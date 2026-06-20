@@ -565,10 +565,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-section-label" data-roles="manager" id="nav-label-system">System</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('integration',this,'SharePoint Integration')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg></span>
-    <span class="nav-label">Integration</span>
-  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('settings',this,'Settings')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
     <span class="nav-label">Settings</span>
@@ -583,7 +579,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </div>
     </div>
     <button id="tk-view-toggle" class="logout-btn hidden" onclick="tkToggleView()" style="margin-bottom:6px;color:var(--emerald)">
-      👤 View as Staff
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>View as Staff
     </button>
     <button class="logout-btn" onclick="doLogout()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -913,7 +909,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 ═══════════════════════════════════════════════════════ -->
 <div id="view-checkin" class="view">
   <div class="page-header">
-    <div><h1>Check In / Out</h1><p>GPS-verified attendance · Google Maps geofence</p></div>
+    <div><h1>Check In / Out</h1><p>GPS-verified attendance · OpenStreetMap</p></div>
   </div>
   <div class="grid-75">
     <!-- LEFT: check-in panel -->
@@ -934,7 +930,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
         <!-- Select work location + GPS verification -->
         <div id="ci-verify-panel" style="border:2px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px">
-          <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px">📍 Where are you checking in from?</label>
+          <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Where are you checking in from?</label>
           <div style="display:flex;gap:8px">
             <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
               <option value="">— Select an approved location —</option>
@@ -1107,7 +1103,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 ═══════════════════════════════════════════════════════ -->
 <div id="view-locations" class="view">
   <div class="page-header">
-    <div><h1>GPS Locations</h1><p>Approved geofence zones · Google Maps Platform</p></div>
+    <div><h1>GPS Locations</h1><p>Approved geofence zones · OpenStreetMap</p></div>
     <button class="btn btn-emerald" onclick="tkOpenLocationModal()">+ Add Location</button>
   </div>
   <div class="stat-boxes">
@@ -1163,14 +1159,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         </div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Google Maps API</div><span class="badge b-ok">● Online</span></div>
+        <div class="card-hdr"><div class="card-title">Map Service</div><span class="badge b-ok">● Online</span></div>
         <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Usage Today</span><span style="font-weight:700;color:var(--navy)">1,284 / 40,000</span></div>
-          <div style="height:5px;background:var(--line);border-radius:3px"><div style="width:3.2%;height:100%;background:var(--emerald);border-radius:3px"></div></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Monthly Cost</span><span style="font-weight:700;color:var(--emerald)">$0.00 (free tier)</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Geocoding API</span><span class="badge b-ok" style="font-size:10px">Active</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Static Maps API</span><span class="badge b-ok" style="font-size:10px">Active</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Key Restriction</span><span style="font-weight:700;color:var(--navy)">Domain-locked</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Provider</span><span style="font-weight:700;color:var(--navy)">OpenStreetMap</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Monthly Cost</span><span style="font-weight:700;color:var(--emerald)">$0.00 (free)</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Map tiles</span><span class="badge b-ok" style="font-size:10px">Active</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Address search</span><span class="badge b-ok" style="font-size:10px">Active</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">API key required</span><span style="font-weight:700;color:var(--navy)">No</span></div>
         </div>
       </div>
     </div>
@@ -1636,7 +1631,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-outline btn-sm" onclick="exportBalances()">↓ Export Balances</button>
-        <button class="btn btn-primary btn-sm" onclick="toast('🔄 Leave balances refreshed from SharePoint Leave_Balances list','#163866')">↻ Sync from SharePoint</button>
       </div>
     </div>
   </div>
@@ -2260,9 +2254,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
               <div style="width:22px;height:22px;border-radius:50%;background:var(--emerald);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">5</div>
               <div><div style="font-weight:700;color:var(--emerald-deep)">Go Live!</div><div style="color:var(--text-light);margin-top:2px">Test Connection → verify data flows → share the page URL with your team. GPS gate is active.</div></div>
             </div>
-          </div>
-          <div style="margin-top:12px">
-            <button class="btn btn-primary btn-sm" style="width:100%;justify-content:center" onclick="showView('integration',null,'Integration Guide')">📄 Full Integration Guide</button>
           </div>
         </div>
         <div class="card">
@@ -3052,7 +3043,9 @@ function tkUpdateViewToggle() {
   if (!btn) return;
   const isAdmin = TK.user && TK.user.role === 'manager';
   btn.classList.toggle('hidden', !isAdmin);
-  btn.innerHTML = (_userRole === 'manager') ? '👤 View as Staff' : '🛡️ Back to Admin view';
+  const userSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+  const shieldSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
+  btn.innerHTML = (_userRole === 'manager') ? userSvg + 'View as Staff' : shieldSvg + 'Back to Admin view';
 }
 
 /* ── Apply role — shows/hides nav items, sets first view ── */
