@@ -392,6 +392,9 @@ body{
   box-shadow:0 22px 48px rgba(23,58,107,.28);
 }
 .sidebar-section-label{color:rgba(255,255,255,.4) !important;}
+/* Collapsed sidebar: scale the logo to fit (overrides inline width/height) */
+#sidebar.collapsed .sidebar-logo{padding:14px 6px 10px !important;}
+#sidebar.collapsed .sidebar-logo img{max-width:44px !important;width:auto !important;height:auto !important;object-fit:contain !important;object-position:center !important;}
 .nav-item{margin:1px 10px;border-radius:12px;border-left:none !important;padding:9px 13px !important;}
 .nav-item.active{background:rgba(255,255,255,.16) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
 .nav-item.active::before{content:'';position:absolute;left:-10px;width:4px;height:20px;border-radius:4px;background:var(--emerald)}
@@ -431,11 +434,9 @@ body{
 .kpi-card::before{display:none !important;}
 .kpi-label{font-size:12px !important;color:var(--text-light) !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;}
 .kpi-value{font-size:38px !important;font-weight:600 !important;color:var(--navy) !important;}
-.kpi-icon{width:42px !important;height:42px !important;border-radius:14px !important;opacity:1 !important;top:22px !important;transform:none !important;}
-.kpi-icon.c-navy{background:rgba(32,80,144,.12) !important;}
-.kpi-icon.c-emerald{background:rgba(0,176,96,.14) !important;}
-.kpi-icon.c-warn{background:rgba(245,158,11,.16) !important;}
-.kpi-icon.c-info{background:rgba(139,92,246,.16) !important;}
+/* Icons: no background box — just the icon in its function colour */
+.kpi-icon{width:30px !important;height:30px !important;border-radius:0 !important;opacity:1 !important;top:22px !important;transform:none !important;background:transparent !important;}
+.kpi-icon svg{width:26px !important;height:26px !important;}
 
 /* ── Pill buttons ── */
 .btn{border-radius:14px !important;}
@@ -564,11 +565,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Reports</span>
   </div>
 
-  <div class="sidebar-section-label" data-roles="manager" id="nav-label-system">System</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('settings',this,'Settings')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
-    <span class="nav-label">Settings</span>
-  </div>
 
   <div class="sidebar-footer">
     <div class="user-card">
@@ -602,7 +598,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="btn btn-emerald btn-sm" onclick="openModal('leaveModal')">+ Request Leave</button>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-      <span class="notif-dot"></span>
+      <span class="notif-dot" id="notif-dot" style="display:none"></span>
     </button>
     <div style="width:32px;height:32px;border-radius:50%;background:var(--emerald);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">HN</div>
   </div>
@@ -815,7 +811,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="kpi-delta dn" id="kpi-late-delta">▲ 2 more than yesterday</div>
     </div>
     <div class="kpi-card c-info">
-      <div class="kpi-icon c-info" style="background:var(--info)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+      <div class="kpi-icon c-info"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--info)" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
       <div class="kpi-label">On Leave</div>
       <div class="kpi-value" id="kpi-onleave">4</div>
       <div class="kpi-delta neu" id="kpi-leave-delta">2 pending approval</div>
@@ -856,51 +852,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <div class="card-title">Pending Approvals</div>
         <button class="btn btn-ghost btn-sm" onclick="showView('manager',null,'Manager Approval')">View All →</button>
       </div>
-      <div class="appr-row">
-        <div class="ava-sm" style="background:#8B5CF6">HN</div>
-        <div class="appr-info"><div class="name">Ha Nguyen — Annual Leave</div><div class="meta">May 12–14 · 3 days · Reason: Family event</div></div>
-        <div class="appr-btns"><button class="btn-approve" onclick="quickApprove(this,'Ha Nguyen')">✓</button><button class="btn-reject" onclick="quickReject(this)">✕</button></div>
-      </div>
-      <div class="appr-row">
-        <div class="ava-sm" style="background:#F59E0B">MV</div>
-        <div class="appr-info"><div class="name">Minh Vu — Sick Leave</div><div class="meta">May 10 · 1 day · Medical cert attached</div></div>
-        <div class="appr-btns"><button class="btn-approve" onclick="quickApprove(this,'Minh Vu')">✓</button><button class="btn-reject" onclick="quickReject(this)">✕</button></div>
-      </div>
-      <div class="appr-row">
-        <div class="ava-sm" style="background:#3168A8">TN</div>
-        <div class="appr-info"><div class="name">Tuan Nguyen — Comp-off</div><div class="meta">May 15 · 1 day · Overtime from April 27</div></div>
-        <div class="appr-btns"><button class="btn-approve" onclick="quickApprove(this,'Tuan Nguyen')">✓</button><button class="btn-reject" onclick="quickReject(this)">✕</button></div>
-      </div>
-      <div class="appr-row">
-        <div class="ava-sm" style="background:#163866">BL</div>
-        <div class="appr-info"><div class="name">Binh Le — Annual Leave</div><div class="meta">May 19–23 · 5 days · Planned vacation</div></div>
-        <div class="appr-btns"><button class="btn-approve" onclick="quickApprove(this,'Binh Le')">✓</button><button class="btn-reject" onclick="quickReject(this)">✕</button></div>
-      </div>
+      <div id="dash-approvals"></div>
     </div>
     <div class="card">
-      <div class="card-hdr"><div class="card-title">Department Summary</div><span style="font-size:12px;color:var(--text-light)">Today</span></div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">Engineering</span><span style="color:var(--text-light)">11/12</span></div>
-          <div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:92%"></div></div>
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">Projects</span><span style="color:var(--text-light)">8/9</span></div>
-          <div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:89%"></div></div>
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">HR &amp; Admin</span><span style="color:var(--text-light)">6/6</span></div>
-          <div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:100%"></div></div>
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">Finance</span><span style="color:var(--text-light)">7/8</span></div>
-          <div class="prog-wrap"><div class="prog-fill prog-navy" style="width:88%"></div></div>
-        </div>
-        <div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">Field Services</span><span style="color:var(--text-light)">10/11</span></div>
-          <div class="prog-wrap"><div class="prog-fill prog-warn" style="width:91%"></div></div>
-        </div>
-      </div>
+      <div class="card-hdr"><div class="card-title">Department Summary</div><span style="font-size:12px;color:var(--text-light)">Present today</span></div>
+      <div id="dash-dept" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
   </div>
 </div>
@@ -2763,11 +2719,91 @@ function tkCheckOut() {
   if (typeof toast === 'function') toast('👋 Checked out at ' + t);
 }
 
+function _tkSet(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+/* Render the manager Dashboard from REAL data (KPIs, activity, approvals, dept). */
+function tkRenderDashboard() {
+  const emps = _DEMO_EMPLOYEES || [], att = _DEMO_ATTENDANCE || [], lv = _DEMO_LEAVE || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const todayAtt = att.filter(r => r.date === today);
+  const checkedIn = todayAtt.filter(r => (r.in || r.clock_in));
+  const present = checkedIn.filter(r => r.status !== 'absent').length;
+  const onTime = todayAtt.filter(r => r.status === 'on-time').length;
+  const late = todayAtt.filter(r => r.status === 'late').length;
+  const onLeave = lv.filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= today && l.endDate >= today).length;
+  const total = emps.length;
+  const pend = lv.filter(l => (l.status || '').toLowerCase() === 'pending');
+  _tkSet('kpi-present', present); _tkSet('kpi-ontime', onTime); _tkSet('kpi-late', late); _tkSet('kpi-onleave', onLeave);
+  _tkSet('kpi-present-delta', total ? ('of ' + total + ' employees') : '—');
+  _tkSet('kpi-ontime-delta', present ? (Math.round(onTime / Math.max(present, 1) * 100) + '% on-time') : '—');
+  _tkSet('kpi-late-delta', late ? (late + ' late today') : 'None late');
+  _tkSet('kpi-leave-delta', pend.length + ' pending approval');
+
+  const feed = document.getElementById('activity-feed');
+  if (feed) {
+    const items = checkedIn.slice().sort((a, b) => ((a.in || a.clock_in) > (b.in || b.clock_in) ? 1 : -1));
+    _tkSet('activity-count', items.length + ' check-ins');
+    feed.innerHTML = items.length ? items.map(r => {
+      const cls = r.status === 'on-time' ? 'em' : (r.status === 'late' ? 'warn' : 'danger');
+      const lbl = r.status === 'on-time' ? 'On Time' : (r.status === 'late' ? 'Late' : '');
+      return '<div class="tl-item"><div class="tl-dot ' + cls + '"></div><div class="tl-time">' + (r.in || r.clock_in) + '</div><div class="tl-text">' + r.name + ' checked in</div><div class="tl-sub">' + (r.loc || '') + (lbl ? ' · ' + lbl : '') + '</div></div>';
+    }).join('') : '<div style="color:var(--text-light);font-size:13px;padding:14px 0;text-align:center">No check-ins yet today.</div>';
+  }
+
+  const da = document.getElementById('dash-approvals');
+  if (da) {
+    da.innerHTML = pend.length ? pend.map(l => {
+      const name = l.emp_name || 'Employee';
+      const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+      return '<div class="appr-row"><div class="ava-sm" style="background:#205090">' + ini + '</div>' +
+        '<div class="appr-info"><div class="name">' + name + ' — ' + (l.type || 'Leave') + '</div><div class="meta">' + l.startDate + ' – ' + l.endDate + ' · ' + l.days + ' day(s)' + (l.reason ? ' · ' + l.reason : '') + '</div></div>' +
+        '<div class="appr-btns"><button class="btn-approve" onclick="tkApprove(' + l.id + ',this)">✓</button><button class="btn-reject" onclick="tkReject(' + l.id + ',this)">✕</button></div></div>';
+    }).join('') : '<div style="color:var(--text-light);font-size:13px;padding:14px 0;text-align:center">No pending approvals 🎉</div>';
+  }
+
+  const dd = document.getElementById('dash-dept');
+  if (dd) {
+    const byDept = {};
+    emps.forEach(e => { const d = e.dept || 'Other'; (byDept[d] = byDept[d] || { total: 0, present: 0 }).total++; });
+    checkedIn.forEach(r => { if (r.status !== 'absent') { const e = emps.find(x => x.name === r.name); const d = (e && e.dept) || r.dept || 'Other'; if (byDept[d]) byDept[d].present++; } });
+    const depts = Object.keys(byDept).filter(d => d).sort();
+    dd.innerHTML = depts.length ? depts.map(d => {
+      const o = byDept[d]; const pct = o.total ? Math.round(o.present / o.total * 100) : 0;
+      const cls = pct >= 90 ? 'prog-emerald' : (pct >= 70 ? 'prog-navy' : 'prog-warn');
+      return '<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="font-weight:600">' + d + '</span><span style="color:var(--text-light)">' + o.present + '/' + o.total + '</span></div><div class="prog-wrap"><div class="prog-fill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
+    }).join('') : '<div style="color:var(--text-light);font-size:13px">No departments set.</div>';
+  }
+}
+
+/* Notifications reflect real pending approvals; clear when none remain. */
+function tkUpdateNotifications() {
+  const pend = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending');
+  const bp = document.getElementById('badge-pending');
+  if (bp) { bp.textContent = pend.length; bp.style.display = pend.length ? '' : 'none'; }
+  const ba = document.getElementById('badge-anomaly');
+  if (ba) ba.style.display = 'none';
+  const dot = document.getElementById('notif-dot');
+  if (dot) dot.style.display = pend.length ? 'block' : 'none';
+  const list = document.getElementById('notif-list');
+  if (list) {
+    list.innerHTML = pend.length ? pend.map(l => {
+      const name = l.emp_name || 'Employee';
+      return '<div class="notif-item" onclick="showView(\'manager\',null,\'Manager Approval\');toggleNotifications()"><div class="notif-icon" style="background:#FEF3C7">⏳</div><div class="notif-body"><strong>' + (l.type || 'Leave') + ' — ' + name + '</strong><span>' + l.startDate + ' – ' + l.endDate + ' · awaiting approval</span></div></div>';
+    }).join('') : '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px">✅ All caught up — no new notifications.</div>';
+  }
+}
+
+function tkMarkAllRead() {
+  const dot = document.getElementById('notif-dot'); if (dot) dot.style.display = 'none';
+  const list = document.getElementById('notif-list'); if (list) list.innerHTML = '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px">✅ All caught up — no new notifications.</div>';
+  const p = document.getElementById('notif-panel'); if (p) p.classList.remove('open');
+}
+
 async function tkApprove(id, btn) {
   const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
   await tkPersist('/api/leave/' + id, { status: 'approved' }, 'PATCH');
   try { await tkBootstrap(); } catch (e) {}
-  tkRenderApprovals();
+  tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {}
   if (typeof toast === 'function') toast('✓ Leave approved');
 }
 
@@ -2775,7 +2811,7 @@ async function tkReject(id, btn) {
   const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
   await tkPersist('/api/leave/' + id, { status: 'rejected' }, 'PATCH');
   try { await tkBootstrap(); } catch (e) {}
-  tkRenderApprovals();
+  tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {}
   if (typeof toast === 'function') toast('✕ Leave rejected');
 }
 
@@ -2981,6 +3017,8 @@ async function doLogin(role, opts = {}) {
   initReportCharts();
   try { tkRenderApprovals(); } catch (e) {}
   try { tkRenderZones(); } catch (e) {}
+  try { tkRenderDashboard(); } catch (e) {}
+  try { tkUpdateNotifications(); } catch (e) {}
   try { tkUpdateViewToggle(); } catch (e) {}
   try {
     const wel = document.getElementById('dash-welcome');
@@ -4150,7 +4188,7 @@ async function submitLeave() {
     await new Promise(r => setTimeout(r, 700));
     /* persist to backend, then refresh the pending list from the database */
     tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason })
-      .then(async () => { try { await tkBootstrap(); tkRenderApprovals(); } catch (e) {} });
+      .then(async () => { try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
     const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
     const colors = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000'];
@@ -5721,24 +5759,9 @@ function saveEmployeeProfile() {
 <div id="notif-panel">
   <div class="notif-hdr">
     <span class="notif-hdr-title">🔔 Notifications</span>
-    <button class="btn btn-ghost btn-sm" onclick="document.getElementById('notif-panel').classList.remove('open');document.getElementById('notif-dot-inner').style.display='none'">Mark all read</button>
+    <button class="btn btn-ghost btn-sm" onclick="tkMarkAllRead()">Mark all read</button>
   </div>
-  <div class="notif-item" onclick="showView('manager',null,'Manager Approval');toggleNotifications()">
-    <div class="notif-icon" style="background:#FEF3C7">⏳</div>
-    <div class="notif-body"><strong>2 Leave Requests Pending</strong><span>Tuan Nguyen · Minh Vu — awaiting approval</span></div>
-  </div>
-  <div class="notif-item" onclick="showView('manager',null,'Manager Approval');toggleNotifications()">
-    <div class="notif-icon" style="background:#FEE2E2">⚠️</div>
-    <div class="notif-body"><strong>GPS Anomaly — Binh Le</strong><span>07:58 · 1.2km outside HQ zone</span></div>
-  </div>
-  <div class="notif-item">
-    <div class="notif-icon" style="background:#D1FAE5">✅</div>
-    <div class="notif-body"><strong>Check-in Complete — 44/46 Today</strong><span>2 employees absent · 4 late</span></div>
-  </div>
-  <div class="notif-item">
-    <div class="notif-icon" style="background:#E0E7FF">📊</div>
-    <div class="notif-body"><strong>Monthly Report Ready</strong><span>April 2026 attendance exported</span></div>
-  </div>
+  <div id="notif-list"></div>
   <div style="padding:10px 16px;text-align:center">
     <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="toggleNotifications()">Close</button>
   </div>
