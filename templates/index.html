@@ -849,39 +849,26 @@ select.form-control{cursor:pointer}
           </div>
         </div>
 
-        <!-- GPS + Zone Comparison Panel -->
-        <div id="gps-zone-panel" style="border:2px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px">
-          <!-- GPS header row -->
-          <div style="background:var(--soft-bg);padding:12px 14px;display:flex;align-items:center;justify-content:space-between">
-            <div style="display:flex;align-items:center;gap:10px">
-              <span id="gps-status-badge" style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;background:#6b7280;color:#fff">⏳ Detecting GPS…</span>
-              <span style="font-size:12px;color:var(--text-light)" id="gps-accuracy-lbl"></span>
-            </div>
-            <button onclick="refreshGPS(this)" style="font-size:11px;padding:5px 12px;border-radius:6px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--navy);font-family:inherit;font-weight:600;display:flex;align-items:center;gap:5px">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh
-            </button>
+        <!-- Select work location + GPS verification -->
+        <div id="ci-verify-panel" style="border:2px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px">
+          <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px">📍 Where are you checking in from?</label>
+          <div style="display:flex;gap:8px">
+            <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
+              <option value="">— Select an approved location —</option>
+            </select>
+            <button onclick="tkVerifySelectedZone()" style="padding:0 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap">↻ Re-check</button>
           </div>
-          <!-- Current location row -->
-          <div style="padding:12px 14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px">
-            <div style="width:34px;height:34px;border-radius:50%;background:rgba(32,80,144,.1);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px">📍</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px">Your Current Location</div>
-              <div style="font-size:13px;font-weight:600;color:var(--text-dark);margin-top:2px" id="map-location-label">Requesting location…</div>
-              <div style="font-size:11px;color:var(--text-light);margin-top:1px;font-family:monospace" id="ci-coords"></div>
-            </div>
-          </div>
-          <!-- Zone comparison rows — built by JS -->
-          <div id="zone-comparison-list"></div>
+          <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
 
-        <!-- Check In / Out Buttons -->
+        <!-- Check In / Out Buttons (Check In appears only when inside the selected zone) -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <button id="btn-checkin" onclick="doCheckin()"
-            style="padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,#205090,#162f5a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px">
+          <button id="btn-checkin" onclick="tkCheckIn()" disabled
+            style="display:none;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--emerald),#00965a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;align-items:center;justify-content:center;gap:8px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             Check In
           </button>
-          <button id="btn-checkout" onclick="doCheckout()" disabled
+          <button id="btn-checkout" onclick="tkCheckOut()" disabled
             style="padding:14px;border-radius:10px;border:none;background:#e2e8f0;color:#94a3b8;font-size:15px;font-weight:700;cursor:not-allowed;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Check Out
@@ -915,102 +902,10 @@ select.form-control{cursor:pointer}
         </div>
       </div>
 
-      <!-- GPS zone verification -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Location Verification</div><span class="badge b-navy" id="loc-verify-badge">Not Verified</span></div>
-        <div style="font-size:12px;color:var(--text-light);margin-bottom:14px">Your GPS position is checked against approved zones. Use the button below to detect your current location.</div>
-
-        <button onclick="verifyCurrentLocation()" id="btn-verify-current" style="width:100%;padding:14px 16px;border-radius:10px;border:2px solid var(--emerald);background:linear-gradient(135deg,#f0fff8,#e8f8ef);cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;color:#065f46;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8" stroke-dasharray="4 2" opacity=".4"/></svg>
-          📍 Detect My Current Location
-        </button>
-        <div id="loc-verify-result" style="display:none;padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;border:1px solid transparent"></div>
-
-        <div style="border-top:1px solid var(--line);padding-top:12px">
-          <div style="font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Map Simulation (display only)</div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px">
-            <button class="btn btn-outline btn-sm" onclick="simGPS(10.7769,106.6985,'HQ District 10','42m')">🏢 HQ</button>
-            <button class="btn btn-outline btn-sm" onclick="simGPS(10.5427,106.4139,'Factory Long An','18m')">🏭 Factory</button>
-            <button class="btn btn-outline btn-sm" onclick="simGPS(10.7752,106.6985,'Near Boundary','188m')">⚠️ Boundary</button>
-            <button class="btn btn-outline btn-sm" onclick="simGPS(10.7660,106.7009,'Outside Zone','1.2km')">❌ Outside</button>
-          </div>
-        </div>
-      </div>
     </div>
 
     <!-- RIGHT: map + history -->
     <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="card" style="padding:0;overflow:hidden">
-        <div style="padding:14px 16px 10px;border-bottom:1px solid var(--line)">
-          <div class="card-title">Live GPS Map</div>
-        </div>
-        <div class="map-panel" style="height:240px;position:relative;background:#EEF3FA" id="gps-map-panel">
-          <svg id="gps-map-svg" class="map-svg" viewBox="0 0 360 240" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
-            <!-- Background -->
-            <rect width="360" height="240" fill="#EEF3FA"/>
-            <!-- Road grid -->
-            <line x1="0" y1="120" x2="360" y2="120" stroke="#fff" stroke-width="12"/>
-            <line x1="0" y1="120" x2="360" y2="120" stroke="#D0DEF0" stroke-width="8"/>
-            <line x1="180" y1="0" x2="180" y2="240" stroke="#fff" stroke-width="12"/>
-            <line x1="180" y1="0" x2="180" y2="240" stroke="#D0DEF0" stroke-width="8"/>
-            <line x1="0" y1="60" x2="360" y2="60" stroke="#E2EAF5" stroke-width="4"/>
-            <line x1="0" y1="180" x2="360" y2="180" stroke="#E2EAF5" stroke-width="4"/>
-            <line x1="90" y1="0" x2="90" y2="240" stroke="#E2EAF5" stroke-width="4"/>
-            <line x1="270" y1="0" x2="270" y2="240" stroke="#E2EAF5" stroke-width="4"/>
-            <!-- Buildings -->
-            <rect x="10"  y="10"  width="74" height="45" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="96"  y="10"  width="78" height="45" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="186" y="10"  width="78" height="45" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="276" y="10"  width="74" height="45" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="10"  y="68"  width="74" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="96"  y="68"  width="78" height="47" rx="4" fill="#CFE8D8" stroke="#B0D4C0" stroke-width="1.5"/>
-            <rect x="186" y="68"  width="78" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="276" y="68"  width="74" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="10"  y="128" width="74" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="96"  y="128" width="78" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="186" y="128" width="78" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="276" y="128" width="74" height="47" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="10"  y="188" width="74" height="42" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="96"  y="188" width="78" height="42" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="186" y="188" width="78" height="42" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <rect x="276" y="188" width="74" height="42" rx="4" fill="#D8E4F0" stroke="#C4D4E8" stroke-width="1"/>
-            <!-- HQ label -->
-            <text x="135" y="98" font-size="8" fill="#205090" font-weight="bold" font-family="Calibri,Arial,sans-serif">HUMILEY HQ</text>
-            <!-- Geofence ring (animated) -->
-            <circle id="map-geofence" cx="180" cy="120" r="64"
-              fill="rgba(0,176,96,.10)" stroke="#00B060" stroke-width="2" stroke-dasharray="7 4" opacity="0.85"/>
-            <!-- Distance line -->
-            <line id="map-dist-line" x1="180" y1="120" x2="198" y2="108"
-              stroke="#205090" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.45"/>
-            <!-- Zone center pin -->
-            <circle cx="180" cy="120" r="10" fill="#205090" opacity="0.9"/>
-            <circle cx="180" cy="120" r="5"  fill="#fff"/>
-            <!-- User pulse ring (animated) -->
-            <circle id="map-pulse-ring" cx="198" cy="108" r="16"
-              fill="rgba(0,176,96,.15)" stroke="rgba(0,176,96,.35)" stroke-width="1.5"/>
-            <!-- User dot -->
-            <circle id="map-user-dot"    cx="198" cy="108" r="8"  fill="#00B060" stroke="#fff" stroke-width="2.5"/>
-            <circle id="map-user-center" cx="198" cy="108" r="3"  fill="#fff"/>
-            <!-- Out-of-zone warning label -->
-            <text id="map-out-label" x="10" y="22" font-size="11" fill="#C00000" font-weight="bold"
-              font-family="Calibri,Arial,sans-serif" opacity="0">⚠ Outside Geofence Zone</text>
-          </svg>
-          <!-- Overlay badges -->
-          <div class="map-overlay" style="pointer-events:none">
-            <div class="map-badge" id="map-badge-zone" style="color:var(--emerald);background:rgba(255,255,255,.92);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">● In Zone (42m)</div>
-            <div class="map-badge" id="map-badge-loc"  style="color:var(--navy);background:rgba(255,255,255,.92);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">HQ — District 10</div>
-          </div>
-          <!-- Coordinates strip -->
-          <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(32,80,144,.82);padding:4px 10px;display:flex;justify-content:space-between;align-items:center">
-            <span style="font-size:10px;color:rgba(255,255,255,.8);font-family:monospace" id="map-coords-strip">10.7769°N · 106.6985°E</span>
-            <span style="font-size:10px;color:rgba(255,255,255,.6)" id="map-accuracy-strip">GPS: Simulated</span>
-          </div>
-        </div>
-        <div style="padding:10px 16px;background:var(--soft-bg);border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-          <span style="font-size:11px;color:var(--text-light)">Last update: just now</span>
-          <button class="btn btn-ghost btn-sm" id="btn-gps-refresh" onclick="refreshGPS()">↻ Refresh GPS</button>
-        </div>
-      </div>
 
       <!-- recent history -->
       <div class="card">
@@ -2684,6 +2579,114 @@ function tkRenderZones() {
   }).join('');
   const stat = document.querySelector('#view-locations .stat-box .stat-num');
   if (stat) stat.textContent = zones.length;
+  try { tkPopulateZoneSelect(); } catch (e) {}
+}
+
+/* ── Check-in flow: select an approved zone, verify GPS is inside it ── */
+let _tkSelectedZone = null, _tkInsideSelected = false, _tkLastLat = null, _tkLastLon = null;
+
+function tkPopulateZoneSelect() {
+  const sel = document.getElementById('ci-zone-select');
+  if (!sel) return;
+  const cur = sel.value;
+  const zones = _DEMO_ZONES || [];
+  sel.innerHTML = '<option value="">— Select an approved location —</option>' +
+    zones.map((z, i) => '<option value="' + i + '">' + (z.name || ('Zone ' + (i + 1))) + '</option>').join('');
+  if (cur && _DEMO_ZONES[parseInt(cur)]) sel.value = cur;
+}
+
+function _tkSetCheckinAllowed(ok) {
+  const btn = document.getElementById('btn-checkin');
+  if (!btn) return;
+  if (ok && !_checkedIn) { btn.style.display = 'flex'; btn.disabled = false; }
+  else { btn.style.display = 'none'; btn.disabled = true; }
+}
+
+function tkSelectZone() {
+  const sel = document.getElementById('ci-zone-select');
+  const status = document.getElementById('ci-verify-status');
+  const idx = sel ? sel.value : '';
+  if (idx === '') {
+    _tkSelectedZone = null; _tkInsideSelected = false; _tkSetCheckinAllowed(false);
+    if (status) status.textContent = "Select your location above — we'll confirm you're there before allowing check-in.";
+    return;
+  }
+  _tkSelectedZone = _DEMO_ZONES[parseInt(idx)];
+  tkVerifySelectedZone();
+}
+
+function tkVerifySelectedZone() {
+  if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
+  const z = _tkSelectedZone;
+  const status = document.getElementById('ci-verify-status');
+  const evaluate = (lat, lon, accNote) => {
+    _tkLastLat = lat; _tkLastLon = lon;
+    const dist = Math.round(_haversineMetres(lat, lon, Number(z.lat), Number(z.lon)));
+    const radius = Number(z.radius) || 200;
+    const inside = dist <= radius;
+    _tkInsideSelected = inside;
+    const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
+    if (status) status.innerHTML = inside
+      ? '<span style="color:var(--emerald);font-weight:700">✅ You are at ' + z.name + '</span> (' + distStr + ' from centre' + accNote + '). You can check in now.'
+      : '<span style="color:var(--danger);font-weight:700">⛔ You are not at ' + z.name + '</span> — ' + distStr + ' away (must be within ' + radius + 'm). Check-in is not allowed here.';
+    _tkSetCheckinAllowed(inside);
+  };
+  if (status) status.textContent = '⏳ Checking your location…';
+  if (!navigator.geolocation) { if (status) status.innerHTML = '⚠️ GPS is not available on this device — cannot verify your location.'; _tkSetCheckinAllowed(false); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => evaluate(pos.coords.latitude, pos.coords.longitude, ', ±' + Math.round(pos.coords.accuracy) + 'm'),
+    err => {
+      if (err && err.code === 1) {
+        if (status) status.innerHTML = '⚠️ <strong>Location is blocked.</strong> Click the 🔒 in the address bar → Location → Allow → reload, then press “Re-check”.';
+        _tkSetCheckinAllowed(false); return;
+      }
+      if (status) status.textContent = '⏳ Still locating (network-based)…';
+      navigator.geolocation.getCurrentPosition(
+        pos => evaluate(pos.coords.latitude, pos.coords.longitude, ', ±' + Math.round(pos.coords.accuracy) + 'm'),
+        e2 => { if (status) status.innerHTML = '⚠️ Could not get your GPS location (' + (e2 && e2.message || 'timeout') + '). Move to an open area and press “Re-check”.'; _tkSetCheckinAllowed(false); },
+        { enableHighAccuracy: false, timeout: 25000, maximumAge: 600000 }
+      );
+    },
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+  );
+}
+
+function tkCheckIn() {
+  if (_checkedIn) { if (typeof toast === 'function') toast('You are already checked in', 'warn'); return; }
+  if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Please select your location first', 'warn'); return; }
+  if (!_tkInsideSelected) { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
+  const now = new Date(), t = now.toTimeString().slice(0, 5);
+  _checkedIn = true;
+  _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: _tkSelectedZone.name });
+  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon });
+  try { filterTable(); } catch (e) {}
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('rec-checkin', t); set('rec-zone', 'In Zone'); set('dur-val', '0h 0m');
+  _tkSetCheckinAllowed(false);
+  const btnOut = document.getElementById('btn-checkout');
+  if (btnOut) { btnOut.disabled = false; btnOut.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; btnOut.style.color = '#fff'; btnOut.style.cursor = 'pointer'; }
+  const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = true;
+  const status = document.getElementById('ci-verify-status');
+  if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">✅ Checked in at ' + t + '</span> · ' + _tkSelectedZone.name;
+  if (typeof toast === 'function') toast('✅ Checked in at ' + t + ' · ' + _tkSelectedZone.name);
+}
+
+function tkCheckOut() {
+  if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
+  const now = new Date(), t = now.toTimeString().slice(0, 5);
+  _checkedIn = false;
+  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t });
+  const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
+  if (rec) { rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); const tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm'; }
+  try { filterTable(); } catch (e) {}
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('rec-checkout', t);
+  const btnOut = document.getElementById('btn-checkout');
+  if (btnOut) { btnOut.disabled = true; btnOut.style.background = '#e2e8f0'; btnOut.style.color = '#94a3b8'; btnOut.style.cursor = 'not-allowed'; }
+  const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = false;
+  const status = document.getElementById('ci-verify-status');
+  if (status) status.innerHTML = '👋 Checked out at ' + t + '. Select your location to check in again.';
+  if (typeof toast === 'function') toast('👋 Checked out at ' + t);
 }
 
 async function tkApprove(id, btn) {
