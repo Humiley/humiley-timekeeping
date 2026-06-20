@@ -209,10 +209,18 @@ class Handler(BaseHTTPRequestHandler):
         if not DEMO_MODE:
             return self._err("Demo login disabled (Microsoft 365 is configured).", 403)
         role = body.get("role", "manager")
-        # Demo identities: manager -> Managing Director; staff -> an engineer
-        emp = db.get_employee("EMP001") if role == "manager" else db.get_employee("EMP009")
-        token = new_session(emp["id"], role)
-        return self._json({"token": token, "user": dict(emp, role=role)})
+        # Demo identities: pick a real admin for manager, a real staff member otherwise
+        emps = db.list_employees()
+        emp = None
+        if role == "manager":
+            emp = next((e for e in emps if e.get("role") == "manager"), None)
+        else:
+            emp = next((e for e in emps if e.get("role") != "manager"), None)
+        emp = emp or (emps[0] if emps else None)
+        if not emp:
+            return self._err("No employees in the system yet.", 400)
+        token = new_session(emp["id"], emp.get("role", role))
+        return self._json({"token": token, "user": dict(emp, role=emp.get("role", role))})
 
     def _auth_m365(self, body):
         token_in = body.get("accessToken", "")

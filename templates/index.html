@@ -377,11 +377,15 @@ select.form-control{cursor:pointer}
 body{
   font-family:'Poppins','Segoe UI',system-ui,Arial,sans-serif !important;
   background:
-    radial-gradient(900px 480px at 88% -8%, rgba(0,176,96,.12), transparent 60%),
-    radial-gradient(900px 520px at 6% 4%, rgba(32,80,144,.10), transparent 55%),
-    linear-gradient(165deg,#eef2f7 0%, #f3f6f9 45%, #eef4f0 100%) !important;
+    radial-gradient(700px 360px at 92% -6%, rgba(0,176,96,.07), transparent 60%),
+    radial-gradient(680px 360px at 4% 2%, rgba(32,80,144,.06), transparent 55%),
+    linear-gradient(180deg,#f7f9fc 0%, #eef1f6 100%) !important;
   padding:0 !important;
 }
+/* subtle scrollbars for a cleaner, modern feel */
+#content::-webkit-scrollbar{width:9px}
+#content::-webkit-scrollbar-thumb{background:rgba(32,80,144,.18);border-radius:8px}
+#content::-webkit-scrollbar-track{background:transparent}
 
 /* ── Floating, rounded navy sidebar ── */
 #sidebar{
@@ -1534,7 +1538,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>HR Admin</h1><p>Leave balances · Payroll hours · Employee management</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="exportHRReport()">↓ Export Report</button>
-      <button class="btn btn-emerald" onclick="openAddEmpModal()">+ Add Employee</button>
+      <button class="btn btn-emerald" onclick="tkOpenAddEmp()">+ Add Employee</button>
     </div>
   </div>
 
@@ -1555,34 +1559,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="card">
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Annual (Used/Total)</th><th>Sick (Used/Total)</th><th>Comp-off</th><th>Unpaid</th><th>Actions</th></tr></thead>
-          <tbody>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#205090">HN</div><span style="font-weight:700">Huy Nguyen Duc</span></div></td><td>Engineering</td>
-              <td><div style="font-size:12px">4 / 12 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:33%"></div></div></div></td>
-              <td><div style="font-size:12px">0 / 30 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:0%"></div></div></div></td>
-              <td style="font-weight:700;color:var(--navy)">2d</td><td style="color:var(--text-light)">0d</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#00B060">LT</div><span style="font-weight:700">Lan Tran</span></div></td><td>HR &amp; Admin</td>
-              <td><div style="font-size:12px">2 / 12 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:17%"></div></div></div></td>
-              <td><div style="font-size:12px">1 / 30 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:3%"></div></div></div></td>
-              <td style="font-weight:700;color:var(--navy)">0d</td><td style="color:var(--text-light)">0d</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">MV</div><span style="font-weight:700">Minh Vu</span></div></td><td>Projects</td>
-              <td><div style="font-size:12px">6 / 12 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-warn" style="width:50%"></div></div></div></td>
-              <td><div style="font-size:12px">2 / 30 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:7%"></div></div></div></td>
-              <td style="color:var(--text-light)">0d</td><td style="color:var(--text-light)">0d</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#8B5CF6">PD</div><span style="font-weight:700">Phuc Dang</span></div></td><td>Finance</td>
-              <td><div style="font-size:12px">3 / 12 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:25%"></div></div></div></td>
-              <td><div style="font-size:12px">0 / 30 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:0%"></div></div></div></td>
-              <td style="color:var(--text-light)">1d</td><td style="color:var(--text-light)">0d</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">BL</div><span style="font-weight:700">Binh Le</span></div></td><td>Field Services</td>
-              <td><div style="font-size:12px">3 / 12 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:25%"></div></div></div></td>
-              <td><div style="font-size:12px">0 / 30 days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:0%"></div></div></div></td>
-              <td style="color:var(--text-light)">3d</td><td style="color:var(--text-light)">0d</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>
-          </tbody>
+          <thead><tr><th>Employee</th><th>Department</th><th>Annual (Used/Total)</th><th>Sick (Used/Total)</th><th>Comp-off</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="hr-balances-body"></tbody>
         </table>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
@@ -3023,6 +3001,8 @@ async function doLogin(role, opts = {}) {
   try { tkRenderDashboard(); } catch (e) {}
   try { tkUpdateNotifications(); } catch (e) {}
   try { tkUpdateViewToggle(); } catch (e) {}
+  try { _renderEmployeeTable(); } catch (e) {}
+  try { tkRenderBalances(); } catch (e) {}
   try {
     const wel = document.getElementById('dash-welcome');
     if (wel && TK.user && TK.user.name) wel.innerHTML = 'Welcome back, <b>' + TK.user.name.split(/\s+/)[0] + '</b> 👋';
@@ -3528,6 +3508,7 @@ function switchHRTab(tab, el) {
   if (el) el.classList.add('active');
   const panel = document.getElementById('hr-' + tab);
   if (panel) panel.style.display = 'block';
+  if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
     const lbl = document.getElementById('emp-count-label');
@@ -4454,8 +4435,29 @@ function _renderEmployeeTable(filter) {
   }).join('');
 }
 
+function tkRenderBalances() {
+  const tbody = document.getElementById('hr-balances-body');
+  if (!tbody) return;
+  const emps = (_DEMO_EMPLOYEES || []);
+  tbody.innerHTML = emps.map(e => {
+    const aT = e.annualTotal || 12, aU = e.annualUsed || 0, sT = e.sickTotal || 30, sU = e.sickUsed || 0;
+    const aPct = Math.round(aU / Math.max(aT, 1) * 100), sPct = Math.round(sU / Math.max(sT, 1) * 100);
+    const active = (e.status || 'Active').toLowerCase() !== 'inactive';
+    return '<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:' + (e.clr || '#205090') + '">' + (e.ini || '') + '</div><span style="font-weight:700">' + e.name + '</span></div></td>' +
+      '<td>' + (e.dept || '—') + '</td>' +
+      '<td><div style="font-size:12px">' + aU + ' / ' + aT + ' days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:' + aPct + '%"></div></div></div></td>' +
+      '<td><div style="font-size:12px">' + sU + ' / ' + sT + ' days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:' + sPct + '%"></div></div></div></td>' +
+      '<td style="font-weight:700;color:var(--navy)">' + (e.compoff || 0) + 'd</td>' +
+      '<td><span class="badge ' + (active ? 'b-ok' : 'b-danger') + '" style="font-size:10px">' + (active ? 'Active' : 'Inactive') + '</span></td>' +
+      '<td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>';
+  }).join('');
+}
+
 function _viewEmpProfile(id) {
   const e = _DEMO_EMPLOYEES.find(x=>x.id===id); if(!e) return;
+  const _mgr = (_DEMO_EMPLOYEES||[]).find(x => (x.email||'').toLowerCase() === (e.managerEmail||'').toLowerCase());
+  const managerName = _mgr ? _mgr.name : (e.managerEmail || '—');
+  const dash = v => (v && String(v).trim()) ? v : '—';
   const yrs = Math.floor((new Date()-new Date(e.startDate))/(365.25*24*3600*1000));
   const annPct = Math.round(e.annualUsed/e.annualTotal*100);
   const sickPct = Math.round(e.sickUsed/e.sickTotal*100);
@@ -4477,23 +4479,35 @@ function _viewEmpProfile(id) {
         <div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-light);margin-bottom:8px">Personal Information</div>
           <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Date of Birth</span><span style="font-weight:600">${e.dob}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Gender</span><span style="font-weight:600">${e.gender}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Nationality</span><span style="font-weight:600">Vietnamese</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Tax ID</span><span style="font-weight:600;font-family:monospace">${e.taxId}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Bank Account</span><span style="font-weight:600;font-size:11px">${e.bank}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Date of Birth</span><span style="font-weight:600">${dash(e.dob)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Gender</span><span style="font-weight:600">${dash(e.gender)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Family Status</span><span style="font-weight:600">${dash(e.familyStatus)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Education</span><span style="font-weight:600;font-size:11px;text-align:right;max-width:150px">${dash(e.education)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">ID / Passport</span><span style="font-weight:600;font-family:monospace;font-size:11px">${dash(e.personalId)}</span></div>
           </div>
         </div>
-        <!-- Contact -->
+        <!-- Employment -->
         <div>
-          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-light);margin-bottom:8px">Contact & Employment</div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-light);margin-bottom:8px">Employment</div>
           <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Email</span><span style="font-weight:600;font-size:11px">${e.email}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Phone</span><span style="font-weight:600">${e.phone}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Start Date</span><span style="font-weight:600">${e.startDate}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">GPS Zone</span><span class="badge b-info" style="font-size:10px">${e.zone}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Address</span><span style="font-weight:600;font-size:11px;text-align:right;max-width:180px">${e.address}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Job Level</span><span style="font-weight:600">${dash(e.jobLevel)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Type</span><span style="font-weight:600">${dash(e.employmentType)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Start Date</span><span style="font-weight:600">${dash(e.startDate)}</span></div>
+            ${e.endDate ? '<div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">End Date</span><span style="font-weight:600;color:var(--danger)">'+e.endDate+'</span></div>' : ''}
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Service</span><span style="font-weight:600">${dash(e.serviceDuration)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Direct Manager</span><span style="font-weight:600;font-size:11px;text-align:right">${dash(managerName)}</span></div>
           </div>
+        </div>
+      </div>
+      <!-- Contact -->
+      <div style="margin-bottom:16px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text-light);margin-bottom:8px">Contact</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;font-size:12px">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Email</span><span style="font-weight:600;font-size:11px">${dash(e.email)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Phone</span><span style="font-weight:600">${dash(e.phone)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">GPS Zone</span><span class="badge b-info" style="font-size:10px">${dash(e.zone)}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">English Cert.</span><span style="font-weight:600">${dash(e.englishCert)}</span></div>
+          <div style="grid-column:1/3;display:flex;justify-content:space-between"><span style="color:var(--text-light)">Address</span><span style="font-weight:600;font-size:11px;text-align:right;max-width:340px">${dash(e.address)}</span></div>
         </div>
       </div>
       <!-- Leave Balance -->
@@ -5636,96 +5650,49 @@ function openAddEmpModal() {
   openModal('addEmpModal');
 }
 
-async function saveEmployee() {
-  const name   = document.getElementById('emp-name')?.value?.trim()  || '';
-  const title  = document.getElementById('emp-title')?.value?.trim() || '';
-  const dept   = document.getElementById('emp-dept')?.value          || '';
-  const email  = document.getElementById('emp-email')?.value?.trim() || '';
-  const start  = document.getElementById('emp-start')?.value         || '';
-  const annual = parseInt(document.getElementById('emp-annual')?.value) || 12;
-  const sick   = parseInt(document.getElementById('emp-sick')?.value)   || 30;
-  const empId  = document.getElementById('emp-id')?.value            || 'EMP???';
+/* Open the Add Employee modal and prepare it (clear fields, fill manager list) */
+function tkOpenAddEmp() {
+  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start']
+    .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
+  const a = document.getElementById('emp-annual'); if (a) a.value = 12;
+  const s = document.getElementById('emp-sick'); if (s) s.value = 30;
+  // populate the direct-manager dropdown from current employees
+  const sel = document.getElementById('emp-manager');
+  if (sel) sel.innerHTML = '<option value="">— None (top of org) —</option>' +
+    (_DEMO_EMPLOYEES || []).map(e => '<option value="' + (e.email || '') + '">' + e.name + (e.title ? ' (' + e.title + ')' : '') + '</option>').join('');
+  openModal('addEmpModal');
+}
 
+async function saveEmployee() {
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const name = val('emp-name'), title = val('emp-title'), dept = val('emp-dept');
   if (!name)  { toast('Full name is required', 'warn'); document.getElementById('emp-name')?.focus(); return; }
-  if (!title) { toast('Job title is required', 'warn');  document.getElementById('emp-title')?.focus(); return; }
+  if (!title) { toast('Position / job title is required', 'warn'); document.getElementById('emp-title')?.focus(); return; }
   if (!dept)  { toast('Please select a department', 'warn'); return; }
 
-  const initials  = name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-  const palette   = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000','#163866','#059669','#D97706'];
-  const color     = palette[Math.floor(Math.random() * palette.length)];
-  const autoEmail = email || name.toLowerCase().replace(/\s+/g, '.') + '@humiley.com.vn';
+  const initials = name.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+  const palette = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000','#163866','#059669','#D97706','#EC4899'];
+  const color = palette[Math.floor((_DEMO_EMPLOYEES || []).length) % palette.length];
+  const autoEmail = val('emp-email') || (name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.') + '@humiley.com');
 
-  if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    // ── 0. Persist to backend, then refresh the employee table from the DB ──
-    tkPersist('/api/employees', {
-      name, title, dept, email: autoEmail, startDate: start || null,
-      annualTotal: annual, sickTotal: sick, ini: initials, clr: color,
-      status: 'Active', zone: 'HQ', role: 'staff'
-    }).then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); } catch (e) {} });
-
-    // ── 1. Add card to Employee Profiles grid ──────────────────────────
-    const grid = document.querySelector('#hr-employees [style*="grid-template-columns"]');
-    if (grid) {
-      const card = document.createElement('div');
-      card.className = 'emp-profile-card';
-      card.innerHTML = `
-        <div class="ava-md" style="background:${color}">${initials}</div>
-        <div class="emp-profile-info">
-          <div class="emp-profile-name" data-empname="${name}">${name}</div>
-          <div class="emp-profile-role">${title} · ${empId}</div>
-          <div class="emp-profile-bal">
-            <span class="bal-pill">Annual: ${annual}d</span>
-            <span class="bal-pill">Sick: ${sick}d</span>
-          </div>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="editEmployeeProfile(this)">Edit</button>`;
-      grid.appendChild(card);
-    }
-
-    // ── 2. Add row to Leave Balances table ────────────────────────────
-    const balTbody = document.querySelector('#hr-balances table tbody');
-    if (balTbody) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <div class="ava-sm" style="background:${color}">${initials}</div>
-          <span style="font-weight:700">${name}</span>
-        </div></td>
-        <td>${dept}</td>
-        <td><div style="font-size:12px">0 / ${annual} days
-          <div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:0%"></div></div>
-        </div></td>
-        <td><div style="font-size:12px">0 / ${sick} days
-          <div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:0%"></div></div>
-        </div></td>
-        <td style="color:var(--text-light)">0d</td>
-        <td style="color:var(--text-light)">0d</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td>`;
-      balTbody.appendChild(tr);
-    }
-
-    closeModal('addEmpModal');
-    toast('✅ ' + name + ' added — ' + dept + ' · ' + empId + (start ? ' · Started ' + start : ''));
-
-    // Switch to Employee Profiles tab so user sees the new card immediately
-    const empTab = document.querySelector('#view-hradmin .tabs .tab:nth-child(3)');
-    switchHRTab('employees', empTab);
-    return;
-  }
-
-  // ── Live SharePoint mode ──────────────────────────────────────────────
-  const fields = {
-    Title: name, JobTitle: title, Department: dept,
-    Email: autoEmail, EmployeeID: empId, StartDate: start || null,
-    AnnualLeaveDays: annual, SickLeaveDays: sick
+  const payload = {
+    name, title, dept, email: autoEmail, ini: initials, clr: color, zone: 'HQ', role: 'staff',
+    gender: val('emp-gender'), dob: val('emp-dob'), jobLevel: val('emp-level'),
+    employmentType: val('emp-type') || 'Full Time', phone: val('emp-phone'),
+    startDate: val('emp-start') || null, status: val('emp-status') || 'Active',
+    managerEmail: val('emp-manager'), familyStatus: val('emp-family'),
+    education: val('emp-education'), personalId: val('emp-personalId'),
+    address: val('emp-address'), emergency: val('emp-emergency'),
+    englishCert: val('emp-english'), note: val('emp-note'),
+    annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
-  const res = await spPost('Employee_Profiles', fields);
-  if (res?.id) {
-    closeModal('addEmpModal');
-    toast('✅ ' + name + ' saved to SharePoint Employee_Profiles list');
-  } else {
-    toast('Save failed — check SharePoint connection', 'error');
-  }
+  if (val('emp-id')) payload.id = val('emp-id');
+
+  const res = await tkPersist('/api/employees', payload);
+  if (res === null) { toast('Could not add employee (email may already exist)', 'error'); return; }
+  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); } catch (e) {}
+  closeModal('addEmpModal');
+  toast('✅ ' + name + ' added — ' + title + ' · ' + dept);
 }
 
 function tkPopulateManagerSelect(selectedEmail, excludeId) {
@@ -5843,7 +5810,7 @@ function saveEmployeeProfile() {
 
 <!-- ADD EMPLOYEE MODAL -->
 <div class="modal-overlay" id="addEmpModal">
-  <div class="modal" style="max-width:520px">
+  <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
     <div class="modal-header">
       <div class="modal-title">👤 Add New Employee</div>
       <button class="modal-close" onclick="closeModal('addEmpModal')">✕</button>
@@ -5852,56 +5819,49 @@ function saveEmployeeProfile() {
       <div class="form-group">
         <label class="form-label">Full Name <span style="color:var(--danger)">*</span></label>
         <input type="text" class="form-control" id="emp-name" placeholder="e.g. Nguyen Van An"
-               oninput="const e=document.getElementById('emp-email');if(!e.dataset.edited)e.value=this.value.toLowerCase().replace(/\s+/g,'.')+'@humiley.com.vn'">
+               oninput="const e=document.getElementById('emp-email');if(!e.dataset.edited)e.value=this.value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.')+'@humiley.com'">
       </div>
-      <div class="form-group">
-        <label class="form-label">Employee ID</label>
-        <input type="text" class="form-control" id="emp-id" readonly style="background:var(--soft-bg);cursor:default">
-      </div>
+      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" placeholder="auto"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group">
-        <label class="form-label">Job Title <span style="color:var(--danger)">*</span></label>
-        <input type="text" class="form-control" id="emp-title" placeholder="e.g. Project Engineer">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Department <span style="color:var(--danger)">*</span></label>
-        <select class="form-control" id="emp-dept">
-          <option value="">— Select Department —</option>
-          <option>Engineering</option>
-          <option>Project Mgmt</option>
-          <option>HRBP</option>
-          <option>Finance</option>
-          <option>Field Svcs</option>
-          <option>Proposal</option>
-        </select>
-      </div>
+      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="emp-gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>
+      <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" id="emp-dob"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group">
-        <label class="form-label">Work Email</label>
-        <input type="email" class="form-control" id="emp-email"
-               placeholder="name@humiley.com.vn"
-               oninput="this.dataset.edited='1'">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Start Date</label>
-        <input type="date" class="form-control" id="emp-start">
-      </div>
+      <div class="form-group"><label class="form-label">Position / Job Title <span style="color:var(--danger)">*</span></label><input type="text" class="form-control" id="emp-title" placeholder="e.g. Design Engineer"></div>
+      <div class="form-group"><label class="form-label">Job Level</label><select class="form-control" id="emp-level"><option value="">—</option><option>Director</option><option>Manager</option><option>Lead</option><option>Staff</option><option>Intern</option></select></div>
     </div>
     <div class="grid-2">
-      <div class="form-group">
-        <label class="form-label">Annual Leave Entitlement (days)</label>
-        <input type="number" class="form-control" id="emp-annual" value="12" min="0" max="30">
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Vietnamese Labour Code minimum: 12 days/year</div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Sick Leave Entitlement (days)</label>
-        <input type="number" class="form-control" id="emp-sick" value="30" min="0" max="60">
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px">SHUI-covered sick leave: 30 days/year</div>
-      </div>
+      <div class="form-group"><label class="form-label">Department <span style="color:var(--danger)">*</span></label>
+        <select class="form-control" id="emp-dept"><option value="">— Select —</option><option>Management</option><option>Engineering</option><option>Project</option><option>Factory</option><option>Operation</option><option>Sales &amp; Tender</option><option>Finance</option></select></div>
+      <div class="form-group"><label class="form-label">Employment Type</label><select class="form-control" id="emp-type"><option>Full Time</option><option>Part Time</option><option>Intern</option></select></div>
     </div>
-    <div class="tip-box">💡 Profile and leave balance will sync to SharePoint <code>Employee_Profiles</code> &amp; <code>Leave_Balances</code> lists when connected. Employee will appear in Employee Profiles and Leave Balances tabs immediately.</div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Work Email <span style="color:var(--text-light);font-weight:400">(login)</span></label><input type="email" class="form-control" id="emp-email" placeholder="name@humiley.com" oninput="this.dataset.edited='1'"></div>
+      <div class="form-group"><label class="form-label">Phone Number</label><input type="text" class="form-control" id="emp-phone" placeholder="84..."></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Start Date</label><input type="date" class="form-control" id="emp-start"></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="emp-status"><option>Active</option><option>Inactive</option></select></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Direct Manager <span style="color:var(--text-light);font-weight:400">(approves leave)</span></label><select class="form-control" id="emp-manager"><option value="">— None (top of org) —</option></select></div>
+      <div class="form-group"><label class="form-label">Family Status</label><select class="form-control" id="emp-family"><option value="">—</option><option>Single</option><option>Married</option></select></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Education Level</label><input type="text" class="form-control" id="emp-education" placeholder="e.g. Bachelor's Degree"></div>
+      <div class="form-group"><label class="form-label">ID / Passport No.</label><input type="text" class="form-control" id="emp-personalId"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Address</label><input type="text" class="form-control" id="emp-address"></div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Emergency Contact</label><input type="text" class="form-control" id="emp-emergency"></div>
+      <div class="form-group"><label class="form-label">English Certificate</label><input type="text" class="form-control" id="emp-english" placeholder="e.g. B1, IELTS 6.0"></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Annual Leave (days)</label><input type="number" class="form-control" id="emp-annual" value="12" min="0" max="30"></div>
+      <div class="form-group"><label class="form-label">Sick Leave (days)</label><input type="number" class="form-control" id="emp-sick" value="30" min="0" max="60"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Note</label><input type="text" class="form-control" id="emp-note"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addEmpModal')">Cancel</button>
       <button class="btn btn-emerald" onclick="saveEmployee()">✓ Add Employee</button>

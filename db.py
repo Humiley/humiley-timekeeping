@@ -54,6 +54,15 @@ def init_db():
             emergency   TEXT,
             address     TEXT,
             managerEmail TEXT,
+            jobLevel     TEXT,
+            endDate      TEXT,
+            serviceDuration TEXT,
+            personalId   TEXT,
+            familyStatus TEXT,
+            education    TEXT,
+            employmentType TEXT,
+            englishCert  TEXT,
+            note         TEXT,
             role        TEXT DEFAULT 'staff',
             annualUsed  INTEGER DEFAULT 0,
             annualTotal INTEGER DEFAULT 12,
@@ -110,11 +119,14 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
         """
     )
-    # migration: add managerEmail column to older databases
-    try:
-        conn.execute("ALTER TABLE employees ADD COLUMN managerEmail TEXT")
-    except sqlite3.OperationalError:
-        pass  # column already exists
+    # migration: add newer columns to older databases
+    for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
+                "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
+                "englishCert TEXT", "note TEXT"):
+        try:
+            conn.execute("ALTER TABLE employees ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -183,7 +195,9 @@ def _row(sql, params=()):
 
 EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDate",
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
-              "managerEmail", "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
+              "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
+              "familyStatus", "education", "employmentType", "englishCert", "note",
+              "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
 def list_employees():
