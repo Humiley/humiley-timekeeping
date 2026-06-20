@@ -3504,7 +3504,7 @@ async function doCheckin() {
   const btn = document.getElementById('btn-checkin');
   const _setBusy = (on) => { if (!btn) return; btn.disabled = on; btn.innerHTML = on ? '<span>⏳ Getting GPS…</span>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Check In'; };
 
-  if (DEMO_MODE()) {
+  if (true) {  /* always use standalone Python backend (SharePoint removed) */
     _setBusy(true);
     const _go = (lat, lon, acc) => {
       _setBusy(false);
@@ -3559,7 +3559,7 @@ async function doCheckout() {
   const btn = document.getElementById('btn-checkout');
   if (btn) { btn.disabled = true; btn.textContent = 'Processing…'; }
 
-  if (DEMO_MODE()) {
+  if (true) {  /* always use standalone Python backend (SharePoint removed) */
     /* ── GPS-required check-out ── */
     const _runCheckout = (lat, lon) => {
       const geo = _checkGeofence(lat, lon, _DEMO_ZONES);
@@ -3954,7 +3954,7 @@ async function submitLeave() {
   if (!type || !start || !end || !reason) { toast('Please fill all fields', 'warn'); return; }
   const days = _calcWorkingDays(start, end);
 
-  if (DEMO_MODE()) {
+  if (true) {  /* always use standalone Python backend (SharePoint removed) */
     await new Promise(r => setTimeout(r, 700));
     /* persist to backend, then refresh the pending list from the database */
     tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason })
@@ -4322,7 +4322,7 @@ function saveLocation() {
   if (!name) { toast('Please enter a location name', 'warn'); return; }
   if (isNaN(lat) || isNaN(lon)) { toast('Please enter valid coordinates', 'warn'); return; }
 
-  if (DEMO_MODE()) {
+  if (true) {  /* always use standalone Python backend (SharePoint removed) */
     /* persist the zone to the backend, then refresh zones from the DB */
     tkPersist('/api/zones', { name, lat, lon, radius })
       .then(async () => { try { await tkBootstrap(); } catch (e) {} });
@@ -4545,11 +4545,12 @@ function loadDashboard() { initDashChart(); }
    17. MANAGER VIEW LOADER
 ────────────────────────────────────────────────────────── */
 async function loadManagerView() {
-  if (!DEMO_MODE()) {
-    const resp = await spGet('Leave_Requests', "Status eq 'Pending'");
-    const badge = document.querySelector('.nav-item[onclick*=\"manager\"] .nav-badge');
-    if (badge) badge.textContent = (resp.value || []).length;
-  }
+  /* refresh pending approvals from the standalone backend */
+  try { await tkBootstrap(); } catch (e) {}
+  try { tkRenderApprovals(); } catch (e) {}
+  const pending = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending').length;
+  const badge = document.querySelector('.nav-item[onclick*="manager"] .nav-badge');
+  if (badge) badge.textContent = pending;
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -5442,7 +5443,7 @@ async function saveEmployee() {
   const color     = palette[Math.floor(Math.random() * palette.length)];
   const autoEmail = email || name.toLowerCase().replace(/\s+/g, '.') + '@humiley.com.vn';
 
-  if (DEMO_MODE()) {
+  if (true) {  /* always use standalone Python backend (SharePoint removed) */
     // ── 0. Persist to backend, then refresh the employee table from the DB ──
     tkPersist('/api/employees', {
       name, title, dept, email: autoEmail, startDate: start || null,
