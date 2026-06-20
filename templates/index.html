@@ -499,6 +499,9 @@ select.form-control{cursor:pointer}
         <div class="user-role" id="sidebar-user-role">Managing Director <span class="role-badge mgr" id="sidebar-role-badge">Manager</span></div>
       </div>
     </div>
+    <button id="tk-view-toggle" class="logout-btn hidden" onclick="tkToggleView()" style="margin-bottom:6px;color:var(--emerald)">
+      👤 View as Staff
+    </button>
     <button class="logout-btn" onclick="doLogout()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
       Sign Out
@@ -2901,6 +2904,7 @@ async function doLogin(role, opts = {}) {
   initReportCharts();
   try { tkRenderApprovals(); } catch (e) {}
   try { tkRenderZones(); } catch (e) {}
+  try { tkUpdateViewToggle(); } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
   toast(role === 'manager'
     ? '👔 Welcome, Manager — full access enabled'
@@ -2935,6 +2939,30 @@ function doLogout() {
   try { sessionStorage.clear(); } catch (e) {}
   if (typeof toast === 'function') toast('Signed out');
   window.location.replace(window.location.origin + '/');
+}
+
+/* ── Admin view switcher: let an Admin flip into the Staff workspace ── */
+function tkToggleView() {
+  if (!TK.user || TK.user.role !== 'manager') return;  // admins only
+  if (_userRole === 'manager') {
+    _userRole = 'staff';
+    _applyRole('staff');
+    try { _initStaffDashboard(); } catch (e) {}
+    if (typeof toast === 'function') toast('👤 Now viewing as Staff — your personal workspace');
+  } else {
+    _userRole = 'manager';
+    _applyRole('manager');
+    if (typeof toast === 'function') toast('🛡️ Back to Admin view');
+  }
+  tkUpdateViewToggle();
+}
+
+function tkUpdateViewToggle() {
+  const btn = document.getElementById('tk-view-toggle');
+  if (!btn) return;
+  const isAdmin = TK.user && TK.user.role === 'manager';
+  btn.classList.toggle('hidden', !isAdmin);
+  btn.innerHTML = (_userRole === 'manager') ? '👤 View as Staff' : '🛡️ Back to Admin view';
 }
 
 /* ── Apply role — shows/hides nav items, sets first view ── */
