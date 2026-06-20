@@ -2603,6 +2603,64 @@ async function tkPersist(path, body, method = 'POST') {
 
 const _today = () => new Date().toISOString().slice(0, 10);
 
+/* Render the Manager Approval "pending" list from the database so approvals
+   are real and persistent (replaces the static demo cards). */
+function tkRenderApprovals() {
+  const pending = document.getElementById('leave-pending');
+  if (!pending) return;
+  const host = pending.querySelector('div') || pending;
+  host.querySelectorAll('.approval-card, .tk-empty').forEach(c => c.remove());
+  const items = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.id);
+  if (!items.length) {
+    const e = document.createElement('div');
+    e.className = 'card tk-empty';
+    e.style.cssText = 'text-align:center;padding:40px;color:var(--text-light)';
+    e.innerHTML = '<div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-weight:700;color:var(--navy)">All caught up!</div><div style="font-size:12px;margin-top:4px">No pending leave requests.</div>';
+    host.appendChild(e);
+  } else {
+    items.forEach(l => {
+      const name = l.emp_name || 'Employee';
+      const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+      const card = document.createElement('div');
+      card.className = 'approval-card';
+      card.dataset.leaveId = l.id;
+      card.innerHTML =
+        '<div class="approval-card-hdr"><div class="ava-md" style="background:#3168A8">' + ini + '</div>' +
+        '<div style="flex:1"><div style="font-size:14px;font-weight:700">' + name + '</div>' +
+        '<div style="font-size:12px;color:var(--text-light)">' + (l.emp_dept || '') + ' · Pending</div></div>' +
+        '<span class="badge b-warn">Pending Manager</span></div>' +
+        '<div class="approval-meta"><div class="approval-meta-item">Leave Type<span>' + (l.type || '') + '</span></div>' +
+        '<div class="approval-meta-item">Duration<span>' + l.days + ' Day' + (l.days !== 1 ? 's' : '') + '</span></div>' +
+        '<div class="approval-meta-item">Dates<span>' + l.startDate + ' – ' + l.endDate + '</span></div></div>' +
+        '<div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px"><strong>Reason:</strong> ' + (l.reason || '') + '</div>' +
+        '<div class="approval-actions"><button class="btn-reject" onclick="tkReject(' + l.id + ',this)">✕ Reject</button>' +
+        '<button class="btn-approve" onclick="tkApprove(' + l.id + ',this)">✓ Approve</button></div>';
+      host.appendChild(card);
+    });
+  }
+  document.querySelectorAll('#leave-tabs .tab').forEach(t => {
+    if (t.textContent.startsWith('Pending')) t.textContent = 'Pending (' + items.length + ')';
+  });
+  const mgr = document.getElementById('mgr-pending');
+  if (mgr) mgr.textContent = items.length;
+}
+
+async function tkApprove(id, btn) {
+  const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+  await tkPersist('/api/leave/' + id, { status: 'approved' }, 'PATCH');
+  try { await tkBootstrap(); } catch (e) {}
+  tkRenderApprovals();
+  if (typeof toast === 'function') toast('✓ Leave approved');
+}
+
+async function tkReject(id, btn) {
+  const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+  await tkPersist('/api/leave/' + id, { status: 'rejected' }, 'PATCH');
+  try { await tkBootstrap(); } catch (e) {}
+  tkRenderApprovals();
+  if (typeof toast === 'function') toast('✕ Leave rejected');
+}
+
 /* ──────────────────────────────────────────────────────────
    2. ROLE-BASED AUTH & LOGIN
 ────────────────────────────────────────────────────────── */
@@ -2636,6 +2694,7 @@ async function doLogin(role, opts = {}) {
   /* boot charts and data */
   initDashChart();
   initReportCharts();
+  try { tkRenderApprovals(); } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
   toast(role === 'manager'
     ? '👔 Welcome, Manager — full access enabled'
@@ -3767,8 +3826,9 @@ async function submitLeave() {
 
   if (DEMO_MODE()) {
     await new Promise(r => setTimeout(r, 700));
-    /* persist to backend */
-    tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason });
+    /* persist to backend, then refresh the pending list from the database */
+    tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason })
+      .then(async () => { try { await tkBootstrap(); tkRenderApprovals(); } catch (e) {} });
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
     const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
     const colors = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000'];
@@ -5244,6 +5304,13 @@ async function saveEmployee() {
   const autoEmail = email || name.toLowerCase().replace(/\s+/g, '.') + '@humiley.com.vn';
 
   if (DEMO_MODE()) {
+    // ── 0. Persist to backend, then refresh the employee table from the DB ──
+    tkPersist('/api/employees', {
+      name, title, dept, email: autoEmail, startDate: start || null,
+      annualTotal: annual, sickTotal: sick, ini: initials, clr: color,
+      status: 'Active', zone: 'HQ', role: 'staff'
+    }).then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); } catch (e) {} });
+
     // ── 1. Add card to Employee Profiles grid ──────────────────────────
     const grid = document.querySelector('#hr-employees [style*="grid-template-columns"]');
     if (grid) {
@@ -5324,8 +5391,15 @@ function editEmployeeProfile(btn) {
   openModal('editEmpModal');
 }
 function saveEmployeeProfile() {
+  const id    = document.getElementById('ee-id')?.value?.trim() || '';
   const name  = document.getElementById('ee-name')?.value?.trim() || '—';
   const title = document.getElementById('ee-title')?.value?.trim() || '';
+  const email = document.getElementById('ee-email')?.value?.trim() || '';
+  /* persist to backend, then refresh the employee table from the DB */
+  if (id) {
+    tkPersist('/api/employees/' + id, { name, title, email }, 'PATCH')
+      .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); } catch (e) {} });
+  }
   closeModal('editEmpModal');
   toast('✅ Profile updated for ' + name + (title ? ' — ' + title : ''));
 }
