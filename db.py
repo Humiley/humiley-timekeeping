@@ -63,6 +63,7 @@ def init_db():
             employmentType TEXT,
             englishCert  TEXT,
             note         TEXT,
+            photo        TEXT,
             role        TEXT DEFAULT 'staff',
             annualUsed  INTEGER DEFAULT 0,
             annualTotal INTEGER DEFAULT 12,
@@ -122,11 +123,15 @@ def init_db():
     # migration: add newer columns to older databases
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
-                "englishCert TEXT", "note TEXT"):
+                "englishCert TEXT", "note TEXT", "photo TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
             pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE leave ADD COLUMN token TEXT")  # approval-link token
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -196,7 +201,7 @@ def _row(sql, params=()):
 EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDate",
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
-              "familyStatus", "education", "employmentType", "englishCert", "note",
+              "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
               "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
@@ -349,16 +354,24 @@ def get_leave(leave_id):
 
 
 def create_leave(data):
+    import secrets
+    token = secrets.token_urlsafe(24)
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO leave (emp_id,type,startDate,endDate,days,status,reason,created_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO leave (emp_id,type,startDate,endDate,days,status,reason,created_at,token) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
         (data["emp_id"], data.get("type"), data.get("startDate"), data.get("endDate"),
-         data.get("days"), data.get("status", "pending"), data.get("reason"), now_iso()))
+         data.get("days"), data.get("status", "pending"), data.get("reason"), now_iso(), token))
     conn.commit()
     rid = cur.lastrowid
     conn.close()
-    return rid
+    return rid, token
+
+
+def get_leave_by_token(token):
+    if not token:
+        return None
+    return _row("SELECT * FROM leave WHERE token = ?", (token,))
 
 
 def set_leave_status(leave_id, status, note=None):

@@ -136,6 +136,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("Forbidden.", 403)
             return self._serve_file(safe)
 
+        if path == "/approve":
+            return self._approve_via_link(qs)
         if path == "/api/config":
             return self._json({"demo": DEMO_MODE, "clientId": M365["clientId"],
                                "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"]})
@@ -275,7 +277,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def _leave_create(self, u, body):
         data = dict(body, emp_id=u["id"], status="pending")
-        return self._json({"ok": True, "id": db.create_leave(data)})
+        rid, token = db.create_leave(data)
+        # surface the direct manager + approval token so the client can email them
+        mgr = db.get_employee_by_email(u.get("managerEmail")) if u.get("managerEmail") else None
+        return self._json({
+            "ok": True, "id": rid, "token": token,
+            "requester": u.get("name"),
+            "managerEmail": u.get("managerEmail") or "",
+            "managerName": mgr["name"] if mgr else "",
+        })
 
     def _leave_status(self, u, lid, body):
         status = body.get("status")
@@ -293,6 +303,47 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Only %s's direct manager can approve this request." % requester["name"], 403)
         db.set_leave_status(int(lid), status, body.get("note"))
         return self._json({"ok": True})
+
+    def _html(self, title, message, color):
+        icon = "✓" if color == "#00B060" else ("✕" if color == "#C00000" else "ℹ")
+        css = ("body{font-family:'Segoe UI',system-ui,Arial,sans-serif;"
+               "background:linear-gradient(180deg,#f7f9fc,#eef1f6);display:flex;min-height:100vh;"
+               "align-items:center;justify-content:center;margin:0}"
+               ".card{background:#fff;border-radius:20px;box-shadow:0 18px 40px rgba(32,80,144,.12);"
+               "padding:40px 44px;max-width:440px;text-align:center}"
+               ".ic{display:inline-block;width:64px;height:64px;border-radius:50%;line-height:64px;"
+               "font-size:30px;color:#fff;margin-bottom:14px;background:" + color + "}"
+               "h1{color:#205090;font-size:20px;margin:6px 0}"
+               "p{color:#5C6470;font-size:14px;line-height:1.6}")
+        html = ('<!DOCTYPE html><html><head><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1">'
+                '<title>Humiley Timekeeping</title><style>' + css + '</style></head>'
+                '<body><div class="card"><div class="ic">' + icon + '</div>'
+                '<h1>' + title + '</h1><p>' + message + '</p></div></body></html>')
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _approve_via_link(self, qs):
+        token = qs.get("t", [""])[0] or qs.get("token", [""])[0]
+        action = (qs.get("action", ["approve"])[0]).lower()
+        lv = db.get_leave_by_token(token)
+        if not lv:
+            return self._html("Invalid or expired link", "This approval link is not valid. Please use the app to review the request.", "#C00000")
+        requester = db.get_employee(lv["emp_id"])
+        rname = requester["name"] if requester else "the employee"
+        if (lv.get("status") or "").lower() != "pending":
+            return self._html("Already " + lv["status"], "This leave request for %s was already <b>%s</b>." % (rname, lv["status"]), "#205090")
+        new_status = "rejected" if action in ("reject", "decline", "deny") else "approved"
+        db.set_leave_status(lv["id"], new_status)
+        verb = "approved ✅" if new_status == "approved" else "rejected"
+        return self._html("Leave " + new_status,
+                          "%s's %s (%s → %s) has been <b>%s</b>." % (rname, lv.get("type", "leave"),
+                          lv.get("startDate", ""), lv.get("endDate", ""), verb),
+                          "#00B060" if new_status == "approved" else "#C00000")
 
     # -- employees ----------------------------------------------------------
     def _emp_create(self, u, body):

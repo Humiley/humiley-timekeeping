@@ -1637,8 +1637,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </div>
     </div>
     <div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn btn-outline btn-sm" onclick="toast('📥 Exporting employee list to Excel…')">↓ Export List</button>
-      <button class="btn btn-primary btn-sm" onclick="toast('🔄 Syncing employees from M365 Azure AD…')">↻ Sync from M365</button>
+      <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()">Export List (CSV)</button>
     </div>
   </div>
 
@@ -2574,12 +2573,12 @@ function tkRenderZones() {
   const zones = _DEMO_ZONES || [];
   tbody.innerHTML = zones.map(z => {
     const nm = z.name || '';
-    const icon = /factory/i.test(nm) ? '🏭' : /wfh|home/i.test(nm) ? '🏠' : '🏢';
+    const icon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>';
     const lat = typeof z.lat === 'number' ? z.lat : (parseFloat(z.lat) || 0);
     const lon = typeof z.lon === 'number' ? z.lon : (parseFloat(z.lon) || 0);
     const safe = nm.replace(/'/g, "\\'");
     return '<tr>' +
-      '<td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;font-size:16px">' + icon + '</div>' +
+      '<td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center">' + icon + '</div>' +
       '<div><div style="font-size:13px;font-weight:700">' + nm + '</div><div style="font-size:11px;color:var(--text-light)">Approved zone</div></div></div></td>' +
       '<td style="font-family:monospace;font-size:11px;color:var(--navy)">' + lat.toFixed(4) + '°N<br>' + lon.toFixed(4) + '°E</td>' +
       '<td><span class="badge b-navy">' + (z.radius || 0) + 'm</span></td>' +
@@ -2701,6 +2700,75 @@ function tkCheckOut() {
 }
 
 function _tkSet(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+/* avatar HTML: photo if present, else coloured initials */
+function tkAvatar(e, cls) {
+  if (e && e.photo) return '<div class="' + cls + '" style="background-image:url(' + e.photo + ');background-size:cover;background-position:center"></div>';
+  return '<div class="' + cls + '" style="background:' + ((e && e.clr) || '#205090') + '">' + ((e && e.ini) || '') + '</div>';
+}
+
+/* read an uploaded photo into a data URL + live preview */
+function tkReadPhoto(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const url = ev.target.result;
+    const h = document.getElementById('emp-photo'); if (h) h.value = url;
+    const p = document.getElementById('emp-photo-preview');
+    if (p) { p.style.backgroundImage = 'url(' + url + ')'; p.style.backgroundSize = 'cover'; p.style.backgroundPosition = 'center'; p.textContent = ''; }
+  };
+  reader.readAsDataURL(f);
+}
+
+/* export the employee roster to CSV */
+function tkExportEmployees() {
+  const cols = ['ID','Name','Email','Gender','DOB','Position','Job Level','Department','Type','Direct Manager','Phone','ID/Passport','Education','Family','Emergency','Address','Status'];
+  const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(x => byEmail[(x.email || '').toLowerCase()] = x);
+  const data = [cols].concat((_DEMO_EMPLOYEES || []).map(e => {
+    const m = byEmail[(e.managerEmail || '').toLowerCase()];
+    return [e.id, e.name, e.email, e.gender, e.dob, e.title, e.jobLevel, e.dept, e.employmentType, (m ? m.name : (e.managerEmail || '')), e.phone, e.personalId, e.education, e.familyStatus, e.emergency, e.address, e.status];
+  }));
+  const csv = data.map(r => r.map(c => '"' + String(c == null ? '' : c).replace(/"/g, '""') + '"').join(',')).join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'humiley-employees.csv'; a.click(); URL.revokeObjectURL(a.href);
+  if (typeof toast === 'function') toast('Employee list exported to CSV');
+}
+
+/* Email the direct manager an approval request with one-click Approve/Reject
+   links. Auto-sends via Microsoft Graph if Mail.Send is available; otherwise
+   opens the user's mail client pre-filled. */
+async function tkEmailLeaveApproval(res, lv) {
+  const base = window.location.origin;
+  const approve = base + '/approve?t=' + encodeURIComponent(res.token) + '&action=approve';
+  const reject  = base + '/approve?t=' + encodeURIComponent(res.token) + '&action=reject';
+  const mgrName = res.managerName || 'Manager';
+  const subject = 'Leave approval needed — ' + (res.requester || 'Employee');
+  const text = 'Hi ' + mgrName + ',\n\n' + (res.requester || 'An employee') +
+    ' has requested leave and needs your approval:\n\n' +
+    '- Type: ' + lv.type + '\n- Dates: ' + lv.start + ' to ' + lv.end + ' (' + lv.days + ' day(s))\n' +
+    '- Reason: ' + (lv.reason || '-') + '\n\nApprove: ' + approve + '\nReject:  ' + reject + '\n\nHumiley Timekeeping';
+  const html = '<p>Hi ' + mgrName + ',</p><p><b>' + (res.requester || 'An employee') +
+    '</b> has requested leave and needs your approval:</p><ul><li>Type: ' + lv.type +
+    '</li><li>Dates: ' + lv.start + ' &ndash; ' + lv.end + ' (' + lv.days + ' day(s))</li><li>Reason: ' + (lv.reason || '-') +
+    '</li></ul><p><a href="' + approve + '" style="background:#00B060;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Approve</a>&nbsp;&nbsp;' +
+    '<a href="' + reject + '" style="background:#C00000;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Reject</a></p>' +
+    '<p style="color:#888;font-size:12px">Humiley Timekeeping</p>';
+  if (_msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: res.managerEmail } }] }, saveToSentItems: true })
+      });
+      if (resp.ok) { toast('✅ Approval request emailed to ' + mgrName); return; }
+    } catch (e) { /* fall back to mailto */ }
+  }
+  toast('Opening email to ' + mgrName + ' — press Send to notify them.', 'info', 6000);
+  window.location.href = 'mailto:' + encodeURIComponent(res.managerEmail) +
+    '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+}
 
 /* Render the manager Dashboard from REAL data (KPIs, activity, approvals, dept). */
 function tkRenderDashboard() {
@@ -4174,7 +4242,14 @@ async function submitLeave() {
     await new Promise(r => setTimeout(r, 700));
     /* persist to backend, then refresh the pending list from the database */
     tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason })
-      .then(async () => { try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
+      .then(async (res) => {
+        try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {}
+        if (res && res.token && res.managerEmail) {
+          try { await tkEmailLeaveApproval(res, { type, start, end, days, reason }); } catch (e) { console.warn('leave email:', e.message); }
+        } else if (res && !res.managerEmail) {
+          toast('Submitted. No direct manager set — ask HR to assign one for approval routing.', 'warn', 6000);
+        }
+      });
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
     const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
     const colors = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000'];
@@ -4423,7 +4498,7 @@ function _renderEmployeeTable(filter) {
     const mgrName = mgr ? mgr.name : (e.managerEmail ? e.managerEmail : '—');
     const active = (e.status || 'Active').toLowerCase() !== 'inactive';
     return `<tr>
-      <td><div class="ava-sm" style="background:${e.clr || '#205090'}">${e.ini || ''}</div></td>
+      <td>${tkAvatar(e,'ava-sm')}</td>
       <td style="font-family:monospace;font-size:11px;color:var(--text-light)">${D(e.id)}</td>
       <td><div style="font-weight:700;font-size:13px;white-space:nowrap">${e.name}</div><div style="font-size:11px;color:var(--text-light)">${D(e.email)}</div></td>
       <td style="font-size:12px">${D(e.gender)}</td>
@@ -4480,7 +4555,7 @@ function _viewEmpProfile(id) {
   el.innerHTML = `<div class="modal" style="max-width:580px;padding:0;overflow:hidden">
     <!-- Header -->
     <div style="background:linear-gradient(135deg,var(--navy-deep),var(--navy));padding:24px 28px;display:flex;align-items:center;gap:16px">
-      <div style="width:60px;height:60px;border-radius:50%;background:${e.clr};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;border:3px solid rgba(255,255,255,.3)">${e.ini}</div>
+      <div style="width:60px;height:60px;border-radius:50%;${e.photo?('background-image:url('+e.photo+');background-size:cover;background-position:center'):('background:'+e.clr)};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;border:3px solid rgba(255,255,255,.3)">${e.photo?'':e.ini}</div>
       <div style="flex:1"><div style="font-size:20px;font-weight:700;color:#fff">${e.name}</div><div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:2px">${e.title} · ${e.dept}</div><div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px">${e.id} · ${yrs} year${yrs!==1?'s':''} of service</div></div>
       <span class="badge ${e.status==='Active'?'b-ok':'b-danger'}">${e.status}</span>
       <button onclick="document.getElementById('empProfileOverlay').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px">✕</button>
@@ -4534,15 +4609,15 @@ function _viewEmpProfile(id) {
       </div>
       <!-- Emergency -->
       <div style="background:#FEF3C7;border-radius:8px;padding:12px;font-size:12px">
-        <div style="font-weight:700;color:#92400E;margin-bottom:3px">🚨 Emergency Contact</div>
-        <div style="color:#78350F">${e.emergency}</div>
+        <div style="font-weight:700;color:#92400E;margin-bottom:3px">Emergency Contact</div>
+        <div style="color:#78350F">${dash(e.emergency)}</div>
       </div>
     </div>
     <!-- Footer -->
     <div style="padding:14px 28px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;background:var(--soft-bg)">
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('empProfileOverlay').remove()">Close</button>
-      <button class="btn btn-outline btn-sm" onclick="document.getElementById('empProfileOverlay').remove();_editEmpProfile('${e.id}')">✏ Edit Profile</button>
-      <button class="btn btn-primary btn-sm" onclick="toast('📧 Opening email to ${e.email}…')">✉ Send Email</button>
+      <button class="btn btn-outline btn-sm" onclick="document.getElementById('empProfileOverlay').remove();_editEmpProfile('${e.id}')">Edit Profile</button>
+      <button class="btn btn-primary btn-sm" onclick="window.location.href='mailto:${e.email}'">Send Email</button>
     </div>
   </div>`;
   document.body.appendChild(el);
@@ -4569,6 +4644,9 @@ function _editEmpProfile(id) {
   set('emp-family',e.familyStatus); set('emp-education',e.education); set('emp-personalId',e.personalId);
   set('emp-address',e.address); set('emp-emergency',e.emergency); set('emp-english',e.englishCert);
   set('emp-note',e.note); set('emp-annual',e.annualTotal); set('emp-sick',e.sickTotal);
+  set('emp-photo', e.photo);
+  const pp = document.getElementById('emp-photo-preview');
+  if (pp) { if (e.photo) { pp.style.backgroundImage='url('+e.photo+')'; pp.style.backgroundSize='cover'; pp.style.backgroundPosition='center'; pp.textContent=''; } else { pp.style.backgroundImage=''; pp.textContent='Photo'; } }
   const em = document.getElementById('emp-email'); if (em) em.dataset.edited = '1';
   openModal('addEmpModal');
 }
@@ -5678,8 +5756,10 @@ function openAddEmpModal() {
 function tkOpenAddEmp() {
   _tkEditEmpId = null;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
-  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family']
+  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo']
     .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
+  const pp = document.getElementById('emp-photo-preview'); if (pp) { pp.style.backgroundImage = ''; pp.textContent = 'Photo'; }
+  const pf = document.getElementById('emp-photo-file'); if (pf) pf.value = '';
   const a = document.getElementById('emp-annual'); if (a) a.value = 12;
   const s = document.getElementById('emp-sick'); if (s) s.value = 30;
   // populate the direct-manager dropdown from current employees
@@ -5709,7 +5789,7 @@ async function saveEmployee() {
     managerEmail: val('emp-manager'), familyStatus: val('emp-family'),
     education: val('emp-education'), personalId: val('emp-personalId'),
     address: val('emp-address'), emergency: val('emp-emergency'),
-    englishCert: val('emp-english'), note: val('emp-note'),
+    englishCert: val('emp-english'), note: val('emp-note'), photo: val('emp-photo'),
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
   let res;
@@ -5844,6 +5924,15 @@ function saveEmployeeProfile() {
     <div class="modal-header">
       <div class="modal-title">Add New Employee</div>
       <button class="modal-close" onclick="closeModal('addEmpModal')">✕</button>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:14px">
+      <div id="emp-photo-preview" style="width:56px;height:56px;border-radius:50%;background:var(--light-tint);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--text-light);font-size:11px;flex-shrink:0;border:2px solid var(--line)">Photo</div>
+      <div>
+        <label class="form-label" style="margin:0 0 4px">Employee Photo</label>
+        <input type="file" accept="image/*" id="emp-photo-file" onchange="tkReadPhoto(this)" style="font-size:12px">
+        <input type="hidden" id="emp-photo">
+        <div style="font-size:11px;color:var(--text-light);margin-top:2px">Optional — a small square image works best.</div>
+      </div>
     </div>
     <div class="grid-2">
       <div class="form-group">
