@@ -2495,8 +2495,12 @@ select.form-control{cursor:pointer}
     <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-control" id="loc-notes" placeholder="Optional notes about this location"></div>
     <div class="form-group">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <label class="form-label" style="margin:0">📍 Pin on map <span style="font-weight:400;color:var(--text-light)">— click the map to set the location</span></label>
+        <label class="form-label" style="margin:0">📍 Set location — search an address, click the map, or use GPS</label>
         <button type="button" class="btn btn-outline btn-sm" onclick="tkUseMyLocation()">🎯 Use My Current Location</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input type="text" class="form-control" id="loc-address" placeholder="Type an address, e.g. Aeon Mall Tan Phu, HCMC" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();tkGeocodeAddress();}">
+        <button type="button" class="btn btn-primary" onclick="tkGeocodeAddress()" style="white-space:nowrap">🔍 Find on map</button>
       </div>
       <div id="loc-map" style="height:240px;border-radius:8px;border:1px solid var(--line);overflow:hidden;background:var(--soft-bg)"></div>
       <div id="loc-map-hint" style="font-size:11px;color:var(--text-light);margin-top:5px">The blue circle shows the check-in radius. Drag the pin or click anywhere to move it.</div>
@@ -2780,7 +2784,7 @@ async function _tkInitMap(centerLat, centerLon, zoom) {
 
 function tkOpenLocationModal() {
   openModal('locationModal');
-  ['loc-name', 'loc-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['loc-name', 'loc-notes', 'loc-address'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const r = document.getElementById('loc-radius'); if (r && !r.value) r.value = 200;
   /* Pre-fill coordinates IMMEDIATELY (center on first zone or HCMC) so Save
      always has valid coords even before the map finishes loading / if GPS is
@@ -2799,18 +2803,53 @@ function tkOpenLocationModal() {
 }
 
 function tkUseMyLocation() {
-  if (!navigator.geolocation) { if (typeof toast === 'function') toast('GPS not supported on this browser', 'error'); return; }
   const hint = document.getElementById('loc-map-hint');
-  if (hint) hint.textContent = '⏳ Getting your current location…';
+  if (!navigator.geolocation) {
+    if (hint) hint.textContent = '⚠️ GPS not supported here. Search an address above or click the map to pin.';
+    return;
+  }
+  if (hint) hint.textContent = '⏳ Getting your current location… (allow the location prompt if it appears)';
   navigator.geolocation.getCurrentPosition(
     pos => {
       tkSetLocPin(pos.coords.latitude, pos.coords.longitude, true);
       if (hint) hint.textContent = '✅ Pinned your current location (±' + Math.round(pos.coords.accuracy) + 'm). Adjust the pin or radius as needed.';
       if (typeof toast === 'function') toast('📍 Current location pinned');
     },
-    err => { if (hint) hint.textContent = '⚠️ Could not get location: ' + err.message + '. Click the map to pin manually.'; },
+    err => {
+      const denied = err && err.code === 1;
+      if (hint) hint.innerHTML = denied
+        ? '⚠️ <strong>Location is blocked for this site.</strong> To enable: click the 🔒 icon in the address bar → Location → Allow → reload. ' +
+          '<br>Or just <strong>type an address above and press “Find on map”</strong>, or click the map to pin.'
+        : '⚠️ Could not get location (' + (err ? err.message : 'unknown') + '). Search an address above or click the map to pin.';
+      if (typeof toast === 'function') toast(denied ? 'Location blocked — use the address search or click the map' : 'Could not get GPS', 'warn', 5000);
+    },
     { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
   );
+}
+
+/* Find a place by typed address (free OpenStreetMap geocoding — no API key). */
+async function tkGeocodeAddress() {
+  const q = (document.getElementById('loc-address')?.value || '').trim();
+  const hint = document.getElementById('loc-map-hint');
+  if (!q) { if (hint) hint.textContent = 'Type an address first, then press “Find on map”.'; return; }
+  if (hint) hint.textContent = '🔍 Searching for “' + q + '”…';
+  try {
+    const res = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), { headers: { 'Accept': 'application/json' } });
+    const data = await res.json();
+    if (!data || !data.length) {
+      if (hint) hint.textContent = '⚠️ Address not found. Try a more specific address (add city/country), or click the map to pin.';
+      return;
+    }
+    const lat = parseFloat(data[0].lat), lon = parseFloat(data[0].lon);
+    tkSetLocPin(lat, lon, true);
+    /* auto-fill the location name if it's empty */
+    const nameEl = document.getElementById('loc-name');
+    if (nameEl && !nameEl.value.trim()) nameEl.value = q;
+    if (hint) hint.textContent = '✅ Found: ' + String(data[0].display_name || q).slice(0, 90) + ' — drag the pin to fine-tune, then Save.';
+    if (typeof toast === 'function') toast('📍 Address located on map');
+  } catch (e) {
+    if (hint) hint.textContent = '⚠️ Address lookup failed (network). Click the map to pin manually.';
+  }
 }
 
 /* ──────────────────────────────────────────────────────────
