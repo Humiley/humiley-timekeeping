@@ -2796,6 +2796,13 @@ function msalLogin() {
 function doLogout() {
   _userRole = null;
   sessionStorage.removeItem('hum_role');
+  /* clear the standalone backend session */
+  TK.token = null; TK.user = null;
+  sessionStorage.removeItem('tk_token');
+  /* in live Microsoft 365 mode, also sign out of the Microsoft account */
+  if (_msalApp && _account) {
+    try { _msalApp.logoutRedirect({ account: _account }); return; } catch (e) {}
+  }
   /* restore overlay */
   const ov = document.getElementById('login-overlay');
   if (ov) { ov.style.display = 'flex'; ov.classList.remove('fade-out'); }
