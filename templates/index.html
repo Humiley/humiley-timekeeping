@@ -369,6 +369,7 @@ select.form-control{cursor:pointer}
 .role-badge.mgr{background:rgba(32,80,144,.12);color:var(--navy)}
 .role-badge.staff{background:rgba(0,176,96,.12);color:var(--emerald-deep)}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
 <!-- ═══ LOGIN OVERLAY ═══ -->
@@ -1126,7 +1127,7 @@ select.form-control{cursor:pointer}
 <div id="view-locations" class="view">
   <div class="page-header">
     <div><h1>GPS Locations</h1><p>Approved geofence zones · Google Maps Platform</p></div>
-    <button class="btn btn-emerald" onclick="openModal('locationModal')">+ Add Location</button>
+    <button class="btn btn-emerald" onclick="tkOpenLocationModal()">+ Add Location</button>
   </div>
   <div class="stat-boxes">
     <div class="stat-box"><div class="stat-num">3</div><div class="stat-lbl">Active Zones</div></div>
@@ -2076,7 +2077,7 @@ select.form-control{cursor:pointer}
       <div style="font-size:13px;color:var(--text-light)">Approved GPS zones where employees can check in and out. All zones are validated against the device's real GPS coordinates.</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-outline btn-sm" id="btn-add-my-location" onclick="addMyLocationAsTestZone(this)">📍 Add My Location (Testing)</button>
-        <button class="btn btn-emerald btn-sm" onclick="openModal('locationModal')">+ Add Zone</button>
+        <button class="btn btn-emerald btn-sm" onclick="tkOpenLocationModal()">+ Add Zone</button>
       </div>
     </div>
     <!-- Testing banner — shown when test zone is active -->
@@ -2488,11 +2489,18 @@ select.form-control{cursor:pointer}
       <div class="form-group"><label class="form-label">Longitude</label><input type="number" class="form-control" id="loc-lon" placeholder="106.698500" step="0.000001"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Radius (metres)</label><input type="number" class="form-control" id="loc-radius" value="200"></div>
+      <div class="form-group"><label class="form-label">Radius (metres)</label><input type="number" class="form-control" id="loc-radius" value="200" oninput="tkUpdateLocRadius()"></div>
       <div class="form-group"><label class="form-label">Department</label><select class="form-control" id="loc-dept"><option>All</option><option>Engineering</option><option>Field Services</option><option>Projects</option><option>Finance</option><option>HRBP</option></select></div>
     </div>
     <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-control" id="loc-notes" placeholder="Optional notes about this location"></div>
-    <div class="tip-box">💡 To get coordinates: open Google Maps → right-click the location → first item shows lat/lng. Copy and paste here.</div>
+    <div class="form-group">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <label class="form-label" style="margin:0">📍 Pin on map <span style="font-weight:400;color:var(--text-light)">— click the map to set the location</span></label>
+        <button type="button" class="btn btn-outline btn-sm" onclick="tkUseMyLocation()">🎯 Use My Current Location</button>
+      </div>
+      <div id="loc-map" style="height:240px;border-radius:8px;border:1px solid var(--line);overflow:hidden;background:var(--soft-bg)"></div>
+      <div id="loc-map-hint" style="font-size:11px;color:var(--text-light);margin-top:5px">The blue circle shows the check-in radius. Drag the pin or click anywhere to move it.</div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('locationModal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveLocation()">Save Location</button>
@@ -2526,6 +2534,7 @@ select.form-control{cursor:pointer}
 ════════════════════════════════════════════════════════════ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 /* ──────────────────────────────────────────────────────────
    1. CONFIGURATION
@@ -2659,6 +2668,69 @@ async function tkReject(id, btn) {
   try { await tkBootstrap(); } catch (e) {}
   tkRenderApprovals();
   if (typeof toast === 'function') toast('✕ Leave rejected');
+}
+
+/* ── Interactive map pin picker for "Add GPS Location" (Leaflet + OSM) ── */
+let _tkLocMap = null, _tkLocMarker = null, _tkLocCircle = null;
+
+function tkSetLocPin(lat, lon, recenter) {
+  if (!_tkLocMap) return;
+  const radius = parseInt(document.getElementById('loc-radius')?.value) || 200;
+  if (!_tkLocMarker) {
+    _tkLocMarker = L.marker([lat, lon], { draggable: true }).addTo(_tkLocMap);
+    _tkLocMarker.on('dragend', e => { const p = e.target.getLatLng(); tkSetLocPin(p.lat, p.lng, false); });
+  } else {
+    _tkLocMarker.setLatLng([lat, lon]);
+  }
+  if (!_tkLocCircle) {
+    _tkLocCircle = L.circle([lat, lon], { radius, color: '#205090', fillColor: '#205090', fillOpacity: 0.12 }).addTo(_tkLocMap);
+  } else {
+    _tkLocCircle.setLatLng([lat, lon]); _tkLocCircle.setRadius(radius);
+  }
+  document.getElementById('loc-lat').value = lat.toFixed(6);
+  document.getElementById('loc-lon').value = lon.toFixed(6);
+  if (recenter) _tkLocMap.setView([lat, lon], Math.max(_tkLocMap.getZoom(), 15));
+}
+
+function tkUpdateLocRadius() {
+  const radius = parseInt(document.getElementById('loc-radius')?.value) || 200;
+  if (_tkLocCircle) _tkLocCircle.setRadius(radius);
+}
+
+function tkOpenLocationModal() {
+  openModal('locationModal');
+  /* clear fields for a fresh entry */
+  ['loc-name', 'loc-lat', 'loc-lon', 'loc-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const r = document.getElementById('loc-radius'); if (r && !r.value) r.value = 200;
+  setTimeout(() => {
+    const el = document.getElementById('loc-map');
+    if (!el || typeof L === 'undefined') return;
+    if (!_tkLocMap) {
+      _tkLocMap = L.map(el).setView([10.7769, 106.6985], 12);  // default: HCMC
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap'
+      }).addTo(_tkLocMap);
+      _tkLocMap.on('click', e => tkSetLocPin(e.latlng.lat, e.latlng.lng, false));
+    }
+    _tkLocMap.invalidateSize();
+    /* if a zone already exists, center on the first one for context */
+    if ((_DEMO_ZONES || []).length) { const z = _DEMO_ZONES[0]; _tkLocMap.setView([z.lat, z.lon], 12); }
+  }, 250);
+}
+
+function tkUseMyLocation() {
+  if (!navigator.geolocation) { if (typeof toast === 'function') toast('GPS not supported on this browser', 'error'); return; }
+  const hint = document.getElementById('loc-map-hint');
+  if (hint) hint.textContent = '⏳ Getting your current location…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      tkSetLocPin(pos.coords.latitude, pos.coords.longitude, true);
+      if (hint) hint.textContent = '✅ Pinned your current location (±' + Math.round(pos.coords.accuracy) + 'm). Adjust the pin or radius as needed.';
+      if (typeof toast === 'function') toast('📍 Current location pinned');
+    },
+    err => { if (hint) hint.textContent = '⚠️ Could not get location: ' + err.message + '. Click the map to pin manually.'; },
+    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+  );
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -4193,6 +4265,9 @@ function saveLocation() {
   if (isNaN(lat) || isNaN(lon)) { toast('Please enter valid coordinates', 'warn'); return; }
 
   if (DEMO_MODE()) {
+    /* persist the zone to the backend, then refresh zones from the DB */
+    tkPersist('/api/zones', { name, lat, lon, radius })
+      .then(async () => { try { await tkBootstrap(); } catch (e) {} });
     // Add row to geofence table
     const tbody = document.querySelector('#view-locations table tbody');
     if (tbody) {
@@ -4882,11 +4957,23 @@ function attGotoPage(pg) {
    LOCATION ROW EDIT
 ══════════════════════════════════════════════════════════ */
 function editLocationRow(btn, name, lat, lon, radius) {
+  openModal('locationModal');
   document.getElementById('loc-name').value   = name;
   document.getElementById('loc-lat').value    = lat || '';
   document.getElementById('loc-lon').value    = lon || '';
   document.getElementById('loc-radius').value = radius || 200;
-  openModal('locationModal');
+  /* show the map pinned to the existing coordinates */
+  setTimeout(() => {
+    const el = document.getElementById('loc-map');
+    if (!el || typeof L === 'undefined') return;
+    if (!_tkLocMap) {
+      _tkLocMap = L.map(el).setView([lat || 10.7769, lon || 106.6985], 15);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_tkLocMap);
+      _tkLocMap.on('click', e => tkSetLocPin(e.latlng.lat, e.latlng.lng, false));
+    }
+    _tkLocMap.invalidateSize();
+    if (lat && lon) tkSetLocPin(parseFloat(lat), parseFloat(lon), true);
+  }, 250);
 }
 
 /* ── TEST ZONE: add current GPS as an approved zone for testing ── */
