@@ -1,26 +1,35 @@
-# Humiley TimeKeeping
+# Humiley Timekeeping & Leave Management
 
-A lightweight time-tracking web app for Humiley / Cowork. Employees clock in
-and out with their **work email + PIN**, and admins manage everyone and track
-hours from a back-office dashboard.
+A standalone web app for Humiley / Cowork — employees check in/out (with GPS),
+request leave, and managers track everyone from a back-office dashboard.
 
-Built entirely on the **Python standard library** (`http.server` + `sqlite3`) —
-**no dependencies to install**. If you have Python 3.8+, you can run it.
+It reuses the design of the original **Humiley Timekeeping & Leave Management**
+platform (sidebar, modules, branding) but replaces the Microsoft 365 /
+SharePoint backend with a **self-contained Python + SQLite** backend so the data
+**persists** and the app runs anywhere — **no dependencies to install**.
+
+> Built on the Python standard library only (`http.server` + `sqlite3`). If you
+> have Python 3.8+, you can run it.
 
 ---
 
 ## Features
 
-**Employee kiosk** (`/`)
-- Clock in / out with email + 4-digit PIN (one button toggles in/out)
-- Live clock and date
-- "Recent activity" view of your own entries and hours
+The full platform UI, served from a real database:
 
-**Admin dashboard** (`/admin`)
-- Secure admin sign-in (email + PIN)
-- **Overview** — headcount, who's clocked in now, total hours, hours-per-employee with date range
-- **Time Entries** — every clock in/out with hours, filter by date, **export to CSV**
-- **Employees** — add / edit staff, set admin role, activate / deactivate, reset PINs
+- **Dashboard** — KPIs, attendance charts, today's activity, pending approvals
+- **Check In / Out** — GPS-aware check-in/out; on-time vs late detection
+- **Attendance** — every record, filterable; staff see only their own
+- **GPS Locations** — approved geofence zones (HQ, Factory, …)
+- **Work Schedules** — shift configuration
+- **Leave Management** — request annual/sick/etc. leave with working-day calc
+- **Manager Approval** — approve / reject leave requests
+- **HR Admin** — add / edit employees, departments, leave balances, roles
+- **Reports & Analytics** — department, leave, payroll, trend charts
+- **Settings / Integration** — Microsoft 365 connection guide
+
+**Roles:** *Manager* (full access) and *Staff* (personal workspace) — enforced
+both in the UI and the API.
 
 ---
 
@@ -31,76 +40,99 @@ cd "TimeKeeping Web App"
 python3 app.py
 ```
 
-Then open:
-- Employee kiosk → http://localhost:8000/
-- Admin dashboard → http://localhost:8000/admin
+Open **http://localhost:8000/**.
 
-On the **first run** a default admin account is created and its credentials are
-printed in the terminal:
+On first run the database is seeded with the platform's 15 demo employees, GPS
+zones, and sample attendance/leave so every screen has realistic data.
 
-```
-Email: admin@humiley.com
-PIN:   2468
-```
+### Logging in
 
-> **Sign in at `/admin` and change this PIN immediately** (Employees tab → Edit).
+**Demo mode (default — no Microsoft account needed):**
+Click **Sign in with Microsoft 365**, then choose **Manager** or **Staff**.
+- *Manager* signs in as the Managing Director (full access).
+- *Staff* signs in as an engineer (personal workspace).
 
-### Load sample data (optional)
-
-To explore the dashboard with example employees and entries:
-
-```bash
-python3 seed_sample.py
-```
+**Live Microsoft 365 mode:** see [Microsoft 365 setup](#microsoft-365-setup-live-mode).
 
 ---
 
 ## Configuration
 
-Set these environment variables before starting if you want to override defaults:
+Environment variables (all optional):
 
-| Variable          | Default              | Purpose                          |
-| ----------------- | -------------------- | -------------------------------- |
-| `TK_PORT`         | `8000`               | Port to listen on                |
-| `TK_HOST`         | `0.0.0.0`            | Bind address                     |
-| `TK_DB_PATH`      | `./timekeeping.db`   | SQLite database file location    |
-| `TK_ADMIN_EMAIL`  | `admin@humiley.com`  | Default admin email (first run)  |
-| `TK_ADMIN_PIN`    | `2468`               | Default admin PIN (first run)    |
+| Variable             | Default            | Purpose                                  |
+| -------------------- | ------------------ | ---------------------------------------- |
+| `TK_PORT` / `PORT`   | `8000`             | Port to listen on                        |
+| `TK_HOST`            | `0.0.0.0`          | Bind address                             |
+| `TK_DB_PATH`         | `./timekeeping.db` | SQLite database file                     |
+| `TK_M365_CLIENT_ID`  | *(empty)*          | Azure AD app (client) ID — enables live mode |
+| `TK_M365_TENANT_ID`  | *(empty)*          | Azure AD directory (tenant) ID           |
+| `TK_MAPS_KEY`        | *(empty)*          | Google Maps API key (optional, for maps) |
 
-Example:
+If `TK_M365_CLIENT_ID` **and** `TK_M365_TENANT_ID` are set, the app switches to
+**live Microsoft 365** login automatically; otherwise it runs in **demo mode**.
 
-```bash
-TK_PORT=9000 TK_ADMIN_EMAIL=you@humiley.com TK_ADMIN_PIN=7531 python3 app.py
-```
+---
+
+## Microsoft 365 setup (live mode)
+
+1. In the **Azure Portal → App registrations**, register a Single-Page App.
+   - Redirect URI (SPA): the URL where you host this app (e.g. `http://localhost:8000/`).
+   - API permissions: **Microsoft Graph → User.Read** (delegated).
+2. Copy the **Application (client) ID** and **Directory (tenant) ID**.
+3. Run with them set:
+
+   ```bash
+   TK_M365_CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+   TK_M365_TENANT_ID=yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy \
+   python3 app.py
+   ```
+
+4. Add each person as an employee (HR Admin) with their **work email**. On
+   sign-in, the backend verifies their Microsoft token via Microsoft Graph,
+   matches the email to their employee record, and applies their role.
+
+> Users without a matching employee record are refused — add them in HR Admin first.
 
 ---
 
 ## How it works
 
-| File              | Role                                                        |
-| ----------------- | ---------------------------------------------------------- |
-| `app.py`          | HTTP server, routing, and the JSON/CSV API                 |
-| `db.py`           | SQLite schema + all data access; PINs hashed with PBKDF2   |
-| `templates/`      | `index.html` (kiosk) and `admin.html` (dashboard)          |
-| `static/`         | `style.css`, `app.js` (kiosk), `admin.js` (dashboard)      |
-| `seed_sample.py`  | Optional demo data                                          |
+| File             | Role                                                          |
+| ---------------- | ------------------------------------------------------------ |
+| `app.py`         | HTTP server, routing, REST API, Microsoft 365 token verify   |
+| `db.py`          | SQLite schema + data access (employees, attendance, leave, zones) |
+| `seed_data.py`   | First-run seed data (employees, zones, attendance, leave)    |
+| `templates/index.html` | The full single-page platform UI (design preserved)    |
+| `static/brand/`  | Humiley logos                                                |
 
-- **PINs are never stored in plain text** — they are salted and hashed with
-  PBKDF2-HMAC-SHA256.
-- Each clock-in opens a `time_entries` row; the matching clock-out closes it.
-  Hours are computed from the in/out timestamps.
-- The database file (`timekeeping.db`) is **git-ignored** so real time data is
-  never committed.
+- The frontend authenticates to the backend, then **loads all data from the
+  database** — every screen reflects real, persisted records.
+- **Check-in/out, leave requests, approvals, and employee edits persist** to
+  SQLite via the REST API (`/api/*`).
+- The database file (`timekeeping.db`) is **git-ignored** so real data is never
+  committed.
+
+### REST API (selected)
+
+| Method | Path | Notes |
+| ------ | ---- | ----- |
+| `POST` | `/api/auth/demo` | Demo login (`{role}`) |
+| `POST` | `/api/auth/m365` | Live login (`{accessToken}`) |
+| `GET`  | `/api/employees` · `POST` · `PATCH /:id` · `DELETE /:id` | manager-only writes |
+| `GET`  | `/api/attendance` · `POST /checkin` · `POST /checkout` | staff see own only |
+| `GET`  | `/api/leave` · `POST` · `PATCH /:id` | approve/reject = manager |
+| `GET`  | `/api/zones` · `POST` · `PATCH /:id` · `DELETE /:id` | manager-only writes |
 
 ---
 
 ## Notes & next steps
 
-- Admin sessions are kept in memory, so restarting the server signs admins out.
-- Times are stored in UTC and shown in the viewer's local timezone.
-- Possible enhancements: weekly/monthly reports, edit/delete individual
-  entries, email notifications, deploy behind HTTPS.
+- Admin sessions are kept in memory, so restarting the server signs users out.
+- Times/dates are stored as written; production deployments should run behind HTTPS.
+- The original SharePoint integration guide is preserved in the project history
+  if you ever want to connect Power Automate / Graph instead of SQLite.
 
 ---
 
-*Humiley Engineering & Solutions · TimeKeeping*
+*Humiley Engineering & Solutions · Timekeeping & Leave Management*

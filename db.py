@@ -1,21 +1,20 @@
 """
-Database layer for the Humiley TimeKeeping web app.
+Database layer for the Humiley Timekeeping & Leave Management platform.
 
-Uses Python's built-in sqlite3 — no external dependencies. The whole data
-model lives in a single SQLite file (timekeeping.db by default).
+Standalone SQLite storage (Python stdlib only) — replaces the original
+SharePoint/Graph backend. Holds employees, attendance, leave requests, GPS
+zones, and app settings.
 """
 
 import os
+import json
 import sqlite3
-import hashlib
-import secrets
 from datetime import datetime, timezone
+
+import seed_data
 
 DB_PATH = os.environ.get("TK_DB_PATH", os.path.join(os.path.dirname(__file__), "timekeeping.db"))
 
-# ---------------------------------------------------------------------------
-# Connection helpers
-# ---------------------------------------------------------------------------
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -25,27 +24,7 @@ def get_conn():
 
 
 def now_iso():
-    """Current time as an ISO-8601 UTC string (e.g. 2026-06-20T08:30:00+00:00)."""
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-
-# ---------------------------------------------------------------------------
-# PIN / password hashing (pbkdf2-hmac-sha256)
-# ---------------------------------------------------------------------------
-
-def hash_pin(pin, salt=None):
-    if salt is None:
-        salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", str(pin).encode("utf-8"), salt.encode("utf-8"), 100_000)
-    return salt + "$" + dk.hex()
-
-
-def verify_pin(pin, stored):
-    try:
-        salt, _ = stored.split("$", 1)
-    except (ValueError, AttributeError):
-        return False
-    return secrets.compare_digest(hash_pin(pin, salt), stored)
 
 
 # ---------------------------------------------------------------------------
@@ -54,199 +33,352 @@ def verify_pin(pin, stored):
 
 def init_db():
     conn = get_conn()
-    cur = conn.cursor()
-    cur.executescript(
+    conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS employees (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT    NOT NULL,
-            email       TEXT    NOT NULL UNIQUE,
-            pin_hash    TEXT    NOT NULL,
-            is_admin    INTEGER NOT NULL DEFAULT 0,
-            active      INTEGER NOT NULL DEFAULT 1,
-            created_at  TEXT    NOT NULL
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL,
+            ini         TEXT,
+            clr         TEXT,
+            dept        TEXT,
+            title       TEXT,
+            email       TEXT UNIQUE,
+            phone       TEXT,
+            startDate   TEXT,
+            status      TEXT DEFAULT 'Active',
+            zone        TEXT,
+            gender      TEXT,
+            dob         TEXT,
+            taxId       TEXT,
+            bank        TEXT,
+            emergency   TEXT,
+            address     TEXT,
+            role        TEXT DEFAULT 'staff',
+            annualUsed  INTEGER DEFAULT 0,
+            annualTotal INTEGER DEFAULT 12,
+            sickUsed    INTEGER DEFAULT 0,
+            sickTotal   INTEGER DEFAULT 30,
+            compoff     INTEGER DEFAULT 0
         );
 
-        CREATE TABLE IF NOT EXISTS time_entries (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER NOT NULL,
-            clock_in    TEXT    NOT NULL,
-            clock_out   TEXT,
-            note        TEXT,
-            FOREIGN KEY (employee_id) REFERENCES employees (id) ON DELETE CASCADE
+        CREATE TABLE IF NOT EXISTS attendance (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id    TEXT NOT NULL,
+            name      TEXT,
+            dept      TEXT,
+            date      TEXT NOT NULL,
+            clock_in  TEXT,
+            clock_out TEXT,
+            status    TEXT,
+            hrs       TEXT,
+            loc       TEXT,
+            lat       REAL,
+            lon       REAL,
+            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_entries_employee ON time_entries (employee_id);
-        CREATE INDEX IF NOT EXISTS idx_entries_open ON time_entries (employee_id, clock_out);
+        CREATE TABLE IF NOT EXISTS leave (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id     TEXT NOT NULL,
+            type       TEXT,
+            startDate  TEXT,
+            endDate    TEXT,
+            days       INTEGER,
+            status     TEXT DEFAULT 'pending',
+            reason     TEXT,
+            note       TEXT,
+            created_at TEXT,
+            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS zones (
+            id     INTEGER PRIMARY KEY AUTOINCREMENT,
+            name   TEXT,
+            lat    REAL,
+            lon    REAL,
+            radius INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
+        CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
+        CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
         """
     )
     conn.commit()
     conn.close()
 
 
-def seed_default_admin():
-    """Create a default admin account on first run and return its credentials
-    (only when freshly created) so they can be printed to the console."""
-    email = os.environ.get("TK_ADMIN_EMAIL", "admin@humiley.com")
-    pin = os.environ.get("TK_ADMIN_PIN", "2468")
-    name = os.environ.get("TK_ADMIN_NAME", "Administrator")
+def is_seeded():
+    conn = get_conn()
+    n = conn.execute("SELECT COUNT(*) AS n FROM employees").fetchone()["n"]
+    conn.close()
+    return n > 0
 
+
+def seed():
+    """Populate the database from seed_data on first run only."""
+    if is_seeded():
+        return False
     conn = get_conn()
     cur = conn.cursor()
-    existing = cur.execute("SELECT 1 FROM employees WHERE email = ?", (email.lower(),)).fetchone()
-    if existing:
-        conn.close()
-        return None
-
-    cur.execute(
-        "INSERT INTO employees (name, email, pin_hash, is_admin, active, created_at) VALUES (?,?,?,?,?,?)",
-        (name, email.lower(), hash_pin(pin), 1, 1, now_iso()),
-    )
+    for e in seed_data.EMPLOYEES:
+        role = "manager" if e["title"] in seed_data.MANAGER_TITLES else "staff"
+        cols = ["id", "name", "ini", "clr", "dept", "title", "email", "phone", "startDate",
+                "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
+                "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
+        vals = [e.get(c) for c in cols[:-6]] + [role, e["annualUsed"], e["annualTotal"],
+                                                 e["sickUsed"], e["sickTotal"], e["compoff"]]
+        cur.execute("INSERT INTO employees (%s) VALUES (%s)" % (
+            ",".join(cols), ",".join(["?"] * len(cols))), vals)
+    for z in seed_data.ZONES:
+        cur.execute("INSERT INTO zones (name,lat,lon,radius) VALUES (?,?,?,?)",
+                    (z["name"], z["lat"], z["lon"], z["radius"]))
+    for a in seed_data.sample_attendance():
+        cur.execute("INSERT INTO attendance (emp_id,name,dept,date,clock_in,clock_out,status,hrs,loc) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (a["emp_id"], a["name"], a["dept"], a["date"], a.get("clock_in"),
+                     a.get("clock_out"), a["status"], a.get("hrs"), a.get("loc")))
+    for l in seed_data.LEAVE:
+        cur.execute("INSERT INTO leave (emp_id,type,startDate,endDate,days,status,reason,created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?)",
+                    (l["emp_id"], l["type"], l["startDate"], l["endDate"], l["days"],
+                     l["status"], l["reason"], now_iso()))
     conn.commit()
     conn.close()
-    return {"email": email.lower(), "pin": pin}
+    return True
 
 
 # ---------------------------------------------------------------------------
-# Employee operations
+# Generic helpers
 # ---------------------------------------------------------------------------
 
-def get_employee_by_email(email):
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM employees WHERE email = ?", (email.lower().strip(),)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def get_employee(emp_id):
-    conn = get_conn()
-    row = conn.execute("SELECT * FROM employees WHERE id = ?", (emp_id,)).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def authenticate(email, pin):
-    """Return the employee dict if email+pin match and account is active, else None."""
-    emp = get_employee_by_email(email)
-    if not emp or not emp["active"]:
-        return None
-    if not verify_pin(pin, emp["pin_hash"]):
-        return None
-    return emp
-
-
-def create_employee(name, email, pin, is_admin=False):
-    conn = get_conn()
-    try:
-        cur = conn.execute(
-            "INSERT INTO employees (name, email, pin_hash, is_admin, active, created_at) VALUES (?,?,?,?,?,?)",
-            (name.strip(), email.lower().strip(), hash_pin(pin), 1 if is_admin else 0, 1, now_iso()),
-        )
-        conn.commit()
-        return cur.lastrowid
-    finally:
-        conn.close()
-
-
-def update_employee(emp_id, name=None, email=None, pin=None, is_admin=None, active=None):
-    sets, params = [], []
-    if name is not None:
-        sets.append("name = ?"); params.append(name.strip())
-    if email is not None:
-        sets.append("email = ?"); params.append(email.lower().strip())
-    if pin is not None and str(pin).strip():
-        sets.append("pin_hash = ?"); params.append(hash_pin(pin))
-    if is_admin is not None:
-        sets.append("is_admin = ?"); params.append(1 if is_admin else 0)
-    if active is not None:
-        sets.append("active = ?"); params.append(1 if active else 0)
-    if not sets:
-        return
-    params.append(emp_id)
-    conn = get_conn()
-    conn.execute("UPDATE employees SET " + ", ".join(sets) + " WHERE id = ?", params)
-    conn.commit()
-    conn.close()
-
-
-def list_employees():
-    conn = get_conn()
-    rows = conn.execute("SELECT * FROM employees ORDER BY name COLLATE NOCASE").fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-# ---------------------------------------------------------------------------
-# Clock in / out
-# ---------------------------------------------------------------------------
-
-def get_open_entry(emp_id):
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT * FROM time_entries WHERE employee_id = ? AND clock_out IS NULL ORDER BY clock_in DESC LIMIT 1",
-        (emp_id,),
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def clock_in(emp_id, note=None):
-    if get_open_entry(emp_id):
-        raise ValueError("You are already clocked in.")
-    conn = get_conn()
-    ts = now_iso()
-    conn.execute(
-        "INSERT INTO time_entries (employee_id, clock_in, note) VALUES (?,?,?)",
-        (emp_id, ts, note),
-    )
-    conn.commit()
-    conn.close()
-    return ts
-
-
-def clock_out(emp_id, note=None):
-    open_entry = get_open_entry(emp_id)
-    if not open_entry:
-        raise ValueError("You are not clocked in.")
-    conn = get_conn()
-    ts = now_iso()
-    if note:
-        conn.execute(
-            "UPDATE time_entries SET clock_out = ?, note = ? WHERE id = ?",
-            (ts, note, open_entry["id"]),
-        )
-    else:
-        conn.execute("UPDATE time_entries SET clock_out = ? WHERE id = ?", (ts, open_entry["id"]))
-    conn.commit()
-    conn.close()
-    return ts
-
-
-def list_entries(emp_id, limit=50):
-    conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM time_entries WHERE employee_id = ? ORDER BY clock_in DESC LIMIT ?",
-        (emp_id, limit),
-    ).fetchall()
-    conn.close()
-    return [dict(r) for r in rows]
-
-
-def all_entries(start=None, end=None, emp_id=None):
-    """Join entries with employee info; optional date range (ISO date strings) and employee filter."""
-    sql = (
-        "SELECT te.*, e.name AS employee_name, e.email AS employee_email "
-        "FROM time_entries te JOIN employees e ON e.id = te.employee_id WHERE 1=1"
-    )
-    params = []
-    if emp_id:
-        sql += " AND te.employee_id = ?"; params.append(emp_id)
-    if start:
-        sql += " AND te.clock_in >= ?"; params.append(start)
-    if end:
-        sql += " AND te.clock_in <= ?"; params.append(end + "T23:59:59+00:00")
-    sql += " ORDER BY te.clock_in DESC"
+def _rows(sql, params=()):
     conn = get_conn()
     rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def _row(sql, params=()):
+    conn = get_conn()
+    row = conn.execute(sql, params).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# Employees
+# ---------------------------------------------------------------------------
+
+EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDate",
+              "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
+              "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
+
+
+def list_employees():
+    return _rows("SELECT * FROM employees ORDER BY id")
+
+
+def get_employee(emp_id):
+    return _row("SELECT * FROM employees WHERE id = ?", (emp_id,))
+
+
+def get_employee_by_email(email):
+    if not email:
+        return None
+    return _row("SELECT * FROM employees WHERE LOWER(email) = LOWER(?)", (email.strip(),))
+
+
+def next_emp_id():
+    rows = _rows("SELECT id FROM employees WHERE id LIKE 'EMP%'")
+    nums = [int(r["id"][3:]) for r in rows if r["id"][3:].isdigit()]
+    return "EMP%03d" % ((max(nums) + 1) if nums else 1)
+
+
+def create_employee(data):
+    emp_id = data.get("id") or next_emp_id()
+    fields = ["id"] + EMP_FIELDS
+    vals = [emp_id] + [data.get(f) for f in EMP_FIELDS]
+    conn = get_conn()
+    conn.execute("INSERT INTO employees (%s) VALUES (%s)" % (
+        ",".join(fields), ",".join(["?"] * len(fields))), vals)
+    conn.commit()
+    conn.close()
+    return emp_id
+
+
+def update_employee(emp_id, data):
+    sets, params = [], []
+    for f in EMP_FIELDS:
+        if f in data:
+            sets.append("%s = ?" % f)
+            params.append(data[f])
+    if not sets:
+        return
+    params.append(emp_id)
+    conn = get_conn()
+    conn.execute("UPDATE employees SET %s WHERE id = ?" % ",".join(sets), params)
+    conn.commit()
+    conn.close()
+
+
+def delete_employee(emp_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM employees WHERE id = ?", (emp_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Attendance
+# ---------------------------------------------------------------------------
+
+def list_attendance(emp_id=None, start=None, end=None):
+    sql = "SELECT * FROM attendance WHERE 1=1"
+    params = []
+    if emp_id:
+        sql += " AND emp_id = ?"; params.append(emp_id)
+    if start:
+        sql += " AND date >= ?"; params.append(start)
+    if end:
+        sql += " AND date <= ?"; params.append(end)
+    sql += " ORDER BY date DESC, clock_in DESC"
+    return _rows(sql, params)
+
+
+def open_attendance(emp_id, date):
+    return _row("SELECT * FROM attendance WHERE emp_id = ? AND date = ? AND clock_out IS NULL "
+                "ORDER BY id DESC LIMIT 1", (emp_id, date))
+
+
+def _hrs_between(cin, cout):
+    try:
+        ih, im = map(int, cin.split(":")); oh, om = map(int, cout.split(":"))
+        mins = (oh * 60 + om) - (ih * 60 + im)
+        return "%dh %02dm" % (mins // 60, mins % 60)
+    except (ValueError, AttributeError):
+        return ""
+
+
+def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time"):
+    emp = get_employee(emp_id)
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
+         date, time_hm, status, loc, lat, lon))
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return rid
+
+
+def clock_out(att_id, time_hm):
+    rec = _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
+    if not rec:
+        return None
+    hrs = _hrs_between(rec["clock_in"], time_hm)
+    conn = get_conn()
+    conn.execute("UPDATE attendance SET clock_out = ?, hrs = ? WHERE id = ?", (time_hm, hrs, att_id))
+    conn.commit()
+    conn.close()
+    return hrs
+
+
+# ---------------------------------------------------------------------------
+# Leave
+# ---------------------------------------------------------------------------
+
+def list_leave(emp_id=None, status=None):
+    sql = ("SELECT l.*, e.name AS emp_name, e.dept AS emp_dept FROM leave l "
+           "LEFT JOIN employees e ON e.id = l.emp_id WHERE 1=1")
+    params = []
+    if emp_id:
+        sql += " AND l.emp_id = ?"; params.append(emp_id)
+    if status:
+        sql += " AND l.status = ?"; params.append(status)
+    sql += " ORDER BY l.startDate DESC"
+    return _rows(sql, params)
+
+
+def create_leave(data):
+    conn = get_conn()
+    cur = conn.execute(
+        "INSERT INTO leave (emp_id,type,startDate,endDate,days,status,reason,created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (data["emp_id"], data.get("type"), data.get("startDate"), data.get("endDate"),
+         data.get("days"), data.get("status", "pending"), data.get("reason"), now_iso()))
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return rid
+
+
+def set_leave_status(leave_id, status, note=None):
+    conn = get_conn()
+    conn.execute("UPDATE leave SET status = ?, note = ? WHERE id = ?", (status, note, leave_id))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Zones
+# ---------------------------------------------------------------------------
+
+def list_zones():
+    return _rows("SELECT * FROM zones ORDER BY id")
+
+
+def create_zone(data):
+    conn = get_conn()
+    cur = conn.execute("INSERT INTO zones (name,lat,lon,radius) VALUES (?,?,?,?)",
+                       (data.get("name"), data.get("lat"), data.get("lon"), data.get("radius")))
+    conn.commit()
+    rid = cur.lastrowid
+    conn.close()
+    return rid
+
+
+def update_zone(zone_id, data):
+    sets, params = [], []
+    for f in ("name", "lat", "lon", "radius"):
+        if f in data:
+            sets.append("%s = ?" % f); params.append(data[f])
+    if not sets:
+        return
+    params.append(zone_id)
+    conn = get_conn()
+    conn.execute("UPDATE zones SET %s WHERE id = ?" % ",".join(sets), params)
+    conn.commit()
+    conn.close()
+
+
+def delete_zone(zone_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM zones WHERE id = ?", (zone_id,))
+    conn.commit()
+    conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Settings
+# ---------------------------------------------------------------------------
+
+def get_setting(key, default=None):
+    row = _row("SELECT value FROM settings WHERE key = ?", (key,))
+    return json.loads(row["value"]) if row else default
+
+
+def set_setting(key, value):
+    conn = get_conn()
+    conn.execute("INSERT INTO settings (key,value) VALUES (?,?) "
+                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (key, json.dumps(value)))
+    conn.commit()
+    conn.close()
