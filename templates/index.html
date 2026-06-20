@@ -873,8 +873,8 @@ select.form-control{cursor:pointer}
 
         <!-- Check In / Out Buttons -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <button id="btn-checkin" onclick="doCheckin()" disabled
-            style="padding:14px;border-radius:10px;border:none;background:#e2e8f0;color:#94a3b8;font-size:15px;font-weight:700;cursor:not-allowed;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px">
+          <button id="btn-checkin" onclick="doCheckin()"
+            style="padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,#205090,#162f5a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:8px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
             Check In
           </button>
@@ -1141,7 +1141,7 @@ select.form-control{cursor:pointer}
       <div class="table-wrap">
         <table>
           <thead><tr><th>Location</th><th>Coordinates</th><th>Radius</th><th>Department</th><th>Active</th><th></th></tr></thead>
-          <tbody>
+          <tbody id="zones-tbody">
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;font-size:16px">🏢</div><div><div style="font-size:13px;font-weight:700">HQ — District 10, HCMC</div><div style="font-size:11px;color:var(--text-light)">200 3/2 Street · Primary office</div></div></div></td>
               <td style="font-family:monospace;font-size:11px;color:var(--navy)">10.7769°N<br>106.6985°E</td>
@@ -2654,6 +2654,31 @@ function tkRenderApprovals() {
   if (mgr) mgr.textContent = items.length;
 }
 
+/* Render the GPS Locations table from the database (replaces static rows). */
+function tkRenderZones() {
+  const tbody = document.getElementById('zones-tbody');
+  if (!tbody) return;
+  const zones = _DEMO_ZONES || [];
+  tbody.innerHTML = zones.map(z => {
+    const nm = z.name || '';
+    const icon = /factory/i.test(nm) ? '🏭' : /wfh|home/i.test(nm) ? '🏠' : '🏢';
+    const lat = typeof z.lat === 'number' ? z.lat : (parseFloat(z.lat) || 0);
+    const lon = typeof z.lon === 'number' ? z.lon : (parseFloat(z.lon) || 0);
+    const safe = nm.replace(/'/g, "\\'");
+    return '<tr>' +
+      '<td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;font-size:16px">' + icon + '</div>' +
+      '<div><div style="font-size:13px;font-weight:700">' + nm + '</div><div style="font-size:11px;color:var(--text-light)">Approved zone</div></div></div></td>' +
+      '<td style="font-family:monospace;font-size:11px;color:var(--navy)">' + lat.toFixed(4) + '°N<br>' + lon.toFixed(4) + '°E</td>' +
+      '<td><span class="badge b-navy">' + (z.radius || 0) + 'm</span></td>' +
+      '<td>All Depts</td>' +
+      '<td><button class="toggle on" onclick="this.classList.toggle(\'on\');this.classList.toggle(\'off\')"></button></td>' +
+      '<td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,\'' + safe + '\',' + lat + ',' + lon + ',' + (z.radius || 200) + ')">Edit</button></td>' +
+      '</tr>';
+  }).join('');
+  const stat = document.querySelector('#view-locations .stat-box .stat-num');
+  if (stat) stat.textContent = zones.length;
+}
+
 async function tkApprove(id, btn) {
   const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
   await tkPersist('/api/leave/' + id, { status: 'approved' }, 'PATCH');
@@ -2813,6 +2838,7 @@ async function doLogin(role, opts = {}) {
   initDashChart();
   initReportCharts();
   try { tkRenderApprovals(); } catch (e) {}
+  try { tkRenderZones(); } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
   toast(role === 'manager'
     ? '👔 Welcome, Manager — full access enabled'
@@ -3439,14 +3465,12 @@ function _applyGpsFix(lat, lon, accuracy) {
   const btnIn  = document.getElementById('btn-checkin');
   const btnOut = document.getElementById('btn-checkout');
   if (btnIn && !_checkedIn) {
-    if (inAny) {
-      btnIn.disabled = false;
-      btnIn.style.background = 'linear-gradient(135deg,var(--emerald),#00965a)';
-      btnIn.style.color = '#fff'; btnIn.style.cursor = 'pointer';
-    } else {
-      btnIn.disabled = true;
-      btnIn.style.background = '#e2e8f0'; btnIn.style.color = '#94a3b8'; btnIn.style.cursor = 'not-allowed';
-    }
+    /* Always allow check-in — zone status is informational, not a blocker */
+    btnIn.disabled = false;
+    btnIn.style.background = inAny
+      ? 'linear-gradient(135deg,var(--emerald),#00965a)'
+      : 'linear-gradient(135deg,#205090,#162f5a)';
+    btnIn.style.color = '#fff'; btnIn.style.cursor = 'pointer';
   }
   /* Gate the panel border color */
   const panel = document.getElementById('gps-zone-panel');
@@ -4322,38 +4346,17 @@ function saveLocation() {
   if (!name) { toast('Please enter a location name', 'warn'); return; }
   if (isNaN(lat) || isNaN(lon)) { toast('Please enter valid coordinates', 'warn'); return; }
 
-  if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    /* persist the zone to the backend, then refresh zones from the DB */
-    tkPersist('/api/zones', { name, lat, lon, radius })
-      .then(async () => { try { await tkBootstrap(); } catch (e) {} });
-    // Add row to geofence table
-    const tbody = document.querySelector('#view-locations table tbody');
-    if (tbody) {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><div style="display:flex;align-items:center;gap:9px">
-          <div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;font-size:16px">📍</div>
-          <div><div style="font-size:13px;font-weight:700">${name}</div><div style="font-size:11px;color:var(--text-light)">${notes || 'Custom location'}</div></div>
-        </div></td>
-        <td style="font-family:monospace;font-size:11px;color:var(--navy)">${lat.toFixed(4)}°N<br>${lon.toFixed(4)}°E</td>
-        <td><span class="badge b-navy">${radius}m</span></td>
-        <td>${dept}</td>
-        <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
-        <td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,name,lat,lon,radius)">Edit</button></td>`;
-      tbody.prepend(tr);
-      // Update Active Zones count
-      const statNum = document.querySelector('#view-locations .stat-num');
-      if (statNum) statNum.textContent = parseInt(statNum.textContent||'3') + 1;
-    }
-    closeModal('locationModal');
-    toast('✅ Location "' + name + '" added to geofence zones');
-    return;
-  }
-  // Live mode — write to SharePoint
-  spPost('Approved_Locations', { Title: name, Latitude: lat, Longitude: lon, RadiusMeters: radius, Department: dept, Notes: notes })
-    .then(res => {
-      if (res && res.id) { closeModal('locationModal'); toast('✅ Location saved to SharePoint'); }
-      else toast('Save failed — try again', 'error');
+  closeModal('locationModal');
+  toast('⏳ Saving location…');
+  /* persist the zone to the backend, then re-render the table from the DB so
+     it shows for everyone (and survives navigation/reload) */
+  tkPersist('/api/zones', { name, lat, lon, radius })
+    .then(async (res) => {
+      if (res === null) { toast('Save failed — please try again', 'error'); return; }
+      try { await tkBootstrap(); } catch (e) {}
+      try { tkRenderZones(); } catch (e) {}
+      try { _reEvalGate(); } catch (e) {}   /* new zone may now include current position */
+      toast('✅ Location "' + name + '" saved to geofence zones');
     });
 }
 
