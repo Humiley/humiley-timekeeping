@@ -2835,7 +2835,7 @@ function msalLogin() {
     return;
   }
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
-  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All'] });
+  _msalApp.loginRedirect({ scopes: ['User.Read'] });
 }
 
 /* ── Logout ── */
@@ -3083,7 +3083,7 @@ async function initAuth() {
 
   /* LIVE Microsoft 365 mode */
   _msalApp = new msal.PublicClientApplication({
-    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: window.location.href },
+    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: window.location.origin + '/' },
     cache: { cacheLocation: 'sessionStorage' }
   });
   _msalApp.handleRedirectPromise().then(async resp => {
@@ -3111,7 +3111,7 @@ async function initAuth() {
 
 async function _getToken() {
   if (!_msalApp) return null;
-  const scopes = ['https://graph.microsoft.com/Sites.ReadWrite.All','https://graph.microsoft.com/User.Read'];
+  const scopes = ['https://graph.microsoft.com/User.Read'];
   try {
     const r = await _msalApp.acquireTokenSilent({ scopes, account: _account });
     return r.accessToken;
