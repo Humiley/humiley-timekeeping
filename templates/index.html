@@ -2780,13 +2780,22 @@ async function _tkInitMap(centerLat, centerLon, zoom) {
 
 function tkOpenLocationModal() {
   openModal('locationModal');
-  ['loc-name', 'loc-lat', 'loc-lon', 'loc-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['loc-name', 'loc-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const r = document.getElementById('loc-radius'); if (r && !r.value) r.value = 200;
+  /* Pre-fill coordinates IMMEDIATELY (center on first zone or HCMC) so Save
+     always has valid coords even before the map finishes loading / if GPS is
+     blocked. The user then clicks the map or drags the pin to the real spot. */
+  const z = (_DEMO_ZONES || [])[0];
+  const cLat = z ? Number(z.lat) : 10.7769, cLon = z ? Number(z.lon) : 106.6985;
+  document.getElementById('loc-lat').value = cLat.toFixed(6);
+  document.getElementById('loc-lon').value = cLon.toFixed(6);
   setTimeout(async () => {
     _tkClearPin();
-    const z = (_DEMO_ZONES || [])[0];
-    await _tkInitMap(z ? z.lat : 10.7769, z ? z.lon : 106.6985, 12);
-  }, 250);
+    await _tkInitMap(cLat, cLon, 13);
+    tkSetLocPin(cLat, cLon, false);
+    const hint = document.getElementById('loc-map-hint');
+    if (hint) hint.textContent = '📌 A pin is placed — click the map (or drag the pin) to move it to your location, then Save.';
+  }, 300);
 }
 
 function tkUseMyLocation() {
