@@ -53,6 +53,7 @@ def init_db():
             bank        TEXT,
             emergency   TEXT,
             address     TEXT,
+            managerEmail TEXT,
             role        TEXT DEFAULT 'staff',
             annualUsed  INTEGER DEFAULT 0,
             annualTotal INTEGER DEFAULT 12,
@@ -109,6 +110,11 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
         """
     )
+    # migration: add managerEmail column to older databases
+    try:
+        conn.execute("ALTER TABLE employees ADD COLUMN managerEmail TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -177,7 +183,7 @@ def _row(sql, params=()):
 
 EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDate",
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
-              "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
+              "managerEmail", "role", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
 def list_employees():
@@ -295,16 +301,32 @@ def clock_out(att_id, time_hm):
 # Leave
 # ---------------------------------------------------------------------------
 
-def list_leave(emp_id=None, status=None):
-    sql = ("SELECT l.*, e.name AS emp_name, e.dept AS emp_dept FROM leave l "
-           "LEFT JOIN employees e ON e.id = l.emp_id WHERE 1=1")
+def list_leave(emp_id=None, status=None, emp_ids=None):
+    sql = ("SELECT l.*, e.name AS emp_name, e.dept AS emp_dept, e.managerEmail AS emp_managerEmail "
+           "FROM leave l LEFT JOIN employees e ON e.id = l.emp_id WHERE 1=1")
     params = []
     if emp_id:
         sql += " AND l.emp_id = ?"; params.append(emp_id)
+    if emp_ids is not None:
+        if not emp_ids:
+            return []
+        sql += " AND l.emp_id IN (%s)" % ",".join(["?"] * len(emp_ids))
+        params.extend(emp_ids)
     if status:
         sql += " AND l.status = ?"; params.append(status)
     sql += " ORDER BY l.startDate DESC"
     return _rows(sql, params)
+
+
+def list_reports(manager_email):
+    """Employees whose direct manager is the given email."""
+    if not manager_email:
+        return []
+    return _rows("SELECT * FROM employees WHERE LOWER(managerEmail) = LOWER(?)", (manager_email,))
+
+
+def get_leave(leave_id):
+    return _row("SELECT * FROM leave WHERE id = ?", (leave_id,))
 
 
 def create_leave(data):

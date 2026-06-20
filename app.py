@@ -179,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._emp_update(eid, body), manager=True)
         if path.startswith("/api/leave/"):
             lid = path.rsplit("/", 1)[1]
-            return self._guard(lambda u: self._leave_status(u, lid, body), manager=True)
+            return self._guard(lambda u: self._leave_status(u, lid, body))
         if path.startswith("/api/zones/"):
             zid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._zone_update(zid, body), manager=True)
@@ -257,10 +257,13 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- leave --------------------------------------------------------------
     def _leave_list(self, u, qs):
-        emp_id = qs.get("emp_id", [None])[0]
-        if u.get("role") != "manager":
-            emp_id = u["id"]
-        return self._json({"leave": db.list_leave(emp_id=emp_id, status=qs.get("status", [None])[0])})
+        status = qs.get("status", [None])[0]
+        # Everyone sees their own leave; managers also see their DIRECT reports'.
+        ids = [u["id"]]
+        reports = db.list_reports(u.get("email"))
+        ids += [r["id"] for r in reports]
+        ids = list(dict.fromkeys(ids))  # dedupe, preserve order
+        return self._json({"leave": db.list_leave(emp_ids=ids, status=status)})
 
     def _leave_create(self, u, body):
         data = dict(body, emp_id=u["id"], status="pending")
@@ -270,6 +273,16 @@ class Handler(BaseHTTPRequestHandler):
         status = body.get("status")
         if status not in ("approved", "rejected", "pending"):
             return self._err("Invalid status.")
+        lv = db.get_leave(int(lid))
+        if not lv:
+            return self._err("Leave request not found.", 404)
+        requester = db.get_employee(lv["emp_id"])
+        if not requester:
+            return self._err("Requester not found.", 404)
+        # Only the requester's DIRECT manager may approve/reject.
+        mgr = (requester.get("managerEmail") or "").strip().lower()
+        if mgr != (u.get("email") or "").strip().lower():
+            return self._err("Only %s's direct manager can approve this request." % requester["name"], 403)
         db.set_leave_status(int(lid), status, body.get("note"))
         return self._json({"ok": True})
 

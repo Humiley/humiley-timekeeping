@@ -2551,7 +2551,8 @@ function tkRenderApprovals() {
   if (!pending) return;
   const host = pending.querySelector('div') || pending;
   host.querySelectorAll('.approval-card, .tk-empty').forEach(c => c.remove());
-  const items = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.id);
+  const _me = TK.user && TK.user.id;
+  const items = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.id && l.emp_id !== _me);
   if (!items.length) {
     const e = document.createElement('div');
     e.className = 'card tk-empty';
@@ -2732,7 +2733,8 @@ function tkRenderDashboard() {
   const late = todayAtt.filter(r => r.status === 'late').length;
   const onLeave = lv.filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= today && l.endDate >= today).length;
   const total = emps.length;
-  const pend = lv.filter(l => (l.status || '').toLowerCase() === 'pending');
+  const _me = TK.user && TK.user.id;
+  const pend = lv.filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== _me);
   _tkSet('kpi-present', present); _tkSet('kpi-ontime', onTime); _tkSet('kpi-late', late); _tkSet('kpi-onleave', onLeave);
   _tkSet('kpi-present-delta', total ? ('of ' + total + ' employees') : '—');
   _tkSet('kpi-ontime-delta', present ? (Math.round(onTime / Math.max(present, 1) * 100) + '% on-time') : '—');
@@ -2777,7 +2779,8 @@ function tkRenderDashboard() {
 
 /* Notifications reflect real pending approvals; clear when none remain. */
 function tkUpdateNotifications() {
-  const pend = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending');
+  const _me = TK.user && TK.user.id;
+  const pend = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== _me);
   const bp = document.getElementById('badge-pending');
   if (bp) { bp.textContent = pend.length; bp.style.display = pend.length ? '' : 'none'; }
   const ba = document.getElementById('badge-anomaly');
@@ -5493,7 +5496,7 @@ function viewCertificate(btn) {
       </div>
     </div>
     <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-control" id="ee-email" placeholder="name@humiley.com.vn"></div>
-    <div class="tip-box">💡 Changes sync to SharePoint <code>Employee_Profiles</code> list when connected.</div>
+    <div class="form-group"><label class="form-label">Direct Manager (approves their leave)</label><select class="form-control" id="ee-manager"><option value="">— None (top of org) —</option></select></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('editEmpModal')">Cancel</button>
       <button class="btn btn-emerald" onclick="saveEmployeeProfile()">Save Changes</button>
@@ -5725,29 +5728,37 @@ async function saveEmployee() {
   }
 }
 
+function tkPopulateManagerSelect(selectedEmail, excludeId) {
+  const sel = document.getElementById('ee-manager');
+  if (!sel) return;
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => e.id !== excludeId);
+  const cur = (selectedEmail || '').toLowerCase();
+  sel.innerHTML = '<option value="">— None (top of org) —</option>' +
+    emps.map(e => '<option value="' + (e.email || '') + '"' + (cur === (e.email || '').toLowerCase() ? ' selected' : '') + '>' + e.name + (e.title ? ' (' + e.title + ')' : '') + '</option>').join('');
+}
+
 function editEmployeeProfile(btn) {
   const card = btn.closest('.emp-profile-card');
-  const nameEl = card?.querySelector('.emp-profile-name');
-  const roleEl = card?.querySelector('.emp-profile-role');
-  const name   = nameEl?.textContent?.trim() || '—';
-  const role   = roleEl?.textContent?.split('·') || [];
-  const title  = role[0]?.trim() || '';
-  const empId  = role[1]?.trim() || '';
-  document.getElementById('ee-name').value  = name;
-  document.getElementById('ee-id').value    = empId;
-  document.getElementById('ee-title').value = title;
-  document.getElementById('ee-email').value = name.toLowerCase().replace(/\s+/g,'.') + '@humiley.com.vn';
+  const name = (card?.querySelector('.emp-profile-name')?.textContent || '').trim();
+  const emp = (_DEMO_EMPLOYEES || []).find(e => e.name === name);
+  if (!emp) { if (typeof toast === 'function') toast('Employee not found', 'warn'); return; }
+  document.getElementById('ee-name').value  = emp.name;
+  document.getElementById('ee-id').value    = emp.id;
+  document.getElementById('ee-title').value = emp.title || '';
+  document.getElementById('ee-email').value = emp.email || '';
+  tkPopulateManagerSelect(emp.managerEmail, emp.id);
   openModal('editEmpModal');
 }
+
 function saveEmployeeProfile() {
   const id    = document.getElementById('ee-id')?.value?.trim() || '';
   const name  = document.getElementById('ee-name')?.value?.trim() || '—';
   const title = document.getElementById('ee-title')?.value?.trim() || '';
   const email = document.getElementById('ee-email')?.value?.trim() || '';
-  /* persist to backend, then refresh the employee table from the DB */
+  const managerEmail = document.getElementById('ee-manager')?.value || '';
   if (id) {
-    tkPersist('/api/employees/' + id, { name, title, email }, 'PATCH')
-      .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); } catch (e) {} });
+    tkPersist('/api/employees/' + id, { name, title, email, managerEmail }, 'PATCH')
+      .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
   }
   closeModal('editEmpModal');
   toast('✅ Profile updated for ' + name + (title ? ' — ' + title : ''));
