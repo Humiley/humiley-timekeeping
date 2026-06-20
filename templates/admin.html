@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Humiley TimeKeeping</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="page wide">
+    <header class="brand">
+      <div class="brand-mark">H</div>
+      <div>
+        <h1>TimeKeeping Admin</h1>
+        <p class="muted">Manage employees &amp; track time</p>
+      </div>
+      <a class="admin-link" href="/">&larr; Kiosk</a>
+      <button id="logout-btn" class="btn ghost hidden">Log out</button>
+    </header>
+
+    <!-- Login -->
+    <main id="login-view" class="card login">
+      <h2>Admin sign in</h2>
+      <form id="login-form" autocomplete="off">
+        <label>Email
+          <input id="login-email" type="email" placeholder="admin@humiley.com" required />
+        </label>
+        <label>PIN
+          <input id="login-pin" type="password" inputmode="numeric" placeholder="••••" required />
+        </label>
+        <button type="submit" class="btn primary">Sign in</button>
+      </form>
+      <div id="login-message" class="message hidden"></div>
+    </main>
+
+    <!-- Dashboard -->
+    <main id="dash-view" class="hidden">
+      <nav class="tabs">
+        <button class="tab active" data-tab="overview">Overview</button>
+        <button class="tab" data-tab="entries">Time Entries</button>
+        <button class="tab" data-tab="employees">Employees</button>
+      </nav>
+
+      <!-- Overview -->
+      <section id="tab-overview" class="tabpane">
+        <div class="stats">
+          <div class="stat"><span id="stat-total" class="stat-num">0</span><span class="stat-label">Employees</span></div>
+          <div class="stat"><span id="stat-in" class="stat-num">0</span><span class="stat-label">Clocked in now</span></div>
+          <div class="stat"><span id="stat-hours" class="stat-num">0</span><span class="stat-label">Hours (range)</span></div>
+        </div>
+
+        <div class="filters">
+          <label>From <input id="ov-start" type="date" /></label>
+          <label>To <input id="ov-end" type="date" /></label>
+          <button id="ov-apply" class="btn">Apply</button>
+        </div>
+
+        <h3>Hours per employee</h3>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Sessions</th><th>Total hours</th><th>Status</th></tr></thead>
+          <tbody id="summary-body"></tbody>
+        </table>
+      </section>
+
+      <!-- Entries -->
+      <section id="tab-entries" class="tabpane hidden">
+        <div class="filters">
+          <label>From <input id="en-start" type="date" /></label>
+          <label>To <input id="en-end" type="date" /></label>
+          <button id="en-apply" class="btn">Apply</button>
+          <a id="en-export" class="btn ghost" href="#">Export CSV</a>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Note</th></tr></thead>
+          <tbody id="entries-body"></tbody>
+        </table>
+      </section>
+
+      <!-- Employees -->
+      <section id="tab-employees" class="tabpane hidden">
+        <div class="filters">
+          <button id="add-emp-btn" class="btn primary">+ Add employee</button>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Now</th><th></th></tr></thead>
+          <tbody id="employees-body"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <footer class="muted center small">Humiley Engineering &amp; Solutions · TimeKeeping</footer>
+  </div>
+
+  <!-- Employee modal -->
+  <div id="emp-modal" class="modal hidden">
+    <div class="modal-card">
+      <h3 id="emp-modal-title">Add employee</h3>
+      <form id="emp-form" autocomplete="off">
+        <input type="hidden" id="emp-id" />
+        <label>Name <input id="emp-name" type="text" required /></label>
+        <label>Email <input id="emp-email" type="email" required /></label>
+        <label id="emp-pin-label">PIN (4+ digits) <input id="emp-pin" type="text" inputmode="numeric" /></label>
+        <label class="checkbox"><input id="emp-admin" type="checkbox" /> Administrator</label>
+        <label class="checkbox" id="emp-active-label"><input id="emp-active" type="checkbox" checked /> Active</label>
+        <div class="modal-actions">
+          <button type="button" id="emp-cancel" class="btn ghost">Cancel</button>
+          <button type="submit" class="btn primary">Save</button>
+        </div>
+      </form>
+      <div id="emp-message" class="message hidden"></div>
+    </div>
+  </div>
+
+  <script src="/static/admin.js"></script>
+</body>
+</html>

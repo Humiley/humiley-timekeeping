@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Humiley TimeKeeping</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="brand">
+      <div class="brand-mark">H</div>
+      <div>
+        <h1>Humiley TimeKeeping</h1>
+        <p class="muted">Clock in &amp; out with your work email</p>
+      </div>
+      <a class="admin-link" href="/admin">Admin &rarr;</a>
+    </header>
+
+    <main class="card kiosk">
+      <div id="clock" class="big-clock">--:--:--</div>
+      <div id="today" class="muted center"></div>
+
+      <form id="clock-form" autocomplete="off">
+        <label>Work email
+          <input id="email" type="email" inputmode="email" placeholder="you@humiley.com" required />
+        </label>
+        <label>PIN
+          <input id="pin" type="password" inputmode="numeric" maxlength="8" placeholder="••••" required />
+        </label>
+        <button id="clock-btn" type="submit" class="btn primary big">Clock In / Out</button>
+      </form>
+
+      <div id="message" class="message hidden"></div>
+
+      <div class="history-toggle">
+        <button id="history-btn" type="button" class="btn ghost">View my recent activity</button>
+      </div>
+
+      <div id="history" class="history hidden">
+        <h3 id="history-title"></h3>
+        <table>
+          <thead><tr><th>Clock In</th><th>Clock Out</th><th>Hours</th></tr></thead>
+          <tbody id="history-body"></tbody>
+        </table>
+      </div>
+    </main>
+
+    <footer class="muted center small">Humiley Engineering &amp; Solutions · TimeKeeping</footer>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
