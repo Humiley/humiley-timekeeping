@@ -2809,21 +2809,35 @@ function tkUseMyLocation() {
     return;
   }
   if (hint) hint.textContent = '⏳ Getting your current location… (allow the location prompt if it appears)';
+
+  const onOk = (pos) => {
+    tkSetLocPin(pos.coords.latitude, pos.coords.longitude, true);
+    if (hint) hint.textContent = '✅ Pinned your current location (±' + Math.round(pos.coords.accuracy) + 'm). Adjust the pin or radius as needed.';
+    if (typeof toast === 'function') toast('📍 Current location pinned');
+  };
+
+  const fail = (err) => {
+    const denied = err && err.code === 1;
+    if (hint) hint.innerHTML = denied
+      ? '⚠️ <strong>Location is blocked for this site.</strong> Click the 🔒 icon in the address bar → Location → Allow → reload. ' +
+        '<br>Or just <strong>type an address above and press “Find on map”</strong>, or click the map to pin.'
+      : '⚠️ Could not get GPS (' + (err ? err.message : 'timeout') + '). Type an address above and press “Find on map”, or click the map to pin.';
+    if (typeof toast === 'function') toast(denied ? 'Location blocked — use the address search or click the map' : 'GPS unavailable — use the address search', 'warn', 5000);
+  };
+
+  /* First try fast/high-accuracy. On timeout or position-unavailable (common on
+     laptops with no GPS chip), retry with low-accuracy + a cached fix allowed. */
   navigator.geolocation.getCurrentPosition(
-    pos => {
-      tkSetLocPin(pos.coords.latitude, pos.coords.longitude, true);
-      if (hint) hint.textContent = '✅ Pinned your current location (±' + Math.round(pos.coords.accuracy) + 'm). Adjust the pin or radius as needed.';
-      if (typeof toast === 'function') toast('📍 Current location pinned');
+    onOk,
+    (err) => {
+      if (err && err.code === 1) { fail(err); return; }  // denied — no point retrying
+      if (hint) hint.textContent = '⏳ Still locating (network-based)…';
+      navigator.geolocation.getCurrentPosition(
+        onOk, fail,
+        { enableHighAccuracy: false, timeout: 25000, maximumAge: 600000 }
+      );
     },
-    err => {
-      const denied = err && err.code === 1;
-      if (hint) hint.innerHTML = denied
-        ? '⚠️ <strong>Location is blocked for this site.</strong> To enable: click the 🔒 icon in the address bar → Location → Allow → reload. ' +
-          '<br>Or just <strong>type an address above and press “Find on map”</strong>, or click the map to pin.'
-        : '⚠️ Could not get location (' + (err ? err.message : 'unknown') + '). Search an address above or click the map to pin.';
-      if (typeof toast === 'function') toast(denied ? 'Location blocked — use the address search or click the map' : 'Could not get GPS', 'warn', 5000);
-    },
-    { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 }
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
   );
 }
 
@@ -2914,18 +2928,13 @@ function msalLogin() {
 
 /* ── Logout ── */
 function doLogout() {
-  _userRole = null;
-  sessionStorage.removeItem('hum_role');
-  /* clear the standalone backend session */
-  TK.token = null; TK.user = null;
-  sessionStorage.removeItem('tk_token');
-  /* in live Microsoft 365 mode, also sign out of the Microsoft account */
-  if (_msalApp && _account) {
-    try { _msalApp.logoutRedirect({ account: _account }); return; } catch (e) {}
-  }
-  /* restore overlay */
-  const ov = document.getElementById('login-overlay');
-  if (ov) { ov.style.display = 'flex'; ov.classList.remove('fade-out'); }
+  _userRole = null; TK.token = null; TK.user = null;
+  /* clear ALL session state — this also wipes the MSAL token cache (stored in
+     sessionStorage), so reloading lands on a clean login screen with no
+     auto-relogin. Reliable in both demo and live Microsoft 365 modes. */
+  try { sessionStorage.clear(); } catch (e) {}
+  if (typeof toast === 'function') toast('Signed out');
+  window.location.replace(window.location.origin + '/');
 }
 
 /* ── Apply role — shows/hides nav items, sets first view ── */
