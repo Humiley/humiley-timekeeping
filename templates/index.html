@@ -370,6 +370,89 @@ select.form-control{cursor:pointer}
 .role-badge.staff{background:rgba(0,176,96,.12);color:var(--emerald-deep)}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<!-- ════════ CREXTIO-INSPIRED THEME (Humiley navy + emerald) ════════ -->
+<style id="crextio-theme">
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+
+body{
+  font-family:'Poppins','Segoe UI',system-ui,Arial,sans-serif !important;
+  background:
+    radial-gradient(900px 480px at 88% -8%, rgba(0,176,96,.12), transparent 60%),
+    radial-gradient(900px 520px at 6% 4%, rgba(32,80,144,.10), transparent 55%),
+    linear-gradient(165deg,#eef2f7 0%, #f3f6f9 45%, #eef4f0 100%) !important;
+  padding:0 !important;
+}
+
+/* ── Floating, rounded navy sidebar ── */
+#sidebar{
+  background:linear-gradient(180deg,#1b417a 0%, #205090 55%, #1d6e6a 130%) !important;
+  margin:14px 0 14px 14px;
+  height:calc(100vh - 28px);
+  border-radius:26px;
+  box-shadow:0 22px 48px rgba(23,58,107,.28);
+}
+.sidebar-section-label{color:rgba(255,255,255,.4) !important;}
+.nav-item{margin:1px 10px;border-radius:12px;border-left:none !important;padding:9px 13px !important;}
+.nav-item.active{background:rgba(255,255,255,.16) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
+.nav-item.active::before{content:'';position:absolute;left:-10px;width:4px;height:20px;border-radius:4px;background:var(--emerald)}
+.nav-item{position:relative}
+.nav-badge{background:var(--emerald) !important;}
+.sidebar-footer{border-top:1px solid rgba(255,255,255,.12) !important;}
+
+/* ── Airy main area, transparent topbar ── */
+#main{padding:0 !important;}
+#topbar{background:transparent !important;border:none !important;box-shadow:none !important;height:auto !important;padding:20px 28px 4px !important;gap:12px;}
+.topbar-search{background:#fff !important;border:none !important;border-radius:14px !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
+.notif-btn, .topbar-toggle{background:#fff !important;border:none !important;border-radius:14px !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
+#content{padding:8px 28px 30px !important;}
+
+/* ── Soft rounded cards everywhere ── */
+.card, .tabpane, .stat-box{
+  border:none !important;
+  border-radius:24px !important;
+  box-shadow:0 14px 34px rgba(32,80,144,.09) !important;
+  background:#fff !important;
+}
+.card{padding:24px !important;}
+.modal{backdrop-filter:blur(3px);}
+.modal .modal, .modal-card{border-radius:24px !important;}
+
+/* ── Big, light headings ── */
+.page-header h1{font-size:32px !important;font-weight:300 !important;letter-spacing:-.6px;color:var(--navy) !important;}
+.page-header p{font-size:13px;color:var(--text-light);}
+.card-title{font-weight:600 !important;}
+
+/* ── KPI cards → Crextio soft style ── */
+.kpi-grid{gap:18px !important;}
+.kpi-card{
+  border:none !important;border-radius:24px !important;padding:22px 24px !important;
+  box-shadow:0 14px 34px rgba(32,80,144,.09) !important;background:#fff !important;
+}
+.kpi-card::before{display:none !important;}
+.kpi-label{font-size:12px !important;color:var(--text-light) !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;}
+.kpi-value{font-size:38px !important;font-weight:600 !important;color:var(--navy) !important;}
+.kpi-icon{width:42px !important;height:42px !important;border-radius:14px !important;opacity:1 !important;top:22px !important;transform:none !important;}
+.kpi-icon.c-navy{background:rgba(32,80,144,.12) !important;}
+.kpi-icon.c-emerald{background:rgba(0,176,96,.14) !important;}
+.kpi-icon.c-warn{background:rgba(245,158,11,.16) !important;}
+.kpi-icon.c-info{background:rgba(139,92,246,.16) !important;}
+
+/* ── Pill buttons ── */
+.btn{border-radius:14px !important;}
+.btn-primary{background:var(--navy) !important;}
+.btn-emerald{background:var(--emerald) !important;}
+.sel-filter, select.form-control, input.form-control{border-radius:12px !important;}
+
+/* ── Cleaner tables ── */
+th{background:transparent !important;border-bottom:1px solid var(--line) !important;}
+.badge{border-radius:999px !important;}
+
+/* ── Welcome hero ── */
+.tk-hero{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:22px;gap:16px;flex-wrap:wrap;}
+.tk-hero h1{font-size:34px;font-weight:300;letter-spacing:-.8px;color:var(--navy);line-height:1.1;}
+.tk-hero h1 b{font-weight:600;}
+.tk-hero .sub{font-size:13px;color:var(--text-light);margin-top:6px;}
+</style>
 </head>
 <body>
 <!-- ═══ LOGIN OVERLAY ═══ -->
@@ -697,12 +780,12 @@ select.form-control{cursor:pointer}
      VIEW: DASHBOARD
 ═══════════════════════════════════════════════════════ -->
 <div id="view-dashboard" class="view active">
-  <div class="page-header">
+  <div class="tk-hero">
     <div>
-      <h1>Dashboard</h1>
-      <p id="dash-date-label">Loading…</p>
+      <h1 id="dash-welcome">Welcome back 👋</h1>
+      <div class="sub" id="dash-date-label">Loading…</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center">
       <select class="sel-filter" id="dash-dept-filter" onchange="filterDashboard()">
         <option value="">All Departments</option>
         <option value="Engineering">Engineering</option>
@@ -2908,6 +2991,10 @@ async function doLogin(role, opts = {}) {
   try { tkRenderApprovals(); } catch (e) {}
   try { tkRenderZones(); } catch (e) {}
   try { tkUpdateViewToggle(); } catch (e) {}
+  try {
+    const wel = document.getElementById('dash-welcome');
+    if (wel && TK.user && TK.user.name) wel.innerHTML = 'Welcome back, <b>' + TK.user.name.split(/\s+/)[0] + '</b> 👋';
+  } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
   toast(role === 'manager'
     ? '👔 Welcome, Manager — full access enabled'
