@@ -2670,51 +2670,97 @@ async function tkReject(id, btn) {
   if (typeof toast === 'function') toast('✕ Leave rejected');
 }
 
-/* ── Interactive map pin picker for "Add GPS Location" (Leaflet + OSM) ── */
-let _tkLocMap = null, _tkLocMarker = null, _tkLocCircle = null;
+/* ── Interactive map pin picker ──
+   Uses Google Maps when a Maps API key is configured (TK_MAPS_KEY), and falls
+   back to OpenStreetMap (Leaflet) when no key is set, so it always works. */
+let _tkMap = null, _tkMarker = null, _tkCircle = null, _tkMapProvider = null, _tkGmapsPromise = null;
+
+function _tkLoadGoogleMaps() {
+  if (window.google && window.google.maps) return Promise.resolve(true);
+  const key = (TK.cfg && TK.cfg.mapsKey) || (typeof SP_CONFIG !== 'undefined' && SP_CONFIG.mapsKey) || '';
+  if (!key || key === 'YOUR_GOOGLE_MAPS_API_KEY') return Promise.resolve(false);
+  if (_tkGmapsPromise) return _tkGmapsPromise;
+  _tkGmapsPromise = new Promise(resolve => {
+    const s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key);
+    s.async = true; s.defer = true;
+    s.onload = () => resolve(true);
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return _tkGmapsPromise;
+}
+
+function _tkClearPin() {
+  try {
+    if (_tkMarker) { _tkMapProvider === 'google' ? _tkMarker.setMap(null) : _tkMap.removeLayer(_tkMarker); }
+    if (_tkCircle) { _tkMapProvider === 'google' ? _tkCircle.setMap(null) : _tkMap.removeLayer(_tkCircle); }
+  } catch (e) {}
+  _tkMarker = null; _tkCircle = null;
+}
 
 function tkSetLocPin(lat, lon, recenter) {
-  if (!_tkLocMap) return;
   const radius = parseInt(document.getElementById('loc-radius')?.value) || 200;
-  if (!_tkLocMarker) {
-    _tkLocMarker = L.marker([lat, lon], { draggable: true }).addTo(_tkLocMap);
-    _tkLocMarker.on('dragend', e => { const p = e.target.getLatLng(); tkSetLocPin(p.lat, p.lng, false); });
-  } else {
-    _tkLocMarker.setLatLng([lat, lon]);
-  }
-  if (!_tkLocCircle) {
-    _tkLocCircle = L.circle([lat, lon], { radius, color: '#205090', fillColor: '#205090', fillOpacity: 0.12 }).addTo(_tkLocMap);
-  } else {
-    _tkLocCircle.setLatLng([lat, lon]); _tkLocCircle.setRadius(radius);
+  if (_tkMapProvider === 'google' && _tkMap) {
+    const pos = { lat, lng: lon };
+    if (!_tkMarker) {
+      _tkMarker = new google.maps.Marker({ map: _tkMap, position: pos, draggable: true });
+      _tkMarker.addListener('dragend', e => tkSetLocPin(e.latLng.lat(), e.latLng.lng(), false));
+    } else _tkMarker.setPosition(pos);
+    if (!_tkCircle) {
+      _tkCircle = new google.maps.Circle({ map: _tkMap, center: pos, radius, strokeColor: '#205090', strokeWeight: 1, fillColor: '#205090', fillOpacity: 0.12 });
+    } else { _tkCircle.setCenter(pos); _tkCircle.setRadius(radius); }
+    if (recenter) { _tkMap.setCenter(pos); _tkMap.setZoom(Math.max(_tkMap.getZoom() || 12, 15)); }
+  } else if (_tkMapProvider === 'leaflet' && _tkMap) {
+    if (!_tkMarker) {
+      _tkMarker = L.marker([lat, lon], { draggable: true }).addTo(_tkMap);
+      _tkMarker.on('dragend', e => { const p = e.target.getLatLng(); tkSetLocPin(p.lat, p.lng, false); });
+    } else _tkMarker.setLatLng([lat, lon]);
+    if (!_tkCircle) _tkCircle = L.circle([lat, lon], { radius, color: '#205090', fillColor: '#205090', fillOpacity: 0.12 }).addTo(_tkMap);
+    else { _tkCircle.setLatLng([lat, lon]); _tkCircle.setRadius(radius); }
+    if (recenter) _tkMap.setView([lat, lon], Math.max(_tkMap.getZoom(), 15));
   }
   document.getElementById('loc-lat').value = lat.toFixed(6);
   document.getElementById('loc-lon').value = lon.toFixed(6);
-  if (recenter) _tkLocMap.setView([lat, lon], Math.max(_tkLocMap.getZoom(), 15));
 }
 
 function tkUpdateLocRadius() {
   const radius = parseInt(document.getElementById('loc-radius')?.value) || 200;
-  if (_tkLocCircle) _tkLocCircle.setRadius(radius);
+  if (_tkCircle) _tkCircle.setRadius(radius);
+}
+
+async function _tkInitMap(centerLat, centerLon, zoom) {
+  const el = document.getElementById('loc-map');
+  if (!el) return;
+  const useGoogle = await _tkLoadGoogleMaps();
+  if (useGoogle && window.google && window.google.maps) {
+    if (_tkMapProvider !== 'google' || !_tkMap) {
+      el.innerHTML = '';
+      _tkMap = new google.maps.Map(el, { center: { lat: centerLat, lng: centerLon }, zoom: zoom || 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false });
+      _tkMap.addListener('click', e => tkSetLocPin(e.latLng.lat(), e.latLng.lng(), false));
+      _tkMapProvider = 'google'; _tkMarker = null; _tkCircle = null;
+    } else { _tkMap.setCenter({ lat: centerLat, lng: centerLon }); }
+  } else {
+    if (typeof L === 'undefined') return;
+    if (_tkMapProvider !== 'leaflet' || !_tkMap) {
+      el.innerHTML = '';
+      _tkMap = L.map(el).setView([centerLat, centerLon], zoom || 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_tkMap);
+      _tkMap.on('click', e => tkSetLocPin(e.latlng.lat, e.latlng.lng, false));
+      _tkMapProvider = 'leaflet'; _tkMarker = null; _tkCircle = null;
+    } else { _tkMap.setView([centerLat, centerLon], zoom || 12); }
+    _tkMap.invalidateSize();
+  }
 }
 
 function tkOpenLocationModal() {
   openModal('locationModal');
-  /* clear fields for a fresh entry */
   ['loc-name', 'loc-lat', 'loc-lon', 'loc-notes'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   const r = document.getElementById('loc-radius'); if (r && !r.value) r.value = 200;
-  setTimeout(() => {
-    const el = document.getElementById('loc-map');
-    if (!el || typeof L === 'undefined') return;
-    if (!_tkLocMap) {
-      _tkLocMap = L.map(el).setView([10.7769, 106.6985], 12);  // default: HCMC
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '© OpenStreetMap'
-      }).addTo(_tkLocMap);
-      _tkLocMap.on('click', e => tkSetLocPin(e.latlng.lat, e.latlng.lng, false));
-    }
-    _tkLocMap.invalidateSize();
-    /* if a zone already exists, center on the first one for context */
-    if ((_DEMO_ZONES || []).length) { const z = _DEMO_ZONES[0]; _tkLocMap.setView([z.lat, z.lon], 12); }
+  setTimeout(async () => {
+    _tkClearPin();
+    const z = (_DEMO_ZONES || [])[0];
+    await _tkInitMap(z ? z.lat : 10.7769, z ? z.lon : 106.6985, 12);
   }, 250);
 }
 
@@ -4970,15 +5016,9 @@ function editLocationRow(btn, name, lat, lon, radius) {
   document.getElementById('loc-lon').value    = lon || '';
   document.getElementById('loc-radius').value = radius || 200;
   /* show the map pinned to the existing coordinates */
-  setTimeout(() => {
-    const el = document.getElementById('loc-map');
-    if (!el || typeof L === 'undefined') return;
-    if (!_tkLocMap) {
-      _tkLocMap = L.map(el).setView([lat || 10.7769, lon || 106.6985], 15);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_tkLocMap);
-      _tkLocMap.on('click', e => tkSetLocPin(e.latlng.lat, e.latlng.lng, false));
-    }
-    _tkLocMap.invalidateSize();
+  setTimeout(async () => {
+    _tkClearPin();
+    await _tkInitMap(parseFloat(lat) || 10.7769, parseFloat(lon) || 106.6985, 15);
     if (lat && lon) tkSetLocPin(parseFloat(lat), parseFloat(lon), true);
   }, 250);
 }
