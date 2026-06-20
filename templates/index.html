@@ -1629,9 +1629,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="table-wrap">
-        <table style="min-width:1700px">
+        <table style="min-width:1820px">
           <thead><tr>
-            <th>Photo</th><th>ID</th><th>Employee</th><th>Gender</th><th>DOB</th><th>Position</th><th>Job Level</th><th>Department</th><th>Type</th><th>Direct Manager</th><th>Phone</th><th>ID / Passport</th><th>Education</th><th>Family</th><th>Emergency Contact</th><th>Address</th><th>Status</th><th>Actions</th>
+            <th>Photo</th><th>ID</th><th>Employee</th><th>Gender</th><th>DOB</th><th>Position</th><th>Job Level</th><th>Department</th><th>Type</th><th>Onboard Date</th><th>Direct Manager</th><th>Phone</th><th>ID / Passport</th><th>Education</th><th>Family</th><th>Emergency Contact</th><th>Address</th><th>Status</th><th>Actions</th>
           </tr></thead>
           <tbody id="emp-table-body"></tbody>
         </table>
@@ -4526,6 +4526,7 @@ function _renderEmployeeTable(filter) {
       <td style="font-size:12px">${D(e.jobLevel)}</td>
       <td><span class="badge b-navy" style="font-size:10px;white-space:nowrap">${D(e.dept)}</span></td>
       <td style="font-size:12px;white-space:nowrap">${D(e.employmentType)}</td>
+      <td style="font-size:12px;white-space:nowrap">${D(e.startDate)}</td>
       <td style="font-size:12px;white-space:nowrap">${D(mgrName)}</td>
       <td style="font-size:12px;white-space:nowrap">${D(e.phone)}</td>
       <td style="font-size:11px;font-family:monospace">${D(e.personalId)}</td>
