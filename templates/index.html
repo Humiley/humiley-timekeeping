@@ -1622,14 +1622,16 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="hr-employees" style="display:none">
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="_renderEmployeeTable()"></div>
-      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All Departments</option><option>Engineering</option><option>Projects</option><option>HR &amp; Admin</option><option>Finance</option><option>Field Services</option></select>
+      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All Departments</option><option>Management</option><option>Engineering</option><option>Project</option><option>Factory</option><option>Operation</option><option>Sales &amp; Tender</option><option>Finance</option></select>
       <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All</option><option>Active</option><option>Inactive</option></select>
       <span style="font-size:12px;color:var(--text-light);white-space:nowrap" id="emp-count-label">15 employees</span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID</th><th>Employee</th><th>Department</th><th>Position</th><th>Phone</th><th>Start Date</th><th>Tenure</th><th>Status</th><th>Zone</th><th>Leave Balance</th><th>Actions</th></tr></thead>
+        <table style="min-width:1700px">
+          <thead><tr>
+            <th>Photo</th><th>ID</th><th>Employee</th><th>Gender</th><th>DOB</th><th>Position</th><th>Job Level</th><th>Department</th><th>Type</th><th>Direct Manager</th><th>Phone</th><th>ID / Passport</th><th>Education</th><th>Family</th><th>Emergency Contact</th><th>Address</th><th>Status</th><th>Actions</th>
+          </tr></thead>
           <tbody id="emp-table-body"></tbody>
         </table>
       </div>
@@ -2386,7 +2388,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div class="modal-overlay" id="locationModal">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">📍 Add GPS Location</div>
+      <div class="modal-title">Add GPS Location</div>
       <button class="modal-close" onclick="closeModal('locationModal')">✕</button>
     </div>
     <div class="form-group"><label class="form-label">Location Name</label><input type="text" class="form-control" id="loc-name" placeholder="e.g. Client Office — Binh Thanh"></div>
@@ -2401,12 +2403,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-control" id="loc-notes" placeholder="Optional notes about this location"></div>
     <div class="form-group">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <label class="form-label" style="margin:0">📍 Set location — search an address, click the map, or use GPS</label>
-        <button type="button" class="btn btn-outline btn-sm" onclick="tkUseMyLocation()">🎯 Use My Current Location</button>
+        <label class="form-label" style="margin:0">Set location — search an address, click the map, or use GPS</label>
+        <button type="button" class="btn btn-outline btn-sm" onclick="tkUseMyLocation()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>Use My Current Location</button>
       </div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <input type="text" class="form-control" id="loc-address" placeholder="Type an address, e.g. Aeon Mall Tan Phu, HCMC" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();tkGeocodeAddress();}">
-        <button type="button" class="btn btn-primary" onclick="tkGeocodeAddress()" style="white-space:nowrap">🔍 Find on map</button>
+        <button type="button" class="btn btn-primary" onclick="tkGeocodeAddress()" style="white-space:nowrap"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Find on map</button>
       </div>
       <div id="loc-map" style="height:240px;border-radius:8px;border:1px solid var(--line);overflow:hidden;background:var(--soft-bg)"></div>
       <div id="loc-map-hint" style="font-size:11px;color:var(--text-light);margin-top:5px">The blue circle shows the check-in radius. Drag the pin or click anywhere to move it.</div>
@@ -4414,22 +4416,33 @@ function _renderEmployeeTable(filter) {
   });
   const tbody = document.getElementById('emp-table-body');
   if (!tbody) return;
+  const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(x => { byEmail[(x.email || '').toLowerCase()] = x; });
+  const D = v => (v && String(v).trim()) ? String(v) : '—';
   tbody.innerHTML = emps.map(e => {
-    const yrs = Math.floor((new Date()-new Date(e.startDate))/(365.25*24*3600*1000));
+    const mgr = byEmail[(e.managerEmail || '').toLowerCase()];
+    const mgrName = mgr ? mgr.name : (e.managerEmail ? e.managerEmail : '—');
+    const active = (e.status || 'Active').toLowerCase() !== 'inactive';
     return `<tr>
-      <td style="font-family:monospace;font-size:11px;color:var(--text-light)">${e.id}</td>
-      <td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:${e.clr}">${e.ini}</div><div><div style="font-weight:700;font-size:13px">${e.name}</div><div style="font-size:11px;color:var(--text-light)">${e.email}</div></div></div></td>
-      <td><span class="badge b-navy" style="font-size:10px">${e.dept}</span></td>
-      <td style="font-size:12px">${e.title}</td>
-      <td style="font-size:12px">${e.phone}</td>
-      <td style="font-size:12px">${e.startDate}</td>
-      <td style="font-size:11px;color:var(--text-light)">${yrs}y ${Math.floor(((new Date()-new Date(e.startDate))/(365.25*24*3600*1000)-yrs)*12)}m</td>
-      <td><span class="badge ${e.status==='Active'?'b-ok':'b-danger'}" style="font-size:10px">${e.status}</span></td>
-      <td><span class="badge b-info" style="font-size:10px">${e.zone}</span></td>
-      <td><div style="font-size:11px"><div>${e.annualUsed}/${e.annualTotal}d annual</div><div style="color:var(--text-light)">${e.sickUsed}/${e.sickTotal}d sick</div></div></td>
+      <td><div class="ava-sm" style="background:${e.clr || '#205090'}">${e.ini || ''}</div></td>
+      <td style="font-family:monospace;font-size:11px;color:var(--text-light)">${D(e.id)}</td>
+      <td><div style="font-weight:700;font-size:13px;white-space:nowrap">${e.name}</div><div style="font-size:11px;color:var(--text-light)">${D(e.email)}</div></td>
+      <td style="font-size:12px">${D(e.gender)}</td>
+      <td style="font-size:12px;white-space:nowrap">${D(e.dob)}</td>
+      <td style="font-size:12px;white-space:nowrap">${D(e.title)}</td>
+      <td style="font-size:12px">${D(e.jobLevel)}</td>
+      <td><span class="badge b-navy" style="font-size:10px;white-space:nowrap">${D(e.dept)}</span></td>
+      <td style="font-size:12px;white-space:nowrap">${D(e.employmentType)}</td>
+      <td style="font-size:12px;white-space:nowrap">${D(mgrName)}</td>
+      <td style="font-size:12px;white-space:nowrap">${D(e.phone)}</td>
+      <td style="font-size:11px;font-family:monospace">${D(e.personalId)}</td>
+      <td style="font-size:11px">${D(e.education)}</td>
+      <td style="font-size:12px">${D(e.familyStatus)}</td>
+      <td style="font-size:11px;max-width:160px">${D(e.emergency)}</td>
+      <td style="font-size:11px;max-width:200px">${D(e.address)}</td>
+      <td><span class="badge ${active?'b-ok':'b-danger'}" style="font-size:10px">${active?'Active':'Inactive'}</span></td>
       <td style="white-space:nowrap">
-        <button class="btn btn-primary btn-sm" onclick="_viewEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">👁 View</button>
-        <button class="btn btn-ghost btn-sm" onclick="_editEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">✏ Edit</button>
+        <button class="btn btn-primary btn-sm" onclick="_viewEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">View</button>
+        <button class="btn btn-ghost btn-sm" onclick="_editEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">Edit</button>
       </td>
     </tr>`;
   }).join('');
@@ -4535,17 +4548,28 @@ function _viewEmpProfile(id) {
   document.body.appendChild(el);
 }
 
+let _tkEditEmpId = null;
 function _editEmpProfile(id) {
   const e = _DEMO_EMPLOYEES.find(x=>x.id===id); if(!e) return;
   document.getElementById('empProfileOverlay')?.remove();
-  // populate add emp modal fields for editing
   const m = document.getElementById('addEmpModal');
   if (!m) { toast('Edit modal not available', 'warn'); return; }
+  _tkEditEmpId = e.id;
   const title = m.querySelector('.modal-title');
   if (title) title.textContent = 'Edit Employee — ' + e.name;
-  const set = (id,v) => { const el=document.getElementById(id); if(el) el.value=v; };
+  const set = (k,v) => { const el=document.getElementById(k); if(el) el.value=(v==null?'':v); };
+  // direct-manager dropdown
+  const sel = document.getElementById('emp-manager');
+  if (sel) sel.innerHTML = '<option value="">— None (top of org) —</option>' +
+    (_DEMO_EMPLOYEES||[]).filter(x=>x.id!==e.id).map(x => '<option value="'+(x.email||'')+'"'+((e.managerEmail||'').toLowerCase()===(x.email||'').toLowerCase()?' selected':'')+'>'+x.name+(x.title?' ('+x.title+')':'')+'</option>').join('');
   set('emp-name',e.name); set('emp-id',e.id); set('emp-dept',e.dept); set('emp-title',e.title);
   set('emp-email',e.email); set('emp-phone',e.phone); set('emp-start',e.startDate);
+  set('emp-gender',e.gender); set('emp-dob',e.dob); set('emp-level',e.jobLevel);
+  set('emp-type',e.employmentType||'Full Time'); set('emp-status',e.status||'Active');
+  set('emp-family',e.familyStatus); set('emp-education',e.education); set('emp-personalId',e.personalId);
+  set('emp-address',e.address); set('emp-emergency',e.emergency); set('emp-english',e.englishCert);
+  set('emp-note',e.note); set('emp-annual',e.annualTotal); set('emp-sick',e.sickTotal);
+  const em = document.getElementById('emp-email'); if (em) em.dataset.edited = '1';
   openModal('addEmpModal');
 }
 
@@ -5652,7 +5676,9 @@ function openAddEmpModal() {
 
 /* Open the Add Employee modal and prepare it (clear fields, fill manager list) */
 function tkOpenAddEmp() {
-  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start']
+  _tkEditEmpId = null;
+  const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
+  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family']
     .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
   const a = document.getElementById('emp-annual'); if (a) a.value = 12;
   const s = document.getElementById('emp-sick'); if (s) s.value = 30;
@@ -5686,13 +5712,17 @@ async function saveEmployee() {
     englishCert: val('emp-english'), note: val('emp-note'),
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
-  if (val('emp-id')) payload.id = val('emp-id');
-
-  const res = await tkPersist('/api/employees', payload);
-  if (res === null) { toast('Could not add employee (email may already exist)', 'error'); return; }
-  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); } catch (e) {}
+  let res;
+  if (_tkEditEmpId) {
+    res = await tkPersist('/api/employees/' + _tkEditEmpId, payload, 'PATCH');
+  } else {
+    res = await tkPersist('/api/employees', payload);
+  }
+  if (res === null) { toast('Could not save employee (email may already exist)', 'error'); return; }
+  const editing = !!_tkEditEmpId; _tkEditEmpId = null;
+  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderBalances(); tkRenderDashboard(); } catch (e) {}
   closeModal('addEmpModal');
-  toast('✅ ' + name + ' added — ' + title + ' · ' + dept);
+  toast('✅ ' + name + (editing ? ' updated' : ' added') + ' — ' + title + ' · ' + dept);
 }
 
 function tkPopulateManagerSelect(selectedEmail, excludeId) {
@@ -5736,7 +5766,7 @@ function saveEmployeeProfile() {
 <!-- NOTIFICATION PANEL -->
 <div id="notif-panel">
   <div class="notif-hdr">
-    <span class="notif-hdr-title">🔔 Notifications</span>
+    <span class="notif-hdr-title">Notifications</span>
     <button class="btn btn-ghost btn-sm" onclick="tkMarkAllRead()">Mark all read</button>
   </div>
   <div id="notif-list"></div>
@@ -5812,7 +5842,7 @@ function saveEmployeeProfile() {
 <div class="modal-overlay" id="addEmpModal">
   <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
     <div class="modal-header">
-      <div class="modal-title">👤 Add New Employee</div>
+      <div class="modal-title">Add New Employee</div>
       <button class="modal-close" onclick="closeModal('addEmpModal')">✕</button>
     </div>
     <div class="grid-2">
@@ -5821,7 +5851,7 @@ function saveEmployeeProfile() {
         <input type="text" class="form-control" id="emp-name" placeholder="e.g. Nguyen Van An"
                oninput="const e=document.getElementById('emp-email');if(!e.dataset.edited)e.value=this.value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.')+'@humiley.com'">
       </div>
-      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" placeholder="auto"></div>
+      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" readonly placeholder="Auto-generated (HML-###)" style="background:var(--soft-bg);cursor:default"></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="emp-gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>

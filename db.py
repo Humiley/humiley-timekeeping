@@ -215,9 +215,14 @@ def get_employee_by_email(email):
 
 
 def next_emp_id():
-    rows = _rows("SELECT id FROM employees WHERE id LIKE 'EMP%'")
-    nums = [int(r["id"][3:]) for r in rows if r["id"][3:].isdigit()]
-    return "EMP%03d" % ((max(nums) + 1) if nums else 1)
+    """Auto-generate the next HML-### employee id."""
+    rows = _rows("SELECT id FROM employees WHERE id LIKE 'HML-%'")
+    nums = []
+    for r in rows:
+        tail = r["id"].split("-")[-1]
+        if tail.isdigit():
+            nums.append(int(tail))
+    return "HML-%03d" % ((max(nums) + 1) if nums else 1)
 
 
 def create_employee(data):
