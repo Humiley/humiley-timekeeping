@@ -2863,11 +2863,16 @@ function _applyRole(role) {
     el.style.display = isManager ? '' : 'none';
   });
 
-  /* update sidebar user card */
+  /* update sidebar user card — show the actual signed-in person */
   const badge    = document.getElementById('sidebar-role-badge');
   const roleText = document.getElementById('sidebar-user-role');
+  const nameEl   = document.getElementById('sidebar-user-name');
+  const avaEl    = document.getElementById('sidebar-ava');
+  const titleText = (TK.user && TK.user.title) || (isManager ? 'Managing Director' : 'Staff');
   if (badge)    { badge.textContent = isManager ? 'Manager' : 'Staff'; badge.className = 'role-badge ' + (isManager ? 'mgr' : 'staff'); }
-  if (roleText) roleText.firstChild.textContent = isManager ? 'Managing Director ' : 'Staff · ';
+  if (roleText) roleText.firstChild.textContent = titleText + ' · ';
+  if (nameEl && TK.user && TK.user.name) nameEl.textContent = TK.user.name;
+  if (avaEl && TK.user) avaEl.textContent = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
 
   /* leave nav label */
   const leaveLbl = document.getElementById('nav-leave-label');
