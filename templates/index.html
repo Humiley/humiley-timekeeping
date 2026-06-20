@@ -4497,6 +4497,21 @@ let _DEMO_EMPLOYEES = [
   { id:'EMP015', name:'Nam Bui', ini:'NB', clr:'#14B8A6', dept:'Engineering', title:'Intern Engineer', email:'nam.bui@humiley.com', phone:'+84 945 567 890', startDate:'2024-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'2002-04-08', taxId:'0567801234', bank:'567801234 — MB Bank', emergency:'Bui Thi Nam (+84 903 555 666)', address:'567 Nguyen Trai, D5 HCMC', annualUsed:0, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
 ];
 
+/* Format a date value as "07 May 2025". Handles M/D/YYYY (source CSV) and YYYY-MM-DD. */
+function tkFmtDate(v) {
+  if (!v) return '—';
+  v = String(v).trim();
+  const MON = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  let y, m, d;
+  const iso = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const sl = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (iso) { y = +iso[1]; m = +iso[2]; d = +iso[3]; }
+  else if (sl) { m = +sl[1]; d = +sl[2]; y = +sl[3]; if (m > 12 && d <= 12) { const t = m; m = d; d = t; } if (y < 100) y += 2000; }
+  else return v;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return v;
+  return String(d).padStart(2, '0') + ' ' + MON[m - 1] + ' ' + y;
+}
+
 function _renderEmployeeTable(filter) {
   const search = (document.querySelector('#hr-employees .search-box input')?.value||'').toLowerCase();
   const deptFilter = document.querySelector('#hr-employees .sel-filter')?.value||'All Departments';
@@ -4521,12 +4536,12 @@ function _renderEmployeeTable(filter) {
       <td style="font-family:monospace;font-size:11px;color:var(--text-light)">${D(e.id)}</td>
       <td><div style="font-weight:700;font-size:13px;white-space:nowrap">${e.name}</div><div style="font-size:11px;color:var(--text-light)">${D(e.email)}</div></td>
       <td style="font-size:12px">${D(e.gender)}</td>
-      <td style="font-size:12px;white-space:nowrap">${D(e.dob)}</td>
+      <td style="font-size:12px;white-space:nowrap">${tkFmtDate(e.dob)}</td>
       <td style="font-size:12px;white-space:nowrap">${D(e.title)}</td>
       <td style="font-size:12px">${D(e.jobLevel)}</td>
       <td><span class="badge b-navy" style="font-size:10px;white-space:nowrap">${D(e.dept)}</span></td>
       <td style="font-size:12px;white-space:nowrap">${D(e.employmentType)}</td>
-      <td style="font-size:12px;white-space:nowrap">${D(e.startDate)}</td>
+      <td style="font-size:12px;white-space:nowrap">${tkFmtDate(e.startDate)}</td>
       <td style="font-size:12px;white-space:nowrap">${D(mgrName)}</td>
       <td style="font-size:12px;white-space:nowrap">${D(e.phone)}</td>
       <td style="font-size:11px;font-family:monospace">${D(e.personalId)}</td>
