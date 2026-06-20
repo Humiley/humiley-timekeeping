@@ -4652,7 +4652,7 @@ function filterTable() {
       <td style="font-size:12px">${r.date}</td>
       <td style="font-weight:600">${r.in || '—'}</td>
       <td style="color:var(--text-light)">${r.out || '—'}</td>
-      <td style="font-weight:700;color:var(--navy)">${r.hrs}</td>
+      <td style="font-weight:700;color:var(--navy)">${r.out ? (r.hrs || '—') : 'In progress'}</td>
       <td>${zoneBadge}</td>
       <td><span class="badge ${stCls}">${stLbl}</span></td>
       <td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td>
