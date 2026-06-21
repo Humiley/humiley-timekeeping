@@ -154,6 +154,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_get(u))
+        if path.startswith("/api/coll/"):
+            name = path[len("/api/coll/"):].split("/")[0]
+            return self._guard(lambda u: self._coll_list(u, name))
         return self._err("Not found.", 404)
 
     def do_POST(self):
@@ -173,6 +176,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._emp_create(u, body), manager=True)
         if path == "/api/zones":
             return self._guard(lambda u: self._json({"id": db.create_zone(body)}), manager=True)
+        if path.startswith("/api/coll/"):
+            name = path[len("/api/coll/"):].split("/")[0]
+            return self._guard(lambda u: self._coll_add(u, name, body), manager=True)
         return self._err("Not found.", 404)
 
     def do_PATCH(self):
@@ -182,6 +188,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._me_update(u, body))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_update(u, body), manager=True)
+        if path.startswith("/api/coll/"):
+            seg = path[len("/api/coll/"):].split("/")
+            return self._guard(lambda u: self._coll_update(u, seg[0], seg[1] if len(seg) > 1 else "", body), manager=True)
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(eid, body), manager=True)
@@ -195,6 +204,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path = urlparse(self.path).path
+        if path.startswith("/api/coll/"):
+            seg = path[len("/api/coll/"):].split("/")
+            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=True)
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: (db.delete_employee(eid), self._json({"ok": True}))[1], manager=True)
@@ -394,10 +406,37 @@ class Handler(BaseHTTPRequestHandler):
                 db.set_setting("portal_" + k, body[k])
         return self._json({"ok": True})
 
+    # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent"}
+
+    def _coll_list(self, u, name):
+        if name not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        return self._json({"items": db.list_collection(name)})
+
+    def _coll_add(self, u, name, body):
+        if name not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        return self._json({"ok": True, "item": db.put_collection_item(name, dict(body or {}))})
+
+    def _coll_update(self, u, name, iid, body):
+        if name not in self.COLLECTIONS or not iid:
+            return self._err("Unknown item.", 404)
+        item = dict(body or {})
+        item["id"] = iid
+        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
+
+    def _coll_delete(self, u, name, iid):
+        if name not in self.COLLECTIONS or not iid:
+            return self._err("Unknown item.", 404)
+        db.delete_collection_item(name, iid)
+        return self._json({"ok": True})
+
 
 def main():
     db.init_db()
     seeded = db.seed()
+    db.seed_hr()
     print("=" * 62)
     print("  Humiley Timekeeping & Leave Management")
     print("=" * 62)

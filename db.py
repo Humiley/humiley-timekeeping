@@ -9,6 +9,7 @@ zones, and app settings.
 import os
 import json
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 
 import seed_data
@@ -115,6 +116,13 @@ def init_db():
             value TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS collections (
+            coll TEXT,
+            id   TEXT,
+            data TEXT,
+            PRIMARY KEY (coll, id)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
@@ -123,7 +131,7 @@ def init_db():
     # migration: add newer columns to older databases
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
-                "englishCert TEXT", "note TEXT", "photo TEXT"):
+                "englishCert TEXT", "note TEXT", "photo TEXT", "salary REAL"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -134,6 +142,82 @@ def init_db():
         pass
     conn.commit()
     conn.close()
+
+
+def seed_hr():
+    """Seed the HRMS module collections (recruitment, onboarding, performance,
+    talent, training) on first run only. Uses real employees where helpful."""
+    if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
+        return False
+    emps = list_employees()
+    pick = [e for e in emps if e.get("status", "Active") != "Inactive"]
+
+    jobs = [
+        {"title": "Senior Civil Engineer", "dept": "Engineering", "location": "HCMC HQ", "type": "Full Time", "openings": 2, "status": "Open"},
+        {"title": "Project Coordinator", "dept": "Project", "location": "Long An", "type": "Full Time", "openings": 1, "status": "Open"},
+        {"title": "Accountant", "dept": "Finance", "location": "HCMC HQ", "type": "Full Time", "openings": 1, "status": "Interviewing"},
+        {"title": "Site Safety Officer", "dept": "Factory", "location": "Long An", "type": "Contract", "openings": 1, "status": "Open"},
+    ]
+    for j in jobs:
+        put_collection_item("jobs", j)
+
+    candidates = [
+        {"name": "Le Minh Anh", "role": "Senior Civil Engineer", "stage": "Interview", "rating": 4, "source": "LinkedIn"},
+        {"name": "Tran Quoc Bao", "role": "Senior Civil Engineer", "stage": "Screening", "rating": 3, "source": "Referral"},
+        {"name": "Pham Thu Ha", "role": "Accountant", "stage": "Offer", "rating": 5, "source": "VietnamWorks"},
+        {"name": "Nguyen Van Cuong", "role": "Project Coordinator", "stage": "Applied", "rating": 0, "source": "Website"},
+        {"name": "Do Thi Mai", "role": "Site Safety Officer", "stage": "Applied", "rating": 0, "source": "Website"},
+        {"name": "Hoang Gia Long", "role": "Accountant", "stage": "Hired", "rating": 5, "source": "Referral"},
+    ]
+    for c in candidates:
+        put_collection_item("candidates", c)
+
+    onboard_tasks = ["Sign employment contract", "IT account & email setup", "Office tour & introductions",
+                     "Health & safety induction", "Set first 30-day goals"]
+    for idx, e in enumerate(pick[-3:]):
+        done_n = [4, 2, 1][idx % 3]
+        put_collection_item("onboarding", {
+            "empId": e["id"], "name": e["name"], "role": e.get("title", ""),
+            "startDate": e.get("startDate", ""),
+            "tasks": [{"label": t, "done": i < done_n} for i, t in enumerate(onboard_tasks)],
+        })
+
+    for i, e in enumerate(pick[:8]):
+        ratings = [4, 5, 3, 4, 4, 5, 3, 4]
+        put_collection_item("reviews", {
+            "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+            "cycle": "H1 2026", "rating": ratings[i % len(ratings)],
+            "status": ["Completed", "In Review", "Self-assessment"][i % 3],
+        })
+
+    goals = [
+        {"name": "Deliver Long An factory expansion phase 1", "owner": "Engineering", "progress": 65, "due": "2026-09-30"},
+        {"name": "Reduce monthly attendance anomalies below 2%", "owner": "Operations", "progress": 80, "due": "2026-07-31"},
+        {"name": "Complete ISO 9001 documentation", "owner": "Quality", "progress": 40, "due": "2026-12-15"},
+        {"name": "Hire & onboard 5 new engineers", "owner": "HR", "progress": 50, "due": "2026-10-31"},
+    ]
+    for g in goals:
+        put_collection_item("goals", g)
+
+    courses = [
+        {"title": "Workplace Safety (HSE) Essentials", "category": "Compliance", "duration": "45 min", "enrolled": 42, "status": "Active"},
+        {"title": "Project Management Fundamentals", "category": "Professional", "duration": "6 modules", "enrolled": 18, "status": "Active"},
+        {"title": "Business English — Intermediate", "category": "Language", "duration": "Ongoing", "enrolled": 25, "status": "Active"},
+        {"title": "Leadership & Communication", "category": "Leadership", "duration": "4 weeks", "enrolled": 8, "status": "Active"},
+        {"title": "AutoCAD for Civil Engineers", "category": "Technical", "duration": "12 hours", "enrolled": 14, "status": "Active"},
+    ]
+    for c in courses:
+        put_collection_item("courses", c)
+
+    boxes = ["Star", "High Potential", "Core Performer", "Solid Performer"]
+    for i, e in enumerate(pick[:6]):
+        put_collection_item("talent", {
+            "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+            "title": e.get("title", ""), "box": boxes[i % len(boxes)],
+            "potential": ["High", "High", "Medium", "Medium"][i % 4],
+            "performance": ["High", "Medium", "High", "Medium"][i % 4],
+        })
+    return True
 
 
 def is_seeded():
@@ -434,5 +518,36 @@ def set_setting(key, value):
     conn.execute("INSERT INTO settings (key,value) VALUES (?,?) "
                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                  (key, json.dumps(value)))
+    conn.commit()
+    conn.close()
+
+
+# ── Generic collections store (recruitment, onboarding, performance, etc.) ──
+def list_collection(coll):
+    rows = _rows("SELECT data FROM collections WHERE coll = ? ORDER BY id", (coll,))
+    return [json.loads(r["data"]) for r in rows]
+
+
+def collection_count(coll):
+    row = _row("SELECT COUNT(*) AS n FROM collections WHERE coll = ?", (coll,))
+    return row["n"] if row else 0
+
+
+def put_collection_item(coll, item):
+    """Insert or update one item (a dict). Generates an id if missing. Returns the item."""
+    if not item.get("id"):
+        item["id"] = coll[:3] + "-" + uuid.uuid4().hex[:8]
+    conn = get_conn()
+    conn.execute("INSERT INTO collections (coll,id,data) VALUES (?,?,?) "
+                 "ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data",
+                 (coll, item["id"], json.dumps(item)))
+    conn.commit()
+    conn.close()
+    return item
+
+
+def delete_collection_item(coll, item_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM collections WHERE coll = ? AND id = ?", (coll, item_id))
     conn.commit()
     conn.close()
