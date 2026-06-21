@@ -570,6 +570,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Manager Approval</span>
     <span class="nav-badge" id="badge-pending">4</span>
   </div>
+  <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
+    <span class="nav-label">Approval Inbox</span>
+    <span class="nav-badge hidden" id="badge-inbox"></span>
+  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('hradmin',this,'HR Admin')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
     <span class="nav-label">HR Admin</span>
@@ -944,6 +949,14 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('courses')">+ Add Course</button>
   </div>
   <div id="training-root"></div>
+</div>
+
+<div id="view-inbox" class="view">
+  <div class="page-header">
+    <div><h1>Approval Inbox</h1><p>One place to action everything pending across HR</p></div>
+    <button class="btn btn-outline btn-sm" onclick="tkRenderInbox()">↻ Refresh</button>
+  </div>
+  <div id="inbox-root"></div>
 </div>
 
 <div id="view-payroll" class="view">
@@ -3326,6 +3339,7 @@ async function doLogin(role, opts = {}) {
     if (wel && TK.user && TK.user.name) wel.innerHTML = 'Welcome back, <b>' + TK.user.name.split(/\s+/)[0] + '</b>';
   } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
+  if (role === 'manager') { try { tkLoadInboxBadge(); } catch (e) {} }
   toast(role === 'manager'
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
@@ -4555,6 +4569,60 @@ async function tkClaimSave() {
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
 }
 
+/* Unified Approval Inbox — every pending action in one place. */
+async function tkRenderInbox() {
+  const root = document.getElementById('inbox-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr')]);
+  const me = TK.user && TK.user.id;
+  const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me);
+  const claims = (_HR.claims || []).filter(c => (c.status || '') === 'Submitted');
+  const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
+  const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment');
+  const total = leave.length + claims.length + reqs.length + padr.length;
+  const kpis = _hrKpiRow([
+    _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi('Leave', leave.length), _hrKpi('Claims', claims.length, '#8B5CF6'),
+    _hrKpi('Requisitions', reqs.length, '#205090'), _hrKpi('PADR reviews', padr.length, 'var(--emerald)')
+  ]);
+  const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
+  const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
+  const claimRows = '<thead><tr><th>Employee</th><th>Type</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>' + claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td>' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Rejected\')">Reject</button></td></tr>').join('') + '</tbody>';
+  const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
+  const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
+  root.innerHTML = kpis + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
+    sec('Leave Requests', leave.length, leaveRows) +
+    sec('Benefit &amp; Welfare Claims', claims.length, claimRows) +
+    sec('Recruitment Requisitions', reqs.length, reqRows) +
+    sec('PADR Self-Assessments', padr.length, padrRows);
+  tkUpdateInboxBadge(total);
+}
+async function tkInboxLeave(id, status) {
+  await tkPersist('/api/leave/' + id, { status: status }, 'PATCH');
+  try { await tkBootstrap(); } catch (e) {}
+  toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
+}
+async function tkInboxClaim(id, status) {
+  const c = (_HR.claims || []).find(x => x.id === id); if (!c) return; c.status = status;
+  try { await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c }); toast('Claim ' + status.toLowerCase()); tkRenderInbox(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+function tkUpdateInboxBadge(total) {
+  const b = document.getElementById('badge-inbox'); if (!b) return;
+  if (total > 0) { b.textContent = total; b.classList.remove('hidden'); } else { b.classList.add('hidden'); }
+}
+async function tkLoadInboxBadge() {
+  try {
+    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr')]);
+    const me = TK.user && TK.user.id;
+    const total = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me).length +
+      (_HR.claims || []).filter(c => c.status === 'Submitted').length +
+      (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft').length +
+      (_HR.padr || []).filter(p => p.status === 'Self-assessment').length;
+    tkUpdateInboxBadge(total);
+  } catch (e) {}
+}
+
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
   const el = document.getElementById('dash-hr-modules'); if (!el) return;
@@ -5054,7 +5122,7 @@ function _calcWorkingDays(startDate, endDate) {
 let _currentView = 'dashboard';
 
 /* Manager-only view IDs — staff will be redirected */
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','performance','talent','training','payroll']);
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','performance','talent','training','payroll','inbox']);
 
 function showView(id, navEl, title) {
   /* staff dashboard redirect — must happen BEFORE the guard check */
@@ -5089,6 +5157,7 @@ function showView(id, navEl, title) {
   if (id === 'talent') { try { tkRenderTalent(); } catch (e) { console.warn('talent:', e.message); } }
   if (id === 'training') { try { tkRenderTraining(); } catch (e) { console.warn('training:', e.message); } }
   if (id === 'payroll') { try { tkRenderPayroll(); } catch (e) { console.warn('payroll:', e.message); } }
+  if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
