@@ -398,16 +398,20 @@ class Handler(BaseHTTPRequestHandler):
     PORTAL_KEYS = ("announcements", "holidays", "learning", "resources")
 
     def _portal_get(self, u):
-        return self._json({k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS})
+        out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
+        out["teamsWebhook"] = db.get_setting("portal_teamsWebhook")
+        return self._json(out)
 
     def _portal_update(self, u, body):
         for k in self.PORTAL_KEYS:
             if isinstance(body.get(k), list):
                 db.set_setting("portal_" + k, body[k])
+        if isinstance(body.get("teamsWebhook"), str):
+            db.set_setting("portal_teamsWebhook", body["teamsWebhook"])
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel"}
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:

@@ -533,10 +533,16 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
            style="height:36px;width:auto;max-width:180px;display:block">
   </div>
 
-  <div class="sidebar-section-label">Attendance</div>
+  <div class="sidebar-section-label">Overview</div>
   <div class="nav-item active" onclick="showView('dashboard',this,'Dashboard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
     <span class="nav-label">Dashboard</span>
+  </div>
+
+  <div class="sidebar-section-label">My Workspace</div>
+  <div class="nav-item" onclick="showView('myprofile',this,'My Profile')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+    <span class="nav-label">My Profile</span>
   </div>
   <div class="nav-item" onclick="showView('checkin',this,'Check In / Out')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span>
@@ -546,38 +552,25 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
     <span class="nav-label">Attendance</span>
   </div>
-  <div class="nav-item" onclick="showView('myprofile',this,'My Profile')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
-    <span class="nav-label">My Profile</span>
-  </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('locations',this,'GPS Locations')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
-    <span class="nav-label">GPS Locations</span>
-    <span class="nav-badge" id="badge-anomaly">2</span>
-  </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
-    <span class="nav-label">Work Schedules</span>
-  </div>
-
-  <div class="sidebar-section-label">Leave</div>
   <div class="nav-item" onclick="showView('leave',this,'Leave Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
     <span class="nav-label" id="nav-leave-label">My Leave</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('manager',this,'Manager Approval')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-    <span class="nav-label">Manager Approval</span>
-    <span class="nav-badge" id="badge-pending">4</span>
+  <div class="nav-item" onclick="showView('travelclaims',this,'Travel &amp; Claims')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
+    <span class="nav-label">Travel &amp; Claims</span>
   </div>
+
+  <div class="sidebar-section-label" data-roles="manager">Approvals</div>
   <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
     <span class="nav-label">Approval Inbox</span>
     <span class="nav-badge hidden" id="badge-inbox"></span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('hradmin',this,'HR Admin')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
-    <span class="nav-label">HR Admin</span>
+  <div class="nav-item" data-roles="manager" onclick="showView('manager',this,'Manager Approval')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+    <span class="nav-label">Manager Approval</span>
+    <span class="nav-badge" id="badge-pending">4</span>
   </div>
 
   <div class="sidebar-section-label" data-roles="manager">People &amp; Talent</div>
@@ -606,14 +599,27 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Training &amp; Dev</span>
   </div>
 
-  <div class="sidebar-section-label" data-roles="manager">Payroll</div>
+  <div class="sidebar-section-label" data-roles="manager">Workplace</div>
+  <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
+    <span class="nav-label">Work Schedules</span>
+  </div>
+  <div class="nav-item" data-roles="manager" onclick="showView('locations',this,'GPS Locations')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
+    <span class="nav-label">GPS Locations</span>
+    <span class="nav-badge" id="badge-anomaly">2</span>
+  </div>
+
+  <div class="sidebar-section-label" data-roles="manager">Finance &amp; Admin</div>
   <div class="nav-item" data-roles="manager" onclick="showView('payroll',this,'Payroll')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
   </div>
-
-  <div class="sidebar-section-label" data-roles="manager" id="nav-label-analytics">Analytics</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('reports',this,'Reports & Analytics')">
+  <div class="nav-item" data-roles="manager" onclick="showView('hradmin',this,'HR Admin')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
+    <span class="nav-label">HR Admin</span>
+  </div>
+  <div class="nav-item" data-roles="manager" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
     <span class="nav-label">Reports</span>
   </div>
@@ -957,6 +963,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="btn btn-outline btn-sm" onclick="tkRenderInbox()">↻ Refresh</button>
   </div>
   <div id="inbox-root"></div>
+</div>
+
+<div id="view-travelclaims" class="view">
+  <div class="page-header">
+    <div><h1>Travel &amp; Claims</h1><p>Business travel requests &amp; expense / benefit claims</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="tkNewTravel()">+ Travel Request</button>
+      <button class="btn btn-primary btn-sm" onclick="tkSubmitClaim()">+ New Claim</button>
+    </div>
+  </div>
+  <div id="travelclaims-root"></div>
 </div>
 
 <div id="view-payroll" class="view">
@@ -1876,6 +1893,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
       <div style="font-size:12px;color:var(--text-light)">Manage what employees see on their dashboard. Changes apply to everyone after saving.</div>
       <button class="btn btn-emerald btn-sm" onclick="tkSavePortal()">Save Portal Content</button>
+    </div>
+    <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
+      <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
@@ -3596,7 +3616,8 @@ async function tkLoadPortal() {
       announcements: Array.isArray(j.announcements) ? j.announcements : null,
       holidays: Array.isArray(j.holidays) ? j.holidays : null,
       learning: Array.isArray(j.learning) ? j.learning : null,
-      resources: Array.isArray(j.resources) ? j.resources : null
+      resources: Array.isArray(j.resources) ? j.resources : null,
+      teamsWebhook: j.teamsWebhook || ''
     };
   } catch (e) {}
 }
@@ -3610,6 +3631,7 @@ function tkRenderPortalEditor() {
   const PD = _tkPortalData();
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
   _tkPortalRenderRows();
+  const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
 }
 
 function _tkPortalRenderRows() {
@@ -3659,13 +3681,14 @@ async function tkSavePortal() {
     announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '', audience: x.audience || 'All' })),
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
-    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() }))
+    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
+    teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources };
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook };
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
 }
@@ -4605,26 +4628,29 @@ async function tkClaimSave() {
 async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr')]);
+  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
   const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me);
   const claims = (_HR.claims || []).filter(c => (c.status || '') === 'Submitted');
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
   const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment');
-  const total = leave.length + claims.length + reqs.length + padr.length;
+  const travel = (_HR.travel || []).filter(t => t.status === 'Submitted');
+  const total = leave.length + claims.length + reqs.length + padr.length + travel.length;
   const kpis = _hrKpiRow([
     _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
-    _hrKpi('Leave', leave.length), _hrKpi('Claims', claims.length, '#8B5CF6'),
-    _hrKpi('Requisitions', reqs.length, '#205090'), _hrKpi('PADR reviews', padr.length, 'var(--emerald)')
+    _hrKpi('Leave', leave.length), _hrKpi('Travel', travel.length, '#3168A8'),
+    _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Requisitions', reqs.length, '#205090')
   ]);
   const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
   const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
   const claimRows = '<thead><tr><th>Employee</th><th>Type</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>' + claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td>' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Rejected\')">Reject</button></td></tr>').join('') + '</tbody>';
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
+  const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
   const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
+    sec('Travel Requests', travel.length, travelRows) +
     sec('Benefit &amp; Welfare Claims', claims.length, claimRows) +
     sec('Recruitment Requisitions', reqs.length, reqRows) +
     sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
@@ -4660,15 +4686,77 @@ function tkUpdateInboxBadge(total) {
 }
 async function tkLoadInboxBadge() {
   try {
-    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr')]);
+    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
     const me = TK.user && TK.user.id;
     const total = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me).length +
       (_HR.claims || []).filter(c => c.status === 'Submitted').length +
       (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft').length +
-      (_HR.padr || []).filter(p => p.status === 'Self-assessment').length;
+      (_HR.padr || []).filter(p => p.status === 'Self-assessment').length +
+      (_HR.travel || []).filter(t => t.status === 'Submitted').length;
     tkUpdateInboxBadge(total);
   } catch (e) {}
 }
+
+/* Travel & Claims — role-adaptive: staff see/submit their own; managers see all + approve. */
+async function tkRenderTravelClaims() {
+  const root = document.getElementById('travelclaims-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await Promise.all([tkLoadColl('travel'), tkLoadColl('claims')]);
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const me = _tkMe ? _tkMe() : null; const myId = me && me.id;
+  let travel = _HR.travel || [], claims = _HR.claims || [];
+  if (!isMgr) { travel = travel.filter(t => t.empId === myId); claims = claims.filter(c => c.empId === myId); }
+  const _ts = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : 'b-warn';
+  const tAdv = travel.reduce((s, t) => s + (+t.advance || 0), 0);
+  const cTot = claims.reduce((s, c) => s + (+c.amount || 0), 0);
+  const kpis = _hrKpiRow([
+    _hrKpi('Travel Requests', travel.length),
+    _hrKpi('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => c.status === 'Submitted').length, '#F59E0B'),
+    _hrKpi('Advances', _PAY_FMT(tAdv), '#8B5CF6'),
+    _hrKpi('Claims value', _PAY_FMT(cTot), 'var(--emerald)')
+  ]);
+  const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">Reject</button>' : '';
+  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
+  const claimRows = claims.length ? claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td style="text-align:right">' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td>' + (c.ts || '') + '</td><td><span class="badge ' + _ts(c.status) + '" style="font-size:10px">' + (c.status || '') + '</span></td><td style="white-space:nowrap">' + act('claims', c.id, c.status) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
+  root.innerHTML = kpis +
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th style="text-align:right">Amount</th><th>Note</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody>' + claimRows + '</tbody></table></div></div>';
+}
+function tkNewTravel() {
+  document.getElementById('travelOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'travelOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">New Travel Request</div><button class="modal-close" onclick="document.getElementById(\'travelOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div class="form-group"><label class="form-label">Destination</label><input class="form-control" id="tr-dest"></div>' +
+    '<div class="form-group"><label class="form-label">Purpose</label><input class="form-control" id="tr-purpose"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">From</label><input type="date" class="form-control" id="tr-from"></div><div class="form-group"><label class="form-label">To</label><input type="date" class="form-control" id="tr-to"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" class="form-control" id="tr-cost"></div></div>' +
+    '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" class="form-control" id="tr-advance"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'travelOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkTravelSave()">Submit</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkTravelSave() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const me = _tkMe ? _tkMe() : null;
+  if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
+  const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, status: 'Submitted' };
+  try {
+    await tkApi('/api/coll/travel', { method: 'POST', body });
+    tkAudit('Travel request submitted', body.name, body.dest);
+    const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+    if (mgr) tkNotifyGraph(mgr.email, 'Travel request to approve', (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.\n\nHumiley HR');
+    document.getElementById('travelOverlay').remove(); toast('Travel request submitted'); tkRenderTravelClaims();
+  } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+}
+async function tkTravelDecision(id, status) {
+  const t = (_HR.travel || []).find(x => x.id === id); if (!t) return; t.status = status;
+  try {
+    await tkApi('/api/coll/travel/' + id, { method: 'PATCH', body: t });
+    tkAudit('Travel ' + status.toLowerCase(), t.name || '', t.dest + ' · ' + _PAY_FMT(t.cost || 0));
+    const e = _hrEmp(t.empId) || {}; tkNotifyGraph(e.email, 'Your travel request was ' + status.toLowerCase(), 'Hi ' + (e.name || '') + ', your travel request to ' + (t.dest || '') + ' has been ' + status.toLowerCase() + '.\n\nHumiley HR');
+    toast('Travel ' + status.toLowerCase()); tkRenderTravelClaims(); try { tkRenderInbox(); } catch (x) {}
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
 
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
@@ -5205,6 +5293,7 @@ function showView(id, navEl, title) {
   if (id === 'training') { try { tkRenderTraining(); } catch (e) { console.warn('training:', e.message); } }
   if (id === 'payroll') { try { tkRenderPayroll(); } catch (e) { console.warn('payroll:', e.message); } }
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
+  if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';

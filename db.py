@@ -152,6 +152,7 @@ def seed_hr():
     if pick:
         _seed_competency(pick)
         _seed_padr(pick)
+        _seed_travel(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -257,6 +258,19 @@ def _seed_competency(pick):
             cells[c] = s
         put_collection_item("competency", {"empId": e["id"], "name": e["name"], "role": e.get("title", ""),
                                            "dept": e.get("dept", ""), "cells": cells})
+
+
+def _seed_travel(pick):
+    if collection_count("travel"):
+        return
+    samples = [
+        {"dest": "Long An Factory", "purpose": "Site commissioning support", "transport": "Company car", "from": "2026-07-08", "to": "2026-07-10", "cost": 3500000, "advance": 2000000, "status": "Submitted"},
+        {"dest": "Hà Nội", "purpose": "Client meeting — AHU project", "transport": "Flight", "from": "2026-07-15", "to": "2026-07-16", "cost": 8500000, "advance": 5000000, "status": "Approved"},
+        {"dest": "Singapore", "purpose": "Supplier factory audit", "transport": "Flight", "from": "2026-08-03", "to": "2026-08-06", "cost": 22000000, "advance": 10000000, "status": "Submitted"},
+    ]
+    for i, e in enumerate(pick[:3]):
+        s = samples[i % len(samples)]
+        put_collection_item("travel", dict(s, empId=e["id"], name=e["name"], dept=e.get("dept", "")))
 
 
 def _seed_padr(pick):
