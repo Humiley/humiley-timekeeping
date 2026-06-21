@@ -773,6 +773,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </button>
   </div>
 
+  <!-- My Analytics — professional charts (same engine as the admin dashboard) -->
+  <div class="staff-panel" style="margin-bottom:20px">
+    <div class="staff-panel-hdr">
+      My Analytics
+      <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('view-staff-dashboard','Humiley_My_Dashboard.pdf',{title:'MY DASHBOARD',docCode:'HML-HR-ME'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+    </div>
+    <div id="staff-analytics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px"></div>
+  </div>
+
   <!-- Leave Balance Chart -->
   <div class="staff-panel" style="margin-bottom:20px">
     <div class="staff-panel-hdr">
@@ -3563,8 +3572,38 @@ function _initStaffDashboard() {
   /* leave balance chart */
   _initStaffLeaveChart();
 
+  /* personal analytics (PowerBI-style charts, same engine as admin) */
+  try { _initStaffAnalytics(); } catch (e) { console.warn('analytics:', e.message); }
+
   /* company portal widgets */
   try { tkRenderStaffPortal(); } catch (e) { console.warn('portal:', e.message); }
+}
+/* Personal dashboard analytics — mirrors the admin "HR at a Glance" charts for the signed-in employee. */
+async function _initStaffAnalytics() {
+  const wrap = document.getElementById('staff-analytics'); if (!wrap) return;
+  try { await tkLoadColl('enrollments'); } catch (e) {}
+  const me = (_DEMO_EMPLOYEES || []).find(e => e.name === _staffName) || {};
+  const recs = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName);
+  // Attendance status
+  const att = { ontime: 0, late: 0, absent: 0 };
+  recs.forEach(r => { if (r.status === 'late') att.late++; else if (r.status === 'absent') att.absent++; else if (r.in || r.status === 'on-time') att.ontime++; });
+  // Working hours — most recent sessions (chronological)
+  const withHrs = recs.filter(r => r.in && r.out).slice(0, 8).reverse();
+  const hLabels = withHrs.map(r => String(r.date || '').slice(5));
+  const hVals = withHrs.map(r => { const [ih, im] = r.in.split(':').map(Number), [oh, om] = r.out.split(':').map(Number); return Math.round(((oh * 60 + om) - (ih * 60 + im)) / 6) / 10; });
+  // Leave by type
+  const meId = (TK.user || {}).id; const mine = (_DEMO_LEAVE || []).filter(l => (meId && l.emp_id === meId) || l.emp_name === _staffName);
+  const lt = {}; mine.forEach(l => { const t = l.type || 'Other'; lt[t] = (lt[t] || 0) + (+l.days || 1); });
+  // Training status
+  const tr = { Completed: 0, 'In progress': 0, Enrolled: 0 };
+  (_HR.enrollments || []).filter(x => x.empId === me.id).forEach(x => { const s = x.status || 'Enrolled'; tr[s] = (tr[s] || 0) + 1; });
+  wrap.innerHTML = _rptChartCard('My Attendance Status', 'sd-att', 190) + _rptChartCard('My Working Hours (recent)', 'sd-hours', 190) + _rptChartCard('My Leave by Type', 'sd-leave', 190) + _rptChartCard('My Training Status', 'sd-training', 190);
+  if (typeof Chart === 'undefined') return;
+  _mkChart('sd-att', { type: 'doughnut', data: { labels: ['On Time', 'Late', 'Absent'], datasets: [{ data: [att.ontime, att.late, att.absent], backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  _mkChart('sd-hours', { type: 'line', data: { labels: hLabels, datasets: [{ data: hVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, v => v + 'h') });
+  if (Object.keys(lt).length) _mkChart('sd-leave', { type: 'doughnut', data: { labels: Object.keys(lt), datasets: [{ data: Object.values(lt), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  else { const c = document.getElementById('sd-leave'); if (c) c.closest('.card').querySelector('div:last-child').innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:60px 0">No leave records yet</div>'; }
+  _mkChart('sd-training', { type: 'doughnut', data: { labels: Object.keys(tr), datasets: [{ data: Object.values(tr), backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Courses' } });
 }
 
 /* Parse a date value (M/D/YYYY or YYYY-MM-DD) into {y,m,d} (m=1..12) or null. */
