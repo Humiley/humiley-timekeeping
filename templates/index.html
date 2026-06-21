@@ -19,7 +19,12 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg)
 /* ── SIDEBAR ── */
 #sidebar{width:228px;min-width:228px;background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);display:flex;flex-direction:column;height:100vh;transition:width .25s;overflow:hidden}
 #sidebar.collapsed{width:60px;min-width:60px}
-.sidebar-logo{padding:18px 14px 10px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;align-items:center;text-align:center}
+.sidebar-logo{padding:18px 14px 10px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;align-items:center;text-align:center;flex-shrink:0}
+.sidebar-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;min-height:0;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.25) transparent}
+.sidebar-scroll::-webkit-scrollbar{width:6px}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:3px}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.4)}
+.sidebar-scroll::-webkit-scrollbar-track{background:transparent}
 #sidebar.collapsed .sidebar-logo img{width:32px;object-fit:none;object-position:0 0}
 #sidebar.collapsed .sidebar-logo img{height:28px}
 .sidebar-section-label{font-size:9px;color:rgba(255,255,255,.35);letter-spacing:1.5px;text-transform:uppercase;padding:14px 16px 5px;white-space:nowrap;transition:opacity .2s}
@@ -533,6 +538,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
            style="height:36px;width:auto;max-width:180px;display:block">
   </div>
 
+  <div class="sidebar-scroll">
   <div class="sidebar-section-label">Overview</div>
   <div class="nav-item active" onclick="showView('dashboard',this,'Dashboard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
@@ -636,6 +642,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Access &amp; Permissions</span>
   </div>
 
+
+  </div><!-- /sidebar-scroll -->
 
   <div class="sidebar-footer">
     <div class="user-card">
