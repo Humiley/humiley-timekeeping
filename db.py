@@ -155,6 +155,8 @@ def seed_hr():
         _seed_padr(pick)
         _seed_travel(pick)
         _seed_exits(pick)
+        _seed_benefits(pick)
+        _seed_learningpaths(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -309,6 +311,54 @@ def _seed_exits(pick):
         "leavePayout": "", "severance": 0, "deductions": 0,
         "settlementNote": "", "rehire": "Yes",
     })
+
+
+def _seed_benefits(pick):
+    """HR-managed benefits & allowances by grade (G1-G10). Baseline lunch/phone/
+    transport match _payComputed welfare so Payroll and Profile agree."""
+    if collection_count("benefits"):
+        return
+    rows = [
+        {"grade": "G1",  "lunch": 730000, "phone": 0,       "transport": 300000,  "parking": 0,       "health": "Group accident only",                    "training": 3000000,   "note": "Intern"},
+        {"grade": "G2",  "lunch": 730000, "phone": 200000,  "transport": 500000,  "parking": 0,       "health": "IP 200M / OP 20M (from Day 91)",          "training": 5000000,   "note": "Junior"},
+        {"grade": "G3",  "lunch": 730000, "phone": 300000,  "transport": 500000,  "parking": 0,       "health": "IP 200M / OP 20M",                        "training": 8000000,   "note": "Engineer / Officer"},
+        {"grade": "G4",  "lunch": 730000, "phone": 300000,  "transport": 700000,  "parking": 0,       "health": "IP 200M / OP 20M + rider",                "training": 12000000,  "note": "Senior"},
+        {"grade": "G5",  "lunch": 730000, "phone": 500000,  "transport": 1000000, "parking": 500000,  "health": "IP 200M / OP 20M + rider",                "training": 15000000,  "note": "Lead / Supervisor"},
+        {"grade": "G6",  "lunch": 730000, "phone": 700000,  "transport": 1500000, "parking": 500000,  "health": "Family health rider",                     "training": 20000000,  "note": "Asst. Manager"},
+        {"grade": "G7",  "lunch": 730000, "phone": 1000000, "transport": 2000000, "parking": 1000000, "health": "Family health rider",                     "training": 30000000,  "note": "Manager"},
+        {"grade": "G8",  "lunch": 730000, "phone": 1500000, "transport": 3000000, "parking": 1000000, "health": "Family + dependents",                     "training": 40000000,  "note": "Senior Manager"},
+        {"grade": "G9",  "lunch": 730000, "phone": 2000000, "transport": 0,       "parking": 1500000, "health": "Family + dependents (car in lieu)",       "training": 60000000,  "note": "Director"},
+        {"grade": "G10", "lunch": 730000, "phone": 3000000, "transport": 0,       "parking": 2000000, "health": "Family + dependents + executive plan",    "training": 100000000, "note": "Executive / MD"},
+    ]
+    for b in rows:
+        put_collection_item("benefits", dict(b, id="ben-" + b["grade"]))
+
+
+def _seed_learningpaths(pick):
+    """Role-based development roadmaps (career learning paths)."""
+    if collection_count("learningpaths"):
+        return
+    paths = [
+        {"role": "Civil Engineer", "track": "Engineering", "stages": [
+            {"name": "Foundation", "months": "0-6", "courses": ["Workplace Safety (HSE) Essentials", "AutoCAD for Civil Engineers"], "certs": ["HSE induction"]},
+            {"name": "Practitioner", "months": "6-18", "courses": ["Project Management Fundamentals"], "certs": ["ISO 9001 awareness"]},
+            {"name": "Advanced", "months": "18-36", "courses": ["Leadership & Communication"], "certs": ["Site commissioning & TAB"]},
+            {"name": "Lead", "months": "36+", "courses": ["Leadership & Communication"], "certs": ["PE / Chartered (target)"]},
+        ]},
+        {"role": "AHU Factory Technician", "track": "Factory", "stages": [
+            {"name": "Foundation", "months": "0-3", "courses": ["Workplace Safety (HSE) Essentials"], "certs": ["LOTO", "Working at height"]},
+            {"name": "Practitioner", "months": "3-12", "courses": [], "certs": ["EN 1886 testing", "Hi-Pot / Megger"]},
+            {"name": "Advanced", "months": "12-24", "courses": [], "certs": ["FAT witness", "VDI 6022"]},
+            {"name": "Lead", "months": "24+", "courses": ["Leadership & Communication"], "certs": ["Site commissioning & TAB"]},
+        ]},
+        {"role": "Project Coordinator", "track": "Project", "stages": [
+            {"name": "Foundation", "months": "0-6", "courses": ["Business English — Intermediate", "Workplace Safety (HSE) Essentials"], "certs": []},
+            {"name": "Practitioner", "months": "6-18", "courses": ["Project Management Fundamentals"], "certs": ["ISO 9001"]},
+            {"name": "Advanced", "months": "18-36", "courses": ["Leadership & Communication"], "certs": ["PMP (target)"]},
+        ]},
+    ]
+    for i, p in enumerate(paths):
+        put_collection_item("learningpaths", dict(p, id="lp-" + str(i + 1)))
 
 
 def _seed_padr(pick):
@@ -520,6 +570,65 @@ def clock_out(att_id, time_hm):
     conn.commit()
     conn.close()
     return hrs
+
+
+def generate_attendance(weeks=6, force=False, anchor=None):
+    """Generate realistic recent attendance for all active employees.
+
+    Idempotent: skips entirely when the table already has rows (unless force),
+    and never duplicates a given (emp_id, date). Deterministic (seeded RNG) so
+    repeated boots/imports don't churn. Returns the number of rows inserted.
+    """
+    import random
+    from datetime import date as _date, timedelta
+    conn = get_conn()
+    have = conn.execute("SELECT COUNT(*) AS n FROM attendance").fetchone()["n"]
+    if have and not force:
+        conn.close()
+        return 0
+    rng = random.Random(20260621)
+    emps = [e for e in list_employees() if (e.get("status") or "Active") != "Inactive"]
+    # map an employee's stored zone label to a short location tag
+    zone_short = {}
+    for z in list_zones():
+        nm = (z["name"] or "")
+        zone_short[nm] = "Factory" if ("factory" in nm.lower() or "long an" in nm.lower()) else "HQ"
+    anchor = anchor or _date.today()
+    rows = []
+    for emp in emps:
+        loc_base = zone_short.get(emp.get("zone") or "", "HQ")
+        for d in range(weeks * 7):
+            day = anchor - timedelta(days=d)
+            if day.weekday() >= 5:  # weekend
+                continue
+            iso = day.isoformat()
+            if conn.execute("SELECT 1 FROM attendance WHERE emp_id=? AND date=?",
+                            (emp["id"], iso)).fetchone():
+                continue
+            roll = rng.random()
+            if roll < 0.04:  # absent
+                rows.append((emp["id"], emp.get("name"), emp.get("dept"), iso,
+                             None, None, "absent", "", None))
+                continue
+            in_h, in_m = 8, rng.randint(0, 34)
+            if rng.random() < 0.12:  # late
+                in_h, in_m = 8, rng.randint(20, 55)
+                status = "late"
+            else:
+                in_h, in_m = (7, rng.randint(45, 59)) if rng.random() < 0.5 else (8, rng.randint(0, 14))
+                status = "on-time"
+            cin = "%02d:%02d" % (in_h, in_m)
+            out_h, out_m = 17, rng.randint(0, 50)
+            cout = "%02d:%02d" % (out_h, out_m)
+            loc = "Out of Zone" if rng.random() < 0.02 else loc_base
+            rows.append((emp["id"], emp.get("name"), emp.get("dept"), iso,
+                         cin, cout, status, _hrs_between(cin, cout), loc))
+    conn.executemany(
+        "INSERT INTO attendance (emp_id,name,dept,date,clock_in,clock_out,status,hrs,loc) "
+        "VALUES (?,?,?,?,?,?,?,?,?)", rows)
+    conn.commit()
+    conn.close()
+    return len(rows)
 
 
 # ---------------------------------------------------------------------------

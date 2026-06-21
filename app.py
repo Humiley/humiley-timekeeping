@@ -431,9 +431,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "acks", "audit"}
+    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr"}
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
@@ -449,6 +449,18 @@ class Handler(BaseHTTPRequestHandler):
             item["empId"] = u.get("id")
             if not item.get("name"):
                 item["name"] = u.get("name")
+        # Staff-created PADR cycle: stamp identity, force self-service shape (no mgr scores/rating).
+        if name == "padr" and u.get("role") != "manager":
+            item["empId"] = u.get("id")
+            if not item.get("name"):
+                item["name"] = u.get("name")
+            item["status"] = item.get("status") or "Goal-setting"
+            item["rating"] = 0
+            for g in (item.get("goals") or []):
+                if isinstance(g, dict):
+                    g["source"] = "self"
+                    g["mgrScore"] = 0
+                    g.setdefault("addedBy", u.get("email") or u.get("id"))
         if name == "audit":
             item["actor"] = u.get("name") or "System"
             item["actorId"] = u.get("id") or ""
@@ -464,17 +476,50 @@ class Handler(BaseHTTPRequestHandler):
             existing = next((x for x in db.list_collection("padr") if x.get("id") == iid), None)
             if not existing or existing.get("empId") != u.get("id"):
                 return self._err("Not allowed.", 403)
+            # Merge: staff may edit self-goals fully, and only selfScore/progress/status/note on
+            # manager-assigned goals. mgrScore, rating and assigned-goal definitions are preserved.
             bgoals = (body or {}).get("goals") or []
-            for i, g in enumerate(existing.get("goals") or []):
-                if i < len(bgoals) and isinstance(bgoals[i], dict) and "selfScore" in bgoals[i]:
-                    g["selfScore"] = bgoals[i]["selfScore"]
+            ex_by_id = {g.get("id"): g for g in (existing.get("goals") or []) if g.get("id")}
+            merged, seen = [], set()
+            for bg in bgoals:
+                if not isinstance(bg, dict):
+                    continue
+                gid = bg.get("id")
+                ex = ex_by_id.get(gid)
+                if ex and ex.get("source") != "self":
+                    for k in ("selfScore", "progress", "status", "note"):
+                        if k in bg:
+                            ex[k] = bg[k]
+                    merged.append(ex)
+                    seen.add(gid)
+                else:
+                    g = dict(bg)
+                    g["source"] = "self"
+                    g["mgrScore"] = (ex or {}).get("mgrScore", 0)
+                    g.setdefault("addedBy", u.get("email") or u.get("id"))
+                    merged.append(g)
+                    if gid:
+                        seen.add(gid)
+            # never let staff drop manager-assigned goals by omitting them
+            for ex in (existing.get("goals") or []):
+                if ex.get("source") != "self" and ex.get("id") not in seen:
+                    merged.append(ex)
+            existing["goals"] = merged
             st = (body or {}).get("status")
-            if st in ("Self-assessment", "Mid-year"):
+            if st in ("Goal-setting", "Self-assessment", "Mid-year"):
                 existing["status"] = st
             existing["id"] = iid
             return self._json({"ok": True, "item": db.put_collection_item("padr", existing)})
         item = dict(body or {})
         item["id"] = iid
+        # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
+        # must not be able to rewrite who a claim/travel/exit belongs to).
+        if name in ("claims", "travel", "acks"):
+            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            if existing:
+                item["empId"] = existing.get("empId", item.get("empId"))
+                if existing.get("name"):
+                    item["name"] = existing.get("name")
         return self._json({"ok": True, "item": db.put_collection_item(name, item)})
 
     def _coll_delete(self, u, name, iid):
@@ -488,6 +533,9 @@ def main():
     db.init_db()
     seeded = db.seed()
     db.seed_hr()
+    att_added = db.generate_attendance()
+    if att_added:
+        print("  Attendance generated: %d rows." % att_added)
     print("=" * 62)
     print("  Humiley Timekeeping & Leave Management")
     print("=" * 62)
