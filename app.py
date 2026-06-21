@@ -176,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self):
         path = urlparse(self.path).path
         body = self._body()
+        if path == "/api/me":
+            return self._guard(lambda u: self._me_update(u, body))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(eid, body), manager=True)
@@ -358,6 +360,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Employee not found.", 404)
         db.update_employee(eid, body)
         return self._json({"ok": True})
+
+    # Fields an employee may update on their OWN profile (self-service).
+    SELF_FIELDS = {"phone", "address", "emergency", "dob", "gender",
+                   "familyStatus", "education", "englishCert", "personalId", "photo"}
+
+    def _me_update(self, u, body):
+        eid = u.get("id")
+        if not eid or not db.get_employee(eid):
+            return self._err("Profile not found.", 404)
+        data = {k: v for k, v in body.items() if k in self.SELF_FIELDS}
+        if data:
+            db.update_employee(eid, data)
+        return self._json({"ok": True, "updated": list(data.keys())})
 
     def _zone_update(self, zid, body):
         db.update_zone(int(zid), body)

@@ -803,6 +803,21 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
 
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;margin-top:20px">
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">My Action Items <span id="staff-todo-count" style="font-size:11px;color:var(--text-light);font-weight:500"></span></div>
+      <div id="staff-todo" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Global Offices</div>
+      <div id="staff-clocks" style="display:flex;flex-direction:column;gap:12px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Learning &amp; Development</div>
+      <div id="staff-learning" style="display:flex;flex-direction:column;gap:11px"></div>
+    </div>
+  </div>
+
   <div class="staff-panel" style="margin-top:20px">
     <div class="staff-panel-hdr">Resources &amp; Quick Links</div>
     <div id="staff-resources" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
@@ -2427,6 +2442,40 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 </div>
 
+<!-- Update My Profile (self-service) -->
+<div class="modal-overlay" id="myProfileModal">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <div class="modal-title"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:7px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Update My Profile</div>
+      <button class="modal-close" onclick="closeModal('myProfileModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div style="font-size:12px;color:var(--text-light);margin-bottom:14px">Keep your personal details current. Job title, department and leave balances are managed by HR.</div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      <div id="my-photo-preview" style="width:60px;height:60px;border-radius:50%;background:var(--soft-bg);display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-light);background-size:cover;background-position:center;flex-shrink:0">Photo</div>
+      <div><div style="font-size:12px;font-weight:600;margin-bottom:4px">Profile Photo</div><input type="file" id="my-photo-file" accept="image/*" onchange="tkReadMyPhoto(this)" style="font-size:12px"><input type="hidden" id="my-photo"></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="my-phone"></div>
+      <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" id="my-dob"></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="my-gender"><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+      <div class="form-group"><label class="form-label">Marital Status</label><select class="form-control" id="my-family"><option value="">—</option><option>Single</option><option>Married</option><option>Other</option></select></div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">ID / Passport</label><input class="form-control" id="my-personalId"></div>
+      <div class="form-group"><label class="form-label">English Certificate</label><input class="form-control" id="my-english"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Education</label><input class="form-control" id="my-education"></div>
+    <div class="form-group"><label class="form-label">Address</label><textarea class="form-control" id="my-address"></textarea></div>
+    <div class="form-group"><label class="form-label">Emergency Contact</label><textarea class="form-control" id="my-emergency" placeholder="Name · relationship · phone"></textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('myProfileModal')">Cancel</button>
+      <button class="btn btn-emerald" onclick="tkSaveMyProfile()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Add Location Modal -->
 <div class="modal-overlay" id="locationModal">
   <div class="modal">
@@ -3401,6 +3450,119 @@ function tkRenderStaffPortal() {
       '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + r.icon + '</svg>' +
       '<div style="font-size:12px;font-weight:600;color:var(--navy)">' + r.label + '</div></button>';
   }).join('');
+
+  /* My action items (data-driven) */
+  const todoEl = document.getElementById('staff-todo');
+  if (todoEl) {
+    const ti = p => '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px">' + p + '</svg>';
+    const I_USER = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
+    const I_CAL = '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>';
+    const I_CLK = '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>';
+    const I_DOC = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
+    const todos = [];
+    const missing = ['phone', 'address', 'emergency'].filter(k => !(me[k] && String(me[k]).trim()));
+    if (missing.length) todos.push({ t: 'Complete your profile (' + missing.join(', ') + ')', a: 'tkOpenMyProfileUpdate()', i: I_USER, c: '#F59E0B' });
+    const myPending = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && (l.emp_id === me.id || l.emp_name === me.name));
+    if (myPending.length) todos.push({ t: myPending.length + ' leave request' + (myPending.length > 1 ? 's' : '') + ' awaiting approval', a: "showView('leave',null,'My Leave')", i: I_CAL, c: '#205090' });
+    if (typeof _checkedIn !== 'undefined' && !_checkedIn) todos.push({ t: 'Check in for today', a: "showView('checkin',null,'Check In / Out')", i: I_CLK, c: '#00B060' });
+    todos.push({ t: 'Complete your mid-year self-assessment by 15 Jul', a: null, i: I_DOC, c: '#8B5CF6' });
+    const cnt = document.getElementById('staff-todo-count'); if (cnt) cnt.textContent = todos.length + ' item' + (todos.length !== 1 ? 's' : '');
+    todoEl.innerHTML = todos.map(td => {
+      const oc = td.a ? (' onclick="' + td.a.replace(/"/g, '&quot;') + '"') : '';
+      return '<div' + oc + ' style="display:flex;align-items:flex-start;gap:10px;' + (td.a ? 'cursor:pointer' : '') + '"><span style="color:' + td.c + '">' + ti(td.i) + '</span><span style="font-size:12.5px;line-height:1.4">' + td.t + (td.a ? ' <span style="color:var(--navy);font-weight:600">&rarr;</span>' : '') + '</span></div>';
+    }).join('');
+  }
+
+  /* Learning & Development (curated) */
+  const learnEl = document.getElementById('staff-learning');
+  if (learnEl) {
+    const courses = [
+      { name: 'Workplace Safety (HSE) Essentials', meta: 'Required · 45 min', pct: 100 },
+      { name: 'Project Management Fundamentals', meta: 'In progress · 6 modules', pct: 40 },
+      { name: 'Business English — Intermediate', meta: 'Recommended', pct: 0 },
+      { name: 'Leadership & Communication', meta: 'Recommended', pct: 0 }
+    ];
+    learnEl.innerHTML = courses.map(c => '<div style="cursor:pointer" onclick="toast(\'The learning catalogue will be linked here by L&amp;D.\',\'info\',5000)">' +
+      '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span style="font-weight:600">' + c.name + '</span><span style="font-size:11px;color:' + (c.pct === 100 ? 'var(--emerald)' : 'var(--text-light)') + '">' + (c.pct === 100 ? 'Done' : c.pct ? c.pct + '%' : 'Start') + '</span></div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px">' + c.meta + '</div>' +
+      '<div class="prog-wrap"><div class="prog-fill ' + (c.pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + c.pct + '%"></div></div></div>').join('');
+  }
+
+  /* Global office clocks (live) */
+  tkRenderClocks();
+  if (!window._tkClockTimer) { window._tkClockTimer = setInterval(tkRenderClocks, 30000); }
+}
+
+/* Live world clocks for the company's global offices. */
+function tkRenderClocks() {
+  const el = document.getElementById('staff-clocks'); if (!el) return;
+  const offices = [
+    { city: 'Ho Chi Minh City', tz: 'Asia/Ho_Chi_Minh', hq: true },
+    { city: 'Singapore', tz: 'Asia/Singapore' },
+    { city: 'London', tz: 'Europe/London' },
+    { city: 'New York', tz: 'America/New_York' }
+  ];
+  const now = new Date();
+  el.innerHTML = offices.map(o => {
+    let t = '--:--', hr = 9;
+    try {
+      t = now.toLocaleTimeString('en-GB', { timeZone: o.tz, hour: '2-digit', minute: '2-digit' });
+      hr = parseInt(now.toLocaleString('en-GB', { timeZone: o.tz, hour: '2-digit', hour12: false }).slice(0, 2), 10);
+    } catch (e) {}
+    const open = hr >= 9 && hr < 18;
+    return '<div style="display:flex;align-items:center;justify-content:space-between">' +
+      '<div style="display:flex;align-items:center;gap:9px"><span style="width:7px;height:7px;border-radius:50%;background:' + (open ? 'var(--emerald)' : '#cbd5e1') + ';display:inline-block;flex-shrink:0"></span>' +
+      '<div><div style="font-size:13px;font-weight:600">' + o.city + (o.hq ? ' <span style="font-size:9px;color:var(--navy);background:var(--light-tint);padding:1px 5px;border-radius:4px;vertical-align:1px">HQ</span>' : '') + '</div><div style="font-size:10px;color:var(--text-light)">' + (open ? 'Open now' : 'Closed') + '</div></div></div>' +
+      '<div style="font-size:15px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + t + '</div></div>';
+  }).join('');
+}
+
+/* Self-service profile photo upload. */
+function tkReadMyPhoto(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById('my-photo').value = e.target.result; const p = document.getElementById('my-photo-preview'); if (p) { p.style.backgroundImage = 'url(' + e.target.result + ')'; p.textContent = ''; } };
+  r.readAsDataURL(f);
+}
+
+function _tkMyEmp() {
+  const u = TK.user || {};
+  return (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase())) || u;
+}
+
+/* Open the self-service "Update My Profile" modal pre-filled with the user's data. */
+function tkOpenMyProfileUpdate() {
+  const e = _tkMyEmp();
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = (v == null ? '' : v); };
+  set('my-phone', e.phone); set('my-gender', e.gender); set('my-family', e.familyStatus);
+  set('my-personalId', e.personalId); set('my-english', e.englishCert); set('my-education', e.education);
+  set('my-address', e.address); set('my-emergency', e.emergency);
+  const p = _tkDateParts(e.dob);
+  set('my-dob', p ? (p.y + '-' + String(p.m).padStart(2, '0') + '-' + String(p.d).padStart(2, '0')) : '');
+  set('my-photo', e.photo || '');
+  const pv = document.getElementById('my-photo-preview');
+  if (pv) { if (e.photo) { pv.style.backgroundImage = 'url(' + e.photo + ')'; pv.textContent = ''; } else { pv.style.backgroundImage = ''; pv.textContent = 'Photo'; } }
+  openModal('myProfileModal');
+}
+
+/* Save the user's own profile changes via the self-service endpoint. */
+async function tkSaveMyProfile() {
+  const g = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  const data = {
+    phone: g('my-phone'), dob: g('my-dob'), gender: g('my-gender'), familyStatus: g('my-family'),
+    personalId: g('my-personalId'), englishCert: g('my-english'), education: g('my-education'),
+    address: g('my-address'), emergency: g('my-emergency'), photo: (document.getElementById('my-photo') || {}).value || ''
+  };
+  try {
+    const res = await fetch('/api/me', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(data) });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.ok) { toast((j && j.error) || 'Could not save profile', 'error', 5000); return; }
+    const e = _tkMyEmp(); if (e) Object.assign(e, data);
+    if (TK.user) Object.assign(TK.user, data);
+    closeModal('myProfileModal');
+    toast('Profile updated');
+    try { tkRenderMyProfile(); } catch (_) {}
+  } catch (err) { toast('Network error: ' + err.message, 'error', 5000); }
 }
 
 /* Render the professional "My Profile" page for the signed-in user. */
@@ -3432,9 +3594,8 @@ function tkRenderMyProfile() {
   const block = (k, v) => '<div style="font-size:13px"><span style="color:var(--text-light)">' + k + '</span><div style="font-weight:600;margin-top:3px;line-height:1.5">' + v + '</div></div>';
   const bar = (label, used, total, cls) => '<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>' + label + '</span><span style="font-weight:700">' + (total - used) + ' of ' + total + ' left</span></div><div class="prog-wrap"><div class="prog-fill ' + cls + '" style="width:' + Math.round(used / Math.max(total, 1) * 100) + '%"></div></div></div>';
 
-  const editBtn = canEdit
-    ? '<button class="btn btn-primary btn-sm" onclick="_editEmpProfile(\'' + e.id + '\')">' + ico(I_EDIT) + 'Edit Profile</button>'
-    : '<button class="btn btn-outline btn-sm" onclick="toast(\'To update your profile details, please contact HR.\',\'info\',5000)">' + ico(I_EDIT) + 'Request Update</button>';
+  const editBtn = '<button class="btn btn-primary btn-sm" onclick="tkOpenMyProfileUpdate()">' + ico(I_EDIT) + 'Update My Profile</button>' +
+    (canEdit ? '<button class="btn btn-outline btn-sm" onclick="_editEmpProfile(\'' + e.id + '\')" style="margin-left:8px">HR Edit</button>' : '');
 
   root.innerHTML =
   '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">' +
