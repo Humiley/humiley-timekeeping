@@ -3857,6 +3857,24 @@ async function tkHireCandidate(id) {
   } catch (e) { toast('Hire failed: ' + e.message, 'error', 6000); }
 }
 
+/* Candidate detail drawer (recruitment). */
+function tkCandidateDetail(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  document.getElementById('candDetailOverlay')?.remove();
+  const job = (_HR.jobs || []).find(j => j.title === c.role);
+  const stageColor = { Applied: 'b-navy', Screening: 'b-warn', Interview: 'b-info', Offer: 'b-warn', Hired: 'b-ok', Rejected: 'b-danger' }[c.stage] || 'b-navy';
+  const row = (k, v) => '<div style="display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600">' + (v || '—') + '</span></div>';
+  const ini = (c.name || '?').split(/\s+/).filter(Boolean).slice(-2).map(w => w[0]).join('').toUpperCase();
+  const adv = (c.stage !== 'Hired' && c.stage !== 'Rejected') ? '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCandidateAdvance(\'' + id + '\')">Advance →</button>' : '';
+  const hire = c.stage === 'Offer' ? '<button class="btn btn-emerald btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkHireCandidate(\'' + id + '\')">Hire</button>' : '';
+  const el = document.createElement('div'); el.id = 'candDetailOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Candidate</div><button class="modal-close" onclick="document.getElementById(\'candDetailOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="text-align:center;margin-bottom:14px"><div class="ava-md" style="background:#205090;margin:0 auto 8px;width:54px;height:54px;font-size:18px">' + ini + '</div><div style="font-weight:700;font-size:16px">' + c.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (c.role || '') + '</div><div style="margin-top:6px"><span class="badge ' + stageColor + '">' + (c.stage || '') + '</span></div></div>' +
+    row('Applying for', c.role) + row('Department', job ? job.dept : '—') + row('Source', c.source) + row('Rating', c.rating ? _hrStars(c.rating) : 'Not rated') +
+    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px">' + hire + adv + '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkQuickAdd(\'candidates\',\'' + id + '\')">Edit</button><button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCollDelete(\'candidates\',\'' + id + '\',\'recruitment\')">Delete</button></div></div>';
+  document.body.appendChild(el);
+}
+
 /* Centralized Employee Database — KPIs + the rich, searchable employee table. */
 function tkRenderDatabase() {
   const emps = _DEMO_EMPLOYEES || [];
@@ -3894,7 +3912,7 @@ async function tkRenderRecruitment() {
       (items.map(c => {
         const adv = c.stage !== 'Hired' && c.stage !== 'Rejected' ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="tkCandidateAdvance(\'' + c.id + '\')">→</button>' : '';
         const hire = c.stage === 'Offer' ? '<button class="btn btn-emerald btn-sm" style="font-size:10px;padding:2px 9px" onclick="tkHireCandidate(\'' + c.id + '\')">Hire</button>' : '';
-        return '<div class="card" style="padding:10px;margin-bottom:8px"><div style="font-weight:700;font-size:13px">' + c.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (c.role || '') + '</div>' + (c.rating ? ('<div style="font-size:11px;margin-top:3px">' + _hrStars(c.rating) + '</div>') : '') + '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + hire + adv + _hrEditDel('candidates', c.id, 'recruitment') + '</div></div>';
+        return '<div class="card" style="padding:10px;margin-bottom:8px"><div style="font-weight:700;font-size:13px;cursor:pointer" title="View details" onclick="tkCandidateDetail(\'' + c.id + '\')">' + c.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (c.role || '') + '</div>' + (c.rating ? ('<div style="font-size:11px;margin-top:3px">' + _hrStars(c.rating) + '</div>') : '') + '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + hire + adv + _hrEditDel('candidates', c.id, 'recruitment') + '</div></div>';
       }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>') + '</div>';
   }).join('');
   const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead><tbody>' +
@@ -3959,7 +3977,15 @@ async function tkRenderPerformance() {
     '<button class="tab" onclick="tkPerfTab(\'reviews\',this)">Reviews (PADR)</button>' +
     '<button class="tab" onclick="tkPerfTab(\'pip\',this)">Improvement (PIP)</button>' +
     '<button class="tab" onclick="tkPerfTab(\'calib\',this)">Calibration</button></div>';
-  const okr = '<div id="perf-okr"><div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Company Goals (OKRs)</div>' +
+  const cycleStages = [
+    { q: 'Q1 · Jan', a: 'Goal-setting', d: 'SMART objectives, weighted' },
+    { q: 'Q3 · Jul', a: 'Mid-year', d: 'Progress check & calibration' },
+    { q: 'Q4 · Nov–Dec', a: 'Final review', d: 'Self + manager + calibration' },
+    { q: 'Q1 next yr', a: 'Reward', d: 'Merit increase, promotion, bonus, IDP' }
+  ];
+  const cycleCard = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:4px">PADR Cycle — Jan–Dec 2026</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Performance Appraisal &amp; Development Review · annual cycle (HML-CB-001 §15)</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+    cycleStages.map(s => '<div style="background:var(--soft-bg);border-radius:8px;padding:11px 13px"><div style="font-size:11px;color:var(--navy);font-weight:700">' + s.q + '</div><div style="font-size:13px;font-weight:600;margin:2px 0">' + s.a + '</div><div style="font-size:11px;color:var(--text-light)">' + s.d + '</div></div>').join('') + '</div></div>';
+  const okr = '<div id="perf-okr">' + cycleCard + '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Company Goals (OKRs)</div>' +
     (goals.length ? goals.map(g => '<div style="margin-bottom:13px"><div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:3px;gap:8px"><span style="font-weight:600">' + (g.name || '') + '</span><span style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-light);font-size:11px;white-space:nowrap">' + (g.owner || '') + (g.due ? (' · due ' + tkFmtDate(g.due)) : '') + ' · ' + (+g.progress || 0) + '%</span>' + _hrEditDel('goals', g.id, 'performance') + '</span></div><div class="prog-wrap"><div class="prog-fill ' + ((+g.progress || 0) >= 70 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + (+g.progress || 0) + '%"></div></div></div>').join('') : '<div style="color:var(--text-light);font-size:13px">No goals yet — click “+ New Goal”.</div>') + '</div></div>';
   const revRows = reviews.length ? reviews.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2).toUpperCase() }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + (r.cycle || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('reviews', r.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No reviews yet</td></tr>';
   const reviewsHtml = '<div id="perf-reviews" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'reviews\')">+ Add Review</button></div>' +
@@ -3971,7 +3997,13 @@ async function tkRenderPerformance() {
   const dist = [1, 2, 3, 4, 5].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
   const maxd = Math.max(1, ...dist);
   const calib = '<div id="perf-calib" style="display:none"><div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:6px">Rating Distribution — Calibration</div><div style="font-size:12px;color:var(--text-light);margin-bottom:14px">Used in calibration meetings to ensure ratings are fair and consistent across teams.</div>' +
-    [5, 4, 3, 2, 1].map(n => { const cnt = dist[n - 1]; const pct = Math.round(cnt / maxd * 100); return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px"><div style="width:90px;font-size:12px">' + _hrStars(n) + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:22px"><div style="width:' + pct + '%;background:var(--navy);height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:28px;text-align:right;font-size:12px;font-weight:700">' + cnt + '</div></div>'; }).join('') + '</div></div>';
+    [5, 4, 3, 2, 1].map(n => { const cnt = dist[n - 1]; const pct = Math.round(cnt / maxd * 100); return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:9px"><div style="width:90px;font-size:12px">' + _hrStars(n) + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:22px"><div style="width:' + pct + '%;background:var(--navy);height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:28px;text-align:right;font-size:12px;font-weight:700">' + cnt + '</div></div>'; }).join('') + '</div></div>' +
+    '<div class="card" style="padding:16px 18px;margin-top:18px"><div class="card-title" style="margin-bottom:12px">Rating Scale &amp; Merit Outcomes (HML-CB-001 §15)</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Rating</th><th>Definition</th><th>C&amp;B Outcome</th></tr></thead><tbody>' +
+    [['5 — Exceptional', 'Top 10% — exceeded most', 'Up to 15% merit + max bonus + promotion'],
+     ['4 — Exceeds', 'Top 25% — exceeded several', '10–12% merit + 1.0–1.5× bonus'],
+     ['3 — Meets', 'Met all objectives', '5–7% merit + 1.0× bonus'],
+     ['2 — Partially meets', 'Below on some', '0–3% + reduced bonus + PIP'],
+     ['1 — Does not meet', 'Significant issues', '0% + no bonus + exit']].map(r => '<tr><td style="font-weight:600;white-space:nowrap">' + r[0] + '</td><td style="color:var(--text-light)">' + r[1] + '</td><td>' + r[2] + '</td></tr>').join('') + '</tbody></table></div></div>';
   root.innerHTML = kpis + tabs + okr + reviewsHtml + pip + calib;
 }
 function tkPerfTab(tab, el) {
@@ -4018,38 +4050,34 @@ async function tkRenderTraining() {
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div>';
 }
 
-/* ── Payroll on the Salary 3Ps model (Pay for Position + Person + Performance) ── */
+/* ════ Payroll — Salary 3Ps model (per HML-CB-001 C&B Policy v01.0) ════ */
 const _PAY_FMT = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
 const _PAY_GRADES = [
-  { g: 'G7', label: 'Director', p1: 70000000 },
-  { g: 'G6', label: 'Head of Function', p1: 50000000 },
-  { g: 'G5', label: 'Manager / Lead', p1: 40000000 },
-  { g: 'G4', label: 'Senior Specialist', p1: 28000000 },
-  { g: 'G3', label: 'Specialist / Engineer', p1: 18000000 },
-  { g: 'G2', label: 'Officer / Worker', p1: 13000000 },
-  { g: 'G1', label: 'Intern / Trainee', p1: 6000000 }
+  { g: 'G1', label: 'Intern', min: 5000000, mid: 7000000, max: 9000000 },
+  { g: 'G2', label: 'Fresh / Junior', min: 12000000, mid: 15000000, max: 18000000 },
+  { g: 'G3', label: 'Engineer / Officer', min: 18000000, mid: 22000000, max: 26000000 },
+  { g: 'G4', label: 'Senior', min: 26000000, mid: 32000000, max: 40000000 },
+  { g: 'G5', label: 'Lead / Supervisor', min: 38000000, mid: 46000000, max: 56000000 },
+  { g: 'G6', label: 'Asst. Manager', min: 52000000, mid: 62000000, max: 74000000 },
+  { g: 'G7', label: 'Manager', min: 70000000, mid: 85000000, max: 100000000 },
+  { g: 'G8', label: 'Senior Manager', min: 95000000, mid: 115000000, max: 140000000 },
+  { g: 'G9', label: 'Director', min: 130000000, mid: 160000000, max: 200000000 },
+  { g: 'G10', label: 'Executive / MD', min: 180000000, mid: 240000000, max: 320000000 }
 ];
-function _payGrade(e) {
+function _payGradeIdx(e) {
   const lvl = (e.jobLevel || '').toLowerCase(), t = (e.title || '').toLowerCase();
-  if (lvl.includes('director') || t.includes('director')) return _PAY_GRADES[0];
-  if (lvl.includes('head') || t.includes('head of')) return _PAY_GRADES[1];
-  if (lvl.includes('manager') || lvl.includes('lead') || t.includes('manager')) return _PAY_GRADES[2];
-  if (lvl.includes('senior') || t.includes('senior')) return _PAY_GRADES[3];
-  if (lvl.includes('intern') || t.includes('intern')) return _PAY_GRADES[6];
-  if (t.includes('worker') || t.includes('admin') || lvl.includes('junior')) return _PAY_GRADES[5];
-  return _PAY_GRADES[4];
+  if (/managing director|chief|\bceo\b|\bvp\b|executive/.test(t) || lvl.includes('executive')) return 9;
+  if (lvl.includes('director') || t.includes('director')) return 8;
+  if (t.includes('senior manager')) return 7;
+  if (t.includes('asst') || t.includes('assistant manager')) return 5;
+  if (lvl.includes('manager') || t.includes('manager') || t.includes('head')) return 6;
+  if (lvl.includes('lead') || t.includes('lead') || t.includes('supervisor')) return 4;
+  if (lvl.includes('senior') || t.includes('senior')) return 3;
+  if (t.includes('intern') || lvl.includes('intern')) return 0;
+  if (t.includes('worker') || t.includes('admin') || lvl.includes('junior') || lvl.includes('fresh')) return 1;
+  return 2;
 }
-function _payPerson(e) {
-  const sp = _tkDateParts(e.startDate); let yrs = 0;
-  if (sp) yrs = Math.max(0, new Date().getFullYear() - sp.y);
-  let p2 = Math.min(yrs, 10) * 700000;
-  const edu = (e.education || '').toLowerCase();
-  if (edu.includes('master') || edu.includes('phd')) p2 += 2000000;
-  else if (edu.includes('bachelor') || edu.includes('university') || edu.includes('engineer')) p2 += 1000000;
-  if ((e.englishCert || '').trim()) p2 += 800000;
-  return { p2: Math.round(p2), yrs };
-}
-function _payPerf(p1, rating) { const f = rating >= 5 ? 0.20 : rating >= 4 ? 0.12 : rating >= 3 ? 0.06 : 0; return { p3: Math.round(p1 * f), f }; }
+const SI_CAP = 46800000, PIT_SELF = 11000000, PIT_DEP = 4400000;
 function _payPit(t) {
   if (t <= 0) return 0;
   const b = [[5000000, .05], [5000000, .10], [8000000, .15], [14000000, .20], [20000000, .25], [28000000, .30], [Infinity, .35]];
@@ -4058,14 +4086,30 @@ function _payPit(t) {
   return Math.round(tax);
 }
 function _payComputed(e, rating) {
-  const gr = _payGrade(e); const p1 = e.salary ? +e.salary : gr.p1;
-  const per = _payPerson(e); const pf = _payPerf(p1, rating || 3);
-  const gross = p1 + per.p2 + pf.p3;
-  const ins = Math.round(gross * 0.105);
-  const taxable = Math.max(0, gross - ins - 11000000);
+  const gi = _payGradeIdx(e), gr = _PAY_GRADES[gi];
+  const gross = e.salary ? +e.salary : gr.mid;
+  const sp = _tkDateParts(e.startDate); const yrs = sp ? Math.max(0, new Date().getFullYear() - sp.y) : 0;
+  const basic = gross * 0.65;
+  const posAllow = gi >= 4 ? gross * 0.05 : 0;
+  const responsibility = gross * 0.10;
+  const skillSen = (yrs >= 5 || (e.englishCert || '').trim()) ? gross * 0.05 : 0;
+  const P1 = basic + posAllow, P2 = responsibility + skillSen;
+  const kpiTarget = gross * 0.10;
+  const r = rating || 3; const pf = r >= 5 ? 1.5 : r >= 4 ? 1.25 : r >= 3 ? 1.0 : r >= 2 ? 0.5 : 0;
+  const P3 = kpiTarget * pf;
+  const lunch = 730000, phone = 300000, transport = 500000, welfare = lunch + phone + transport;
+  const siBase = Math.min(P1 + P2, SI_CAP);
+  const si = siBase * 0.105;
+  const deps = +e.dependents || 0;
+  const taxable = Math.max(0, (P1 + P2 + P3 + transport) - si - PIT_SELF - deps * PIT_DEP);
   const pit = _payPit(taxable);
-  const net = gross - ins - pit;
-  return { grade: gr.g, p1, p2: per.p2, p3: pf.p3, yrs: per.yrs, gross, ins, pit, net, rating: rating || 3 };
+  const grossPay = P1 + P2 + P3 + welfare;
+  const net = grossPay - si - pit;
+  const R = Math.round;
+  return { gi, grade: gr.g, gradeLabel: gr.label, yrs, rating: r, pf,
+    basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
+    P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
+    siBase: R(siBase), si: R(si), pit: R(pit), grossPay: R(grossPay), net: R(net) };
 }
 let _payCache = {};
 async function tkRenderPayroll() {
@@ -4076,51 +4120,66 @@ async function tkRenderPayroll() {
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
   _payCache = {};
-  let tG = 0, tN = 0, tP1 = 0, tP2 = 0, tP3 = 0;
+  let tG = 0, tN = 0, tSI = 0, tPIT = 0;
   const rows = emps.map(e => {
     const c = _payComputed(e, ratingBy[e.id]); _payCache[e.id] = c;
-    tG += c.gross; tN += c.net; tP1 += c.p1; tP2 += c.p2; tP3 += c.p3;
+    tG += c.grossPay; tN += c.net; tSI += c.si; tPIT += c.pit;
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.title || '') + '</div></div></div></td>' +
-      '<td><span class="badge b-navy" style="font-size:10px">' + c.grade + '</span></td>' +
-      '<td style="text-align:right">' + _PAY_FMT(c.p1) + '</td>' +
-      '<td style="text-align:right;color:#205090">' + _PAY_FMT(c.p2) + '</td>' +
-      '<td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.p3) + '</td>' +
-      '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.gross) + '</td>' +
-      '<td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.ins + c.pit) + '</td>' +
+      '<td><span class="badge b-navy" style="font-size:10px" title="' + c.gradeLabel + '">' + c.grade + '</span></td>' +
+      '<td style="text-align:right">' + _PAY_FMT(c.P1) + '</td>' +
+      '<td style="text-align:right;color:#205090">' + _PAY_FMT(c.P2) + '</td>' +
+      '<td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.P3) + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.grossPay) + '</td>' +
+      '<td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.si + c.pit) + '</td>' +
       '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + '</td>' +
       '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button></td></tr>';
   }).join('');
-  const grades = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading — 3P Model</div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Total pay = <b style="color:var(--text-dark)">P1 Position</b> (grade band) + <b style="color:#205090">P2 Person</b> (seniority &amp; competency) + <b style="color:var(--emerald)">P3 Performance</b> (review rating)</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap">' + _PAY_GRADES.map(g => '<div style="background:var(--soft-bg);border-radius:8px;padding:8px 12px;font-size:12px"><span class="badge b-navy" style="font-size:10px">' + g.g + '</span> <b>' + g.label + '</b><div style="color:var(--text-light)">' + _PAY_FMT(g.p1) + ' / mo</div></div>').join('') + '</div></div>';
+  const grades = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1 Position</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2 Person</b> (Responsibility 10% + Skill/Seniority 0–5%) + <b style="color:var(--emerald)">P3 Performance</b> (KPI 10% × rating) + welfare. SI base = P1+P2 · Ref: HML-CB-001.</div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' +
+    _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
   root.innerHTML = _hrKpiRow([
     _hrKpi('Pay Run', monthName.split(' ')[0]),
     _hrKpi('Employees', emps.length, '#8B5CF6'),
     _hrKpi('Gross Total', _PAY_FMT(tG), '#F59E0B'),
     _hrKpi('Net Total', _PAY_FMT(tN), 'var(--emerald)')
-  ]) + grades +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + monthName + '</div><span style="font-size:11px;color:var(--text-light)">P1+P2+P3 → Gross · Insurance 10.5% + PIT · Net (VND)</span></div><div class="table-wrap"><table style="min-width:920px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1 Position</th><th style="text-align:right">P2 Person</th><th style="text-align:right">P3 Perf.</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net Pay</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
-    '<div style="font-size:11px;color:var(--text-light);margin-top:10px">P1 uses the grade band (or a salary set on the record). P2 grows with years of service + education/English certification. P3 scales with the latest performance rating. Set a base salary on any employee to override P1.</div>';
+  ]) +
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()">↓ Export Pay Run (CSV)</button></div>' +
+    grades +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + monthName + '</div><span style="font-size:11px;color:var(--text-light)">SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M relief · VND</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1 Position</th><th style="text-align:right">P2 Person</th><th style="text-align:right">P3 Perf.</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net Pay</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:10px">Built on the Humiley C&amp;B Policy (HML-CB-001). P3 scales 0.5×–1.5× of the 10% KPI target by latest PADR rating. Set a base salary on an employee to override the grade Mid band.</div>';
+}
+function tkExportPayroll() {
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const head = ['Employee ID', 'Name', 'Department', 'Title', 'Grade', 'P1 Position', 'P2 Person', 'P3 Performance', 'Welfare', 'Gross', 'SI/HI/UI', 'PIT', 'Net'];
+  const rows = emps.map(e => { const c = _payCache[e.id] || _payComputed(e, 3); return [e.id, e.name, e.dept || '', e.title || '', c.grade, c.P1, c.P2, c.P3, c.welfare, c.grossPay, c.si, c.pit, c.net]; });
+  const csv = [head].concat(rows).map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'Humiley_PayRun_' + new Date().toISOString().slice(0, 7) + '.csv'; a.click(); URL.revokeObjectURL(url);
+  toast('Pay run exported (' + emps.length + ' employees)');
 }
 function tkPayslip(empId) {
-  const e = _hrEmp(empId); const c = _payCache[empId]; if (!e || !c) return;
+  const e = _hrEmp(empId); const c = _payCache[empId] || (e && _payComputed(e, 3)); if (!e) return;
   document.getElementById('payslipOverlay')?.remove();
   const el = document.createElement('div'); el.id = 'payslipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  const line = (k, v, color) => '<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
-  el.innerHTML = '<div class="modal" style="max-width:460px">' +
+  const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
+  const grp = t => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + t + '</div>';
+  el.innerHTML = '<div class="modal" style="max-width:480px">' +
     '<div class="modal-header"><div class="modal-title">Payslip — ' + new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) + '</div><button class="modal-close" onclick="document.getElementById(\'payslipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
-    '<div style="background:var(--soft-bg);border-radius:8px;padding:12px 14px;margin-bottom:12px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Earnings (3P)</div>' +
-    line('P1 · Pay for Position', _PAY_FMT(c.p1)) +
-    line('P2 · Pay for Person (' + c.yrs + 'y service)', _PAY_FMT(c.p2), '#205090') +
-    line('P3 · Pay for Performance (' + _hrStars(c.rating) + ')', _PAY_FMT(c.p3), 'var(--emerald)') +
-    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('Gross Salary', _PAY_FMT(c.gross)) + '</div></div>' +
-    '<div style="background:var(--soft-bg);border-radius:8px;padding:12px 14px;margin-bottom:12px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin-bottom:6px">Deductions</div>' +
-    line('Social/Health/Unemployment (10.5%)', '-' + _PAY_FMT(c.ins)) +
-    line('Personal Income Tax', '-' + _PAY_FMT(c.pit)) + '</div>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
+    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Earnings — 3P</div>' +
+    grp('P1 · Position') + line('Basic salary', _PAY_FMT(c.basic), '', 1) + (c.posAllow ? line('Position allowance', _PAY_FMT(c.posAllow), '', 1) : '') +
+    grp('P2 · Person') + line('Responsibility allowance', _PAY_FMT(c.responsibility), '', 1) + (c.skillSen ? line('Skill / Seniority (' + c.yrs + 'y)', _PAY_FMT(c.skillSen), '', 1) : '') +
+    grp('P3 · Performance') + line('KPI variable (' + c.pf.toFixed(2) + '× · ' + _hrStars(c.rating) + ')', _PAY_FMT(c.P3), 'var(--emerald)', 1) +
+    grp('Welfare (non-SI)') + line('Lunch · Phone · Transport', _PAY_FMT(c.welfare), '', 1) +
+    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('GROSS', _PAY_FMT(c.grossPay)) + '</div></div>' +
+    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Deductions</div>' +
+    line('SI/HI/UI 10.5% (base ' + _PAY_FMT(c.siBase) + ')', '-' + _PAY_FMT(c.si)) +
+    line('Personal Income Tax (after ₫11M relief)', '-' + _PAY_FMT(c.pit)) + '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">Net Pay</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
+    '<div style="font-size:10px;color:var(--text-light);margin-top:8px;text-align:center">Confidential · Generated per HML-CB-FRM-016 · Report discrepancies within 5 working days</div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-primary" onclick="window.print()">Save as PDF</button></div></div>';
   document.body.appendChild(el);
 }
