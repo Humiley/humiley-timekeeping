@@ -3808,7 +3808,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [] };
 /* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
 const _ONBOARD_TEMPLATE = [
   { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
@@ -3894,8 +3894,76 @@ function tkCandidateDetail(id) {
   el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Candidate</div><button class="modal-close" onclick="document.getElementById(\'candDetailOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="text-align:center;margin-bottom:14px"><div class="ava-md" style="background:#205090;margin:0 auto 8px;width:54px;height:54px;font-size:18px">' + ini + '</div><div style="font-weight:700;font-size:16px">' + c.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (c.role || '') + '</div><div style="margin-top:6px"><span class="badge ' + stageColor + '">' + (c.stage || '') + '</span></div></div>' +
     row('Applying for', c.role) + row('Department', job ? job.dept : '—') + row('Source', c.source) + row('Rating', c.rating ? _hrStars(c.rating) : 'Not rated') +
-    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px">' + hire + adv + '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkQuickAdd(\'candidates\',\'' + id + '\')">Edit</button><button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCollDelete(\'candidates\',\'' + id + '\',\'recruitment\')">Delete</button></div></div>';
+    (c.eval && c.eval.score ? row('Interview score', c.eval.score + '/5 · ' + (c.eval.rec || '')) : '') +
+    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px">' + hire + adv + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkInterviewEval(\'' + id + '\')">Evaluate</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkQuickAdd(\'candidates\',\'' + id + '\')">Edit</button><button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCollDelete(\'candidates\',\'' + id + '\',\'recruitment\')">Delete</button></div></div>';
   document.body.appendChild(el);
+}
+
+/* Requisition approval routing (QĐ.HR-01: Hiring Mgr → Dept Head → HR → Finance → GM). */
+const _REQ_CHAIN = ['Hiring Manager', 'Department Head', 'HR Director', 'Finance Controller', 'GM / CEO'];
+function tkReqRouting(id) {
+  const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
+  const step = j.appStep || 0; const apps = j.approvals || [];
+  document.getElementById('reqRouteOverlay')?.remove();
+  const chain = _REQ_CHAIN.map((role, i) => {
+    const done = i < step; const cur = i === step && j.status !== 'Approved';
+    const ap = apps[i];
+    const ic = done ? '<span style="color:var(--emerald)">' + _PENCIL.replace(/.*/, '') + '✓</span>' : (cur ? '●' : '○');
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="width:22px;text-align:center;color:' + (done ? 'var(--emerald)' : cur ? 'var(--navy)' : '#cbd5e1') + ';font-weight:700">' + (done ? '✓' : (i + 1)) + '</div><div style="flex:1"><div style="font-size:13px;font-weight:600">' + role + '</div>' + (ap ? '<div style="font-size:11px;color:var(--text-light)">' + ap.decision + ' · ' + (ap.ts || '') + '</div>' : (cur ? '<div style="font-size:11px;color:var(--navy)">Awaiting decision</div>' : '')) + '</div>' + (cur ? '<button class="btn btn-emerald btn-sm" style="font-size:11px;padding:3px 10px" onclick="tkReqApprove(\'' + id + '\')">Approve</button><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:#C00000" onclick="tkReqReject(\'' + id + '\')">Reject</button>' : '') + '</div>';
+  }).join('');
+  const el = document.createElement('div'); el.id = 'reqRouteOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">Requisition Approval — ' + (j.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'reqRouteOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + (j.dept || '') + ' · ' + (j.grade || '') + ' · ' + (j.openings || 1) + ' opening(s) · ' + (j.reason || '') + '<br>Sequential sign-off per QĐ.HR-01. GM approval required for G7+.</div>' + chain +
+    '<div style="margin-top:12px"><span class="badge ' + (j.status === 'Approved' ? 'b-ok' : 'b-warn') + '">' + (j.status || 'Draft') + '</span></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'reqRouteOverlay\').remove()">Close</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkReqApprove(id) {
+  const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
+  const step = j.appStep || 0;
+  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Approved', ts: new Date().toLocaleDateString('en-GB') };
+  j.appStep = step + 1;
+  j.status = j.appStep >= _REQ_CHAIN.length ? 'Approved' : 'Pending ' + _REQ_CHAIN[j.appStep];
+  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); toast(_REQ_CHAIN[step] + ' approved'); tkReqRouting(id); tkRenderRecruitment(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+async function tkReqReject(id) {
+  const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
+  const step = j.appStep || 0;
+  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Rejected', ts: new Date().toLocaleDateString('en-GB') };
+  j.status = 'On Hold';
+  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); toast('Requisition rejected at ' + _REQ_CHAIN[step], 'warn'); document.getElementById('reqRouteOverlay')?.remove(); tkRenderRecruitment(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+
+/* Interview evaluation rubric (BM.HR-01-04: Technical 40 / Behavioral 35 / Culture 15 / Logistics 10). */
+const _EVAL_CRIT = [{ k: 'tech', label: 'Technical Competencies', w: 40 }, { k: 'behav', label: 'Behavioral Competencies', w: 35 }, { k: 'culture', label: 'Culture-Fit & Values', w: 15 }, { k: 'logistics', label: 'Comp / Logistics / Notice', w: 10 }];
+function tkInterviewEval(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  const ev = c.eval || {};
+  document.getElementById('evalOverlay')?.remove();
+  const rows = _EVAL_CRIT.map(cr => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:13px">' + cr.label + ' <span style="color:var(--text-light)">(' + cr.w + '%)</span></div><select class="form-control" style="width:70px" id="eval-' + cr.k + '" onchange="tkEvalCalc()"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option' + ((ev[cr.k] || 0) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>').join('');
+  const el = document.createElement('div'); el.id = 'evalOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">Interview Evaluation — ' + (c.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'evalOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + (c.role || '') + ' · score each 1–5 (BM.HR-01-04)</div>' + rows +
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:10px 0"><span style="font-size:13px;font-weight:600">Weighted score</span><span id="eval-total" style="font-size:18px;font-weight:800;color:var(--navy)">—</span></div>' +
+    '<div class="form-group"><label class="form-label">Recommendation</label><select class="form-control" id="eval-rec"><option value="">—</option><option' + (ev.rec === 'Strong Hire' ? ' selected' : '') + '>Strong Hire</option><option' + (ev.rec === 'Hire' ? ' selected' : '') + '>Hire</option><option' + (ev.rec === 'Conditional' ? ' selected' : '') + '>Conditional</option><option' + (ev.rec === 'No Hire' ? ' selected' : '') + '>No Hire</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Comments</label><textarea class="form-control" id="eval-comment">' + _tkEscT(ev.comment || '') + '</textarea></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'evalOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkEvalSave(\'' + id + '\')">Save evaluation</button></div></div>';
+  document.body.appendChild(el); tkEvalCalc();
+}
+function tkEvalCalc() {
+  let tot = 0; _EVAL_CRIT.forEach(cr => { const v = +(document.getElementById('eval-' + cr.k) || {}).value || 0; tot += v * cr.w / 100; });
+  const el = document.getElementById('eval-total'); if (el) el.textContent = tot ? tot.toFixed(2) + ' / 5' : '—';
+}
+async function tkEvalSave(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  const ev = { rec: document.getElementById('eval-rec').value, comment: document.getElementById('eval-comment').value };
+  let tot = 0; _EVAL_CRIT.forEach(cr => { ev[cr.k] = +document.getElementById('eval-' + cr.k).value || 0; tot += ev[cr.k] * cr.w / 100; });
+  ev.score = +tot.toFixed(2);
+  c.eval = ev; if (ev.score) c.rating = Math.round(ev.score);
+  try { await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c }); document.getElementById('evalOverlay').remove(); toast('Evaluation saved (' + ev.score + '/5 · ' + (ev.rec || '') + ')'); tkRenderRecruitment(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
 /* Centralized Employee Database — KPIs + the rich, searchable employee table. */
@@ -3939,7 +4007,7 @@ async function tkRenderRecruitment() {
       }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>') + '</div>';
   }).join('');
   const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead><tbody>' +
-    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No jobs posted yet</td></tr>') + '</tbody></table></div></div>';
+    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + (j.grade ? ' <span class="badge b-navy" style="font-size:9px">' + j.grade + '</span>' : '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' || j.status === 'Approved' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" title="Approval routing" style="font-size:10px;padding:4px 7px" onclick="tkReqRouting(\'' + j.id + '\')">Route</button>' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No jobs posted yet</td></tr>') + '</tbody></table></div></div>';
   // Monthly dashboard (funnel conversion, SLA tiers, source mix) per QĐ.HR-01
   const funnelStages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
   const fcount = funnelStages.map(s => cands.filter(c => c.stage === s).length);
@@ -4012,7 +4080,7 @@ function tkOnboardToggle(id, idx, checked) {
 async function tkRenderPerformance() {
   const root = document.getElementById('performance-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('reviews'), tkLoadColl('goals'), tkLoadColl('padr')]);
+  await Promise.all([tkLoadColl('reviews'), tkLoadColl('goals'), tkLoadColl('padr'), tkLoadColl('pip')]);
   const reviews = _HR.reviews, goals = _HR.goals;
   const avg = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
   const done = reviews.filter(r => r.status === 'Completed').length;
@@ -4041,10 +4109,12 @@ async function tkRenderPerformance() {
   const revRows = reviews.length ? reviews.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2).toUpperCase() }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + (r.cycle || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('reviews', r.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No reviews yet</td></tr>';
   const reviewsHtml = '<div id="perf-reviews" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'reviews\')">+ Add Review</button></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Reviews (Mid-Year &amp; Annual)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Cycle</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>' + revRows + '</tbody></table></div></div></div>';
-  const pipList = reviews.filter(r => (+r.rating || 3) <= 2);
-  const pip = '<div id="perf-pip" style="display:none">' + (pipList.length ?
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Improvement Plans</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Rating</th><th>Plan Status</th></tr></thead><tbody>' + pipList.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge b-warn" style="font-size:10px">PIP — 60 days</span></td></tr>'; }).join('') + '</tbody></table></div></div>' :
-    '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">No employees are on a Performance Improvement Plan — every team member is meeting expectations.</div>') + '</div>';
+  const pips = _HR.pip || [];
+  const flagged = reviews.filter(r => (+r.rating || 3) <= 2 && !pips.some(p => p.empId === r.empId));
+  const pipRows = pips.length ? pips.map(p => { const e = _hrEmp(p.empId); const ci = (p.checkins || []).length; const sc = p.outcome === 'Pass' ? 'b-ok' : p.outcome === 'Fail' ? 'b-danger' : 'b-warn'; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (p.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.dept || '') + '</td><td>' + (p.duration || 60) + ' days</td><td>' + ci + ' check-ins</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (p.outcome || p.status || 'Active') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPipManage(\'' + p.id + '\')">Manage</button>' + _hrEditDel('pip', p.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No active PIPs</td></tr>';
+  const flagCard = flagged.length ? '<div class="card" style="padding:14px 16px;margin-bottom:16px;background:#FEF3C7"><div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:8px">Flagged for PIP (rating ≤ 2)</div>' + flagged.map(r => '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:4px 0"><span>' + (r.name || '') + ' · ' + (r.dept || '') + ' · ' + _hrStars(r.rating) + '</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkStartPip(\'' + (r.empId || '') + '\',\'' + (r.name || '').replace(/\x27/g, '') + '\',\'' + (r.dept || '') + '\')">Start PIP</button></div>').join('') + '</div>' : '';
+  const pip = '<div id="perf-pip" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="tkStartPip()">+ Start PIP</button></div>' + flagCard +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Improvement Plans (BM.HR-05-03)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Duration</th><th>Check-ins</th><th>Status</th><th></th></tr></thead><tbody>' + pipRows + '</tbody></table></div></div></div>';
   const dist = [1, 2, 3, 4, 5].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
   const maxd = Math.max(1, ...dist);
   const calib = '<div id="perf-calib" style="display:none"><div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:6px">Rating Distribution — Calibration</div><div style="font-size:12px;color:var(--text-light);margin-bottom:14px">Used in calibration meetings to ensure ratings are fair and consistent across teams.</div>' +
@@ -4121,6 +4191,51 @@ async function tkMyGoalsSubmit(id) {
   if (p.status === 'Goal-setting' || p.status === 'Mid-year') p.status = 'Self-assessment';
   try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); document.getElementById('myGoalsOverlay').remove(); toast('Self-assessment submitted to your manager'); }
   catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+}
+
+/* Performance Improvement Plan — create + weekly check-ins (BM.HR-05-03). */
+async function tkStartPip(empId, name, dept) {
+  let e = empId ? _hrEmp(empId) : null;
+  if (!empId) {
+    const opts = (_DEMO_EMPLOYEES || []).filter(x => (x.status || 'Active').toLowerCase() !== 'inactive');
+    const pick = prompt('Employee name for the PIP:'); if (!pick) return;
+    e = opts.find(x => (x.name || '').toLowerCase().includes(pick.toLowerCase())); if (!e) { toast('Employee not found', 'warn'); return; }
+    empId = e.id; name = e.name; dept = e.dept;
+  }
+  const rec = { empId: empId, name: name || (e && e.name), dept: dept || (e && e.dept) || '', duration: 60, startDate: _today(), status: 'Active', outcome: '',
+    concern: '', actions: [{ action: 'Improve quality / output to target', measure: 'Meets standard for 3 consecutive weeks' }], checkins: [] };
+  try { const res = await tkApi('/api/coll/pip', { method: 'POST', body: rec }); (_HR.pip = _HR.pip || []).push(res.item); toast('PIP started for ' + rec.name); tkRenderPerformance(); setTimeout(() => tkPipManage(res.item.id), 300); }
+  catch (e2) { toast('Could not start PIP: ' + e2.message, 'error', 5000); }
+}
+function tkPipManage(id) {
+  const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
+  document.getElementById('pipOverlay')?.remove();
+  const acts = (p.actions || []).map(a => '<tr><td style="font-size:12px">' + (a.action || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (a.measure || '') + '</td></tr>').join('') || '<tr><td colspan="2" style="color:var(--text-light);font-size:12px">No actions</td></tr>';
+  const checks = (p.checkins || []).map((c, i) => '<tr><td>W' + (i + 1) + '</td><td>' + (c.date || '') + '</td><td style="font-size:12px">' + (c.note || '') + '</td></tr>').join('') || '<tr><td colspan="3" style="color:var(--text-light);font-size:12px">No check-ins yet</td></tr>';
+  const el = document.createElement('div'); el.id = 'pipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">PIP — ' + (p.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'pipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div class="form-group"><label class="form-label">Performance concern (measurable)</label><textarea class="form-control" id="pip-concern">' + _tkEscT(p.concern || '') + '</textarea></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Duration</label><select class="form-control" id="pip-duration"><option' + (p.duration == 30 ? ' selected' : '') + '>30</option><option' + (p.duration == 60 ? ' selected' : '') + '>60</option><option' + (p.duration == 90 ? ' selected' : '') + '>90</option></select></div><div class="form-group"><label class="form-label">Outcome</label><select class="form-control" id="pip-outcome"><option value="">In progress</option><option' + (p.outcome === 'Pass' ? ' selected' : '') + '>Pass</option><option' + (p.outcome === 'Extend' ? ' selected' : '') + '>Extend</option><option' + (p.outcome === 'Fail' ? ' selected' : '') + '>Fail</option></select></div></div>' +
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin:6px 0 4px">Improvement actions</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Action</th><th>Measure of success</th></tr></thead><tbody>' + acts + '</tbody></table></div>' +
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin:10px 0 4px">Weekly check-ins</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Week</th><th>Date</th><th>Progress / blocker</th></tr></thead><tbody>' + checks + '</tbody></table></div>' +
+    '<div style="display:flex;gap:8px;margin-top:8px"><input class="form-control" id="pip-newcheck" placeholder="Add this week\'s progress note…" style="flex:1"><button class="btn btn-outline btn-sm" onclick="tkPipAddCheck(\'' + id + '\')">+ Check-in</button></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pipOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPipSave(\'' + id + '\')">Save PIP</button></div></div>';
+  document.body.appendChild(el);
+}
+function tkPipAddCheck(id) {
+  const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
+  const note = (document.getElementById('pip-newcheck') || {}).value; if (!note) return;
+  p.checkins = p.checkins || []; p.checkins.push({ date: new Date().toLocaleDateString('en-GB'), note: note });
+  tkApi('/api/coll/pip/' + id, { method: 'PATCH', body: p }).then(() => { toast('Check-in added'); tkPipManage(id); });
+}
+async function tkPipSave(id) {
+  const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
+  p.concern = document.getElementById('pip-concern').value;
+  p.duration = +document.getElementById('pip-duration').value || 60;
+  p.outcome = document.getElementById('pip-outcome').value;
+  p.status = p.outcome ? p.outcome : 'Active';
+  try { await tkApi('/api/coll/pip/' + id, { method: 'PATCH', body: p }); document.getElementById('pipOverlay').remove(); toast('PIP saved'); tkRenderPerformance(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
 /* Talent Management */
@@ -4415,6 +4530,30 @@ async function tkMyPayslip() {
   if (!e) { toast('Your employee record was not found', 'warn'); return; }
   tkPayslip(e.id);
 }
+function _tkMe() { const u = TK.user || {}; return (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase())); }
+/* Employee — e-acknowledge a policy/document. */
+async function tkAckDoc(doc) {
+  const e = _tkMe(); if (!e) return;
+  try { const res = await tkApi('/api/coll/acks', { method: 'POST', body: { empId: e.id, doc: doc, ts: new Date().toLocaleDateString('en-GB') } }); (_HR.acks = _HR.acks || []).push(res.item); toast('Acknowledged: ' + doc); tkRenderMyProfile(); }
+  catch (err) { toast('Could not save: ' + err.message, 'error', 5000); }
+}
+/* Employee — submit a benefit/welfare claim. */
+function tkSubmitClaim() {
+  document.getElementById('claimOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:420px"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div class="form-group"><label class="form-label">Claim type</label><select class="form-control" id="claim-type"><option>Medical / Health</option><option>Wedding</option><option>Bereavement</option><option>Newborn</option><option>Birthday</option><option>Training</option><option>Other</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Amount (VND)</label><input class="form-control" id="claim-amount" type="number"></div>' +
+    '<div class="form-group"><label class="form-label">Note</label><textarea class="form-control" id="claim-note" placeholder="Description + attach proof to HR"></textarea></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">Submit</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkClaimSave() {
+  const e = _tkMe();
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', type: document.getElementById('claim-type').value, amount: +document.getElementById('claim-amount').value || 0, note: document.getElementById('claim-note').value, status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
+  try { await tkApi('/api/coll/claims', { method: 'POST', body }); document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); }
+  catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
+}
 
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
@@ -4474,11 +4613,13 @@ async function tkRenderHrMetrics() {
 
 /* Quick-add modal for the HR collections */
 const _QA_SPECS = {
-  jobs: { title: 'Post a Job', coll: 'jobs', reload: 'recruitment', fields: [
+  jobs: { title: 'Post a Job / Requisition', coll: 'jobs', reload: 'recruitment', fields: [
     { k: 'title', label: 'Job Title' }, { k: 'dept', label: 'Department' }, { k: 'location', label: 'Location' },
+    { k: 'grade', label: 'Job Grade', type: 'select', options: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10'] },
     { k: 'type', label: 'Type', type: 'select', options: ['Full Time', 'Part Time', 'Contract', 'Intern'] },
     { k: 'openings', label: 'Openings', type: 'number' },
-    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Interviewing', 'On Hold', 'Closed'] }] },
+    { k: 'reason', label: 'Source of need', type: 'select', options: ['Replacement', 'New headcount', 'Project-based', 'Backfill (promotion)', 'Capability gap'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Open', 'Interviewing', 'On Hold', 'Closed'] }] },
   candidates: { title: 'Add Candidate', coll: 'candidates', reload: 'recruitment', fields: [
     { k: 'name', label: 'Candidate Name' }, { k: 'role', label: 'Applying For' },
     { k: 'stage', label: 'Stage', type: 'select', options: ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'] },
@@ -4643,6 +4784,22 @@ function tkRenderMyProfile() {
     sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
     sec('Leave &amp; Benefits', bar('Annual Leave', aU, aT, 'prog-navy') + bar('Sick Leave', sU, sT, 'prog-emerald') + row('Comp-off Days', comp + ' days')) +
     sec('Emergency Contact', e.emergency ? '<div style="font-size:13px;line-height:1.6">' + D(e.emergency) + '</div>' : '<div style="font-size:13px;color:var(--text-light)">No emergency contact on file</div>') +
+    (() => {
+      const sdp = _tkDateParts(e.startDate); const days = sdp ? Math.floor((Date.now() - new Date(sdp.y, sdp.m - 1, sdp.d).getTime()) / 86400000) : 0;
+      const elig = (label, ok, note) => '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px"><span style="color:var(--text-light)">' + label + '</span><span style="font-weight:600;color:' + (ok ? 'var(--emerald)' : 'var(--text-light)') + '">' + (ok ? 'Eligible' : note) + '</span></div>';
+      return sec('Benefits &amp; Allowances',
+        elig('Health top-up (IP 200M / OP 20M)', days >= 91, 'from Day 91') +
+        elig('Family health rider', days >= 365, 'from Day 365') +
+        elig('Group accident (24× gross)', true, '') +
+        row('Lunch allowance', '₫730,000/mo') +
+        '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="tkSubmitClaim()">Submit a claim</button>');
+    })() +
+    (() => {
+      const docs = ['Employee Handbook', 'Code of Conduct & Anti-Harassment', 'IT Acceptable Use Policy', 'Confidentiality, IP & Data', 'HSE / Site Safety', 'C&B Policy (HML-CB-001)'];
+      const ackOf = nm => (_HR.acks || []).find(a => a.empId === e.id && a.doc === nm);
+      const rows = docs.map(d => { const a = ackOf(d); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span>' + d + '</span>' + (a ? '<span style="font-size:11px;color:var(--emerald);white-space:nowrap">✓ ' + (a.ts || 'Acknowledged') + '</span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="tkAckDoc(&quot;' + d.replace(/"/g, '') + '&quot;)">Acknowledge</button>') + '</div>'; }).join('');
+      return '<div class="card" style="padding:18px 20px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:12px">Documents &amp; Policies</div>' + rows + '</div>';
+    })() +
   '</div>' +
   '<div class="card" style="padding:18px 20px;margin-top:20px">' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:13px">Reporting Line</div>' +
@@ -4924,7 +5081,7 @@ function showView(id, navEl, title) {
   if (id === 'manager') { loadManagerView(); }
   if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderHrModules(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
-  if (id === 'myprofile') { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }
+  if (id === 'myprofile') { tkLoadColl('acks').then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
