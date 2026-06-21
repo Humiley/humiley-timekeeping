@@ -1134,23 +1134,28 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div><h1>Check In / Out</h1><p>GPS-verified attendance · OpenStreetMap</p></div>
   </div>
-  <div class="grid-75">
-    <!-- LEFT: check-in panel -->
-    <div style="display:flex;flex-direction:column;gap:16px">
-      <div class="card" style="padding:20px">
-        <!-- Clock row -->
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px">
-          <div>
-            <div class="checkin-clock" id="ci-time"><span id="live-clock">--:--</span></div>
-            <div class="checkin-date" id="ci-date"><span id="live-date">Loading…</span></div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:11px;color:var(--text-light)">Today's Hours</div>
-            <div style="font-size:26px;font-weight:700;color:var(--navy)" id="dur-val">0h 0m</div>
-            <div style="font-size:11px;color:var(--text-light)">since check-in</div>
-          </div>
-        </div>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <!-- HERO status -->
+    <div id="ci-hero" style="padding:22px 26px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px;background:linear-gradient(135deg,#0f2f5e,#205090);color:#fff;border-radius:24px;box-shadow:0 14px 34px rgba(32,80,144,.18)">
+      <div>
+        <div style="font-size:34px;font-weight:800;letter-spacing:.5px" id="live-clock">--:--</div>
+        <div style="font-size:13px;opacity:.85" id="live-date">Loading…</div>
+      </div>
+      <div id="ci-hero-status" style="font-size:14px;font-weight:600;background:rgba(255,255,255,.15);padding:9px 16px;border-radius:22px">Not checked in</div>
+      <div style="text-align:right">
+        <div style="font-size:11px;opacity:.8;text-transform:uppercase;letter-spacing:.5px">Today's Hours</div>
+        <div style="font-size:28px;font-weight:800" id="dur-val">0h 0m</div>
+      </div>
+    </div>
 
+    <!-- KPI strip (this week, from real attendance) -->
+    <div id="ci-kpis" style="display:flex;gap:14px;flex-wrap:wrap"></div>
+
+    <!-- two even columns -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="ci-cols">
+      <!-- LEFT: check-in panel -->
+      <div class="card" style="padding:20px">
+        <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:14px">Check In / Out</div>
         <!-- Select work location + GPS verification -->
         <div id="ci-verify-panel" style="border:2px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px">
           <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Where are you checking in from?</label>
@@ -1162,8 +1167,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
           </div>
           <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
-
-        <!-- Check In / Out Buttons (Check In appears only when inside the selected zone) -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <button id="btn-checkin" onclick="tkCheckIn()" disabled
             style="display:none;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--emerald),#00965a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;align-items:center;justify-content:center;gap:8px">
@@ -1176,68 +1179,23 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
             Check Out
           </button>
         </div>
-
-        <!-- Status message -->
         <div id="checkin-msg" style="display:none;padding:10px 14px;border-radius:8px;font-size:12px;line-height:1.6;border:1px solid transparent"></div>
       </div>
 
-      <!-- today's record -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Today's Record</div><span class="badge b-ok" id="today-status-badge">On Time</span></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;text-align:center">
-          <div style="padding:10px;background:var(--soft-bg);border-radius:8px">
-            <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Check In</div>
-            <div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:4px" id="rec-checkin">08:02</div>
-          </div>
-          <div style="padding:10px;background:var(--soft-bg);border-radius:8px">
-            <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Check Out</div>
-            <div style="font-size:20px;font-weight:700;color:var(--text-light);margin-top:4px" id="rec-checkout">—</div>
-          </div>
-          <div style="padding:10px;background:var(--soft-bg);border-radius:8px">
-            <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Total</div>
-            <div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:4px" id="rec-total">—</div>
-          </div>
-          <div style="padding:10px;background:var(--soft-bg);border-radius:8px">
-            <div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Zone</div>
-            <div style="font-size:14px;font-weight:700;color:var(--emerald);margin-top:6px" id="rec-zone">In Zone</div>
+      <!-- RIGHT: today's record + history -->
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Today's Record</div><span class="badge b-ok" id="today-status-badge">—</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;text-align:center">
+            <div style="padding:10px;background:var(--soft-bg);border-radius:8px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Check In</div><div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:4px" id="rec-checkin">—</div></div>
+            <div style="padding:10px;background:var(--soft-bg);border-radius:8px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Check Out</div><div style="font-size:20px;font-weight:700;color:var(--text-light);margin-top:4px" id="rec-checkout">—</div></div>
+            <div style="padding:10px;background:var(--soft-bg);border-radius:8px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Total</div><div style="font-size:20px;font-weight:700;color:var(--navy);margin-top:4px" id="rec-total">—</div></div>
+            <div style="padding:10px;background:var(--soft-bg);border-radius:8px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px">Zone</div><div style="font-size:14px;font-weight:700;color:var(--emerald);margin-top:6px" id="rec-zone">—</div></div>
           </div>
         </div>
-      </div>
-
-    </div>
-
-    <!-- RIGHT: map + history -->
-    <div style="display:flex;flex-direction:column;gap:16px">
-
-      <!-- recent history -->
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Recent Check-In History</div></div>
-        <div style="display:flex;flex-direction:column;gap:0">
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--soft-bg);font-size:12px">
-            <span style="color:var(--text-light)">May 9 (Today)</span>
-            <span style="font-weight:700">08:02 → In Progress</span>
-            <span class="badge b-ok" style="font-size:10px">On Time</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--soft-bg);font-size:12px">
-            <span style="color:var(--text-light)">May 8 (Thu)</span>
-            <span style="font-weight:700">08:05 → 17:12</span>
-            <span class="badge b-ok" style="font-size:10px">9h 7m</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--soft-bg);font-size:12px">
-            <span style="color:var(--text-light)">May 7 (Wed)</span>
-            <span style="font-weight:700">08:31 → 17:08</span>
-            <span class="badge b-warn" style="font-size:10px">Late 1min</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--soft-bg);font-size:12px">
-            <span style="color:var(--text-light)">May 6 (Tue)</span>
-            <span style="font-weight:700">07:58 → 17:30</span>
-            <span class="badge b-ok" style="font-size:10px">9h 32m</span>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:12px">
-            <span style="color:var(--text-light)">May 5 (Mon)</span>
-            <span style="font-weight:700">08:12 → 17:00</span>
-            <span class="badge b-ok" style="font-size:10px">8h 48m</span>
-          </div>
+        <div class="card">
+          <div class="card-hdr"><div class="card-title">Recent Check-In History</div><span style="font-size:11px;color:var(--text-light)">Last 8 days</span></div>
+          <div id="ci-history-body" style="display:flex;flex-direction:column;gap:0"></div>
         </div>
       </div>
     </div>
@@ -2911,6 +2869,7 @@ function tkCheckIn() {
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Checked in at ' + t + '</span> · ' + _tkSelectedZone.name;
   if (typeof toast === 'function') toast('Checked in at ' + t + ' · ' + _tkSelectedZone.name);
+  try { tkRenderCheckin(); } catch (e) {}
 }
 
 function tkCheckOut() {
@@ -2929,6 +2888,44 @@ function tkCheckOut() {
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
   if (typeof toast === 'function') toast('Checked out at ' + t);
+  try { tkRenderCheckin(); } catch (e) {}
+}
+
+/* Render the Check In/Out page from real attendance for the current user (A6). */
+function tkRenderCheckin() {
+  try { tkPopulateZoneSelect(); } catch (e) {}
+  const today = new Date().toISOString().slice(0, 10);
+  const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const todayRow = mine.find(r => r.date === today);
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  // Today's Record
+  set('rec-checkin', todayRow && (todayRow.in || todayRow.clock_in) ? (todayRow.in || todayRow.clock_in) : '—');
+  set('rec-checkout', todayRow && (todayRow.out || todayRow.clock_out) ? (todayRow.out || todayRow.clock_out) : '—');
+  set('rec-total', todayRow && todayRow.hrs ? todayRow.hrs : '—');
+  set('rec-zone', todayRow && todayRow.loc ? todayRow.loc : (_checkedIn ? 'In Zone' : '—'));
+  const badge = document.getElementById('today-status-badge');
+  if (badge) { const st = todayRow ? (todayRow.status || 'on-time') : ''; badge.textContent = todayRow ? (st === 'late' ? 'Late' : st === 'absent' ? 'Absent' : 'On Time') : 'No record'; badge.className = 'badge ' + (st === 'late' ? 'b-warn' : st === 'absent' ? 'b-danger' : todayRow ? 'b-ok' : 'b-info'); }
+  // Hero status pill
+  const hero = document.getElementById('ci-hero-status');
+  if (hero) {
+    if (_checkedIn || (todayRow && (todayRow.in || todayRow.clock_in) && !(todayRow.out || todayRow.clock_out))) hero.innerHTML = '● Checked in' + (todayRow && (todayRow.in || todayRow.clock_in) ? ' since ' + (todayRow.in || todayRow.clock_in) : '');
+    else if (todayRow && (todayRow.out || todayRow.clock_out)) hero.textContent = 'Checked out at ' + (todayRow.out || todayRow.clock_out);
+    else hero.textContent = 'Not checked in';
+  }
+  // KPI strip — this week
+  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const wk = mine.filter(r => r.date >= weekAgo);
+  const present = wk.filter(r => (r.in || r.clock_in)).length;
+  const late = wk.filter(r => r.status === 'late').length;
+  let mins = 0; wk.forEach(r => { const h = (r.hrs || '').match(/(\d+)h\s*(\d+)?/); if (h) mins += (+h[1]) * 60 + (+(h[2] || 0)); });
+  const kpiEl = document.getElementById('ci-kpis');
+  if (kpiEl) kpiEl.innerHTML = [_hrKpi('Present (this week)', present, 'var(--emerald)'), _hrKpi('Late (this week)', late, '#F59E0B'), _hrKpi('Hours (this week)', Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm', '#205090')].join('');
+  // History — last 8
+  const body = document.getElementById('ci-history-body');
+  if (body) {
+    const rows = mine.slice(0, 8);
+    body.innerHTML = rows.length ? rows.map((r, i) => { const cin = r.in || r.clock_in, cout = r.out || r.clock_out; const cls = r.status === 'late' ? 'b-warn' : r.status === 'absent' ? 'b-danger' : 'b-ok'; const lbl = r.status === 'absent' ? 'Absent' : (cout ? (r.hrs || '') : 'In progress'); return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:12px' + (i < rows.length - 1 ? ';border-bottom:1px solid var(--soft-bg)' : '') + '"><span style="color:var(--text-light)">' + tkFmtDate(r.date) + (r.date === today ? ' (Today)' : '') + '</span><span style="font-weight:700">' + (cin || '—') + ' → ' + (cout || (cin ? 'In Progress' : '—')) + '</span><span class="badge ' + cls + '" style="font-size:10px">' + lbl + '</span></div>'; }).join('') : '<div style="padding:16px;text-align:center;color:var(--text-light);font-size:12px">No attendance history yet</div>';
+  }
 }
 
 function _tkSet(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
@@ -5650,6 +5647,7 @@ function showView(id, navEl, title) {
   if (id === 'payroll') { try { tkRenderPayroll(); } catch (e) { console.warn('payroll:', e.message); } }
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
+  if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
