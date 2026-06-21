@@ -679,7 +679,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" placeholder="Search employees, records…">
     </div>
-    <button class="btn btn-emerald btn-sm" onclick="openModal('leaveModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Request Leave</button>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
@@ -5158,10 +5157,8 @@ async function tkMailRequester(to, name, subject, body) {
     } catch (e) {}
   }
   try {
-    const a = document.createElement('a');
-    a.href = 'mailto:' + encodeURIComponent(to) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-    a.style.display = 'none'; document.body.appendChild(a); a.click(); setTimeout(() => { try { a.remove(); } catch (e) {} }, 0);
-    toast('Email to ' + (name || to) + ' ready — review & send', 'info', 4500);
+    _openAsOutlook(to, subject, body);
+    toast('Opening Outlook — message to ' + (name || to) + ' ready. Review & Send.', 'info', 5000);
   } catch (e) { toast('Could not open mail client', 'warn'); }
   return true;
 }
@@ -5281,13 +5278,31 @@ function _payslipBody(e, c, period) {
     grp('Welfare (non-SI)') + line('Lunch · Phone · Transport', _PAY_FMT(c.welfare), '', 1) +
     ((c.extraEarn && c.extraEarn.length) ? grp('Additional earnings') + c.extraEarn.map(x => line(x.label || 'Earning', _PAY_FMT(x.amt), 'var(--emerald)', 1)).join('') : '') +
     '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('GROSS', _PAY_FMT(c.grossPay)) + '</div></div>' +
-    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Deductions — Employee</div>' +
-    line('Social Insurance (8%)', '-' + _PAY_FMT(c.eeBhxh), '', 1) + line('Health Insurance (1.5%)', '-' + _PAY_FMT(c.eeBhyt), '', 1) + line('Unemployment (1%)', '-' + _PAY_FMT(c.eeBhtn), '', 1) +
-    line('Personal Income Tax', '-' + _PAY_FMT(c.pit), '', 1) + (c.unpaidDeduction ? line('Unpaid leave (' + c.unpaidDays + 'd)', '-' + _PAY_FMT(c.unpaidDeduction), '', 1) : '') +
-    ((c.extraDeduct && c.extraDeduct.length) ? c.extraDeduct.map(x => line(x.label || 'Deduction', '-' + _PAY_FMT(x.amt), '', 1)).join('') : '') + '</div>' +
+    // ── Statutory contributions — two consistent cards: Employee (deducted) + Employer (paid on top) ──
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:2px 0 6px">Statutory Insurance — Employee &amp; Employer (HML-CB-001)</div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:12px">' +
+      _payStatCard('Employee — deducted', '10.5% of SI base', [
+        ['Social Insurance', '8%', c.eeBhxh], ['Health Insurance', '1.5%', c.eeBhyt], ['Unemployment Ins.', '1%', c.eeBhtn]
+      ], c.eeBhxh + c.eeBhyt + c.eeBhtn, '#205090') +
+      _payStatCard('Employer — paid on top', '23.5% of SI base', [
+        ['Social Insurance', '17.5%', c.erBhxh], ['Health Insurance', '3%', c.erBhyt], ['Unemployment Ins.', '1%', c.erBhtn], ['Trade Union', '2%', c.erTu]
+      ], c.erTotal, '#00B060') +
+    '</div>' +
+    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Other deductions — Employee</div>' +
+    line('Personal Income Tax (PIT)', '-' + _PAY_FMT(c.pit), '', 1) + (c.unpaidDeduction ? line('Unpaid leave (' + c.unpaidDays + 'd)', '-' + _PAY_FMT(c.unpaidDeduction), '', 1) : '') +
+    ((c.extraDeduct && c.extraDeduct.length) ? c.extraDeduct.map(x => line(x.label || 'Deduction', '-' + _PAY_FMT(x.amt), '', 1)).join('') : '') +
+    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('TOTAL DEDUCTIONS', '-' + _PAY_FMT(c.si + c.pit + (c.unpaidDeduction || 0))) + '</div></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">NET PAY</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
-    '<div style="font-size:10px;color:var(--text-light);margin-top:8px">Employer also contributes ' + _PAY_FMT(c.erTotal) + ' (SI/HI/UI 21.5% + 2% Trade Union). Total cost to company ' + _PAY_FMT(c.employerCost) + '.</div>' +
+    '<div style="font-size:10px;color:var(--text-light);margin-top:8px;text-align:center">Total cost to company (gross + employer statutory) = <b>' + _PAY_FMT(c.employerCost) + '</b></div>' +
     '<div style="font-size:10px;color:var(--text-light);margin-top:4px;text-align:center">Confidential · per HML-CB-FRM-016 · report discrepancies within 5 working days</div>';
+}
+/* One statutory card (Employee or Employer) — consistent design, used twice on the payslip. */
+function _payStatCard(title, sub, rows, total, accent) {
+  const r = rows.map(x => '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0"><span style="color:var(--text-light)">' + x[0] + ' <span style="color:#9aa3ad">(' + x[1] + ')</span></span><span style="font-weight:600">' + _PAY_FMT(x[2]) + '</span></div>').join('');
+  return '<div style="flex:1;background:#fff;border:1px solid var(--line);border-top:3px solid ' + accent + ';border-radius:8px;padding:10px 12px">' +
+    '<div style="font-size:11px;font-weight:800;color:' + accent + '">' + title + '</div>' +
+    '<div style="font-size:9.5px;color:var(--text-light);margin-bottom:6px">' + sub + '</div>' + r +
+    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">Subtotal</span><span style="font-weight:800;color:' + accent + '">' + _PAY_FMT(total) + '</span></div></div>';
 }
 function tkPayslip(empId) {
   const e = _hrEmp(empId); if (!e) return;
@@ -5300,6 +5315,35 @@ function tkPayslip(empId) {
     '<div id="payslip-body">' + _payslipHTML(e, c, period) + '</div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-outline" onclick="tkEmailPayslip(\'' + empId + '\')">' + tkIcon('send') + 'Email PDF (confidential)</button><button class="btn btn-primary" onclick="tkDownloadPayslipPDF(\'' + empId + '\')">' + tkIcon('download') + 'Download PDF</button></div></div>';
   document.body.appendChild(el);
+}
+/* Open a ready-to-send message in Outlook (or the default mail app) with the body pre-filled and the
+   PDF already ATTACHED. We build an RFC-822 .eml with `X-Unsent: 1` — Outlook opens it as a new,
+   editable draft (To / Subject / Body / attachment all set) so the user just reviews and clicks Send.
+   This works without Microsoft 365 keys, which plain mailto: links cannot (they can't carry attachments). */
+function _openAsOutlook(to, subject, body, attName, attB64) {
+  const CRLF = '\r\n';
+  const b = 'HMLMIME_' + Math.abs(((subject || '') + (to || '')).length * 1009 + ((attB64 || '').length % 100000));
+  let eml = '';
+  eml += 'To: ' + (to || '') + CRLF;
+  eml += 'Subject: ' + (subject || '') + CRLF;
+  eml += 'X-Unsent: 1' + CRLF;                 // ← tells Outlook to open this as a NEW unsent draft
+  eml += 'MIME-Version: 1.0' + CRLF;
+  if (attB64) {
+    eml += 'Content-Type: multipart/mixed; boundary="' + b + '"' + CRLF + CRLF;
+    eml += '--' + b + CRLF + 'Content-Type: text/plain; charset="utf-8"' + CRLF + 'Content-Transfer-Encoding: 8bit' + CRLF + CRLF + (body || '') + CRLF + CRLF;
+    eml += '--' + b + CRLF + 'Content-Type: application/pdf; name="' + attName + '"' + CRLF + 'Content-Transfer-Encoding: base64' + CRLF + 'Content-Disposition: attachment; filename="' + attName + '"' + CRLF + CRLF;
+    eml += (attB64.match(/.{1,76}/g) || []).join(CRLF) + CRLF;
+    eml += '--' + b + '--' + CRLF;
+  } else {
+    eml += 'Content-Type: text/plain; charset="utf-8"' + CRLF + CRLF + (body || '') + CRLF;
+  }
+  const blob = new Blob([eml], { type: 'message/rfc822' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = ((attName ? attName.replace(/\.pdf$/i, '') : ('Humiley_' + (subject || 'message').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40))) + '.eml');
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { try { a.remove(); URL.revokeObjectURL(url); } catch (e) {} }, 200);
+  return true;
 }
 async function tkEmailPayslip(empId) {
   const e = _hrEmp(empId); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
@@ -5320,10 +5364,14 @@ async function tkEmailPayslip(empId) {
       if (pdfB64) msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: _payslipFilename(e, period), contentType: 'application/pdf', contentBytes: pdfB64 }];
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
       if (resp.ok) { tkAudit('Payslip emailed', e.name, period); toast('Payslip PDF emailed confidentially to ' + e.name); return; }
-    } catch (err) { /* fall back to download */ }
+    } catch (err) { /* fall back to Outlook compose */ }
   }
-  // No live mail (e.g. demo / not signed in): just download the PDF.
-  if (doc) { doc.save(_payslipFilename(e, period)); tkAudit('Payslip downloaded', e.name, period); toast('Email not available — payslip PDF downloaded instead', 'info', 5000); }
+  // No live Graph: open Outlook with the payslip already attached + default content, ready to send.
+  if (pdfB64) {
+    _openAsOutlook(e.email, subject, body, _payslipFilename(e, period), pdfB64);
+    tkAudit('Payslip prepared for Outlook', e.name, period);
+    toast('Opening Outlook — payslip attached to ' + e.name + '. Review & Send.', 'info', 6000);
+  } else if (doc) { doc.save(_payslipFilename(e, period)); toast('Could not open mail — payslip downloaded instead', 'warn', 5000); }
   else { toast('Could not generate the payslip PDF', 'error', 5000); }
 }
 async function tkMyPayslip() {
@@ -5934,11 +5982,14 @@ async function tkRenderHrMetrics() {
   const byType = {}; emps.forEach(e => { const t = e.employmentType || 'Full Time'; byType[t] = (byType[t] || 0) + 1; });
   // Training status (from enrollments)
   const tr = { Completed: 0, 'In progress': 0, Enrolled: 0 }; (_HR.enrollments || []).forEach(x => { const s = x.status || 'Enrolled'; tr[s] = (tr[s] || 0) + 1; });
+  // Avg performance (PADR) by department — new dashboard chart
+  const perfAgg = {}; emps.forEach(e => { const d = e.dept || '—'; (perfAgg[d] = perfAgg[d] || { s: 0, n: 0 }); perfAgg[d].s += (ratingBy[e.id] || 3); perfAgg[d].n++; });
+  const perfDeptVals = deptKeys.map(d => perfAgg[d] && perfAgg[d].n ? Math.round(perfAgg[d].s / perfAgg[d].n * 10) / 10 : 0);
   const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
   ch.innerHTML = chartCard('Staff by Department', 'dc-deptbar') + chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
     chartCard('Gender Split', 'dc-gender') + chartCard('Tenure Bands', 'dc-tenure') + chartCard('Attendance Status', 'dc-att') +
     chartCard('Leave Days by Type', 'dc-leave') + chartCard('Headcount Growth', 'dc-trend') +
-    chartCard('Employment Type', 'dc-emptype') + chartCard('Training Status', 'dc-training');
+    chartCard('Employment Type', 'dc-emptype') + chartCard('Training Status', 'dc-training') + chartCard('Avg Performance by Dept', 'dc-perfdept');
   tkBuildDashCharts({
     deptLabels: deptKeys, deptVals: deptKeys.map(d => byDept[d]),
     funnelLabels: stages, funnelVals: funnel,
@@ -5949,7 +6000,8 @@ async function tkRenderHrMetrics() {
     leaveLabels: Object.keys(leaveByType), leaveVals: Object.values(leaveByType),
     trendLabels: trendLabels, trendVals: trendVals,
     empTypeLabels: Object.keys(byType), empTypeVals: Object.values(byType),
-    trainingLabels: Object.keys(tr), trainingVals: Object.values(tr)
+    trainingLabels: Object.keys(tr), trainingVals: Object.values(tr),
+    perfDeptLabels: deptKeys, perfDeptVals: perfDeptVals
   });
   try { tkRenderDashLevelBand(); } catch (e) {}
 }
@@ -7194,21 +7246,31 @@ async function tkRenderRecruitReport() {
     _hrKpi('Offer acceptance', accept + '%', 'var(--emerald)')
   ]);
   const funnel = stages.map(s => cands.filter(c => c.stage === s).length);
-  const fmax = Math.max(1, ...funnel);
-  const bar = (l, v) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:90px;font-size:12px">' + l + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:20px"><div style="width:' + Math.round(v / fmax * 100) + '%;background:#00B060;height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:30px;text-align:right;font-weight:700;font-size:12px">' + v + '</div></div>';
+  const stageAll = stages.concat(['Rejected']); const stageAllVals = stageAll.map(s => cands.filter(c => c.stage === s).length);
+  const openByDept = {}; jobs.filter(j => j.status !== 'Closed').forEach(j => { const dd = j.dept || '—'; openByDept[dd] = (openByDept[dd] || 0) + (parseInt(j.openings, 10) || 0); });
+  const odk = Object.keys(openByDept).sort((a, b) => openByDept[b] - openByDept[a]);
   const jobRows = jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td></tr>').join('');
   el.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-recruit\',\'Humiley_Recruitment_Report.pdf\',{title:\'RECRUITMENT REPORT\',docCode:\'HML-HR-REC\'})">' + tkIcon('download') + 'Export PDF</button></div>' + kpis +
-    '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:12px">Hiring Funnel</div>' + stages.map((s, i) => bar(s, funnel[i])).join('') + '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' +
+      _rptChartCard('Hiring Funnel', 'rc-funnel') + _rptChartCard('Pipeline by Stage', 'rc-stage') + _rptChartCard('Open Vacancies by Department', 'rc-opendept') +
+    '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Openings</th><th>Status</th></tr></thead><tbody>' + (jobRows || '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No positions</td></tr>') + '</tbody></table></div></div>';
+  if (typeof Chart !== 'undefined') {
+    _mkChart('rc-funnel', { type: 'bar', data: { labels: stages, datasets: [{ data: funnel, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
+    _mkChart('rc-stage', { type: 'doughnut', data: { labels: stageAll, datasets: [{ data: stageAllVals, backgroundColor: ['#3168A8', '#0ea5e9', '#8b5cf6', '#f59e0b', '#00B060', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
+    _mkChart('rc-opendept', { type: 'bar', data: { labels: odk, datasets: [{ data: odk.map(d => openByDept[d]), backgroundColor: _grad('#f7b94e', '#f59e0b'), borderRadius: 6, maxBarThickness: 40 }] }, options: _axisOpts(false) });
+  }
 }
+/* Report chart card (PowerBI-style canvas tile). */
+function _rptChartCard(title, id, h) { return '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:' + (h || 210) + 'px"><canvas id="' + id + '"></canvas></div></div>'; }
 /* Payroll report — company cost summary + by-department breakdown (no individual figures). */
 async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
   await tkLoadColl('reviews');
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
-  const byDept = {}; let gross = 0, net = 0, erCost = 0, pit = 0, si = 0;
-  emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
+  const byDept = {}; let gross = 0, net = 0, erCost = 0, pit = 0, si = 0, erStat = 0, P1 = 0, P2 = 0, P3 = 0, welfare = 0;
+  emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; erStat += (c.erTotal || 0); P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0); P3 += (c.P3 || 0); welfare += (c.welfare || 0); (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
   const kpis = _hrKpiRow([
     _hrKpi('Headcount', emps.length, '#8B5CF6'),
     _hrKpi('Gross payroll', _PAY_FMT(gross), '#F59E0B'),
@@ -7218,8 +7280,15 @@ async function tkRenderPayrollReport() {
   const dk = Object.keys(byDept).sort((a, b) => byDept[b].er - byDept[a].er);
   const drows = dk.map(d => '<tr><td style="font-weight:600">' + d + '</td><td style="text-align:right">' + byDept[d].n + '</td><td style="text-align:right">' + _PAY_FMT(byDept[d].gross) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(byDept[d].er) + '</td></tr>').join('');
   el.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'PAYROLL REPORT\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + kpis +
-    '<div class="card" style="padding:14px 16px;margin-bottom:18px;font-size:12px;color:var(--text-light)">Statutory this period — employee SI/HI/UI ' + _PAY_FMT(si) + ' · PIT ' + _PAY_FMT(pit) + '. Figures follow the Salary 3P model (HML-CB-001).</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' +
+      _rptChartCard('Employer Cost by Department', 'pr-dept') + _rptChartCard('Gross Cost Composition (3P)', 'pr-3p') + _rptChartCard('Statutory — Employee vs Employer', 'pr-stat') +
+    '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + emps.length + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
+  if (typeof Chart !== 'undefined') {
+    _mkChart('pr-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => byDept[d].er), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+    _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
+    _mkChart('pr-stat', { type: 'doughnut', data: { labels: ['Employee 10.5%', 'Employer 23.5%'], datasets: [{ data: [si, erStat], backgroundColor: ['#8b5cf6', '#205090'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Statutory', fmt: _money } });
+  }
 }
 
 function renderLeaveReport() {
@@ -8020,26 +8089,45 @@ let _dashChart = null, _trendChart = null, _leaveChart = null, _deptChart = null
 const _CHART_FONT = { family: 'Calibri', size: 11 };
 const _BRAND = ['#205090', '#00B060', '#f59e0b', '#8b5cf6', '#3168A8', '#ef4444', '#0ea5e9', '#14b8a6'];
 let _dashHrCharts = {};
-function _mkChart(id, cfg) {
+/* Compact number formatter for axes / labels (1.2k, 3.4M, ₫…). */
+function _num(v) { v = +v || 0; const a = Math.abs(v); if (a >= 1e9) return (v / 1e9).toFixed(1).replace(/\.0$/, '') + 'B'; if (a >= 1e6) return (v / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'; if (a >= 1e3) return (v / 1e3).toFixed(1).replace(/\.0$/, '') + 'k'; return String(Math.round(v * 10) / 10); }
+const _money = v => '₫' + _num(v);
+/* Vertical / horizontal gradient fills for that polished PowerBI look. */
+function _grad(top, bot) { return (c) => { const a = c.chart.chartArea; if (!a) return top; const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom); g.addColorStop(0, top); g.addColorStop(1, bot); return g; }; }
+function _gradH(left, right) { return (c) => { const a = c.chart.chartArea; if (!a) return right; const g = c.chart.ctx.createLinearGradient(a.left, 0, a.right, 0); g.addColorStop(0, left); g.addColorStop(1, right); return g; }; }
+/* Opt-in plugins. Formatters/labels live on the chart INSTANCE ($fmt/$labels/$center) — never in
+   chart.options, because Chart.js treats any function found in options as a scriptable and invokes it
+   with a context object (which would crash _num on `+object`). */
+const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (chart.config.type !== 'bar' || !chart.$labels) return; const ctx = chart.ctx, fmt = chart.$fmt || _num, horiz = chart.options.indexAxis === 'y'; ctx.save(); ctx.font = '700 10px Calibri'; ctx.fillStyle = '#334155'; chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return; meta.data.forEach((el, i) => { const v = ds.data[i]; if (v == null || v === '') return; if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(fmt(v), el.x + 5, el.y); } else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(fmt(v), el.x, el.y - 4); } }); }); ctx.restore(); } };
+const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText(o.label || 'Total', cx, cy + 15); ctx.restore(); } };
+if (typeof Chart !== 'undefined') { try { Chart.register(_valueLabels, _doughCenter); Chart.defaults.font.family = 'Calibri'; Chart.defaults.color = '#6b7280'; } catch (e) {} }
+function _mkChart(id, cfg, extra) {
   const ctx = document.getElementById(id); if (!ctx || typeof Chart === 'undefined') return;
   if (_dashHrCharts[id]) { try { _dashHrCharts[id].destroy(); } catch (e) {} }
-  _dashHrCharts[id] = new Chart(ctx, cfg);
+  const inst = new Chart(ctx, cfg);
+  inst.$labels = (cfg.type === 'bar'); inst.$fmt = extra && extra.fmt; inst.$center = extra && extra.center;
+  _dashHrCharts[id] = inst; return inst;
 }
-const _axisOpts = (horiz) => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#f3f4f6', display: !horiz }, ticks: { color: '#6b7280', font: _CHART_FONT } }, y: { grid: { color: '#f3f4f6', display: !!horiz }, ticks: { color: '#374151', font: _CHART_FONT } } } });
-const _doughnutOpts = { responsive: true, maintainAspectRatio: false, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: '#374151', padding: 10, boxWidth: 12 } } } };
+const _tooltip = (fmt) => ({ backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, displayColors: false, titleFont: { family: 'Calibri', size: 12, weight: '700' }, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const v = c.parsed.y != null ? c.parsed.y : (c.parsed.x != null ? c.parsed.x : c.parsed); return ' ' + ((fmt || _num)(v)); } } });
+const _axisOpts = (horiz, fmt) => ({ responsive: true, maintainAspectRatio: false, layout: { padding: { top: 14, right: horiz ? 30 : 6 } }, plugins: { legend: { display: false }, tooltip: _tooltip(fmt) }, scales: { x: { grid: { color: '#eef1f4', display: !horiz, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT } }, y: { beginAtZero: true, grid: { color: '#eef1f4', display: !!horiz, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, callback: function (v) { return horiz ? this.getLabelForValue(v) : (fmt || _num)(v); } } } }, animation: { duration: 650 } });
+const _doughTooltip = { backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const ds = c.dataset.data || []; const tot = ds.reduce((s, x) => s + (+x || 0), 0); const v = +c.parsed || 0; return ' ' + c.label + ': ' + _num(v) + (tot ? ' (' + Math.round(v / tot * 100) + '%)' : ''); } } };
+const _doughOpts = () => ({ responsive: true, maintainAspectRatio: false, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: '#475569', padding: 10, boxWidth: 10, usePointStyle: true } }, tooltip: _doughTooltip }, animation: { animateRotate: true, duration: 650 } });
+const _doughnutOpts = _doughOpts();
+const _starFmt = v => (Math.round(v * 10) / 10) + '★';
 function tkBuildDashCharts(d) {
   if (typeof Chart === 'undefined') return;
-  _mkChart('dc-deptbar', { type: 'bar', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: '#205090', borderRadius: 5 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
-  _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
-  _mkChart('dc-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.funnelVals, backgroundColor: '#00B060', borderRadius: 5 }] }, options: _axisOpts(false) });
-  _mkChart('dc-perf', { type: 'bar', data: { labels: d.perfLabels, datasets: [{ data: d.perfVals, backgroundColor: '#f59e0b', borderRadius: 5 }] }, options: _axisOpts(false) });
-  _mkChart('dc-gender', { type: 'doughnut', data: { labels: d.genderLabels, datasets: [{ data: d.genderVals, backgroundColor: ['#3168A8', '#8b5cf6', '#94a3b8'], borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
-  _mkChart('dc-tenure', { type: 'bar', data: { labels: d.tenureLabels, datasets: [{ data: d.tenureVals, backgroundColor: '#3168A8', borderRadius: 5 }] }, options: _axisOpts(false) });
-  _mkChart('dc-att', { type: 'doughnut', data: { labels: d.attLabels, datasets: [{ data: d.attVals, backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
-  _mkChart('dc-leave', { type: 'doughnut', data: { labels: d.leaveLabels, datasets: [{ data: d.leaveVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
-  _mkChart('dc-trend', { type: 'line', data: { labels: d.trendLabels, datasets: [{ data: d.trendVals, borderColor: '#205090', backgroundColor: 'rgba(32,80,144,.10)', fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: '#205090' }] }, options: _axisOpts(false) });
-  _mkChart('dc-emptype', { type: 'doughnut', data: { labels: d.empTypeLabels, datasets: [{ data: d.empTypeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
-  _mkChart('dc-training', { type: 'doughnut', data: { labels: d.trainingLabels, datasets: [{ data: d.trainingVals, backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
+  _mkChart('dc-deptbar', { type: 'bar', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
+  _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
+  _mkChart('dc-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.funnelVals, backgroundColor: _grad('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 38 }] }, options: _axisOpts(false) });
+  _mkChart('dc-perf', { type: 'bar', data: { labels: d.perfLabels, datasets: [{ data: d.perfVals, backgroundColor: ['#00B060', '#3dbb6b', '#f59e0b', '#f97316', '#ef4444'], borderRadius: 6, maxBarThickness: 38 }] }, options: _axisOpts(false) });
+  _mkChart('dc-gender', { type: 'doughnut', data: { labels: d.genderLabels, datasets: [{ data: d.genderVals, backgroundColor: ['#3168A8', '#8b5cf6', '#94a3b8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'People' } });
+  _mkChart('dc-tenure', { type: 'bar', data: { labels: d.tenureLabels, datasets: [{ data: d.tenureVals, backgroundColor: _grad('#5a8fd6', '#3168A8'), borderRadius: 6, maxBarThickness: 44 }] }, options: _axisOpts(false) });
+  _mkChart('dc-att', { type: 'doughnut', data: { labels: d.attLabels, datasets: [{ data: d.attVals, backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Records' } });
+  _mkChart('dc-leave', { type: 'doughnut', data: { labels: d.leaveLabels, datasets: [{ data: d.leaveVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  _mkChart('dc-trend', { type: 'line', data: { labels: d.trendLabels, datasets: [{ data: d.trendVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false) });
+  _mkChart('dc-emptype', { type: 'doughnut', data: { labels: d.empTypeLabels, datasets: [{ data: d.empTypeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
+  _mkChart('dc-training', { type: 'doughnut', data: { labels: d.trainingLabels, datasets: [{ data: d.trainingVals, backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Enrols' } });
+  _mkChart('dc-perfdept', { type: 'bar', data: { labels: d.perfDeptLabels, datasets: [{ data: d.perfDeptVals, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 22 }] }, options: Object.assign(_axisOpts(true, _starFmt), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 5, grid: { color: '#eef1f4', drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, stepSize: 1 } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT } } } }) }, { fmt: _starFmt });
 }
 
 function initDashChart(period = 'week') {
