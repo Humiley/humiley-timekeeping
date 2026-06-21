@@ -1235,6 +1235,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <button class="btn btn-primary btn-sm" onclick="loadAttendance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
+  <!-- Attendance dashboard (On Time / Late / Absent) -->
+  <div id="att-kpis" style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:18px"></div>
+
   <!-- Manager filter bar (hidden for staff) -->
   <div class="filter-bar" id="att-filter-bar">
     <div class="search-box">
@@ -2944,7 +2947,11 @@ function tkRenderCheckin() {
   const late = wk.filter(r => r.status === 'late').length;
   let mins = 0; wk.forEach(r => { const h = (r.hrs || '').match(/(\d+)h\s*(\d+)?/); if (h) mins += (+h[1]) * 60 + (+(h[2] || 0)); });
   const kpiEl = document.getElementById('ci-kpis');
-  if (kpiEl) kpiEl.innerHTML = [_hrKpi('Present (this week)', present, 'var(--emerald)'), _hrKpi('Late (this week)', late, '#F59E0B'), _hrKpi('Hours (this week)', Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm', '#205090')].join('');
+  if (kpiEl) kpiEl.innerHTML = [
+    _kpiTile('Present (this week)', present, '#00B060', TK_ICON.check),
+    _kpiTile('Late (this week)', late, '#F59E0B', TK_ICON.clock),
+    _kpiTile('Hours (this week)', Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm', '#205090', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
+  ].join('');
   // History — last 8
   const body = document.getElementById('ci-history-body');
   if (body) {
@@ -3905,6 +3912,10 @@ async function tkLoadColl(name) {
 function _hrEmp(id) { return (_DEMO_EMPLOYEES || []).find(e => e.id === id); }
 function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:#205090">' + ((e && e.ini) || '?') + '</div>'; }
 const _hrKpi = (label, val, color) => '<div class="card" style="flex:1;min-width:150px;padding:16px 18px"><div style="font-size:23px;font-weight:800;color:' + (color || 'var(--navy)') + '">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
+/* Icon KPI tile (icon-left + value + label) — the consistent professional KPI used across pages. */
+const _kpiTile = (label, val, color, icon) => '<div class="card" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
+  '<div style="width:42px;height:42px;border-radius:11px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
+  '<div style="min-width:0"><div style="font-size:21px;font-weight:800;color:var(--navy);line-height:1.1;white-space:nowrap">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div></div></div>';
 const _hrKpiRow = cards => '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">' + cards.join('') + '</div>';
 const _hrStars = n => { n = Math.max(0, Math.min(5, +n || 0)); return '<span style="color:#F59E0B">' + '★'.repeat(n) + '</span><span style="color:#d4d8de">' + '★'.repeat(5 - n) + '</span>'; };
 const _TRASH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -7309,12 +7320,23 @@ function filterTable() {
       <td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td>
     </tr>`;
   }).join('');
-  // update summary line
+  // update summary line + KPI dashboard
   const ontime = rows.filter(r=>r.status==='on-time').length;
   const late   = rows.filter(r=>r.status==='late').length;
   const absent = rows.filter(r=>r.status==='absent').length;
   const summary = document.getElementById('att-summary');
   if (summary) summary.textContent = rows.length + ' records · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent';
+  const kp = document.getElementById('att-kpis');
+  if (kp && typeof _kpiTile === 'function') {
+    const rate = rows.length ? Math.round(ontime / rows.length * 100) : 0;
+    kp.innerHTML = [
+      _kpiTile('Total records', rows.length, '#205090', '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'),
+      _kpiTile('On Time', ontime, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+      _kpiTile('Late', late, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+      _kpiTile('Absent', absent, '#EF4444', '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+      _kpiTile('On-time rate', rate + '%', '#8B5CF6', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>')
+    ].join('');
+  }
 }
 
 function exportAttendance() {
