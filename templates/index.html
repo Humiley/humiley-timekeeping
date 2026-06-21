@@ -2654,6 +2654,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
      SCRIPTS
 ════════════════════════════════════════════════════════════ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -4727,7 +4728,7 @@ async function tkRenderPayroll() {
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
     '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button><button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button></div></div>' +
-    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Pay Register</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Calculation</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
 }
@@ -4760,9 +4761,12 @@ function _payRenderReg() {
     '<td><span class="badge b-navy" style="font-size:10px" title="' + c.gradeLabel + '">' + c.grade + '</span></td>' +
     '<td style="text-align:right">' + _PAY_FMT(c.P1) + '</td><td style="text-align:right;color:#205090">' + _PAY_FMT(c.P2) + '</td><td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.P3) + '</td>' +
     '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.grossPay) + '</td><td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.si + c.pit + c.unpaidDeduction) + '</td>' +
-    '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + '</td><td><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button></td></tr>'; }).join('');
+    '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + '</td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button> <button class="btn btn-ghost btn-sm" title="Download PDF" style="font-size:10px;padding:4px 7px" onclick="tkDownloadPayslipPDF(\'' + e.id + '\')">' + tkIcon('download', 12) + '</button></td></tr>'; }).join('');
+  const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
+  const rolled = (_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual');
+  const rollBar = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700;color:var(--navy)">Monthly calculation — ' + period + '</div><div style="font-size:12px;color:var(--text-light)">Per-employee Salary 3P (HML-CB-001). Review the figures below, then roll out to finalise this month\'s pay run.</div></div>' + (rolled ? '<span class="badge b-ok" style="font-size:11px">' + tkIcon('check', 12) + ' Rolled out</span>' : '<button class="btn btn-emerald btn-sm" onclick="tkRollOutPayroll()">' + tkIcon('check') + 'Roll out ' + period + '</button>') + '</div>';
   const grades = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2</b> (Responsibility 10% + Skill 0–5%) + <b style="color:var(--emerald)">P3</b> (KPI 10% × rating) + welfare · SI base = P1+P2 · HML-CB-001.</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' + _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
-  el.innerHTML = grades + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  el.innerHTML = rollBar + grades + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
@@ -4810,6 +4814,20 @@ async function tkCreatePayRun() {
     toast('Pay run created for ' + period + ' — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
   } catch (e) { toast('Could not create pay run: ' + e.message, 'error', 5000); }
 }
+/* Roll out (finalise) the current month's company payroll from the per-employee calculation. */
+async function tkRollOutPayroll() {
+  const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
+  if ((_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual')) { toast(period + ' is already rolled out', 'warn'); return; }
+  const t = _payTotals;
+  if (!confirm('Roll out ' + period + ' payroll?\n\n' + t.count + ' employees · gross ' + _PAY_FMT(t.gross) + ' · net ' + _PAY_FMT(t.net) + '\n\nThis finalises the month and records the pay run.')) return;
+  try {
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'company', period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    (_HR.payruns = _HR.payruns || []).push(res.item);
+    tkAudit('Payroll rolled out', period, t.count + ' employees · net ' + _PAY_FMT(t.net));
+    toast(period + ' payroll rolled out — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
+    _payRenderReg(); _payRenderRuns();
+  } catch (e) { toast('Could not roll out: ' + e.message, 'error', 5000); }
+}
 function tkExportPayroll() {
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const head = ['Employee ID', 'Name', 'Department', 'Title', 'Grade', 'P1', 'P2', 'P3', 'Welfare', 'Gross', 'EE SI/HI/UI', 'PIT', 'Net', 'ER Cost'];
@@ -4819,6 +4837,73 @@ function tkExportPayroll() {
   const a = document.createElement('a'); a.href = url; a.download = 'Humiley_PayRun_' + _payYM.y + '-' + String(_payYM.m + 1).padStart(2, '0') + '.csv'; a.click(); URL.revokeObjectURL(url);
   toast('Pay run exported (' + emps.length + ' employees)');
 }
+/* Build an A4 PDF payslip on the Humiley letterhead (jsPDF). Returns the doc or null. */
+function _payslipPDF(e, c, period) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) return null;
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 16; let y = 18;
+  const NAVY = [32, 80, 144], GREY = [110, 120, 130], DARK = [33, 37, 41], GREEN = [0, 150, 80];
+  const fmt = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
+  // ── Letterhead ──
+  const logo = ((document.querySelector('.sidebar-logo img') || document.getElementById('login-main-logo') || {}).src) || '';
+  if (logo) { try { doc.addImage(logo, 'PNG', M, y - 4, 28, 12); } catch (x) {} }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor.apply(doc, NAVY);
+  doc.text('HUMILEY GROUP INC.', M + 32, y + 1);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, GREY);
+  doc.text('Humiley Engineering & Solutions  ·  200 3/2 Street, District 10, HCMC', M + 32, y + 6);
+  doc.text('CONFIDENTIAL PAYSLIP', W - M, y + 1, { align: 'right' });
+  doc.setFont('helvetica', 'bold'); doc.setTextColor.apply(doc, DARK); doc.text(period, W - M, y + 6, { align: 'right' });
+  y += 13; doc.setDrawColor.apply(doc, NAVY); doc.setLineWidth(0.7); doc.line(M, y, W - M, y); y += 9;
+  // ── Employee ──
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, DARK); doc.text(e.name || '', M, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, GREY);
+  doc.text([(e.id || ''), (e.title || ''), (e.dept || ''), 'Grade ' + c.grade].filter(Boolean).join('   ·   '), M, y + 5); y += 12;
+  // ── Period stats ──
+  doc.setFontSize(9); doc.setTextColor.apply(doc, GREY);
+  doc.text('Working days: ' + c.workingDays + '     Unpaid days: ' + c.unpaidDays + '     KPI factor: ' + c.pf.toFixed(2) + '×     PADR: ' + c.rating + '/5', M, y); y += 8;
+  // ── helpers ──
+  const sec = (t) => { doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY); doc.text(t, M, y); y += 5; };
+  const row = (k, v, color) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(80, 80, 80); doc.text(k, M + 3, y); doc.setFont('helvetica', 'bold'); if (color) doc.setTextColor.apply(doc, color); else doc.setTextColor.apply(doc, DARK); doc.text(v, W - M, y, { align: 'right' }); y += 6; };
+  const rule = () => { doc.setDrawColor(225, 228, 232); doc.setLineWidth(0.3); doc.line(M, y - 3, W - M, y - 3); };
+  // ── Earnings ──
+  sec('EARNINGS — Salary 3P (per HML-CB-001)');
+  row('P1 · Basic salary (65%)', fmt(c.basic)); if (c.posAllow) row('P1 · Position allowance', fmt(c.posAllow));
+  row('P2 · Responsibility (10%)', fmt(c.responsibility)); if (c.skillSen) row('P2 · Skill / Seniority (' + c.yrs + 'y)', fmt(c.skillSen));
+  row('P3 · KPI variable (' + c.pf.toFixed(2) + '×)', fmt(c.P3), GREEN);
+  row('Welfare — lunch · phone · transport (non-SI)', fmt(c.welfare));
+  rule(); row('GROSS PAY', fmt(c.grossPay)); y += 3;
+  // ── Deductions ──
+  sec('DEDUCTIONS — Employee statutory');
+  row('Social Insurance (8%)', '-' + fmt(c.eeBhxh)); row('Health Insurance (1.5%)', '-' + fmt(c.eeBhyt)); row('Unemployment Insurance (1%)', '-' + fmt(c.eeBhtn));
+  row('Personal Income Tax (PIT)', '-' + fmt(c.pit)); if (c.unpaidDeduction) row('Unpaid leave (' + c.unpaidDays + 'd)', '-' + fmt(c.unpaidDeduction));
+  rule(); row('TOTAL DEDUCTIONS', '-' + fmt(c.si + c.pit + (c.unpaidDeduction || 0))); y += 4;
+  // ── Net pay band ──
+  doc.setFillColor.apply(doc, NAVY); doc.roundedRect(M, y, W - 2 * M, 16, 2, 2, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.text('NET PAY', M + 6, y + 10);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text(fmt(c.net), W - M - 6, y + 11, { align: 'right' }); y += 24;
+  // ── Footer ──
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, GREY);
+  doc.text('Employer also contributes ' + fmt(c.erTotal) + ' (SI/HI/UI + 2% Trade Union). Total cost to company ' + fmt(c.employerCost) + '.', M, y); y += 4;
+  doc.text('Confidential · generated per HML-CB-FRM-016 · please report any discrepancy within 5 working days.', M, y);
+  doc.setFontSize(8); doc.setTextColor(160, 165, 172); doc.text('Humiley Group Inc. — People & Workplace Portal', W / 2, 288, { align: 'center' });
+  return doc;
+}
+function _payslipFilename(e, period) { return 'Humiley_Payslip_' + (e.name || 'employee').replace(/\s+/g, '_') + '_' + (period || '').replace(/\s+/g, '_') + '.pdf'; }
+function tkDownloadPayslipPDF(empId) {
+  const e = _hrEmp(empId); if (!e) return;
+  const c = _payslipComputed(empId); const period = _payslipPeriod();
+  const doc = _payslipPDF(e, c, period);
+  if (!doc) { toast('PDF engine not loaded — using browser print', 'warn'); window.print(); return; }
+  doc.save(_payslipFilename(e, period));
+  toast('Payslip PDF downloaded');
+}
+function _payslipComputed(empId) {
+  const e = _hrEmp(empId); let c = _payCache[empId];
+  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
+  return c;
+}
+function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
 function _payslipHTML(e, c, period) {
   const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
   const grp = t => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + t + '</div>';
@@ -4850,26 +4935,33 @@ function tkPayslip(empId) {
   const el = document.createElement('div'); el.id = 'payslipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">Payslip — ' + period + '</div><button class="modal-close" onclick="document.getElementById(\'payslipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div id="payslip-body">' + _payslipHTML(e, c, period) + '</div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-outline" onclick="tkEmailPayslip(\'' + empId + '\')">Email (confidential)</button><button class="btn btn-primary" onclick="window.print()">Save as PDF</button></div></div>';
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-outline" onclick="tkEmailPayslip(\'' + empId + '\')">' + tkIcon('send') + 'Email PDF (confidential)</button><button class="btn btn-primary" onclick="tkDownloadPayslipPDF(\'' + empId + '\')">' + tkIcon('download') + 'Download PDF</button></div></div>';
   document.body.appendChild(el);
 }
 async function tkEmailPayslip(empId) {
   const e = _hrEmp(empId); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
   let c = _payCache[empId];
   if (!c) { const rv = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, rv ? +rv.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
-  const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : '');
+  const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : _payslipPeriod());
   const subject = 'Confidential Payslip — ' + period;
-  const body = 'Dear ' + e.name + ',\n\nPlease find your confidential payslip for ' + period + ':\n\n' +
-    'Grade: ' + c.grade + '\nGross: ' + _PAY_FMT(c.grossPay) + '\nEmployee SI/HI/UI: -' + _PAY_FMT(c.si) + '\nPIT: -' + _PAY_FMT(c.pit) + '\nNET PAY: ' + _PAY_FMT(c.net) + '\n\nThis information is strictly confidential. Report any discrepancy within 5 working days.\n\nHumiley HR';
+  const body = 'Dear ' + e.name + ',\n\nPlease find attached your confidential payslip for ' + period + ' (PDF).\n\n' +
+    'Summary — Gross: ' + _PAY_FMT(c.grossPay) + ' · NET PAY: ' + _PAY_FMT(c.net) + '\n\nThis information is strictly confidential. Report any discrepancy within 5 working days.\n\nHumiley Group Inc. — HR';
+  // Build the PDF attachment
+  let pdfB64 = '';
+  try { const doc = _payslipPDF(e, c, period); if (doc) pdfB64 = doc.output('datauristring').split(',')[1]; } catch (x) {}
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: e.email } }] }, saveToSentItems: true }) });
-      if (resp.ok) { toast('Payslip emailed confidentially to ' + e.name); return; }
+      const msg = { subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: e.email } }] };
+      if (pdfB64) msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: _payslipFilename(e, period), contentType: 'application/pdf', contentBytes: pdfB64 }];
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      if (resp.ok) { tkAudit('Payslip emailed', e.name, period); toast('Payslip PDF emailed confidentially to ' + e.name); return; }
     } catch (err) { /* fall back */ }
   }
-  window.location.href = 'mailto:' + encodeURIComponent(e.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-  toast('Opening confidential email to ' + e.name, 'info', 5000);
+  // Fallback: download the PDF + open the mail client (attachment can't be auto-added via mailto)
+  if (pdfB64) { try { _payslipPDF(e, c, period).save(_payslipFilename(e, period)); } catch (x) {} }
+  window.location.href = 'mailto:' + encodeURIComponent(e.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body + '\n\n(PDF payslip downloaded — please attach it.)');
+  toast('PDF downloaded — attach it to the email that just opened', 'info', 6000);
 }
 async function tkMyPayslip() {
   await tkLoadColl('reviews');
