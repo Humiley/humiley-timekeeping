@@ -6,6 +6,7 @@
 <title>Humiley Group Inc. — People & Workplace Portal</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
+input,textarea,select,button{font-family:'Segoe UI',system-ui,Arial,sans-serif}
 :root{
   --navy:#205090;--navy-deep:#163866;--navy-light:#3168A8;
   --emerald:#00B060;--emerald-deep:#008548;
@@ -956,7 +957,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-onboarding" class="view">
   <div class="page-header">
     <div><h1>Onboarding</h1><p>New-hire checklists &amp; first-week readiness</p></div>
-    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('onboarding')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add New Hire</button>
+    <button class="btn btn-primary btn-sm" onclick="tkAddNewHire()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add New Hire</button>
   </div>
   <div id="onboarding-root"></div>
 </div>
@@ -4130,7 +4131,7 @@ function tkRenderDatabase() {
   const byDept = {}; emps.filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').forEach(e => { const d = e.dept || '—'; byDept[d] = (byDept[d] || 0) + 1; });
   const deptKeys = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]);
   const palette = ['#205090', '#00B060', '#F59E0B', '#8B5CF6', '#3168A8', '#EF4444', '#0ea5e9', '#14b8a6'];
-  const deptCard = deptKeys.map((d, i) => '<div style="flex:1;min-width:120px;background:var(--soft-bg);border-radius:12px;padding:12px 14px;border-left:4px solid ' + palette[i % palette.length] + '"><div style="font-size:20px;font-weight:800;color:var(--navy)">' + byDept[d] + '</div><div style="font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + d + '</div></div>').join('');
+  const deptCard = deptKeys.map((d, i) => { const col = palette[i % palette.length]; return '<div style="flex:1;min-width:130px;background:var(--soft-bg);border-radius:12px;padding:12px 14px;border-left:4px solid ' + col + ';display:flex;align-items:center;gap:11px"><div style="width:34px;height:34px;border-radius:9px;background:' + col + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="' + col + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div><div style="min-width:0"><div style="font-size:20px;font-weight:800;color:var(--navy);line-height:1.1">' + byDept[d] + '</div><div style="font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + d + '</div></div></div>'; }).join('');
   if (k) k.innerHTML = _hrKpiRow([
     _hrKpi('Total Employees', emps.length),
     _hrKpi('Active', active, 'var(--emerald)'),
@@ -4205,6 +4206,34 @@ function tkCandidateAdvance(id) {
 }
 
 /* Onboarding */
+/* Add a new hire — choose which onboarding activities apply (checkbox per activity). */
+function tkAddNewHire() {
+  document.getElementById('newHireOverlay')?.remove();
+  const byPhase = {}; _ONBOARD_TEMPLATE.forEach((t, i) => { (byPhase[t.phase] = byPhase[t.phase] || []).push({ t, i }); });
+  const checklist = Object.keys(byPhase).map(ph => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:10px 0 3px">' + ph + '</div>' +
+    byPhase[ph].map(({ t, i }) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" class="nh-act" data-i="' + i + '" checked><span>' + t.label + '</span></label>').join('')).join('');
+  const el = document.createElement('div'); el.id = 'newHireOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:92vh;overflow:auto"><div class="modal-header"><div class="modal-title">Add New Hire</div><button class="modal-close" onclick="document.getElementById(\'newHireOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Full name</label><input class="form-control" id="nh-name"></div><div class="form-group"><label class="form-label">Role / position</label><input class="form-control" id="nh-role"></div></div>' +
+    '<div class="form-group"><label class="form-label">Start date</label><input type="date" class="form-control" id="nh-start"></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin:6px 0 2px"><div style="font-weight:700;font-size:12px;color:var(--navy)">Onboarding activities</div><label style="font-size:11px;color:var(--text-light);cursor:pointer"><input type="checkbox" id="nh-all" checked onchange="document.querySelectorAll(\'.nh-act\').forEach(c=>c.checked=this.checked)"> Select all</label></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:4px">Tick the activities that apply to this employee.</div>' +
+    '<div class="card" style="padding:10px 14px">' + checklist + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'newHireOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkAddNewHireGo()">' + tkIcon('check') + 'Create</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkAddNewHireGo() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const name = g('nh-name').trim(); if (!name) { toast('Enter the new hire\'s name', 'warn'); return; }
+  const picked = [...document.querySelectorAll('.nh-act:checked')].map(c => +c.getAttribute('data-i'));
+  const tasks = _ONBOARD_TEMPLATE.filter((t, i) => picked.includes(i)).map(t => ({ label: t.label, phase: t.phase, done: false }));
+  try {
+    const r = await tkApi('/api/coll/onboarding', { method: 'POST', body: { name: name, role: g('nh-role'), startDate: g('nh-start'), tasks: tasks, milestones: _onboardMilestones() } });
+    if (r && r.item) (_HR.onboarding = _HR.onboarding || []).push(r.item);
+    tkAudit('New hire onboarding started', name, tasks.length + ' activities');
+    document.getElementById('newHireOverlay').remove(); toast('Onboarding started for ' + name + ' (' + tasks.length + ' activities)'); tkRenderOnboarding();
+  } catch (e) { toast('Could not create: ' + e.message, 'error', 5000); }
+}
 async function tkRenderOnboarding() {
   const root = document.getElementById('onboarding-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
@@ -4542,16 +4571,24 @@ function _myGoalsRead(p) {
   document.querySelectorAll('#mygoals-root [data-obj]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-obj')); if (g) g.objective = el.value; });
   document.querySelectorAll('#mygoals-root [data-wt]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-wt')); if (g) g.weight = +el.value || 0; });
 }
-function tkMyGoalAdd() {
-  const me = _tkMe() || {}; const p = (_HR.padr || []).find(x => x.empId === me.id); if (!p) return;
-  const obj = (document.getElementById('mg-obj') || {}).value || ''; if (!obj.trim()) { toast('Enter an objective', 'warn'); return; }
+async function tkMyGoalAdd() {
+  const me = _tkMe() || {}; let p = (_HR.padr || []).find(x => x.empId === me.id);
+  const obj = (document.getElementById('mg-obj') || {}).value || ''; if (!obj.trim()) { toast('Enter or pick an objective first', 'warn'); return; }
+  if (!p) { await tkMyGoalsStart(); p = (_HR.padr || []).find(x => x.empId === me.id); if (!p) return; }
   _myGoalsRead(p);
   (p.goals = p.goals || []).push({ id: _newGoalId(), objective: obj, weight: +(document.getElementById('mg-wt') || {}).value || 0, target: (document.getElementById('mg-tgt') || {}).value || '', selfScore: 0, mgrScore: 0, progress: 0, status: 'Not started', source: 'self', addedBy: me.email || me.id });
-  tkRenderMyGoals();
+  try {
+    await tkApi('/api/coll/padr/' + p.id, { method: 'PATCH', body: p });
+    tkAudit('Goal added', me.name, obj);
+    toast('Goal added'); tkRenderMyGoals();
+  } catch (e) { toast('Could not add goal: ' + e.message, 'error', 5000); }
 }
-function tkMyGoalDel(gid) {
+async function tkMyGoalDel(gid) {
   const me = _tkMe() || {}; const p = (_HR.padr || []).find(x => x.empId === me.id); if (!p) return;
-  _myGoalsRead(p); p.goals = (p.goals || []).filter(g => g.id !== gid); tkRenderMyGoals();
+  if (!confirm('Remove this goal?')) return;
+  _myGoalsRead(p); p.goals = (p.goals || []).filter(g => g.id !== gid);
+  try { await tkApi('/api/coll/padr/' + p.id, { method: 'PATCH', body: p }); toast('Goal removed'); tkRenderMyGoals(); }
+  catch (e) { toast('Could not remove: ' + e.message, 'error', 5000); }
 }
 async function tkMyGoalsStart() {
   const me = _tkMe() || {};
