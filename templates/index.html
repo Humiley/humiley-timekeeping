@@ -3406,16 +3406,16 @@ const _TK_HOLIDAYS = [
 /* Default portal content + merge with admin-managed overrides (window._TK_PORTAL). */
 const _TK_PORTAL_DEFAULTS = {
   announcements: [
-    { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.' },
-    { tag: 'Safety', color: '#F59E0B', title: 'HSE Refresher — Long An Factory', body: 'Mandatory health & safety refresher for all site and factory staff this month. Check your email for your scheduled slot.' },
-    { tag: 'Company', color: '#00B060', title: 'Q2 Town Hall — Project Highlights', body: 'Join the company-wide town hall to review Q2 delivery milestones and the H2 roadmap. Calendar invite to follow.' }
+    { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.', audience: 'All' },
+    { tag: 'Safety', color: '#F59E0B', title: 'HSE Refresher — Long An Factory', body: 'Mandatory health & safety refresher for all site and factory staff this month. Check your email for your scheduled slot.', audience: 'All' },
+    { tag: 'Company', color: '#00B060', title: 'Q2 Town Hall — Project Highlights', body: 'Join the company-wide town hall to review Q2 delivery milestones and the H2 roadmap. Calendar invite to follow.', audience: 'All' }
   ],
   holidays: _TK_HOLIDAYS,
   learning: [
-    { name: 'Workplace Safety (HSE) Essentials', meta: 'Required · 45 min', pct: 100 },
-    { name: 'Project Management Fundamentals', meta: 'In progress · 6 modules', pct: 40 },
-    { name: 'Business English — Intermediate', meta: 'Recommended', pct: 0 },
-    { name: 'Leadership & Communication', meta: 'Recommended', pct: 0 }
+    { name: 'Workplace Safety (HSE) Essentials', meta: 'Required · 45 min', pct: 100, url: '' },
+    { name: 'Project Management Fundamentals', meta: 'In progress · 6 modules', pct: 40, url: '' },
+    { name: 'Business English — Intermediate', meta: 'Recommended', pct: 0, url: '' },
+    { name: 'Leadership & Communication', meta: 'Recommended', pct: 0, url: '' }
   ],
   resources: [
     { label: 'Employee Handbook', url: '' }, { label: 'Company Policies', url: '' },
@@ -3469,21 +3469,28 @@ function _tkPortalRenderRows() {
   const m = _tkPortalModel; if (!m) return;
   const I = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html || '<div style="font-size:12px;color:var(--text-light);padding:8px 0">None yet — click “+ Add”.</div>'; };
   const rm = (t, i) => '<button class="btn btn-ghost btn-sm" onclick="tkPortalRemove(\'' + t + '\',' + i + ')" style="flex-shrink:0">Remove</button>';
+  const depts = ['All'].concat([...new Set((_DEMO_EMPLOYEES || []).map(e => e.dept).filter(Boolean))].sort());
+  const audSel = (i, sel) => '<select class="form-control" style="flex:0 0 150px" title="Show to" onchange="tkPortalSet(\'announcements\',' + i + ',\'audience\',this)">' +
+    depts.map(d => '<option' + (((sel || 'All') === d) ? ' selected' : '') + '>' + d + '</option>').join('') + '</select>';
   I('portal-announcements', m.announcements.map((it, i) =>
     '<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
     '<div style="display:flex;gap:8px;margin-bottom:6px">' +
-    '<input class="form-control" style="flex:0 0 110px" placeholder="Tag" value="' + _tkEscA(it.tag) + '" oninput="tkPortalSet(\'announcements\',' + i + ',\'tag\',this)">' +
+    '<input class="form-control" style="flex:0 0 100px" placeholder="Tag" value="' + _tkEscA(it.tag) + '" oninput="tkPortalSet(\'announcements\',' + i + ',\'tag\',this)">' +
     '<input class="form-control" style="flex:1" placeholder="Title" value="' + _tkEscA(it.title) + '" oninput="tkPortalSet(\'announcements\',' + i + ',\'title\',this)">' + rm('announcements', i) +
-    '</div><textarea class="form-control" rows="2" placeholder="Message" oninput="tkPortalSet(\'announcements\',' + i + ',\'body\',this)">' + _tkEscT(it.body) + '</textarea></div>').join(''));
+    '</div><div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="font-size:11px;color:var(--text-light);flex-shrink:0">Show to</span>' + audSel(i, it.audience) +
+    '<span style="font-size:11px;color:var(--text-light)">department</span></div>' +
+    '<textarea class="form-control" rows="2" placeholder="Message" oninput="tkPortalSet(\'announcements\',' + i + ',\'body\',this)">' + _tkEscT(it.body) + '</textarea></div>').join(''));
   I('portal-holidays', m.holidays.map((it, i) =>
     '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
     '<input type="date" class="form-control" style="flex:0 0 150px" value="' + _tkEscA(it.date) + '" oninput="tkPortalSet(\'holidays\',' + i + ',\'date\',this)">' +
     '<input class="form-control" style="flex:1" placeholder="Holiday name" value="' + _tkEscA(it.name) + '" oninput="tkPortalSet(\'holidays\',' + i + ',\'name\',this)">' + rm('holidays', i) + '</div>').join(''));
   I('portal-learning', m.learning.map((it, i) =>
-    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">' +
     '<input class="form-control" style="flex:1" placeholder="Course name" value="' + _tkEscA(it.name) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'name\',this)">' +
-    '<input class="form-control" style="flex:0 0 150px" placeholder="Status / meta" value="' + _tkEscA(it.meta) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'meta\',this)">' +
-    '<input type="number" min="0" max="100" class="form-control" style="flex:0 0 64px" placeholder="%" value="' + _tkEscA(it.pct) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'pct\',this)">' + rm('learning', i) + '</div>').join(''));
+    '<input class="form-control" style="flex:0 0 140px" placeholder="Status / meta" value="' + _tkEscA(it.meta) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'meta\',this)">' +
+    '<input type="number" min="0" max="100" class="form-control" style="flex:0 0 60px" placeholder="%" value="' + _tkEscA(it.pct) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'pct\',this)">' + rm('learning', i) +
+    '</div><input class="form-control" placeholder="https://… course link (optional)" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'url\',this)"></div>').join(''));
   I('portal-resources', m.resources.map((it, i) =>
     '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
     '<input class="form-control" style="flex:0 0 180px" placeholder="Label" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'label\',this)">' +
@@ -3494,7 +3501,7 @@ function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[
 function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
 function tkPortalAdd(type) {
   if (!_tkPortalModel) tkRenderPortalEditor();
-  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0 }, resources: { label: '', url: '' } }[type];
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '', audience: 'All' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0, url: '' }, resources: { label: '', url: '' } }[type];
   _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
   _tkPortalRenderRows();
 }
@@ -3502,9 +3509,9 @@ function tkPortalAdd(type) {
 async function tkSavePortal() {
   const m = _tkPortalModel; if (!m) { toast('Open the Company Portal tab first', 'warn'); return; }
   const payload = {
-    announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '' })),
+    announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '', audience: x.audience || 'All' })),
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
-    learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)) })),
+    learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() }))
   };
   try {
@@ -3529,11 +3536,12 @@ function tkRenderStaffPortal() {
 
   /* Portal content (admin-managed via HR Admin, with defaults) */
   const PD = _tkPortalData();
-  const ann = PD.announcements;
+  const myDept = me.dept || '';
+  const ann = PD.announcements.filter(a => !a.audience || a.audience === 'All' || a.audience === myDept);
   const annEl = document.getElementById('staff-announcements');
-  if (annEl) annEl.innerHTML = ann.map(a => { const col = a.color || '#205090'; return '<div style="border-left:3px solid ' + col + ';padding:2px 0 2px 12px">' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + col + '1f;color:' + col + ';font-size:10px">' + (a.tag || 'News') + '</span><strong style="font-size:13px">' + (a.title || '') + '</strong></div>' +
-    '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + (a.body || '') + '</div></div>'; }).join('');
+  if (annEl) annEl.innerHTML = ann.length ? ann.map(a => { const col = a.color || '#205090'; const aud = (a.audience && a.audience !== 'All') ? '<span style="font-size:10px;color:var(--text-light);margin-left:auto">' + a.audience + '</span>' : ''; return '<div style="border-left:3px solid ' + col + ';padding:2px 0 2px 12px">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + col + '1f;color:' + col + ';font-size:10px">' + (a.tag || 'News') + '</span><strong style="font-size:13px">' + (a.title || '') + '</strong>' + aud + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + (a.body || '') + '</div></div>'; }).join('') : empty('No announcements right now');
 
   /* Who's out today */
   const out = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= todayISO && l.endDate >= todayISO);
@@ -3613,10 +3621,13 @@ function tkRenderStaffPortal() {
   const learnEl = document.getElementById('staff-learning');
   if (learnEl) {
     const courses = PD.learning;
-    learnEl.innerHTML = courses.map(c => '<div style="cursor:pointer" onclick="toast(\'The learning catalogue will be linked here by L&amp;D.\',\'info\',5000)">' +
-      '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span style="font-weight:600">' + c.name + '</span><span style="font-size:11px;color:' + (c.pct === 100 ? 'var(--emerald)' : 'var(--text-light)') + '">' + (c.pct === 100 ? 'Done' : c.pct ? c.pct + '%' : 'Start') + '</span></div>' +
-      '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px">' + c.meta + '</div>' +
-      '<div class="prog-wrap"><div class="prog-fill ' + (c.pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + c.pct + '%"></div></div></div>').join('');
+    learnEl.innerHTML = courses.map(c => {
+      const oc = (c.url ? ("window.open('" + String(c.url).replace(/'/g, "\\'") + "','_blank','noopener')") : "toast('The learning catalogue will be linked here by L&amp;D.','info',5000)").replace(/"/g, '&quot;');
+      return '<div style="cursor:pointer" onclick="' + oc + '">' +
+      '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span style="font-weight:600">' + (c.name || '') + (c.url ? ' <span style="color:var(--navy)">&#8599;</span>' : '') + '</span><span style="font-size:11px;color:' + (c.pct === 100 ? 'var(--emerald)' : 'var(--text-light)') + '">' + (c.pct === 100 ? 'Done' : c.pct ? c.pct + '%' : 'Start') + '</span></div>' +
+      '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px">' + (c.meta || '') + '</div>' +
+      '<div class="prog-wrap"><div class="prog-fill ' + (c.pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + c.pct + '%"></div></div></div>';
+    }).join('');
   }
 
   /* Global office clocks (live) */
