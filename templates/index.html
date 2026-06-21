@@ -1306,12 +1306,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>GPS Locations</h1><p>Approved geofence zones · OpenStreetMap</p></div>
     <button class="btn btn-emerald" onclick="tkOpenLocationModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Location</button>
   </div>
-  <div class="stat-boxes">
-    <div class="stat-box"><div class="stat-num">3</div><div class="stat-lbl">Active Zones</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--emerald)">98.2%</div><div class="stat-lbl">In-Zone Rate</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--danger)">2</div><div class="stat-lbl">Anomalies Today</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--navy)">46</div><div class="stat-lbl">Employees Tracked</div></div>
-  </div>
+  <div id="loc-kpis" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px"></div>
   <div class="grid-75 mb16">
     <div class="card">
       <div class="card-hdr"><div class="card-title">Approved Geofence Zones</div></div>
@@ -1394,7 +1389,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </table>
     </div>
   </div>
-  <div class="tip-box"><strong>SharePoint sync:</strong> Schedule records are stored in the <code>Work_Schedules</code> SharePoint list. Power Automate reads the active schedule for each employee's department when validating check-in timestamps.</div>
+  <div class="tip-box"><strong>How it works:</strong> The active schedule for each employee's department defines the valid check-in window, grace period and overtime rate used when their attendance is recorded.</div>
 </div>
 <!-- ═══════════════════════════════════════════════════════
      VIEW: LEAVE MANAGEMENT
@@ -2802,8 +2797,21 @@ function tkRenderZones() {
       '<td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,\'' + safe + '\',' + lat + ',' + lon + ',' + (z.radius || 200) + ')">Edit</button></td>' +
       '</tr>';
   }).join('');
-  const stat = document.querySelector('#view-locations .stat-box .stat-num');
-  if (stat) stat.textContent = zones.length;
+  const kp = document.getElementById('loc-kpis');
+  if (kp && typeof _kpiTile === 'function') {
+    const today = new Date().toISOString().slice(0, 10);
+    const todayAtt = (_DEMO_ATTENDANCE || []).filter(r => r.date === today);
+    const anomalies = todayAtt.filter(r => r.loc === 'Out of Zone').length;
+    const inZone = todayAtt.filter(r => r.loc && r.loc !== 'Out of Zone').length;
+    const tracked = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').length;
+    const rate = todayAtt.length ? Math.round(inZone / todayAtt.length * 1000) / 10 : 100;
+    kp.innerHTML = [
+      _kpiTile('Active Zones', zones.length, '#205090', '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'),
+      _kpiTile('In-Zone Rate', rate + '%', '#00B060', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>'),
+      _kpiTile('Anomalies Today', anomalies, '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
+      _kpiTile('Employees Tracked', tracked, '#8B5CF6', TK_ICON.users)
+    ].join('');
+  }
   try { tkPopulateZoneSelect(); } catch (e) {}
 }
 
@@ -3914,7 +3922,20 @@ async function tkLoadColl(name) {
 }
 function _hrEmp(id) { return (_DEMO_EMPLOYEES || []).find(e => e.id === id); }
 function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:#205090">' + ((e && e.ini) || '?') + '</div>'; }
-const _hrKpi = (label, val, color) => '<div class="card" style="flex:1;min-width:150px;padding:16px 18px"><div style="font-size:23px;font-weight:800;color:' + (color || 'var(--navy)') + '">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
+/* Pick a sensible icon from the KPI label so every page gets a consistent icon+text KPI. */
+const _KPI_HEX = { 'var(--emerald)': '#00B060', 'var(--navy)': '#205090', 'var(--warning)': '#F59E0B' };
+function _kpiIcon(label) {
+  const l = (label || '').toLowerCase();
+  if (/rate|progress|accept|%/.test(l)) return '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>';
+  if (/pay|cost|advance|claim|net|gross|salary|value|₫/.test(l)) return '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
+  if (/rating|star|potential|\bhigh\b|avg/.test(l)) return '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
+  if (/manager|staff|admin|management|headcount|employ|tracked|candidate|assessed|requisition|position|vacanc|hired|offer|pipeline|ready/.test(l)) return TK_ICON.users;
+  if (/leave|pending|review|cycle|onboard|date|exit|turnover|course|enrol|training/.test(l)) return TK_ICON.calendar;
+  if (/active|done|complete|tasks|zone/.test(l)) return TK_ICON.check;
+  if (/late|time|hours/.test(l)) return TK_ICON.clock;
+  return '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>';
+}
+const _hrKpi = (label, val, color) => _kpiTile(label, val, _KPI_HEX[color] || color || '#205090', _kpiIcon(label));
 /* Icon KPI tile (icon-left + value + label) — the consistent professional KPI used across pages. */
 const _kpiTile = (label, val, color, icon) => '<div class="card" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
   '<div style="width:42px;height:42px;border-radius:11px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
@@ -4086,12 +4107,17 @@ function tkRenderDatabase() {
   const active = emps.filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').length;
   const depts = [...new Set(emps.map(e => e.dept).filter(Boolean))];
   const k = document.getElementById('database-kpis');
+  // headcount by department dashboard
+  const byDept = {}; emps.filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').forEach(e => { const d = e.dept || '—'; byDept[d] = (byDept[d] || 0) + 1; });
+  const deptKeys = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]);
+  const palette = ['#205090', '#00B060', '#F59E0B', '#8B5CF6', '#3168A8', '#EF4444', '#0ea5e9', '#14b8a6'];
+  const deptCard = deptKeys.map((d, i) => '<div style="flex:1;min-width:120px;background:var(--soft-bg);border-radius:12px;padding:12px 14px;border-left:4px solid ' + palette[i % palette.length] + '"><div style="font-size:20px;font-weight:800;color:var(--navy)">' + byDept[d] + '</div><div style="font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + d + '</div></div>').join('');
   if (k) k.innerHTML = _hrKpiRow([
     _hrKpi('Total Employees', emps.length),
     _hrKpi('Active', active, 'var(--emerald)'),
     _hrKpi('Departments', depts.length, '#8B5CF6'),
     _hrKpi('Managers', emps.filter(e => e.role === 'manager').length, '#F59E0B')
-  ]);
+  ]) + '<div class="card" style="padding:14px 16px;margin-bottom:20px"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div><div style="display:flex;gap:12px;flex-wrap:wrap">' + (deptCard || '<span style="font-size:12px;color:var(--text-light)">No data</span>') + '</div></div>';
   try { _renderEmployeeTable(); } catch (e) {}
   const lbl = document.getElementById('emp-count-label');
   if (lbl) lbl.textContent = emps.length + ' employees';
