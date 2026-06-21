@@ -66,9 +66,9 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg)
 .btn-ghost{background:transparent;color:var(--text-light);border:none}.btn-ghost:hover{background:var(--soft-bg)}
 .btn-danger{background:#FEE2E2;color:#991B1B;border:none}.btn-danger:hover{background:#FECACA}
 .btn-sm{padding:4px 10px;font-size:12px}
-.btn-approve{background:#D1FAE5;color:#065F46;border:none;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;font-family:inherit}
+.btn-approve{background:#D1FAE5;color:#065F46;border:none;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
 .btn-approve:hover{background:#A7F3D0}
-.btn-reject{background:#FEE2E2;color:#991B1B;border:none;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;font-family:inherit}
+.btn-reject{background:#FEE2E2;color:#991B1B;border:none;font-size:12px;padding:5px 10px;border-radius:6px;cursor:pointer;font-weight:700;font-family:inherit;display:inline-flex;align-items:center;gap:5px}
 .btn-reject:hover{background:#FECACA}
 
 /* ── KPI CARDS ── */
@@ -662,7 +662,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" placeholder="Search employees, records…">
     </div>
-    <button class="btn btn-emerald btn-sm" onclick="openModal('leaveModal')">+ Request Leave</button>
+    <button class="btn btn-emerald btn-sm" onclick="openModal('leaveModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Request Leave</button>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
@@ -898,8 +898,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div><h1>Employee Database</h1><p>Centralized employee records · single source of truth</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()">↓ Export CSV</button>
-      <button class="btn btn-primary btn-sm" onclick="tkOpenAddEmp()">+ Add Employee</button>
+      <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="tkOpenAddEmp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
     </div>
   </div>
   <div id="database-kpis"></div>
@@ -927,8 +927,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div><h1>Recruitment</h1><p>Job openings &amp; candidate pipeline</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" onclick="tkQuickAdd('jobs')">+ Post Job</button>
-      <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('candidates')">+ Add Candidate</button>
+      <button class="btn btn-outline btn-sm" onclick="tkQuickAdd('jobs')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Post Job</button>
+      <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('candidates')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Candidate</button>
     </div>
   </div>
   <div id="recruitment-root"></div>
@@ -937,7 +937,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-onboarding" class="view">
   <div class="page-header">
     <div><h1>Onboarding</h1><p>New-hire checklists &amp; first-week readiness</p></div>
-    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('onboarding')">+ Add New Hire</button>
+    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('onboarding')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add New Hire</button>
   </div>
   <div id="onboarding-root"></div>
 </div>
@@ -945,7 +945,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-offboarding" class="view">
   <div class="page-header">
     <div><h1>Offboarding &amp; Exit</h1><p>Resignation, clearance checklist &amp; final settlement</p></div>
-    <button class="btn btn-primary btn-sm" onclick="tkInitExit()">+ Initiate Exit</button>
+    <button class="btn btn-primary btn-sm" onclick="tkInitExit()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Initiate Exit</button>
   </div>
   <div id="offboarding-root"></div>
 </div>
@@ -953,7 +953,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-performance" class="view">
   <div class="page-header">
     <div><h1>Performance Management</h1><p>Review cycles, ratings &amp; company goals</p></div>
-    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('goals')">+ New Goal</button>
+    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('goals')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Goal</button>
   </div>
   <div id="performance-root"></div>
 </div>
@@ -968,7 +968,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-training" class="view">
   <div class="page-header">
     <div><h1>Training &amp; Development</h1><p>Course catalog &amp; enrollment</p></div>
-    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('courses')">+ Add Course</button>
+    <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('courses')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Course</button>
   </div>
   <div id="training-root"></div>
 </div>
@@ -976,7 +976,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-inbox" class="view">
   <div class="page-header">
     <div><h1>Approval Inbox</h1><p>One place to action everything pending across HR</p></div>
-    <button class="btn btn-outline btn-sm" onclick="tkRenderInbox()">↻ Refresh</button>
+    <button class="btn btn-outline btn-sm" onclick="tkRenderInbox()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
   </div>
   <div id="inbox-root"></div>
 </div>
@@ -985,8 +985,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div><h1>Travel &amp; Claims</h1><p>Business travel requests &amp; expense / benefit claims</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" onclick="tkNewTravel()">+ Travel Request</button>
-      <button class="btn btn-primary btn-sm" onclick="tkSubmitClaim()">+ New Claim</button>
+      <button class="btn btn-outline btn-sm" onclick="tkNewTravel()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Travel Request</button>
+      <button class="btn btn-primary btn-sm" onclick="tkSubmitClaim()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Claim</button>
     </div>
   </div>
   <div id="travelclaims-root"></div>
@@ -1002,7 +1002,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-payroll" class="view">
   <div class="page-header">
     <div><h1>Payroll</h1><p>Monthly pay run · gross, deductions &amp; net</p></div>
-    <button class="btn btn-outline btn-sm" onclick="toast('Payroll export will be linked to your accounting system.','info',5000)">↓ Export Pay Run</button>
+    <button class="btn btn-outline btn-sm" onclick="toast('Payroll export will be linked to your accounting system.','info',5000)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Pay Run</button>
   </div>
   <div id="payroll-root"></div>
 </div>
@@ -1040,7 +1040,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <option value="Finance">Finance</option>
         <option value="Field Services">Field Services</option>
       </select>
-      <button class="btn btn-outline btn-sm" onclick="refreshDashboard()">↻ Refresh</button>
+      <button class="btn btn-outline btn-sm" onclick="refreshDashboard()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
 
@@ -1158,7 +1158,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
             <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
               <option value="">— Select an approved location —</option>
             </select>
-            <button onclick="tkVerifySelectedZone()" style="padding:0 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap">↻ Re-check</button>
+            <button onclick="tkVerifySelectedZone()" style="padding:0 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
           </div>
           <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
@@ -1254,8 +1254,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <p id="att-summary">46 employees · Today's records</p>
     </div>
     <div style="display:flex;gap:8px" id="att-mgr-btns">
-      <button class="btn btn-outline btn-sm" onclick="exportAttendance()">↓ Export CSV</button>
-      <button class="btn btn-primary btn-sm" onclick="loadAttendance()">↻ Refresh</button>
+      <button class="btn btn-outline btn-sm" onclick="exportAttendance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+      <button class="btn btn-primary btn-sm" onclick="loadAttendance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
   <!-- Manager filter bar (hidden for staff) -->
@@ -1327,7 +1327,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-locations" class="view">
   <div class="page-header">
     <div><h1>GPS Locations</h1><p>Approved geofence zones · OpenStreetMap</p></div>
-    <button class="btn btn-emerald" onclick="tkOpenLocationModal()">+ Add Location</button>
+    <button class="btn btn-emerald" onclick="tkOpenLocationModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Location</button>
   </div>
   <div class="stat-boxes">
     <div class="stat-box"><div class="stat-num">3</div><div class="stat-lbl">Active Zones</div></div>
@@ -1401,7 +1401,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-schedules" class="view">
   <div class="page-header">
     <div><h1>Work Schedules</h1><p>Define shift patterns · Grace periods · Check-in windows</p></div>
-    <button class="btn btn-emerald" onclick="openModal('addScheduleModal')">+ Add Schedule</button>
+    <button class="btn btn-emerald" onclick="openModal('addScheduleModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Schedule</button>
   </div>
   <div class="card mb16">
     <div class="table-wrap">
@@ -1427,7 +1427,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>Leave Management</h1><p>Request · Track · Balance · Calendar</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="switchLeaveTab('calendar', document.querySelector('#leave-tabs .tab:last-child'))"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar</button>
-      <button class="btn btn-emerald" onclick="openModal('leaveModal')">+ New Request</button>
+      <button class="btn btn-emerald" onclick="openModal('leaveModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Request</button>
     </div>
   </div>
 
@@ -1607,7 +1607,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>Manager Approval</h1><p>Pending leave · Late alerts · GPS anomalies · Team overview</p></div>
     <div style="display:flex;gap:8px">
       <select class="sel-filter"><option>My Team</option><option>All Teams</option></select>
-      <button class="btn btn-primary btn-sm" onclick="loadManagerView()">↻ Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="loadManagerView()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
 
@@ -1800,8 +1800,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div><h1>HR Admin</h1><p>Leave balances · Payroll hours · Employee management</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn btn-outline btn-sm" onclick="exportHRReport()">↓ Export Report</button>
-      <button class="btn btn-emerald" onclick="tkOpenAddEmp()">+ Add Employee</button>
+      <button class="btn btn-outline btn-sm" onclick="exportHRReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Report</button>
+      <button class="btn btn-emerald" onclick="tkOpenAddEmp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
     </div>
   </div>
 
@@ -1826,7 +1826,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         </table>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-outline btn-sm" onclick="exportBalances()">↓ Export Balances</button>
+        <button class="btn btn-outline btn-sm" onclick="exportBalances()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Balances</button>
       </div>
     </div>
   </div>
@@ -1922,19 +1922,19 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')">+ Add</button></div>
+        <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-announcements"></div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Holidays</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('holidays')">+ Add</button></div>
+        <div class="card-hdr"><div class="card-title">Holidays</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('holidays')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-holidays"></div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Learning &amp; Development</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('learning')">+ Add</button></div>
+        <div class="card-hdr"><div class="card-title">Learning &amp; Development</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('learning')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-learning"></div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Resources &amp; Quick Links</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('resources')">+ Add</button></div>
+        <div class="card-hdr"><div class="card-title">Resources &amp; Quick Links</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('resources')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
         <div id="portal-resources"></div>
       </div>
     </div>
@@ -1949,7 +1949,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>Reports &amp; Analytics</h1><p>Attendance · Leave · Employee In/Out · Department KPIs</p></div>
     <div style="display:flex;gap:8px">
       <select class="sel-filter" id="rpt-period"><option>May 2026</option><option>April 2026</option><option>Q1 2026</option></select>
-      <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()">↓ Export Excel</button>
+      <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
     </div>
   </div>
 
@@ -2016,7 +2016,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
         <div class="card-title">Leave Requests — May 2026</div>
-        <button class="btn btn-outline btn-sm" onclick="toast('Exporting leave report…')">↓ Export</button>
+        <button class="btn btn-outline btn-sm" onclick="toast('Exporting leave report…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
       </div>
       <div class="table-wrap">
         <table>
@@ -2077,8 +2077,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
         <div class="card-title">Employee In/Out Log — May 9, 2026</div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="renderInOutReport()">↻ Refresh</button>
-          <button class="btn btn-outline btn-sm" onclick="toast('Exporting In/Out log to Excel…')">↓ Export</button>
+          <button class="btn btn-ghost btn-sm" onclick="renderInOutReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
+          <button class="btn btn-outline btn-sm" onclick="toast('Exporting In/Out log to Excel…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -2256,7 +2256,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div style="font-size:13px;color:var(--text-light)">Approved GPS zones where employees can check in and out. All zones are validated against the device's real GPS coordinates.</div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-outline btn-sm" id="btn-add-my-location" onclick="addMyLocationAsTestZone(this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Add My Location (Testing)</button>
-        <button class="btn btn-emerald btn-sm" onclick="tkOpenLocationModal()">+ Add Zone</button>
+        <button class="btn btn-emerald btn-sm" onclick="tkOpenLocationModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Zone</button>
       </div>
     </div>
     <!-- Testing banner — shown when test zone is active -->
@@ -2465,7 +2465,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
           <div style="font-family:monospace;font-size:11px;background:#0f2040;color:#a8d8a8;padding:14px;border-radius:8px;line-height:1.8" id="cfg-live-preview">
             Loading config preview…
           </div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="updateCfgPreview()">↻ Refresh Preview</button>
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="updateCfgPreview()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh Preview</button>
         </div>
       </div>
     </div>
@@ -3942,6 +3942,32 @@ const _hrKpiRow = cards => '<div style="display:flex;gap:16px;flex-wrap:wrap;mar
 const _hrStars = n => { n = Math.max(0, Math.min(5, +n || 0)); return '<span style="color:#F59E0B">' + '★'.repeat(n) + '</span><span style="color:#d4d8de">' + '★'.repeat(5 - n) + '</span>'; };
 const _TRASH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
 const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+/* Shared inline-SVG icon registry — keeps every button/link/tab on one icon+text style.
+   Use tkIcon('name') in JS-rendered markup; stroke=currentColor inherits the button colour. */
+const TK_ICON = {
+  plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  external: '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  arrowRight: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  users: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  alert: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  mapPin: '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>'
+};
+function tkIcon(name, sz) {
+  return '<svg width="' + (sz || 14) + '" height="' + (sz || 14) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (TK_ICON[name] || '') + '</svg>';
+}
+/* Static-HTML plus glyph (scripts may not have run yet for inline onclick buttons) */
+const _PLUS_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 /* Edit + Delete action buttons for a collection item (type === collection name). */
 function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
@@ -4214,13 +4240,13 @@ async function tkRenderPerformance() {
   const okr = '<div id="perf-okr">' + cycleCard + '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Company Goals (OKRs)</div>' +
     (goals.length ? goals.map(g => '<div style="margin-bottom:13px"><div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:3px;gap:8px"><span style="font-weight:600">' + (g.name || '') + '</span><span style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-light);font-size:11px;white-space:nowrap">' + (g.owner || '') + (g.due ? (' · due ' + tkFmtDate(g.due)) : '') + ' · ' + (+g.progress || 0) + '%</span>' + _hrEditDel('goals', g.id, 'performance') + '</span></div><div class="prog-wrap"><div class="prog-fill ' + ((+g.progress || 0) >= 70 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + (+g.progress || 0) + '%"></div></div></div>').join('') : '<div style="color:var(--text-light);font-size:13px">No goals yet — click “+ New Goal”.</div>') + '</div></div>';
   const revRows = reviews.length ? reviews.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2).toUpperCase() }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + (r.cycle || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('reviews', r.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No reviews yet</td></tr>';
-  const reviewsHtml = '<div id="perf-reviews" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'reviews\')">+ Add Review</button></div>' +
+  const reviewsHtml = '<div id="perf-reviews" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'reviews\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Review</button></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Reviews (Mid-Year &amp; Annual)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Cycle</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>' + revRows + '</tbody></table></div></div></div>';
   const pips = _HR.pip || [];
   const flagged = reviews.filter(r => (+r.rating || 3) <= 2 && !pips.some(p => p.empId === r.empId));
   const pipRows = pips.length ? pips.map(p => { const e = _hrEmp(p.empId); const ci = (p.checkins || []).length; const sc = p.outcome === 'Pass' ? 'b-ok' : p.outcome === 'Fail' ? 'b-danger' : 'b-warn'; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (p.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.dept || '') + '</td><td>' + (p.duration || 60) + ' days</td><td>' + ci + ' check-ins</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (p.outcome || p.status || 'Active') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPipManage(\'' + p.id + '\')">Manage</button>' + _hrEditDel('pip', p.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No active PIPs</td></tr>';
   const flagCard = flagged.length ? '<div class="card" style="padding:14px 16px;margin-bottom:16px;background:#FEF3C7"><div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:8px">Flagged for PIP (rating ≤ 2)</div>' + flagged.map(r => '<div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:4px 0"><span>' + (r.name || '') + ' · ' + (r.dept || '') + ' · ' + _hrStars(r.rating) + '</span><button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkStartPip(\'' + (r.empId || '') + '\',\'' + (r.name || '').replace(/\x27/g, '') + '\',\'' + (r.dept || '') + '\')">Start PIP</button></div>').join('') + '</div>' : '';
-  const pip = '<div id="perf-pip" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="tkStartPip()">+ Start PIP</button></div>' + flagCard +
+  const pip = '<div id="perf-pip" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-primary btn-sm" onclick="tkStartPip()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Start PIP</button></div>' + flagCard +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Improvement Plans (BM.HR-05-03)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Duration</th><th>Check-ins</th><th>Status</th><th></th></tr></thead><tbody>' + pipRows + '</tbody></table></div></div></div>';
   const dist = [1, 2, 3, 4, 5].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
   const maxd = Math.max(1, ...dist);
@@ -4383,7 +4409,7 @@ async function tkRenderTalent() {
   grid += '</div><div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-light);margin-top:4px">PERFORMANCE →</div></div>';
   const succ = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Succession &amp; Readiness</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>9-Box</th><th>Performance</th><th>Potential</th><th>Succession</th><th></th></tr></thead><tbody>' +
     (t.length ? t.map(x => { const e = _hrEmp(x.empId); const sc = x.succession === 'Ready Now' ? 'b-ok' : x.succession === 'Develop in Role' ? 'b-warn' : 'b-info'; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (x.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (x.name || '') + '</span></div></td><td>' + (x.dept || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + (x.box || '—') + '</span></td><td>' + (x.performance || '—') + '</td><td>' + (x.potential || '—') + '</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (x.succession || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('talent', x.id, 'talent') + '</td></tr>'; }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No assessments yet</td></tr>') + '</tbody></table></div></div>';
-  root.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'talent\')">+ Assess Employee</button></div>' + kpis + grid + succ;
+  root.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'talent\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Assess Employee</button></div>' + kpis + grid + succ;
 }
 
 /* Training & Development — Catalog + Competency Matrix (Training Matrix HML-AHU-TM-001) */
@@ -4522,7 +4548,7 @@ async function tkRenderPayroll() {
   const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
-    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()">↓ Export CSV</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">+ Create Pay Run</button></div></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create Pay Run</button></div></div>' +
     '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Pay Register</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
@@ -4883,7 +4909,7 @@ async function tkRenderOffboarding() {
       '<td style="text-align:right;font-size:12px">' + _PAY_FMT(set.net) + '</td>' +
       '<td><span class="badge ' + _st(r.status) + '" style="font-size:10px">' + (r.status || '') + '</span></td>' +
       '<td style="white-space:nowrap;text-align:right">' + acts + ' <button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'exits\',\'' + r.id + '\',\'offboarding\')">' + _TRASH + '</button></td></tr>';
-  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:20px">No exits in progress. Click <b>+ Initiate Exit</b> to start.</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:20px">No exits in progress. Click <b>Initiate Exit</b> to start.</td></tr>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Exit Register</div><span style="font-size:11px;color:var(--text-light)">Resignation · clearance · final settlement</span></div>' +
     '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Employee</th><th>Type</th><th>Last day</th><th>Clearance</th><th style="text-align:right">Net settlement</th><th>Status</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>';
