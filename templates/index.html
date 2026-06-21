@@ -98,7 +98,7 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg)
 /* ── CARDS ── */
 .card{background:#fff;border-radius:10px;border:1px solid var(--line);padding:20px;box-shadow:0 1px 4px rgba(32,80,144,.08)}
 .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.card-title{font-size:14px;font-weight:700;color:var(--navy)}
+.card-title{font-size:17px;font-weight:700;color:var(--navy)}
 .card-sub{font-size:12px;color:var(--text-light)}
 .mb16{margin-bottom:16px}.mb22{margin-bottom:22px}
 
@@ -365,7 +365,7 @@ select.form-control{cursor:pointer}
 .staff-kpi-lbl{font-size:11px;color:var(--text-light);margin-top:3px}
 .staff-2col{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .staff-panel{background:#fff;border-radius:12px;border:1px solid var(--line);padding:20px 22px}
-.staff-panel-hdr{font-size:13px;font-weight:700;color:var(--navy);border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.staff-panel-hdr{font-size:16px;font-weight:700;color:var(--navy);border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 .staff-quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
 .staff-quick-btn{background:#fff;border:2px solid var(--line);border-radius:12px;padding:16px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:8px}
 .staff-quick-btn:hover{border-color:var(--navy);background:var(--light-tint);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
@@ -653,10 +653,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg></span>
     <span class="nav-label">Offboarding</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('devices',this,'Device &amp; Asset Management')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
-    <span class="nav-label">Devices &amp; Assets</span>
-  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('performance',this,'Performance Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
     <span class="nav-label">Performance</span>
@@ -682,6 +678,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-section-label" data-roles="manager">Finance &amp; Admin</div>
+  <div class="nav-item" data-roles="manager" onclick="showView('devices',this,'Device &amp; Asset Management')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
+    <span class="nav-label">Devices &amp; Assets</span>
+  </div>
   <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('payroll',this,'Payroll')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
@@ -4619,6 +4619,28 @@ function _courseLinks(c) {
 
 /* ════════════════ DEVICE / EQUIPMENT (ASSET) MANAGEMENT ════════════════ */
 const _DEV_STCLS = s => s === 'Assigned' ? 'b-info' : s === 'Available' ? 'b-ok' : s === 'In Repair' ? 'b-warn' : s === 'Retired' ? 'b-navy' : 'b-danger';
+const _DEV_ICONS = {
+  'Laptop': '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="2" y1="20" x2="22" y2="20"/>',
+  'Desktop': '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  'Monitor': '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  'Phone': '<rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+  'Tablet': '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>',
+  'Printer': '<polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/>',
+  'Vehicle': '<path d="M3 12l2-5h11l3 5"/><path d="M3 12h18v3a1 1 0 0 1-1 1h-1M3 12v3a1 1 0 0 0 1 1h1"/><circle cx="7" cy="17" r="1.6"/><circle cx="17" cy="17" r="1.6"/>',
+  'Tool': '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6 2 2 6-6a4 4 0 0 0 5.4-5.4l-2.3 2.3-2-2 2.3-2.3z"/>',
+  'PPE / Safety': '<path d="M12 2a7 7 0 0 0-7 7v3H4a1 1 0 0 0-1 1 9 9 0 0 0 18 0 1 1 0 0 0-1-1h-1V9a7 7 0 0 0-7-7z"/>',
+  'Uniform / Shirt': '<path d="M16 3l5 3-2 4-2-1v12H7V9L5 10 3 6l5-3 2 2h4z"/>',
+  'Access Card': '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
+  'SIM / Phone Plan': '<rect x="5" y="2" width="14" height="20" rx="2"/><path d="M9 7h6"/>',
+  'Furniture': '<path d="M4 18v-6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v6"/><path d="M4 18v3M20 18v3M4 14h16"/>',
+  'Software License': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z"/>',
+  'Other': '<path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/>'
+};
+const _DEV_COLORS = { 'Laptop': '#205090', 'Desktop': '#205090', 'Monitor': '#3168A8', 'Phone': '#00B060', 'Tablet': '#0ea5e9', 'Printer': '#8b5cf6', 'Vehicle': '#f59e0b', 'Tool': '#14b8a6', 'PPE / Safety': '#ef4444', 'Uniform / Shirt': '#8b5cf6', 'Access Card': '#3168A8', 'SIM / Phone Plan': '#00B060', 'Furniture': '#f59e0b', 'Software License': '#0ea5e9', 'Other': '#6b7280' };
+function _devIcon(cat, sz) {
+  const p = _DEV_ICONS[cat] || _DEV_ICONS['Other']; const c = _DEV_COLORS[cat] || '#6b7280'; const s = sz || 34;
+  return '<div style="width:' + s + 'px;height:' + s + 'px;border-radius:9px;background:' + c + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="' + Math.round(s * 0.5) + '" height="' + Math.round(s * 0.5) + '" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg></div>';
+}
 /* Admin — company-wide asset register: KPIs, charts, full table, CRUD. */
 async function tkRenderDevices() {
   const root = document.getElementById('devices-root'); if (!root) return;
@@ -4640,7 +4662,7 @@ async function tkRenderDevices() {
   const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
   const rows = d.length ? d.slice().sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || '')).map(x => {
     const tot = (+x.qty || 1) * (+x.unitPrice || 0);
-    return '<tr><td><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
   root.innerHTML =
     '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
@@ -4667,7 +4689,7 @@ async function tkRenderMyDevices() {
     _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
   ]);
-  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:6px"><div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
+  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + _devIcon(x.category, 38) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
     '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Issued: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
@@ -4730,9 +4752,16 @@ async function tkRenderMyGoals() {
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await tkLoadColl('padr');
   const me = _tkMe() || {};
-  let p = (_HR.padr || []).find(x => x.empId === me.id);
+  const mine = (_HR.padr || []).filter(x => x.empId === me.id);
+  const yearOf = c => (String(c.cycle || '').match(/\d{4}/) || [])[0] || String(c.cycle || '') || String(new Date().getFullYear());
+  const curY = String(new Date().getFullYear());
+  let years = Array.from(new Set(mine.map(yearOf))).sort().reverse();
+  if (!years.includes(curY)) years.unshift(curY);
+  if (!_myGoalsYear || !years.includes(_myGoalsYear)) _myGoalsYear = years.includes(curY) ? curY : years[0];
+  const yearSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px"><span style="font-size:12px;color:var(--text-light)">PADR year</span><select class="sel-filter" onchange="tkMyGoalsYear(this.value)" style="font-size:13px;padding:6px 10px">' + years.map(y => '<option' + (y === _myGoalsYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div>';
+  let p = mine.find(x => yearOf(x) === _myGoalsYear);
   if (!p) {
-    root.innerHTML = '<div class="card" style="padding:24px;text-align:center"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">No PADR cycle yet</div><div style="font-size:13px;color:var(--text-light);margin-bottom:14px">Start your own goal cycle now, or wait for your manager to assign goals.</div><button class="btn btn-primary btn-sm" onclick="tkMyGoalsStart()">' + tkIcon('plus') + 'Start my goal cycle</button></div>';
+    root.innerHTML = yearSel + '<div class="card" style="padding:24px;text-align:center"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">No PADR cycle for ' + _myGoalsYear + '</div><div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' + (_myGoalsYear === curY ? 'Start your own goal cycle now, or wait for your manager to assign goals.' : 'There is no appraisal on record for this year.') + '</div>' + (_myGoalsYear === curY ? '<button class="btn btn-primary btn-sm" onclick="tkMyGoalsStart()">' + tkIcon('plus') + 'Start my goal cycle</button>' : '') + '</div>';
     return;
   }
   _normGoals(p);
@@ -4759,7 +4788,7 @@ async function tkRenderMyGoals() {
     '<div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Pick a suggested goal to pre-fill, or type your own below.</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mg-lib" onchange="tkMyGoalLib()" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— Suggested goals (optional) —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
     '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="mg-obj" placeholder="Type your own goal / objective…" style="flex:2;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-wt" type="number" placeholder="Wt %" style="width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-tgt" placeholder="Target / KPI" style="flex:1;min-width:140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><button class="btn btn-emerald btn-sm" onclick="tkMyGoalAdd()">' + tkIcon('plus') + 'Add goal</button></div></div>';
-  root.innerHTML = kpis +
+  root.innerHTML = yearSel + kpis +
     (p.rating ? '<div class="card" style="padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--text-light)">Final rating</span><span style="font-size:15px">' + _hrStars(p.rating) + '</span>' + (p.idp ? '<span style="font-size:12px;color:var(--text-light);margin-left:auto">IDP: ' + p.idp + '</span>' : '') + '</div>' : '') +
     card('Goals assigned by my manager', assigned.length + ' goal(s)', goalTable(assigned, false)) +
     card('My own development goals', own.length + ' goal(s)', goalTable(own, true)) +
@@ -4793,10 +4822,12 @@ async function tkMyGoalDel(gid) {
   try { await tkApi('/api/coll/padr/' + p.id, { method: 'PATCH', body: p }); toast('Goal removed'); tkRenderMyGoals(); }
   catch (e) { toast('Could not remove: ' + e.message, 'error', 5000); }
 }
+let _myGoalsYear = null;
+function tkMyGoalsYear(y) { _myGoalsYear = y; tkRenderMyGoals(); }
 async function tkMyGoalsStart() {
   const me = _tkMe() || {};
   try {
-    const r = await tkApi('/api/coll/padr', { method: 'POST', body: { name: me.name, dept: me.dept || '', cycle: String(new Date().getFullYear()), status: 'Goal-setting', goals: [] } });
+    const r = await tkApi('/api/coll/padr', { method: 'POST', body: { name: me.name, dept: me.dept || '', cycle: _myGoalsYear || String(new Date().getFullYear()), status: 'Goal-setting', goals: [] } });
     if (r && r.item) (_HR.padr = _HR.padr || []).push(r.item);
     toast('Goal cycle started'); tkRenderMyGoals();
   } catch (e) { toast('Could not start: ' + e.message, 'error', 5000); }
@@ -6205,7 +6236,7 @@ async function tkRenderHrMetrics() {
   // Avg performance (PADR) by department — new dashboard chart
   const perfAgg = {}; emps.forEach(e => { const d = e.dept || '—'; (perfAgg[d] = perfAgg[d] || { s: 0, n: 0 }); perfAgg[d].s += (ratingBy[e.id] || 3); perfAgg[d].n++; });
   const perfDeptVals = deptKeys.map(d => perfAgg[d] && perfAgg[d].n ? Math.round(perfAgg[d].s / perfAgg[d].n * 10) / 10 : 0);
-  const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
+  const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
   ch.innerHTML = chartCard('Staff by Department', 'dc-deptbar') + chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
     chartCard('Gender Split', 'dc-gender') + chartCard('Tenure Bands', 'dc-tenure') + chartCard('Attendance Status', 'dc-att') +
     chartCard('Leave Days by Type', 'dc-leave') + chartCard('Headcount Growth', 'dc-trend') +
@@ -6297,7 +6328,7 @@ const _QA_SPECS = {
     { k: 'attachment', label: 'Attachment (PDF / Doc / Slides)', type: 'file' }] },
   devices: { title: 'Add Device / Equipment', coll: 'devices', reload: 'devices', fields: [
     { k: 'name', label: 'Device / Equipment Name' },
-    { k: 'category', label: 'Category', type: 'select', options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Vehicle', 'Tool', 'Software License', 'Other'] },
+    { k: 'category', label: 'Category', type: 'select', options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Vehicle', 'Tool', 'PPE / Safety', 'Uniform / Shirt', 'Access Card', 'SIM / Phone Plan', 'Furniture', 'Software License', 'Other'] },
     { k: 'serial', label: 'Serial / Asset Tag' },
     { k: 'assignedTo', label: 'Assigned To (employee)' },
     { k: 'department', label: 'Department' },
@@ -6472,8 +6503,8 @@ function tkRenderMyProfile() {
     '</div>' +
   '</div>' +
   '<div style="display:grid;grid-template-columns:repeat(8,minmax(225px,1fr));gap:14px;overflow-x:auto;padding-bottom:6px;align-items:start">' +
-    sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
-    sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('ID / Passport', D(e.personalId))) +
+    sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('System Access', D((_LEVEL_LABEL && _LEVEL_LABEL[e.level]) || (e.role === 'manager' ? 'Manager' : 'Staff'))) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
+    sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('Shirt / Uniform', D(e.shirtSize)) + row('ID / Passport', D(e.personalId))) +
     sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
     sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
     sec('Leave &amp; Benefits', bar('Annual Leave', aU, aT, 'prog-navy') + bar('Sick Leave', sU, sT, 'prog-emerald')) +
@@ -7521,7 +7552,7 @@ async function tkRenderRecruitReport() {
   }
 }
 /* Report chart card (PowerBI-style canvas tile). */
-function _rptChartCard(title, id, h) { return '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:' + (h || 210) + 'px"><canvas id="' + id + '"></canvas></div></div>'; }
+function _rptChartCard(title, id, h) { return '<div class="card" style="padding:14px 16px"><div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:' + (h || 210) + 'px"><canvas id="' + id + '"></canvas></div></div>'; }
 /* Payroll report — company cost summary + by-department breakdown (no individual figures). */
 async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
@@ -9292,8 +9323,11 @@ async function saveEmployee() {
   const color = palette[Math.floor((_DEMO_EMPLOYEES || []).length) % palette.length];
   const autoEmail = val('emp-email') || (name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.') + '@humiley.com');
 
+  const access = val('emp-access') || 'staff';
+  const _accessMap = { staff: { role: 'staff', level: 'staff' }, manager: { role: 'manager', level: 'manager' }, admin: { role: 'manager', level: 'admin' } };
+  const acc = _accessMap[access] || _accessMap.staff;
   const payload = {
-    name, title, dept, email: autoEmail, ini: initials, clr: color, zone: 'HQ', role: 'staff',
+    name, title, dept, email: autoEmail, ini: initials, clr: color, zone: 'HQ', role: acc.role, level: acc.level,
     gender: val('emp-gender'), dob: val('emp-dob'), jobLevel: val('emp-level'),
     employmentType: val('emp-type') || 'Full Time', phone: val('emp-phone'),
     startDate: val('emp-start') || null, status: val('emp-status') || 'Active',
@@ -9301,6 +9335,7 @@ async function saveEmployee() {
     education: val('emp-education'), personalId: val('emp-personalId'),
     address: val('emp-address'), emergency: val('emp-emergency'),
     englishCert: val('emp-english'), note: val('emp-note'), photo: val('emp-photo'),
+    shirtSize: val('emp-shirt'),
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
   let res;
@@ -9311,9 +9346,25 @@ async function saveEmployee() {
   }
   if (res === null) { toast('Could not save employee (email may already exist)', 'error'); return; }
   const editing = !!_tkEditEmpId; _tkEditEmpId = null;
+  // Provision assets for a NEW hire (auto-create device records assigned to them)
+  let provN = 0;
+  if (!editing) {
+    const checked = id => !!(document.getElementById(id) || {}).checked;
+    const want = []; const sz = val('emp-shirt');
+    if (checked('prov-laptop')) want.push({ name: 'Dell Latitude 5440', category: 'Laptop', unitPrice: 22000000 });
+    if (checked('prov-monitor')) want.push({ name: 'Dell 24" Monitor P2422H', category: 'Monitor', unitPrice: 4500000 });
+    if (checked('prov-phone')) want.push({ name: 'iPhone 13', category: 'Phone', unitPrice: 16000000 });
+    if (checked('prov-card')) want.push({ name: 'Company Access Card', category: 'Access Card', unitPrice: 50000 });
+    if (checked('prov-shirt')) want.push({ name: 'Company Uniform / Shirt' + (sz ? ' (' + sz + ')' : ''), category: 'Uniform / Shirt', unitPrice: 250000, note: sz ? ('Size ' + sz) : '' });
+    const newEmp = (res && (res.item || res.employee || res)) || {};
+    const empId = newEmp.id || ''; const today = new Date().toISOString().slice(0, 10);
+    for (const w of want) {
+      try { await tkApi('/api/coll/devices', { method: 'POST', body: { name: w.name, category: w.category, serial: '', assignedTo: name, empId: empId, department: dept, qty: 1, unitPrice: w.unitPrice, purchaseDate: today, status: 'Assigned', note: w.note || '' } }); provN++; } catch (e) {}
+    }
+  }
   try { await tkBootstrap(); _renderEmployeeTable(); tkRenderBalances(); tkRenderDashboard(); } catch (e) {}
   closeModal('addEmpModal');
-  toast('' + name + (editing ? ' updated' : ' added') + ' — ' + title + ' · ' + dept);
+  toast('' + name + (editing ? ' updated' : ' added') + ' — ' + title + ' · ' + dept + (provN ? ' · ' + provN + ' asset(s) provisioned' : ''));
 }
 
 function tkPopulateManagerSelect(selectedEmail, excludeId) {
@@ -9492,6 +9543,22 @@ function saveEmployeeProfile() {
       <div class="form-group"><label class="form-label">Sick Leave (days)</label><input type="number" class="form-control" id="emp-sick" value="30" min="0" max="60"></div>
     </div>
     <div class="form-group"><label class="form-label">Note</label><input type="text" class="form-control" id="emp-note"></div>
+
+    <div style="border-top:1px solid var(--line);margin:8px 0 14px;padding-top:14px">
+      <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px">Access &amp; Provisioning</div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">System Access / Permission</label><select class="form-control" id="emp-access"><option value="staff">Staff / Employee</option><option value="manager">Manager / HR</option><option value="admin">Admin</option></select></div>
+        <div class="form-group"><label class="form-label">Shirt / Uniform Size</label><select class="form-control" id="emp-shirt"><option value="">—</option><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>3XL</option></select></div>
+      </div>
+      <label class="form-label">Provision on hire <span style="color:var(--text-light);font-weight:400">(auto-creates assets assigned to this employee)</span></label>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="prov-laptop" checked style="width:16px;height:16px;accent-color:var(--navy)"> Laptop</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="prov-monitor" checked style="width:16px;height:16px;accent-color:var(--navy)"> Monitor</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="prov-phone" style="width:16px;height:16px;accent-color:var(--navy)"> Phone</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="prov-card" checked style="width:16px;height:16px;accent-color:var(--navy)"> Access Card</label>
+        <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" id="prov-shirt" checked style="width:16px;height:16px;accent-color:var(--navy)"> Uniform / Shirt</label>
+      </div>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addEmpModal')">Cancel</button>
       <button class="btn btn-emerald" onclick="saveEmployee()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Add Employee</button>
