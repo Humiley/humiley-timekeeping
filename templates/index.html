@@ -1094,17 +1094,14 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
 
+  <!-- Level-adaptive band (admin: access/audit · management: finance) — top of dashboard -->
+  <div id="dash-level-band" style="margin-bottom:22px"></div>
+
   <!-- HR at a glance (all-HRM KPIs) -->
   <div class="card" style="padding:16px 18px;margin-bottom:22px">
     <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR at a Glance</div>
-    <div id="dash-hr-metrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
+    <div id="dash-hr-metrics" style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px"></div>
     <div id="dash-hr-charts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:18px"></div>
-  </div>
-
-  <!-- HRMS module shortcuts -->
-  <div class="card" style="padding:16px 18px;margin-bottom:22px">
-    <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR Modules</div>
-    <div id="dash-hr-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px"></div>
   </div>
 
   <!-- CHARTS + ACTIVITY -->
@@ -1710,6 +1707,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <button class="btn btn-outline btn-sm" onclick="exportHRReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Report</button>
       <button class="btn btn-emerald" onclick="tkOpenAddEmp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
     </div>
+  </div>
+
+  <!-- HRMS module shortcuts -->
+  <div class="card" style="padding:16px 18px;margin-bottom:18px">
+    <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR Modules</div>
+    <div id="dash-hr-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px"></div>
   </div>
 
   <div class="tabs">
@@ -5362,7 +5365,6 @@ async function tkRenderHrMetrics() {
   const wrap = document.getElementById('dash-hr-metrics'); if (!wrap) return;
   wrap.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
   await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent'), tkLoadColl('exits')]);
-  try { tkRenderHrModules(); } catch (e) {}
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const today = new Date().toISOString().slice(0, 10);
   const present = (_DEMO_ATTENDANCE || []).filter(r => r.date === today && (r.in || r.clock_in)).length;
@@ -5376,12 +5378,20 @@ async function tkRenderHrMetrics() {
   const ratingBy = {}; reviews.forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
   let payGross = 0; emps.forEach(e => { try { payGross += _payComputed(e, ratingBy[e.id]).grossPay; } catch (x) {} });
   const newHires = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.y === new Date().getFullYear() && (p.m - 1) === new Date().getMonth(); }).length;
-  const k = (label, val, color) => '<div style="background:var(--soft-bg);border-radius:10px;padding:13px 14px"><div style="font-size:20px;font-weight:800;color:' + (color || 'var(--navy)') + '">' + val + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
+  const metric = (label, val, color, icon) => '<div style="background:var(--soft-bg);border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:11px;min-width:0">' +
+    '<div style="width:36px;height:36px;border-radius:10px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
+    '<div style="min-width:0"><div style="font-size:17px;font-weight:800;color:var(--navy);line-height:1.15;white-space:nowrap">' + val + '</div><div style="font-size:11px;color:var(--text-light);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div></div></div>';
   wrap.innerHTML = [
-    k('Headcount', emps.length), k('Present today', present, 'var(--emerald)'), k('On leave today', onLeave, '#F59E0B'),
-    k('New hires (mo)', newHires, '#8B5CF6'), k('Open vacancies', openReq, '#205090'), k('In pipeline', cands, '#8B5CF6'),
-    k('Onboarding', onboard, '#F59E0B'), k('Avg PADR', avgRating + '/5', 'var(--emerald)'), k('Course enrolments', enroll, '#205090'),
-    k('Monthly payroll', _PAY_FMT(payGross), '#F59E0B')
+    metric('Headcount', emps.length, '#205090', TK_ICON.users),
+    metric('Present today', present, '#00B060', TK_ICON.check),
+    metric('On leave today', onLeave, '#F59E0B', TK_ICON.calendar),
+    metric('New hires (mo)', newHires, '#8B5CF6', '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>'),
+    metric('Open vacancies', openReq, '#205090', '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'),
+    metric('In pipeline', cands, '#8B5CF6', '<polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>'),
+    metric('Onboarding', onboard, '#F59E0B', '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>'),
+    metric('Avg PADR', avgRating + '/5', '#00B060', '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>'),
+    metric('Course enrolments', enroll, '#205090', '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
+    metric('Monthly payroll', _PAY_FMT(payGross), '#F59E0B', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>')
   ].join('');
   // charts (professional Chart.js)
   const ch = document.getElementById('dash-hr-charts'); if (!ch) return;
@@ -5410,9 +5420,7 @@ async function tkRenderHrMetrics() {
 }
 /* B1 — level-adaptive band: Admin sees access/audit, Management sees finance, Manager sees team focus. */
 async function tkRenderDashLevelBand() {
-  let band = document.getElementById('dash-level-band');
-  const charts = document.getElementById('dash-hr-charts'); if (!charts) return;
-  if (!band) { band = document.createElement('div'); band.id = 'dash-level-band'; band.style.marginTop = '18px'; charts.parentNode.insertBefore(band, charts.nextSibling); }
+  const band = document.getElementById('dash-level-band'); if (!band) return;
   const lvl = (typeof _userLevel !== 'undefined' && _userLevel) || 'manager';
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const card = (title, body) => '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">' + title + '</div>' + body + '</div>';
@@ -5924,7 +5932,8 @@ function showView(id, navEl, title) {
   if (titleEl) titleEl.textContent = pageTitle;
   if (id === 'reports') { setTimeout(initReportCharts, 100); }
   if (id === 'manager') { loadManagerView(); }
-  if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderHrModules(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
+  if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderDashLevelBand(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
+  if (id === 'hradmin') { Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} }); }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
   if (id === 'myprofile') { Promise.all([tkLoadColl('acks'), tkLoadColl('benefits')]).then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
