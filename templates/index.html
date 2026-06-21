@@ -458,6 +458,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 .tk-hero h1{font-size:34px;font-weight:300;letter-spacing:-.8px;color:var(--navy);line-height:1.1;}
 .tk-hero h1 b{font-weight:600;}
 .tk-hero .sub{font-size:13px;color:var(--text-light);margin-top:6px;}
+@media print {
+  body * { visibility: hidden !important; }
+  #payslipOverlay, #payslipOverlay * { visibility: visible !important; }
+  #payslipOverlay { position: absolute !important; inset: 0 !important; background: #fff !important; display: block !important; padding: 0 !important; }
+  #payslipOverlay .modal { box-shadow: none !important; max-width: 100% !important; }
+  #payslipOverlay .modal-footer, #payslipOverlay .modal-close { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -847,6 +854,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="staff-panel">
       <div class="staff-panel-hdr">Learning &amp; Development</div>
       <div id="staff-learning" style="display:flex;flex-direction:column;gap:11px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">My Performance</div>
+      <div id="staff-perf" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
   </div>
 
@@ -3742,6 +3753,27 @@ function tkRenderStaffPortal() {
   /* Global office clocks (live) */
   tkRenderClocks();
   if (!window._tkClockTimer) { window._tkClockTimer = setInterval(tkRenderClocks, 30000); }
+
+  /* My Performance (the signed-in employee's own latest review) */
+  const perfEl = document.getElementById('staff-perf');
+  if (perfEl) {
+    perfEl.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
+    tkLoadColl('reviews').then(() => {
+      const mine = (_HR.reviews || []).filter(r => (me.id && r.empId === me.id) || (r.name && r.name === me.name));
+      const courses = ((_tkPortalData().learning) || []);
+      if (mine.length) {
+        const r = mine[0];
+        perfEl.innerHTML =
+          '<div style="text-align:center;padding:4px 0 8px"><div style="font-size:22px">' + _hrStars(r.rating) + '</div>' +
+          '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + (r.cycle || 'Latest review') + ' · <span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></div></div>' +
+          '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-top:1px solid var(--line)"><span style="color:var(--text-light)">Rating</span><span style="font-weight:700">' + (+r.rating || 0) + ' / 5</span></div>' +
+          '<div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text-light)">Courses available</span><span style="font-weight:700">' + courses.length + '</span></div>' +
+          '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="showView(\'myprofile\',null,\'My Profile\')">View My Profile</button>';
+      } else {
+        perfEl.innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:14px 0">No performance review on record yet.<br>Your manager will share it during the next review cycle.</div>';
+      }
+    });
+  }
 }
 
 /* Live world clocks for the company's global offices. */
@@ -3779,6 +3811,51 @@ function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? t
 const _hrKpi = (label, val, color) => '<div class="card" style="flex:1;min-width:150px;padding:16px 18px"><div style="font-size:23px;font-weight:800;color:' + (color || 'var(--navy)') + '">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
 const _hrKpiRow = cards => '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">' + cards.join('') + '</div>';
 const _hrStars = n => { n = Math.max(0, Math.min(5, +n || 0)); return '<span style="color:#F59E0B">' + '★'.repeat(n) + '</span><span style="color:#d4d8de">' + '★'.repeat(5 - n) + '</span>'; };
+const _TRASH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+/* Edit + Delete action buttons for a collection item (type === collection name). */
+function _hrEditDel(type, id, reload) {
+  return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
+    '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
+}
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining() };
+async function tkCollDelete(coll, id, reload) {
+  if (!confirm('Delete this item? This cannot be undone.')) return;
+  try {
+    await tkApi('/api/coll/' + coll + '/' + id, { method: 'DELETE' });
+    _HR[coll] = (_HR[coll] || []).filter(x => x.id !== id);
+    if (_HR_RELOAD[reload]) _HR_RELOAD[reload]();
+    toast('Deleted');
+  } catch (e) { toast('Could not delete: ' + e.message, 'error', 5000); }
+}
+async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; } catch (e) {} }
+function _slugEmail(name) {
+  const s = (name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, '.');
+  return (s || 'employee') + '@humiley.com';
+}
+/* Hire a candidate → create employee record + onboarding checklist + mark Hired. */
+async function tkHireCandidate(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  if (!confirm('Hire ' + c.name + '?\n\nThis will:\n• Create an employee record in the roster\n• Start an onboarding checklist\n• Mark the candidate as Hired')) return;
+  try {
+    const ini = (c.name || '').split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+    const dept = ((_HR.jobs || []).find(j => j.title === c.role) || {}).dept || '';
+    const emp = await tkApi('/api/employees', { method: 'POST', body: {
+      name: c.name, title: c.role || '', dept, email: _slugEmail(c.name), phone: '', status: 'Active',
+      role: 'staff', startDate: _today(), employmentType: 'Full Time', ini,
+      annualUsed: 0, annualTotal: 12, sickUsed: 0, sickTotal: 30, compoff: 0
+    } });
+    await tkApi('/api/coll/onboarding', { method: 'POST', body: {
+      empId: emp.id, name: c.name, role: c.role || '', startDate: _today(),
+      tasks: ['Sign employment contract', 'IT account & email setup', 'Office tour & introductions', 'Health & safety induction', 'Set first 30-day goals'].map(l => ({ label: l, done: false }))
+    } });
+    await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: { ...c, stage: 'Hired' } });
+    c.stage = 'Hired';
+    await tkReloadEmployees();
+    tkRenderRecruitment();
+    toast(c.name + ' hired → added to roster (' + emp.id + ') & onboarding started', 'success', 6000);
+  } catch (e) { toast('Hire failed: ' + e.message, 'error', 6000); }
+}
 
 /* Centralized Employee Database — KPIs + the rich, searchable employee table. */
 function tkRenderDatabase() {
@@ -3814,10 +3891,14 @@ async function tkRenderRecruitment() {
   const cols = stages.map(st => {
     const items = cands.filter(c => c.stage === st);
     return '<div style="flex:1;min-width:175px;background:var(--soft-bg);border-radius:10px;padding:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin-bottom:8px;display:flex;justify-content:space-between"><span>' + st + '</span><span>' + items.length + '</span></div>' +
-      (items.map(c => '<div class="card" title="Click to advance stage" style="padding:10px;margin-bottom:8px;cursor:pointer" onclick="tkCandidateAdvance(\'' + c.id + '\')"><div style="font-weight:700;font-size:13px">' + c.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (c.role || '') + '</div>' + (c.rating ? ('<div style="font-size:11px;margin-top:3px">' + _hrStars(c.rating) + '</div>') : '') + '</div>').join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>') + '</div>';
+      (items.map(c => {
+        const adv = c.stage !== 'Hired' && c.stage !== 'Rejected' ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="tkCandidateAdvance(\'' + c.id + '\')">→</button>' : '';
+        const hire = c.stage === 'Offer' ? '<button class="btn btn-emerald btn-sm" style="font-size:10px;padding:2px 9px" onclick="tkHireCandidate(\'' + c.id + '\')">Hire</button>' : '';
+        return '<div class="card" style="padding:10px;margin-bottom:8px"><div style="font-weight:700;font-size:13px">' + c.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (c.role || '') + '</div>' + (c.rating ? ('<div style="font-size:11px;margin-top:3px">' + _hrStars(c.rating) + '</div>') : '') + '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + hire + adv + _hrEditDel('candidates', c.id, 'recruitment') + '</div></div>';
+      }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>') + '</div>';
   }).join('');
-  const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th></tr></thead><tbody>' +
-    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No jobs posted yet</td></tr>') + '</tbody></table></div></div>';
+  const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead><tbody>' +
+    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No jobs posted yet</td></tr>') + '</tbody></table></div></div>';
   root.innerHTML = kpis + '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Candidate Pipeline</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>' + jt;
 }
 function tkCandidateAdvance(id) {
@@ -3846,7 +3927,7 @@ async function tkRenderOnboarding() {
   const cards = items.length ? items.map(o => {
     const tk = o.tasks || []; const dn = tk.filter(t => t.done).length; const pct = Math.round(dn / Math.max(tk.length, 1) * 100);
     const e = _hrEmp(o.empId) || { name: o.name, ini: (o.name || '?').slice(0, 2).toUpperCase() };
-    return '<div class="card" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + _hrAv(e) + '<div style="flex:1"><div style="font-weight:700">' + (o.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (o.role || '') + (o.startDate ? (' · starts ' + tkFmtDate(o.startDate)) : '') + '</div></div><span class="badge ' + (pct === 100 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + pct + '%</span></div>' +
+    return '<div class="card" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + _hrAv(e) + '<div style="flex:1"><div style="font-weight:700">' + (o.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (o.role || '') + (o.startDate ? (' · starts ' + tkFmtDate(o.startDate)) : '') + '</div></div><span class="badge ' + (pct === 100 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + pct + '%</span>' + _hrEditDel('onboarding', o.id, 'onboarding') + '</div>' +
       '<div class="prog-wrap" style="margin-bottom:10px"><div class="prog-fill ' + (pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pct + '%"></div></div>' +
       tk.map((t, i) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="tkOnboardToggle(\'' + o.id + '\',' + i + ',this.checked)"><span style="' + (t.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + t.label + '</span></label>').join('') +
     '</div>';
@@ -3879,10 +3960,10 @@ async function tkRenderPerformance() {
     '<button class="tab" onclick="tkPerfTab(\'pip\',this)">Improvement (PIP)</button>' +
     '<button class="tab" onclick="tkPerfTab(\'calib\',this)">Calibration</button></div>';
   const okr = '<div id="perf-okr"><div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Company Goals (OKRs)</div>' +
-    (goals.length ? goals.map(g => '<div style="margin-bottom:13px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span style="font-weight:600">' + (g.name || '') + '</span><span style="color:var(--text-light);font-size:11px">' + (g.owner || '') + (g.due ? (' · due ' + tkFmtDate(g.due)) : '') + ' · ' + (+g.progress || 0) + '%</span></div><div class="prog-wrap"><div class="prog-fill ' + ((+g.progress || 0) >= 70 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + (+g.progress || 0) + '%"></div></div></div>').join('') : '<div style="color:var(--text-light);font-size:13px">No goals yet — click “+ New Goal”.</div>') + '</div></div>';
-  const revRows = reviews.length ? reviews.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2).toUpperCase() }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + (r.cycle || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></td></tr>'; }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No reviews yet</td></tr>';
+    (goals.length ? goals.map(g => '<div style="margin-bottom:13px"><div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:3px;gap:8px"><span style="font-weight:600">' + (g.name || '') + '</span><span style="display:flex;align-items:center;gap:6px"><span style="color:var(--text-light);font-size:11px;white-space:nowrap">' + (g.owner || '') + (g.due ? (' · due ' + tkFmtDate(g.due)) : '') + ' · ' + (+g.progress || 0) + '%</span>' + _hrEditDel('goals', g.id, 'performance') + '</span></div><div class="prog-wrap"><div class="prog-fill ' + ((+g.progress || 0) >= 70 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + (+g.progress || 0) + '%"></div></div></div>').join('') : '<div style="color:var(--text-light);font-size:13px">No goals yet — click “+ New Goal”.</div>') + '</div></div>';
+  const revRows = reviews.length ? reviews.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2).toUpperCase() }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + (r.cycle || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('reviews', r.id, 'performance') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No reviews yet</td></tr>';
   const reviewsHtml = '<div id="perf-reviews" style="display:none"><div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'reviews\')">+ Add Review</button></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Reviews (Mid-Year &amp; Annual)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Cycle</th><th>Rating</th><th>Status</th></tr></thead><tbody>' + revRows + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Reviews (Mid-Year &amp; Annual)</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Cycle</th><th>Rating</th><th>Status</th><th></th></tr></thead><tbody>' + revRows + '</tbody></table></div></div></div>';
   const pipList = reviews.filter(r => (+r.rating || 3) <= 2);
   const pip = '<div id="perf-pip" style="display:none">' + (pipList.length ?
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Performance Improvement Plans</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>Rating</th><th>Plan Status</th></tr></thead><tbody>' + pipList.map(r => { const e = _hrEmp(r.empId); return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (r.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (r.name || '') + '</span></div></td><td>' + (r.dept || '') + '</td><td>' + _hrStars(r.rating) + '</td><td><span class="badge b-warn" style="font-size:10px">PIP — 60 days</span></td></tr>'; }).join('') + '</tbody></table></div></div>' :
@@ -3933,7 +4014,7 @@ async function tkRenderTraining() {
     _hrKpi('Enrollments', totalEnroll, '#8B5CF6'),
     _hrKpi('Categories', [...new Set(c.map(x => x.category).filter(Boolean))].length, '#F59E0B')
   ]);
-  const cards = c.length ? c.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.status === 'Active' ? 'b-ok' : 'b-warn') + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + '</div><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + (x.enrolled || 0) + ' enrolled</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
+  const cards = c.length ? c.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.status === 'Active' ? 'b-ok' : 'b-warn') + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + (x.enrolled || 0) + ' enrolled</div><div style="display:flex;gap:4px">' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div>';
 }
 
@@ -4040,7 +4121,7 @@ function tkPayslip(empId) {
     line('Social/Health/Unemployment (10.5%)', '-' + _PAY_FMT(c.ins)) +
     line('Personal Income Tax', '-' + _PAY_FMT(c.pit)) + '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">Net Pay</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-primary" onclick="window.print()">Print</button></div></div>';
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-primary" onclick="window.print()">Save as PDF</button></div></div>';
   document.body.appendChild(el);
 }
 
@@ -4083,14 +4164,16 @@ const _QA_SPECS = {
     { k: 'title', label: 'Course Title' }, { k: 'category', label: 'Category' }, { k: 'duration', label: 'Duration' },
     { k: 'status', label: 'Status', type: 'select', options: ['Active', 'Draft', 'Archived'] }] }
 };
-let _qaType = null;
-function tkQuickAdd(type) {
-  _qaType = type; const spec = _QA_SPECS[type]; if (!spec) return;
-  document.getElementById('qa-title').textContent = spec.title;
+let _qaType = null, _qaEditId = null;
+function tkQuickAdd(type, id) {
+  _qaType = type; _qaEditId = id || null;
+  const spec = _QA_SPECS[type]; if (!spec) return;
+  const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
+  document.getElementById('qa-title').textContent = (id ? 'Edit — ' : '') + spec.title;
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
-    const id = 'qa-' + f.k;
-    if (f.type === 'select') return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + id + '">' + f.options.map(o => '<option>' + o + '</option>').join('') + '</select></div>';
-    return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + id + '" type="' + (f.type || 'text') + '"></div>';
+    const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
+    if (f.type === 'select') return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '">' + f.options.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div>';
+    return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"></div>';
   }).join('');
   openModal('quickAddModal');
 }
@@ -4099,17 +4182,21 @@ async function tkQuickAddSave() {
   const data = {};
   spec.fields.forEach(f => { const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; data[f.k] = v; });
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
-  if (_qaType === 'onboarding') data.tasks = ['Sign employment contract', 'IT account & email setup', 'Office tour & introductions', 'Health & safety induction', 'Set first 30-day goals'].map(l => ({ label: l, done: false }));
   try {
-    const r = await fetch('/api/coll/' + spec.coll, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(data) });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save', 'error', 5000); return; }
-    (_HR[spec.coll] = _HR[spec.coll] || []).push(j.item);
+    let item;
+    if (_qaEditId) {
+      const ex = (_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {};
+      const res = await tkApi('/api/coll/' + spec.coll + '/' + _qaEditId, { method: 'PATCH', body: { ...ex, ...data } });
+      item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
+    } else {
+      if (_qaType === 'onboarding') data.tasks = ['Sign employment contract', 'IT account & email setup', 'Office tour & introductions', 'Health & safety induction', 'Set first 30-day goals'].map(l => ({ label: l, done: false }));
+      const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
+      item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
+    }
     closeModal('quickAddModal');
-    toast('Added successfully');
-    const fn = { recruitment: tkRenderRecruitment, onboarding: tkRenderOnboarding, performance: tkRenderPerformance, training: tkRenderTraining }[spec.reload];
-    if (fn) try { fn(); } catch (e) {}
-  } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
+    toast(_qaEditId ? 'Updated' : 'Added successfully');
+    if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
 /* Self-service profile photo upload. */
