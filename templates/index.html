@@ -556,6 +556,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></span>
     <span class="nav-label" id="nav-leave-label">My Leave</span>
   </div>
+  <div class="nav-item" onclick="showView('mygoals',this,'My Goals')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
+    <span class="nav-label">My Goals</span>
+  </div>
   <div class="nav-item" onclick="showView('travelclaims',this,'Travel &amp; Claims')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
     <span class="nav-label">Travel &amp; Claims</span>
@@ -940,6 +944,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="btn btn-primary btn-sm" onclick="tkQuickAdd('onboarding')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add New Hire</button>
   </div>
   <div id="onboarding-root"></div>
+</div>
+
+<div id="view-mygoals" class="view">
+  <div class="page-header">
+    <div><h1>My Goals</h1><p>Track your PADR goals, self-assess &amp; add your own development goals</p></div>
+  </div>
+  <div id="mygoals-root"></div>
 </div>
 
 <div id="view-offboarding" class="view">
@@ -4266,14 +4277,39 @@ function tkPerfTab(tab, el) {
   if (el) el.classList.add('active');
 }
 /* Manager view of a PADR cycle — score goals, set rating/stage. */
+/* Goal helpers — stable ids, provenance, progress/status (A13/B2). */
+let _goalSeq = 0;
+const _newGoalId = () => 'gl-' + (Date.now ? '' : '') + (_goalSeq++) + '-' + ((TK.user && TK.user.id) || 'x');
+function _normGoals(p) {
+  (p.goals || []).forEach((g, i) => { if (!g.id) g.id = 'g' + i; if (!g.source) g.source = 'assigned'; if (g.progress == null) g.progress = 0; if (!g.status) g.status = 'Not started'; });
+  return p.goals || [];
+}
+const _GOAL_STATUSES = ['Not started', 'On track', 'At risk', 'Done'];
+const _GOAL_LIBRARY = [
+  { cat: 'Delivery', objective: 'Deliver assigned projects on time & on budget', weight: 25, target: '100% milestones met' },
+  { cat: 'Quality', objective: 'Keep defect / rework rate within target', weight: 20, target: '< 2% rework' },
+  { cat: 'HSE', objective: 'HSE compliance & 5S', weight: 15, target: 'Zero incidents' },
+  { cat: 'Customer', objective: 'Customer satisfaction & responsiveness', weight: 10, target: 'CSAT ≥ 4.5/5' },
+  { cat: 'Cost', objective: 'Cost saving / efficiency initiative', weight: 10, target: 'Save ≥ 5%' },
+  { cat: 'Development', objective: 'Skill development & certification', weight: 10, target: '2 competencies gained' },
+  { cat: 'Teamwork', objective: 'Teamwork & cross-functional collaboration', weight: 10, target: 'Positive 360 feedback' },
+  { cat: 'Leadership', objective: 'Mentor / lead a sub-team or initiative', weight: 15, target: 'Mentor 1–2 juniors' },
+  { cat: 'Innovation', objective: 'Process improvement / innovation', weight: 10, target: '1 improvement shipped' }
+];
+const _goalSourceBadge = g => g.source === 'self' ? '<span class="badge b-info" style="font-size:9px">Self</span>' : '<span class="badge b-navy" style="font-size:9px">Assigned</span>';
 function tkPadrManage(id) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  _normGoals(p);
   document.getElementById('padrOverlay')?.remove();
-  const goalRows = (p.goals || []).map((g, i) => '<tr><td style="font-size:12px">' + (g.objective || '') + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:48px;text-align:center" id="padr-mgr-' + i + '"></td></tr>').join('');
+  const goalRows = (p.goals || []).map(g => '<tr><td style="font-size:12px">' + (g.objective || '') + ' ' + _goalSourceBadge(g) + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:42px;text-align:center" data-mgr="' + g.id + '"></td><td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td><td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkPadrDelGoal(\'' + id + '\',\'' + g.id + '\')">' + _TRASH + '</button></td></tr>').join('');
+  const totalW = (p.goals || []).reduce((s, g) => s + (+g.weight || 0), 0);
   const el = document.createElement('div'); el.id = 'padrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:620px"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Score each objective 1–5; weighted total drives the rating.</div>' +
-    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self</th><th>Mgr</th></tr></thead><tbody>' + goalRows + '</tbody></table></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:680px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Assign goals, score 1–5; weighted total drives the rating. Weight total: <b style="color:' + (totalW === 100 ? 'var(--emerald)' : '#F59E0B') + '">' + totalW + '%</b></div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Self</th><th>Mgr</th><th>Status</th><th></th></tr></thead><tbody id="padr-goal-body">' + goalRows + '</tbody></table></div>' +
+    '<div class="card" style="padding:10px 12px;margin-top:10px;background:var(--soft-bg)"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:6px">Assign a new goal</div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:6px"><select class="form-control" id="padr-lib" style="flex:1;font-size:12px" onchange="tkPadrLib(\'' + id + '\')"><option value="">— pick from library —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
+    '<input class="form-control" id="padr-ng-obj" placeholder="Objective" style="font-size:12px;margin-bottom:6px"><div style="display:flex;gap:6px"><input class="form-control" id="padr-ng-wt" type="number" placeholder="Weight %" style="width:90px;font-size:12px"><input class="form-control" id="padr-ng-tgt" placeholder="Target / KPI" style="flex:1;font-size:12px"><button class="btn btn-outline btn-sm" onclick="tkPadrAddGoal(\'' + id + '\')">' + tkIcon('plus') + 'Add</button></div></div>' +
     '<div class="grid-2" style="margin-top:12px"><div class="form-group"><label class="form-label">Stage</label><select class="form-control" id="padr-status"><option>Goal-setting</option><option>Mid-year</option><option>Self-assessment</option><option>Calibrated</option><option>Finalized</option></select></div>' +
     '<div class="form-group"><label class="form-label">Final rating (1–5)</label><select class="form-control" id="padr-rating"><option value="0">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div></div>' +
     '<div class="form-group"><label class="form-label">IDP / development note</label><textarea class="form-control" id="padr-idp">' + _tkEscT(p.idp || '') + '</textarea></div>' +
@@ -4282,9 +4318,33 @@ function tkPadrManage(id) {
   document.getElementById('padr-status').value = p.status || 'Goal-setting';
   document.getElementById('padr-rating').value = String(p.rating || 0);
 }
+function tkPadrLib(id) {
+  const i = (document.getElementById('padr-lib') || {}).value; if (i === '') return;
+  const l = _GOAL_LIBRARY[+i]; if (!l) return;
+  document.getElementById('padr-ng-obj').value = l.objective;
+  document.getElementById('padr-ng-wt').value = l.weight;
+  document.getElementById('padr-ng-tgt').value = l.target;
+}
+function _padrReadInputs(p) {
+  document.querySelectorAll('#padrOverlay [data-mgr]').forEach(el => { const g = (p.goals || []).find(x => x.id === el.getAttribute('data-mgr')); if (g && el.value) g.mgrScore = +el.value; });
+  document.querySelectorAll('#padrOverlay [data-st]').forEach(el => { const g = (p.goals || []).find(x => x.id === el.getAttribute('data-st')); if (g) g.status = el.value; });
+}
+function tkPadrAddGoal(id) {
+  const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  const obj = (document.getElementById('padr-ng-obj') || {}).value || ''; if (!obj.trim()) { toast('Enter an objective', 'warn'); return; }
+  _padrReadInputs(p);
+  (p.goals = p.goals || []).push({ id: _newGoalId(), objective: obj, weight: +(document.getElementById('padr-ng-wt') || {}).value || 0, target: (document.getElementById('padr-ng-tgt') || {}).value || '', selfScore: 0, mgrScore: 0, progress: 0, status: 'Not started', source: 'assigned', addedBy: (TK.user || {}).email || (TK.user || {}).id });
+  tkPadrManage(id);
+}
+function tkPadrDelGoal(id, gid) {
+  const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  _padrReadInputs(p);
+  p.goals = (p.goals || []).filter(g => g.id !== gid);
+  tkPadrManage(id);
+}
 async function tkPadrSave(id) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
-  (p.goals || []).forEach((g, i) => { const el = document.getElementById('padr-mgr-' + i); if (el && el.value) g.mgrScore = +el.value; });
+  _padrReadInputs(p);
   p.status = document.getElementById('padr-status').value;
   p.rating = +document.getElementById('padr-rating').value || 0;
   p.idp = document.getElementById('padr-idp').value;
@@ -4296,28 +4356,84 @@ async function tkPadrSave(id) {
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
-/* Employee self-assessment of their own PADR goals. */
-async function tkMyGoals() {
+/* Back-compat launcher — opens the full My Goals page. */
+function tkMyGoals() { showView('mygoals', null, 'My Goals'); }
+async function tkRenderMyGoals() {
+  const root = document.getElementById('mygoals-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await tkLoadColl('padr');
-  const u = TK.user || {}; const me = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
-  const p = (_HR.padr || []).find(x => me && x.empId === me.id);
-  document.getElementById('myGoalsOverlay')?.remove();
-  const el = document.createElement('div'); el.id = 'myGoalsOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  if (!p) { el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">My Goals (PADR)</div><button class="modal-close" onclick="document.getElementById(\'myGoalsOverlay\').remove()">✕</button></div><div style="padding:14px;color:var(--text-light);font-size:13px">No PADR cycle has been set up for you yet. Your manager will agree your goals at the start of the cycle.</div></div>'; document.body.appendChild(el); return; }
-  const rows = (p.goals || []).map((g, i) => '<tr><td style="font-size:12px">' + (g.objective || '') + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.selfScore || '') + '" style="width:48px;text-align:center" id="mygoal-' + i + '"></td></tr>').join('');
-  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">My Goals — ' + (p.cycle || '') + ' PADR</div><button class="modal-close" onclick="document.getElementById(\'myGoalsOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Rate your own achievement 1–5 against each agreed objective, then submit your self-assessment.</div>' +
-    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self-score</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    (p.rating ? '<div style="margin-top:12px;padding:10px 12px;background:var(--soft-bg);border-radius:8px;font-size:12px">Final rating: ' + _hrStars(p.rating) + ' · ' + (p.idp ? ('IDP: ' + p.idp) : '') + '</div>' : '') +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'myGoalsOverlay\').remove()">Close</button><button class="btn btn-emerald" onclick="tkMyGoalsSubmit(\'' + p.id + '\')">Submit self-assessment</button></div></div>';
-  document.body.appendChild(el);
+  const me = _tkMe() || {};
+  let p = (_HR.padr || []).find(x => x.empId === me.id);
+  if (!p) {
+    root.innerHTML = '<div class="card" style="padding:24px;text-align:center"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">No PADR cycle yet</div><div style="font-size:13px;color:var(--text-light);margin-bottom:14px">Start your own goal cycle now, or wait for your manager to assign goals.</div><button class="btn btn-primary btn-sm" onclick="tkMyGoalsStart()">' + tkIcon('plus') + 'Start my goal cycle</button></div>';
+    return;
+  }
+  _normGoals(p);
+  const assigned = p.goals.filter(g => g.source !== 'self');
+  const own = p.goals.filter(g => g.source === 'self');
+  const totalW = p.goals.reduce((s, g) => s + (+g.weight || 0), 0);
+  const avgProg = p.goals.length ? Math.round(p.goals.reduce((s, g) => s + (+g.progress || 0), 0) / p.goals.length) : 0;
+  const kpis = _hrKpiRow([
+    _hrKpi('Goals', p.goals.length), _hrKpi('Avg progress', avgProg + '%', '#8B5CF6'),
+    _hrKpi('Weight', totalW + '%', totalW === 100 ? 'var(--emerald)' : '#F59E0B'),
+    _hrKpi('Stage', p.status || '—', '#205090')
+  ]);
+  const goalTable = (list, editable) => list.length ? '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self</th><th>Mgr</th><th>Progress</th><th>Status</th>' + (editable ? '<th></th>' : '') + '</tr></thead><tbody>' +
+    list.map(g => '<tr><td style="font-size:12px">' + (editable ? '<input value="' + _tkEscA(g.objective || '') + '" data-obj="' + g.id + '" style="width:170px;font-size:12px">' : (g.objective || '')) + '</td><td style="text-align:center">' + (editable ? '<input type="number" value="' + (g.weight || 0) + '" data-wt="' + g.id + '" style="width:46px;text-align:center">' : (g.weight || 0) + '%') + '</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td>' +
+      '<td style="text-align:center"><input type="number" min="0" max="5" value="' + (g.selfScore || '') + '" data-self="' + g.id + '" style="width:42px;text-align:center"></td>' +
+      '<td style="text-align:center">' + (g.mgrScore || '—') + '</td>' +
+      '<td><input type="number" min="0" max="100" value="' + (g.progress || 0) + '" data-prog="' + g.id + '" style="width:52px;text-align:center">%</td>' +
+      '<td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td>' +
+      (editable ? '<td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkMyGoalDel(\'' + g.id + '\')">' + _TRASH + '</button></td>' : '') + '</tr>').join('') +
+    '</tbody></table></div>' : '<div style="padding:14px;color:var(--text-light);font-size:12px">None yet.</div>';
+  const card = (title, hint, inner) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div><span style="font-size:11px;color:var(--text-light)">' + hint + '</span></div>' + inner + '</div>';
+  const addForm = '<div class="card" style="padding:12px 16px;margin-bottom:18px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">Add my own goal</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mg-lib" onchange="tkMyGoalLib()" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— pick from library —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
+    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="mg-obj" placeholder="Objective" style="flex:2;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-wt" type="number" placeholder="Wt %" style="width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-tgt" placeholder="Target" style="flex:1;min-width:140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><button class="btn btn-outline btn-sm" onclick="tkMyGoalAdd()">' + tkIcon('plus') + 'Add</button></div></div>';
+  root.innerHTML = kpis +
+    (p.rating ? '<div class="card" style="padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--text-light)">Final rating</span><span style="font-size:15px">' + _hrStars(p.rating) + '</span>' + (p.idp ? '<span style="font-size:12px;color:var(--text-light);margin-left:auto">IDP: ' + p.idp + '</span>' : '') + '</div>' : '') +
+    card('Goals assigned by my manager', assigned.length + ' goal(s)', goalTable(assigned, false)) +
+    card('My own development goals', own.length + ' goal(s)', goalTable(own, true)) +
+    addForm +
+    '<div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn btn-emerald" onclick="tkMyGoalsSave(\'' + p.id + '\',true)">' + tkIcon('send') + 'Save &amp; submit self-assessment</button> <button class="btn btn-outline" onclick="tkMyGoalsSave(\'' + p.id + '\')">Save progress</button></div>';
 }
-async function tkMyGoalsSubmit(id) {
+function tkMyGoalLib() { const i = (document.getElementById('mg-lib') || {}).value; if (i === '') return; const l = _GOAL_LIBRARY[+i]; if (!l) return; document.getElementById('mg-obj').value = l.objective; document.getElementById('mg-wt').value = l.weight; document.getElementById('mg-tgt').value = l.target; }
+function _myGoalsRead(p) {
+  document.querySelectorAll('#mygoals-root [data-self]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-self')); if (g) g.selfScore = +el.value || 0; });
+  document.querySelectorAll('#mygoals-root [data-prog]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-prog')); if (g) g.progress = +el.value || 0; });
+  document.querySelectorAll('#mygoals-root [data-st]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-st')); if (g) g.status = el.value; });
+  document.querySelectorAll('#mygoals-root [data-obj]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-obj')); if (g) g.objective = el.value; });
+  document.querySelectorAll('#mygoals-root [data-wt]').forEach(el => { const g = p.goals.find(x => x.id === el.getAttribute('data-wt')); if (g) g.weight = +el.value || 0; });
+}
+function tkMyGoalAdd() {
+  const me = _tkMe() || {}; const p = (_HR.padr || []).find(x => x.empId === me.id); if (!p) return;
+  const obj = (document.getElementById('mg-obj') || {}).value || ''; if (!obj.trim()) { toast('Enter an objective', 'warn'); return; }
+  _myGoalsRead(p);
+  (p.goals = p.goals || []).push({ id: _newGoalId(), objective: obj, weight: +(document.getElementById('mg-wt') || {}).value || 0, target: (document.getElementById('mg-tgt') || {}).value || '', selfScore: 0, mgrScore: 0, progress: 0, status: 'Not started', source: 'self', addedBy: me.email || me.id });
+  tkRenderMyGoals();
+}
+function tkMyGoalDel(gid) {
+  const me = _tkMe() || {}; const p = (_HR.padr || []).find(x => x.empId === me.id); if (!p) return;
+  _myGoalsRead(p); p.goals = (p.goals || []).filter(g => g.id !== gid); tkRenderMyGoals();
+}
+async function tkMyGoalsStart() {
+  const me = _tkMe() || {};
+  try {
+    const r = await tkApi('/api/coll/padr', { method: 'POST', body: { name: me.name, dept: me.dept || '', cycle: String(new Date().getFullYear()), status: 'Goal-setting', goals: [] } });
+    if (r && r.item) (_HR.padr = _HR.padr || []).push(r.item);
+    toast('Goal cycle started'); tkRenderMyGoals();
+  } catch (e) { toast('Could not start: ' + e.message, 'error', 5000); }
+}
+async function tkMyGoalsSave(id, submit) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
-  (p.goals || []).forEach((g, i) => { const el = document.getElementById('mygoal-' + i); if (el && el.value) g.selfScore = +el.value; });
-  if (p.status === 'Goal-setting' || p.status === 'Mid-year') p.status = 'Self-assessment';
-  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); tkAudit('PADR self-assessment submitted', p.name || (TK.user || {}).name, p.cycle || ''); const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === ((_tkMe() || {}).managerEmail || '').toLowerCase()); if (mgr) tkNotifyGraph(mgr.email, 'PADR self-assessment ready to review', (p.name || '') + ' has submitted their ' + (p.cycle || '') + ' PADR self-assessment for your review.\n\nHumiley HR'); document.getElementById('myGoalsOverlay').remove(); toast('Self-assessment submitted to your manager'); }
-  catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+  _myGoalsRead(p);
+  if (submit && (p.status === 'Goal-setting' || p.status === 'Mid-year')) p.status = 'Self-assessment';
+  try {
+    await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p });
+    tkAudit(submit ? 'PADR self-assessment submitted' : 'My goals updated', p.name || (TK.user || {}).name, p.cycle || '');
+    if (submit) { const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === ((_tkMe() || {}).managerEmail || '').toLowerCase()); if (mgr) tkNotifyGraph(mgr.email, 'PADR self-assessment ready to review', (p.name || '') + ' has submitted their ' + (p.cycle || '') + ' PADR self-assessment for your review.\n\nHumiley HR'); }
+    toast(submit ? 'Self-assessment submitted to your manager' : 'Progress saved'); tkRenderMyGoals();
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
 /* Performance Improvement Plan — create + weekly check-ins (BM.HR-05-03). */
@@ -4424,10 +4540,25 @@ async function tkRenderTraining() {
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix — HML-AHU-TM-001</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
     (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis +
-    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
-    catalog + matrix;
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'roadmap\',this)">Development Roadmap</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
+    catalog + '<div id="trn-roadmap" style="display:none"></div>' + matrix;
+  tkRenderRoadmap();
 }
-function tkTrnTab(tab, el) { ['catalog', 'matrix'].forEach(t => { const p = document.getElementById('trn-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#training-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+function tkTrnTab(tab, el) { ['catalog', 'roadmap', 'matrix'].forEach(t => { const p = document.getElementById('trn-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#training-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+/* Development Roadmap — role-based career learning paths (A14). */
+async function tkRenderRoadmap() {
+  const el = document.getElementById('trn-roadmap'); if (!el) return;
+  await tkLoadColl('learningpaths');
+  const paths = _HR.learningpaths || [];
+  if (!paths.length) { el.innerHTML = '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No learning paths defined yet.</div>'; return; }
+  const stageColors = ['#205090', '#3168A8', '#00B060', '#8B5CF6'];
+  el.innerHTML = '<div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light)">Career learning paths by role — each stage lists the courses &amp; certifications to progress. Map competencies in the matrix to track individual progress.</div>' +
+    paths.map(p => '<div class="card" style="padding:16px 18px;margin-bottom:16px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="font-weight:700;font-size:14px;color:var(--navy)">' + (p.role || '') + '</div><span class="badge b-navy" style="font-size:10px">' + (p.track || '') + ' track</span></div>' +
+      '<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:4px">' + (p.stages || []).map((s, i) => '<div style="min-width:200px;flex:1;border:1px solid var(--line);border-top:3px solid ' + stageColors[i % stageColors.length] + ';border-radius:10px;padding:12px"><div style="font-weight:700;font-size:13px">' + (i + 1) + '. ' + (s.name || '') + '</div><div style="font-size:10px;color:var(--text-light);margin-bottom:8px">' + (s.months || '') + ' months</div>' +
+        ((s.courses || []).length ? '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin-bottom:2px">Courses</div>' + (s.courses || []).map(c => '<div style="font-size:11.5px;padding:1px 0">• ' + c + '</div>').join('') : '') +
+        ((s.certs || []).length ? '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:6px 0 2px">Certifications</div>' + (s.certs || []).map(c => '<div style="font-size:11.5px;padding:1px 0">◆ ' + c + '</div>').join('') : '') +
+        '</div>').join('') + '</div></div>').join('');
+}
 
 /* ════ Payroll — Salary 3Ps model (per HML-CB-001 C&B Policy v01.0) ════ */
 const _PAY_FMT = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
@@ -4537,7 +4668,7 @@ async function tkRenderPayroll() {
   const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
-    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Create Pay Run</button></div></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button><button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button></div></div>' +
     '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Pay Register</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
@@ -4578,8 +4709,37 @@ function _payRenderReg() {
 async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
   const runs = (_HR.payruns || []).slice().sort((a, b) => (a.period < b.period ? 1 : -1));
-  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Monthly Pay Runs</div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th></tr></thead><tbody>' +
-    (runs.length ? runs.map(r => '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td>' + (r.count || 0) + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (r.created || '') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — click “+ Create Pay Run”.</td></tr>') + '</tbody></table></div></div>';
+  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Runs</div><span style="font-size:11px;color:var(--text-light)">Monthly (company) &amp; individual runs</span></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Scope</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>' +
+    (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (r.created || '') + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — use Create Pay Run or Individual Pay Run.</td></tr>') + '</tbody></table></div></div>';
+}
+/* Individual monthly pay run for one employee (A15). */
+function tkIndivPayRun() {
+  document.getElementById('indivPayOverlay')?.remove();
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const el = document.createElement('div'); el.id = 'indivPayOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Individual Pay Run</div><button class="modal-close" onclick="document.getElementById(\'indivPayOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Employee</label><select class="form-control" id="ipr-emp">' + emps.map(e => '<option value="' + e.id + '">' + e.name + ' — ' + (e.title || '') + '</option>').join('') + '</select></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Month</label><select class="form-control" id="ipr-month">' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">Year</label><select class="form-control" id="ipr-year">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'indivPayOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkIndivPayRunGo()">' + tkIcon('check') + 'Generate &amp; payslip</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkIndivPayRunGo() {
+  const empId = (document.getElementById('ipr-emp') || {}).value;
+  const y = +(document.getElementById('ipr-year') || {}).value, m = +(document.getElementById('ipr-month') || {}).value;
+  const e = _hrEmp(empId); if (!e) return;
+  const r = (_HR.reviews || []).find(x => x.empId === empId);
+  const c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m) });
+  const period = _PAY_MONTHS[m] + ' ' + y;
+  try {
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'individual', empId: empId, empName: e.name, period: period, count: 1, gross: c.grossPay, net: c.net, ee: c.si, er: c.erTotal, pit: c.pit, erCost: c.employerCost, grade: c.grade, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    (_HR.payruns = _HR.payruns || []).push(res.item);
+    tkAudit('Individual pay run', e.name, period + ' · net ' + _PAY_FMT(c.net));
+    document.getElementById('indivPayOverlay')?.remove();
+    _payYM = { y: y, m: m }; _payCache[empId] = c; _payRenderRuns();
+    tkPayslip(empId);
+    toast('Pay run generated for ' + e.name + ' — ' + period);
+  } catch (err) { toast('Could not generate: ' + err.message, 'error', 5000); }
 }
 async function tkCreatePayRun() {
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
@@ -5720,6 +5880,7 @@ function showView(id, navEl, title) {
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
+  if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
