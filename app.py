@@ -14,6 +14,7 @@ otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 
 import json
 import os
+import re
 import secrets
 import time
 import urllib.request
@@ -178,7 +179,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"id": db.create_zone(body)}), manager=True)
         if path.startswith("/api/coll/"):
             name = path[len("/api/coll/"):].split("/")[0]
-            return self._guard(lambda u: self._coll_add(u, name, body), manager=True)
+            return self._guard(lambda u: self._coll_add(u, name, body), manager=(name not in self.STAFF_WRITE))
         return self._err("Not found.", 404)
 
     def do_PATCH(self):
@@ -190,10 +191,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._portal_update(u, body), manager=True)
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
-            return self._guard(lambda u: self._coll_update(u, seg[0], seg[1] if len(seg) > 1 else "", body), manager=True)
+            nm = seg[0]
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm != "padr"))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
-            return self._guard(lambda u: self._emp_update(eid, body), manager=True)
+            return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
         if path.startswith("/api/leave/"):
             lid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._leave_status(u, lid, body))
@@ -371,10 +373,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("An employee with that email already exists.")
         return self._json({"ok": True, "id": db.create_employee(body)})
 
-    def _emp_update(self, eid, body):
+    ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com"}
+
+    def _caller_level(self, u):
+        lv = u.get("level")
+        if lv in ("staff", "manager", "management", "admin"):
+            return lv
+        if (u.get("email") or "").lower() in self.ADMIN_EMAILS:
+            return "admin"
+        if u.get("role") == "manager":
+            return "management" if re.search(r"director|managing|chief|head|coo|ceo|cfo", u.get("title") or "", re.I) else "manager"
+        return "staff"
+
+    def _emp_update(self, u, eid, body):
         if not db.get_employee(eid):
             return self._err("Employee not found.", 404)
-        db.update_employee(eid, body)
+        body = dict(body or {})
+        # Only admins may change access level or role (prevents privilege escalation).
+        if ("level" in body or "role" in body) and self._caller_level(u) != "admin":
+            body.pop("level", None)
+            body.pop("role", None)
+        if body:
+            db.update_employee(eid, body)
         return self._json({"ok": True})
 
     # Fields an employee may update on their OWN profile (self-service).
@@ -412,6 +432,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
     COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel"}
+    # Collections any authenticated user (incl. staff) may create for self-service.
+    STAFF_WRITE = {"claims", "travel", "acks", "audit"}
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
@@ -421,11 +443,36 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
-        return self._json({"ok": True, "item": db.put_collection_item(name, dict(body or {}))})
+        item = dict(body or {})
+        # For staff self-service records, stamp identity from the session (no impersonation).
+        if name in ("claims", "travel", "acks"):
+            item["empId"] = u.get("id")
+            if not item.get("name"):
+                item["name"] = u.get("name")
+        if name == "audit":
+            item["actor"] = u.get("name") or "System"
+            item["actorId"] = u.get("id") or ""
+        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
 
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        # Non-managers reach this only for 'padr' — they may submit their OWN self-assessment only.
+        if u.get("role") != "manager":
+            if name != "padr":
+                return self._err("Manager access required.", 403)
+            existing = next((x for x in db.list_collection("padr") if x.get("id") == iid), None)
+            if not existing or existing.get("empId") != u.get("id"):
+                return self._err("Not allowed.", 403)
+            bgoals = (body or {}).get("goals") or []
+            for i, g in enumerate(existing.get("goals") or []):
+                if i < len(bgoals) and isinstance(bgoals[i], dict) and "selfScore" in bgoals[i]:
+                    g["selfScore"] = bgoals[i]["selfScore"]
+            st = (body or {}).get("status")
+            if st in ("Self-assessment", "Mid-year"):
+                existing["status"] = st
+            existing["id"] = iid
+            return self._json({"ok": True, "item": db.put_collection_item("padr", existing)})
         item = dict(body or {})
         item["id"] = iid
         return self._json({"ok": True, "item": db.put_collection_item(name, item)})

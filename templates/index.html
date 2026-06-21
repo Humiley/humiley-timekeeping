@@ -611,7 +611,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-section-label" data-roles="manager">Finance &amp; Admin</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('payroll',this,'Payroll')">
+  <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('payroll',this,'Payroll')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
   </div>
@@ -622,6 +622,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="nav-item" data-roles="manager" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
     <span class="nav-label">Reports</span>
+  </div>
+  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <span class="nav-label">Access &amp; Permissions</span>
   </div>
 
 
@@ -974,6 +978,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
   <div id="travelclaims-root"></div>
+</div>
+
+<div id="view-permissions" class="view">
+  <div class="page-header">
+    <div><h1>Access &amp; Permissions</h1><p>Grant each employee their access level — Staff · Manager · Management · Admin</p></div>
+  </div>
+  <div id="permissions-root"></div>
 </div>
 
 <div id="view-payroll" class="view">
@@ -3324,6 +3335,18 @@ async function tkGeocodeAddress() {
 ────────────────────────────────────────────────────────── */
 let _msalApp = null, _account = null;
 let _userRole = null;   // 'manager' | 'staff'
+let _userLevel = 'staff'; // 'staff' | 'manager' | 'management' | 'admin'
+const _LEVELS = ['staff', 'manager', 'management', 'admin'];
+const _LEVEL_LABEL = { staff: 'Staff', manager: 'Manager', management: 'Management', admin: 'Administrator' };
+function _lvlRank(l) { const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
+const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'giang.nguyen@humiley.com'];
+function _deriveLevel(e) {
+  if (!e) return 'staff';
+  if (e.level && _LEVELS.indexOf(e.level) >= 0) return e.level;
+  if (_ADMIN_EMAILS.indexOf((e.email || '').toLowerCase()) >= 0) return 'admin';
+  if ((e.role || '') === 'manager') return /director|managing|chief|\bhead\b|\bCOO\b|\bCEO\b|\bCFO\b/i.test(e.title || '') ? 'management' : 'manager';
+  return 'staff';
+}
 let _staffName = 'Huy Nguyen Duc';
 let _staffInitials = 'HN';
 
@@ -3430,10 +3453,18 @@ function tkUpdateViewToggle() {
 /* ── Apply role — shows/hides nav items, sets first view ── */
 function _applyRole(role) {
   const isManager = role === 'manager';
+  /* effective level: when viewing as staff, cap at staff */
+  _userLevel = isManager ? _deriveLevel(TK.user) : 'staff';
+  const rank = _lvlRank(_userLevel);
 
   /* nav items tagged data-roles="manager" */
   document.querySelectorAll('[data-roles="manager"]').forEach(el => {
     el.style.display = isManager ? '' : 'none';
+  });
+  /* finer gating: items tagged data-level need a minimum level rank */
+  document.querySelectorAll('[data-level]').forEach(el => {
+    const need = _lvlRank(el.getAttribute('data-level'));
+    if (rank < need) el.style.display = 'none';
   });
 
   /* update sidebar user card — show the actual signed-in person */
@@ -3442,7 +3473,7 @@ function _applyRole(role) {
   const nameEl   = document.getElementById('sidebar-user-name');
   const avaEl    = document.getElementById('sidebar-ava');
   const titleText = (TK.user && TK.user.title) || (isManager ? 'Managing Director' : 'Staff');
-  if (badge)    { badge.textContent = isManager ? 'Manager' : 'Staff'; badge.className = 'role-badge ' + (isManager ? 'mgr' : 'staff'); }
+  if (badge)    { badge.textContent = _LEVEL_LABEL[_userLevel] || (isManager ? 'Manager' : 'Staff'); badge.className = 'role-badge ' + (isManager ? 'mgr' : 'staff'); }
   if (roleText) roleText.firstChild.textContent = titleText + ' · ';
   if (nameEl && TK.user && TK.user.name) nameEl.textContent = TK.user.name;
   if (avaEl && TK.user) avaEl.textContent = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
@@ -4547,7 +4578,7 @@ function _payslipHTML(e, c, period) {
   const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
   const grp = t => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + t + '</div>';
   return '<div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:12px">' +
-    '<img src="https://raw.githubusercontent.com/Humiley/humiley-timekeeping/main/static/logo.png" onerror="this.style.display=\'none\'" style="height:30px">' +
+    '<img src="' + ((document.querySelector('.sidebar-logo img') || {}).src || '') + '" onerror="this.style.display=\'none\'" style="height:32px">' +
     '<div><div style="font-weight:800;color:var(--navy);font-size:15px">HUMILEY ENGINEERING &amp; SOLUTIONS</div><div style="font-size:10px;color:var(--text-light)">200 3/2 Street, District 10, HCMC · Confidential Payslip</div></div>' +
     '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period + '</div></div>' +
     '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
@@ -4578,7 +4609,9 @@ function tkPayslip(empId) {
   document.body.appendChild(el);
 }
 async function tkEmailPayslip(empId) {
-  const e = _hrEmp(empId); const c = _payCache[empId] || _payComputed(e, 3); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
+  const e = _hrEmp(empId); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
+  let c = _payCache[empId];
+  if (!c) { const rv = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, rv ? +rv.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
   const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : '');
   const subject = 'Confidential Payslip — ' + period;
   const body = 'Dear ' + e.name + ',\n\nPlease find your confidential payslip for ' + period + ':\n\n' +
@@ -4606,21 +4639,40 @@ async function tkAckDoc(doc) {
   try { const res = await tkApi('/api/coll/acks', { method: 'POST', body: { empId: e.id, doc: doc, ts: new Date().toLocaleDateString('en-GB') } }); (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc); toast('Acknowledged: ' + doc); tkRenderMyProfile(); }
   catch (err) { toast('Could not save: ' + err.message, 'error', 5000); }
 }
+/* Read a file (bill / ticket / receipt) into a hidden field as a data URL. */
+function tkReadAttach(input, hid) {
+  const f = input.files && input.files[0]; if (!f) return;
+  if (f.size > 3 * 1024 * 1024) { toast('File too large — max 3 MB', 'warn'); input.value = ''; return; }
+  const r = new FileReader();
+  r.onload = e => { const h = document.getElementById(hid); if (h) h.value = e.target.result; const n = document.getElementById(hid + 'name'); if (n) n.value = f.name; const s = document.getElementById(hid + 'lbl'); if (s) s.textContent = '✓ ' + f.name; };
+  r.readAsDataURL(f);
+}
+const _ATTACH_FIELD = (hid, label) => '<div class="form-group"><label class="form-label">' + label + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'' + hid + '\')" style="font-size:12px"><span id="' + hid + 'lbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="' + hid + '"><input type="hidden" id="' + hid + 'name"></div>';
+const _attachLink = rec => (rec && rec.attachment) ? ' <a href="' + rec.attachment + '" target="_blank" rel="noopener" title="' + (rec.attachmentName || 'attachment') + '" style="color:var(--navy)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>' : '';
+
 /* Employee — submit a benefit/welfare claim. */
 function tkSubmitClaim() {
   document.getElementById('claimOverlay')?.remove();
   const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:420px"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div class="form-group"><label class="form-label">Claim type</label><select class="form-control" id="claim-type"><option>Medical / Health</option><option>Wedding</option><option>Bereavement</option><option>Newborn</option><option>Birthday</option><option>Training</option><option>Other</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Claim type</label><select class="form-control" id="claim-type"><option>Medical / Health</option><option>Travel / Transport</option><option>Wedding</option><option>Bereavement</option><option>Newborn</option><option>Birthday</option><option>Training</option><option>Other</option></select></div>' +
     '<div class="form-group"><label class="form-label">Amount (VND)</label><input class="form-control" id="claim-amount" type="number"></div>' +
-    '<div class="form-group"><label class="form-label">Note</label><textarea class="form-control" id="claim-note" placeholder="Description + attach proof to HR"></textarea></div>' +
+    '<div class="form-group"><label class="form-label">Note</label><textarea class="form-control" id="claim-note" placeholder="Description"></textarea></div>' +
+    _ATTACH_FIELD('claim-attach', 'Attach bill / receipt (image or PDF)') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">Submit</button></div></div>';
   document.body.appendChild(el);
 }
 async function tkClaimSave() {
   const e = _tkMe();
-  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', type: document.getElementById('claim-type').value, amount: +document.getElementById('claim-amount').value || 0, note: document.getElementById('claim-note').value, status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
-  try { await tkApi('/api/coll/claims', { method: 'POST', body }); tkAudit('Claim submitted', body.name, body.type + ' ' + _PAY_FMT(body.amount)); document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); }
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', type: g('claim-type'), amount: +g('claim-amount') || 0, note: g('claim-note'), attachment: g('claim-attach'), attachmentName: g('claim-attachname'), status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
+  try {
+    await tkApi('/api/coll/claims', { method: 'POST', body });
+    tkAudit('Claim submitted', body.name, body.type + ' ' + _PAY_FMT(body.amount));
+    const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
+    if (mgr) tkNotifyGraph(mgr.email, 'Claim to approve', (body.name || '') + ' submitted a ' + body.type + ' claim of ' + _PAY_FMT(body.amount) + '. CC: Finance / HR.\n\nHumiley HR');
+    document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {}
+  }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
 }
 
@@ -4676,7 +4728,7 @@ async function tkInboxClaim(id, status) {
     await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c });
     tkAudit('Claim ' + status.toLowerCase(), c.name || '', (c.type || '') + ' ' + _PAY_FMT(c.amount || 0));
     const emp = _hrEmp(c.empId) || {}; tkNotifyGraph(emp.email, 'Your claim was ' + status.toLowerCase(), 'Hi ' + (c.name || '') + ',\n\nYour ' + (c.type || '') + ' claim of ' + _PAY_FMT(c.amount || 0) + ' has been ' + status.toLowerCase() + '.\n\nHumiley HR');
-    toast('Claim ' + status.toLowerCase()); tkRenderInbox();
+    toast('Claim ' + status.toLowerCase()); try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {}
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
@@ -4716,8 +4768,8 @@ async function tkRenderTravelClaims() {
     _hrKpi('Claims value', _PAY_FMT(cTot), 'var(--emerald)')
   ]);
   const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">Reject</button>' : '';
-  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
-  const claimRows = claims.length ? claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td style="text-align:right">' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td>' + (c.ts || '') + '</td><td><span class="badge ' + _ts(c.status) + '" style="font-size:10px">' + (c.status || '') + '</span></td><td style="white-space:nowrap">' + act('claims', c.id, c.status) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
+  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
+  const claimRows = claims.length ? claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td style="text-align:right">' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + _attachLink(c) + '</td><td>' + (c.ts || '') + '</td><td><span class="badge ' + _ts(c.status) + '" style="font-size:10px">' + (c.status || '') + '</span></td><td style="white-space:nowrap">' + act('claims', c.id, c.status) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th style="text-align:right">Amount</th><th>Note</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody>' + claimRows + '</tbody></table></div></div>';
@@ -4731,6 +4783,7 @@ function tkNewTravel() {
     '<div class="grid-2"><div class="form-group"><label class="form-label">From</label><input type="date" class="form-control" id="tr-from"></div><div class="form-group"><label class="form-label">To</label><input type="date" class="form-control" id="tr-to"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" class="form-control" id="tr-cost"></div></div>' +
     '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" class="form-control" id="tr-advance"></div>' +
+    _ATTACH_FIELD('tr-attach', 'Attach ticket / quote (image or PDF)') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'travelOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkTravelSave()">Submit</button></div></div>';
   document.body.appendChild(el);
 }
@@ -4738,7 +4791,7 @@ async function tkTravelSave() {
   const g = id => (document.getElementById(id) || {}).value || '';
   const me = _tkMe ? _tkMe() : null;
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
-  const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, status: 'Submitted' };
+  const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: g('tr-attach'), attachmentName: g('tr-attachname'), status: 'Submitted' };
   try {
     await tkApi('/api/coll/travel', { method: 'POST', body });
     tkAudit('Travel request submitted', body.name, body.dest);
@@ -4757,6 +4810,36 @@ async function tkTravelDecision(id, status) {
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
+
+/* Access & Permissions — admin grants each employee a level. */
+function tkRenderPermissions() {
+  const root = document.getElementById('permissions-root'); if (!root) return;
+  const emps = (_DEMO_EMPLOYEES || []).slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const counts = { staff: 0, manager: 0, management: 0, admin: 0 };
+  emps.forEach(e => { counts[_deriveLevel(e)] = (counts[_deriveLevel(e)] || 0) + 1; });
+  const kpis = _hrKpiRow([
+    _hrKpi('Staff', counts.staff), _hrKpi('Managers', counts.manager, '#205090'),
+    _hrKpi('Management', counts.management, '#8B5CF6'), _hrKpi('Admins', counts.admin, '#F59E0B')
+  ]);
+  const note = '<div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light)">Levels: <b style="color:var(--text-dark)">Staff</b> self-service only · <b style="color:var(--text-dark)">Manager</b> team approvals &amp; people modules · <b style="color:var(--text-dark)">Management</b> + payroll &amp; finance · <b style="color:var(--text-dark)">Admin</b> + access control. Changes take effect on the employee\'s next sign-in.</div>';
+  const rows = emps.map(e => {
+    const cur = _deriveLevel(e);
+    const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td></tr>';
+  }).join('');
+  root.innerHTML = kpis + note + '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+async function tkSetLevel(id, level) {
+  const e = _hrEmp(id); if (!e) return;
+  const role = level === 'staff' ? 'staff' : 'manager';
+  try {
+    await tkApi('/api/employees/' + id, { method: 'PATCH', body: { level: level, role: role } });
+    e.level = level; e.role = role;
+    tkAudit('Access level changed', e.name, _LEVEL_LABEL[level]);
+    tkNotifyGraph(e.email, 'Your Humiley access level was updated', 'Hi ' + (e.name || '') + ', your system access level is now ' + (_LEVEL_LABEL[level] || level) + '. It applies at your next sign-in.\n\nHumiley HR');
+    toast(e.name + ' → ' + (_LEVEL_LABEL[level] || level));
+  } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
+}
 
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
@@ -5257,7 +5340,8 @@ function _calcWorkingDays(startDate, endDate) {
 let _currentView = 'dashboard';
 
 /* Manager-only view IDs — staff will be redirected */
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','performance','talent','training','payroll','inbox']);
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','performance','talent','training','payroll','inbox','permissions']);
+const _LEVEL_VIEWS = { payroll: 'management', permissions: 'admin' };
 
 function showView(id, navEl, title) {
   /* staff dashboard redirect — must happen BEFORE the guard check */
@@ -5265,6 +5349,11 @@ function showView(id, navEl, title) {
   /* role guard — staff cannot access manager-only views */
   if (_userRole === 'staff' && _MGR_VIEWS.has(id)) {
     toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Access restricted. This section is for managers only.', 'warn');
+    return;
+  }
+  /* level guard — some views require a higher access level */
+  if (_LEVEL_VIEWS[id] && _lvlRank(_userLevel) < _lvlRank(_LEVEL_VIEWS[id])) {
+    toast('Access restricted — this section requires ' + (_LEVEL_LABEL[_LEVEL_VIEWS[id]] || _LEVEL_VIEWS[id]) + ' level.', 'warn');
     return;
   }
 
@@ -5294,6 +5383,7 @@ function showView(id, navEl, title) {
   if (id === 'payroll') { try { tkRenderPayroll(); } catch (e) { console.warn('payroll:', e.message); } }
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
+  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
