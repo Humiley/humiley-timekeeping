@@ -566,6 +566,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
     <span class="nav-label">My Goals</span>
   </div>
+  <div class="nav-item" onclick="showView('mytraining',this,'My Training')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
+    <span class="nav-label">My Training</span>
+  </div>
   <div class="nav-item" onclick="showView('travelclaims',this,'Travel &amp; Claims')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
     <span class="nav-label">Travel &amp; Claims</span>
@@ -964,6 +968,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="mygoals-root"></div>
 </div>
 
+<div id="view-mytraining" class="view">
+  <div class="page-header">
+    <div><h1>My Training</h1><p>Your enrolled courses · update progress &amp; leave feedback</p></div>
+  </div>
+  <div id="mytraining-root"></div>
+</div>
+
 <div id="view-offboarding" class="view">
   <div class="page-header">
     <div><h1>Offboarding &amp; Exit</h1><p>Resignation, clearance checklist &amp; final settlement</p></div>
@@ -1062,6 +1073,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <option value="Finance">Finance</option>
         <option value="Field Services">Field Services</option>
       </select>
+      <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('view-dashboard','Humiley_Dashboard.pdf')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
       <button class="btn btn-outline btn-sm" onclick="refreshDashboard()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
@@ -2655,6 +2667,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 ════════════════════════════════════════════════════════════ -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -3866,7 +3879,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [] };
 /* Audit log — record who did what, when (persisted to the audit collection). */
 function tkAudit(action, target, detail) {
   const entry = { ts: new Date().toISOString(), tsDisp: new Date().toLocaleString('en-GB'), actor: (TK.user && TK.user.name) || 'System', actorId: (TK.user && TK.user.id) || '', action: action, target: target || '', detail: detail || '' };
@@ -4325,7 +4338,7 @@ async function tkRenderPerformance() {
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (p.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.dept || '') + '</td><td>' + (p.goals || []).length + ' (' + gw + '%)</td><td>' + selfAvg + '</td><td>' + mgrAvg + '</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (p.status || '') + '</span></td><td>' + (p.rating ? _hrStars(p.rating) : '—') + '</td><td><button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPadrManage(\'' + p.id + '\')">Manage</button></td></tr>';
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No goal cycles yet</td></tr>';
   const goalsTab = '<div id="perf-goals" style="display:none"><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Stage-gated PADR per employee (FRM-011): goals are agreed (weights total 100%), employee self-assesses, manager scores, then calibration finalises the rating. Employees enter their own scores from <b>My Goals</b> on their dashboard.</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Goal Cycles 2026</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Goals (wt)</th><th>Self</th><th>Manager</th><th>Stage</th><th>Rating</th><th></th></tr></thead><tbody>' + padrRows + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Goal Cycles 2026</div><button class="btn btn-emerald btn-sm" onclick="tkAssignGoals()">' + tkIcon('plus') + 'Assign goals to employee</button></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Goals (wt)</th><th>Self</th><th>Manager</th><th>Stage</th><th>Rating</th><th></th></tr></thead><tbody>' + padrRows + '</tbody></table></div></div></div>';
   root.innerHTML = kpis + tabs + okr + goalsTab + reviewsHtml + pip + calib;
 }
 function tkPerfTab(tab, el) {
@@ -4354,6 +4367,32 @@ const _GOAL_LIBRARY = [
   { cat: 'Innovation', objective: 'Process improvement / innovation', weight: 10, target: '1 improvement shipped' }
 ];
 const _goalSourceBadge = g => g.source === 'self' ? '<span class="badge b-info" style="font-size:9px">Self</span>' : '<span class="badge b-navy" style="font-size:9px">Assigned</span>';
+/* Assign goals to an employee — creates their PADR cycle (if none) then opens Manage to add goals. */
+function tkAssignGoals() {
+  document.getElementById('assignGoalOverlay')?.remove();
+  const withCycle = new Set((_HR.padr || []).map(p => p.empId));
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const opts = emps.map(e => '<option value="' + e.id + '">' + e.name + ' — ' + (e.title || '') + (withCycle.has(e.id) ? ' (has cycle)' : '') + '</option>').join('');
+  const el = document.createElement('div'); el.id = 'assignGoalOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Assign Goals to Employee</div><button class="modal-close" onclick="document.getElementById(\'assignGoalOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Employee</label><select class="form-control" id="ag-emp">' + opts + '</select></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:6px">A 2026 PADR cycle will be created for the employee (if they don\'t have one), then you can add their weighted goals.</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'assignGoalOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkAssignGoalsGo()">Continue</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkAssignGoalsGo() {
+  const empId = (document.getElementById('ag-emp') || {}).value; const e = _hrEmp(empId); if (!e) return;
+  let p = (_HR.padr || []).find(x => x.empId === empId);
+  document.getElementById('assignGoalOverlay')?.remove();
+  if (!p) {
+    try {
+      const r = await tkApi('/api/coll/padr', { method: 'POST', body: { empId: e.id, name: e.name, dept: e.dept || '', cycle: String(new Date().getFullYear()), status: 'Goal-setting', rating: 0, goals: [] } });
+      if (r && r.item) { p = r.item; (_HR.padr = _HR.padr || []).push(p); }
+      tkAudit('PADR cycle created', e.name, 'Goal-setting');
+    } catch (err) { toast('Could not create cycle: ' + err.message, 'error', 5000); return; }
+  }
+  if (p) tkPadrManage(p.id);
+}
 function tkPadrManage(id) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
   _normGoals(p);
@@ -4412,6 +4451,40 @@ async function tkPadrSave(id) {
     document.getElementById('padrOverlay').remove(); toast('PADR updated'); tkRenderPerformance();
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Staff — My Training: enrolled courses with progress + feedback (item 4). */
+async function tkRenderMyTraining() {
+  const root = document.getElementById('mytraining-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('enrollments');
+  const me = _tkMe() || {};
+  const mine = (_HR.enrollments || []).filter(x => x.empId === me.id);
+  const kpis = _hrKpiRow([
+    _kpiTile('Enrolled courses', mine.length, '#205090', '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
+    _kpiTile('In progress', mine.filter(x => x.status === 'In progress').length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Completed', mine.filter(x => x.status === 'Completed').length, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    _kpiTile('Avg progress', (mine.length ? Math.round(mine.reduce((s, x) => s + (+x.progress || 0), 0) / mine.length) : 0) + '%', '#8B5CF6', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>')
+  ]);
+  const cards = mine.length ? mine.map(x => { const pg = +x.progress || 0; return '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:8px"><div style="font-weight:700;font-size:14px">' + (x.course || '') + '</div><span class="badge ' + (x.status === 'Completed' ? 'b-ok' : x.status === 'In progress' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.status || 'Enrolled') + '</span></div>' +
+    '<label style="font-size:11px;color:var(--text-light)">Progress: <b id="mt-pct-' + x.id + '" style="color:var(--navy)">' + pg + '%</b></label>' +
+    '<input type="range" min="0" max="100" step="10" value="' + pg + '" style="width:100%;margin:6px 0" oninput="document.getElementById(\'mt-pct-' + x.id + '\').textContent=this.value+\'%\'" data-mt-prog="' + x.id + '">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="font-size:11px;color:var(--text-light)">Rating</span><select data-mt-rate="' + x.id + '" style="font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + (+x.rating === n ? ' selected' : '') + '>' + n + ' ★</option>').join('') + '</select></div>' +
+    '<textarea data-mt-fb="' + x.id + '" placeholder="Your feedback on this course…" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:6px;min-height:48px">' + (x.feedback || '') + '</textarea>' +
+    '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-emerald btn-sm" onclick="tkMyTrainingSave(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Save</button></div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">You have no course enrolments yet. Your manager will enroll you, or check the course catalog.</div>';
+  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + cards + '</div>';
+}
+async function tkMyTrainingSave(id) {
+  const x = (_HR.enrollments || []).find(e => e.id === id); if (!x) return;
+  const prog = +(document.querySelector('[data-mt-prog="' + id + '"]') || {}).value || 0;
+  const rate = +(document.querySelector('[data-mt-rate="' + id + '"]') || {}).value || 0;
+  const fb = (document.querySelector('[data-mt-fb="' + id + '"]') || {}).value || '';
+  const status = prog >= 100 ? 'Completed' : prog > 0 ? 'In progress' : 'Enrolled';
+  try {
+    await tkApi('/api/coll/enrollments/' + id, { method: 'PATCH', body: { progress: prog, rating: rate, feedback: fb, status: status } });
+    x.progress = prog; x.rating = rate; x.feedback = fb; x.status = status;
+    tkAudit('Training progress updated', (TK.user || {}).name, x.course + ' · ' + prog + '%');
+    toast('Saved — ' + x.course + ' ' + prog + '%'); tkRenderMyTraining();
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 /* Back-compat launcher — opens the full My Goals page. */
 function tkMyGoals() { showView('mygoals', null, 'My Goals'); }
@@ -4580,16 +4653,19 @@ async function tkRenderTalent() {
 async function tkRenderTraining() {
   const root = document.getElementById('training-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('courses'), tkLoadColl('competency')]);
+  await Promise.all([tkLoadColl('courses'), tkLoadColl('competency'), tkLoadColl('enrollments')]);
   const c = _HR.courses;
-  const totalEnroll = c.reduce((s, x) => s + (+x.enrolled || 0), 0);
+  const enr = _HR.enrollments || [];
+  const enrCount = title => enr.filter(x => x.course === title).length;
+  const totalEnroll = enr.length || c.reduce((s, x) => s + (+x.enrolled || 0), 0);
+  const completed = enr.filter(x => x.status === 'Completed').length;
   const kpis = _hrKpiRow([
     _hrKpi('Courses', c.length),
-    _hrKpi('Mandatory', c.filter(x => x.type === 'Mandatory').length, '#F59E0B'),
-    _hrKpi('Enrolments', totalEnroll, '#8B5CF6'),
-    _hrKpi('Tracked staff', (_HR.competency || []).length, 'var(--emerald)')
+    _hrKpi('Active enrolments', enr.filter(x => x.status !== 'Completed').length, '#F59E0B'),
+    _hrKpi('Completed', completed, 'var(--emerald)'),
+    _hrKpi('Tracked staff', new Set(enr.map(x => x.empId)).size || (_HR.competency || []).length, '#8B5CF6')
   ]);
-  const cards = c.length ? c.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.type === 'Mandatory' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.type || 'Optional') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + ' · ' + (x.status || 'Active') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + (x.enrolled || 0) + ' enrolled</div><div style="display:flex;gap:4px">' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
+  const cards = c.length ? c.map(x => { const n = enrCount(x.title) || (+x.enrolled || 0); return '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.type === 'Mandatory' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.type || 'Optional') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + ' · ' + (x.status || 'Active') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + n + ' enrolled</div><div style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkEnrollCourse(\'' + (x.title || '').replace(/'/g, "\\'") + '\')">' + tkIcon('plus', 12) + 'Enroll</button>' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
   const catalog = '<div id="trn-catalog"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div></div>';
   // competency matrix
   const comp = _HR.competency || [];
@@ -4599,11 +4675,50 @@ async function tkRenderTraining() {
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix — HML-AHU-TM-001</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
     (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis +
-    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'roadmap\',this)">Development Roadmap</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
-    catalog + '<div id="trn-roadmap" style="display:none"></div>' + matrix;
-  tkRenderRoadmap();
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'enroll\',this)">Enrolments &amp; Progress</button><button class="tab" onclick="tkTrnTab(\'roadmap\',this)">Development Roadmap</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
+    catalog + '<div id="trn-enroll" style="display:none"></div>' + '<div id="trn-roadmap" style="display:none"></div>' + matrix;
+  tkRenderRoadmap(); tkRenderEnrollments();
 }
-function tkTrnTab(tab, el) { ['catalog', 'roadmap', 'matrix'].forEach(t => { const p = document.getElementById('trn-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#training-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+function tkTrnTab(tab, el) { ['catalog', 'enroll', 'roadmap', 'matrix'].forEach(t => { const p = document.getElementById('trn-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#training-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+/* Enrolments & progress tracking (manager view). */
+function tkRenderEnrollments() {
+  const el = document.getElementById('trn-enroll'); if (!el) return;
+  const enr = (_HR.enrollments || []).slice().sort((a, b) => (a.course || '').localeCompare(b.course || ''));
+  const stCls = s => s === 'Completed' ? 'b-ok' : s === 'In progress' ? 'b-warn' : 'b-info';
+  const rows = enr.length ? enr.map(x => { const e = _hrEmp(x.empId) || { name: x.name, ini: (x.name || '?').slice(0, 2) }; const pg = +x.progress || 0; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.dept || '') + '</div></div></div></td><td style="font-size:12px">' + (x.course || '') + '</td><td style="min-width:130px"><div class="prog-wrap" style="margin-bottom:3px"><div class="prog-fill ' + (pg === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pg + '%"></div></div><span style="font-size:10px;color:var(--text-light)">' + pg + '%</span></td><td><span class="badge ' + stCls(x.status) + '" style="font-size:10px">' + (x.status || 'Enrolled') + '</span></td><td>' + (x.rating ? _hrStars(x.rating) : '<span style="color:var(--text-light);font-size:11px">—</span>') + '</td><td style="font-size:11px;color:var(--text-light);max-width:220px">' + (x.feedback || '') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:18px">No enrolments yet — use <b>Enroll</b> on a course.</td></tr>';
+  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Enrolments &amp; Progress</div><span style="font-size:11px;color:var(--text-light)">Tracking ' + enr.length + ' enrolment(s)</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Course</th><th>Progress</th><th>Status</th><th>Rating</th><th>Feedback</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+/* Enroll a whole department or selected employees in a course. */
+function tkEnrollCourse(course) {
+  document.getElementById('enrollOverlay')?.remove();
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const depts = [...new Set(emps.map(e => e.dept).filter(Boolean))].sort();
+  const el = document.createElement('div'); el.id = 'enrollOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div class="modal-title">Enroll — ' + course + '</div><button class="modal-close" onclick="document.getElementById(\'enrollOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Enroll a whole department</label><select class="form-control" id="enr-dept"><option value="">— none —</option>' + depts.map(d => '<option>' + d + '</option>').join('') + '</select></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin:2px 0 6px">…and / or pick individual employees:</div>' +
+    '<div style="overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;max-height:34vh">' + emps.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(e => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" class="enr-emp" value="' + e.id + '"><span>' + e.name + ' <span style="color:var(--text-light)">· ' + (e.dept || '') + '</span></span></label>').join('') + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'enrollOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkEnrollGo(\'' + course.replace(/'/g, "\\'") + '\')">' + tkIcon('check') + 'Enroll</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkEnrollGo(course) {
+  const dept = (document.getElementById('enr-dept') || {}).value || '';
+  const picked = [...document.querySelectorAll('.enr-emp:checked')].map(c => c.value);
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const ids = new Set(picked);
+  if (dept) emps.filter(e => e.dept === dept).forEach(e => ids.add(e.id));
+  if (!ids.size) { toast('Select a department or employees', 'warn'); return; }
+  const existing = new Set((_HR.enrollments || []).filter(x => x.course === course).map(x => x.empId));
+  let added = 0;
+  for (const id of ids) {
+    if (existing.has(id)) continue;
+    const e = _hrEmp(id); if (!e) continue;
+    try { const r = await tkApi('/api/coll/enrollments', { method: 'POST', body: { empId: e.id, name: e.name, dept: e.dept || '', course: course, status: 'Enrolled', progress: 0, rating: 0, feedback: '' } }); if (r && r.item) { (_HR.enrollments = _HR.enrollments || []).push(r.item); added++; tkNotifyGraph(e.email, 'You have been enrolled: ' + course, 'Hi ' + (e.name || '') + ', you have been enrolled in "' + course + '". Track your progress in My Training.\n\nHumiley HR'); } } catch (x) {}
+  }
+  tkAudit('Course enrolment', course, added + ' employee(s)');
+  document.getElementById('enrollOverlay').remove();
+  toast(added + ' employee(s) enrolled in ' + course); tkRenderTraining();
+}
 /* Development Roadmap — role-based career learning paths (A14). */
 async function tkRenderRoadmap() {
   const el = document.getElementById('trn-roadmap'); if (!el) return;
@@ -4890,12 +5005,63 @@ function _payslipPDF(e, c, period) {
   return doc;
 }
 function _payslipFilename(e, period) { return 'Humiley_Payslip_' + (e.name || 'employee').replace(/\s+/g, '_') + '_' + (period || '').replace(/\s+/g, '_') + '.pdf'; }
-function tkDownloadPayslipPDF(empId) {
-  const e = _hrEmp(empId); if (!e) return;
+/* Render an HTML string to a single/multi-page A4 PDF (html2canvas) — crisp, matches the on-screen design. */
+async function _htmlToPdfDoc(html, width) {
+  const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!h2c || !J) return null;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:#fff;padding:26px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+  let canvas; try { canvas = await h2c(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const pw = 210, ph = 297, m = 10, iw = pw - 2 * m;
+  const pageCanvasH = Math.floor(canvas.width * (ph - 2 * m) / iw);
+  let sY = 0, first = true;
+  while (sY < canvas.height) {
+    const sliceH = Math.min(pageCanvasH, canvas.height - sY);
+    const cc = document.createElement('canvas'); cc.width = canvas.width; cc.height = sliceH;
+    cc.getContext('2d').drawImage(canvas, 0, sY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+    if (!first) doc.addPage();
+    doc.addImage(cc.toDataURL('image/jpeg', 0.95), 'JPEG', m, m, iw, sliceH * iw / canvas.width);
+    first = false; sY += sliceH;
+  }
+  return doc;
+}
+/* Export an on-page element to PDF (used for dashboards / reports). */
+async function tkExportElementPDF(elId, filename) {
+  const el = document.getElementById(elId); if (!el) { toast('Nothing to export', 'warn'); return; }
+  const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!h2c || !J) { toast('PDF engine not loaded', 'warn'); return; }
+  toast('Building PDF…', 'info', 2000);
+  let canvas; try { canvas = await h2c(el, { scale: 2, backgroundColor: '#f4f6fa', useCORS: true, logging: false }); } catch (e) { toast('Export failed: ' + e.message, 'error', 5000); return; }
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const pw = 210, ph = 297, m = 8, iw = pw - 2 * m;
+  const pageCanvasH = Math.floor(canvas.width * (ph - 2 * m) / iw);
+  let sY = 0, first = true;
+  while (sY < canvas.height) {
+    const sliceH = Math.min(pageCanvasH, canvas.height - sY);
+    const cc = document.createElement('canvas'); cc.width = canvas.width; cc.height = sliceH;
+    cc.getContext('2d').drawImage(canvas, 0, sY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+    if (!first) doc.addPage();
+    doc.addImage(cc.toDataURL('image/jpeg', 0.92), 'JPEG', m, m, iw, sliceH * iw / canvas.width);
+    first = false; sY += sliceH;
+  }
+  doc.save(filename || 'Humiley_export.pdf');
+  toast('PDF downloaded');
+}
+async function _payslipPdfDoc(empId) {
+  const e = _hrEmp(empId); if (!e) return null;
   const c = _payslipComputed(empId); const period = _payslipPeriod();
-  const doc = _payslipPDF(e, c, period);
+  const doc = await _htmlToPdfDoc(_payslipHTML(e, c, period), 720);
+  return doc || _payslipPDF(e, c, period);
+}
+async function tkDownloadPayslipPDF(empId) {
+  const e = _hrEmp(empId); if (!e) return;
+  toast('Building payslip PDF…', 'info', 2000);
+  const doc = await _payslipPdfDoc(empId);
   if (!doc) { toast('PDF engine not loaded — using browser print', 'warn'); window.print(); return; }
-  doc.save(_payslipFilename(e, period));
+  doc.save(_payslipFilename(e, _payslipPeriod()));
   toast('Payslip PDF downloaded');
 }
 function _payslipComputed(empId) {
@@ -4946,9 +5112,10 @@ async function tkEmailPayslip(empId) {
   const subject = 'Confidential Payslip — ' + period;
   const body = 'Dear ' + e.name + ',\n\nPlease find attached your confidential payslip for ' + period + ' (PDF).\n\n' +
     'Summary — Gross: ' + _PAY_FMT(c.grossPay) + ' · NET PAY: ' + _PAY_FMT(c.net) + '\n\nThis information is strictly confidential. Report any discrepancy within 5 working days.\n\nHumiley Group Inc. — HR';
-  // Build the PDF attachment
-  let pdfB64 = '';
-  try { const doc = _payslipPDF(e, c, period); if (doc) pdfB64 = doc.output('datauristring').split(',')[1]; } catch (x) {}
+  // Build the high-quality PDF (html2canvas → A4)
+  toast('Preparing payslip PDF…', 'info', 2000);
+  const doc = await _payslipPdfDoc(empId);
+  let pdfB64 = ''; try { if (doc) pdfB64 = doc.output('datauristring').split(',')[1]; } catch (x) {}
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
@@ -4956,12 +5123,11 @@ async function tkEmailPayslip(empId) {
       if (pdfB64) msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: _payslipFilename(e, period), contentType: 'application/pdf', contentBytes: pdfB64 }];
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
       if (resp.ok) { tkAudit('Payslip emailed', e.name, period); toast('Payslip PDF emailed confidentially to ' + e.name); return; }
-    } catch (err) { /* fall back */ }
+    } catch (err) { /* fall back to download */ }
   }
-  // Fallback: download the PDF + open the mail client (attachment can't be auto-added via mailto)
-  if (pdfB64) { try { _payslipPDF(e, c, period).save(_payslipFilename(e, period)); } catch (x) {} }
-  window.location.href = 'mailto:' + encodeURIComponent(e.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body + '\n\n(PDF payslip downloaded — please attach it.)');
-  toast('PDF downloaded — attach it to the email that just opened', 'info', 6000);
+  // No live mail (e.g. demo / not signed in): just download the PDF.
+  if (doc) { doc.save(_payslipFilename(e, period)); tkAudit('Payslip downloaded', e.name, period); toast('Email not available — payslip PDF downloaded instead', 'info', 5000); }
+  else { toast('Could not generate the payslip PDF', 'error', 5000); }
 }
 async function tkMyPayslip() {
   await tkLoadColl('reviews');
@@ -5140,7 +5306,7 @@ function _claimRowsHtml(claims, isMgr) {
   if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
   return claims.map(c => {
     const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
-    const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'All</button> <button class="btn-reject" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'All</button>' : '';
+    const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve all</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject all</button>' : '';
     const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
     const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
@@ -5211,7 +5377,18 @@ async function tkRenderTravelClaims() {
   const _ts = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : 'b-warn';
   const tAdv = travel.reduce((s, t) => s + (+t.advance || 0), 0);
   const cTot = claims.reduce((s, c) => s + _claimTotal(c), 0);
-  const periodSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px"><span style="font-size:12px;color:var(--text-light)">View</span><select class="sel-filter" onchange="tkTcSetPeriod(this.value)" style="font-size:12px"><option value="all"' + (_tcPeriod === 'all' ? ' selected' : '') + '>All time</option><option value="month"' + (_tcPeriod === 'month' ? ' selected' : '') + '>This month</option><option value="year"' + (_tcPeriod === 'year' ? ' selected' : '') + '>This year</option></select></div>';
+  const periodSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px">' + (isMgr ? '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'tc-export\',\'Humiley_Travel_Claims.pdf\')">' + tkIcon('download') + 'Export PDF</button>' : '') + '<span style="font-size:12px;color:var(--text-light)">View</span><select class="sel-filter" onchange="tkTcSetPeriod(this.value)" style="font-size:12px"><option value="all"' + (_tcPeriod === 'all' ? ' selected' : '') + '>All time</option><option value="month"' + (_tcPeriod === 'month' ? ' selected' : '') + '>This month</option><option value="year"' + (_tcPeriod === 'year' ? ' selected' : '') + '>This year</option></select></div>';
+  // spend by department + company total (manager dashboard)
+  let deptDash = '';
+  if (isMgr) {
+    const bd = {};
+    travel.forEach(t => { const d = t.dept || '—'; (bd[d] = bd[d] || { tr: 0, adv: 0, cl: 0 }); bd[d].tr += +t.cost || 0; bd[d].adv += +t.advance || 0; });
+    claims.forEach(c => { const d = c.dept || (_hrEmp(c.empId) || {}).dept || '—'; (bd[d] = bd[d] || { tr: 0, adv: 0, cl: 0 }); bd[d].cl += _claimTotal(c); });
+    const dk = Object.keys(bd).sort((a, b) => (bd[b].tr + bd[b].cl) - (bd[a].tr + bd[a].cl));
+    const compT = travel.reduce((s, t) => s + (+t.cost || 0), 0);
+    const drows = dk.map(d => '<tr><td style="font-weight:600">' + d + '</td><td style="text-align:right">' + _PAY_FMT(bd[d].tr) + '</td><td style="text-align:right">' + _PAY_FMT(bd[d].adv) + '</td><td style="text-align:right">' + _PAY_FMT(bd[d].cl) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(bd[d].tr + bd[d].cl) + '</td></tr>').join('');
+    deptDash = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Spend by Department</div><span style="font-size:11px;color:var(--text-light)">Travel + claims · ' + (_tcPeriod === 'all' ? 'all time' : _tcPeriod === 'year' ? 'this year' : 'this month') + '</span></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Travel cost</th><th style="text-align:right">Advances</th><th style="text-align:right">Claims</th><th style="text-align:right">Total</th></tr></thead><tbody>' + (drows || '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:14px">No spend in this period</td></tr>') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(compT) + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(tAdv) + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(cTot) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(compT + cTot) + '</td></tr></tfoot></table></div></div>';
+  }
   const kpis = _hrKpiRow([
     _kpiTile('Travel Requests', travel.length, '#205090', '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'),
     _kpiTile('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => _claimOpen(c)).length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
@@ -5221,9 +5398,9 @@ async function tkRenderTravelClaims() {
   const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>' : '';
   const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
-  root.innerHTML = periodSel + kpis +
+  root.innerHTML = periodSel + '<div id="tc-export">' + kpis + deptDash +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div><span style="font-size:11px;color:var(--text-light)">Click a claim to see its items</span></div><div class="table-wrap"><table>' + claimRows + '</table></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div><span style="font-size:11px;color:var(--text-light)">Click a claim to see its items</span></div><div class="table-wrap"><table>' + claimRows + '</table></div></div></div>';
 }
 function tkNewTravel() {
   document.getElementById('travelOverlay')?.remove();
@@ -5557,7 +5734,7 @@ async function tkRenderHrMetrics() {
   const yKeys = Object.keys(byYear).map(Number).sort(); let cum = 0; const trendLabels = [], trendVals = [];
   yKeys.forEach(y => { cum += byYear[y]; trendLabels.push(String(y)); trendVals.push(cum); });
   const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
-  ch.innerHTML = chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
+  ch.innerHTML = chartCard('Staff by Department', 'dc-deptbar') + chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
     chartCard('Gender Split', 'dc-gender') + chartCard('Tenure Bands', 'dc-tenure') + chartCard('Attendance Status', 'dc-att') +
     chartCard('Leave Days by Type', 'dc-leave') + chartCard('Headcount Growth', 'dc-trend');
   tkBuildDashCharts({
@@ -6118,6 +6295,7 @@ function showView(id, navEl, title) {
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
+  if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
   if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
@@ -7598,6 +7776,7 @@ const _axisOpts = (horiz) => ({ responsive: true, maintainAspectRatio: false, pl
 const _doughnutOpts = { responsive: true, maintainAspectRatio: false, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: '#374151', padding: 10, boxWidth: 12 } } } };
 function tkBuildDashCharts(d) {
   if (typeof Chart === 'undefined') return;
+  _mkChart('dc-deptbar', { type: 'bar', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: '#205090', borderRadius: 5 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
   _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
   _mkChart('dc-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.funnelVals, backgroundColor: '#00B060', borderRadius: 5 }] }, options: _axisOpts(false) });
   _mkChart('dc-perf', { type: 'bar', data: { labels: d.perfLabels, datasets: [{ data: d.perfVals, backgroundColor: '#f59e0b', borderRadius: 5 }] }, options: _axisOpts(false) });

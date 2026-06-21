@@ -158,6 +158,7 @@ def seed_hr():
         _seed_benefits(pick)
         _seed_learningpaths(pick)
         _seed_claims(pick)
+        _seed_enrollments(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -333,6 +334,24 @@ def _seed_claims(pick):
         ],
         "amount": 5050000,
     })
+
+
+def _seed_enrollments(pick):
+    if collection_count("enrollments"):
+        return
+    if not pick:
+        return
+    courses = ["Workplace Safety (HSE) Essentials", "Project Management Fundamentals", "Business English — Intermediate", "Leadership & Communication", "AutoCAD for Civil Engineers"]
+    statuses = [("Completed", 100), ("In progress", 60), ("In progress", 30), ("Enrolled", 0)]
+    for i, e in enumerate(pick[:10]):
+        crs = courses[i % len(courses)]
+        st, pg = statuses[i % len(statuses)]
+        put_collection_item("enrollments", {
+            "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+            "course": crs, "status": st, "progress": pg,
+            "rating": (5 if i % 3 == 0 else 4) if st == "Completed" else 0,
+            "feedback": "Very practical, well delivered." if (st == "Completed" and i % 3 == 0) else "",
+        })
 
 
 def _seed_benefits(pick):

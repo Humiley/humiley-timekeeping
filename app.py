@@ -192,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
             nm = seg[0]
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm != "padr"))
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -431,9 +431,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr"}
+    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
@@ -452,6 +452,10 @@ class Handler(BaseHTTPRequestHandler):
         if name == "padr" and u.get("role") != "manager":
             item["empId"] = u.get("id")
             item["name"] = u.get("name")
+        # Staff self-enrolment: stamp identity (managers enrol others, so trust their body).
+        if name == "enrollments" and u.get("role") != "manager":
+            item["empId"] = u.get("id")
+            item["name"] = u.get("name")
             item["status"] = item.get("status") or "Goal-setting"
             item["rating"] = 0
             for g in (item.get("goals") or []):
@@ -467,8 +471,18 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
-        # Non-managers reach this only for 'padr' — they may submit their OWN self-assessment only.
+        # Non-managers reach this only for 'padr' and 'enrollments' (own records).
         if u.get("role") != "manager":
+            if name == "enrollments":
+                existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
+                if not existing or existing.get("empId") != u.get("id"):
+                    return self._err("Not allowed.", 403)
+                # staff may only update their own progress / status / rating / feedback
+                for k in ("progress", "status", "rating", "feedback"):
+                    if k in (body or {}):
+                        existing[k] = body[k]
+                existing["id"] = iid
+                return self._json({"ok": True, "item": db.put_collection_item("enrollments", existing)})
             if name != "padr":
                 return self._err("Manager access required.", 403)
             existing = next((x for x in db.list_collection("padr") if x.get("id") == iid), None)
