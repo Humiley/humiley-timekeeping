@@ -539,6 +539,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
     <span class="nav-label">Attendance</span>
   </div>
+  <div class="nav-item" onclick="showView('myprofile',this,'My Profile')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+    <span class="nav-label">My Profile</span>
+  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('locations',this,'GPS Locations')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
     <span class="nav-label">GPS Locations</span>
@@ -687,7 +691,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="staff-quick-btn" onclick="showView('checkin',null,'Check In / Out')">
       <span class="qicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>My Location
     </button>
-    <button class="staff-quick-btn" onclick="toast('Profile settings coming soon in SharePoint','info')">
+    <button class="staff-quick-btn" onclick="showView('myprofile',null,'My Profile')">
       <span class="qicon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>My Profile
     </button>
   </div>
@@ -771,6 +775,45 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </div>
     </div>
   </div>
+
+  <!-- ── Company portal widgets ── -->
+  <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;margin-top:20px" class="staff-portal-row">
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Company Announcements <span style="font-size:11px;color:var(--text-light);font-weight:500">Latest updates</span></div>
+      <div id="staff-announcements" style="display:flex;flex-direction:column;gap:14px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Who's Out Today <span id="staff-whosout-count" style="font-size:11px;color:var(--text-light);font-weight:500"></span></div>
+      <div id="staff-whosout" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;margin-top:20px">
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Celebrations This Month</div>
+      <div id="staff-celebrations" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">Upcoming Holidays</div>
+      <div id="staff-holidays" style="display:flex;flex-direction:column;gap:12px"></div>
+    </div>
+    <div class="staff-panel">
+      <div class="staff-panel-hdr">My Team</div>
+      <div id="staff-team" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+  </div>
+
+  <div class="staff-panel" style="margin-top:20px">
+    <div class="staff-panel-hdr">Resources &amp; Quick Links</div>
+    <div id="staff-resources" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════
+     VIEW: MY PROFILE
+═══════════════════════════════════════════════════════ -->
+<div id="view-myprofile" class="view">
+  <div id="myprofile-root"></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -3252,6 +3295,180 @@ function _initStaffDashboard() {
 
   /* leave balance chart */
   _initStaffLeaveChart();
+
+  /* company portal widgets */
+  try { tkRenderStaffPortal(); } catch (e) { console.warn('portal:', e.message); }
+}
+
+/* Parse a date value (M/D/YYYY or YYYY-MM-DD) into {y,m,d} (m=1..12) or null. */
+function _tkDateParts(v) {
+  if (!v) return null; v = String(v).trim();
+  let m, d, y;
+  const iso = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const sl = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (iso) { y = +iso[1]; m = +iso[2]; d = +iso[3]; }
+  else if (sl) { m = +sl[1]; d = +sl[2]; y = +sl[3]; if (m > 12 && d <= 12) { const t = m; m = d; d = t; } if (y < 100) y += 2000; }
+  else return null;
+  if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+  return { y, m, d };
+}
+
+/* Vietnam public holidays (HCMC) — used by the dashboard "Upcoming Holidays" widget. */
+const _TK_HOLIDAYS = [
+  { date: '2026-01-01', name: "New Year's Day" },
+  { date: '2026-02-17', name: 'Lunar New Year (Tết)' },
+  { date: '2026-04-26', name: 'Hung Kings Commemoration' },
+  { date: '2026-04-30', name: 'Reunification Day' },
+  { date: '2026-05-01', name: 'International Labour Day' },
+  { date: '2026-09-01', name: 'National Day Holiday' },
+  { date: '2026-09-02', name: 'National Day' },
+  { date: '2027-01-01', name: "New Year's Day" },
+  { date: '2027-02-06', name: 'Lunar New Year (Tết)' }
+];
+
+/* Render the employee "company portal" widgets on the staff dashboard. */
+function tkRenderStaffPortal() {
+  const emps = _DEMO_EMPLOYEES || [];
+  const me = emps.find(e => e.name === _staffName) || (TK.user || {});
+  const now = new Date();
+  const todayISO = now.toISOString().slice(0, 10);
+  const mIdx = now.getMonth() + 1;
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const av = (e, sz) => (typeof tkAvatar === 'function' ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (e.clr || '#205090') + '">' + (e.ini || '') + '</div>');
+  const empty = t => '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:10px 0">' + t + '</div>';
+
+  /* Announcements (curated) */
+  const ann = [
+    { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.' },
+    { tag: 'Benefits', color: '#00B060', title: 'New Health & Wellness Program', body: 'Annual health check-ups and a monthly wellness allowance are now available to all full-time staff.' },
+    { tag: 'Facilities', color: '#8B5CF6', title: 'HQ District 10 — Floor Refresh', body: 'Level 3 meeting rooms are being upgraded this month. Please use the booking system for alternatives.' }
+  ];
+  const annEl = document.getElementById('staff-announcements');
+  if (annEl) annEl.innerHTML = ann.map(a => '<div style="border-left:3px solid ' + a.color + ';padding:2px 0 2px 12px">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + a.color + '1f;color:' + a.color + ';font-size:10px">' + a.tag + '</span><strong style="font-size:13px">' + a.title + '</strong></div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + a.body + '</div></div>').join('');
+
+  /* Who's out today */
+  const out = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= todayISO && l.endDate >= todayISO);
+  const outEl = document.getElementById('staff-whosout');
+  const cntEl = document.getElementById('staff-whosout-count'); if (cntEl) cntEl.textContent = out.length ? out.length + ' away' : '';
+  if (outEl) outEl.innerHTML = out.length ? out.map(l => {
+    const emp = emps.find(e => e.id === l.emp_id || e.name === l.emp_name) || { name: l.emp_name || 'Employee', ini: '', clr: '#205090' };
+    return '<div style="display:flex;align-items:center;gap:10px">' + av(emp) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + emp.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (l.type || 'Leave') + ' · back ' + tkFmtDate(l.endDate) + '</div></div></div>';
+  }).join('') : empty('Everyone is in today.');
+
+  /* Celebrations this month */
+  const bdays = emps.filter(e => { const p = _tkDateParts(e.dob); return p && p.m === mIdx; }).map(e => { const p = _tkDateParts(e.dob); return { e, d: p.d, label: 'Birthday' }; });
+  const annis = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.m === mIdx && p.y < now.getFullYear(); }).map(e => { const p = _tkDateParts(e.startDate); const yrs = now.getFullYear() - p.y; return { e, d: p.d, label: yrs + ' yr Work Anniversary' }; });
+  const celebs = bdays.concat(annis).sort((a, b) => a.d - b.d);
+  const celEl = document.getElementById('staff-celebrations');
+  if (celEl) celEl.innerHTML = celebs.length ? celebs.map(c => '<div style="display:flex;align-items:center;gap:10px">' + av(c.e) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + c.e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + c.label + ' · ' + MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0') + '</div></div></div>').join('') : empty('No celebrations this month');
+
+  /* Upcoming holidays */
+  const hol = _TK_HOLIDAYS.filter(h => h.date >= todayISO).slice(0, 4);
+  const holEl = document.getElementById('staff-holidays');
+  if (holEl) holEl.innerHTML = hol.length ? hol.map(h => {
+    const dt = new Date(h.date + 'T00:00:00'); const days = Math.ceil((dt - now) / 86400000);
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+      '<div style="display:flex;align-items:center;gap:11px"><div style="width:38px;text-align:center"><div style="font-size:17px;font-weight:800;color:var(--navy);line-height:1">' + dt.getDate() + '</div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + MON[dt.getMonth()] + '</div></div><div style="font-size:13px;font-weight:600">' + h.name + '</div></div>' +
+      '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">' + (days <= 0 ? 'Today' : 'in ' + days + 'd') + '</span></div>';
+  }).join('') : empty('No upcoming holidays');
+
+  /* My team: manager + same-department colleagues */
+  const teamEl = document.getElementById('staff-team');
+  if (teamEl) {
+    const mgr = emps.find(e => (e.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+    const peers = emps.filter(e => e.dept === me.dept && e.id !== me.id).slice(0, 5);
+    let html = '';
+    if (mgr) html += '<div style="display:flex;align-items:center;gap:10px;padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:9px">' + av(mgr) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + mgr.name + '</div><div style="font-size:11px;color:var(--emerald);font-weight:600">Your manager</div></div></div>';
+    html += peers.length ? peers.map(p => '<div style="display:flex;align-items:center;gap:10px">' + av(p) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + p.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (p.title || p.dept || '') + '</div></div></div>').join('') : empty('No teammates listed');
+    teamEl.innerHTML = html;
+  }
+
+  /* Resources & quick links */
+  const res = [
+    { label: 'Employee Handbook', icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>', msg: 'The Employee Handbook will be linked here by HR.' },
+    { label: 'Company Policies', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', msg: 'Company policies will be linked here by HR.' },
+    { label: 'Payroll & Payslips', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', msg: 'Payslips will appear here once payroll is connected.' },
+    { label: 'Benefits & Wellness', icon: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/>', msg: 'Benefits & wellness details will be linked by HR.' },
+    { label: 'IT Help Desk', icon: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', msg: 'For IT support, please contact your administrator.' },
+    { label: 'Company Directory', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', action: "showView('myprofile',null,'My Profile')" }
+  ];
+  const resEl = document.getElementById('staff-resources');
+  if (resEl) resEl.innerHTML = res.map(r => {
+    const oc = (r.action ? r.action : ('toast(' + JSON.stringify(r.msg || '') + ",'info',5000)")).replace(/"/g, '&quot;');
+    return '<button onclick="' + oc + '" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 12px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s">' +
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + r.icon + '</svg>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--navy)">' + r.label + '</div></button>';
+  }).join('');
+}
+
+/* Render the professional "My Profile" page for the signed-in user. */
+function tkRenderMyProfile() {
+  const root = document.getElementById('myprofile-root'); if (!root) return;
+  const u = TK.user || {};
+  const emps = _DEMO_EMPLOYEES || [];
+  const e = emps.find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase())) || u;
+  const mgr = emps.find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
+  const reports = emps.filter(x => (x.managerEmail || '').toLowerCase() === (e.email || '').toLowerCase() && x.id !== e.id);
+  const peers = emps.filter(x => x.dept === e.dept && x.id !== e.id).slice(0, 6);
+  const D = v => (v && String(v).trim()) ? String(v) : '—';
+  const aT = e.annualTotal || 12, aU = e.annualUsed || 0, sT = e.sickTotal || 30, sU = e.sickUsed || 0, comp = e.compoff || 0;
+  const av = (x, sz) => (typeof tkAvatar === 'function' ? tkAvatar(x, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (x.clr || '#205090') + '">' + (x.ini || '') + '</div>');
+  const photoCss = e.photo ? ('background-image:url(' + e.photo + ');background-size:cover;background-position:center') : ('background:' + (e.clr || '#205090'));
+  const sp = _tkDateParts(e.startDate);
+  let svc = '—';
+  if (e.serviceDuration && String(e.serviceDuration).trim()) svc = e.serviceDuration;
+  else if (sp) { const yrs = Math.max(0, new Date().getFullYear() - sp.y); svc = yrs ? (yrs + ' year' + (yrs !== 1 ? 's' : '')) : '< 1 year'; }
+  const canEdit = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const ico = p => '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px">' + p + '</svg>';
+  const I_MAIL = '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>';
+  const I_PHONE = '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>';
+  const I_PIN = '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>';
+  const I_EDIT = '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>';
+
+  const sec = (title, rows) => '<div class="card" style="padding:18px 20px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:13px">' + title + '</div><div style="display:flex;flex-direction:column;gap:10px">' + rows + '</div></div>';
+  const row = (k, v) => '<div style="display:flex;justify-content:space-between;gap:14px;font-size:13px"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600;text-align:right">' + v + '</span></div>';
+  const block = (k, v) => '<div style="font-size:13px"><span style="color:var(--text-light)">' + k + '</span><div style="font-weight:600;margin-top:3px;line-height:1.5">' + v + '</div></div>';
+  const bar = (label, used, total, cls) => '<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>' + label + '</span><span style="font-weight:700">' + (total - used) + ' of ' + total + ' left</span></div><div class="prog-wrap"><div class="prog-fill ' + cls + '" style="width:' + Math.round(used / Math.max(total, 1) * 100) + '%"></div></div></div>';
+
+  const editBtn = canEdit
+    ? '<button class="btn btn-primary btn-sm" onclick="_editEmpProfile(\'' + e.id + '\')">' + ico(I_EDIT) + 'Edit Profile</button>'
+    : '<button class="btn btn-outline btn-sm" onclick="toast(\'To update your profile details, please contact HR.\',\'info\',5000)">' + ico(I_EDIT) + 'Request Update</button>';
+
+  root.innerHTML =
+  '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">' +
+    '<div style="height:96px;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy) 55%,var(--emerald))"></div>' +
+    '<div style="padding:0 26px 14px;display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap">' +
+      '<div style="width:92px;height:92px;border-radius:50%;' + photoCss + ';border:4px solid #fff;margin-top:-46px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:30px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.12);flex-shrink:0">' + (e.photo ? '' : D(e.ini)) + '</div>' +
+      '<div style="flex:1;min-width:200px;padding-top:12px">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><h1 style="font-size:22px;margin:0">' + D(e.name) + '</h1><span class="badge ' + ((e.status || 'Active').toLowerCase() !== 'inactive' ? 'b-ok' : 'b-danger') + '" style="font-size:10px">' + D(e.status || 'Active') + '</span></div>' +
+        '<div style="font-size:14px;color:var(--text-dark);font-weight:600;margin-top:3px">' + D(e.title) + '</div>' +
+        '<div style="font-size:12px;color:var(--text-light);margin-top:3px">' + D(e.dept) + ' · ' + D(e.id) + ' · ' + svc + ' of service</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:8px;padding-top:12px">' +
+        '<button class="btn btn-outline btn-sm" onclick="window.location.href=\'mailto:' + D(e.email) + '\'">' + ico(I_MAIL) + 'Email</button>' + editBtn +
+      '</div>' +
+    '</div>' +
+    '<div style="display:flex;gap:20px;flex-wrap:wrap;padding:0 26px 18px;font-size:12.5px;color:var(--text-dark)">' +
+      '<span>' + ico(I_MAIL) + D(e.email) + '</span><span>' + ico(I_PHONE) + D(e.phone) + '</span><span>' + ico(I_PIN) + D(e.zone) + '</span>' +
+    '</div>' +
+  '</div>' +
+  '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px">' +
+    sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
+    sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('ID / Passport', D(e.personalId))) +
+    sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
+    sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
+    sec('Leave &amp; Benefits', bar('Annual Leave', aU, aT, 'prog-navy') + bar('Sick Leave', sU, sT, 'prog-emerald') + row('Comp-off Days', comp + ' days')) +
+    sec('Emergency Contact', e.emergency ? '<div style="font-size:13px;line-height:1.6">' + D(e.emergency) + '</div>' : '<div style="font-size:13px;color:var(--text-light)">No emergency contact on file</div>') +
+  '</div>' +
+  '<div class="card" style="padding:18px 20px;margin-top:20px">' +
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:13px">Reporting Line</div>' +
+    '<div style="display:flex;flex-wrap:wrap;gap:26px">' +
+      '<div style="min-width:180px"><div style="font-size:11px;color:var(--text-light);margin-bottom:7px">Reports to</div>' + (mgr ? ('<div style="display:flex;align-items:center;gap:10px">' + av(mgr) + '<div><div style="font-size:13px;font-weight:600">' + mgr.name + '</div><div style="font-size:11px;color:var(--text-light)">' + D(mgr.title) + '</div></div></div>') : '<div style="font-size:12px;color:var(--text-light)">— (top of organisation)</div>') + '</div>' +
+      '<div style="flex:1;min-width:220px"><div style="font-size:11px;color:var(--text-light);margin-bottom:7px">' + (reports.length ? ('Direct reports (' + reports.length + ')') : ('Team · ' + D(e.dept))) + '</div><div style="display:flex;flex-wrap:wrap;gap:10px">' + ((reports.length ? reports : peers).map(p => '<div style="display:flex;align-items:center;gap:8px;background:var(--soft-bg);border-radius:20px;padding:5px 13px 5px 5px">' + av(p) + '<span style="font-size:12px;font-weight:600">' + p.name + '</span></div>').join('') || '<div style="font-size:12px;color:var(--text-light)">No team members listed</div>') + '</div></div>' +
+    '</div>' +
+  '</div>';
 }
 
 function _initStaffLeaveChart() {
@@ -3525,6 +3742,7 @@ function showView(id, navEl, title) {
   if (id === 'manager') { loadManagerView(); }
   if (id === 'dashboard') { setTimeout(initDashChart, 100); }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
+  if (id === 'myprofile') { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
