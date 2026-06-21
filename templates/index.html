@@ -567,9 +567,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Approval Inbox</span>
     <span class="nav-badge hidden" id="badge-inbox"></span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('manager',this,'Manager Approval')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
-    <span class="nav-label">Manager Approval</span>
+  <div class="nav-item" data-roles="manager" onclick="showView('manager',this,'Team Monitoring')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+    <span class="nav-label">Team Monitoring</span>
     <span class="nav-badge" id="badge-pending">4</span>
   </div>
 
@@ -1117,7 +1117,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="card">
       <div class="card-hdr">
         <div class="card-title">Pending Approvals</div>
-        <button class="btn btn-ghost btn-sm" onclick="showView('manager',null,'Manager Approval')">View All →</button>
+        <button class="btn btn-ghost btn-sm" onclick="showView('inbox',null,'Approval Inbox')">View All →</button>
       </div>
       <div id="dash-approvals"></div>
     </div>
@@ -1604,7 +1604,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 ═══════════════════════════════════════════════════════ -->
 <div id="view-manager" class="view">
   <div class="page-header">
-    <div><h1>Manager Approval</h1><p>Pending leave · Late alerts · GPS anomalies · Team overview</p></div>
+    <div><h1>Team Monitoring</h1><p>Real-time attendance, lateness &amp; GPS oversight (approvals are in the Inbox)</p></div>
     <div style="display:flex;gap:8px">
       <select class="sel-filter"><option>My Team</option><option>All Teams</option></select>
       <button class="btn btn-primary btn-sm" onclick="loadManagerView()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
@@ -1619,7 +1619,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="tabs" id="mgr-tabs">
-    <button class="tab active" onclick="switchMgrTab('approvals',this)">Leave Approvals (4)</button>
+    <button class="tab active" onclick="switchMgrTab('approvals',this)">Approvals</button>
     <button class="tab" onclick="switchMgrTab('latealerts',this)">Late Alerts (4)</button>
     <button class="tab" onclick="switchMgrTab('gpsalerts',this)">GPS Alerts (2)</button>
     <button class="tab" onclick="switchMgrTab('teamview',this)">Team View</button>
@@ -1627,83 +1627,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
   <!-- APPROVALS TAB -->
   <div id="mgr-approvals">
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#8B5CF6">HN</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Ha Nguyen</div><div style="font-size:12px;color:var(--text-light)">Sales · Ref: LEAVE-2026-0039</div></div>
-          <span class="badge b-warn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>23h remaining</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Type<span>Annual Leave</span></div>
-          <div class="approval-meta-item">Days<span>3 Days</span></div>
-          <div class="approval-meta-item">Dates<span>May 12–14</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);margin-bottom:10px;padding:10px;background:var(--soft-bg);border-radius:6px">Family event in Da Nang. Balance: 8d remaining → 5d after approval.</div>
-        <div class="approval-actions">
-          <input type="text" class="form-control" placeholder="Comment (optional)…" style="width:250px;height:34px;padding:6px 10px;font-size:12px">
-          <button class="btn-reject" onclick="managerReject(this,'Ha Nguyen')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="managerApprove(this,'Ha Nguyen')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
-
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#F59E0B">MV</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Minh Vu</div><div style="font-size:12px;color:var(--text-light)">Projects · Ref: LEAVE-2026-0040</div></div>
-          <span class="badge b-danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Expires in 2h</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Type<span>Sick Leave</span></div>
-          <div class="approval-meta-item">Days<span>1 Day</span></div>
-          <div class="approval-meta-item">Dates<span>May 10</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);margin-bottom:10px;padding:10px;background:var(--soft-bg);border-radius:6px">Fever — medical cert attached. Balance: 14d remaining → 13d after approval.</div>
-        <div class="approval-actions">
-          <button class="btn btn-ghost btn-sm" onclick="viewCertificate(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>Medical Cert</button>
-          <input type="text" class="form-control" placeholder="Comment…" style="width:200px;height:34px;padding:6px 10px;font-size:12px">
-          <button class="btn-reject" onclick="managerReject(this,'Minh Vu')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="managerApprove(this,'Minh Vu')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
-
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#3168A8">TN</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Tuan Nguyen</div><div style="font-size:12px;color:var(--text-light)">Projects · Ref: LEAVE-2026-0041</div></div>
-          <span class="badge b-warn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>40h remaining</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Type<span>Comp-off</span></div>
-          <div class="approval-meta-item">Days<span>1 Day</span></div>
-          <div class="approval-meta-item">Dates<span>May 15</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);margin-bottom:10px;padding:10px;background:var(--soft-bg);border-radius:6px">Comp-off from overtime on April 27 (project delivery). Balance: 2d comp-off.</div>
-        <div class="approval-actions">
-          <input type="text" class="form-control" placeholder="Comment…" style="width:200px;height:34px;padding:6px 10px;font-size:12px">
-          <button class="btn-reject" onclick="managerReject(this,'Tuan Nguyen')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="managerApprove(this,'Tuan Nguyen')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
-
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#163866">BL</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Binh Le</div><div style="font-size:12px;color:var(--text-light)">Field Services · Ref: LEAVE-2026-0042</div></div>
-          <span class="badge b-warn"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>46h remaining</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Type<span>Annual Leave</span></div>
-          <div class="approval-meta-item">Days<span>5 Days</span></div>
-          <div class="approval-meta-item">Dates<span>May 19–23</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);margin-bottom:10px;padding:10px;background:var(--soft-bg);border-radius:6px">Planned vacation. Balance: 9d remaining → 4d after approval. No project conflicts.</div>
-        <div class="approval-actions">
-          <input type="text" class="form-control" placeholder="Comment…" style="width:200px;height:34px;padding:6px 10px;font-size:12px">
-          <button class="btn-reject" onclick="managerReject(this,'Binh Le')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="managerApprove(this,'Binh Le')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
+    <div class="card" style="padding:28px;text-align:center">
+      <div style="font-weight:700;font-size:15px;color:var(--navy);margin-bottom:6px">Approvals have moved to the Approval Inbox</div>
+      <div style="font-size:13px;color:var(--text-light);margin-bottom:14px">Leave, travel, claims, requisitions and PADR reviews are now all approved in one place.</div>
+      <button class="btn btn-primary btn-sm" onclick="showView('inbox',null,'Approval Inbox')">Go to Approval Inbox</button>
     </div>
   </div>
 
@@ -4688,28 +4615,72 @@ function tkReadAttach(input, hid) {
 const _ATTACH_FIELD = (hid, label) => '<div class="form-group"><label class="form-label">' + label + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'' + hid + '\')" style="font-size:12px"><span id="' + hid + 'lbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="' + hid + '"><input type="hidden" id="' + hid + 'name"></div>';
 const _attachLink = rec => (rec && rec.attachment) ? ' <a href="' + rec.attachment + '" target="_blank" rel="noopener" title="' + (rec.attachmentName || 'attachment') + '" style="color:var(--navy)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>' : '';
 
-/* Employee — submit a benefit/welfare claim. */
+/* ── Multi-line claims (A8) — one claim (a trip/event) can hold many items: meal, hotel, transport… ── */
+const _CLAIM_CATS = ['Meal', 'Hotel / Accommodation', 'Transport', 'Fuel', 'Taxi / Grab', 'Flight', 'Per diem', 'Medical / Health', 'Wedding', 'Bereavement', 'Newborn', 'Birthday', 'Training', 'Other'];
+/* Normalise to items[] — synthesise a single line for legacy single-amount claims. */
+function _claimItems(c) {
+  if (c && Array.isArray(c.items) && c.items.length) return c.items;
+  return [{ id: 'legacy', category: (c && c.type) || 'Claim', amount: +(c && c.amount) || 0, note: (c && c.note) || '', attachment: (c && c.attachment) || '', attachmentName: (c && c.attachmentName) || '', status: (c && c.status) || 'Submitted' }];
+}
+const _claimTotal = c => _claimItems(c).reduce((s, it) => s + (+it.amount || 0), 0);
+function _claimRollup(c) {
+  const its = _claimItems(c);
+  if (its.some(it => (it.status || 'Submitted') === 'Submitted')) return its.some(it => it.status === 'Approved' || it.status === 'Rejected') ? 'Partially approved' : 'Submitted';
+  if (its.every(it => it.status === 'Approved')) return 'Approved';
+  if (its.every(it => it.status === 'Rejected')) return 'Rejected';
+  return 'Partially approved';
+}
+const _claimOpen = c => _claimItems(c).some(it => (it.status || 'Submitted') === 'Submitted');
+let _claimRowSeq = 0;
+function _claimLineHtml() {
+  const i = _claimRowSeq++;
+  return '<div class="claim-line" data-ci="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control claim-cat">' + _CLAIM_CATS.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Amount (VND)</label><input class="form-control claim-amt" type="number" oninput="tkClaimRecalc()"></div></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Note</label><input class="form-control claim-note" placeholder="e.g. dinner with client"></div>' +
+    _ATTACH_FIELD('claim-att-' + i, 'Attach bill / receipt') +
+    '<div style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:11px" onclick="this.closest(\'.claim-line\').remove();tkClaimRecalc()">Remove line</button></div></div>';
+}
+function tkClaimRecalc() {
+  let t = 0; document.querySelectorAll('#claim-lines .claim-amt').forEach(i => t += +i.value || 0);
+  const el = document.getElementById('claim-total'); if (el) el.textContent = _PAY_FMT(t);
+}
+function tkClaimAddLine() { const w = document.getElementById('claim-lines'); if (w) { w.insertAdjacentHTML('beforeend', _claimLineHtml()); } }
 function tkSubmitClaim() {
-  document.getElementById('claimOverlay')?.remove();
+  document.getElementById('claimOverlay')?.remove(); _claimRowSeq = 0;
   const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:420px"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div class="form-group"><label class="form-label">Claim type</label><select class="form-control" id="claim-type"><option>Medical / Health</option><option>Travel / Transport</option><option>Wedding</option><option>Bereavement</option><option>Newborn</option><option>Birthday</option><option>Training</option><option>Other</option></select></div>' +
-    '<div class="form-group"><label class="form-label">Amount (VND)</label><input class="form-control" id="claim-amount" type="number"></div>' +
-    '<div class="form-group"><label class="form-label">Note</label><textarea class="form-control" id="claim-note" placeholder="Description"></textarea></div>' +
-    _ATTACH_FIELD('claim-attach', 'Attach bill / receipt (image or PDF)') +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">Submit</button></div></div>';
+  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Claim title / trip</label><input class="form-control" id="claim-title" placeholder="e.g. Hanoi site visit 12–14 Jun"></div>' +
+    '<div style="font-weight:700;font-size:13px;margin:4px 0 6px;color:var(--navy)">Items</div>' +
+    '<div id="claim-lines"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="tkClaimAddLine()">' + tkIcon('plus') + 'Add item</button>' +
+    '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text-light)">Total claim</span><span style="font-size:18px;font-weight:800;color:var(--navy)" id="claim-total">₫0</span></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
+  tkClaimAddLine();
 }
 async function tkClaimSave() {
   const e = _tkMe();
-  const g = id => (document.getElementById(id) || {}).value || '';
-  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', type: g('claim-type'), amount: +g('claim-amount') || 0, note: g('claim-note'), attachment: g('claim-attach'), attachmentName: g('claim-attachname'), status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
+  const items = [];
+  document.querySelectorAll('#claim-lines .claim-line').forEach(row => {
+    const ci = row.getAttribute('data-ci');
+    const cat = (row.querySelector('.claim-cat') || {}).value || '';
+    const amt = +((row.querySelector('.claim-amt') || {}).value) || 0;
+    const note = (row.querySelector('.claim-note') || {}).value || '';
+    const att = (document.getElementById('claim-att-' + ci) || {}).value || '';
+    const attName = (document.getElementById('claim-att-' + ci + 'name') || {}).value || '';
+    if (amt > 0 || att) items.push({ id: 'ci-' + ci + '-' + cat.slice(0, 4), category: cat, amount: amt, note: note, attachment: att, attachmentName: attName, status: 'Submitted' });
+  });
+  if (!items.length) { toast('Add at least one item with an amount', 'warn'); return; }
+  const total = items.reduce((s, it) => s + it.amount, 0);
+  const title = (document.getElementById('claim-title') || {}).value || (items.length > 1 ? items.length + ' items' : items[0].category);
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, items: items, amount: total, status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
   try {
     await tkApi('/api/coll/claims', { method: 'POST', body });
-    tkAudit('Claim submitted', body.name, body.type + ' ' + _PAY_FMT(body.amount));
+    tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
     const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
-    if (mgr) tkNotifyGraph(mgr.email, 'Claim to approve', (body.name || '') + ' submitted a ' + body.type + ' claim of ' + _PAY_FMT(body.amount) + '. CC: Finance / HR.\n\nHumiley HR');
-    document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {}
+    if (mgr) tkNotifyGraph(mgr.email, 'Claim to approve', (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.\n\nHumiley HR');
+    document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
   }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
 }
@@ -4722,7 +4693,7 @@ async function tkRenderInbox() {
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
   const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me);
-  const claims = (_HR.claims || []).filter(c => (c.status || '') === 'Submitted');
+  const claims = (_HR.claims || []).filter(c => _claimOpen(c));
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
   const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment');
   const travel = (_HR.travel || []).filter(t => t.status === 'Submitted');
@@ -4734,7 +4705,7 @@ async function tkRenderInbox() {
   ]);
   const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
   const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
-  const claimRows = '<thead><tr><th>Employee</th><th>Type</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>' + claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td>' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Rejected\')">Reject</button></td></tr>').join('') + '</tbody>';
+  const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, true) + '</tbody>';
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
   const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
@@ -4760,13 +4731,43 @@ async function tkInboxLeave(id, status) {
   try { await tkBootstrap(); } catch (e) {}
   toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
 }
+/* Expandable multi-line claim table — used by both the Inbox and Travel & Claims. */
+const _claimBadgeCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Partially approved' ? 'b-info' : 'b-warn';
+function tkClaimToggle(id) { const d = document.getElementById('claim-det-' + id); if (d) d.style.display = (d.style.display === 'none' ? 'table-row' : 'none'); }
+function _claimRowsHtml(claims, isMgr) {
+  if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
+  return claims.map(c => {
+    const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
+    const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'All</button> <button class="btn-reject" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'All</button>' : '';
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
+    const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:9px;padding:2px 6px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + '</button> <button class="btn-reject" style="font-size:9px;padding:2px 6px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + '</button>' : '';
+    const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
+      its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
+      '</tbody></table></td></tr>';
+    return summary + detail;
+  }).join('');
+}
 async function tkInboxClaim(id, status) {
-  const c = (_HR.claims || []).find(x => x.id === id); if (!c) return; c.status = status;
+  const c = (_HR.claims || []).find(x => x.id === id); if (!c) return;
+  c.status = status;
+  if (Array.isArray(c.items)) c.items.forEach(it => { if ((it.status || 'Submitted') === 'Submitted') it.status = status; });
   try {
     await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c });
-    tkAudit('Claim ' + status.toLowerCase(), c.name || '', (c.type || '') + ' ' + _PAY_FMT(c.amount || 0));
-    const emp = _hrEmp(c.empId) || {}; tkNotifyGraph(emp.email, 'Your claim was ' + status.toLowerCase(), 'Hi ' + (c.name || '') + ',\n\nYour ' + (c.type || '') + ' claim of ' + _PAY_FMT(c.amount || 0) + ' has been ' + status.toLowerCase() + '.\n\nHumiley HR');
+    tkAudit('Claim ' + status.toLowerCase(), c.name || '', (c.title || c.type || '') + ' ' + _PAY_FMT(_claimTotal(c)));
+    const emp = _hrEmp(c.empId) || {}; tkNotifyGraph(emp.email, 'Your claim was ' + status.toLowerCase(), 'Hi ' + (c.name || '') + ',\n\nYour claim "' + (c.title || c.type || '') + '" (' + _PAY_FMT(_claimTotal(c)) + ') has been ' + status.toLowerCase() + '.\n\nHumiley HR');
     toast('Claim ' + status.toLowerCase()); try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {}
+  }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+async function tkInboxClaimItem(claimId, itemId, status) {
+  const c = (_HR.claims || []).find(x => x.id === claimId); if (!c || !Array.isArray(c.items)) return;
+  const it = c.items.find(x => x.id === itemId); if (!it) return;
+  it.status = status; c.status = _claimRollup(c);
+  try {
+    await tkApi('/api/coll/claims/' + claimId, { method: 'PATCH', body: c });
+    tkAudit('Claim item ' + status.toLowerCase(), c.name || '', (it.category || '') + ' ' + _PAY_FMT(it.amount || 0));
+    const emp = _hrEmp(c.empId) || {}; tkNotifyGraph(emp.email, 'Claim item ' + status.toLowerCase(), 'Hi ' + (c.name || '') + ', your claim item "' + (it.category || '') + '" (' + _PAY_FMT(it.amount || 0) + ') was ' + status.toLowerCase() + '. Overall status: ' + c.status + '.\n\nHumiley HR');
+    toast('Item ' + status.toLowerCase()); try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {}
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
@@ -4779,7 +4780,7 @@ async function tkLoadInboxBadge() {
     await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
     const me = TK.user && TK.user.id;
     const total = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me).length +
-      (_HR.claims || []).filter(c => c.status === 'Submitted').length +
+      (_HR.claims || []).filter(c => _claimOpen(c)).length +
       (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft').length +
       (_HR.padr || []).filter(p => p.status === 'Self-assessment').length +
       (_HR.travel || []).filter(t => t.status === 'Submitted').length;
@@ -4798,19 +4799,19 @@ async function tkRenderTravelClaims() {
   if (!isMgr) { travel = travel.filter(t => t.empId === myId); claims = claims.filter(c => c.empId === myId); }
   const _ts = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : 'b-warn';
   const tAdv = travel.reduce((s, t) => s + (+t.advance || 0), 0);
-  const cTot = claims.reduce((s, c) => s + (+c.amount || 0), 0);
+  const cTot = claims.reduce((s, c) => s + _claimTotal(c), 0);
   const kpis = _hrKpiRow([
     _hrKpi('Travel Requests', travel.length),
-    _hrKpi('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => c.status === 'Submitted').length, '#F59E0B'),
+    _hrKpi('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => _claimOpen(c)).length, '#F59E0B'),
     _hrKpi('Advances', _PAY_FMT(tAdv), '#8B5CF6'),
     _hrKpi('Claims value', _PAY_FMT(cTot), 'var(--emerald)')
   ]);
   const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">Reject</button>' : '';
   const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
-  const claimRows = claims.length ? claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td style="text-align:right">' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + _attachLink(c) + '</td><td>' + (c.ts || '') + '</td><td><span class="badge ' + _ts(c.status) + '" style="font-size:10px">' + (c.status || '') + '</span></td><td style="white-space:nowrap">' + act('claims', c.id, c.status) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
+  const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Type</th><th style="text-align:right">Amount</th><th>Note</th><th>Date</th><th>Status</th><th></th></tr></thead><tbody>' + claimRows + '</tbody></table></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div><span style="font-size:11px;color:var(--text-light)">Click a claim to see its items</span></div><div class="table-wrap"><table>' + claimRows + '</table></div></div>';
 }
 function tkNewTravel() {
   document.getElementById('travelOverlay')?.remove();

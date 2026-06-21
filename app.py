@@ -447,13 +447,11 @@ class Handler(BaseHTTPRequestHandler):
         # For staff self-service records, stamp identity from the session (no impersonation).
         if name in ("claims", "travel", "acks"):
             item["empId"] = u.get("id")
-            if not item.get("name"):
-                item["name"] = u.get("name")
+            item["name"] = u.get("name")
         # Staff-created PADR cycle: stamp identity, force self-service shape (no mgr scores/rating).
         if name == "padr" and u.get("role") != "manager":
             item["empId"] = u.get("id")
-            if not item.get("name"):
-                item["name"] = u.get("name")
+            item["name"] = u.get("name")
             item["status"] = item.get("status") or "Goal-setting"
             item["rating"] = 0
             for g in (item.get("goals") or []):

@@ -157,6 +157,7 @@ def seed_hr():
         _seed_exits(pick)
         _seed_benefits(pick)
         _seed_learningpaths(pick)
+        _seed_claims(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -310,6 +311,27 @@ def _seed_exits(pick):
                       for i, (o, l) in enumerate(EXIT_CLEARANCE)],
         "leavePayout": "", "severance": 0, "deductions": 0,
         "settlementNote": "", "rehire": "Yes",
+    })
+
+
+def _seed_claims(pick):
+    """One multi-line expense claim (a trip with several items) for demo."""
+    if collection_count("claims"):
+        return
+    if not pick:
+        return
+    e = pick[min(2, len(pick) - 1)]
+    put_collection_item("claims", {
+        "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+        "title": "Long An site visit (3 days)", "type": "Multi-item",
+        "ts": "12/06/2026", "status": "Submitted",
+        "items": [
+            {"id": "ci-1", "category": "Hotel / Accommodation", "amount": 2400000, "note": "2 nights", "attachment": "", "attachmentName": "", "status": "Submitted"},
+            {"id": "ci-2", "category": "Meal", "amount": 850000, "note": "Team dinner", "attachment": "", "attachmentName": "", "status": "Submitted"},
+            {"id": "ci-3", "category": "Transport", "amount": 1200000, "note": "Car + fuel", "attachment": "", "attachmentName": "", "status": "Submitted"},
+            {"id": "ci-4", "category": "Per diem", "amount": 600000, "note": "3 days", "attachment": "", "attachmentName": "", "status": "Submitted"},
+        ],
+        "amount": 5050000,
     })
 
 
