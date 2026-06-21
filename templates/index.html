@@ -3843,12 +3843,17 @@ async function tkNotifyGraph(to, subject, body) {
 }
 /* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
 const _ONBOARD_TEMPLATE = [
+  { phase: 'Pre-boarding', label: 'Send welcome email & first-day logistics' },
+  { phase: 'Pre-boarding', label: 'Prepare desk, PPE & workstation' },
+  { phase: 'Pre-boarding', label: 'Create payroll / SI / PIT profile' },
   { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
   { phase: 'Day 1 — Arrival', label: 'Sign Labor Contract & NDA' },
   { phase: 'Day 1 — Arrival', label: 'Personal info, bank, tax code & SI registration' },
   { phase: 'Day 1 — Arrival', label: 'IT account, email & company ID / access card' },
   { phase: 'Week 1 — Integration', label: 'EHS induction & Code of Conduct' },
   { phase: 'Week 1 — Integration', label: 'IT security & expense system training' },
+  { phase: 'Week 1 — Integration', label: 'Benefits & welfare enrollment (insurance, allowances)' },
+  { phase: 'Week 1 — Integration', label: 'Add to Teams / email lists & org chart' },
   { phase: 'Week 1 — Integration', label: 'Department deep-dive (projects, process, tools)' },
   { phase: 'Week 1 — Integration', label: 'Role shadowing with mentor & first task' },
   { phase: '30-60-90 Days', label: 'Draft 30-60-90 day plan + PADR objectives' },
@@ -3857,6 +3862,15 @@ const _ONBOARD_TEMPLATE = [
   { phase: '30-60-90 Days', label: 'Day 90 — probation review (confirm / extend / end)' }
 ];
 const _onboardTasks = () => _ONBOARD_TEMPLATE.map(t => ({ label: t.label, phase: t.phase, done: false }));
+/* Probation milestones (A11) — due dates computed from startDate; email reminder when approaching. */
+const _PROBATION_MILESTONES = [
+  { day: 30, label: 'Day 30 — Manager first check-in' },
+  { day: 60, label: 'Day 60 — HR check-in & risk review' },
+  { day: 90, label: 'Day 90 — Probation review (confirm / extend / end)' }
+];
+const _onboardMilestones = () => _PROBATION_MILESTONES.map(m => ({ day: m.day, label: m.label, status: 'Pending', reviewedOn: '', remindedAt: '' }));
+const _addDays = (iso, n) => { const p = _tkDateParts(iso); if (!p) return ''; const d = new Date(p.y, p.m - 1, p.d); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const _daysUntil = iso => { const p = _tkDateParts(iso); if (!p) return null; return Math.round((new Date(p.y, p.m - 1, p.d) - new Date(_today())) / 86400000); };
 async function tkLoadColl(name) {
   try { const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } }); if (r.ok) { const j = await r.json(); _HR[name] = j.items || []; } } catch (e) {}
   return _HR[name];
@@ -3928,7 +3942,7 @@ async function tkHireCandidate(id) {
     } });
     await tkApi('/api/coll/onboarding', { method: 'POST', body: {
       empId: emp.id, name: c.name, role: c.role || '', startDate: _today(),
-      tasks: _onboardTasks()
+      tasks: _onboardTasks(), milestones: _onboardMilestones()
     } });
     await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: { ...c, stage: 'Hired' } });
     c.stage = 'Hired';
@@ -4118,21 +4132,70 @@ async function tkRenderOnboarding() {
     _hrKpi('Avg. Progress', (totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0) + '%', '#8B5CF6')
   ]);
   const cards = items.length ? items.map(o => {
+    if (!o.milestones) o.milestones = _onboardMilestones();
     const tk = o.tasks || []; const dn = tk.filter(t => t.done).length; const pct = Math.round(dn / Math.max(tk.length, 1) * 100);
     const e = _hrEmp(o.empId) || { name: o.name, ini: (o.name || '?').slice(0, 2).toUpperCase() };
     return '<div class="card" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + _hrAv(e) + '<div style="flex:1"><div style="font-weight:700">' + (o.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (o.role || '') + (o.startDate ? (' · starts ' + tkFmtDate(o.startDate)) : '') + '</div></div><span class="badge ' + (pct === 100 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + pct + '%</span>' + _hrEditDel('onboarding', o.id, 'onboarding') + '</div>' +
       '<div class="prog-wrap" style="margin-bottom:10px"><div class="prog-fill ' + (pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pct + '%"></div></div>' +
+      _onboardMilestoneHtml(o) +
       (() => { const byPhase = {}; tk.forEach((t, i) => { const p = t.phase || 'Checklist'; (byPhase[p] = byPhase[p] || []).push({ t, i }); });
         return Object.keys(byPhase).map(p => (tk.some(t => t.phase) ? '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + p + '</div>' : '') +
           byPhase[p].map(({ t, i }) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="tkOnboardToggle(\'' + o.id + '\',' + i + ',this.checked)"><span style="' + (t.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + t.label + '</span></label>').join('')).join(''); })() +
     '</div>';
   }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No one is onboarding right now.</div>';
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">' + cards + '</div>';
+  try { tkOnboardReminders(); } catch (e) {}
+}
+/* Probation milestone strip with computed due dates + status select. */
+function _onboardMilestoneHtml(o) {
+  if (!o.startDate) return '<div style="font-size:11px;color:var(--text-light);margin:6px 0">Set a start date to track 30/60/90-day milestones.</div>';
+  const rows = (o.milestones || []).map((m, mi) => {
+    const due = _addDays(o.startDate, m.day); const du = _daysUntil(due);
+    let badge, cls;
+    if (['Confirmed', 'Extended', 'Ended'].indexOf(m.status) >= 0) { badge = m.status; cls = m.status === 'Confirmed' ? 'b-ok' : m.status === 'Extended' ? 'b-warn' : 'b-danger'; }
+    else if (du < 0) { badge = 'Overdue'; cls = 'b-danger'; }
+    else if (du <= 7) { badge = 'Due in ' + du + 'd'; cls = 'b-warn'; }
+    else { badge = 'in ' + du + 'd'; cls = 'b-info'; }
+    const sel = '<select onchange="tkOnboardMilestone(\'' + o.id + '\',' + mi + ',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--line);border-radius:5px">' + ['Pending', 'Confirmed', 'Extended', 'Ended'].map(s => '<option' + (s === m.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>';
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11.5px;padding:3px 0"><span>' + m.label.replace(/ —.*/, '') + ' · ' + tkFmtDate(due) + '</span><span style="display:inline-flex;align-items:center;gap:5px"><span class="badge ' + cls + '" style="font-size:9px">' + badge + '</span>' + sel + '</span></div>';
+  }).join('');
+  return '<div style="background:var(--soft-bg);border-radius:8px;padding:8px 10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin-bottom:3px">Probation milestones</div>' + rows + '</div>';
 }
 function tkOnboardToggle(id, idx, checked) {
   const o = _HR.onboarding.find(x => x.id === id); if (!o || !o.tasks || !o.tasks[idx]) return;
   o.tasks[idx].done = checked;
   fetch('/api/coll/onboarding/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(o) }).then(r => r.json()).then(() => tkRenderOnboarding());
+}
+async function tkOnboardMilestone(id, mi, status) {
+  const o = (_HR.onboarding || []).find(x => x.id === id); if (!o || !o.milestones || !o.milestones[mi]) return;
+  o.milestones[mi].status = status; o.milestones[mi].reviewedOn = _today();
+  try {
+    await tkApi('/api/coll/onboarding/' + id, { method: 'PATCH', body: o });
+    tkAudit('Onboarding milestone ' + status, o.name || '', o.milestones[mi].label);
+    if (status === 'Confirmed' && o.milestones[mi].day === 90) {
+      const e = _hrEmp(o.empId) || {}; tkNotifyGraph(e.email, 'Probation passed — welcome aboard!', 'Hi ' + (o.name || '') + ', congratulations — your probation review is complete and you are now a confirmed employee. Welcome to the Humiley team!\n\nHumiley HR');
+    }
+    toast('Milestone: ' + status); tkRenderOnboarding();
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Email reminders as 30/60/90-day milestones approach (debounced once per day). */
+function tkOnboardReminders() {
+  (_HR.onboarding || []).forEach(o => {
+    if (!o.startDate || !o.milestones) return;
+    let dirty = false;
+    o.milestones.forEach(m => {
+      if (m.status !== 'Pending') return;
+      const due = _addDays(o.startDate, m.day); const du = _daysUntil(due);
+      if (du == null || du > 7 || du < -30) return;
+      if (m.remindedAt === _today()) return;
+      const e = _hrEmp(o.empId) || {};
+      const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === ((e.managerEmail || '')).toLowerCase());
+      const to = (mgr && mgr.email) || e.email;
+      if (to) tkNotifyGraph(to, 'Probation milestone due: ' + (o.name || ''), (o.name || '') + ' (' + (o.role || '') + ') reaches "' + m.label + '" on ' + tkFmtDate(due) + ' (start ' + tkFmtDate(o.startDate) + '). Please complete the probation review before they become a confirmed employee.\n\nHumiley HR');
+      m.remindedAt = _today(); dirty = true;
+    });
+    if (dirty) { try { tkApi('/api/coll/onboarding/' + o.id, { method: 'PATCH', body: o }).catch(() => {}); } catch (e) {} }
+  });
 }
 
 /* Performance Management — PADR (KPI/OKR · Reviews · PIP · Calibration) */
@@ -4956,6 +5019,7 @@ function tkInitExit() {
     '<div class="form-group"><label class="form-label">Notice (days)</label><input type="number" class="form-control" id="ex-notice" value="30"></div></div>' +
     '<div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-last"></div>' +
     '<div class="form-group"><label class="form-label">Reason</label><textarea class="form-control" id="ex-reason" rows="2" placeholder="Reason for leaving"></textarea></div>' +
+    _ATTACH_FIELD('ex-letter', 'Resignation / termination letter (image or PDF)') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'exitOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkExitCreate()">Initiate</button></div></div>';
   document.body.appendChild(el);
 }
@@ -4966,6 +5030,7 @@ async function tkExitCreate() {
   const body = { empId: emp.id, name: emp.name, dept: emp.dept || '', title: emp.title || '', type: g('ex-type'),
     initiated: new Date().toISOString().slice(0, 10), initStart: emp.startDate || '', lastDay: g('ex-last'),
     noticeDays: +g('ex-notice') || 30, reason: g('ex-reason'), status: 'Clearance', clearance: _exitDefClearance(),
+    resignLetter: g('ex-letter'), resignLetterName: g('ex-lettername'),
     leavePayout: '', severance: 0, deductions: 0, settlementNote: '', rehire: 'Yes' };
   try {
     const r = await tkApi('/api/coll/exits', { method: 'POST', body });
@@ -4983,14 +5048,18 @@ function tkExitManage(id) {
   const e = _hrEmp(r.empId) || { name: r.name, ini: (r.name || '?').slice(0, 2).toUpperCase() };
   const set = _exitSettlement(r);
   const byOwner = {}; r.clearance.forEach((c, i) => { (byOwner[c.owner] = byOwner[c.owner] || []).push({ c, i }); });
+  const isAsset = c => c.owner === 'IT' || c.owner === 'Admin';
   const checklist = Object.keys(byOwner).map(o => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:9px 0 2px">' + o + '</div>' +
-    byOwner[o].map(({ c, i }) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (c.done ? 'checked' : '') + ' onchange="tkExitToggle(\'' + id + '\',' + i + ',this.checked)"><span style="' + (c.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + c.label + '</span></label>').join('')).join('');
+    byOwner[o].map(({ c, i }) => '<div style="padding:3px 0"><label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer"><input type="checkbox" ' + (c.done ? 'checked' : '') + ' onchange="tkExitToggle(\'' + id + '\',' + i + ',this.checked)"><span style="flex:1;' + (c.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + c.label + '</span>' + _attachLink(c) + '</label>' +
+      (isAsset(c) ? '<div style="margin:2px 0 0 24px"><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'exitproof-' + i + '\')" style="font-size:10px"><span id="exitproof-' + i + 'lbl" style="font-size:10px;color:var(--emerald);margin-left:4px"></span><input type="hidden" id="exitproof-' + i + '" value="' + (c.attachment || '') + '"><input type="hidden" id="exitproof-' + i + 'name" value="' + (c.attachmentName || '') + '"></div>' : '') +
+    '</div>').join('')).join('');
   const fld = (lbl, hid, val, ph) => '<div class="form-group"><label class="form-label">' + lbl + '</label><input type="number" class="form-control" id="' + hid + '" value="' + (val || 0) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></div>';
   const el = document.createElement('div'); el.id = 'exitMgrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;overflow:auto"><div class="modal-header"><div style="display:flex;align-items:center;gap:10px">' + _hrAv(e) + '<div><div class="modal-title" style="margin:0">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.type || '') + ' · last day ' + tkFmtDate(r.lastDay) + ' · ' + _exitYears(r) + ' yrs service</div></div></div><button class="modal-close" onclick="document.getElementById(\'exitMgrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-m-type">' + _EXIT_TYPES.map(t => '<option' + (t === r.type ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-m-last" value="' + (r.lastDay || '') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">Reason</label><textarea class="form-control" id="ex-m-reason" rows="2">' + (r.reason || '') + '</textarea></div>' +
-    '<div style="font-weight:700;font-size:13px;margin:6px 0 2px;color:var(--navy)">Exit Clearance Checklist (FRM-014)</div>' +
+    '<div class="form-group"><label class="form-label">Resignation / termination letter ' + (r.resignLetter ? _attachLink({ attachment: r.resignLetter, attachmentName: r.resignLetterName }) : '') + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'ex-m-letter\')" style="font-size:12px"><span id="ex-m-letterlbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="ex-m-letter"><input type="hidden" id="ex-m-lettername"></div>' +
+    '<div style="font-weight:700;font-size:13px;margin:6px 0 2px;color:var(--navy)">Exit Clearance Checklist (FRM-014) — attach proof for returned assets</div>' +
     '<div class="card" style="padding:10px 14px;margin-bottom:14px">' + checklist + '</div>' +
     '<div style="font-weight:700;font-size:13px;margin:6px 0 2px;color:var(--navy)">Final Settlement (Article 46)</div>' +
     '<div class="card" style="padding:12px 14px;margin-bottom:6px;font-size:11.5px;color:var(--text-light)">Monthly salary base (P1+P2): <b style="color:var(--text-dark)">' + _PAY_FMT(set.monthly) + '</b> · daily rate ' + _PAY_FMT(set.dayRate) + ' · unused annual leave <b style="color:var(--text-dark)">' + set.leaveDays + ' day(s)</b>. Severance = ½ month × years not covered by unemployment insurance (often 0 for service since 2009).</div>' +
@@ -5013,6 +5082,9 @@ function _exitReadModal(r) {
     r.type = g('ex-m-type'); r.lastDay = g('ex-m-last') || r.lastDay; r.reason = g('ex-m-reason');
     r.leavePayout = +g('ex-m-leave') || 0; r.severance = +g('ex-m-sev') || 0; r.deductions = +g('ex-m-ded') || 0;
     r.rehire = g('ex-m-rehire'); r.settlementNote = g('ex-m-note');
+    if (g('ex-m-letter')) { r.resignLetter = g('ex-m-letter'); r.resignLetterName = g('ex-m-lettername'); }
+    // capture per-clearance-item proof attachments (asset returns)
+    (r.clearance || []).forEach((c, i) => { const v = g('exitproof-' + i); if (v) { c.attachment = v; c.attachmentName = g('exitproof-' + i + 'name') || ''; } });
   }
 }
 async function tkExitSave(id, complete) {
@@ -5210,7 +5282,7 @@ async function tkQuickAddSave() {
       const res = await tkApi('/api/coll/' + spec.coll + '/' + _qaEditId, { method: 'PATCH', body: { ...ex, ...data } });
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
-      if (_qaType === 'onboarding') data.tasks = _onboardTasks();
+      if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(); }
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
