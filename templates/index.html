@@ -1094,9 +1094,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
 
-  <!-- Level-adaptive band (admin: access/audit · management: finance) — top of dashboard -->
-  <div id="dash-level-band" style="margin-bottom:22px"></div>
-
   <!-- HR at a glance (all-HRM KPIs) -->
   <div class="card" style="padding:16px 18px;margin-bottom:22px">
     <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR at a Glance</div>
@@ -1145,6 +1142,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div id="dash-dept" style="display:flex;flex-direction:column;gap:10px"></div>
     </div>
   </div>
+
+  <!-- Level-adaptive band (admin: access/audit · management: finance) — bottom of dashboard -->
+  <div id="dash-level-band" style="margin-top:22px"></div>
 </div>
 <!-- ═══════════════════════════════════════════════════════
      VIEW: CHECK IN / OUT
@@ -5423,24 +5423,40 @@ async function tkRenderDashLevelBand() {
   const band = document.getElementById('dash-level-band'); if (!band) return;
   const lvl = (typeof _userLevel !== 'undefined' && _userLevel) || 'manager';
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
-  const card = (title, body) => '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">' + title + '</div>' + body + '</div>';
-  const chip = (l, v, c) => '<div style="display:inline-block;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:0 8px 8px 0"><div style="font-size:18px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div><div style="font-size:11px;color:var(--text-light)">' + l + '</div></div>';
+  const card = (title, body) => '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">' + title + '</div>' + body + '</div>';
+  // uniform box, icon-left, equal width in a grid row (consistent with HR at a Glance)
+  const box = (label, val, color, icon) => '<div style="background:var(--soft-bg);border-radius:12px;padding:13px 14px;display:flex;align-items:center;gap:11px;min-width:0">' +
+    '<div style="width:36px;height:36px;border-radius:10px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
+    '<div style="min-width:0"><div style="font-size:17px;font-weight:800;color:var(--navy);line-height:1.15;white-space:nowrap">' + val + '</div><div style="font-size:11px;color:var(--text-light);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div></div></div>';
+  const row = (cells) => '<div style="display:grid;grid-template-columns:repeat(' + cells.length + ',1fr);gap:12px">' + cells.join('') + '</div>';
+  const I_USER = '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>';
+  const I_USERS = TK_ICON.users;
+  const I_SHIELD = TK_ICON.shield;
+  const I_KEY = '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3"/>';
   if (lvl === 'admin') {
     await tkLoadColl('audit');
     const counts = { staff: 0, manager: 0, management: 0, admin: 0 }; (_DEMO_EMPLOYEES || []).forEach(e => { const d = _deriveLevel(e); counts[d] = (counts[d] || 0) + 1; });
     const recent = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 6);
+    const act = a => { const same = (a.target || '') === (a.actor || ''); return '<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--soft-bg);border-radius:8px;margin-bottom:6px;font-size:12px">' +
+      '<span style="font-weight:700;color:var(--navy);white-space:nowrap">' + (a.actor || '') + '</span>' +
+      '<span class="badge b-navy" style="font-size:9px">' + (a.action || '') + '</span>' +
+      (same ? '' : '<span style="color:var(--text-dark)">' + (a.target || '') + '</span>') +
+      '<span style="margin-left:auto;font-size:10px;color:var(--text-light);white-space:nowrap">' + (a.tsDisp || '') + '</span></div>'; };
     band.innerHTML = card('System &amp; Access (Admin)',
-      chip('Staff', counts.staff) + chip('Managers', counts.manager, '#205090') + chip('Management', counts.management, '#8B5CF6') + chip('Admins', counts.admin, '#F59E0B') +
-      '<div style="margin-top:6px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:600">Manage access levels →</a></div>' +
-      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:12px 0 4px">Recent activity</div>' +
-      (recent.length ? recent.map(a => '<div style="font-size:11.5px;padding:2px 0;color:var(--text-light)"><span style="color:var(--text-dark);font-weight:600">' + (a.actor || '') + '</span> · ' + (a.action || '') + ' · ' + (a.target || '') + '</div>').join('') : '<div style="font-size:12px;color:var(--text-light)">No activity yet</div>'));
+      row([box('Staff', counts.staff, '#205090', I_USER), box('Managers', counts.manager, '#3168A8', I_USERS), box('Management', counts.management, '#8B5CF6', I_SHIELD), box('Admins', counts.admin, '#F59E0B', I_KEY)]) +
+      '<div style="margin:12px 0 4px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</a></div>' +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin:12px 0 6px">Recent activity</div>' +
+      (recent.length ? recent.map(act).join('') : '<div style="font-size:12px;color:var(--text-light)">No activity yet</div>'));
   } else if (lvl === 'management') {
     let gross = 0, erCost = 0; const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
     emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
     const exits = (_HR.exits || []).length; const turnover = emps.length ? Math.round(exits / emps.length * 1000) / 10 : 0;
+    const I_CASH = '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
+    const I_BANK = '<rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 3 2 9h20z"/><line x1="7" y1="15" x2="7" y2="17"/><line x1="12" y1="15" x2="12" y2="17"/><line x1="17" y1="15" x2="17" y2="17"/>';
+    const I_TREND = '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>';
     band.innerHTML = card('Workforce &amp; Finance (Management)',
-      chip('Monthly gross', _PAY_FMT(gross), '#F59E0B') + chip('Employer cost', _PAY_FMT(erCost), 'var(--navy)') + chip('Headcount', emps.length, '#8B5CF6') + chip('Turnover (yr)', turnover + '%', '#EF4444') +
-      '<div style="margin-top:6px"><a onclick="showView(\'payroll\',null,\'Payroll\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:600">Open payroll →</a></div>');
+      row([box('Monthly gross', _PAY_FMT(gross), '#F59E0B', I_CASH), box('Employer cost', _PAY_FMT(erCost), '#205090', I_BANK), box('Headcount', emps.length, '#8B5CF6', TK_ICON.users), box('Turnover (yr)', turnover + '%', '#EF4444', I_TREND)]) +
+      '<div style="margin-top:12px"><a onclick="showView(\'payroll\',null,\'Payroll\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Open payroll →</a></div>');
   } else { band.innerHTML = ''; }
 }
 
