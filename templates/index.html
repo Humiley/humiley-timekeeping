@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Humiley – Timekeeping & Leave Management</title>
+<title>Humiley Group Inc. — People & Workplace Portal</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -483,8 +483,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
          id="login-main-logo"
          style="height:88px;width:auto;max-width:320px;display:block;margin:0 auto 32px">
 
-    <h2 class="login-title">Welcome to Humiley</h2>
-    <p class="login-sub">Timekeeping &amp; Leave Management Platform<br>
+    <h2 class="login-title">Welcome to Humiley Group Inc.</h2>
+    <p class="login-sub">People &amp; Workplace Portal<br>
       <span style="font-size:12px;color:#9CA3AF">Sign in with your Microsoft 365 work account</span>
     </p>
 
@@ -501,7 +501,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
     <p class="login-perm-note" id="login-perm-note-txt">
       Access requires a valid Humiley Microsoft 365 account<br>
-      with Timekeeping &amp; Leave Management permissions
+      with HR &amp; Workplace portal permissions
     </p>
 
     <!-- ── Role-step panel (shown after simulated MS365 auth in demo) ── -->
@@ -2917,6 +2917,8 @@ function tkCheckOut() {
 }
 
 /* Render the Check In/Out page from real attendance for the current user (A6). */
+let _ciPeriod = 'week';
+function tkCiSetPeriod(v) { _ciPeriod = v; tkRenderCheckin(); }
 function tkRenderCheckin() {
   try { tkPopulateZoneSelect(); } catch (e) {}
   const today = new Date().toISOString().slice(0, 10);
@@ -2937,17 +2939,21 @@ function tkRenderCheckin() {
     else if (todayRow && (todayRow.out || todayRow.clock_out)) hero.textContent = 'Checked out at ' + (todayRow.out || todayRow.clock_out);
     else hero.textContent = 'Not checked in';
   }
-  // KPI strip — this week
+  // KPI strip — week / month / year (selectable)
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const wk = mine.filter(r => r.date >= weekAgo);
+  const cym = today.slice(0, 7), cy = today.slice(0, 4);
+  const inP = d => _ciPeriod === 'week' ? d >= weekAgo : _ciPeriod === 'month' ? d.slice(0, 7) === cym : d.slice(0, 4) === cy;
+  const lbl = _ciPeriod === 'year' ? 'this year' : _ciPeriod === 'month' ? 'this month' : 'this week';
+  const wk = mine.filter(r => inP(r.date));
   const present = wk.filter(r => (r.in || r.clock_in)).length;
   const late = wk.filter(r => r.status === 'late').length;
   let mins = 0; wk.forEach(r => { const h = (r.hrs || '').match(/(\d+)h\s*(\d+)?/); if (h) mins += (+h[1]) * 60 + (+(h[2] || 0)); });
   const kpiEl = document.getElementById('ci-kpis');
-  if (kpiEl) kpiEl.innerHTML = [
-    _kpiTile('Present (this week)', present, '#00B060', TK_ICON.check),
-    _kpiTile('Late (this week)', late, '#F59E0B', TK_ICON.clock),
-    _kpiTile('Hours (this week)', Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm', '#205090', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
+  const selHtml = '<div style="flex-basis:100%;display:flex;align-items:center;justify-content:flex-end;gap:8px"><span style="font-size:12px;color:var(--text-light)">Summary</span><select class="sel-filter" style="font-size:12px" onchange="tkCiSetPeriod(this.value)"><option value="week"' + (_ciPeriod === 'week' ? ' selected' : '') + '>This week</option><option value="month"' + (_ciPeriod === 'month' ? ' selected' : '') + '>This month</option><option value="year"' + (_ciPeriod === 'year' ? ' selected' : '') + '>This year</option></select></div>';
+  if (kpiEl) kpiEl.innerHTML = selHtml + [
+    _kpiTile('Present (' + lbl + ')', present, '#00B060', TK_ICON.check),
+    _kpiTile('Late (' + lbl + ')', late, '#F59E0B', TK_ICON.clock),
+    _kpiTile('Hours (' + lbl + ')', Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm', '#205090', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>')
   ].join('');
   // History — last 8
   const body = document.getElementById('ci-history-body');
@@ -4398,9 +4404,10 @@ async function tkRenderMyGoals() {
   const totalW = p.goals.reduce((s, g) => s + (+g.weight || 0), 0);
   const avgProg = p.goals.length ? Math.round(p.goals.reduce((s, g) => s + (+g.progress || 0), 0) / p.goals.length) : 0;
   const kpis = _hrKpiRow([
-    _hrKpi('Goals', p.goals.length), _hrKpi('Avg progress', avgProg + '%', '#8B5CF6'),
-    _hrKpi('Weight', totalW + '%', totalW === 100 ? 'var(--emerald)' : '#F59E0B'),
-    _hrKpi('Stage', p.status || '—', '#205090')
+    _kpiTile('Goals', p.goals.length, '#205090', '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+    _kpiTile('Avg progress', avgProg + '%', '#8B5CF6', '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>'),
+    _kpiTile('Weight', totalW + '%', totalW === 100 ? '#00B060' : '#F59E0B', '<path d="M12 3v18"/><path d="M5 8l7-5 7 5"/><path d="M5 8l-3 6a4 4 0 0 0 6 0z"/><path d="M19 8l3 6a4 4 0 0 1-6 0z"/>'),
+    _kpiTile('Stage', p.status || '—', '#3168A8', TK_ICON.calendar)
   ]);
   const goalTable = (list, editable) => list.length ? '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self</th><th>Mgr</th><th>Progress</th><th>Status</th>' + (editable ? '<th></th>' : '') + '</tr></thead><tbody>' +
     list.map(g => '<tr><td style="font-size:12px">' + (editable ? '<input value="' + _tkEscA(g.objective || '') + '" data-obj="' + g.id + '" style="width:170px;font-size:12px">' : (g.objective || '')) + '</td><td style="text-align:center">' + (editable ? '<input type="number" value="' + (g.weight || 0) + '" data-wt="' + g.id + '" style="width:46px;text-align:center">' : (g.weight || 0) + '%') + '</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td>' +
@@ -4411,9 +4418,10 @@ async function tkRenderMyGoals() {
       (editable ? '<td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkMyGoalDel(\'' + g.id + '\')">' + _TRASH + '</button></td>' : '') + '</tr>').join('') +
     '</tbody></table></div>' : '<div style="padding:14px;color:var(--text-light);font-size:12px">None yet.</div>';
   const card = (title, hint, inner) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div><span style="font-size:11px;color:var(--text-light)">' + hint + '</span></div>' + inner + '</div>';
-  const addForm = '<div class="card" style="padding:12px 16px;margin-bottom:18px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">Add my own goal</div>' +
-    '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mg-lib" onchange="tkMyGoalLib()" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— pick from library —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
-    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="mg-obj" placeholder="Objective" style="flex:2;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-wt" type="number" placeholder="Wt %" style="width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-tgt" placeholder="Target" style="flex:1;min-width:140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><button class="btn btn-outline btn-sm" onclick="tkMyGoalAdd()">' + tkIcon('plus') + 'Add</button></div></div>';
+  const addForm = '<div class="card" style="padding:12px 16px;margin-bottom:18px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:3px">Add my own goal</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Pick a suggested goal to pre-fill, or type your own below.</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap"><select id="mg-lib" onchange="tkMyGoalLib()" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><option value="">— Suggested goals (optional) —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
+    '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="mg-obj" placeholder="Type your own goal / objective…" style="flex:2;min-width:200px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-wt" type="number" placeholder="Wt %" style="width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><input id="mg-tgt" placeholder="Target / KPI" style="flex:1;min-width:140px;padding:8px;border:1px solid var(--line);border-radius:6px;font-size:12px"><button class="btn btn-emerald btn-sm" onclick="tkMyGoalAdd()">' + tkIcon('plus') + 'Add goal</button></div></div>';
   root.innerHTML = kpis +
     (p.rating ? '<div class="card" style="padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--text-light)">Final rating</span><span style="font-size:15px">' + _hrStars(p.rating) + '</span>' + (p.idp ? '<span style="font-size:12px;color:var(--text-light);margin-left:auto">IDP: ' + p.idp + '</span>' : '') + '</div>' : '') +
     card('Goals assigned by my manager', assigned.length + ' goal(s)', goalTable(assigned, false)) +
@@ -5016,7 +5024,7 @@ function _claimRowsHtml(claims, isMgr) {
     const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
     const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'All</button> <button class="btn-reject" style="font-size:10px;padding:3px 8px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'All</button>' : '';
     const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
-    const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:9px;padding:2px 6px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + '</button> <button class="btn-reject" style="font-size:9px;padding:2px 6px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + '</button>' : '';
+    const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
       its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
       '</tbody></table></td></tr>';
@@ -5065,6 +5073,8 @@ async function tkLoadInboxBadge() {
 }
 
 /* Travel & Claims — role-adaptive: staff see/submit their own; managers see all + approve. */
+let _tcPeriod = 'all';
+function tkTcSetPeriod(v) { _tcPeriod = v; tkRenderTravelClaims(); }
 async function tkRenderTravelClaims() {
   const root = document.getElementById('travelclaims-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
@@ -5073,19 +5083,27 @@ async function tkRenderTravelClaims() {
   const me = _tkMe ? _tkMe() : null; const myId = me && me.id;
   let travel = _HR.travel || [], claims = _HR.claims || [];
   if (!isMgr) { travel = travel.filter(t => t.empId === myId); claims = claims.filter(c => c.empId === myId); }
+  // period filter (view monthly / yearly together with the dashboard)
+  const _now = new Date(), _cy = String(_now.getFullYear()), _cm = String(_now.getMonth() + 1).padStart(2, '0');
+  const _travYM = t => { const p = _tkDateParts(t.from || t.to || t.created); return p ? { y: String(p.y), m: String(p.m).padStart(2, '0') } : null; };
+  const _claimYM = c => { if (c.ts && c.ts.indexOf('/') > 0) { const pr = c.ts.split('/'); return { y: pr[2], m: (pr[1] || '').padStart(2, '0') }; } const p = _tkDateParts(c.ts); return p ? { y: String(p.y), m: String(p.m).padStart(2, '0') } : null; };
+  const _inP = ym => { if (_tcPeriod === 'all') return true; if (!ym) return false; return _tcPeriod === 'year' ? ym.y === _cy : (ym.y === _cy && ym.m === _cm); };
+  travel = travel.filter(t => _inP(_travYM(t)));
+  claims = claims.filter(c => _inP(_claimYM(c)));
   const _ts = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : 'b-warn';
   const tAdv = travel.reduce((s, t) => s + (+t.advance || 0), 0);
   const cTot = claims.reduce((s, c) => s + _claimTotal(c), 0);
+  const periodSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px"><span style="font-size:12px;color:var(--text-light)">View</span><select class="sel-filter" onchange="tkTcSetPeriod(this.value)" style="font-size:12px"><option value="all"' + (_tcPeriod === 'all' ? ' selected' : '') + '>All time</option><option value="month"' + (_tcPeriod === 'month' ? ' selected' : '') + '>This month</option><option value="year"' + (_tcPeriod === 'year' ? ' selected' : '') + '>This year</option></select></div>';
   const kpis = _hrKpiRow([
-    _hrKpi('Travel Requests', travel.length),
-    _hrKpi('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => _claimOpen(c)).length, '#F59E0B'),
-    _hrKpi('Advances', _PAY_FMT(tAdv), '#8B5CF6'),
-    _hrKpi('Claims value', _PAY_FMT(cTot), 'var(--emerald)')
+    _kpiTile('Travel Requests', travel.length, '#205090', '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'),
+    _kpiTile('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => _claimOpen(c)).length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Advances', _PAY_FMT(tAdv), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+    _kpiTile('Claims value', _PAY_FMT(cTot), '#00B060', '<path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>')
   ]);
-  const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">Reject</button>' : '';
+  const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>' : '';
   const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
-  root.innerHTML = kpis +
+  root.innerHTML = periodSel + kpis +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div><span style="font-size:11px;color:var(--text-light)">Click a claim to see its items</span></div><div class="table-wrap"><table>' + claimRows + '</table></div></div>';
 }
