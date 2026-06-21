@@ -6232,9 +6232,9 @@ function tkRenderMyProfile() {
   const I_PIN = '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>';
   const I_EDIT = '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>';
 
-  const sec = (title, rows) => '<div class="card" style="padding:18px 20px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:13px">' + title + '</div><div style="display:flex;flex-direction:column;gap:10px">' + rows + '</div></div>';
-  const row = (k, v) => '<div style="display:flex;justify-content:space-between;gap:14px;font-size:13px"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600;text-align:right">' + v + '</span></div>';
-  const block = (k, v) => '<div style="font-size:13px"><span style="color:var(--text-light)">' + k + '</span><div style="font-weight:600;margin-top:3px;line-height:1.5">' + v + '</div></div>';
+  const sec = (title, rows) => '<div class="card" style="padding:18px 20px;overflow:hidden"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:13px">' + title + '</div><div style="display:flex;flex-direction:column;gap:10px">' + rows + '</div></div>';
+  const row = (k, v) => '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px;align-items:baseline"><span style="color:var(--text-light);flex:1 1 40%;min-width:0">' + k + '</span><span style="font-weight:600;text-align:right;flex:1 1 60%;min-width:0;overflow-wrap:break-word">' + v + '</span></div>';
+  const block = (k, v) => '<div style="font-size:13px;min-width:0"><span style="color:var(--text-light)">' + k + '</span><div style="font-weight:600;margin-top:3px;line-height:1.5;overflow-wrap:break-word">' + v + '</div></div>';
   const bar = (label, used, total, cls) => '<div><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span>' + label + '</span><span style="font-weight:700">' + (total - used) + ' of ' + total + ' left</span></div><div class="prog-wrap"><div class="prog-fill ' + cls + '" style="width:' + Math.round(used / Math.max(total, 1) * 100) + '%"></div></div></div>';
 
   const editBtn = '<button class="btn btn-primary btn-sm" onclick="tkOpenMyProfileUpdate()">' + ico(I_EDIT) + 'Update My Profile</button>' +
@@ -6259,7 +6259,7 @@ function tkRenderMyProfile() {
       '</div>' +
     '</div>' +
   '</div>' +
-  '<div style="display:grid;grid-template-columns:repeat(8,minmax(155px,1fr));gap:14px;overflow-x:auto;padding-bottom:6px;align-items:start">' +
+  '<div style="display:grid;grid-template-columns:repeat(8,minmax(225px,1fr));gap:14px;overflow-x:auto;padding-bottom:6px;align-items:start">' +
     sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
     sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('ID / Passport', D(e.personalId))) +
     sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
@@ -6287,7 +6287,7 @@ function tkRenderMyProfile() {
     (() => {
       const docs = ['Employee Handbook', 'Code of Conduct & Anti-Harassment', 'IT Acceptable Use Policy', 'Confidentiality, IP & Data', 'HSE / Site Safety', 'C&B Policy (HML-CB-001)'];
       const ackOf = nm => (_HR.acks || []).find(a => a.empId === e.id && a.doc === nm);
-      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts || 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
+      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer;flex:1;min-width:0;overflow-wrap:break-word" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts || 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px;flex-shrink:0" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
       return '<div class="card" style="padding:18px 20px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:12px">Documents &amp; Policies</div>' + rows + '</div>';
     })() +
   '</div>' +
