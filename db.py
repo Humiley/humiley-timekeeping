@@ -154,6 +154,7 @@ def seed_hr():
         _seed_competency(pick)
         _seed_padr(pick)
         _seed_travel(pick)
+        _seed_exits(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -272,6 +273,42 @@ def _seed_travel(pick):
     for i, e in enumerate(pick[:3]):
         s = samples[i % len(samples)]
         put_collection_item("travel", dict(s, empId=e["id"], name=e["name"], dept=e.get("dept", "")))
+
+
+EXIT_CLEARANCE = [
+    ("Manager", "Knowledge transfer & handover document"),
+    ("Manager", "Outstanding work / projects reassigned"),
+    ("IT", "Return laptop, phone & company assets"),
+    ("IT", "Revoke email, system & VPN access"),
+    ("Admin", "Return access card, keys & uniform"),
+    ("Finance", "Settle advances, claims & company loans"),
+    ("HR", "Final timesheet & annual-leave payout calculated"),
+    ("HR", "Severance / final settlement processed"),
+    ("HR", "Social Insurance book closed & returned"),
+    ("HR", "Exit interview completed"),
+]
+
+
+def _seed_exits(pick):
+    if collection_count("exits"):
+        return
+    # One in-progress resignation to demonstrate the offboarding workflow.
+    cand = [e for e in pick if (e.get("role") or "") != "manager"]
+    if not cand:
+        cand = pick
+    e = cand[-1]
+    done_n = 4
+    put_collection_item("exits", {
+        "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+        "title": e.get("title", ""), "type": "Resignation",
+        "initiated": "2026-06-02", "lastDay": "2026-07-02", "noticeDays": 30,
+        "reason": "Career change — relocating to home province.",
+        "status": "Clearance",
+        "clearance": [{"owner": o, "label": l, "done": i < done_n}
+                      for i, (o, l) in enumerate(EXIT_CLEARANCE)],
+        "leavePayout": "", "severance": 0, "deductions": 0,
+        "settlementNote": "", "rehire": "Yes",
+    })
 
 
 def _seed_padr(pick):
