@@ -1734,9 +1734,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
   <div class="tabs">
     <button class="tab active" onclick="switchHRTab('balances',this)">Leave Balances</button>
+    <button class="tab" onclick="switchHRTab('benefits',this)">Benefits</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
+  <div id="hr-benefits" style="display:none"><div id="hr-benefits-root"></div></div>
 
   <!-- BALANCES -->
   <div id="hr-balances">
@@ -3900,7 +3902,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -4599,11 +4601,41 @@ async function tkMyPayslip() {
 }
 function _tkMe() { const u = TK.user || {}; return (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase())); }
 /* Employee — e-acknowledge a policy/document. */
-async function tkAckDoc(doc) {
+/* Policy library — read-then-confirm acknowledgements (A4). Keys MUST match the docs list. */
+const _POLICY_LIB = {
+  'Employee Handbook': { rev: 'HML-HR-001 v1.0', body: '<p>Welcome to Humiley. This handbook sets out how we work together.</p><ul><li>Standard hours 08:00–17:00, Mon–Fri; flexible/site schedules by arrangement.</li><li>Attendance is recorded via GPS check-in inside an approved zone.</li><li>Annual leave accrues per your grade; apply via Leave Management for manager approval.</li><li>Probation is 60–90 days with 30/60/90-day reviews before confirmation.</li><li>Treat colleagues, clients and partners with respect and professionalism.</li></ul>' },
+  'Code of Conduct & Anti-Harassment': { rev: 'HML-HR-002', body: '<p>Every employee is entitled to a safe, respectful workplace.</p><ul><li>Harassment, discrimination, bullying or retaliation of any kind is prohibited.</li><li>Avoid conflicts of interest; disclose any that arise to HR.</li><li>No bribery, kickbacks or facilitation payments.</li><li>Report concerns to your manager or HR; reports are handled confidentially.</li></ul>' },
+  'IT Acceptable Use Policy': { rev: 'HML-IT-001', body: '<p>Company IT systems are provided for business use.</p><ul><li>Keep credentials private; enable MFA; never share passwords.</li><li>Do not install unapproved software or disable security controls.</li><li>Company email and devices may be audited for security and compliance.</li><li>Report lost devices or suspected breaches to IT immediately.</li></ul>' },
+  'Confidentiality, IP & Data': { rev: 'HML-LE-001', body: '<p>Protecting company and client information is everyone\'s duty.</p><ul><li>Keep confidential information secure during and after employment.</li><li>Work products created for Humiley are company intellectual property.</li><li>Handle personal data lawfully and only for legitimate business purposes.</li><li>Do not disclose client or project data without authorisation.</li></ul>' },
+  'HSE / Site Safety': { rev: 'HML-HSE-001', body: '<p>Safety first — on every site, every day.</p><ul><li>Wear required PPE; follow LOTO, working-at-height and confined-space rules.</li><li>Complete the HSE induction before site access.</li><li>Report hazards, near-misses and incidents immediately.</li><li>Stop work if conditions are unsafe.</li></ul>' },
+  'C&B Policy (HML-CB-001)': { rev: 'HML-CB-001 v01.0', body: '<p>Compensation follows the Salary 3P model.</p><ul><li><b>P1 – Position:</b> basic (65%) + position allowance (from G5).</li><li><b>P2 – Person:</b> responsibility (10%) + skill/seniority (0–5%).</li><li><b>P3 – Performance:</b> KPI bonus (10% × 0.5–1.5× by PADR rating).</li><li>Welfare: lunch ₫730,000 / phone ₫300,000 / transport ₫500,000 per month (non-SI).</li><li>Statutory SI/HI/UI 10.5% (employee) and PIT are withheld per law.</li></ul>' }
+};
+function tkOpenPolicy(doc) {
   const e = _tkMe(); if (!e) return;
-  try { const res = await tkApi('/api/coll/acks', { method: 'POST', body: { empId: e.id, doc: doc, ts: new Date().toLocaleDateString('en-GB') } }); (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc); toast('Acknowledged: ' + doc); tkRenderMyProfile(); }
+  const acked = (_HR.acks || []).find(a => a.empId === e.id && a.doc === doc);
+  const p = _POLICY_LIB[doc] || { rev: '', body: '<p>Policy document — please read and confirm.</p>' };
+  document.getElementById('policyOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'policyOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div><div class="modal-title" style="margin:0">' + doc + '</div>' + (p.rev ? '<div style="font-size:11px;color:var(--text-light)">' + p.rev + '</div>' : '') + '</div><button class="modal-close" onclick="document.getElementById(\'policyOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="overflow:auto;padding:4px 2px;font-size:13.5px;line-height:1.65;color:var(--text-dark)">' + p.body + '</div>' +
+    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' Acknowledged on ' + (acked.ts || '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Close</button></div>'
+      : '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="pol-ack-chk" onchange="document.getElementById(\'pol-ack-btn\').disabled=!this.checked"> I have read and understood this policy.</label>' +
+        '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Cancel</button><button class="btn btn-emerald" id="pol-ack-btn" disabled onclick="tkConfirmPolicy(this.getAttribute(\'data-doc\'))" data-doc="' + doc.replace(/"/g, '&quot;') + '">' + tkIcon('check') + 'Acknowledge</button></div>') +
+    '</div>';
+  document.body.appendChild(el);
+}
+async function tkConfirmPolicy(doc) {
+  const e = _tkMe(); if (!e) return;
+  if ((_HR.acks || []).find(a => a.empId === e.id && a.doc === doc)) { document.getElementById('policyOverlay')?.remove(); toast('Already acknowledged'); return; }
+  try {
+    const res = await tkApi('/api/coll/acks', { method: 'POST', body: { doc: doc, ts: new Date().toLocaleDateString('en-GB') } });
+    (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc);
+    document.getElementById('policyOverlay')?.remove(); toast('Acknowledged: ' + doc); tkRenderMyProfile();
+  }
   catch (err) { toast('Could not save: ' + err.message, 'error', 5000); }
 }
+/* Back-compat: any old caller opens the read-and-confirm flow. */
+function tkAckDoc(doc) { return tkOpenPolicy(doc); }
 /* Read a file (bill / ticket / receipt) into a hidden field as a data URL. */
 function tkReadAttach(input, hid) {
   const f = input.files && input.files[0]; if (!f) return;
@@ -5018,6 +5050,18 @@ async function tkExitComplete(id) {
   } catch (err) { toast('Could not complete: ' + err.message, 'error', 5000); }
 }
 
+/* HR Admin → Benefits by grade (A5). Managers configure allowances per grade; staff see their own in My Profile. */
+async function tkRenderBenefitsAdmin() {
+  const root = document.getElementById('hr-benefits-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('benefits');
+  const items = (_HR.benefits || []).slice().sort((a, b) => (+(a.grade || '').replace(/\D/g, '') || 0) - (+(b.grade || '').replace(/\D/g, '') || 0));
+  const note = '<div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light)">Allowances &amp; benefits are defined per <b style="color:var(--text-dark)">grade (G1–G10)</b>. Each employee sees the package for their derived grade in <b style="color:var(--text-dark)">My Profile → Benefits</b>. Lunch/phone/transport stay consistent with payroll welfare.</div>';
+  const rows = items.length ? items.map(b => '<tr><td><span class="badge b-navy" style="font-size:10px">' + (b.grade || '') + '</span></td><td style="font-size:12px;color:var(--text-light)">' + (b.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(b.lunch || 0) + '</td><td style="text-align:right">' + _PAY_FMT(b.phone || 0) + '</td><td style="text-align:right">' + _PAY_FMT(b.transport || 0) + '</td><td style="text-align:right">' + _PAY_FMT(b.parking || 0) + '</td><td style="font-size:12px">' + (b.health || '—') + '</td><td style="text-align:right">' + _PAY_FMT(b.training || 0) + '</td><td style="white-space:nowrap;text-align:right">' + _hrEditDel('benefits', b.id, 'benefits') + '</td></tr>').join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">No benefit grades defined</td></tr>';
+  root.innerHTML = note + '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'benefits\')">' + tkIcon('plus') + 'Add grade</button></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Lunch</th><th style="text-align:right">Phone</th><th style="text-align:right">Transport</th><th style="text-align:right">Parking</th><th>Health plan</th><th style="text-align:right">Training/yr</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
 /* Access & Permissions — admin grants each employee a level. */
 function tkRenderPermissions() {
   const root = document.getElementById('permissions-root'); if (!root) return;
@@ -5136,7 +5180,13 @@ const _QA_SPECS = {
     { k: 'performance', label: 'Performance', type: 'select', options: ['High', 'Medium', 'Low'] },
     { k: 'potential', label: 'Potential', type: 'select', options: ['High', 'Medium', 'Low'] },
     { k: 'box', label: '9-Box', type: 'select', options: ['Star', 'High Potential', 'High Performer', 'Core Performer', 'Solid Performer', 'Inconsistent', 'Risk'] },
-    { k: 'succession', label: 'Succession', type: 'select', options: ['Ready Now', 'Ready in 1 year', 'Ready in 2-3 years', 'Develop in Role'] }] }
+    { k: 'succession', label: 'Succession', type: 'select', options: ['Ready Now', 'Ready in 1 year', 'Ready in 2-3 years', 'Develop in Role'] }] },
+  benefits: { title: 'Benefits by Grade', coll: 'benefits', reload: 'benefits', fields: [
+    { k: 'grade', label: 'Grade', type: 'select', options: ['G1', 'G2', 'G3', 'G4', 'G5', 'G6', 'G7', 'G8', 'G9', 'G10'] },
+    { k: 'lunch', label: 'Lunch (₫/mo)', type: 'number' }, { k: 'phone', label: 'Phone (₫/mo)', type: 'number' },
+    { k: 'transport', label: 'Transport (₫/mo)', type: 'number' }, { k: 'parking', label: 'Parking (₫/mo)', type: 'number' },
+    { k: 'health', label: 'Health plan' }, { k: 'training', label: 'Training budget (₫/yr)', type: 'number' },
+    { k: 'note', label: 'Typical title / note' }] }
 };
 let _qaType = null, _qaEditId = null;
 function tkQuickAdd(type, id) {
@@ -5280,18 +5330,26 @@ function tkRenderMyProfile() {
     sec('Emergency Contact', e.emergency ? '<div style="font-size:13px;line-height:1.6">' + D(e.emergency) + '</div>' : '<div style="font-size:13px;color:var(--text-light)">No emergency contact on file</div>') +
     (() => {
       const sdp = _tkDateParts(e.startDate); const days = sdp ? Math.floor((Date.now() - new Date(sdp.y, sdp.m - 1, sdp.d).getTime()) / 86400000) : 0;
+      const gi = _payGradeIdx(e); const gradeCode = _PAY_GRADES[gi].g;
+      const ben = (_HR.benefits || []).find(b => b.grade === gradeCode) || {};
+      const allow = (label, v) => (+v > 0) ? row(label, _PAY_FMT(v) + '/mo') : '';
+      const gradeBadge = '<span class="badge b-navy" style="font-size:10px;margin-left:6px">' + gradeCode + ' · ' + _PAY_GRADES[gi].label + '</span>';
       const elig = (label, ok, note) => '<div style="display:flex;justify-content:space-between;gap:10px;font-size:13px"><span style="color:var(--text-light)">' + label + '</span><span style="font-weight:600;color:' + (ok ? 'var(--emerald)' : 'var(--text-light)') + '">' + (ok ? 'Eligible' : note) + '</span></div>';
-      return sec('Benefits &amp; Allowances',
-        elig('Health top-up (IP 200M / OP 20M)', days >= 91, 'from Day 91') +
+      return sec('Benefits &amp; Allowances' + gradeBadge,
+        allow('Lunch allowance', ben.lunch != null ? ben.lunch : 730000) +
+        allow('Phone allowance', ben.phone) +
+        allow('Transport allowance', ben.transport) +
+        allow('Parking', ben.parking) +
+        (ben.health ? row('Health plan', ben.health) : '') +
+        (ben.training ? row('Training budget', _PAY_FMT(ben.training) + '/yr') : '') +
+        elig('Health top-up active', days >= 91, 'from Day 91') +
         elig('Family health rider', days >= 365, 'from Day 365') +
-        elig('Group accident (24× gross)', true, '') +
-        row('Lunch allowance', '₫730,000/mo') +
-        '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="tkSubmitClaim()">Submit a claim</button>');
+        '<button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="tkSubmitClaim()">' + tkIcon('plus') + 'Submit a claim</button>');
     })() +
     (() => {
       const docs = ['Employee Handbook', 'Code of Conduct & Anti-Harassment', 'IT Acceptable Use Policy', 'Confidentiality, IP & Data', 'HSE / Site Safety', 'C&B Policy (HML-CB-001)'];
       const ackOf = nm => (_HR.acks || []).find(a => a.empId === e.id && a.doc === nm);
-      const rows = docs.map(d => { const a = ackOf(d); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span>' + d + '</span>' + (a ? '<span style="font-size:11px;color:var(--emerald);white-space:nowrap">✓ ' + (a.ts || 'Acknowledged') + '</span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="tkAckDoc(&quot;' + d.replace(/"/g, '') + '&quot;)">Acknowledge</button>') + '</div>'; }).join('');
+      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts || 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
       return '<div class="card" style="padding:18px 20px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-light);margin-bottom:12px">Documents &amp; Policies</div>' + rows + '</div>';
     })() +
   '</div>' +
@@ -5581,7 +5639,7 @@ function showView(id, navEl, title) {
   if (id === 'manager') { loadManagerView(); }
   if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderHrModules(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
-  if (id === 'myprofile') { tkLoadColl('acks').then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
+  if (id === 'myprofile') { Promise.all([tkLoadColl('acks'), tkLoadColl('benefits')]).then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
@@ -5640,13 +5698,14 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','compliance','portal'].forEach(id => {
+  ['balances','benefits','compliance','portal'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
   if (el) el.classList.add('active');
   const panel = document.getElementById('hr-' + tab);
   if (panel) panel.style.display = 'block';
+  if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
