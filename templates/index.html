@@ -619,6 +619,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
     <span class="nav-label">Travel &amp; Claims</span>
   </div>
+  <div class="nav-item" onclick="showView('mydevices',this,'My Devices')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
+    <span class="nav-label">My Devices</span>
+  </div>
 
   <div class="sidebar-section-label" data-roles="manager">Approvals</div>
   <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
@@ -648,6 +652,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="nav-item" data-roles="manager" onclick="showView('offboarding',this,'Offboarding &amp; Exit')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg></span>
     <span class="nav-label">Offboarding</span>
+  </div>
+  <div class="nav-item" data-roles="manager" onclick="showView('devices',this,'Device &amp; Asset Management')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
+    <span class="nav-label">Devices &amp; Assets</span>
   </div>
   <div class="nav-item" data-roles="manager" onclick="showView('performance',this,'Performance Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
@@ -878,15 +886,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <!-- ── Company portal widgets ── -->
-  <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:20px;margin-top:20px" class="staff-portal-row">
-    <div class="staff-panel">
-      <div class="staff-panel-hdr">Company Announcements <span style="font-size:11px;color:var(--text-light);font-weight:500">Latest updates</span></div>
-      <div id="staff-announcements" style="display:flex;flex-direction:column;gap:14px"></div>
-    </div>
-    <div class="staff-panel">
-      <div class="staff-panel-hdr">Who's Out Today <span id="staff-whosout-count" style="font-size:11px;color:var(--text-light);font-weight:500"></span></div>
-      <div id="staff-whosout" style="display:flex;flex-direction:column;gap:10px"></div>
-    </div>
+  <div class="staff-panel" style="margin-top:20px">
+    <div class="staff-panel-hdr">Company Announcements <span style="font-size:11px;color:var(--text-light);font-weight:500">Latest updates</span></div>
+    <div id="staff-announcements" style="display:flex;flex-direction:column;gap:14px"></div>
   </div>
 
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:20px;margin-top:20px">
@@ -924,6 +926,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
 </div>
+
+<!-- ═══ VIEW: DEVICE & ASSET MANAGEMENT (admin) ═══ -->
+<div id="view-devices" class="view"><div id="devices-root"></div></div>
+<!-- ═══ VIEW: MY DEVICES (staff) ═══ -->
+<div id="view-mydevices" class="view"><div id="mydevices-root"></div></div>
 
 <!-- ═══════════════════════════════════════════════════════
      VIEW: MY PROFILE
@@ -3786,40 +3793,36 @@ function tkRenderStaffPortal() {
     '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + col + '1f;color:' + col + ';font-size:10px">' + (a.tag || 'News') + '</span><strong style="font-size:13px">' + (a.title || '') + '</strong>' + aud + '</div>' +
     '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + (a.body || '') + '</div></div>'; }).join('') : empty('No announcements right now');
 
-  /* Who's out today */
-  const out = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= todayISO && l.endDate >= todayISO);
-  const outEl = document.getElementById('staff-whosout');
-  const cntEl = document.getElementById('staff-whosout-count'); if (cntEl) cntEl.textContent = out.length ? out.length + ' away' : '';
-  if (outEl) outEl.innerHTML = out.length ? out.map(l => {
-    const emp = emps.find(e => e.id === l.emp_id || e.name === l.emp_name) || { name: l.emp_name || 'Employee', ini: '', clr: '#205090' };
-    return '<div style="display:flex;align-items:center;gap:10px">' + av(emp) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + emp.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (l.type || 'Leave') + ' · back ' + tkFmtDate(l.endDate) + '</div></div></div>';
-  }).join('') : empty('Everyone is in today.');
+  /* Consistent person row used across the portal widgets */
+  const personRow = (e, sub, right) => '<div style="display:flex;align-items:center;gap:11px;padding:7px 8px;border-radius:9px;transition:background .15s" onmouseover="this.style.background=\'var(--soft-bg)\'" onmouseout="this.style.background=\'transparent\'">' + av(e) + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</div></div>' + (right || '') + '</div>';
+  const chip = (txt, color) => '<span style="font-size:10px;font-weight:700;color:' + color + ';background:' + color + '1a;padding:3px 9px;border-radius:20px;white-space:nowrap;flex-shrink:0">' + txt + '</span>';
 
-  /* Celebrations this month */
-  const bdays = emps.filter(e => { const p = _tkDateParts(e.dob); return p && p.m === mIdx; }).map(e => { const p = _tkDateParts(e.dob); return { e, d: p.d, label: 'Birthday' }; });
-  const annis = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.m === mIdx && p.y < now.getFullYear(); }).map(e => { const p = _tkDateParts(e.startDate); const yrs = now.getFullYear() - p.y; return { e, d: p.d, label: yrs + ' yr Work Anniversary' }; });
+  /* Celebrations this month — birthdays + work anniversaries */
+  const bdays = emps.filter(e => { const p = _tkDateParts(e.dob); return p && p.m === mIdx; }).map(e => { const p = _tkDateParts(e.dob); return { e, d: p.d, label: 'Birthday', kind: 'b' }; });
+  const annis = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.m === mIdx && p.y < now.getFullYear(); }).map(e => { const p = _tkDateParts(e.startDate); const yrs = now.getFullYear() - p.y; return { e, d: p.d, label: yrs + ' yr Work Anniversary', kind: 'a' }; });
   const celebs = bdays.concat(annis).sort((a, b) => a.d - b.d);
   const celEl = document.getElementById('staff-celebrations');
-  if (celEl) celEl.innerHTML = celebs.length ? celebs.map(c => '<div style="display:flex;align-items:center;gap:10px">' + av(c.e) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + c.e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + c.label + ' · ' + MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0') + '</div></div></div>').join('') : empty('No celebrations this month');
+  if (celEl) celEl.innerHTML = celebs.length ? celebs.map(c => personRow(c.e, c.label, chip(MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0'), c.kind === 'b' ? '#8b5cf6' : '#00B060'))).join('') : empty('No celebrations this month');
 
   /* Upcoming holidays */
-  const hol = PD.holidays.slice().filter(h => h.date >= todayISO).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 4);
+  const hol = PD.holidays.slice().filter(h => h.date >= todayISO).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 5);
   const holEl = document.getElementById('staff-holidays');
   if (holEl) holEl.innerHTML = hol.length ? hol.map(h => {
     const dt = new Date(h.date + 'T00:00:00'); const days = Math.ceil((dt - now) / 86400000);
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">' +
-      '<div style="display:flex;align-items:center;gap:11px"><div style="width:38px;text-align:center"><div style="font-size:17px;font-weight:800;color:var(--navy);line-height:1">' + dt.getDate() + '</div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + MON[dt.getMonth()] + '</div></div><div style="font-size:13px;font-weight:600">' + h.name + '</div></div>' +
-      '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">' + (days <= 0 ? 'Today' : 'in ' + days + 'd') + '</span></div>';
+    return '<div style="display:flex;align-items:center;gap:12px;padding:7px 8px;border-radius:9px">' +
+      '<div style="width:46px;height:46px;border-radius:10px;background:var(--light-tint);display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0"><div style="font-size:16px;font-weight:800;color:var(--navy);line-height:1">' + dt.getDate() + '</div><div style="font-size:9px;color:var(--navy);text-transform:uppercase;letter-spacing:.5px">' + MON[dt.getMonth()] + '</div></div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + h.name + '</div><div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(h.date) + '</div></div>' +
+      chip(days <= 0 ? 'Today' : 'in ' + days + 'd', '#205090') + '</div>';
   }).join('') : empty('No upcoming holidays');
 
   /* My team: manager + same-department colleagues */
   const teamEl = document.getElementById('staff-team');
   if (teamEl) {
     const mgr = emps.find(e => (e.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    const peers = emps.filter(e => e.dept === me.dept && e.id !== me.id).slice(0, 5);
+    const peers = emps.filter(e => e.dept === me.dept && e.id !== me.id).slice(0, 6);
     let html = '';
-    if (mgr) html += '<div style="display:flex;align-items:center;gap:10px;padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:9px">' + av(mgr) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + mgr.name + '</div><div style="font-size:11px;color:var(--emerald);font-weight:600">Your manager</div></div></div>';
-    html += peers.length ? peers.map(p => '<div style="display:flex;align-items:center;gap:10px">' + av(p) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + p.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (p.title || p.dept || '') + '</div></div></div>').join('') : empty('No teammates listed');
+    if (mgr) html += '<div style="display:flex;align-items:center;gap:11px;padding:9px;border-radius:10px;background:linear-gradient(135deg,#2050900f,#00b06008);border:1px solid var(--line);margin-bottom:8px">' + av(mgr) + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mgr.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (mgr.title || '') + '</div></div>' + chip('Manager', '#00B060') + '</div>';
+    html += peers.length ? peers.map(p => personRow(p, p.title || p.dept || '')).join('') : (mgr ? '' : empty('No teammates listed'));
     teamEl.innerHTML = html;
   }
 
@@ -3950,20 +3953,25 @@ const _ONBOARD_TEMPLATE = [
   { phase: 'Pre-boarding', label: 'Send welcome email & first-day logistics' },
   { phase: 'Pre-boarding', label: 'Prepare desk, PPE & workstation' },
   { phase: 'Pre-boarding', label: 'Create payroll / SI / PIT profile' },
+  { phase: 'Pre-boarding', label: 'Provision laptop & equipment in the asset register' },
   { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
   { phase: 'Day 1 — Arrival', label: 'Sign Labor Contract & NDA' },
   { phase: 'Day 1 — Arrival', label: 'Personal info, bank, tax code & SI registration' },
   { phase: 'Day 1 — Arrival', label: 'IT account, email & company ID / access card' },
+  { phase: 'Day 1 — Arrival', label: 'Issue company device(s) & sign asset handover' },
   { phase: 'Week 1 — Integration', label: 'EHS induction & Code of Conduct' },
   { phase: 'Week 1 — Integration', label: 'IT security & expense system training' },
   { phase: 'Week 1 — Integration', label: 'Benefits & welfare enrollment (insurance, allowances)' },
   { phase: 'Week 1 — Integration', label: 'Add to Teams / email lists & org chart' },
+  { phase: 'Week 1 — Integration', label: 'Assign onboarding buddy / mentor' },
+  { phase: 'Week 1 — Integration', label: 'Enroll in mandatory training courses' },
   { phase: 'Week 1 — Integration', label: 'Department deep-dive (projects, process, tools)' },
   { phase: 'Week 1 — Integration', label: 'Role shadowing with mentor & first task' },
   { phase: '30-60-90 Days', label: 'Draft 30-60-90 day plan + PADR objectives' },
   { phase: '30-60-90 Days', label: 'Day 30 — first check-in with Manager' },
   { phase: '30-60-90 Days', label: 'Day 60 — HR check-in & risk review' },
-  { phase: '30-60-90 Days', label: 'Day 90 — probation review (confirm / extend / end)' }
+  { phase: '30-60-90 Days', label: 'Day 90 — probation review (confirm / extend / end)' },
+  { phase: '30-60-90 Days', label: 'Confirm benefits start & health top-up (Day 91)' }
 ];
 const _onboardTasks = () => _ONBOARD_TEMPLATE.map(t => ({ label: t.label, phase: t.phase, done: false }));
 /* Probation milestones (A11) — due dates computed from startDate; email reminder when approaching. */
@@ -4034,7 +4042,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -4224,16 +4232,24 @@ async function tkRenderRecruitment() {
     _hrKpi('Offer acceptance', acceptance + '%', acceptance >= 85 ? 'var(--emerald)' : '#EF4444'),
     _hrKpi('Hired (cycle)', hired, '#8B5CF6')
   ]);
-  const funnelCard = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:4px">Candidate Funnel &amp; Conversion</div><div style="font-size:11px;color:var(--text-light);margin-bottom:12px">QĐ.HR-01 stages · cumulative reach + conversion to next</div>' +
-    funnelStages.map((s, i) => { const conv = i > 0 && cumul[i - 1] ? Math.round(cumul[i] / cumul[i - 1] * 100) : 100; return bar(s + (i > 0 ? ' (' + conv + '% conv)' : ''), cumul[i], fmax, ['#205090', '#3168A8', '#8B5CF6', '#F59E0B', '#00B060'][i]); }).join('') + '</div>';
-  const srcCard = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Source of Hire Mix</div>' + (Object.keys(srcMix).length ? Object.keys(srcMix).sort((a, b) => srcMix[b] - srcMix[a]).map(s => bar(s, srcMix[s], smax, '#205090')).join('') : '<div style="font-size:12px;color:var(--text-light)">No data</div>') + '</div>';
+  const funnelLabels = funnelStages.map((s, i) => { const conv = i > 0 && cumul[i - 1] ? Math.round(cumul[i] / cumul[i - 1] * 100) : null; return s + (conv != null ? ' · ' + conv + '%' : ''); });
+  const srcKeys = Object.keys(srcMix).sort((a, b) => srcMix[b] - srcMix[a]);
+  _recMonthlyData = { funnelLabels: funnelLabels, cumul: cumul, srcLabels: srcKeys, srcVals: srcKeys.map(k => srcMix[k]) };
+  const funnelCard = _rptChartCard('Candidate Funnel &amp; Conversion', 'rec-funnel', 240);
+  const srcCard = _rptChartCard('Source of Hire Mix', 'rec-src', 240);
   const slaCard = '<div class="card" style="padding:16px 18px;margin-top:18px"><div class="card-title" style="margin-bottom:6px">Time-to-Offer SLA (QĐ.HR-01)</div><div style="font-size:11px;color:var(--text-light);margin-bottom:12px">Target: ≤30 days non-management · ≤60 management · ≤90 senior leadership · offer acceptance ≥85% · 90-day attrition ≤3%</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Open position</th><th>Department</th><th>Type</th><th>SLA tier</th><th>Status</th></tr></thead><tbody>' +
     (jobs.filter(j => j.status !== 'Closed').length ? jobs.filter(j => j.status !== 'Closed').map(j => { const tier = /director|head|senior manager/i.test(j.title || '') ? '≤90d' : /manager|lead/i.test(j.title || '') ? '≤60d' : '≤30d'; return '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.type || '') + '</td><td>' + tier + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (j.status === 'Open' ? 'On-track' : 'In progress') + '</span></td></tr>'; }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:14px">No open requisitions</td></tr>') + '</tbody></table></div></div>';
   const monthly = '<div id="rec-monthly" style="display:none">' + mkpi + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + funnelCard + srcCard + '</div>' + slaCard + '</div>';
   const pipeline = '<div id="rec-pipeline"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Candidate Pipeline</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>' + jt + '</div>';
   root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkRecTab(\'pipeline\',this)">Pipeline &amp; Jobs</button><button class="tab" onclick="tkRecTab(\'monthly\',this)">Monthly Dashboard</button></div>' + pipeline + monthly;
 }
-function tkRecTab(tab, el) { ['pipeline', 'monthly'].forEach(t => { const p = document.getElementById('rec-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#recruitment-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+let _recMonthlyData = null;
+function _buildRecMonthlyCharts() {
+  const d = _recMonthlyData; if (!d || typeof Chart === 'undefined') return;
+  _mkChart('rec-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.cumul, backgroundColor: ['#205090', '#3168A8', '#8B5CF6', '#F59E0B', '#00B060'], borderRadius: 6, maxBarThickness: 28 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
+  _mkChart('rec-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
+}
+function tkRecTab(tab, el) { ['pipeline', 'monthly'].forEach(t => { const p = document.getElementById('rec-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#recruitment-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'monthly') setTimeout(_buildRecMonthlyCharts, 60); }
 function tkCandidateAdvance(id) {
   const c = _HR.candidates.find(x => x.id === id); if (!c) return;
   const order = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
@@ -4529,8 +4545,9 @@ async function tkPadrSave(id) {
 async function tkRenderMyTraining() {
   const root = document.getElementById('mytraining-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await tkLoadColl('enrollments');
+  await Promise.all([tkLoadColl('enrollments'), tkLoadColl('courses')]);
   const me = _tkMe() || {};
+  const _crsByTitle = t => (_HR.courses || []).find(c => c.title === t);
   const mine = (_HR.enrollments || []).filter(x => x.empId === me.id);
   const kpis = _hrKpiRow([
     _kpiTile('Enrolled courses', mine.length, '#205090', '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>'),
@@ -4543,11 +4560,13 @@ async function tkRenderMyTraining() {
     '<input type="range" min="0" max="100" step="10" value="' + pg + '" style="width:100%;margin:6px 0" oninput="document.getElementById(\'mt-pct-' + x.id + '\').textContent=this.value+\'%\'" data-mt-prog="' + x.id + '">' +
     '<div style="display:flex;align-items:center;gap:8px;margin:6px 0"><span style="font-size:11px;color:var(--text-light)">Rating</span><select data-mt-rate="' + x.id + '" style="font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:5px"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + (+x.rating === n ? ' selected' : '') + '>' + n + ' ★</option>').join('') + '</select></div>' +
     '<textarea data-mt-fb="' + x.id + '" placeholder="Your feedback on this course…" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:6px;min-height:48px">' + (x.feedback || '') + '</textarea>' +
-    '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-emerald btn-sm" onclick="tkMyTrainingSave(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Save</button></div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">You have no course enrolments yet. Your manager will enroll you, or check the course catalog.</div>';
+    (_courseLinks(_crsByTitle(x.course)) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + _courseLinks(_crsByTitle(x.course)) + '</div>' : '') +
+    '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="tkMyTrainingSave(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Save</button>' + (x.status !== 'Completed' ? '<button class="btn btn-emerald btn-sm" onclick="tkMyTrainingComplete(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Mark Complete</button>' : '<span class="badge b-ok" style="font-size:10px;align-self:center">' + tkIcon('check', 11) + 'Completed</span>') + '</div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">You have no course enrolments yet. Your manager will enroll you, or check the course catalog.</div>';
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + cards + '</div>';
 }
 async function tkMyTrainingSave(id) {
   const x = (_HR.enrollments || []).find(e => e.id === id); if (!x) return;
+  const was = x.status;
   const prog = +(document.querySelector('[data-mt-prog="' + id + '"]') || {}).value || 0;
   const rate = +(document.querySelector('[data-mt-rate="' + id + '"]') || {}).value || 0;
   const fb = (document.querySelector('[data-mt-fb="' + id + '"]') || {}).value || '';
@@ -4556,8 +4575,153 @@ async function tkMyTrainingSave(id) {
     await tkApi('/api/coll/enrollments/' + id, { method: 'PATCH', body: { progress: prog, rating: rate, feedback: fb, status: status } });
     x.progress = prog; x.rating = rate; x.feedback = fb; x.status = status;
     tkAudit('Training progress updated', (TK.user || {}).name, x.course + ' · ' + prog + '%');
-    toast('Saved — ' + x.course + ' ' + prog + '%'); tkRenderMyTraining();
+    if (status === 'Completed' && was !== 'Completed') { _notifyCourseComplete(x); toast('Course completed — manager & HR notified'); }
+    else toast('Saved — ' + x.course + ' ' + prog + '%');
+    tkRenderMyTraining();
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Employee one-click course completion → marks 100% and emails manager + HR. */
+async function tkMyTrainingComplete(id) {
+  const x = (_HR.enrollments || []).find(e => e.id === id); if (!x) return;
+  if (x.status === 'Completed') { toast('Already completed', 'info'); return; }
+  const rate = +(document.querySelector('[data-mt-rate="' + id + '"]') || {}).value || +x.rating || 0;
+  const fb = (document.querySelector('[data-mt-fb="' + id + '"]') || {}).value || x.feedback || '';
+  try {
+    await tkApi('/api/coll/enrollments/' + id, { method: 'PATCH', body: { progress: 100, rating: rate, feedback: fb, status: 'Completed', completedOn: new Date().toISOString().slice(0, 10) } });
+    x.progress = 100; x.rating = rate; x.feedback = fb; x.status = 'Completed';
+    tkAudit('Course completed', (TK.user || {}).name, x.course);
+    _notifyCourseComplete(x);
+    toast('Course completed — manager & HR notified'); tkRenderMyTraining();
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Notify the employee's manager + HR that a course was completed. */
+function _notifyCourseComplete(x) {
+  const me = _tkMe() || {};
+  const mgr = (_DEMO_EMPLOYEES || []).find(e => (e.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+  const hr = (_DEMO_EMPLOYEES || []).find(e => /hr/i.test(e.dept || '') && (e.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(e => /hr/i.test(e.dept || ''));
+  const to = [mgr && mgr.email, hr && hr.email].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+  const subject = 'Course completed — ' + (me.name || '') + ' · ' + (x.course || '');
+  const body = 'Dear Manager / HR,\n\n' + (me.name || 'An employee') + ' has completed the training course "' + (x.course || '') + '".\n\n' +
+    'Rating given: ' + (x.rating ? x.rating + ' / 5' : '—') + '\nFeedback: ' + (x.feedback || '—') + '\nCompleted on: ' + tkFmtDateObj(new Date()) + '\n\n' +
+    'Best regards,\n' + (me.name || '') + '\nHumiley Group Inc. — People & Workplace';
+  tkMailRequester(to, 'Manager & HR', subject, body);
+}
+/* Course link + downloadable material buttons (from a course record). */
+function _courseLinks(c) {
+  if (!c) return '';
+  const ext = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+  const dl = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  let h = '';
+  if (c.link) h += '<a href="' + _tkEscA(c.link) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px;text-decoration:none">' + ext + 'Course link</a>';
+  if (c.attachment) h += '<a href="' + c.attachment + '" download="' + _tkEscA((c.attachmentName || 'course-material')) + '" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;text-decoration:none">' + dl + 'Material</a>';
+  return h;
+}
+
+/* ════════════════ DEVICE / EQUIPMENT (ASSET) MANAGEMENT ════════════════ */
+const _DEV_STCLS = s => s === 'Assigned' ? 'b-info' : s === 'Available' ? 'b-ok' : s === 'In Repair' ? 'b-warn' : s === 'Retired' ? 'b-navy' : 'b-danger';
+/* Admin — company-wide asset register: KPIs, charts, full table, CRUD. */
+async function tkRenderDevices() {
+  const root = document.getElementById('devices-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('devices');
+  const d = _HR.devices || [];
+  const units = d.reduce((s, x) => s + (+x.qty || 1), 0);
+  const value = d.reduce((s, x) => s + (+x.qty || 1) * (+x.unitPrice || 0), 0);
+  const assigned = d.filter(x => x.status === 'Assigned').reduce((s, x) => s + (+x.qty || 1), 0);
+  const available = d.filter(x => x.status === 'Available').reduce((s, x) => s + (+x.qty || 1), 0);
+  const kpis = _hrKpiRow([
+    _kpiTile('Total items', units, '#205090', '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
+    _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+    _kpiTile('Assigned', assigned, '#8B5CF6', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+    _kpiTile('Available', available, '#F59E0B', '<polyline points="20 6 9 17 4 12"/>')
+  ]);
+  const byCat = {}, byStatus = {}, valByDept = {};
+  d.forEach(x => { const q = +x.qty || 1; byCat[x.category || 'Other'] = (byCat[x.category || 'Other'] || 0) + q; byStatus[x.status || '—'] = (byStatus[x.status || '—'] || 0) + q; valByDept[x.department || '—'] = (valByDept[x.department || '—'] || 0) + q * (+x.unitPrice || 0); });
+  const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
+  const rows = d.length ? d.slice().sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || '')).map(x => {
+    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
+    return '<tr><td><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
+  root.innerHTML =
+    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
+    '<div id="dev-export">' + kpis +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div><div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+  if (typeof Chart !== 'undefined') {
+    const ck = Object.keys(byCat), sk = Object.keys(byStatus);
+    _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
+    _mkChart('dev-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#3168A8', '#00B060', '#F59E0B', '#94a3b8', '#EF4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
+    _mkChart('dev-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => valByDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+  }
+}
+/* Staff — devices assigned to the signed-in employee. */
+async function tkRenderMyDevices() {
+  const root = document.getElementById('mydevices-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('devices');
+  const me = _tkMe() || {};
+  const mine = (_HR.devices || []).filter(x => (x.empId && x.empId === me.id) || (x.assignedTo && x.assignedTo === me.name));
+  const value = mine.reduce((s, x) => s + (+x.qty || 1) * (+x.unitPrice || 0), 0);
+  const kpis = _hrKpiRow([
+    _kpiTile('My devices', mine.length, '#205090', '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
+    _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+    _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
+  ]);
+  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px;margin-bottom:6px"><div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Issued: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
+  root.innerHTML = kpis +
+    '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">' + cards + '</div>';
+}
+/* Offboarding — asset return checklist + sign-off (employee signs before leaving). */
+async function tkAssetReturn(empId, exitId) {
+  await tkLoadColl('devices');
+  const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || { id: empId, name: '' };
+  const mine = (_HR.devices || []).filter(x => ((x.empId && x.empId === empId) || (x.assignedTo && x.assignedTo === e.name)) && x.status !== 'Available');
+  document.getElementById('assetReturnOverlay')?.remove();
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = mine.length ? mine.map(x => '<tr><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + ' · ' + (x.category || '') + '</div></div></label></td><td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>').join('') : '<tr><td colspan="2" style="text-align:center;color:var(--text-light);padding:14px">No assigned devices to return.</td></tr>';
+  const el = document.createElement('div'); el.id = 'assetReturnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + (e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Tick each asset returned and record its condition. The employee signs below to confirm hand-back before their last day (FRM-014 Exit Clearance).</div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Return?</th><th>Condition</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><div class="form-group" style="margin:0"><label class="form-label">Employee signature (type full name)</label><input class="form-control" id="ar-sign" placeholder="' + _tkEscA(e.name || '') + '"></div><div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-control" id="ar-date" type="date" value="' + today + '"></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'assetReturnOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkAssetReturnSave(\'' + empId + '\',\'' + (exitId || '') + '\')">' + tkIcon('check') + 'Confirm Return &amp; Sign off</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkAssetReturnSave(empId, exitId) {
+  const sign = (document.getElementById('ar-sign') || {}).value.trim();
+  const date = (document.getElementById('ar-date') || {}).value || new Date().toISOString().slice(0, 10);
+  if (!sign) { toast('Please type the employee signature to confirm', 'warn'); return; }
+  const boxes = Array.from(document.querySelectorAll('[data-ar-id]'));
+  const returned = [];
+  try {
+    for (const b of boxes) {
+      if (!b.checked) continue;
+      const id = b.getAttribute('data-ar-id');
+      const cond = (document.querySelector('[data-ar-cond="' + id + '"]') || {}).value || 'Good';
+      const x = (_HR.devices || []).find(v => v.id === id); if (!x) continue;
+      const newStatus = cond === 'Lost' ? 'Lost' : cond === 'Damaged' ? 'In Repair' : 'Available';
+      await tkApi('/api/coll/devices/' + id, { method: 'PATCH', body: { ...x, status: newStatus, assignedTo: '', empId: '', returnedOn: date, returnCondition: cond } });
+      Object.assign(x, { status: newStatus, assignedTo: '', empId: '', returnedOn: date, returnCondition: cond });
+      returned.push((x.name || '') + ' (' + cond + ')');
+    }
+    if (exitId) { const ex = (_HR.exits || []).find(v => v.id === exitId); if (ex) { ex.assetReturn = { signedBy: sign, date: date, items: returned }; try { await tkApi('/api/coll/exits/' + exitId, { method: 'PATCH', body: ex }); } catch (e) {} } }
+    tkAudit('Assets returned & signed off', (_hrEmp(empId) || {}).name || empId, returned.length + ' item(s) · ' + sign);
+    const e = _hrEmp(empId) || {};
+    _notifyAssetReturn(e, returned, sign, date);
+    document.getElementById('assetReturnOverlay')?.remove();
+    toast(returned.length + ' asset(s) returned & signed off');
+    try { tkRenderDevices(); } catch (x) {} try { tkRenderOffboarding(); } catch (x) {}
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+function _notifyAssetReturn(e, items, sign, date) {
+  const hr = (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || '') && (x.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || ''));
+  const to = [(hr && hr.email), e.managerEmail].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+  if (!to) return;
+  const subject = 'Asset return signed off — ' + (e.name || '');
+  const body = 'Dear HR / Manager,\n\n' + (e.name || 'The employee') + ' has returned and signed off the following company assets on ' + tkFmtDate(date) + ':\n\n- ' + (items.join('\n- ') || 'None') + '\n\nSigned by: ' + sign + '\n\nHumiley Group Inc. — People & Workplace';
+  tkMailRequester(to, 'HR & Manager', subject, body);
 }
 /* Back-compat launcher — opens the full My Goals page. */
 function tkMyGoals() { showView('mygoals', null, 'My Goals'); }
@@ -4713,18 +4877,23 @@ async function tkRenderTalent() {
     _hrKpi('Ready Now', t.filter(x => x.succession === 'Ready Now').length, '#8B5CF6')
   ]);
   const cellFor = (pr, po) => t.filter(x => lvl(x.performance) === pr && lvl(x.potential) === po);
-  let grid = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:4px">9-Box Talent Grid</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Performance (→) × Potential (↑) · click a name to edit</div>';
-  grid += '<div>';
+  let grid = '<div class="card" style="padding:18px 20px;margin-bottom:20px"><div class="card-title" style="margin-bottom:4px">9-Box Talent Grid</div><div style="font-size:12px;color:var(--text-light);margin-bottom:16px">Performance (→) × Potential (↑) · click a name to edit</div>';
+  grid += '<div style="display:flex;gap:12px;align-items:stretch">';
+  grid += '<div style="display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-light);text-transform:uppercase">Potential ↑</div>';
+  grid += '<div style="flex:1;min-width:0">';
   for (let po = 2; po >= 0; po--) {
-    grid += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">';
+    grid += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:10px">';
     for (let pr = 0; pr <= 2; pr++) {
       const def = _NINEBOX[2 - po][pr]; const items = cellFor(pr, po);
-      grid += '<div style="background:' + def.c + '14;border:1px solid ' + def.c + '55;border-radius:8px;padding:8px;min-height:80px"><div style="font-size:9px;font-weight:700;color:' + def.c + ';text-transform:uppercase;margin-bottom:4px">' + def.box + '</div>' +
-        items.map(x => '<div style="font-size:11px;font-weight:600;cursor:pointer;padding:1px 0" onclick="tkQuickAdd(\'talent\',\'' + x.id + '\')" title="Edit">' + (x.name || '') + '</div>').join('') + '</div>';
+      const cnt = items.length ? '<span style="font-size:10px;font-weight:700;color:' + def.c + ';background:' + def.c + '1f;border-radius:20px;padding:1px 8px;flex-shrink:0">' + items.length + '</span>' : '';
+      grid += '<div style="background:linear-gradient(135deg,' + def.c + '12,' + def.c + '05);border:1px solid ' + def.c + '40;border-radius:11px;padding:11px 12px;min-height:106px">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px"><span style="font-size:9.5px;font-weight:800;color:' + def.c + ';text-transform:uppercase;letter-spacing:.4px">' + def.box + '</span>' + cnt + '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:5px">' + items.map(x => '<span onclick="tkQuickAdd(\'talent\',\'' + x.id + '\')" title="Click to edit" style="font-size:11px;font-weight:600;background:#fff;border:1px solid ' + def.c + '55;color:var(--text-dark);border-radius:20px;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:all .12s" onmouseover="this.style.background=\'' + def.c + '14\'" onmouseout="this.style.background=\'#fff\'">' + (x.name || '') + '</span>').join('') + '</div></div>';
     }
     grid += '</div>';
   }
-  grid += '</div><div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-light);margin-top:4px">PERFORMANCE →</div></div>';
+  grid += '</div></div>';
+  grid += '<div style="text-align:center;font-size:11px;font-weight:800;letter-spacing:1.5px;color:var(--text-light);margin-top:8px;text-transform:uppercase">Performance →</div></div>';
   const succ = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Succession &amp; Readiness</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>9-Box</th><th>Performance</th><th>Potential</th><th>Succession</th><th></th></tr></thead><tbody>' +
     (t.length ? t.map(x => { const e = _hrEmp(x.empId); const sc = x.succession === 'Ready Now' ? 'b-ok' : x.succession === 'Develop in Role' ? 'b-warn' : 'b-info'; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (x.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (x.name || '') + '</span></div></td><td>' + (x.dept || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + (x.box || '—') + '</span></td><td>' + (x.performance || '—') + '</td><td>' + (x.potential || '—') + '</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (x.succession || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('talent', x.id, 'talent') + '</td></tr>'; }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No assessments yet</td></tr>') + '</tbody></table></div></div>';
   root.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'talent\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Assess Employee</button></div>' + kpis + grid + succ;
@@ -4746,7 +4915,7 @@ async function tkRenderTraining() {
     _hrKpi('Completed', completed, 'var(--emerald)'),
     _hrKpi('Tracked staff', new Set(enr.map(x => x.empId)).size || (_HR.competency || []).length, '#8B5CF6')
   ]);
-  const cards = c.length ? c.map(x => { const n = enrCount(x.title) || (+x.enrolled || 0); return '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.type === 'Mandatory' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.type || 'Optional') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + ' · ' + (x.status || 'Active') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + n + ' enrolled</div><div style="display:flex;gap:4px"><button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkEnrollCourse(\'' + (x.title || '').replace(/'/g, "\\'") + '\')">' + tkIcon('plus', 12) + 'Enroll</button>' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
+  const cards = c.length ? c.map(x => { const n = enrCount(x.title) || (+x.enrolled || 0); return '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.type === 'Mandatory' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.type || 'Optional') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + ' · ' + (x.status || 'Active') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + n + ' enrolled</div><div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">' + _courseLinks(x) + '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkEnrollCourse(\'' + (x.title || '').replace(/'/g, "\\'") + '\')">' + tkIcon('plus', 12) + 'Enroll</button>' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
   const catalog = '<div id="trn-catalog"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div></div>';
   // competency matrix
   const comp = _HR.competency || [];
@@ -5785,9 +5954,10 @@ async function tkRenderOffboarding() {
     const dn = _exitDone(r), tot = (r.clearance || []).length || _EXIT_CLEARANCE.length;
     const pct = Math.round(dn / Math.max(tot, 1) * 100);
     const set = _exitSettlement(r);
+    const arBadge = (r.assetReturn && r.assetReturn.signedBy) ? ' <span class="badge b-ok" style="font-size:9px" title="Signed by ' + _tkEscA(r.assetReturn.signedBy) + ' on ' + tkFmtDate(r.assetReturn.date) + '">assets ✓</span>' : '';
     const acts = r.status === 'Completed'
-      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>'
-      : '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>';
+      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' + arBadge
+      : '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button> <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>' + arBadge;
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.title || e.title || '') + ' · ' + (r.dept || e.dept || '') + '</div></div></div></td>' +
       '<td>' + (r.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(r.lastDay) + '</td>' +
       '<td style="min-width:130px"><div class="prog-wrap" style="margin-bottom:3px"><div class="prog-fill ' + (pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pct + '%"></div></div><span style="font-size:10px;color:var(--text-light)">' + dn + ' / ' + tot + ' cleared</span></td>' +
@@ -6122,7 +6292,20 @@ const _QA_SPECS = {
   courses: { title: 'Add Course', coll: 'courses', reload: 'training', fields: [
     { k: 'title', label: 'Course Title' }, { k: 'category', label: 'Category' }, { k: 'duration', label: 'Duration' },
     { k: 'type', label: 'Type', type: 'select', options: ['Mandatory', 'Optional'] },
-    { k: 'status', label: 'Status', type: 'select', options: ['Active', 'Draft', 'Archived'] }] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Active', 'Draft', 'Archived'] },
+    { k: 'link', label: 'Course Link (URL)', type: 'url' },
+    { k: 'attachment', label: 'Attachment (PDF / Doc / Slides)', type: 'file' }] },
+  devices: { title: 'Add Device / Equipment', coll: 'devices', reload: 'devices', fields: [
+    { k: 'name', label: 'Device / Equipment Name' },
+    { k: 'category', label: 'Category', type: 'select', options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Vehicle', 'Tool', 'Software License', 'Other'] },
+    { k: 'serial', label: 'Serial / Asset Tag' },
+    { k: 'assignedTo', label: 'Assigned To (employee)' },
+    { k: 'department', label: 'Department' },
+    { k: 'qty', label: 'Quantity', type: 'number' },
+    { k: 'unitPrice', label: 'Unit Price (₫)', type: 'number' },
+    { k: 'purchaseDate', label: 'Purchase Date', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Assigned', 'Available', 'In Repair', 'Retired', 'Lost'] },
+    { k: 'note', label: 'Note' }] },
   talent: { title: 'Talent Assessment', coll: 'talent', reload: 'talent', fields: [
     { k: 'name', label: 'Employee Name' }, { k: 'dept', label: 'Department' }, { k: 'title', label: 'Position' },
     { k: 'performance', label: 'Performance', type: 'select', options: ['High', 'Medium', 'Low'] },
@@ -6145,14 +6328,32 @@ function tkQuickAdd(type, id) {
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'select') return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '">' + f.options.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div>';
-    return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"></div>';
+    if (f.type === 'file') {
+      const nm = ex ? (ex[f.k + 'Name'] || '') : '';
+      return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
+        '<input type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,image/*" onchange="_qaReadFile(this,\'' + f.k + '\')" style="font-size:12px;width:100%">' +
+        '<input type="hidden" id="' + fid + '" value="' + _tkEscA(val) + '"><input type="hidden" id="' + fid + '-name" value="' + _tkEscA(nm) + '">' +
+        '<div id="' + fid + '-info" style="font-size:11px;color:var(--text-light);margin-top:4px">' + (nm ? ('Current: ' + nm) : '') + '</div></div>';
+    }
+    return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
   }).join('');
   openModal('quickAddModal');
+}
+/* Read an attachment into a hidden field as a data-URL (used by file-type quick-add fields). */
+function _qaReadFile(input, k) {
+  const f = input.files && input.files[0]; if (!f) return;
+  if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB)', 'warn'); input.value = ''; return; }
+  const r = new FileReader();
+  r.onload = e => { const v = document.getElementById('qa-' + k); const n = document.getElementById('qa-' + k + '-name'); const info = document.getElementById('qa-' + k + '-info'); if (v) v.value = e.target.result; if (n) n.value = f.name; if (info) info.textContent = 'Attached: ' + f.name; };
+  r.readAsDataURL(f);
 }
 async function tkQuickAddSave() {
   const spec = _QA_SPECS[_qaType]; if (!spec) return;
   const data = {};
-  spec.fields.forEach(f => { const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; data[f.k] = v; });
+  spec.fields.forEach(f => {
+    if (f.type === 'file') { data[f.k] = (document.getElementById('qa-' + f.k) || {}).value || ''; data[f.k + 'Name'] = (document.getElementById('qa-' + f.k + '-name') || {}).value || ''; return; }
+    const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; data[f.k] = v;
+  });
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   try {
     let item;
@@ -6553,7 +6754,7 @@ function _calcWorkingDays(startDate, endDate) {
 let _currentView = 'dashboard';
 
 /* Manager-only view IDs — staff will be redirected */
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions']);
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
 const _LEVEL_VIEWS = { payroll: 'management', permissions: 'admin' };
 
 function showView(id, navEl, title) {
@@ -6593,6 +6794,8 @@ function showView(id, navEl, title) {
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
   if (id === 'myprofile') { Promise.all([tkLoadColl('acks'), tkLoadColl('benefits')]).then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
+  if (id === 'devices') { try { tkRenderDevices(); } catch (e) { console.warn('devices:', e.message); } }
+  if (id === 'mydevices') { try { tkRenderMyDevices(); } catch (e) { console.warn('mydevices:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
   if (id === 'performance') { try { tkRenderPerformance(); } catch (e) { console.warn('perf:', e.message); } }

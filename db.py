@@ -159,6 +159,7 @@ def seed_hr():
         _seed_learningpaths(pick)
         _seed_claims(pick)
         _seed_enrollments(pick)
+        _seed_devices(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -313,6 +314,36 @@ def _seed_exits(pick):
         "leavePayout": "", "severance": 0, "deductions": 0,
         "settlementNote": "", "rehire": "Yes",
     })
+
+
+def _seed_devices(pick):
+    """Company device / equipment register — laptops, monitors, phones per employee
+    plus shared company assets. Demonstrates the asset-management module."""
+    if collection_count("devices"):
+        return
+    laptops = ["Dell Latitude 5440", "Lenovo ThinkPad T14", "HP EliteBook 840", "MacBook Pro 14"]
+    items = []
+    for i, e in enumerate(pick):
+        items.append({"name": laptops[i % len(laptops)], "category": "Laptop", "serial": "HML-LT-%03d" % (i + 1),
+                      "assignedTo": e["name"], "empId": e["id"], "department": e.get("dept", ""),
+                      "qty": 1, "unitPrice": 22000000, "purchaseDate": "2024-01-15", "status": "Assigned", "note": ""})
+        items.append({"name": "Dell 24\" Monitor P2422H", "category": "Monitor", "serial": "HML-MN-%03d" % (i + 1),
+                      "assignedTo": e["name"], "empId": e["id"], "department": e.get("dept", ""),
+                      "qty": 1, "unitPrice": 4500000, "purchaseDate": "2024-01-15", "status": "Assigned", "note": ""})
+        if (e.get("role") or "") == "manager":
+            items.append({"name": "iPhone 13", "category": "Phone", "serial": "HML-PH-%03d" % (i + 1),
+                          "assignedTo": e["name"], "empId": e["id"], "department": e.get("dept", ""),
+                          "qty": 1, "unitPrice": 16000000, "purchaseDate": "2024-03-01", "status": "Assigned", "note": ""})
+    items += [
+        {"name": "HP LaserJet Pro Printer", "category": "Printer", "serial": "HML-PR-001", "assignedTo": "", "empId": "", "department": "HR & Admin", "qty": 2, "unitPrice": 6500000, "purchaseDate": "2023-11-10", "status": "Available", "note": "Shared office printers"},
+        {"name": "Epson Projector EB-X06", "category": "Other", "serial": "HML-PJ-001", "assignedTo": "", "empId": "", "department": "HR & Admin", "qty": 1, "unitPrice": 12000000, "purchaseDate": "2023-09-05", "status": "Available", "note": "Meeting room"},
+        {"name": "Toyota Hilux (Company)", "category": "Vehicle", "serial": "51A-678.90", "assignedTo": "", "empId": "", "department": "Operation", "qty": 1, "unitPrice": 850000000, "purchaseDate": "2022-06-20", "status": "Available", "note": "Site transport"},
+        {"name": "Total Station Survey Kit", "category": "Tool", "serial": "HML-TL-001", "assignedTo": "", "empId": "", "department": "Engineering", "qty": 3, "unitPrice": 120000000, "purchaseDate": "2023-02-14", "status": "Available", "note": "Field survey"},
+        {"name": "Dell Latitude (spare pool)", "category": "Laptop", "serial": "HML-LT-099", "assignedTo": "", "empId": "", "department": "HR & Admin", "qty": 2, "unitPrice": 22000000, "purchaseDate": "2024-05-01", "status": "Available", "note": "Spare pool"},
+        {"name": "Lenovo ThinkPad (repair)", "category": "Laptop", "serial": "HML-LT-077", "assignedTo": "", "empId": "", "department": "Engineering", "qty": 1, "unitPrice": 21000000, "purchaseDate": "2023-08-12", "status": "In Repair", "note": "Keyboard fault"},
+    ]
+    for it in items:
+        put_collection_item("devices", it)
 
 
 def _seed_claims(pick):
