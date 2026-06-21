@@ -152,6 +152,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._leave_list(u, qs))
         if path == "/api/zones":
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
+        if path == "/api/portal":
+            return self._guard(lambda u: self._portal_get(u))
         return self._err("Not found.", 404)
 
     def do_POST(self):
@@ -178,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if path == "/api/me":
             return self._guard(lambda u: self._me_update(u, body))
+        if path == "/api/portal":
+            return self._guard(lambda u: self._portal_update(u, body), manager=True)
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(eid, body), manager=True)
@@ -376,6 +380,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def _zone_update(self, zid, body):
         db.update_zone(int(zid), body)
+        return self._json({"ok": True})
+
+    # -- company portal content (announcements / holidays / learning / resources) --
+    PORTAL_KEYS = ("announcements", "holidays", "learning", "resources")
+
+    def _portal_get(self, u):
+        return self._json({k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS})
+
+    def _portal_update(self, u, body):
+        for k in self.PORTAL_KEYS:
+            if isinstance(body.get(k), list):
+                db.set_setting("portal_" + k, body[k])
         return self._json({"ok": True})
 
 

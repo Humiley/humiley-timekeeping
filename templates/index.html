@@ -1606,6 +1606,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <button class="tab" onclick="switchHRTab('payroll',this)">Hours & Payroll</button>
     <button class="tab" onclick="switchHRTab('employees',this)">Employee Profiles</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
+    <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
 
   <!-- BALANCES -->
@@ -1726,6 +1727,32 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
           <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 7 · Checkout Reminder</span><span class="badge b-ok">Running</span></div>
           <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><span style="font-weight:600">Flow 8 · Low Balance Alert</span><span class="badge b-ok">Running</span></div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Company Portal content manager -->
+  <div id="hr-portal" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text-light)">Manage what employees see on their dashboard. Changes apply to everyone after saving.</div>
+      <button class="btn btn-emerald btn-sm" onclick="tkSavePortal()">Save Portal Content</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')">+ Add</button></div>
+        <div id="portal-announcements"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Holidays</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('holidays')">+ Add</button></div>
+        <div id="portal-holidays"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Learning &amp; Development</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('learning')">+ Add</button></div>
+        <div id="portal-learning"></div>
+      </div>
+      <div class="card">
+        <div class="card-hdr"><div class="card-title">Resources &amp; Quick Links</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('resources')">+ Add</button></div>
+        <div id="portal-resources"></div>
       </div>
     </div>
   </div>
@@ -3149,6 +3176,7 @@ async function doLogin(role, opts = {}) {
       _staffInitials = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
     }
     await tkBootstrap();
+    await tkLoadPortal();
   } catch (e) {
     console.warn('Backend unavailable — using local demo data:', e.message);
   }
@@ -3375,6 +3403,119 @@ const _TK_HOLIDAYS = [
   { date: '2027-02-06', name: 'Lunar New Year (Tết)' }
 ];
 
+/* Default portal content + merge with admin-managed overrides (window._TK_PORTAL). */
+const _TK_PORTAL_DEFAULTS = {
+  announcements: [
+    { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.' },
+    { tag: 'Safety', color: '#F59E0B', title: 'HSE Refresher — Long An Factory', body: 'Mandatory health & safety refresher for all site and factory staff this month. Check your email for your scheduled slot.' },
+    { tag: 'Company', color: '#00B060', title: 'Q2 Town Hall — Project Highlights', body: 'Join the company-wide town hall to review Q2 delivery milestones and the H2 roadmap. Calendar invite to follow.' }
+  ],
+  holidays: _TK_HOLIDAYS,
+  learning: [
+    { name: 'Workplace Safety (HSE) Essentials', meta: 'Required · 45 min', pct: 100 },
+    { name: 'Project Management Fundamentals', meta: 'In progress · 6 modules', pct: 40 },
+    { name: 'Business English — Intermediate', meta: 'Recommended', pct: 0 },
+    { name: 'Leadership & Communication', meta: 'Recommended', pct: 0 }
+  ],
+  resources: [
+    { label: 'Employee Handbook', url: '' }, { label: 'Company Policies', url: '' },
+    { label: 'Payroll & Payslips', url: '' }, { label: 'Benefits & Wellness', url: '' },
+    { label: 'IT Help Desk', url: '' }, { label: 'Company Directory', url: '' }
+  ]
+};
+const _TK_RES_ICON = {
+  'Employee Handbook': '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>',
+  'Company Policies': '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  'Payroll & Payslips': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  'Benefits & Wellness': '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/>',
+  'IT Help Desk': '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  'Company Directory': '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+};
+const _TK_RES_ICON_DEFAULT = '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>';
+
+function _tkPortalData() {
+  const o = window._TK_PORTAL || {};
+  const pick = k => (Array.isArray(o[k]) && o[k].length) ? o[k] : _TK_PORTAL_DEFAULTS[k];
+  return { announcements: pick('announcements'), holidays: pick('holidays'), learning: pick('learning'), resources: pick('resources') };
+}
+
+/* Load admin-managed portal content from the backend. */
+async function tkLoadPortal() {
+  try {
+    const r = await fetch('/api/portal', { headers: { 'Authorization': 'Bearer ' + TK.token } });
+    if (!r.ok) return;
+    const j = await r.json();
+    window._TK_PORTAL = {
+      announcements: Array.isArray(j.announcements) ? j.announcements : null,
+      holidays: Array.isArray(j.holidays) ? j.holidays : null,
+      learning: Array.isArray(j.learning) ? j.learning : null,
+      resources: Array.isArray(j.resources) ? j.resources : null
+    };
+  } catch (e) {}
+}
+
+/* ── HR Admin: Company Portal content editor ── */
+let _tkPortalModel = null;
+const _tkEscA = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+function tkRenderPortalEditor() {
+  const PD = _tkPortalData();
+  _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
+  _tkPortalRenderRows();
+}
+
+function _tkPortalRenderRows() {
+  const m = _tkPortalModel; if (!m) return;
+  const I = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html || '<div style="font-size:12px;color:var(--text-light);padding:8px 0">None yet — click “+ Add”.</div>'; };
+  const rm = (t, i) => '<button class="btn btn-ghost btn-sm" onclick="tkPortalRemove(\'' + t + '\',' + i + ')" style="flex-shrink:0">Remove</button>';
+  I('portal-announcements', m.announcements.map((it, i) =>
+    '<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div style="display:flex;gap:8px;margin-bottom:6px">' +
+    '<input class="form-control" style="flex:0 0 110px" placeholder="Tag" value="' + _tkEscA(it.tag) + '" oninput="tkPortalSet(\'announcements\',' + i + ',\'tag\',this)">' +
+    '<input class="form-control" style="flex:1" placeholder="Title" value="' + _tkEscA(it.title) + '" oninput="tkPortalSet(\'announcements\',' + i + ',\'title\',this)">' + rm('announcements', i) +
+    '</div><textarea class="form-control" rows="2" placeholder="Message" oninput="tkPortalSet(\'announcements\',' + i + ',\'body\',this)">' + _tkEscT(it.body) + '</textarea></div>').join(''));
+  I('portal-holidays', m.holidays.map((it, i) =>
+    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
+    '<input type="date" class="form-control" style="flex:0 0 150px" value="' + _tkEscA(it.date) + '" oninput="tkPortalSet(\'holidays\',' + i + ',\'date\',this)">' +
+    '<input class="form-control" style="flex:1" placeholder="Holiday name" value="' + _tkEscA(it.name) + '" oninput="tkPortalSet(\'holidays\',' + i + ',\'name\',this)">' + rm('holidays', i) + '</div>').join(''));
+  I('portal-learning', m.learning.map((it, i) =>
+    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
+    '<input class="form-control" style="flex:1" placeholder="Course name" value="' + _tkEscA(it.name) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'name\',this)">' +
+    '<input class="form-control" style="flex:0 0 150px" placeholder="Status / meta" value="' + _tkEscA(it.meta) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'meta\',this)">' +
+    '<input type="number" min="0" max="100" class="form-control" style="flex:0 0 64px" placeholder="%" value="' + _tkEscA(it.pct) + '" oninput="tkPortalSet(\'learning\',' + i + ',\'pct\',this)">' + rm('learning', i) + '</div>').join(''));
+  I('portal-resources', m.resources.map((it, i) =>
+    '<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">' +
+    '<input class="form-control" style="flex:0 0 180px" placeholder="Label" value="' + _tkEscA(it.label) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'label\',this)">' +
+    '<input class="form-control" style="flex:1" placeholder="https://…  (optional)" value="' + _tkEscA(it.url) + '" oninput="tkPortalSet(\'resources\',' + i + ',\'url\',this)">' + rm('resources', i) + '</div>').join(''));
+}
+
+function tkPortalSet(type, i, field, el) { if (_tkPortalModel && _tkPortalModel[type][i]) _tkPortalModel[type][i][field] = el.value; }
+function tkPortalRemove(type, i) { if (_tkPortalModel) { _tkPortalModel[type].splice(i, 1); _tkPortalRenderRows(); } }
+function tkPortalAdd(type) {
+  if (!_tkPortalModel) tkRenderPortalEditor();
+  const blank = { announcements: { tag: 'News', color: '#205090', title: '', body: '' }, holidays: { date: '', name: '' }, learning: { name: '', meta: '', pct: 0 }, resources: { label: '', url: '' } }[type];
+  _tkPortalModel[type].push(JSON.parse(JSON.stringify(blank)));
+  _tkPortalRenderRows();
+}
+
+async function tkSavePortal() {
+  const m = _tkPortalModel; if (!m) { toast('Open the Company Portal tab first', 'warn'); return; }
+  const payload = {
+    announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '' })),
+    holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
+    learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)) })),
+    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() }))
+  };
+  try {
+    const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources };
+    toast('Company portal updated — employees will see this on their dashboard.');
+  } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
+}
+
 /* Render the employee "company portal" widgets on the staff dashboard. */
 function tkRenderStaffPortal() {
   const emps = _DEMO_EMPLOYEES || [];
@@ -3386,16 +3527,13 @@ function tkRenderStaffPortal() {
   const av = (e, sz) => (typeof tkAvatar === 'function' ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (e.clr || '#205090') + '">' + (e.ini || '') + '</div>');
   const empty = t => '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:10px 0">' + t + '</div>';
 
-  /* Announcements (curated) */
-  const ann = (window._TK_ANNOUNCEMENTS && window._TK_ANNOUNCEMENTS.length) ? window._TK_ANNOUNCEMENTS : [
-    { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.' },
-    { tag: 'Safety', color: '#F59E0B', title: 'HSE Refresher — Long An Factory', body: 'Mandatory health & safety refresher for all site and factory staff this month. Check your email for your scheduled slot.' },
-    { tag: 'Company', color: '#00B060', title: 'Q2 Town Hall — Project Highlights', body: 'Join the company-wide town hall to review Q2 delivery milestones and the H2 roadmap. Calendar invite to follow.' }
-  ];
+  /* Portal content (admin-managed via HR Admin, with defaults) */
+  const PD = _tkPortalData();
+  const ann = PD.announcements;
   const annEl = document.getElementById('staff-announcements');
-  if (annEl) annEl.innerHTML = ann.map(a => '<div style="border-left:3px solid ' + a.color + ';padding:2px 0 2px 12px">' +
-    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + a.color + '1f;color:' + a.color + ';font-size:10px">' + a.tag + '</span><strong style="font-size:13px">' + a.title + '</strong></div>' +
-    '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + a.body + '</div></div>').join('');
+  if (annEl) annEl.innerHTML = ann.map(a => { const col = a.color || '#205090'; return '<div style="border-left:3px solid ' + col + ';padding:2px 0 2px 12px">' +
+    '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px"><span class="badge" style="background:' + col + '1f;color:' + col + ';font-size:10px">' + (a.tag || 'News') + '</span><strong style="font-size:13px">' + (a.title || '') + '</strong></div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.5">' + (a.body || '') + '</div></div>'; }).join('');
 
   /* Who's out today */
   const out = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= todayISO && l.endDate >= todayISO);
@@ -3414,7 +3552,7 @@ function tkRenderStaffPortal() {
   if (celEl) celEl.innerHTML = celebs.length ? celebs.map(c => '<div style="display:flex;align-items:center;gap:10px">' + av(c.e) + '<div style="flex:1"><div style="font-size:13px;font-weight:600">' + c.e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + c.label + ' · ' + MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0') + '</div></div></div>').join('') : empty('No celebrations this month');
 
   /* Upcoming holidays */
-  const hol = _TK_HOLIDAYS.filter(h => h.date >= todayISO).slice(0, 4);
+  const hol = PD.holidays.slice().filter(h => h.date >= todayISO).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 4);
   const holEl = document.getElementById('staff-holidays');
   if (holEl) holEl.innerHTML = hol.length ? hol.map(h => {
     const dt = new Date(h.date + 'T00:00:00'); const days = Math.ceil((dt - now) / 86400000);
@@ -3435,20 +3573,18 @@ function tkRenderStaffPortal() {
   }
 
   /* Resources & quick links */
-  const res = [
-    { label: 'Employee Handbook', icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>', msg: 'The Employee Handbook will be linked here by HR.' },
-    { label: 'Company Policies', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>', msg: 'Company policies will be linked here by HR.' },
-    { label: 'Payroll & Payslips', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>', msg: 'Payslips will appear here once payroll is connected.' },
-    { label: 'Benefits & Wellness', icon: '<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/>', msg: 'Benefits & wellness details will be linked by HR.' },
-    { label: 'IT Help Desk', icon: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>', msg: 'For IT support, please contact your administrator.' },
-    { label: 'Company Directory', icon: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>', action: "showView('myprofile',null,'My Profile')" }
-  ];
+  const res = PD.resources;
   const resEl = document.getElementById('staff-resources');
   if (resEl) resEl.innerHTML = res.map(r => {
-    const oc = (r.action ? r.action : ('toast(' + JSON.stringify(r.msg || '') + ",'info',5000)")).replace(/"/g, '&quot;');
+    const icon = _TK_RES_ICON[r.label] || _TK_RES_ICON_DEFAULT;
+    let oc;
+    if (r.url) oc = "window.open('" + String(r.url).replace(/'/g, "\\'") + "','_blank','noopener')";
+    else if (r.label === 'Company Directory') oc = "showView('myprofile',null,'My Profile')";
+    else oc = "toast('This resource will be linked by your administrator.','info',5000)";
+    oc = oc.replace(/"/g, '&quot;');
     return '<button onclick="' + oc + '" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 12px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s">' +
-      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + r.icon + '</svg>' +
-      '<div style="font-size:12px;font-weight:600;color:var(--navy)">' + r.label + '</div></button>';
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + icon + '</svg>' +
+      '<div style="font-size:12px;font-weight:600;color:var(--navy)">' + (r.label || '') + '</div></button>';
   }).join('');
 
   /* My action items (data-driven) */
@@ -3476,12 +3612,7 @@ function tkRenderStaffPortal() {
   /* Learning & Development (curated) */
   const learnEl = document.getElementById('staff-learning');
   if (learnEl) {
-    const courses = [
-      { name: 'Workplace Safety (HSE) Essentials', meta: 'Required · 45 min', pct: 100 },
-      { name: 'Project Management Fundamentals', meta: 'In progress · 6 modules', pct: 40 },
-      { name: 'Business English — Intermediate', meta: 'Recommended', pct: 0 },
-      { name: 'Leadership & Communication', meta: 'Recommended', pct: 0 }
-    ];
+    const courses = PD.learning;
     learnEl.innerHTML = courses.map(c => '<div style="cursor:pointer" onclick="toast(\'The learning catalogue will be linked here by L&amp;D.\',\'info\',5000)">' +
       '<div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px"><span style="font-weight:600">' + c.name + '</span><span style="font-size:11px;color:' + (c.pct === 100 ? 'var(--emerald)' : 'var(--text-light)') + '">' + (c.pct === 100 ? 'Done' : c.pct ? c.pct + '%' : 'Start') + '</span></div>' +
       '<div style="font-size:10px;color:var(--text-light);margin-bottom:4px">' + c.meta + '</div>' +
@@ -3951,7 +4082,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','payroll','employees','compliance'].forEach(id => {
+  ['balances','payroll','employees','compliance','portal'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -3959,6 +4090,7 @@ function switchHRTab(tab, el) {
   const panel = document.getElementById('hr-' + tab);
   if (panel) panel.style.display = 'block';
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
+  if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
     const lbl = document.getElementById('emp-count-label');
@@ -5494,7 +5626,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const mgrApprovals = document.getElementById('mgr-approvals'); if (mgrApprovals) mgrApprovals.style.display = 'block';
 
   // HR Admin tabs — show "balances", hide others
-  ['payroll','employees','compliance'].forEach(id => {
+  ['payroll','employees','compliance','portal'].forEach(id => {
     const p = document.getElementById('hr-' + id); if (p) p.style.display = 'none';
   });
   const hrBalances = document.getElementById('hr-balances'); if (hrBalances) hrBalances.style.display = 'block';
