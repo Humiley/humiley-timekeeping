@@ -1019,6 +1019,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
 
+  <!-- HR at a glance (all-HRM KPIs) -->
+  <div class="card" style="padding:16px 18px;margin-bottom:22px">
+    <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR at a Glance</div>
+    <div id="dash-hr-metrics" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px"></div>
+    <div id="dash-hr-charts" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-top:18px"></div>
+  </div>
+
   <!-- HRMS module shortcuts -->
   <div class="card" style="padding:16px 18px;margin-bottom:22px">
     <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR Modules</div>
@@ -4312,6 +4319,47 @@ function tkRenderHrModules() {
   el.innerHTML = mods.map(m => '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + m.icon + '</svg><div style="font-size:12px;font-weight:600;color:var(--navy)">' + m.label + '</div></button>').join('');
 }
 
+/* Manager dashboard — all-HRM metrics across every module. */
+async function tkRenderHrMetrics() {
+  const wrap = document.getElementById('dash-hr-metrics'); if (!wrap) return;
+  wrap.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
+  await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent')]);
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const today = new Date().toISOString().slice(0, 10);
+  const present = (_DEMO_ATTENDANCE || []).filter(r => r.date === today && (r.in || r.clock_in)).length;
+  const onLeave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= today && l.endDate >= today).length;
+  const openReq = (_HR.jobs || []).filter(j => j.status !== 'Closed').reduce((s, j) => s + (parseInt(j.openings, 10) || 0), 0);
+  const cands = (_HR.candidates || []).filter(c => c.stage !== 'Hired' && c.stage !== 'Rejected').length;
+  const onboard = (_HR.onboarding || []).filter(o => (o.tasks || []).some(t => !t.done)).length;
+  const reviews = _HR.reviews || [];
+  const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
+  const enroll = (_HR.courses || []).reduce((s, c) => s + (+c.enrolled || 0), 0);
+  const ratingBy = {}; reviews.forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+  let payGross = 0; emps.forEach(e => { try { payGross += _payComputed(e, ratingBy[e.id]).grossPay; } catch (x) {} });
+  const newHires = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.y === new Date().getFullYear() && (p.m - 1) === new Date().getMonth(); }).length;
+  const k = (label, val, color) => '<div style="background:var(--soft-bg);border-radius:10px;padding:13px 14px"><div style="font-size:20px;font-weight:800;color:' + (color || 'var(--navy)') + '">' + val + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
+  wrap.innerHTML = [
+    k('Headcount', emps.length), k('Present today', present, 'var(--emerald)'), k('On leave today', onLeave, '#F59E0B'),
+    k('New hires (mo)', newHires, '#8B5CF6'), k('Open vacancies', openReq, '#205090'), k('In pipeline', cands, '#8B5CF6'),
+    k('Onboarding', onboard, '#F59E0B'), k('Avg PADR', avgRating + '/5', 'var(--emerald)'), k('Course enrolments', enroll, '#205090'),
+    k('Monthly payroll', _PAY_FMT(payGross), '#F59E0B')
+  ].join('');
+  // charts
+  const ch = document.getElementById('dash-hr-charts'); if (!ch) return;
+  const byDept = {}; emps.forEach(e => { byDept[e.dept || '—'] = (byDept[e.dept || '—'] || 0) + 1; });
+  const dmax = Math.max(1, ...Object.values(byDept));
+  const bar = (lab, v, mx, c) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:110px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + lab + '</div><div style="flex:1;background:#fff;border-radius:5px;height:18px"><div style="width:' + Math.round(v / mx * 100) + '%;background:' + (c || 'var(--navy)') + ';height:100%;border-radius:5px;min-width:2px"></div></div><div style="width:26px;text-align:right;font-size:11px;font-weight:700">' + v + '</div></div>';
+  const stages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
+  const funnel = stages.map(s => (_HR.candidates || []).filter(c => c.stage === s).length);
+  const fmax = Math.max(1, ...funnel);
+  const dist = [5, 4, 3, 2, 1].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
+  const rmax = Math.max(1, ...dist);
+  ch.innerHTML =
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div>' + Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]).map(d => bar(d, byDept[d], dmax, '#205090')).join('') + '</div>' +
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Recruitment Funnel</div>' + stages.map((s, i) => bar(s, funnel[i], fmax, '#00B060')).join('') + '</div>' +
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Performance Distribution</div>' + [5, 4, 3, 2, 1].map((n, i) => bar(n + '★', dist[i], rmax, '#F59E0B')).join('') + '</div>';
+}
+
 /* Quick-add modal for the HR collections */
 const _QA_SPECS = {
   jobs: { title: 'Post a Job', coll: 'jobs', reload: 'recruitment', fields: [
@@ -4755,7 +4803,7 @@ function showView(id, navEl, title) {
   if (titleEl) titleEl.textContent = pageTitle;
   if (id === 'reports') { setTimeout(initReportCharts, 100); }
   if (id === 'manager') { loadManagerView(); }
-  if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderHrModules(); } catch (e) {} }
+  if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderHrModules(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
   if (id === 'myprofile') { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
