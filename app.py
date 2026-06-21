@@ -431,7 +431,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
 
