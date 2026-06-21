@@ -145,12 +145,15 @@ def init_db():
 
 
 def seed_hr():
-    """Seed the HRMS module collections (recruitment, onboarding, performance,
-    talent, training) on first run only. Uses real employees where helpful."""
-    if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
-        return False
+    """Seed the HRMS module collections. Each collection seeds independently so
+    newer modules populate even on databases seeded by an earlier version."""
     emps = list_employees()
     pick = [e for e in emps if e.get("status", "Active") != "Inactive"]
+    if pick:
+        _seed_competency(pick)
+        _seed_padr(pick)
+    if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
+        return False
 
     jobs = [
         {"title": "Senior Civil Engineer", "dept": "Engineering", "location": "HCMC HQ", "type": "Full Time", "openings": 2, "status": "Open"},
@@ -222,14 +225,63 @@ def seed_hr():
         put_collection_item("courses", c)
 
     boxes = ["Star", "High Potential", "Core Performer", "Solid Performer"]
+    succ = ["Ready Now", "Ready in 1 year", "Ready in 2-3 years", "Develop in Role"]
     for i, e in enumerate(pick[:6]):
         put_collection_item("talent", {
             "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
             "title": e.get("title", ""), "box": boxes[i % len(boxes)],
             "potential": ["High", "High", "Medium", "Medium"][i % 4],
             "performance": ["High", "Medium", "High", "Medium"][i % 4],
+            "succession": succ[i % len(succ)],
         })
+
     return True
+
+
+def _seed_competency(pick):
+    if collection_count("competency"):
+        return
+    comps = ["WS-01 CNC cutting", "WS-02 Frame assembly", "WS-03 PU foaming", "WS-04 Section assembly",
+             "WS-05 Hygienic detail", "WS-06 Electrical pre-wire", "WS-07 Final assembly", "WS-08 Panel wiring",
+             "WS-09 Pre-test & 5S", "FAT witness", "EN 1886 testing", "Hi-Pot / Megger", "Vibration ISO 21940",
+             "Forklift", "Working at height", "LOTO", "Confined space", "Hot work / welding", "First aid",
+             "ISO 9001", "VDI 6022", "EU-GMP Annex 1", "BMS / BACnet", "Site commissioning & TAB", "Customer communication"]
+    statuses = ["✓", "T", "X", "—"]
+    prod = [e for e in pick if (e.get("dept") or "") in ("Factory", "Engineering", "Project", "Operation")][:10]
+    for idx, e in enumerate(prod):
+        cells = {}
+        for ci, c in enumerate(comps):
+            s = statuses[(idx + ci * 3) % 4]
+            if ci < 9 and (e.get("dept") == "Factory"):
+                s = "✓" if (idx + ci) % 5 else "T"
+            cells[c] = s
+        put_collection_item("competency", {"empId": e["id"], "name": e["name"], "role": e.get("title", ""),
+                                           "dept": e.get("dept", ""), "cells": cells})
+
+
+def _seed_padr(pick):
+    if collection_count("padr"):
+        return
+    goal_pool = [
+        ("Deliver assigned projects on time & on budget", 30, "100% milestones met"),
+        ("Quality — defect/rework rate within target", 25, "< 2% rework"),
+        ("HSE compliance & 5S", 15, "Zero incidents"),
+        ("Skill development & certification", 15, "2 competencies gained"),
+        ("Teamwork & customer focus", 15, "Positive 360 feedback"),
+    ]
+    cyc_status = ["Goal-setting", "Mid-year", "Self-assessment", "Calibrated", "Finalized"]
+    for i, e in enumerate(pick[:10]):
+        st = cyc_status[i % len(cyc_status)]
+        goals = [{"objective": o, "weight": w, "target": t,
+                  "selfScore": (4 if i % 2 else 3) if st in ("Self-assessment", "Calibrated", "Finalized") else 0,
+                  "mgrScore": (4 if i % 3 else 3) if st in ("Calibrated", "Finalized") else 0}
+                 for (o, w, t) in goal_pool]
+        put_collection_item("padr", {
+            "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""), "cycle": "2026",
+            "status": st, "goals": goals,
+            "rating": (4 if i % 2 else 3) if st == "Finalized" else 0,
+            "idp": "Lead a sub-project; complete PM fundamentals course" if i % 2 else "Mentoring & ISO 9001 refresher",
+        })
 
 
 def is_seeded():

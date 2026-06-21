@@ -3775,7 +3775,7 @@ function tkRenderStaffPortal() {
           '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + (r.cycle || 'Latest review') + ' · <span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></div></div>' +
           '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-top:1px solid var(--line)"><span style="color:var(--text-light)">Rating</span><span style="font-weight:700">' + (+r.rating || 0) + ' / 5</span></div>' +
           '<div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text-light)">Courses available</span><span style="font-weight:700">' + courses.length + '</span></div>' +
-          '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-outline btn-sm" style="flex:1;justify-content:center" onclick="showView(\'myprofile\',null,\'My Profile\')">My Profile</button><button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="tkMyPayslip()">My Payslip</button></div>';
+          '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-outline btn-sm" style="flex:1;justify-content:center" onclick="tkMyGoals()">My Goals</button><button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="tkMyPayslip()">My Payslip</button></div>';
       } else {
         perfEl.innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:14px 0">No performance review on record yet.<br>Your manager will share it during the next review cycle.</div>';
       }
@@ -3808,7 +3808,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [] };
 /* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
 const _ONBOARD_TEMPLATE = [
   { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
@@ -3841,7 +3841,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -3940,8 +3940,33 @@ async function tkRenderRecruitment() {
   }).join('');
   const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead><tbody>' +
     (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No jobs posted yet</td></tr>') + '</tbody></table></div></div>';
-  root.innerHTML = kpis + '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Candidate Pipeline</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>' + jt;
+  // Monthly dashboard (funnel conversion, SLA tiers, source mix) per QĐ.HR-01
+  const funnelStages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
+  const fcount = funnelStages.map(s => cands.filter(c => c.stage === s).length);
+  const cumul = funnelStages.map((s, i) => cands.filter(c => funnelStages.indexOf(c.stage) >= i).length);
+  const fmax = Math.max(1, ...cumul);
+  const hired = cands.filter(c => c.stage === 'Hired').length;
+  const offers = cands.filter(c => c.stage === 'Offer' || c.stage === 'Hired').length;
+  const acceptance = offers ? Math.round(hired / offers * 100) : 0;
+  const srcMix = {}; cands.forEach(c => { const s = c.source || 'Other'; srcMix[s] = (srcMix[s] || 0) + 1; });
+  const smax = Math.max(1, ...Object.values(srcMix));
+  const bar = (lab, v, mx, c, suffix) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:120px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + lab + '</div><div style="flex:1;background:var(--soft-bg);border-radius:5px;height:18px"><div style="width:' + Math.round(v / mx * 100) + '%;background:' + (c || 'var(--navy)') + ';height:100%;border-radius:5px;min-width:2px"></div></div><div style="width:60px;text-align:right;font-size:11px;font-weight:700">' + v + (suffix || '') + '</div></div>';
+  const mkpi = _hrKpiRow([
+    _hrKpi('Open requisitions', jobs.filter(j => j.status !== 'Closed').length),
+    _hrKpi('Vacancies', openReq, '#F59E0B'),
+    _hrKpi('Offer acceptance', acceptance + '%', acceptance >= 85 ? 'var(--emerald)' : '#EF4444'),
+    _hrKpi('Hired (cycle)', hired, '#8B5CF6')
+  ]);
+  const funnelCard = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:4px">Candidate Funnel &amp; Conversion</div><div style="font-size:11px;color:var(--text-light);margin-bottom:12px">QĐ.HR-01 stages · cumulative reach + conversion to next</div>' +
+    funnelStages.map((s, i) => { const conv = i > 0 && cumul[i - 1] ? Math.round(cumul[i] / cumul[i - 1] * 100) : 100; return bar(s + (i > 0 ? ' (' + conv + '% conv)' : ''), cumul[i], fmax, ['#205090', '#3168A8', '#8B5CF6', '#F59E0B', '#00B060'][i]); }).join('') + '</div>';
+  const srcCard = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Source of Hire Mix</div>' + (Object.keys(srcMix).length ? Object.keys(srcMix).sort((a, b) => srcMix[b] - srcMix[a]).map(s => bar(s, srcMix[s], smax, '#205090')).join('') : '<div style="font-size:12px;color:var(--text-light)">No data</div>') + '</div>';
+  const slaCard = '<div class="card" style="padding:16px 18px;margin-top:18px"><div class="card-title" style="margin-bottom:6px">Time-to-Offer SLA (QĐ.HR-01)</div><div style="font-size:11px;color:var(--text-light);margin-bottom:12px">Target: ≤30 days non-management · ≤60 management · ≤90 senior leadership · offer acceptance ≥85% · 90-day attrition ≤3%</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Open position</th><th>Department</th><th>Type</th><th>SLA tier</th><th>Status</th></tr></thead><tbody>' +
+    (jobs.filter(j => j.status !== 'Closed').length ? jobs.filter(j => j.status !== 'Closed').map(j => { const tier = /director|head|senior manager/i.test(j.title || '') ? '≤90d' : /manager|lead/i.test(j.title || '') ? '≤60d' : '≤30d'; return '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.type || '') + '</td><td>' + tier + '</td><td><span class="badge ' + (j.status === 'Open' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (j.status === 'Open' ? 'On-track' : 'In progress') + '</span></td></tr>'; }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:14px">No open requisitions</td></tr>') + '</tbody></table></div></div>';
+  const monthly = '<div id="rec-monthly" style="display:none">' + mkpi + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + funnelCard + srcCard + '</div>' + slaCard + '</div>';
+  const pipeline = '<div id="rec-pipeline"><div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:10px">Candidate Pipeline</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>' + jt + '</div>';
+  root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkRecTab(\'pipeline\',this)">Pipeline &amp; Jobs</button><button class="tab" onclick="tkRecTab(\'monthly\',this)">Monthly Dashboard</button></div>' + pipeline + monthly;
 }
+function tkRecTab(tab, el) { ['pipeline', 'monthly'].forEach(t => { const p = document.getElementById('rec-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#recruitment-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
 function tkCandidateAdvance(id) {
   const c = _HR.candidates.find(x => x.id === id); if (!c) return;
   const order = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
@@ -3987,7 +4012,7 @@ function tkOnboardToggle(id, idx, checked) {
 async function tkRenderPerformance() {
   const root = document.getElementById('performance-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('reviews'), tkLoadColl('goals')]);
+  await Promise.all([tkLoadColl('reviews'), tkLoadColl('goals'), tkLoadColl('padr')]);
   const reviews = _HR.reviews, goals = _HR.goals;
   const avg = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
   const done = reviews.filter(r => r.status === 'Completed').length;
@@ -3999,7 +4024,8 @@ async function tkRenderPerformance() {
   ]);
   const tabs = '<div class="tabs" style="margin-bottom:16px">' +
     '<button class="tab active" onclick="tkPerfTab(\'okr\',this)">KPI &amp; OKR</button>' +
-    '<button class="tab" onclick="tkPerfTab(\'reviews\',this)">Reviews (PADR)</button>' +
+    '<button class="tab" onclick="tkPerfTab(\'goals\',this)">Goal Cycles (PADR)</button>' +
+    '<button class="tab" onclick="tkPerfTab(\'reviews\',this)">Reviews</button>' +
     '<button class="tab" onclick="tkPerfTab(\'pip\',this)">Improvement (PIP)</button>' +
     '<button class="tab" onclick="tkPerfTab(\'calib\',this)">Calibration</button></div>';
   const cycleStages = [
@@ -4029,51 +4055,137 @@ async function tkRenderPerformance() {
      ['3 — Meets', 'Met all objectives', '5–7% merit + 1.0× bonus'],
      ['2 — Partially meets', 'Below on some', '0–3% + reduced bonus + PIP'],
      ['1 — Does not meet', 'Significant issues', '0% + no bonus + exit']].map(r => '<tr><td style="font-weight:600;white-space:nowrap">' + r[0] + '</td><td style="color:var(--text-light)">' + r[1] + '</td><td>' + r[2] + '</td></tr>').join('') + '</tbody></table></div></div>';
-  root.innerHTML = kpis + tabs + okr + reviewsHtml + pip + calib;
+  // Goal Cycles (PADR) — per-employee weighted goals, stage-gated
+  const padr = _HR.padr || [];
+  const padrRows = padr.length ? padr.map(p => {
+    const e = _hrEmp(p.empId); const gw = (p.goals || []).reduce((s, g) => s + (+g.weight || 0), 0);
+    const selfAvg = (p.goals || []).filter(g => g.selfScore).length ? ((p.goals).reduce((s, g) => s + (+g.selfScore || 0) * (+g.weight || 0), 0) / 100).toFixed(1) : '—';
+    const mgrAvg = (p.goals || []).filter(g => g.mgrScore).length ? ((p.goals).reduce((s, g) => s + (+g.mgrScore || 0) * (+g.weight || 0), 0) / 100).toFixed(1) : '—';
+    const sc = p.status === 'Finalized' ? 'b-ok' : p.status === 'Calibrated' ? 'b-info' : 'b-warn';
+    return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (p.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.dept || '') + '</td><td>' + (p.goals || []).length + ' (' + gw + '%)</td><td>' + selfAvg + '</td><td>' + mgrAvg + '</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (p.status || '') + '</span></td><td>' + (p.rating ? _hrStars(p.rating) : '—') + '</td><td><button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPadrManage(\'' + p.id + '\')">Manage</button></td></tr>';
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No goal cycles yet</td></tr>';
+  const goalsTab = '<div id="perf-goals" style="display:none"><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Stage-gated PADR per employee (FRM-011): goals are agreed (weights total 100%), employee self-assesses, manager scores, then calibration finalises the rating. Employees enter their own scores from <b>My Goals</b> on their dashboard.</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Goal Cycles 2026</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Dept</th><th>Goals (wt)</th><th>Self</th><th>Manager</th><th>Stage</th><th>Rating</th><th></th></tr></thead><tbody>' + padrRows + '</tbody></table></div></div></div>';
+  root.innerHTML = kpis + tabs + okr + goalsTab + reviewsHtml + pip + calib;
 }
 function tkPerfTab(tab, el) {
-  ['okr', 'reviews', 'pip', 'calib'].forEach(t => { const p = document.getElementById('perf-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; });
+  ['okr', 'goals', 'reviews', 'pip', 'calib'].forEach(t => { const p = document.getElementById('perf-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; });
   document.querySelectorAll('#performance-root .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
 }
+/* Manager view of a PADR cycle — score goals, set rating/stage. */
+function tkPadrManage(id) {
+  const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  document.getElementById('padrOverlay')?.remove();
+  const goalRows = (p.goals || []).map((g, i) => '<tr><td style="font-size:12px">' + (g.objective || '') + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:48px;text-align:center" id="padr-mgr-' + i + '"></td></tr>').join('');
+  const el = document.createElement('div'); el.id = 'padrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:620px"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Score each objective 1–5; weighted total drives the rating.</div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self</th><th>Mgr</th></tr></thead><tbody>' + goalRows + '</tbody></table></div>' +
+    '<div class="grid-2" style="margin-top:12px"><div class="form-group"><label class="form-label">Stage</label><select class="form-control" id="padr-status"><option>Goal-setting</option><option>Mid-year</option><option>Self-assessment</option><option>Calibrated</option><option>Finalized</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Final rating (1–5)</label><select class="form-control" id="padr-rating"><option value="0">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div></div>' +
+    '<div class="form-group"><label class="form-label">IDP / development note</label><textarea class="form-control" id="padr-idp">' + _tkEscT(p.idp || '') + '</textarea></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'padrOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPadrSave(\'' + id + '\')">Save</button></div></div>';
+  document.body.appendChild(el);
+  document.getElementById('padr-status').value = p.status || 'Goal-setting';
+  document.getElementById('padr-rating').value = String(p.rating || 0);
+}
+async function tkPadrSave(id) {
+  const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  (p.goals || []).forEach((g, i) => { const el = document.getElementById('padr-mgr-' + i); if (el && el.value) g.mgrScore = +el.value; });
+  p.status = document.getElementById('padr-status').value;
+  p.rating = +document.getElementById('padr-rating').value || 0;
+  p.idp = document.getElementById('padr-idp').value;
+  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); document.getElementById('padrOverlay').remove(); toast('PADR updated'); tkRenderPerformance(); }
+  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Employee self-assessment of their own PADR goals. */
+async function tkMyGoals() {
+  await tkLoadColl('padr');
+  const u = TK.user || {}; const me = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
+  const p = (_HR.padr || []).find(x => me && x.empId === me.id);
+  document.getElementById('myGoalsOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'myGoalsOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  if (!p) { el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">My Goals (PADR)</div><button class="modal-close" onclick="document.getElementById(\'myGoalsOverlay\').remove()">✕</button></div><div style="padding:14px;color:var(--text-light);font-size:13px">No PADR cycle has been set up for you yet. Your manager will agree your goals at the start of the cycle.</div></div>'; document.body.appendChild(el); return; }
+  const rows = (p.goals || []).map((g, i) => '<tr><td style="font-size:12px">' + (g.objective || '') + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="font-size:11px;color:var(--text-light)">' + (g.target || '') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.selfScore || '') + '" style="width:48px;text-align:center" id="mygoal-' + i + '"></td></tr>').join('');
+  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">My Goals — ' + (p.cycle || '') + ' PADR</div><button class="modal-close" onclick="document.getElementById(\'myGoalsOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Rate your own achievement 1–5 against each agreed objective, then submit your self-assessment.</div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Target</th><th>Self-score</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    (p.rating ? '<div style="margin-top:12px;padding:10px 12px;background:var(--soft-bg);border-radius:8px;font-size:12px">Final rating: ' + _hrStars(p.rating) + ' · ' + (p.idp ? ('IDP: ' + p.idp) : '') + '</div>' : '') +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'myGoalsOverlay\').remove()">Close</button><button class="btn btn-emerald" onclick="tkMyGoalsSubmit(\'' + p.id + '\')">Submit self-assessment</button></div></div>';
+  document.body.appendChild(el);
+}
+async function tkMyGoalsSubmit(id) {
+  const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
+  (p.goals || []).forEach((g, i) => { const el = document.getElementById('mygoal-' + i); if (el && el.value) g.selfScore = +el.value; });
+  if (p.status === 'Goal-setting' || p.status === 'Mid-year') p.status = 'Self-assessment';
+  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); document.getElementById('myGoalsOverlay').remove(); toast('Self-assessment submitted to your manager'); }
+  catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+}
 
 /* Talent Management */
+const _NINEBOX = [
+  [{ box: 'High Potential', c: '#3168A8' }, { box: 'High Potential', c: '#3168A8' }, { box: 'Star', c: '#00B060' }],
+  [{ box: 'Inconsistent', c: '#F59E0B' }, { box: 'Core Performer', c: '#205090' }, { box: 'High Performer', c: '#10B981' }],
+  [{ box: 'Risk', c: '#EF4444' }, { box: 'Solid Performer', c: '#8B5CF6' }, { box: 'Solid Performer', c: '#8B5CF6' }]
+];
 async function tkRenderTalent() {
   const root = document.getElementById('talent-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await tkLoadColl('talent');
   const t = _HR.talent;
+  const lvl = v => v === 'High' ? 2 : v === 'Medium' ? 1 : 0;
   const kpis = _hrKpiRow([
     _hrKpi('Assessed', t.length),
     _hrKpi('High Potential', t.filter(x => x.potential === 'High').length, 'var(--emerald)'),
     _hrKpi('Stars', t.filter(x => x.box === 'Star').length, '#F59E0B'),
-    _hrKpi('Successors Ready', t.filter(x => x.box === 'Star' || x.box === 'High Potential').length, '#8B5CF6')
+    _hrKpi('Ready Now', t.filter(x => x.succession === 'Ready Now').length, '#8B5CF6')
   ]);
-  const boxes = ['Star', 'High Potential', 'Core Performer', 'Solid Performer'];
-  const cards = boxes.map(b => {
-    const items = t.filter(x => x.box === b);
-    return '<div class="card" style="padding:16px 18px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">' + b + ' <span style="color:var(--text-light);font-weight:500">(' + items.length + ')</span></div>' +
-      (items.length ? items.map(x => { const e = _hrEmp(x.empId); return '<div style="display:flex;align-items:center;gap:9px;margin-bottom:8px">' + _hrAv(e || { ini: (x.name || '?').slice(0, 2).toUpperCase() }) + '<div><div style="font-size:13px;font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.title || x.dept || '') + '</div></div></div>'; }).join('') : '<div style="font-size:12px;color:var(--text-light)">—</div>') + '</div>';
-  }).join('');
-  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px">' + cards + '</div>';
+  const cellFor = (pr, po) => t.filter(x => lvl(x.performance) === pr && lvl(x.potential) === po);
+  let grid = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:4px">9-Box Talent Grid</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Performance (→) × Potential (↑) · click a name to edit</div>';
+  grid += '<div>';
+  for (let po = 2; po >= 0; po--) {
+    grid += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">';
+    for (let pr = 0; pr <= 2; pr++) {
+      const def = _NINEBOX[2 - po][pr]; const items = cellFor(pr, po);
+      grid += '<div style="background:' + def.c + '14;border:1px solid ' + def.c + '55;border-radius:8px;padding:8px;min-height:80px"><div style="font-size:9px;font-weight:700;color:' + def.c + ';text-transform:uppercase;margin-bottom:4px">' + def.box + '</div>' +
+        items.map(x => '<div style="font-size:11px;font-weight:600;cursor:pointer;padding:1px 0" onclick="tkQuickAdd(\'talent\',\'' + x.id + '\')" title="Edit">' + (x.name || '') + '</div>').join('') + '</div>';
+    }
+    grid += '</div>';
+  }
+  grid += '</div><div style="text-align:center;font-size:11px;font-weight:700;color:var(--text-light);margin-top:4px">PERFORMANCE →</div></div>';
+  const succ = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Succession &amp; Readiness</div></div><div class="table-wrap"><table><thead><tr><th>Employee</th><th>Department</th><th>9-Box</th><th>Performance</th><th>Potential</th><th>Succession</th><th></th></tr></thead><tbody>' +
+    (t.length ? t.map(x => { const e = _hrEmp(x.empId); const sc = x.succession === 'Ready Now' ? 'b-ok' : x.succession === 'Develop in Role' ? 'b-warn' : 'b-info'; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e || { ini: (x.name || '?').slice(0, 2) }) + '<span style="font-weight:600">' + (x.name || '') + '</span></div></td><td>' + (x.dept || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + (x.box || '—') + '</span></td><td>' + (x.performance || '—') + '</td><td>' + (x.potential || '—') + '</td><td><span class="badge ' + sc + '" style="font-size:10px">' + (x.succession || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('talent', x.id, 'talent') + '</td></tr>'; }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No assessments yet</td></tr>') + '</tbody></table></div></div>';
+  root.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'talent\')">+ Assess Employee</button></div>' + kpis + grid + succ;
 }
 
-/* Training & Development */
+/* Training & Development — Catalog + Competency Matrix (Training Matrix HML-AHU-TM-001) */
 async function tkRenderTraining() {
   const root = document.getElementById('training-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await tkLoadColl('courses');
+  await Promise.all([tkLoadColl('courses'), tkLoadColl('competency')]);
   const c = _HR.courses;
   const totalEnroll = c.reduce((s, x) => s + (+x.enrolled || 0), 0);
   const kpis = _hrKpiRow([
     _hrKpi('Courses', c.length),
-    _hrKpi('Active', c.filter(x => x.status === 'Active').length, 'var(--emerald)'),
-    _hrKpi('Enrollments', totalEnroll, '#8B5CF6'),
-    _hrKpi('Categories', [...new Set(c.map(x => x.category).filter(Boolean))].length, '#F59E0B')
+    _hrKpi('Mandatory', c.filter(x => x.type === 'Mandatory').length, '#F59E0B'),
+    _hrKpi('Enrolments', totalEnroll, '#8B5CF6'),
+    _hrKpi('Tracked staff', (_HR.competency || []).length, 'var(--emerald)')
   ]);
-  const cards = c.length ? c.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.status === 'Active' ? 'b-ok' : 'b-warn') + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + (x.enrolled || 0) + ' enrolled</div><div style="display:flex;gap:4px">' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
-  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div>';
+  const cards = c.length ? c.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:8px"><div style="font-weight:700;font-size:14px">' + (x.title || '') + '</div><span class="badge ' + (x.type === 'Mandatory' ? 'b-warn' : 'b-info') + '" style="font-size:10px;flex-shrink:0">' + (x.type || 'Optional') + '</span></div><div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' + (x.category || '') + ' · ' + (x.duration || '') + ' · ' + (x.status || 'Active') + '</div><div style="display:flex;align-items:center;justify-content:space-between"><div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>' + (x.enrolled || 0) + ' enrolled</div><div style="display:flex;gap:4px">' + _hrEditDel('courses', x.id, 'training') + '</div></div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No courses yet</div>';
+  const catalog = '<div id="trn-catalog"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px">' + cards + '</div></div>';
+  // competency matrix
+  const comp = _HR.competency || [];
+  const colSet = []; comp.forEach(r => Object.keys(r.cells || {}).forEach(k => { if (!colSet.includes(k)) colSet.push(k); }));
+  const glyph = s => { const m = { '✓': 'var(--emerald)', 'T': '#F59E0B', 'X': '#EF4444', '—': '#cbd5e1' }; return '<span style="color:' + (m[s] || '#cbd5e1') + ';font-weight:700">' + (s || '—') + '</span>'; };
+  const matrix = '<div id="trn-matrix" style="display:none"><div class="card" style="padding:14px 16px;margin-bottom:14px;display:flex;gap:18px;flex-wrap:wrap;font-size:12px"><span><b>Legend:</b></span><span>' + glyph('✓') + ' Trained &amp; current</span><span>' + glyph('T') + ' In progress</span><span>' + glyph('X') + ' Required, not trained</span><span>' + glyph('—') + ' N/A</span></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix — HML-AHU-TM-001</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
+    (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
+  root.innerHTML = kpis +
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
+    catalog + matrix;
 }
+function tkTrnTab(tab, el) { ['catalog', 'matrix'].forEach(t => { const p = document.getElementById('trn-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#training-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
 
 /* ════ Payroll — Salary 3Ps model (per HML-CB-001 C&B Policy v01.0) ════ */
 const _PAY_FMT = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
@@ -4382,7 +4494,14 @@ const _QA_SPECS = {
     { k: 'status', label: 'Status', type: 'select', options: ['Self-assessment', 'In Review', 'Completed'] }] },
   courses: { title: 'Add Course', coll: 'courses', reload: 'training', fields: [
     { k: 'title', label: 'Course Title' }, { k: 'category', label: 'Category' }, { k: 'duration', label: 'Duration' },
-    { k: 'status', label: 'Status', type: 'select', options: ['Active', 'Draft', 'Archived'] }] }
+    { k: 'type', label: 'Type', type: 'select', options: ['Mandatory', 'Optional'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Active', 'Draft', 'Archived'] }] },
+  talent: { title: 'Talent Assessment', coll: 'talent', reload: 'talent', fields: [
+    { k: 'name', label: 'Employee Name' }, { k: 'dept', label: 'Department' }, { k: 'title', label: 'Position' },
+    { k: 'performance', label: 'Performance', type: 'select', options: ['High', 'Medium', 'Low'] },
+    { k: 'potential', label: 'Potential', type: 'select', options: ['High', 'Medium', 'Low'] },
+    { k: 'box', label: '9-Box', type: 'select', options: ['Star', 'High Potential', 'High Performer', 'Core Performer', 'Solid Performer', 'Inconsistent', 'Risk'] },
+    { k: 'succession', label: 'Succession', type: 'select', options: ['Ready Now', 'Ready in 1 year', 'Ready in 2-3 years', 'Develop in Role'] }] }
 };
 let _qaType = null, _qaEditId = null;
 function tkQuickAdd(type, id) {
