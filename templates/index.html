@@ -3501,10 +3501,12 @@ function _initStaffDashboard() {
     }).join('');
   }
 
-  /* leave list */
+  /* leave list — filtered to the current user */
   const leaveList = document.getElementById('staff-leave-list');
   if (leaveList) {
-    const myLeave = _DEMO_LEAVE.slice(0, 4);
+    const meId = (TK.user || {}).id;
+    const mine = (_DEMO_LEAVE || []).filter(l => (meId && (l.emp_id === meId)) || l.emp_name === _staffName);
+    const myLeave = (mine.length ? mine : (_DEMO_LEAVE || [])).slice(0, 4);
     leaveList.innerHTML = myLeave.map(l => {
       const sColor = l.status === 'approved' ? 'var(--emerald)' : l.status === 'pending' ? 'var(--warning)' : 'var(--danger)';
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--soft-bg);border-radius:8px;font-size:12px">
@@ -5318,30 +5320,38 @@ async function tkSetLevel(id, level) {
     tkAudit('Access level changed', e.name, _LEVEL_LABEL[level]);
     tkNotifyGraph(e.email, 'Your Humiley access level was updated', 'Hi ' + (e.name || '') + ', your system access level is now ' + (_LEVEL_LABEL[level] || level) + '. It applies at your next sign-in.\n\nHumiley HR');
     toast(e.name + ' → ' + (_LEVEL_LABEL[level] || level));
+    try { tkRenderPermissions(); } catch (x) {}
   } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
 }
 
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
   const el = document.getElementById('dash-hr-modules'); if (!el) return;
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const openReq = (_HR.jobs || []).filter(j => j.status !== 'Closed').reduce((s, j) => s + (parseInt(j.openings, 10) || 0), 0);
+  const onboard = (_HR.onboarding || []).filter(o => (o.tasks || []).some(t => !t.done)).length;
+  const exitsOpen = (_HR.exits || []).filter(x => x.status !== 'Completed').length;
+  const reviews = _HR.reviews || []; const avgR = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
   const mods = [
-    { id: 'database', label: 'Employee DB', title: 'Employee Database', icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>' },
-    { id: 'recruitment', label: 'Recruitment', title: 'Recruitment', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>' },
-    { id: 'onboarding', label: 'Onboarding', title: 'Onboarding', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>' },
-    { id: 'offboarding', label: 'Offboarding', title: 'Offboarding & Exit', icon: '<path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>' },
-    { id: 'performance', label: 'Performance', title: 'Performance Management', icon: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>' },
-    { id: 'talent', label: 'Talent', title: 'Talent Management', icon: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>' },
-    { id: 'training', label: 'Training', title: 'Training & Development', icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
-    { id: 'payroll', label: 'Payroll', title: 'Payroll', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' }
+    { id: 'database', label: 'Employee DB', title: 'Employee Database', count: emps.length, icon: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>' },
+    { id: 'recruitment', label: 'Recruitment', title: 'Recruitment', count: openReq + ' open', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>' },
+    { id: 'onboarding', label: 'Onboarding', title: 'Onboarding', count: onboard, icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/>' },
+    { id: 'offboarding', label: 'Offboarding', title: 'Offboarding & Exit', count: exitsOpen, icon: '<path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>' },
+    { id: 'performance', label: 'Performance', title: 'Performance Management', count: avgR + '/5', icon: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>' },
+    { id: 'talent', label: 'Talent', title: 'Talent Management', count: (_HR.talent || []).length, icon: '<circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/>' },
+    { id: 'training', label: 'Training', title: 'Training & Development', count: (_HR.courses || []).length, icon: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>' },
+    { id: 'payroll', label: 'Payroll', title: 'Payroll', count: '', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
+    { id: 'reports', label: 'Reports', title: 'Reports & Analytics', count: '', icon: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>' }
   ];
-  el.innerHTML = mods.map(m => '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + m.icon + '</svg><div style="font-size:12px;font-weight:600;color:var(--navy)">' + m.label + '</div></button>').join('');
+  el.innerHTML = mods.map(m => '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="position:relative;background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s">' + (m.count !== '' && m.count != null ? '<span style="position:absolute;top:6px;right:8px;font-size:10px;font-weight:700;color:var(--navy);background:var(--light-tint);padding:1px 6px;border-radius:8px">' + m.count + '</span>' : '') + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + m.icon + '</svg><div style="font-size:12px;font-weight:600;color:var(--navy)">' + m.label + '</div></button>').join('');
 }
 
 /* Manager dashboard — all-HRM metrics across every module. */
 async function tkRenderHrMetrics() {
   const wrap = document.getElementById('dash-hr-metrics'); if (!wrap) return;
   wrap.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
-  await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent')]);
+  await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent'), tkLoadColl('exits')]);
+  try { tkRenderHrModules(); } catch (e) {}
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const today = new Date().toISOString().slice(0, 10);
   const present = (_DEMO_ATTENDANCE || []).filter(r => r.date === today && (r.in || r.clock_in)).length;
@@ -5372,10 +5382,52 @@ async function tkRenderHrMetrics() {
   const fmax = Math.max(1, ...funnel);
   const dist = [5, 4, 3, 2, 1].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
   const rmax = Math.max(1, ...dist);
+  // gender split
+  const byGender = {}; emps.forEach(e => { const g = e.gender || 'Unspecified'; byGender[g] = (byGender[g] || 0) + 1; });
+  const gmax = Math.max(1, ...Object.values(byGender));
+  // tenure bands
+  const yrNow = new Date().getFullYear(); const bands = { '< 1 yr': 0, '1–3 yrs': 0, '3–5 yrs': 0, '5+ yrs': 0 };
+  emps.forEach(e => { const p = _tkDateParts(e.startDate); const y = p ? yrNow - p.y : 0; if (y < 1) bands['< 1 yr']++; else if (y < 3) bands['1–3 yrs']++; else if (y < 5) bands['3–5 yrs']++; else bands['5+ yrs']++; });
+  const bmax = Math.max(1, ...Object.values(bands));
+  // payroll cost by dept
+  const payByDept = {}; emps.forEach(e => { try { payByDept[e.dept || '—'] = (payByDept[e.dept || '—'] || 0) + _payComputed(e, ratingBy[e.id]).employerCost; } catch (x) {} });
+  const pmax = Math.max(1, ...Object.values(payByDept));
+  const moneyBar = (lab, v, mx, c) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:110px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + lab + '</div><div style="flex:1;background:#fff;border-radius:5px;height:18px"><div style="width:' + Math.round(v / mx * 100) + '%;background:' + (c || 'var(--navy)') + ';height:100%;border-radius:5px;min-width:2px"></div></div><div style="width:84px;text-align:right;font-size:10px;font-weight:700">' + _PAY_FMT(v) + '</div></div>';
   ch.innerHTML =
     '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div>' + Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]).map(d => bar(d, byDept[d], dmax, '#205090')).join('') + '</div>' +
     '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Recruitment Funnel</div>' + stages.map((s, i) => bar(s, funnel[i], fmax, '#00B060')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Performance Distribution</div>' + [5, 4, 3, 2, 1].map((n, i) => bar(n + '★', dist[i], rmax, '#F59E0B')).join('') + '</div>';
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Performance Distribution</div>' + [5, 4, 3, 2, 1].map((n, i) => bar(n + '★', dist[i], rmax, '#F59E0B')).join('') + '</div>' +
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Gender Split</div>' + Object.keys(byGender).map(g => bar(g, byGender[g], gmax, '#8B5CF6')).join('') + '</div>' +
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Tenure Bands</div>' + Object.keys(bands).map(b => bar(b, bands[b], bmax, '#3168A8')).join('') + '</div>' +
+    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Employer Cost by Department</div>' + Object.keys(payByDept).sort((a, b) => payByDept[b] - payByDept[a]).map(d => moneyBar(d, payByDept[d], pmax, '#F59E0B')).join('') + '</div>';
+  try { tkRenderDashLevelBand(); } catch (e) {}
+}
+/* B1 — level-adaptive band: Admin sees access/audit, Management sees finance, Manager sees team focus. */
+async function tkRenderDashLevelBand() {
+  let band = document.getElementById('dash-level-band');
+  const charts = document.getElementById('dash-hr-charts'); if (!charts) return;
+  if (!band) { band = document.createElement('div'); band.id = 'dash-level-band'; band.style.marginTop = '18px'; charts.parentNode.insertBefore(band, charts.nextSibling); }
+  const lvl = (typeof _userLevel !== 'undefined' && _userLevel) || 'manager';
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const card = (title, body) => '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">' + title + '</div>' + body + '</div>';
+  const chip = (l, v, c) => '<div style="display:inline-block;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:0 8px 8px 0"><div style="font-size:18px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div><div style="font-size:11px;color:var(--text-light)">' + l + '</div></div>';
+  if (lvl === 'admin') {
+    await tkLoadColl('audit');
+    const counts = { staff: 0, manager: 0, management: 0, admin: 0 }; (_DEMO_EMPLOYEES || []).forEach(e => { const d = _deriveLevel(e); counts[d] = (counts[d] || 0) + 1; });
+    const recent = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 6);
+    band.innerHTML = card('System &amp; Access (Admin)',
+      chip('Staff', counts.staff) + chip('Managers', counts.manager, '#205090') + chip('Management', counts.management, '#8B5CF6') + chip('Admins', counts.admin, '#F59E0B') +
+      '<div style="margin-top:6px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:600">Manage access levels →</a></div>' +
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:12px 0 4px">Recent activity</div>' +
+      (recent.length ? recent.map(a => '<div style="font-size:11.5px;padding:2px 0;color:var(--text-light)"><span style="color:var(--text-dark);font-weight:600">' + (a.actor || '') + '</span> · ' + (a.action || '') + ' · ' + (a.target || '') + '</div>').join('') : '<div style="font-size:12px;color:var(--text-light)">No activity yet</div>'));
+  } else if (lvl === 'management') {
+    let gross = 0, erCost = 0; const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+    emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
+    const exits = (_HR.exits || []).length; const turnover = emps.length ? Math.round(exits / emps.length * 1000) / 10 : 0;
+    band.innerHTML = card('Workforce &amp; Finance (Management)',
+      chip('Monthly gross', _PAY_FMT(gross), '#F59E0B') + chip('Employer cost', _PAY_FMT(erCost), 'var(--navy)') + chip('Headcount', emps.length, '#8B5CF6') + chip('Turnover (yr)', turnover + '%', '#EF4444') +
+      '<div style="margin-top:6px"><a onclick="showView(\'payroll\',null,\'Payroll\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:600">Open payroll →</a></div>');
+  } else { band.innerHTML = ''; }
 }
 
 /* Quick-add modal for the HR collections */
@@ -6551,10 +6603,34 @@ function switchReportTab(tab, el) {
   const active = document.getElementById('rpt-' + tab);
   if (active) active.style.display = 'block';
   if (tab === 'inout') renderInOutReport();
+  if (tab === 'leave') renderLeaveReport();
 }
 
 function renderLeaveReport() {
-  // placeholder — static HTML is already shown; could filter here
+  const tbody = document.getElementById('leave-report-tbody'); if (!tbody) return;
+  const deptF = (document.querySelector('#rpt-leave .sel-filter') || {}).value || 'All Employees';
+  const typeF = (document.getElementById('rpt-leave-type') || {}).value || 'All Types';
+  const statF = (document.getElementById('rpt-leave-status') || {}).value || 'All Status';
+  const badge = s => { const m = { approved: 'b-ok', pending: 'b-warn', rejected: 'b-danger' }; return m[(s || '').toLowerCase()] || 'b-warn'; };
+  let rows = (_DEMO_LEAVE || []).filter(l => {
+    const dept = l.emp_dept || l.dept || '';
+    const matchD = deptF === 'All Employees' || deptF === 'All Departments' || dept === deptF;
+    const matchT = typeF === 'All Types' || (l.type || '') === typeF;
+    const matchS = statF === 'All Status' || (l.status || '').toLowerCase() === statF.toLowerCase();
+    return matchD && matchT && matchS;
+  });
+  // stat boxes
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('lr-total', rows.length);
+  set('lr-approved', rows.filter(l => (l.status || '').toLowerCase() === 'approved').length);
+  set('lr-pending', rows.filter(l => (l.status || '').toLowerCase() === 'pending').length);
+  set('lr-rejected', rows.filter(l => (l.status || '').toLowerCase() === 'rejected').length);
+  set('lr-days', rows.reduce((s, l) => s + (+l.days || 0), 0));
+  const emp = nm => (_DEMO_EMPLOYEES || []).find(e => e.name === nm);
+  tbody.innerHTML = rows.length ? rows.map(l => {
+    const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: '#205090', ini: nm.slice(0, 2).toUpperCase() };
+    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + nm + '</span></div></td><td>' + (l.emp_dept || l.dept || '') + '</td><td>' + (l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-light)">No leave records match your filters.</td></tr>';
 }
 
 function renderInOutReport() {
