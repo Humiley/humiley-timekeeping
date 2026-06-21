@@ -3338,10 +3338,10 @@ function tkRenderStaffPortal() {
   const empty = t => '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:10px 0">' + t + '</div>';
 
   /* Announcements (curated) */
-  const ann = [
+  const ann = (window._TK_ANNOUNCEMENTS && window._TK_ANNOUNCEMENTS.length) ? window._TK_ANNOUNCEMENTS : [
     { tag: 'HR', color: '#205090', title: 'Mid-Year Performance Reviews', body: 'Self-assessments are open through 15 July. Complete yours and book a 1:1 with your manager.' },
-    { tag: 'Benefits', color: '#00B060', title: 'New Health & Wellness Program', body: 'Annual health check-ups and a monthly wellness allowance are now available to all full-time staff.' },
-    { tag: 'Facilities', color: '#8B5CF6', title: 'HQ District 10 — Floor Refresh', body: 'Level 3 meeting rooms are being upgraded this month. Please use the booking system for alternatives.' }
+    { tag: 'Safety', color: '#F59E0B', title: 'HSE Refresher — Long An Factory', body: 'Mandatory health & safety refresher for all site and factory staff this month. Check your email for your scheduled slot.' },
+    { tag: 'Company', color: '#00B060', title: 'Q2 Town Hall — Project Highlights', body: 'Join the company-wide town hall to review Q2 delivery milestones and the H2 roadmap. Calendar invite to follow.' }
   ];
   const annEl = document.getElementById('staff-announcements');
   if (annEl) annEl.innerHTML = ann.map(a => '<div style="border-left:3px solid ' + a.color + ';padding:2px 0 2px 12px">' +
