@@ -3112,7 +3112,10 @@ function tkMarkAllRead() {
 
 async function tkApprove(id, btn) {
   const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+  const _l = (_DEMO_LEAVE || []).find(x => x.id == id) || {}; const _e = _hrEmp(_l.emp_id) || {};
   await tkPersist('/api/leave/' + id, { status: 'approved' }, 'PATCH');
+  tkAudit('Leave approved', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
+  tkNotifyGraph(_e.email, 'Your leave request was approved', 'Hi ' + (_e.name || '') + ', your ' + (_l.type || 'leave') + ' request has been approved.\n\nHumiley HR');
   try { await tkBootstrap(); } catch (e) {}
   tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {}
   if (typeof toast === 'function') toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Leave approved');
@@ -3120,7 +3123,10 @@ async function tkApprove(id, btn) {
 
 async function tkReject(id, btn) {
   const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+  const _l = (_DEMO_LEAVE || []).find(x => x.id == id) || {}; const _e = _hrEmp(_l.emp_id) || {};
   await tkPersist('/api/leave/' + id, { status: 'rejected' }, 'PATCH');
+  tkAudit('Leave rejected', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
+  tkNotifyGraph(_e.email, 'Your leave request was rejected', 'Hi ' + (_e.name || '') + ', your ' + (_l.type || 'leave') + ' request has been rejected. Please speak with your manager.\n\nHumiley HR');
   try { await tkBootstrap(); } catch (e) {}
   tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {}
   if (typeof toast === 'function') toast('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Leave rejected');
@@ -3822,7 +3828,27 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [] };
+/* Audit log — record who did what, when (persisted to the audit collection). */
+function tkAudit(action, target, detail) {
+  const entry = { ts: new Date().toISOString(), tsDisp: new Date().toLocaleString('en-GB'), actor: (TK.user && TK.user.name) || 'System', actorId: (TK.user && TK.user.id) || '', action: action, target: target || '', detail: detail || '' };
+  (_HR.audit = _HR.audit || []).unshift(entry);
+  try { tkApi('/api/coll/audit', { method: 'POST', body: entry }).catch(() => {}); } catch (e) {}
+}
+/* Background-safe notification: silent Microsoft Graph email + optional Teams webhook. No mailto (won't hijack the browser). */
+async function tkNotifyGraph(to, subject, body) {
+  let sent = false;
+  if (to && _msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true }) });
+      sent = resp.ok;
+    } catch (e) {}
+  }
+  const hook = window._TK_TEAMS_WEBHOOK || (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook);
+  if (hook) { try { fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: subject, text: body }) }).catch(() => {}); sent = true; } catch (e) {} }
+  return sent;
+}
 /* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
 const _ONBOARD_TEMPLATE = [
   { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
@@ -3889,6 +3915,7 @@ async function tkHireCandidate(id) {
     await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: { ...c, stage: 'Hired' } });
     c.stage = 'Hired';
     await tkReloadEmployees();
+    tkAudit('Candidate hired', c.name, 'as ' + (c.role || '') + ' · ' + emp.id);
     tkRenderRecruitment();
     toast(c.name + ' hired → added to roster (' + emp.id + ') & onboarding started', 'success', 6000);
   } catch (e) { toast('Hire failed: ' + e.message, 'error', 6000); }
@@ -3938,7 +3965,7 @@ async function tkReqApprove(id) {
   j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Approved', ts: new Date().toLocaleDateString('en-GB') };
   j.appStep = step + 1;
   j.status = j.appStep >= _REQ_CHAIN.length ? 'Approved' : 'Pending ' + _REQ_CHAIN[j.appStep];
-  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); toast(_REQ_CHAIN[step] + ' approved'); tkReqRouting(id); tkRenderRecruitment(); }
+  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition approved · ' + _REQ_CHAIN[step], j.title, j.status); toast(_REQ_CHAIN[step] + ' approved'); tkReqRouting(id); tkRenderRecruitment(); }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 async function tkReqReject(id) {
@@ -3946,7 +3973,7 @@ async function tkReqReject(id) {
   const step = j.appStep || 0;
   j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Rejected', ts: new Date().toLocaleDateString('en-GB') };
   j.status = 'On Hold';
-  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); toast('Requisition rejected at ' + _REQ_CHAIN[step], 'warn'); document.getElementById('reqRouteOverlay')?.remove(); tkRenderRecruitment(); }
+  try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition rejected · ' + _REQ_CHAIN[step], j.title, ''); toast('Requisition rejected at ' + _REQ_CHAIN[step], 'warn'); document.getElementById('reqRouteOverlay')?.remove(); tkRenderRecruitment(); }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
@@ -3976,7 +4003,7 @@ async function tkEvalSave(id) {
   let tot = 0; _EVAL_CRIT.forEach(cr => { ev[cr.k] = +document.getElementById('eval-' + cr.k).value || 0; tot += ev[cr.k] * cr.w / 100; });
   ev.score = +tot.toFixed(2);
   c.eval = ev; if (ev.score) c.rating = Math.round(ev.score);
-  try { await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c }); document.getElementById('evalOverlay').remove(); toast('Evaluation saved (' + ev.score + '/5 · ' + (ev.rec || '') + ')'); tkRenderRecruitment(); }
+  try { await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c }); tkAudit('Interview evaluated', c.name, ev.score + '/5 · ' + (ev.rec || '')); document.getElementById('evalOverlay').remove(); toast('Evaluation saved (' + ev.score + '/5 · ' + (ev.rec || '') + ')'); tkRenderRecruitment(); }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
@@ -4180,7 +4207,12 @@ async function tkPadrSave(id) {
   p.status = document.getElementById('padr-status').value;
   p.rating = +document.getElementById('padr-rating').value || 0;
   p.idp = document.getElementById('padr-idp').value;
-  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); document.getElementById('padrOverlay').remove(); toast('PADR updated'); tkRenderPerformance(); }
+  try {
+    await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p });
+    tkAudit('PADR ' + (p.status === 'Finalized' ? 'finalized' : 'updated'), p.name || '', p.rating ? ('Rating ' + p.rating + '/5') : p.status);
+    if (p.status === 'Finalized') { const e = _hrEmp(p.empId) || {}; tkNotifyGraph(e.email, 'Your PADR review is finalized', 'Hi ' + (e.name || '') + ', your ' + (p.cycle || '') + ' performance review has been finalized with a rating of ' + (p.rating || '-') + '/5.\n\nHumiley HR'); }
+    document.getElementById('padrOverlay').remove(); toast('PADR updated'); tkRenderPerformance();
+  }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 /* Employee self-assessment of their own PADR goals. */
@@ -4203,7 +4235,7 @@ async function tkMyGoalsSubmit(id) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
   (p.goals || []).forEach((g, i) => { const el = document.getElementById('mygoal-' + i); if (el && el.value) g.selfScore = +el.value; });
   if (p.status === 'Goal-setting' || p.status === 'Mid-year') p.status = 'Self-assessment';
-  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); document.getElementById('myGoalsOverlay').remove(); toast('Self-assessment submitted to your manager'); }
+  try { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); tkAudit('PADR self-assessment submitted', p.name || (TK.user || {}).name, p.cycle || ''); const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === ((_tkMe() || {}).managerEmail || '').toLowerCase()); if (mgr) tkNotifyGraph(mgr.email, 'PADR self-assessment ready to review', (p.name || '') + ' has submitted their ' + (p.cycle || '') + ' PADR self-assessment for your review.\n\nHumiley HR'); document.getElementById('myGoalsOverlay').remove(); toast('Self-assessment submitted to your manager'); }
   catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
 }
 
@@ -4548,7 +4580,7 @@ function _tkMe() { const u = TK.user || {}; return (_DEMO_EMPLOYEES || []).find(
 /* Employee — e-acknowledge a policy/document. */
 async function tkAckDoc(doc) {
   const e = _tkMe(); if (!e) return;
-  try { const res = await tkApi('/api/coll/acks', { method: 'POST', body: { empId: e.id, doc: doc, ts: new Date().toLocaleDateString('en-GB') } }); (_HR.acks = _HR.acks || []).push(res.item); toast('Acknowledged: ' + doc); tkRenderMyProfile(); }
+  try { const res = await tkApi('/api/coll/acks', { method: 'POST', body: { empId: e.id, doc: doc, ts: new Date().toLocaleDateString('en-GB') } }); (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc); toast('Acknowledged: ' + doc); tkRenderMyProfile(); }
   catch (err) { toast('Could not save: ' + err.message, 'error', 5000); }
 }
 /* Employee — submit a benefit/welfare claim. */
@@ -4565,7 +4597,7 @@ function tkSubmitClaim() {
 async function tkClaimSave() {
   const e = _tkMe();
   const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', type: document.getElementById('claim-type').value, amount: +document.getElementById('claim-amount').value || 0, note: document.getElementById('claim-note').value, status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
-  try { await tkApi('/api/coll/claims', { method: 'POST', body }); document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); }
+  try { await tkApi('/api/coll/claims', { method: 'POST', body }); tkAudit('Claim submitted', body.name, body.type + ' ' + _PAY_FMT(body.amount)); document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
 }
 
@@ -4574,6 +4606,7 @@ async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr')]);
+  if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
   const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me);
   const claims = (_HR.claims || []).filter(c => (c.status || '') === 'Submitted');
@@ -4590,21 +4623,35 @@ async function tkRenderInbox() {
   const claimRows = '<thead><tr><th>Employee</th><th>Type</th><th>Amount</th><th>Note</th><th></th></tr></thead><tbody>' + claims.map(c => '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.type || '') + '</td><td>' + _PAY_FMT(c.amount || 0) + '</td><td style="font-size:12px;color:var(--text-light)">' + (c.note || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxClaim(\'' + c.id + '\',\'Rejected\')">Reject</button></td></tr>').join('') + '</tbody>';
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
-  root.innerHTML = kpis + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
+  const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
     sec('Benefit &amp; Welfare Claims', claims.length, claimRows) +
     sec('Recruitment Requisitions', reqs.length, reqRows) +
-    sec('PADR Self-Assessments', padr.length, padrRows);
+    sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
+  const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
+  const auditHtml = '<div id="inbox-audit" style="display:none"><div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Activity Log</div><span style="font-size:11px;color:var(--text-light)">Who did what, when</span></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>' +
+    (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.tsDisp || '') + '</td><td style="font-weight:600">' + (a.actor || '') + '</td><td>' + (a.action || '') + '</td><td>' + (a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + (a.detail || '') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No activity yet</td></tr>') + '</tbody></table></div></div></div>';
+  root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkInboxTab(\'pending\',this)">Pending</button><button class="tab" onclick="tkInboxTab(\'audit\',this)">Activity Log</button></div>' + pendingHtml + auditHtml;
   tkUpdateInboxBadge(total);
 }
+function tkInboxTab(tab, el) { ['pending', 'audit'].forEach(t => { const p = document.getElementById('inbox-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#inbox-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
 async function tkInboxLeave(id, status) {
+  const l = (_DEMO_LEAVE || []).find(x => x.id == id) || {};
+  const emp = _hrEmp(l.emp_id) || {};
   await tkPersist('/api/leave/' + id, { status: status }, 'PATCH');
+  tkAudit('Leave ' + status, l.emp_name || emp.name || '', (l.type || '') + ' ' + (l.startDate || '') + '→' + (l.endDate || ''));
+  tkNotifyGraph(emp.email, 'Your leave request was ' + status, 'Hi ' + (emp.name || '') + ',\n\nYour ' + (l.type || 'leave') + ' request (' + (l.startDate || '') + ' to ' + (l.endDate || '') + ') has been ' + status + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nHumiley HR');
   try { await tkBootstrap(); } catch (e) {}
   toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
 }
 async function tkInboxClaim(id, status) {
   const c = (_HR.claims || []).find(x => x.id === id); if (!c) return; c.status = status;
-  try { await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c }); toast('Claim ' + status.toLowerCase()); tkRenderInbox(); }
+  try {
+    await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c });
+    tkAudit('Claim ' + status.toLowerCase(), c.name || '', (c.type || '') + ' ' + _PAY_FMT(c.amount || 0));
+    const emp = _hrEmp(c.empId) || {}; tkNotifyGraph(emp.email, 'Your claim was ' + status.toLowerCase(), 'Hi ' + (c.name || '') + ',\n\nYour ' + (c.type || '') + ' claim of ' + _PAY_FMT(c.amount || 0) + ' has been ' + status.toLowerCase() + '.\n\nHumiley HR');
+    toast('Claim ' + status.toLowerCase()); tkRenderInbox();
+  }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 function tkUpdateInboxBadge(total) {
