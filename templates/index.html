@@ -5372,34 +5372,29 @@ async function tkRenderHrMetrics() {
     k('Onboarding', onboard, '#F59E0B'), k('Avg PADR', avgRating + '/5', 'var(--emerald)'), k('Course enrolments', enroll, '#205090'),
     k('Monthly payroll', _PAY_FMT(payGross), '#F59E0B')
   ].join('');
-  // charts
+  // charts (professional Chart.js)
   const ch = document.getElementById('dash-hr-charts'); if (!ch) return;
   const byDept = {}; emps.forEach(e => { byDept[e.dept || '—'] = (byDept[e.dept || '—'] || 0) + 1; });
-  const dmax = Math.max(1, ...Object.values(byDept));
-  const bar = (lab, v, mx, c) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:110px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + lab + '</div><div style="flex:1;background:#fff;border-radius:5px;height:18px"><div style="width:' + Math.round(v / mx * 100) + '%;background:' + (c || 'var(--navy)') + ';height:100%;border-radius:5px;min-width:2px"></div></div><div style="width:26px;text-align:right;font-size:11px;font-weight:700">' + v + '</div></div>';
+  const deptKeys = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]);
   const stages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
   const funnel = stages.map(s => (_HR.candidates || []).filter(c => c.stage === s).length);
-  const fmax = Math.max(1, ...funnel);
   const dist = [5, 4, 3, 2, 1].map(n => reviews.filter(r => (+r.rating || 0) === n).length);
-  const rmax = Math.max(1, ...dist);
-  // gender split
   const byGender = {}; emps.forEach(e => { const g = e.gender || 'Unspecified'; byGender[g] = (byGender[g] || 0) + 1; });
-  const gmax = Math.max(1, ...Object.values(byGender));
-  // tenure bands
   const yrNow = new Date().getFullYear(); const bands = { '< 1 yr': 0, '1–3 yrs': 0, '3–5 yrs': 0, '5+ yrs': 0 };
   emps.forEach(e => { const p = _tkDateParts(e.startDate); const y = p ? yrNow - p.y : 0; if (y < 1) bands['< 1 yr']++; else if (y < 3) bands['1–3 yrs']++; else if (y < 5) bands['3–5 yrs']++; else bands['5+ yrs']++; });
-  const bmax = Math.max(1, ...Object.values(bands));
-  // payroll cost by dept
   const payByDept = {}; emps.forEach(e => { try { payByDept[e.dept || '—'] = (payByDept[e.dept || '—'] || 0) + _payComputed(e, ratingBy[e.id]).employerCost; } catch (x) {} });
-  const pmax = Math.max(1, ...Object.values(payByDept));
-  const moneyBar = (lab, v, mx, c) => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:110px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + lab + '</div><div style="flex:1;background:#fff;border-radius:5px;height:18px"><div style="width:' + Math.round(v / mx * 100) + '%;background:' + (c || 'var(--navy)') + ';height:100%;border-radius:5px;min-width:2px"></div></div><div style="width:84px;text-align:right;font-size:10px;font-weight:700">' + _PAY_FMT(v) + '</div></div>';
-  ch.innerHTML =
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Headcount by Department</div>' + Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]).map(d => bar(d, byDept[d], dmax, '#205090')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Recruitment Funnel</div>' + stages.map((s, i) => bar(s, funnel[i], fmax, '#00B060')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Performance Distribution</div>' + [5, 4, 3, 2, 1].map((n, i) => bar(n + '★', dist[i], rmax, '#F59E0B')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Gender Split</div>' + Object.keys(byGender).map(g => bar(g, byGender[g], gmax, '#8B5CF6')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Tenure Bands</div>' + Object.keys(bands).map(b => bar(b, bands[b], bmax, '#3168A8')).join('') + '</div>' +
-    '<div class="card" style="padding:14px 16px;background:var(--soft-bg)"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:10px">Employer Cost by Department</div>' + Object.keys(payByDept).sort((a, b) => payByDept[b] - payByDept[a]).map(d => moneyBar(d, payByDept[d], pmax, '#F59E0B')).join('') + '</div>';
+  const payKeys = Object.keys(payByDept).sort((a, b) => payByDept[b] - payByDept[a]);
+  const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
+  ch.innerHTML = chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
+    chartCard('Gender Split', 'dc-gender') + chartCard('Tenure Bands', 'dc-tenure') + chartCard('Employer Cost by Dept (₫M)', 'dc-pay');
+  tkBuildDashCharts({
+    deptLabels: deptKeys, deptVals: deptKeys.map(d => byDept[d]),
+    funnelLabels: stages, funnelVals: funnel,
+    perfLabels: ['5★', '4★', '3★', '2★', '1★'], perfVals: dist,
+    genderLabels: Object.keys(byGender), genderVals: Object.values(byGender),
+    tenureLabels: Object.keys(bands), tenureVals: Object.values(bands),
+    payLabels: payKeys, payVals: payKeys.map(d => Math.round(payByDept[d] / 1e6))
+  });
   try { tkRenderDashLevelBand(); } catch (e) {}
 }
 /* B1 — level-adaptive band: Admin sees access/audit, Management sees finance, Manager sees team focus. */
@@ -7389,17 +7384,44 @@ function updateSPConfigStatus() {
    19. CHARTS
 ────────────────────────────────────────────────────────── */
 let _dashChart = null, _trendChart = null, _leaveChart = null, _deptChart = null, _payChart = null;
+/* Professional Chart.js dashboard charts (A1). Registry + destroy-guard so re-entry is safe. */
+const _CHART_FONT = { family: 'Calibri', size: 11 };
+const _BRAND = ['#205090', '#00B060', '#f59e0b', '#8b5cf6', '#3168A8', '#ef4444', '#0ea5e9', '#14b8a6'];
+let _dashHrCharts = {};
+function _mkChart(id, cfg) {
+  const ctx = document.getElementById(id); if (!ctx || typeof Chart === 'undefined') return;
+  if (_dashHrCharts[id]) { try { _dashHrCharts[id].destroy(); } catch (e) {} }
+  _dashHrCharts[id] = new Chart(ctx, cfg);
+}
+const _axisOpts = (horiz) => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { grid: { color: '#f3f4f6', display: !horiz }, ticks: { color: '#6b7280', font: _CHART_FONT } }, y: { grid: { color: '#f3f4f6', display: !!horiz }, ticks: { color: '#374151', font: _CHART_FONT } } } });
+const _doughnutOpts = { responsive: true, maintainAspectRatio: false, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: '#374151', padding: 10, boxWidth: 12 } } } };
+function tkBuildDashCharts(d) {
+  if (typeof Chart === 'undefined') return;
+  _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
+  _mkChart('dc-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.funnelVals, backgroundColor: '#00B060', borderRadius: 5 }] }, options: _axisOpts(false) });
+  _mkChart('dc-perf', { type: 'bar', data: { labels: d.perfLabels, datasets: [{ data: d.perfVals, backgroundColor: '#f59e0b', borderRadius: 5 }] }, options: _axisOpts(false) });
+  _mkChart('dc-gender', { type: 'doughnut', data: { labels: d.genderLabels, datasets: [{ data: d.genderVals, backgroundColor: ['#3168A8', '#8b5cf6', '#94a3b8'], borderWidth: 2, borderColor: '#fff' }] }, options: _doughnutOpts });
+  _mkChart('dc-tenure', { type: 'bar', data: { labels: d.tenureLabels, datasets: [{ data: d.tenureVals, backgroundColor: '#3168A8', borderRadius: 5 }] }, options: _axisOpts(false) });
+  _mkChart('dc-pay', { type: 'bar', data: { labels: d.payLabels, datasets: [{ data: d.payVals, backgroundColor: '#f59e0b', borderRadius: 5 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
+}
 
 function initDashChart(period = 'week') {
   const ctx = document.getElementById('dashChart');
   if (!ctx) return;
   if (_dashChart) _dashChart.destroy();
-  const labels = period === 'month'
-    ? ['W1','W2','W3','W4']
-    : ['Mon','Tue','Wed','Thu','Fri','Sat'];
-  const present = period === 'month' ? [46,48,45,49] : [46,48,45,50,47,12];
-  const late    = period === 'month' ? [6,5,7,4]     : [6,5,7,4,5,2];
-  const absent  = period === 'month' ? [3,2,4,1]     : [3,2,4,1,3,0];
+  // Real attendance grouped by date (last 6 weekdays), fallback to demo if none.
+  let labels = [], present = [], late = [], absent = [];
+  const byDate = {};
+  (_DEMO_ATTENDANCE || []).forEach(r => { const dt = r.date; if (!dt) return; (byDate[dt] = byDate[dt] || { p: 0, l: 0, a: 0 }); if (r.status === 'late') byDate[dt].l++; else if (r.status === 'absent') byDate[dt].a++; else if (r.in || r.clock_in) byDate[dt].p++; });
+  const dates = Object.keys(byDate).sort().slice(-6);
+  if (dates.length) {
+    dates.forEach(dt => { const p = _tkDateParts(dt); labels.push(p ? (p.d + '/' + p.m) : dt); present.push(byDate[dt].p); late.push(byDate[dt].l); absent.push(byDate[dt].a); });
+  } else {
+    labels = period === 'month' ? ['W1', 'W2', 'W3', 'W4'] : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    present = period === 'month' ? [46, 48, 45, 49] : [46, 48, 45, 50, 47, 12];
+    late = period === 'month' ? [6, 5, 7, 4] : [6, 5, 7, 4, 5, 2];
+    absent = period === 'month' ? [3, 2, 4, 1] : [3, 2, 4, 1, 3, 0];
+  }
   _dashChart = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -7432,13 +7454,19 @@ function _initTrendChart() {
   const ctx = document.getElementById('trendChart');
   if (!ctx) return;
   if (_trendChart) _trendChart.destroy();
+  // Real: present vs late by recent date.
+  const byDate = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (!r.date) return; (byDate[r.date] = byDate[r.date] || { p: 0, l: 0 }); if (r.status === 'late') byDate[r.date].l++; else if (r.in || r.clock_in) byDate[r.date].p++; });
+  const dts = Object.keys(byDate).sort().slice(-10);
+  const tLabels = dts.length ? dts.map(d => { const p = _tkDateParts(d); return p ? p.d + '/' + p.m : d; }) : ['Jan', 'Feb', 'Mar', 'Apr', 'May'];
+  const tPresent = dts.length ? dts.map(d => byDate[d].p) : [44, 46, 45, 48, 47];
+  const tLate = dts.length ? dts.map(d => byDate[d].l) : [8, 6, 7, 5, 6];
   _trendChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: ['Jan','Feb','Mar','Apr','May'],
+      labels: tLabels,
       datasets: [
-        { label:'Present', data:[44,46,45,48,47], borderColor:'#00B060', backgroundColor:'rgba(0,176,96,.1)', fill:true, tension:.4, pointRadius:4 },
-        { label:'Late',    data:[8,6,7,5,6],      borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', fill:true, tension:.4, pointRadius:4 }
+        { label:'Present', data:tPresent, borderColor:'#00B060', backgroundColor:'rgba(0,176,96,.1)', fill:true, tension:.4, pointRadius:3 },
+        { label:'Late',    data:tLate,    borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', fill:true, tension:.4, pointRadius:3 }
       ]
     },
     options: {
@@ -7456,11 +7484,15 @@ function _initLeaveChart() {
   const ctx = document.getElementById('leaveDistChart');
   if (!ctx) return;
   if (_leaveChart) _leaveChart.destroy();
+  // Real: leave days grouped by type.
+  const byType = {}; (_DEMO_LEAVE || []).forEach(l => { const t = l.type || 'Other'; byType[t] = (byType[t] || 0) + (+l.days || 1); });
+  const lLabels = Object.keys(byType).length ? Object.keys(byType) : ['Annual', 'Sick', 'Maternity', 'Paternity', 'Unpaid'];
+  const lVals = Object.keys(byType).length ? lLabels.map(t => byType[t]) : [45, 18, 8, 3, 6];
   _leaveChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
-      labels: ['Annual','Sick','Maternity','Paternity','Unpaid'],
-      datasets: [{ data:[45,18,8,3,6], backgroundColor:['#205090','#00B060','#f59e0b','#8b5cf6','#6b7280'], borderWidth:2, borderColor:'#fff' }]
+      labels: lLabels,
+      datasets: [{ data:lVals, backgroundColor:['#205090','#00B060','#f59e0b','#8b5cf6','#6b7280','#ef4444'], borderWidth:2, borderColor:'#fff' }]
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
@@ -7473,11 +7505,15 @@ function _initDeptChart() {
   const ctx = document.getElementById('deptChart');
   if (!ctx) return;
   if (_deptChart) _deptChart.destroy();
+  // Real: late count by department.
+  const lateByDept = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (r.status === 'late') { const d = r.dept || '—'; lateByDept[d] = (lateByDept[d] || 0) + 1; } });
+  const dKeys = Object.keys(lateByDept).length ? Object.keys(lateByDept).sort((a, b) => lateByDept[b] - lateByDept[a]) : ['Engineering', 'Project Mgmt', 'HRBP', 'Finance', 'Field Svcs', 'Proposal'];
+  const dVals = Object.keys(lateByDept).length ? dKeys.map(d => lateByDept[d]) : [2.1, 3.4, 1.2, 1.8, 4.2, 2.6];
   _deptChart = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: ['Engineering','Project Mgmt','HRBP','Finance','Field Svcs','Proposal'],
-      datasets: [{ label:'Avg Late Days/Month', data:[2.1,3.4,1.2,1.8,4.2,2.6], backgroundColor:'#205090', borderRadius:6 }]
+      labels: dKeys,
+      datasets: [{ label:'Late arrivals', data:dVals, backgroundColor:'#205090', borderRadius:6 }]
     },
     options: {
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
