@@ -3768,7 +3768,7 @@ function tkRenderStaffPortal() {
           '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + (r.cycle || 'Latest review') + ' · <span class="badge ' + (r.status === 'Completed' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || '') + '</span></div></div>' +
           '<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-top:1px solid var(--line)"><span style="color:var(--text-light)">Rating</span><span style="font-weight:700">' + (+r.rating || 0) + ' / 5</span></div>' +
           '<div style="display:flex;justify-content:space-between;font-size:12px"><span style="color:var(--text-light)">Courses available</span><span style="font-weight:700">' + courses.length + '</span></div>' +
-          '<button class="btn btn-outline btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="showView(\'myprofile\',null,\'My Profile\')">View My Profile</button>';
+          '<div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-outline btn-sm" style="flex:1;justify-content:center" onclick="showView(\'myprofile\',null,\'My Profile\')">My Profile</button><button class="btn btn-primary btn-sm" style="flex:1;justify-content:center" onclick="tkMyPayslip()">My Payslip</button></div>';
       } else {
         perfEl.innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:14px 0">No performance review on record yet.<br>Your manager will share it during the next review cycle.</div>';
       }
@@ -3801,7 +3801,23 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [] };
+/* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
+const _ONBOARD_TEMPLATE = [
+  { phase: 'Day 1 — Arrival', label: 'Welcome & office tour, introductions' },
+  { phase: 'Day 1 — Arrival', label: 'Sign Labor Contract & NDA' },
+  { phase: 'Day 1 — Arrival', label: 'Personal info, bank, tax code & SI registration' },
+  { phase: 'Day 1 — Arrival', label: 'IT account, email & company ID / access card' },
+  { phase: 'Week 1 — Integration', label: 'EHS induction & Code of Conduct' },
+  { phase: 'Week 1 — Integration', label: 'IT security & expense system training' },
+  { phase: 'Week 1 — Integration', label: 'Department deep-dive (projects, process, tools)' },
+  { phase: 'Week 1 — Integration', label: 'Role shadowing with mentor & first task' },
+  { phase: '30-60-90 Days', label: 'Draft 30-60-90 day plan + PADR objectives' },
+  { phase: '30-60-90 Days', label: 'Day 30 — first check-in with Manager' },
+  { phase: '30-60-90 Days', label: 'Day 60 — HR check-in & risk review' },
+  { phase: '30-60-90 Days', label: 'Day 90 — probation review (confirm / extend / end)' }
+];
+const _onboardTasks = () => _ONBOARD_TEMPLATE.map(t => ({ label: t.label, phase: t.phase, done: false }));
 async function tkLoadColl(name) {
   try { const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } }); if (r.ok) { const j = await r.json(); _HR[name] = j.items || []; } } catch (e) {}
   return _HR[name];
@@ -3847,7 +3863,7 @@ async function tkHireCandidate(id) {
     } });
     await tkApi('/api/coll/onboarding', { method: 'POST', body: {
       empId: emp.id, name: c.name, role: c.role || '', startDate: _today(),
-      tasks: ['Sign employment contract', 'IT account & email setup', 'Office tour & introductions', 'Health & safety induction', 'Set first 30-day goals'].map(l => ({ label: l, done: false }))
+      tasks: _onboardTasks()
     } });
     await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: { ...c, stage: 'Hired' } });
     c.stage = 'Hired';
@@ -3947,7 +3963,9 @@ async function tkRenderOnboarding() {
     const e = _hrEmp(o.empId) || { name: o.name, ini: (o.name || '?').slice(0, 2).toUpperCase() };
     return '<div class="card" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + _hrAv(e) + '<div style="flex:1"><div style="font-weight:700">' + (o.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (o.role || '') + (o.startDate ? (' · starts ' + tkFmtDate(o.startDate)) : '') + '</div></div><span class="badge ' + (pct === 100 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + pct + '%</span>' + _hrEditDel('onboarding', o.id, 'onboarding') + '</div>' +
       '<div class="prog-wrap" style="margin-bottom:10px"><div class="prog-fill ' + (pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pct + '%"></div></div>' +
-      tk.map((t, i) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="tkOnboardToggle(\'' + o.id + '\',' + i + ',this.checked)"><span style="' + (t.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + t.label + '</span></label>').join('') +
+      (() => { const byPhase = {}; tk.forEach((t, i) => { const p = t.phase || 'Checklist'; (byPhase[p] = byPhase[p] || []).push({ t, i }); });
+        return Object.keys(byPhase).map(p => (tk.some(t => t.phase) ? '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + p + '</div>' : '') +
+          byPhase[p].map(({ t, i }) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="tkOnboardToggle(\'' + o.id + '\',' + i + ',this.checked)"><span style="' + (t.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + t.label + '</span></label>').join('')).join(''); })() +
     '</div>';
   }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No one is onboarding right now.</div>';
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">' + cards + '</div>';
@@ -4085,7 +4103,19 @@ function _payPit(t) {
   for (const [amt, rate] of b) { const x = Math.min(rem, amt); tax += x * rate; rem -= x; if (rem <= 0) break; }
   return Math.round(tax);
 }
-function _payComputed(e, rating) {
+function _payWD(y, m) { let d = new Date(y, m, 1), n = 0; while (d.getMonth() === m) { const w = d.getDay(); if (w >= 1 && w <= 5) n++; d = new Date(y, m, d.getDate() + 1); } return n; }
+function _payUnpaidDays(empId, y, m) {
+  const first = y + '-' + String(m + 1).padStart(2, '0') + '-01';
+  const last = y + '-' + String(m + 1).padStart(2, '0') + '-31';
+  let n = 0;
+  (_DEMO_LEAVE || []).forEach(l => {
+    if ((l.emp_id === empId || l.empId === empId) && /unpaid/i.test(l.type || '') && (l.status || '').toLowerCase() === 'approved'
+      && l.startDate <= last && l.endDate >= first) n += (+l.days || 0);
+  });
+  return n;
+}
+function _payComputed(e, rating, opts) {
+  opts = opts || {};
   const gi = _payGradeIdx(e), gr = _PAY_GRADES[gi];
   const gross = e.salary ? +e.salary : gr.mid;
   const sp = _tkDateParts(e.startDate); const yrs = sp ? Math.max(0, new Date().getFullYear() - sp.y) : 0;
@@ -4099,89 +4129,172 @@ function _payComputed(e, rating) {
   const P3 = kpiTarget * pf;
   const lunch = 730000, phone = 300000, transport = 500000, welfare = lunch + phone + transport;
   const siBase = Math.min(P1 + P2, SI_CAP);
-  const si = siBase * 0.105;
+  const ee = { bhxh: siBase * 0.08, bhyt: siBase * 0.015, bhtn: siBase * 0.01 };
+  ee.total = ee.bhxh + ee.bhyt + ee.bhtn;
+  const er = { bhxh: siBase * 0.175, bhyt: siBase * 0.03, bhtn: siBase * 0.01, tu: siBase * 0.02 };
+  er.total = er.bhxh + er.bhyt + er.bhtn + er.tu;
+  const workingDays = opts.workingDays || 22;
+  const unpaidDays = opts.unpaidDays || 0;
+  const unpaidDeduction = (P1 + P2) / workingDays * unpaidDays;
   const deps = +e.dependents || 0;
-  const taxable = Math.max(0, (P1 + P2 + P3 + transport) - si - PIT_SELF - deps * PIT_DEP);
+  const taxable = Math.max(0, (P1 + P2 + P3 + transport) - ee.total - PIT_SELF - deps * PIT_DEP);
   const pit = _payPit(taxable);
   const grossPay = P1 + P2 + P3 + welfare;
-  const net = grossPay - si - pit;
+  const net = grossPay - ee.total - pit - unpaidDeduction;
   const R = Math.round;
   return { gi, grade: gr.g, gradeLabel: gr.label, yrs, rating: r, pf,
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
-    siBase: R(siBase), si: R(si), pit: R(pit), grossPay: R(grossPay), net: R(net) };
+    siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
+    erBhxh: R(er.bhxh), erBhyt: R(er.bhyt), erBhtn: R(er.bhtn), erTu: R(er.tu), erTotal: R(er.total),
+    pit: R(pit), grossPay: R(grossPay), workingDays, unpaidDays, unpaidDeduction: R(unpaidDeduction),
+    employerCost: R(grossPay + er.total), net: R(net) };
 }
-let _payCache = {};
+const _PAY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+let _payYM = null, _payCache = {}, _payTotals = {};
+function _payBuild() {
+  const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+  const wd = _payWD(_payYM.y, _payYM.m);
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  _payCache = {}; const t = { gross: 0, net: 0, ee: 0, er: 0, pit: 0, P1: 0, P2: 0, P3: 0, welfare: 0, erCost: 0, byDept: {} };
+  emps.forEach(e => {
+    const c = _payComputed(e, ratingBy[e.id], { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, _payYM.m) });
+    _payCache[e.id] = c;
+    t.gross += c.grossPay; t.net += c.net; t.ee += c.si; t.er += c.erTotal; t.pit += c.pit;
+    t.P1 += c.P1; t.P2 += c.P2; t.P3 += c.P3; t.welfare += c.welfare; t.erCost += c.employerCost;
+    t.byDept[e.dept || '—'] = (t.byDept[e.dept || '—'] || 0) + c.employerCost;
+  });
+  t.count = emps.length; t.wd = wd; _payTotals = t; return emps;
+}
 async function tkRenderPayroll() {
   const root = document.getElementById('payroll-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await tkLoadColl('reviews');
-  const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+  await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns')]);
+  if (!_payYM) { const d = new Date(); _payYM = { y: d.getFullYear(), m: d.getMonth() }; }
+  _payBuild();
+  const monthSel = '<select class="sel-filter" id="pay-month" onchange="tkPaySetYM()">' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select>';
+  const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  root.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()">↓ Export CSV</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">+ Create Pay Run</button></div></div>' +
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Pay Register</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
+    '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
+  _payRenderDash(); _payRenderReg(); _payRenderRuns();
+}
+function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; _payBuild(); _payRenderDash(); _payRenderReg(); }
+function tkPayTab(tab, el) { ['dash', 'reg', 'runs'].forEach(t => { const p = document.getElementById('pay-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#payroll-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+function _payBar(label, val, max, color) { const pct = Math.round((val / Math.max(max, 1)) * 100); return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:120px;font-size:12px;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:20px"><div style="width:' + pct + '%;background:' + (color || 'var(--navy)') + ';height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:110px;text-align:right;font-size:11px;font-weight:600">' + _PAY_FMT(val) + '</div></div>'; }
+function _payRenderDash() {
+  const el = document.getElementById('pay-dash'); if (!el) return;
+  const t = _payTotals;
+  const kpis = _hrKpiRow([
+    _hrKpi('Headcount', t.count, '#8B5CF6'),
+    _hrKpi('Gross Payroll', _PAY_FMT(t.gross), '#F59E0B'),
+    _hrKpi('Net Paid', _PAY_FMT(t.net), 'var(--emerald)'),
+    _hrKpi('Employer Cost', _PAY_FMT(t.erCost), 'var(--navy)')
+  ]);
+  const comp = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Gross Cost Composition (3P)</div>' +
+    _payBar('P1 Position', t.P1, t.gross, '#205090') + _payBar('P2 Person', t.P2, t.gross, '#3168A8') + _payBar('P3 Performance', t.P3, t.gross, '#00B060') + _payBar('Welfare', t.welfare, t.gross, '#F59E0B') + '</div>';
+  const stat = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Statutory Contributions</div>' +
+    _payBar('Employee (10.5%)', t.ee, Math.max(t.ee, t.er), '#8B5CF6') + _payBar('Employer (23.5%)', t.er, Math.max(t.ee, t.er), '#205090') + _payBar('PIT withheld', t.pit, Math.max(t.ee, t.er), '#C00000') +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">Employer SI/HI/UI + 2% Trade Union. Total company statutory: ' + _PAY_FMT(t.ee + t.er) + '/mo.</div></div>';
+  const deptMax = Math.max(1, ...Object.values(t.byDept));
+  const dept = '<div class="card" style="padding:16px 18px;margin-top:18px"><div class="card-title" style="margin-bottom:12px">Employer Cost by Department</div>' +
+    Object.keys(t.byDept).sort((a, b) => t.byDept[b] - t.byDept[a]).map(d => _payBar(d, t.byDept[d], deptMax, '#205090')).join('') + '</div>';
+  el.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + comp + stat + '</div>' + dept;
+}
+function _payRenderReg() {
+  const el = document.getElementById('pay-reg'); if (!el) return;
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
-  const monthName = new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
-  _payCache = {};
-  let tG = 0, tN = 0, tSI = 0, tPIT = 0;
-  const rows = emps.map(e => {
-    const c = _payComputed(e, ratingBy[e.id]); _payCache[e.id] = c;
-    tG += c.grossPay; tN += c.net; tSI += c.si; tPIT += c.pit;
-    return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.title || '') + '</div></div></div></td>' +
-      '<td><span class="badge b-navy" style="font-size:10px" title="' + c.gradeLabel + '">' + c.grade + '</span></td>' +
-      '<td style="text-align:right">' + _PAY_FMT(c.P1) + '</td>' +
-      '<td style="text-align:right;color:#205090">' + _PAY_FMT(c.P2) + '</td>' +
-      '<td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.P3) + '</td>' +
-      '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.grossPay) + '</td>' +
-      '<td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.si + c.pit) + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + '</td>' +
-      '<td><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button></td></tr>';
-  }).join('');
-  const grades = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1 Position</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2 Person</b> (Responsibility 10% + Skill/Seniority 0–5%) + <b style="color:var(--emerald)">P3 Performance</b> (KPI 10% × rating) + welfare. SI base = P1+P2 · Ref: HML-CB-001.</div>' +
-    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' +
-    _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
-  root.innerHTML = _hrKpiRow([
-    _hrKpi('Pay Run', monthName.split(' ')[0]),
-    _hrKpi('Employees', emps.length, '#8B5CF6'),
-    _hrKpi('Gross Total', _PAY_FMT(tG), '#F59E0B'),
-    _hrKpi('Net Total', _PAY_FMT(tN), 'var(--emerald)')
-  ]) +
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()">↓ Export Pay Run (CSV)</button></div>' +
-    grades +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + monthName + '</div><span style="font-size:11px;color:var(--text-light)">SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M relief · VND</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1 Position</th><th style="text-align:right">P2 Person</th><th style="text-align:right">P3 Perf.</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net Pay</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
-    '<div style="font-size:11px;color:var(--text-light);margin-top:10px">Built on the Humiley C&amp;B Policy (HML-CB-001). P3 scales 0.5×–1.5× of the 10% KPI target by latest PADR rating. Set a base salary on an employee to override the grade Mid band.</div>';
+  const rows = emps.map(e => { const c = _payCache[e.id]; if (!c) return ''; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.title || '') + '</div></div></div></td>' +
+    '<td><span class="badge b-navy" style="font-size:10px" title="' + c.gradeLabel + '">' + c.grade + '</span></td>' +
+    '<td style="text-align:right">' + _PAY_FMT(c.P1) + '</td><td style="text-align:right;color:#205090">' + _PAY_FMT(c.P2) + '</td><td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.P3) + '</td>' +
+    '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.grossPay) + '</td><td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.si + c.pit + c.unpaidDeduction) + '</td>' +
+    '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + '</td><td><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button></td></tr>'; }).join('');
+  const grades = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2</b> (Responsibility 10% + Skill 0–5%) + <b style="color:var(--emerald)">P3</b> (KPI 10% × rating) + welfare · SI base = P1+P2 · HML-CB-001.</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' + _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
+  el.innerHTML = grades + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+async function _payRenderRuns() {
+  const el = document.getElementById('pay-runs'); if (!el) return;
+  const runs = (_HR.payruns || []).slice().sort((a, b) => (a.period < b.period ? 1 : -1));
+  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Monthly Pay Runs</div></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th></tr></thead><tbody>' +
+    (runs.length ? runs.map(r => '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td>' + (r.count || 0) + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (r.created || '') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — click “+ Create Pay Run”.</td></tr>') + '</tbody></table></div></div>';
+}
+async function tkCreatePayRun() {
+  const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
+  if ((_HR.payruns || []).some(r => r.period === period)) { if (!confirm('A pay run for ' + period + ' already exists. Create another?')) return; }
+  const t = _payTotals;
+  try {
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    (_HR.payruns = _HR.payruns || []).push(res.item);
+    _payRenderRuns();
+    toast('Pay run created for ' + period + ' — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
+  } catch (e) { toast('Could not create pay run: ' + e.message, 'error', 5000); }
 }
 function tkExportPayroll() {
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
-  const head = ['Employee ID', 'Name', 'Department', 'Title', 'Grade', 'P1 Position', 'P2 Person', 'P3 Performance', 'Welfare', 'Gross', 'SI/HI/UI', 'PIT', 'Net'];
-  const rows = emps.map(e => { const c = _payCache[e.id] || _payComputed(e, 3); return [e.id, e.name, e.dept || '', e.title || '', c.grade, c.P1, c.P2, c.P3, c.welfare, c.grossPay, c.si, c.pit, c.net]; });
+  const head = ['Employee ID', 'Name', 'Department', 'Title', 'Grade', 'P1', 'P2', 'P3', 'Welfare', 'Gross', 'EE SI/HI/UI', 'PIT', 'Net', 'ER Cost'];
+  const rows = emps.map(e => { const c = _payCache[e.id] || _payComputed(e, 3); return [e.id, e.name, e.dept || '', e.title || '', c.grade, c.P1, c.P2, c.P3, c.welfare, c.grossPay, c.si, c.pit, c.net, c.employerCost]; });
   const csv = [head].concat(rows).map(r => r.map(x => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = 'Humiley_PayRun_' + new Date().toISOString().slice(0, 7) + '.csv'; a.click(); URL.revokeObjectURL(url);
+  const a = document.createElement('a'); a.href = url; a.download = 'Humiley_PayRun_' + _payYM.y + '-' + String(_payYM.m + 1).padStart(2, '0') + '.csv'; a.click(); URL.revokeObjectURL(url);
   toast('Pay run exported (' + emps.length + ' employees)');
 }
-function tkPayslip(empId) {
-  const e = _hrEmp(empId); const c = _payCache[empId] || (e && _payComputed(e, 3)); if (!e) return;
-  document.getElementById('payslipOverlay')?.remove();
-  const el = document.createElement('div'); el.id = 'payslipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+function _payslipHTML(e, c, period) {
   const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
   const grp = t => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + t + '</div>';
-  el.innerHTML = '<div class="modal" style="max-width:480px">' +
-    '<div class="modal-header"><div class="modal-title">Payslip — ' + new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) + '</div><button class="modal-close" onclick="document.getElementById(\'payslipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
-    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Earnings — 3P</div>' +
+  return '<div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:12px">' +
+    '<img src="https://raw.githubusercontent.com/Humiley/humiley-timekeeping/main/static/logo.png" onerror="this.style.display=\'none\'" style="height:30px">' +
+    '<div><div style="font-weight:800;color:var(--navy);font-size:15px">HUMILEY ENGINEERING &amp; SOLUTIONS</div><div style="font-size:10px;color:var(--text-light)">200 3/2 Street, District 10, HCMC · Confidential Payslip</div></div>' +
+    '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period + '</div></div>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:12px;font-size:11px"><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">Working days</div><div style="font-weight:700;font-size:14px">' + c.workingDays + '</div></div><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">Unpaid days</div><div style="font-weight:700;font-size:14px">' + c.unpaidDays + '</div></div><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">KPI factor</div><div style="font-weight:700;font-size:14px">' + c.pf.toFixed(2) + '×</div></div></div>' +
+    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Earnings — 3P</div>' +
     grp('P1 · Position') + line('Basic salary', _PAY_FMT(c.basic), '', 1) + (c.posAllow ? line('Position allowance', _PAY_FMT(c.posAllow), '', 1) : '') +
-    grp('P2 · Person') + line('Responsibility allowance', _PAY_FMT(c.responsibility), '', 1) + (c.skillSen ? line('Skill / Seniority (' + c.yrs + 'y)', _PAY_FMT(c.skillSen), '', 1) : '') +
+    grp('P2 · Person') + line('Responsibility', _PAY_FMT(c.responsibility), '', 1) + (c.skillSen ? line('Skill / Seniority (' + c.yrs + 'y)', _PAY_FMT(c.skillSen), '', 1) : '') +
     grp('P3 · Performance') + line('KPI variable (' + c.pf.toFixed(2) + '× · ' + _hrStars(c.rating) + ')', _PAY_FMT(c.P3), 'var(--emerald)', 1) +
     grp('Welfare (non-SI)') + line('Lunch · Phone · Transport', _PAY_FMT(c.welfare), '', 1) +
     '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('GROSS', _PAY_FMT(c.grossPay)) + '</div></div>' +
-    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px">' +
-    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Deductions</div>' +
-    line('SI/HI/UI 10.5% (base ' + _PAY_FMT(c.siBase) + ')', '-' + _PAY_FMT(c.si)) +
-    line('Personal Income Tax (after ₫11M relief)', '-' + _PAY_FMT(c.pit)) + '</div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">Net Pay</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
-    '<div style="font-size:10px;color:var(--text-light);margin-top:8px;text-align:center">Confidential · Generated per HML-CB-FRM-016 · Report discrepancies within 5 working days</div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-primary" onclick="window.print()">Save as PDF</button></div></div>';
+    '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Deductions — Employee</div>' +
+    line('Social Insurance (8%)', '-' + _PAY_FMT(c.eeBhxh), '', 1) + line('Health Insurance (1.5%)', '-' + _PAY_FMT(c.eeBhyt), '', 1) + line('Unemployment (1%)', '-' + _PAY_FMT(c.eeBhtn), '', 1) +
+    line('Personal Income Tax', '-' + _PAY_FMT(c.pit), '', 1) + (c.unpaidDeduction ? line('Unpaid leave (' + c.unpaidDays + 'd)', '-' + _PAY_FMT(c.unpaidDeduction), '', 1) : '') + '</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">NET PAY</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
+    '<div style="font-size:10px;color:var(--text-light);margin-top:8px">Employer also contributes ' + _PAY_FMT(c.erTotal) + ' (SI/HI/UI 21.5% + 2% Trade Union). Total cost to company ' + _PAY_FMT(c.employerCost) + '.</div>' +
+    '<div style="font-size:10px;color:var(--text-light);margin-top:4px;text-align:center">Confidential · per HML-CB-FRM-016 · report discrepancies within 5 working days</div>';
+}
+function tkPayslip(empId) {
+  const e = _hrEmp(empId); if (!e) return;
+  let c = _payCache[empId];
+  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
+  const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }));
+  document.getElementById('payslipOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'payslipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">Payslip — ' + period + '</div><button class="modal-close" onclick="document.getElementById(\'payslipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div id="payslip-body">' + _payslipHTML(e, c, period) + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payslipOverlay\').remove()">Close</button><button class="btn btn-outline" onclick="tkEmailPayslip(\'' + empId + '\')">Email (confidential)</button><button class="btn btn-primary" onclick="window.print()">Save as PDF</button></div></div>';
   document.body.appendChild(el);
+}
+async function tkEmailPayslip(empId) {
+  const e = _hrEmp(empId); const c = _payCache[empId] || _payComputed(e, 3); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
+  const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : '');
+  const subject = 'Confidential Payslip — ' + period;
+  const body = 'Dear ' + e.name + ',\n\nPlease find your confidential payslip for ' + period + ':\n\n' +
+    'Grade: ' + c.grade + '\nGross: ' + _PAY_FMT(c.grossPay) + '\nEmployee SI/HI/UI: -' + _PAY_FMT(c.si) + '\nPIT: -' + _PAY_FMT(c.pit) + '\nNET PAY: ' + _PAY_FMT(c.net) + '\n\nThis information is strictly confidential. Report any discrepancy within 5 working days.\n\nHumiley HR';
+  if (_msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: e.email } }] }, saveToSentItems: true }) });
+      if (resp.ok) { toast('Payslip emailed confidentially to ' + e.name); return; }
+    } catch (err) { /* fall back */ }
+  }
+  window.location.href = 'mailto:' + encodeURIComponent(e.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  toast('Opening confidential email to ' + e.name, 'info', 5000);
+}
+async function tkMyPayslip() {
+  await tkLoadColl('reviews');
+  const u = TK.user || {}; const e = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
+  if (!e) { toast('Your employee record was not found', 'warn'); return; }
+  tkPayslip(e.id);
 }
 
 /* Manager dashboard — HR module shortcut grid */
@@ -4248,7 +4361,7 @@ async function tkQuickAddSave() {
       const res = await tkApi('/api/coll/' + spec.coll + '/' + _qaEditId, { method: 'PATCH', body: { ...ex, ...data } });
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
-      if (_qaType === 'onboarding') data.tasks = ['Sign employment contract', 'IT account & email setup', 'Office tour & introductions', 'Health & safety induction', 'Set first 30-day goals'].map(l => ({ label: l, done: false }));
+      if (_qaType === 'onboarding') data.tasks = _onboardTasks();
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }

@@ -172,14 +172,26 @@ def seed_hr():
     for c in candidates:
         put_collection_item("candidates", c)
 
-    onboard_tasks = ["Sign employment contract", "IT account & email setup", "Office tour & introductions",
-                     "Health & safety induction", "Set first 30-day goals"]
+    onboard_tasks = [
+        ("Day 1 — Arrival", "Welcome & office tour, introductions"),
+        ("Day 1 — Arrival", "Sign Labor Contract & NDA"),
+        ("Day 1 — Arrival", "Personal info, bank, tax code & SI registration"),
+        ("Day 1 — Arrival", "IT account, email & company ID / access card"),
+        ("Week 1 — Integration", "EHS induction & Code of Conduct"),
+        ("Week 1 — Integration", "IT security & expense system training"),
+        ("Week 1 — Integration", "Department deep-dive (projects, process, tools)"),
+        ("Week 1 — Integration", "Role shadowing with mentor & first task"),
+        ("30-60-90 Days", "Draft 30-60-90 day plan + PADR objectives"),
+        ("30-60-90 Days", "Day 30 — first check-in with Manager"),
+        ("30-60-90 Days", "Day 60 — HR check-in & risk review"),
+        ("30-60-90 Days", "Day 90 — probation review (confirm / extend / end)"),
+    ]
     for idx, e in enumerate(pick[-3:]):
-        done_n = [4, 2, 1][idx % 3]
+        done_n = [8, 4, 1][idx % 3]
         put_collection_item("onboarding", {
             "empId": e["id"], "name": e["name"], "role": e.get("title", ""),
             "startDate": e.get("startDate", ""),
-            "tasks": [{"label": t, "done": i < done_n} for i, t in enumerate(onboard_tasks)],
+            "tasks": [{"phase": ph, "label": t, "done": i < done_n} for i, (ph, t) in enumerate(onboard_tasks)],
         })
 
     for i, e in enumerate(pick[:8]):
