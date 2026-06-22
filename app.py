@@ -393,13 +393,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _caller_level(self, u):
         lv = u.get("level")
-        if lv in ("staff", "manager", "management", "admin"):
+        if lv in ("staff", "manager", "management", "editor", "admin"):
             return lv
         if (u.get("email") or "").lower() in self.ADMIN_EMAILS:
             return "admin"
         if u.get("role") == "manager":
             return "management" if re.search(r"director|managing|chief|head|coo|ceo|cfo", u.get("title") or "", re.I) else "manager"
         return "staff"
+
+    def _level_rank(self, lvl):
+        try:
+            return self.LEVEL_ORDER.index(lvl) + 1
+        except ValueError:
+            return 1
 
     def _emp_update(self, u, eid, body):
         if not db.get_employee(eid):
@@ -452,6 +458,7 @@ class Handler(BaseHTTPRequestHandler):
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
+    LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
@@ -461,8 +468,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
-        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
-            return self._err("Payroll changes require Administrator level.", 403)
+        if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Payroll changes require Editor level or above.", 403)
         item = dict(body or {})
         # For staff self-service records, stamp identity from the session (no impersonation).
         if name in ("claims", "travel", "acks"):
@@ -491,8 +498,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
-        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
-            return self._err("Payroll changes require Administrator level.", 403)
+        if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Payroll changes require Editor level or above.", 403)
         # Non-managers reach this only for 'padr' and 'enrollments' (own records).
         if u.get("role") != "manager":
             if name == "enrollments":
@@ -575,8 +582,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_delete(self, u, name, iid):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
-        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
-            return self._err("Payroll changes require Administrator level.", 403)
+        if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Payroll changes require Editor level or above.", 403)
         db.delete_collection_item(name, iid)
         return self._json({"ok": True})
 
