@@ -146,7 +146,7 @@ class Handler(BaseHTTPRequestHandler):
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)
         if path == "/api/employees":
-            return self._guard(lambda u: self._json({"employees": db.list_employees()}))
+            return self._guard(lambda u: self._json({"employees": self._emp_list_for(u)}))
         if path == "/api/attendance":
             return self._guard(lambda u: self._attendance_list(u, qs))
         if path == "/api/leave":
@@ -374,7 +374,20 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("name and email required.")
         if db.get_employee_by_email(body["email"]):
             return self._err("An employee with that email already exists.")
+        body = dict(body or {})
+        # Only admins may set access level / role on create (prevents privilege escalation).
+        if ("level" in body or "role" in body) and self._caller_level(u) != "admin":
+            body.pop("level", None)
+            body.pop("role", None)
         return self._json({"ok": True, "id": db.create_employee(body)})
+
+    def _emp_list_for(self, u):
+        """Staff see a directory-safe roster (own record full); managers+ see all fields."""
+        rows = db.list_employees()
+        if self._caller_level(u) != "staff":
+            return rows
+        me = u.get("id")
+        return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in self.EMP_SENSITIVE} for e in rows]
 
     ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
@@ -438,6 +451,7 @@ class Handler(BaseHTTPRequestHandler):
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
+    EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:

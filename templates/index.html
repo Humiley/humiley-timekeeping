@@ -6635,6 +6635,7 @@ function tkRenderPermissions() {
   root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function tkSetLevel(id, level) {
+  if (!_requireLevel('admin')) return;
   const e = _hrEmp(id); if (!e) return;
   const role = level === 'staff' ? 'staff' : 'manager';
   try {
