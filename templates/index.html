@@ -55,6 +55,11 @@ body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg)
 .topbar-title{font-size:12px;font-weight:600;color:var(--text-light);min-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar-search{display:flex;align-items:center;gap:8px;background:var(--soft-bg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;width:230px}
 .topbar-search input{border:none;background:transparent;font-size:13px;color:var(--text-dark);outline:none;width:100%;font-family:inherit}
+#lang-toggle{display:flex;gap:5px;align-items:center;flex-shrink:0}
+.lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
+.lang-btn svg{border-radius:2px}
+.lang-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
+.lang-btn:hover{border-color:var(--navy)}
 .notif-btn{position:relative;width:34px;height:34px;border-radius:8px;background:var(--soft-bg);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-light)}
 .notif-dot{width:8px;height:8px;background:var(--danger);border-radius:50%;position:absolute;top:5px;right:5px;border:2px solid #fff}
 
@@ -615,9 +620,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
     <span class="nav-label">My Training</span>
   </div>
-  <div class="nav-item" onclick="showView('travelclaims',this,'Travel &amp; Claims')">
+  <div class="nav-item" onclick="showView('travelclaims',this,'Travel Expense')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
-    <span class="nav-label">Travel &amp; Claims</span>
+    <span class="nav-label" id="nav-tc-label">Travel Expense</span>
   </div>
   <div class="nav-item" onclick="showView('mydevices',this,'My Devices')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
@@ -734,6 +739,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" placeholder="Search employees, records…">
     </div>
+    <div id="lang-toggle">
+      <button class="lang-btn" data-lang="en" onclick="tkSetLang('en')" title="English"><svg width="20" height="13" viewBox="0 0 60 40"><clipPath id="ukc"><rect width="60" height="40" rx="3"/></clipPath><g clip-path="url(#ukc)"><rect width="60" height="40" fill="#012169"/><path d="M0,0 60,40 M60,0 0,40" stroke="#fff" stroke-width="8"/><path d="M0,0 60,40 M60,0 0,40" stroke="#C8102E" stroke-width="4"/><path d="M30,0 V40 M0,20 H60" stroke="#fff" stroke-width="13"/><path d="M30,0 V40 M0,20 H60" stroke="#C8102E" stroke-width="8"/></g></svg>EN</button>
+      <button class="lang-btn" data-lang="vi" onclick="tkSetLang('vi')" title="Tiếng Việt"><svg width="20" height="13" viewBox="0 0 30 20"><rect width="30" height="20" rx="1.5" fill="#da251d"/><path d="M15 4l1.18 3.63h3.82l-3.09 2.24 1.18 3.63L15 11.26l-3.09 2.24 1.18-3.63-3.09-2.24h3.82z" fill="#ff0"/></svg>VN</button>
+    </div>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
@@ -747,27 +756,21 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
      VIEW: STAFF DASHBOARD (personal portal)
 ═══════════════════════════════════════════════════════ -->
 <div id="view-staff-dashboard" class="view">
-  <div class="view-header" style="margin-bottom:20px">
+  <!-- Clean header (matches the Admin "Welcome back" style) -->
+  <div class="tk-hero">
     <div>
-      <div class="view-title" id="staff-welcome-title">Good morning!</div>
-      <div class="view-sub" id="staff-welcome-date">Monday, 10 May 2026</div>
+      <h1 id="staff-welcome-title">Welcome back</h1>
+      <div class="sub" id="staff-welcome-date">Loading…</div>
     </div>
-    <button class="btn btn-emerald" onclick="showView('checkin',null,'Check In / Out')">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:6px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Check In / Out
-    </button>
-  </div>
-
-  <!-- Hero banner -->
-  <div class="staff-hero">
-    <div class="staff-hero-left">
-      <div class="staff-hero-greeting">Your workspace</div>
-      <div class="staff-hero-name" id="staff-hero-name">Welcome</div>
-      <div class="staff-hero-date" id="staff-hero-date">Loading…</div>
-    </div>
-    <div class="staff-hero-right">
-      <div class="staff-hero-status" id="staff-hero-status">● Ready to check in</div>
-      <div class="staff-hero-time" id="staff-hero-clock">--:--</div>
+    <div style="display:flex;gap:14px;align-items:center">
+      <div style="text-align:right">
+        <div id="staff-hero-status" style="font-size:12px;color:var(--text-light);font-weight:600">● Ready to check in</div>
+        <div id="staff-hero-clock" style="font-size:20px;font-weight:800;color:var(--navy);line-height:1.1">--:--</div>
+      </div>
+      <button class="btn btn-emerald" onclick="showView('checkin',null,'Check In / Out')">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:6px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Check In / Out
+      </button>
     </div>
   </div>
 
@@ -943,7 +946,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-database" class="view">
   <div class="page-header">
     <div><h1>Employee Database</h1><p>Centralized employee records · single source of truth</p></div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-outline btn-sm" onclick="tkImportTemplate('employees')" title="Download Excel template"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Template</button>
+      <button class="btn btn-outline btn-sm" onclick="tkImport('employees')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
       <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
       <button class="btn btn-primary btn-sm" onclick="tkOpenAddEmp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
     </div>
@@ -1043,7 +1048,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
 <div id="view-travelclaims" class="view">
   <div class="page-header">
-    <div><h1>Travel &amp; Claims</h1><p>Business travel requests &amp; expense / benefit claims</p></div>
+    <div><h1 id="tc-page-title">Travel Expense (TR)</h1><p>Business travel requests &amp; expense / benefit claims</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="tkNewTravel()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Travel Request</button>
       <button class="btn btn-primary btn-sm" onclick="tkSubmitClaim()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Claim</button>
@@ -1615,10 +1620,22 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="stat-boxes" style="margin-bottom:16px">
-    <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="mgr-pending">4</div><div class="stat-lbl">Pending Approvals</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="mgr-late">4</div><div class="stat-lbl">Late Today</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="mgr-anomaly">2</div><div class="stat-lbl">GPS Anomalies</div></div>
-    <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="mgr-onleave">4</div><div class="stat-lbl">On Leave</div></div>
+    <div class="stat-box" style="display:flex;align-items:center;gap:13px;text-align:left">
+      <div style="width:42px;height:42px;border-radius:11px;background:#F59E0B1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div><div class="stat-num" style="color:var(--warning);text-align:left" id="mgr-pending">4</div><div class="stat-lbl" style="text-align:left">Pending Approvals</div></div>
+    </div>
+    <div class="stat-box" style="display:flex;align-items:center;gap:13px;text-align:left">
+      <div style="width:42px;height:42px;border-radius:11px;background:#C000001f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#C00000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><polyline points="12 9 12 13 14.5 14.5"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/></svg></div>
+      <div><div class="stat-num" style="color:var(--danger);text-align:left" id="mgr-late">4</div><div class="stat-lbl" style="text-align:left">Late Today</div></div>
+    </div>
+    <div class="stat-box" style="display:flex;align-items:center;gap:13px;text-align:left">
+      <div style="width:42px;height:42px;border-radius:11px;background:#8B5CF61f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+      <div><div class="stat-num" style="color:var(--info);text-align:left" id="mgr-anomaly">2</div><div class="stat-lbl" style="text-align:left">GPS Anomalies</div></div>
+    </div>
+    <div class="stat-box" style="display:flex;align-items:center;gap:13px;text-align:left">
+      <div style="width:42px;height:42px;border-radius:11px;background:#00B0601f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <div><div class="stat-num" style="color:var(--emerald);text-align:left" id="mgr-onleave">4</div><div class="stat-lbl" style="text-align:left">On Leave</div></div>
+    </div>
   </div>
 
   <div class="tabs" id="mgr-tabs">
@@ -2692,6 +2709,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://alcdn.msauth.net/browser/2.38.2/js/msal-browser.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -3517,9 +3535,9 @@ function _initStaffDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const el = document.getElementById('staff-welcome-title');
-  if (el) el.textContent = greeting + ', ' + _staffName.split(' ')[0] + '!';
+  if (el) el.innerHTML = 'Welcome back, <b>' + (_staffName.split(' ').slice(-1)[0] || _staffName) + '</b>';
   const dateEl = document.getElementById('staff-welcome-date');
-  if (dateEl) dateEl.textContent = tkFmtDateObj(new Date());
+  if (dateEl) dateEl.textContent = greeting + ' · ' + tkFmtDateObj(new Date());
 
   /* hero */
   const heroName = document.getElementById('staff-hero-name');
@@ -4545,7 +4563,7 @@ async function tkPadrSave(id) {
 async function tkRenderMyTraining() {
   const root = document.getElementById('mytraining-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('enrollments'), tkLoadColl('courses')]);
+  await Promise.all([tkLoadColl('enrollments'), tkLoadColl('courses'), tkLoadColl('onboarding')]);
   const me = _tkMe() || {};
   const _crsByTitle = t => (_HR.courses || []).find(c => c.title === t);
   const mine = (_HR.enrollments || []).filter(x => x.empId === me.id);
@@ -4562,7 +4580,22 @@ async function tkRenderMyTraining() {
     '<textarea data-mt-fb="' + x.id + '" placeholder="Your feedback on this course…" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:6px;min-height:48px">' + (x.feedback || '') + '</textarea>' +
     (_courseLinks(_crsByTitle(x.course)) ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + _courseLinks(_crsByTitle(x.course)) + '</div>' : '') +
     '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="tkMyTrainingSave(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Save</button>' + (x.status !== 'Completed' ? '<button class="btn btn-emerald btn-sm" onclick="tkMyTrainingComplete(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Mark Complete</button>' : '<span class="badge b-ok" style="font-size:10px;align-self:center">' + tkIcon('check', 11) + 'Completed</span>') + '</div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">You have no course enrolments yet. Your manager will enroll you, or check the course catalog.</div>';
-  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + cards + '</div>';
+  // ── My Onboarding Checklist (tick to complete — irreversible, syncs to HR/Admin) ──
+  let onbCard = '';
+  const myOnb = (_HR.onboarding || []).find(o => (o.empId && o.empId === me.id) || (o.name && o.name === me.name));
+  if (myOnb && Array.isArray(myOnb.tasks) && myOnb.tasks.length) {
+    const tasks = myOnb.tasks, total = tasks.length, done = tasks.filter(t => t.done).length;
+    const phases = []; tasks.forEach(t => { const ph = t.phase || 'Tasks'; if (!t.done && !phases.includes(ph)) phases.push(ph); });
+    const body = done >= total
+      ? '<div style="padding:16px;text-align:center;color:var(--emerald);font-weight:600">' + tkIcon('check') + ' All onboarding steps completed.</div>'
+      : phases.map(ph => '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:10px 0 2px;letter-spacing:.4px">' + ph + '</div>' +
+          tasks.map((t, i) => (!t.done && (t.phase || 'Tasks') === ph) ? '<label style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px"><input type="checkbox" onchange="tkMyOnboardingTick(\'' + myOnb.id + '\',' + i + ',this)" style="width:17px;height:17px;accent-color:var(--navy);flex-shrink:0">' + (t.label || '') + '</label>' : '').join('')
+        ).join('');
+    onbCard = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title">My Onboarding Checklist</div><span style="font-size:12px;color:var(--text-light)">' + done + ' / ' + total + ' done</span></div>' +
+      '<div class="prog-wrap" style="margin-bottom:6px"><div class="prog-fill prog-emerald" style="width:' + Math.round(done / total * 100) + '%"></div></div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-bottom:4px">Tick each step as you complete it — once ticked it is locked and your HR / Manager is updated.</div>' + body + '</div>';
+  }
+  root.innerHTML = onbCard + kpis + '<div style="font-size:14px;font-weight:700;color:var(--navy);margin:4px 0 10px">My Courses</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + cards + '</div>';
 }
 async function tkMyTrainingSave(id) {
   const x = (_HR.enrollments || []).find(e => e.id === id); if (!x) return;
@@ -4593,6 +4626,23 @@ async function tkMyTrainingComplete(id) {
     _notifyCourseComplete(x);
     toast('Course completed — manager & HR notified'); tkRenderMyTraining();
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
+/* Employee ticks an onboarding step — marks it done (irreversible), syncs to HR/Admin, hides it. */
+async function tkMyOnboardingTick(onbId, idx, cb) {
+  const o = (_HR.onboarding || []).find(x => x.id === onbId); if (!o || !o.tasks || !o.tasks[idx]) return;
+  if (cb) cb.disabled = true;
+  o.tasks[idx].done = true;
+  try {
+    await tkApi('/api/coll/onboarding/' + onbId, { method: 'PATCH', body: { tasks: o.tasks } });
+    tkAudit('Onboarding step completed', (TK.user || {}).name, o.tasks[idx].label);
+    if (o.tasks.every(t => t.done)) {
+      const me = _tkMe() || {};
+      const hr = (_DEMO_EMPLOYEES || []).find(e => /hr/i.test(e.dept || '') && (e.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(e => /hr/i.test(e.dept || ''));
+      const to = [(hr && hr.email), me.managerEmail].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+      if (to) tkMailRequester(to, 'HR & Manager', 'Onboarding completed — ' + (me.name || ''), 'Dear HR / Manager,\n\n' + (me.name || 'The employee') + ' has completed all onboarding checklist steps.\n\nHumiley Group Inc. — People & Workplace');
+    }
+    toast('Step completed'); tkRenderMyTraining();
+  } catch (e) { o.tasks[idx].done = false; if (cb) cb.disabled = false; toast('Could not save: ' + e.message, 'error', 5000); }
 }
 /* Notify the employee's manager + HR that a course was completed. */
 function _notifyCourseComplete(x) {
@@ -4641,6 +4691,102 @@ function _devIcon(cat, sz) {
   const p = _DEV_ICONS[cat] || _DEV_ICONS['Other']; const c = _DEV_COLORS[cat] || '#6b7280'; const s = sz || 34;
   return '<div style="width:' + s + 'px;height:' + s + 'px;border-radius:9px;background:' + c + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="' + Math.round(s * 0.5) + '" height="' + Math.round(s * 0.5) + '" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg></div>';
 }
+/* Photo / attachment cell — image thumbnail (click to enlarge) or a download link. */
+function _devPhotoCell(x, sz) {
+  const s = sz || 38;
+  if (!x || !x.photo) return '<span style="color:var(--text-light)">—</span>';
+  if (/^data:image|\.(png|jpe?g|gif|webp|svg)$/i.test(x.photo)) return '<img src="' + x.photo + '" onclick="window.open(this.src,\'_blank\')" title="Click to enlarge" style="width:' + s + 'px;height:' + s + 'px;border-radius:8px;object-fit:cover;border:1px solid var(--line);cursor:pointer">';
+  return '<a href="' + x.photo + '" download="' + _tkEscA(x.photoName || 'attachment') + '" title="Download attachment" style="display:inline-flex;width:' + s + 'px;height:' + s + 'px;border-radius:8px;border:1px solid var(--line);align-items:center;justify-content:center;color:var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>';
+}
+/* ════════════════ EXCEL / CSV BULK IMPORT (admin) ════════════════ */
+const _capH = h => h.replace(/^_/, '').replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase());
+const _IMPORT_SPECS = {
+  employees: {
+    label: 'Employees', api: '/api/employees',
+    reload: () => { tkBootstrap().then(() => { try { _renderEmployeeTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} }); },
+    cols: [
+      { h: 'name', lbl: 'Name', keys: ['name', 'fullname', 'employeename'], req: true, sample: 'Nguyen Van An' },
+      { h: 'title', lbl: 'Title', keys: ['title', 'position', 'jobtitle'], sample: 'Design Engineer' },
+      { h: 'dept', lbl: 'Department', keys: ['department', 'dept'], sample: 'Engineering' },
+      { h: 'email', lbl: 'Email', keys: ['email', 'workemail'], sample: '' },
+      { h: 'phone', lbl: 'Phone', keys: ['phone', 'phonenumber', 'mobile'], sample: '' },
+      { h: 'jobLevel', lbl: 'Job Level', keys: ['joblevel'], sample: 'Staff' },
+      { h: 'employmentType', lbl: 'Employment Type', keys: ['employmenttype', 'type'], sample: 'Full Time' },
+      { h: 'startDate', lbl: 'Start Date', keys: ['startdate', 'onboarddate', 'joindate'], sample: '2026-06-01' },
+      { h: 'gender', lbl: 'Gender', keys: ['gender'], sample: 'Male' },
+      { h: 'dob', lbl: 'DOB', keys: ['dob', 'dateofbirth', 'birthday'], sample: '1995-05-20' },
+      { h: 'shirtSize', lbl: 'Shirt Size', keys: ['shirtsize', 'shirt', 'uniformsize', 'uniform'], sample: 'L' },
+      { h: '_access', lbl: 'Access', keys: ['access', 'permission', 'systemaccess', 'role'], sample: 'staff' },
+      { h: 'annualTotal', lbl: 'Annual Leave', keys: ['annualleave', 'annual', 'annualtotal'], num: true, sample: 12 },
+      { h: 'sickTotal', lbl: 'Sick Leave', keys: ['sickleave', 'sick', 'sicktotal'], num: true, sample: 30 }
+    ],
+    build: (o) => {
+      const acc = String(o._access || 'staff').toLowerCase();
+      const role = /admin|manager|hr/.test(acc) ? 'manager' : 'staff';
+      const level = /admin/.test(acc) ? 'admin' : /manager|hr|management/.test(acc) ? 'manager' : 'staff';
+      const name = o.name; const ini = (name || '').split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+      const email = o.email || ((name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, '.') + '@humiley.com');
+      return { name, title: o.title || '', dept: o.dept || '', email, ini, clr: '#205090', zone: 'HQ', role, level, phone: o.phone || '', jobLevel: o.jobLevel || '', employmentType: o.employmentType || 'Full Time', startDate: o.startDate || null, gender: o.gender || '', dob: o.dob || '', shirtSize: o.shirtSize || '', status: 'Active', annualTotal: +o.annualTotal || 12, sickTotal: +o.sickTotal || 30 };
+    }
+  },
+  devices: {
+    label: 'Devices', coll: 'devices', reload: () => { try { tkRenderDevices(); } catch (e) {} },
+    cols: [
+      { h: 'name', lbl: 'Device / Equipment', keys: ['name', 'device', 'equipment', 'deviceequipment'], req: true, sample: 'Dell Latitude 5440' },
+      { h: 'category', lbl: 'Category', keys: ['category', 'type'], sample: 'Laptop' },
+      { h: 'serial', lbl: 'Serial / Asset Tag', keys: ['serial', 'assettag', 'serialassettag', 'tag'], sample: 'HML-LT-200' },
+      { h: 'assignedTo', lbl: 'Assigned To', keys: ['assignedto', 'assigned', 'owner', 'employee'], sample: '' },
+      { h: 'department', lbl: 'Department', keys: ['department', 'dept'], sample: 'Engineering' },
+      { h: 'qty', lbl: 'Qty', keys: ['qty', 'quantity'], num: true, sample: 1 },
+      { h: 'unitPrice', lbl: 'Unit Price', keys: ['unitprice', 'price', 'cost'], num: true, sample: 22000000 },
+      { h: 'purchaseDate', lbl: 'Purchase Date', keys: ['purchasedate', 'purchase', 'date'], sample: '2026-01-15' },
+      { h: 'status', lbl: 'Status', keys: ['status'], sample: 'Available' },
+      { h: 'note', lbl: 'Note', keys: ['note', 'notes', 'remark'], sample: '' }
+    ],
+    build: (o) => ({ name: o.name, category: o.category || 'Other', serial: o.serial || '', assignedTo: o.assignedTo || '', empId: '', department: o.department || '', qty: +o.qty || 1, unitPrice: +o.unitPrice || 0, purchaseDate: o.purchaseDate || '', status: o.status || (o.assignedTo ? 'Assigned' : 'Available'), note: o.note || '' })
+  }
+};
+function tkImport(kind) {
+  const spec = _IMPORT_SPECS[kind]; if (!spec) return;
+  if (typeof XLSX === 'undefined') { toast('Spreadsheet engine still loading — please try again', 'warn'); return; }
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = () => { const f = inp.files && inp.files[0]; if (f) _tkDoImport(kind, f); };
+  inp.click();
+}
+async function _tkDoImport(kind, f) {
+  const spec = _IMPORT_SPECS[kind];
+  toast('Reading ' + f.name + '…', 'info', 2000);
+  let rows;
+  try { const buf = await f.arrayBuffer(); const wb = XLSX.read(buf, { type: 'array' }); const ws = wb.Sheets[wb.SheetNames[0]]; rows = XLSX.utils.sheet_to_json(ws, { defval: '' }); }
+  catch (e) { toast('Could not read the file: ' + e.message, 'error', 6000); return; }
+  if (!rows.length) { toast('No rows found in the first sheet', 'warn'); return; }
+  const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const reqCol = spec.cols.find(c => c.req);
+  let ok = 0, fail = 0, skip = 0;
+  for (const raw of rows) {
+    const nk = {}; Object.keys(raw).forEach(k => nk[norm(k)] = raw[k]);
+    const o = {};
+    spec.cols.forEach(c => { for (const key of c.keys) { if (nk[key] != null && String(nk[key]).trim() !== '') { o[c.h] = c.num ? (parseFloat(String(nk[key]).replace(/[^0-9.\-]/g, '')) || 0) : String(nk[key]).trim(); break; } } });
+    if (reqCol && !o[reqCol.h]) { skip++; continue; }
+    try { if (spec.api) await tkApi(spec.api, { method: 'POST', body: spec.build(o) }); else await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: spec.build(o) }); ok++; }
+    catch (e) { fail++; }
+  }
+  toast('Import complete — ' + ok + ' added' + (fail ? ' · ' + fail + ' failed' : '') + (skip ? ' · ' + skip + ' skipped' : ''), fail ? 'warn' : undefined, 6000);
+  tkAudit('Imported ' + spec.label, '', ok + ' rows from ' + f.name);
+  try { spec.reload(); } catch (e) {}
+}
+function tkImportTemplate(kind) {
+  const spec = _IMPORT_SPECS[kind]; if (!spec) return;
+  if (typeof XLSX === 'undefined') { toast('Spreadsheet engine still loading — please try again', 'warn'); return; }
+  const hdr = {}; spec.cols.forEach(c => { hdr[c.lbl || _capH(c.h)] = c.sample != null ? c.sample : ''; });
+  const ws = XLSX.utils.json_to_sheet([hdr]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, spec.label);
+  XLSX.writeFile(wb, 'Humiley_' + spec.label + '_Import_Template.xlsx');
+  toast('Template downloaded — fill it in, then Import', 'info', 5000);
+}
+const _IMPORT_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+function _importBtns(kind) { return '<button class="btn btn-outline btn-sm" onclick="tkImportTemplate(\'' + kind + '\')" title="Download Excel template">' + tkIcon('download') + 'Template</button><button class="btn btn-outline btn-sm" onclick="tkImport(\'' + kind + '\')">' + _IMPORT_ICON + 'Import Excel</button>'; }
+
 /* Admin — company-wide asset register: KPIs, charts, full table, CRUD. */
 async function tkRenderDevices() {
   const root = document.getElementById('devices-root'); if (!root) return;
@@ -4662,13 +4808,13 @@ async function tkRenderDevices() {
   const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
   const rows = d.length ? d.slice().sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || '')).map(x => {
     const tot = (+x.qty || 1) * (+x.unitPrice || 0);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
-  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
+    return '<tr><td>' + _devPhotoCell(x) + '</td><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
   root.innerHTML =
-    '<div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div><div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div><div class="table-wrap"><table><thead><tr><th>Photo</th><th>Device / Equipment</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
     _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
@@ -4689,7 +4835,7 @@ async function tkRenderMyDevices() {
     _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
   ]);
-  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + _devIcon(x.category, 38) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
+  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + (x.photo ? _devPhotoCell(x, 38) : _devIcon(x.category, 38)) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
     '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Issued: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
@@ -5859,6 +6005,8 @@ async function tkRenderTravelClaims() {
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('travel'), tkLoadColl('claims')]);
   const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const _tcTitle = isMgr ? 'Travel Expense (TR)' : 'My Travel Expense';
+  { const h = document.getElementById('tc-page-title'); if (h) h.textContent = _tcTitle; const nl = document.getElementById('nav-tc-label'); if (nl) nl.textContent = isMgr ? 'Travel Expense' : 'My Travel Expense'; const tt = document.getElementById('topbarTitle'); if (tt && _currentView === 'travelclaims') tt.textContent = _tcTitle; }
   const me = _tkMe ? _tkMe() : null; const myId = me && me.id;
   let travel = _HR.travel || [], claims = _HR.claims || [];
   if (!isMgr) { travel = travel.filter(t => t.empId === myId); claims = claims.filter(c => c.empId === myId); }
@@ -6336,7 +6484,8 @@ const _QA_SPECS = {
     { k: 'unitPrice', label: 'Unit Price (₫)', type: 'number' },
     { k: 'purchaseDate', label: 'Purchase Date', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Assigned', 'Available', 'In Repair', 'Retired', 'Lost'] },
-    { k: 'note', label: 'Note' }] },
+    { k: 'note', label: 'Note' },
+    { k: 'photo', label: 'Photo / Attachment (image, PDF…)', type: 'file' }] },
   talent: { title: 'Talent Assessment', coll: 'talent', reload: 'talent', fields: [
     { k: 'name', label: 'Employee Name' }, { k: 'dept', label: 'Department' }, { k: 'title', label: 'Position' },
     { k: 'performance', label: 'Performance', type: 'select', options: ['High', 'Medium', 'Low'] },
@@ -6865,6 +7014,106 @@ function toggleSidebar() {
   document.getElementById('main').classList.toggle('expanded');
 }
 function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
+
+/* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
+const _VI = {
+  // Sidebar sections
+  'Overview': 'Tổng quan', 'My Workspace': 'Không gian của tôi', 'Approvals': 'Phê duyệt',
+  'People & Talent': 'Nhân sự & Nhân tài', 'Workplace': 'Nơi làm việc', 'Finance & Admin': 'Tài chính & Hành chính',
+  // Nav items
+  'Dashboard': 'Bảng điều khiển', 'My Profile': 'Hồ sơ của tôi', 'Check In / Out': 'Chấm công vào/ra',
+  'Attendance': 'Chấm công', 'Leave Management': 'Quản lý nghỉ phép', 'My Leave': 'Nghỉ phép của tôi',
+  'My Goals': 'Mục tiêu của tôi', 'My Training': 'Đào tạo của tôi', 'Travel Expense': 'Công tác phí',
+  'My Travel Expense': 'Công tác phí của tôi', 'My Devices': 'Thiết bị của tôi', 'Approval Inbox': 'Hộp phê duyệt',
+  'Team Monitoring': 'Giám sát nhóm', 'Employee Database': 'Cơ sở dữ liệu nhân sự', 'Recruitment': 'Tuyển dụng',
+  'Onboarding': 'Hội nhập', 'Offboarding': 'Thôi việc', 'Performance': 'Hiệu suất', 'Talent': 'Nhân tài',
+  'Training & Dev': 'Đào tạo & Phát triển', 'Work Schedules': 'Lịch làm việc', 'GPS Locations': 'Vị trí GPS',
+  'Devices & Assets': 'Thiết bị & Tài sản', 'Payroll': 'Bảng lương', 'HR Admin': 'Quản trị NS',
+  'Reports': 'Báo cáo', 'Access & Permissions': 'Phân quyền',
+  // Topbar / footer / login
+  'Search employees, records…': 'Tìm nhân viên, hồ sơ…', 'Notifications': 'Thông báo',
+  'View as Staff': 'Xem như nhân viên', 'Back to Admin view': 'Quay lại quản trị', 'Sign Out': 'Đăng xuất',
+  'Welcome to Humiley Group Inc.': 'Chào mừng đến Humiley Group Inc.', 'People & Workplace Portal': 'Cổng Nhân sự & Nơi làm việc',
+  'Sign in with your Microsoft 365 work account': 'Đăng nhập bằng tài khoản Microsoft 365 công ty',
+  'Sign in with Microsoft 365': 'Đăng nhập bằng Microsoft 365',
+  'Microsoft 365 sign-in successful — select your access level:': 'Đăng nhập Microsoft 365 thành công — chọn cấp truy cập:',
+  'Manager / HR Admin': 'Quản lý / Quản trị NS', 'Staff / Employee': 'Nhân viên',
+  'Full access — all employees, approvals, reports, HR admin': 'Toàn quyền — nhân sự, phê duyệt, báo cáo, quản trị',
+  'Personal view — your check-in, attendance & leave': 'Chế độ cá nhân — chấm công, đi làm & nghỉ phép',
+  // View headers + subtitles
+  'Welcome back': 'Chào mừng trở lại', 'Centralized employee records · single source of truth': 'Dữ liệu nhân sự tập trung · nguồn duy nhất',
+  'Travel Expense (TR)': 'Công tác phí (TR)', 'Business travel requests & expense / benefit claims': 'Đề nghị công tác & đề nghị chi phí / phúc lợi',
+  'Performance Management': 'Quản lý hiệu suất', 'Talent Management': 'Quản lý nhân tài', 'Recruitment': 'Tuyển dụng',
+  'Device & Asset Management': 'Quản lý Thiết bị & Tài sản', 'My Dashboard': 'Bảng điều khiển của tôi',
+  // Common buttons
+  'Add Employee': 'Thêm nhân viên', 'Add Device': 'Thêm thiết bị', 'Add goal': 'Thêm mục tiêu', 'Add Course': 'Thêm khóa học',
+  'Export PDF': 'Xuất PDF', 'Export CSV': 'Xuất CSV', 'Import Excel': 'Nhập Excel', 'Template': 'Mẫu', 'Refresh': 'Làm mới',
+  'Save': 'Lưu', 'Cancel': 'Hủy', 'Add': 'Thêm', 'Edit': 'Sửa', 'Delete': 'Xóa', 'Close': 'Đóng', 'View All →': 'Xem tất cả →',
+  'Approve': 'Duyệt', 'Reject': 'Từ chối', 'Approve all': 'Duyệt tất cả', 'Reject all': 'Từ chối tất cả',
+  'Submit': 'Gửi', 'Mark Complete': 'Đánh dấu hoàn thành', 'Save progress': 'Lưu tiến độ', 'Enroll': 'Đăng ký',
+  'Request Leave': 'Xin nghỉ phép', 'Travel Request': 'Đề nghị công tác', 'New Claim': 'Đề nghị chi phí',
+  'Submit a claim': 'Gửi đề nghị chi phí', 'Update My Profile': 'Cập nhật hồ sơ', 'Email': 'Gửi email',
+  'Assess Employee': 'Đánh giá nhân viên', 'Create': 'Tạo', 'Course link': 'Liên kết khóa học', 'Material': 'Tài liệu',
+  'Assets': 'Tài sản', 'Manage': 'Quản lý', 'Complete': 'Hoàn thành', 'Initiate Exit': 'Khởi tạo thôi việc',
+  // Statuses
+  'Active': 'Đang làm', 'Inactive': 'Ngừng', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Từ chối',
+  'Completed': 'Hoàn thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
+  'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý', 'Lost': 'Mất',
+  'On Time': 'Đúng giờ', 'Late': 'Đi muộn', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
+  // KPI / labels
+  'Headcount': 'Tổng nhân sự', 'Present Today': 'Có mặt hôm nay', 'Late Arrivals': 'Đi muộn', 'On Leave': 'Nghỉ phép',
+  'Present today': 'Có mặt hôm nay', 'On leave today': 'Nghỉ hôm nay', 'New hires (mo)': 'Tuyển mới (tháng)',
+  'Open vacancies': 'Vị trí tuyển', 'In pipeline': 'Đang tuyển', 'Avg PADR': 'PADR TB', 'Course enrolments': 'Lượt đăng ký học',
+  'Turnover (yr)': 'Tỷ lệ nghỉ (năm)', 'Days Present (Month)': 'Ngày công (Tháng)', 'Late Arrivals (Month)': 'Đi muộn (Tháng)',
+  'Hours This Month': 'Giờ làm trong tháng', 'Leave Days Remaining': 'Ngày phép còn lại', 'Total items': 'Tổng thiết bị',
+  'Total value': 'Tổng giá trị', 'My devices': 'Thiết bị của tôi', 'In use': 'Đang dùng', 'Goals': 'Mục tiêu',
+  'Avg progress': 'Tiến độ TB', 'Weight': 'Trọng số', 'Stage': 'Giai đoạn', 'Enrolled courses': 'Khóa đã đăng ký',
+  // Section / card titles
+  'HR at a Glance': 'Tổng quan nhân sự', 'My Analytics': 'Phân tích của tôi', 'Leave Balance — Day Summary': 'Số dư phép — Tổng hợp',
+  'Recent Attendance': 'Chấm công gần đây', 'My Leave Requests': 'Đơn nghỉ phép của tôi', 'Company Announcements': 'Thông báo công ty',
+  'Celebrations This Month': 'Sự kiện trong tháng', 'Upcoming Holidays': 'Ngày lễ sắp tới', 'My Team': 'Nhóm của tôi',
+  'Asset Register': 'Sổ tài sản', 'Staff by Department': 'Nhân sự theo phòng ban', 'Headcount by Department': 'Nhân sự theo phòng',
+  'Recruitment Funnel': 'Phễu tuyển dụng', 'Performance Distribution': 'Phân bố hiệu suất', 'Gender Split': 'Tỷ lệ giới tính',
+  'Tenure Bands': 'Thâm niên', 'Attendance Status': 'Tình trạng chấm công', 'Leave Days by Type': 'Ngày nghỉ theo loại',
+  'Headcount Growth': 'Tăng trưởng nhân sự', 'Employment Type': 'Loại hợp đồng', 'Training Status': 'Tình trạng đào tạo',
+  'Avg Performance by Dept': 'Hiệu suất TB theo phòng', 'Items by Category': 'Thiết bị theo loại', 'Status Breakdown': 'Phân loại trạng thái',
+  'Asset Value by Department': 'Giá trị tài sản theo phòng', 'My Attendance Status': 'Chấm công của tôi',
+  'My Working Hours (recent)': 'Giờ làm gần đây', 'My Leave by Type': 'Nghỉ phép theo loại', 'My Training Status': 'Đào tạo của tôi',
+  'Spend by Department': 'Chi phí theo phòng ban', '9-Box Talent Grid': 'Ma trận nhân tài 9-ô',
+  // Profile cards
+  'Job & Employment': 'Công việc & Hợp đồng', 'Personal Information': 'Thông tin cá nhân', 'Contact': 'Liên hệ',
+  'Education & Skills': 'Học vấn & Kỹ năng', 'Leave & Benefits': 'Nghỉ phép & Phúc lợi', 'Emergency Contact': 'Liên hệ khẩn cấp',
+  'Benefits & Allowances': 'Phúc lợi & Phụ cấp', 'Documents & Policies': 'Tài liệu & Chính sách', 'System Access': 'Quyền hệ thống',
+  'Shirt / Uniform': 'Áo / Đồng phục', 'Reporting Line': 'Tuyến báo cáo',
+  // Misc common words
+  'Department': 'Phòng ban', 'Position': 'Chức danh', 'Status': 'Trạng thái', 'Action': 'Thao tác', 'Actions': 'Thao tác',
+  'Date': 'Ngày', 'Name': 'Tên', 'Email': 'Email', 'Phone': 'Điện thoại', 'Category': 'Loại', 'Total': 'Tổng',
+  'Manager': 'Quản lý', 'Staff': 'Nhân viên', 'Admin': 'Quản trị', 'PADR year': 'Năm PADR'
+};
+const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
+let _viObs = null, _viNodes = [];
+function _updateLangButtons() { document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-lang') === _LANG.cur)); }
+function _viTranslateText(tn) { const raw = tn.nodeValue; if (!raw) return; const key = raw.trim(); if (!key || key.length > 140) return; const vi = _VI[key]; if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
+function _viWalk(root) {
+  if (!root) return;
+  if (root.nodeType === 3) { _viTranslateText(root); return; }
+  if (root.nodeType !== 1) return;
+  const tag = (root.tagName || '').toUpperCase(); if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'CANVAS' || tag === 'SVG') return;
+  if (root.placeholder) { const v = _VI[root.placeholder]; if (v && root.getAttribute('data-enph') === null) { root.setAttribute('data-enph', root.placeholder); root.placeholder = v; } }
+  try { const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null); const arr = []; let n; while (n = tw.nextNode()) { const p = n.parentNode; const pt = p && (p.tagName || '').toUpperCase(); if (pt === 'SCRIPT' || pt === 'STYLE') continue; arr.push(n); } arr.forEach(_viTranslateText); } catch (e) {}
+  if (root.querySelectorAll) root.querySelectorAll('[placeholder]').forEach(el => { const v = _VI[el.placeholder]; if (v && el.getAttribute('data-enph') === null) { el.setAttribute('data-enph', el.placeholder); el.placeholder = v; } });
+}
+function _startVIObserver() { if (_viObs) return; _viObs = new MutationObserver(ms => { if (_LANG.cur !== 'vi') return; ms.forEach(m => { if (m.type === 'childList') m.addedNodes.forEach(_viWalk); }); }); _viObs.observe(document.body, { childList: true, subtree: true }); }
+function _stopVIObserver() { if (_viObs) { _viObs.disconnect(); _viObs = null; } }
+function _restoreEN() { _viNodes.forEach(o => { try { o.n.nodeValue = o.en; } catch (e) {} }); _viNodes = []; document.querySelectorAll('[data-enph]').forEach(el => { el.placeholder = el.getAttribute('data-enph'); el.removeAttribute('data-enph'); }); }
+function tkSetLang(lang) {
+  lang = lang === 'vi' ? 'vi' : 'en'; _LANG.cur = lang;
+  try { localStorage.setItem('tkLang', lang); } catch (e) {}
+  document.documentElement.lang = lang; _updateLangButtons();
+  if (lang === 'vi') { try { _viWalk(document.body); } catch (e) {} _startVIObserver(); }
+  else { _stopVIObserver(); _restoreEN(); }
+}
+(function _initLang() { const go = () => { _updateLangButtons(); if (_LANG.cur === 'vi') setTimeout(() => tkSetLang('vi'), 250); }; if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();
 
 /* ──────────────────────────────────────────────────────────
    6. TAB SWITCHERS

@@ -192,7 +192,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
             nm = seg[0]
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments")))
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments", "onboarding")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -483,6 +483,20 @@ class Handler(BaseHTTPRequestHandler):
                         existing[k] = body[k]
                 existing["id"] = iid
                 return self._json({"ok": True, "item": db.put_collection_item("enrollments", existing)})
+            if name == "onboarding":
+                existing = next((x for x in db.list_collection("onboarding") if x.get("id") == iid), None)
+                if not existing or (existing.get("empId") != u.get("id") and existing.get("name") != u.get("name")):
+                    return self._err("Not allowed.", 403)
+                # staff may only mark their OWN onboarding tasks done (irreversible); everything else preserved
+                btasks = (body or {}).get("tasks")
+                if isinstance(btasks, list):
+                    ex_tasks = existing.get("tasks") or []
+                    for i, bt in enumerate(btasks):
+                        if i < len(ex_tasks) and isinstance(bt, dict) and bt.get("done"):
+                            ex_tasks[i]["done"] = True
+                    existing["tasks"] = ex_tasks
+                existing["id"] = iid
+                return self._json({"ok": True, "item": db.put_collection_item("onboarding", existing)})
             if name != "padr":
                 return self._err("Manager access required.", 403)
             existing = next((x for x in db.list_collection("padr") if x.get("id") == iid), None)

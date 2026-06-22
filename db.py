@@ -160,6 +160,7 @@ def seed_hr():
         _seed_claims(pick)
         _seed_enrollments(pick)
         _seed_devices(pick)
+        _seed_onboarding(pick)
     if collection_count("jobs") or collection_count("courses") or collection_count("candidates"):
         return False
 
@@ -314,6 +315,34 @@ def _seed_exits(pick):
         "leavePayout": "", "severance": 0, "deductions": 0,
         "settlementNote": "", "rehire": "Yes",
     })
+
+
+def _seed_onboarding(pick):
+    """Onboarding checklists for the most recent hires — visible to Admin and to the
+    employee (in My Training) where they tick steps to complete them."""
+    if collection_count("onboarding"):
+        return
+    tasks_tpl = [
+        ("Pre-boarding", "Send welcome email & first-day logistics"),
+        ("Pre-boarding", "Prepare desk, PPE & workstation"),
+        ("Pre-boarding", "Provision laptop & equipment in the asset register"),
+        ("Day 1 — Arrival", "Welcome & office tour, introductions"),
+        ("Day 1 — Arrival", "Sign Labor Contract & NDA"),
+        ("Day 1 — Arrival", "IT account, email & company ID / access card"),
+        ("Week 1 — Integration", "EHS induction & Code of Conduct"),
+        ("Week 1 — Integration", "Benefits & welfare enrollment (insurance, allowances)"),
+        ("Week 1 — Integration", "Role shadowing with mentor & first task"),
+        ("30-60-90 Days", "Draft 30-60-90 day plan + PADR objectives"),
+        ("30-60-90 Days", "Day 30 — first check-in with Manager"),
+    ]
+    cand = [e for e in pick if (e.get("role") or "") != "manager"]
+    for idx, e in enumerate(cand or pick):
+        done_n = 3 + (idx % 5)  # 3–7 of 11 done — leaves steps for the employee to tick
+        put_collection_item("onboarding", {
+            "empId": e["id"], "name": e["name"], "dept": e.get("dept", ""),
+            "title": e.get("title", ""), "startDate": e.get("startDate", ""),
+            "tasks": [{"phase": ph, "label": lb, "done": i < done_n} for i, (ph, lb) in enumerate(tasks_tpl)],
+        })
 
 
 def _seed_devices(pick):
