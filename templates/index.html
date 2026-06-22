@@ -2689,10 +2689,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="modal-title">SharePoint Configuration</div>
       <button class="modal-close" onclick="closeModal('spConfigModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div class="form-group"><label class="form-label">Azure AD Client ID</label><input type="text" class="form-control" id="cfg-clientid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-    <div class="form-group"><label class="form-label">Azure AD Tenant ID</label><input type="text" class="form-control" id="cfg-tenantid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
-    <div class="form-group"><label class="form-label">SharePoint Site ID</label><input type="text" class="form-control" id="cfg-siteid" placeholder="humiley.sharepoint.com,xxxxxxxx-..."></div>
-    <div class="form-group"><label class="form-label">Google Maps API Key</label><input type="text" class="form-control" id="cfg-mapskey" placeholder="AIzaSy..."></div>
+    <div class="form-group"><label class="form-label">Azure AD Client ID</label><input type="text" class="form-control" id="cfg-clientId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-group"><label class="form-label">Azure AD Tenant ID</label><input type="text" class="form-control" id="cfg-tenantId" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"></div>
+    <div class="form-group"><label class="form-label">SharePoint Site ID</label><input type="text" class="form-control" id="cfg-siteId" placeholder="humiley.sharepoint.com,xxxxxxxx-..."></div>
+    <div class="form-group"><label class="form-label">Google Maps API Key</label><input type="text" class="form-control" id="cfg-mapsKey" placeholder="AIzaSy..."></div>
     <div class="warn-box"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> After saving, the page will reload and authenticate with Azure AD. Ensure your Azure AD app Redirect URI includes this page's URL.</div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('spConfigModal')">Cancel</button>
@@ -4589,7 +4589,7 @@ async function tkRenderMyTraining() {
     const body = done >= total
       ? '<div style="padding:16px;text-align:center;color:var(--emerald);font-weight:600">' + tkIcon('check') + ' All onboarding steps completed.</div>'
       : phases.map(ph => '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:10px 0 2px;letter-spacing:.4px">' + ph + '</div>' +
-          tasks.map((t, i) => (!t.done && (t.phase || 'Tasks') === ph) ? '<label style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px"><input type="checkbox" onchange="tkMyOnboardingTick(\'' + myOnb.id + '\',' + i + ',this)" style="width:17px;height:17px;accent-color:var(--navy);flex-shrink:0">' + (t.label || '') + '</label>' : '').join('')
+          tasks.map((t, i) => (!t.done && (t.phase || 'Tasks') === ph) ? '<label style="display:flex;align-items:center;gap:11px;padding:8px 4px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px"><input type="checkbox" onchange="tkMyOnboardingTick(\'' + myOnb.id + '\',' + i + ',this)" style="width:17px;height:17px;accent-color:var(--navy);flex-shrink:0">' + _tkEscA(t.label || '') + '</label>' : '').join('')
         ).join('');
     onbCard = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><div class="card-title">My Onboarding Checklist</div><span style="font-size:12px;color:var(--text-light)">' + done + ' / ' + total + ' done</span></div>' +
       '<div class="prog-wrap" style="margin-bottom:6px"><div class="prog-fill prog-emerald" style="width:' + Math.round(done / total * 100) + '%"></div></div>' +
@@ -5599,7 +5599,7 @@ function _payslipPDF(e, c, period) {
   sec('DEDUCTIONS — Employee statutory');
   row('Social Insurance (8%)', '-' + fmt(c.eeBhxh)); row('Health Insurance (1.5%)', '-' + fmt(c.eeBhyt)); row('Unemployment Insurance (1%)', '-' + fmt(c.eeBhtn));
   row('Personal Income Tax (PIT)', '-' + fmt(c.pit)); if (c.unpaidDeduction) row('Unpaid leave (' + c.unpaidDays + 'd)', '-' + fmt(c.unpaidDeduction));
-  rule(); row('TOTAL DEDUCTIONS', '-' + fmt(c.si + c.pit + (c.unpaidDeduction || 0))); y += 4;
+  rule(); row('TOTAL DEDUCTIONS', '-' + fmt(c.si + c.pit + (c.unpaidDeduction || 0) + (c.extraDedTot || 0))); y += 4;
   // ── Net pay band ──
   doc.setFillColor.apply(doc, NAVY); doc.roundedRect(M, y, W - 2 * M, 16, 2, 2, 'F');
   doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'normal'); doc.setFontSize(11); doc.text('NET PAY', M + 6, y + 10);
@@ -5687,7 +5687,7 @@ function _payslipBody(e, c, period) {
     '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Other deductions — Employee</div>' +
     line('Personal Income Tax (PIT)', '-' + _PAY_FMT(c.pit), '', 1) + (c.unpaidDeduction ? line('Unpaid leave (' + c.unpaidDays + 'd)', '-' + _PAY_FMT(c.unpaidDeduction), '', 1) : '') +
     ((c.extraDeduct && c.extraDeduct.length) ? c.extraDeduct.map(x => line(x.label || 'Deduction', '-' + _PAY_FMT(x.amt), '', 1)).join('') : '') +
-    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('TOTAL DEDUCTIONS', '-' + _PAY_FMT(c.si + c.pit + (c.unpaidDeduction || 0))) + '</div></div>' +
+    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('TOTAL DEDUCTIONS', '-' + _PAY_FMT(c.si + c.pit + (c.unpaidDeduction || 0) + (c.extraDedTot || 0))) + '</div></div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:14px 16px"><span style="font-size:13px">NET PAY</span><span style="font-size:20px;font-weight:800">' + _PAY_FMT(c.net) + '</span></div>' +
     '<div style="font-size:10px;color:var(--text-light);margin-top:8px;text-align:center">Total cost to company (gross + employer statutory) = <b>' + _PAY_FMT(c.employerCost) + '</b></div>' +
     '<div style="font-size:10px;color:var(--text-light);margin-top:4px;text-align:center">Confidential · per HML-CB-FRM-016 · report discrepancies within 5 working days</div>';
@@ -7088,7 +7088,24 @@ const _VI = {
   // Misc common words
   'Department': 'Phòng ban', 'Position': 'Chức danh', 'Status': 'Trạng thái', 'Action': 'Thao tác', 'Actions': 'Thao tác',
   'Date': 'Ngày', 'Name': 'Tên', 'Email': 'Email', 'Phone': 'Điện thoại', 'Category': 'Loại', 'Total': 'Tổng',
-  'Manager': 'Quản lý', 'Staff': 'Nhân viên', 'Admin': 'Quản trị', 'PADR year': 'Năm PADR'
+  'Manager': 'Quản lý', 'Staff': 'Nhân viên', 'Admin': 'Quản trị', 'PADR year': 'Năm PADR',
+  // Modal / dialog titles + common confirmations & toasts
+  'Add New Employee': 'Thêm nhân viên mới', 'Edit Employee Profile': 'Sửa hồ sơ nhân viên', 'Add Candidate': 'Thêm ứng viên',
+  'Add Device / Equipment': 'Thêm thiết bị / trang bị', 'Add Course': 'Thêm khóa học', 'Add New Hire': 'Thêm nhân sự mới',
+  'My Onboarding Checklist': 'Danh sách hội nhập của tôi', 'My Courses': 'Khóa học của tôi', 'Asset Return & Sign-off': 'Trả tài sản & Ký xác nhận',
+  'Deleted': 'Đã xóa', 'Updated': 'Đã cập nhật', 'Added successfully': 'Đã thêm thành công', 'Saved': 'Đã lưu', 'Step completed': 'Đã hoàn thành bước',
+  'Delete this item? This cannot be undone.': 'Xóa mục này? Hành động không thể hoàn tác.', 'Are you sure?': 'Bạn có chắc không?',
+  'No email on file for this employee': 'Nhân viên này chưa có email', 'Could not save': 'Không thể lưu',
+  'Working days': 'Ngày công', 'Unpaid days': 'Ngày không lương', 'KPI factor': 'Hệ số KPI', 'NET PAY': 'THỰC LÃNH', 'GROSS': 'TỔNG THU NHẬP',
+  'TOTAL DEDUCTIONS': 'TỔNG KHẤU TRỪ', 'Earnings — 3P': 'Thu nhập — 3P', 'Other deductions — Employee': 'Khấu trừ khác — Nhân viên',
+  'Confidential Payslip': 'Phiếu lương (bảo mật)', 'Download PDF': 'Tải PDF', 'Payslip': 'Phiếu lương',
+  'Ready to check in': 'Sẵn sàng chấm công', 'Checked In': 'Đã chấm công vào',
+  'Open positions': 'Vị trí đang tuyển', 'Vacancies': 'Chỗ trống', 'Offer acceptance': 'Tỷ lệ nhận offer', 'Hired (cycle)': 'Đã tuyển (kỳ)',
+  'Candidate Funnel & Conversion': 'Phễu ứng viên & Chuyển đổi', 'Source of Hire Mix': 'Nguồn tuyển dụng',
+  'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
+  'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
+  'My Devices': 'Thiết bị của tôi', 'My Training': 'Đào tạo của tôi', 'Open Positions': 'Vị trí tuyển dụng',
+  'Goals assigned by my manager': 'Mục tiêu quản lý giao', 'My own development goals': 'Mục tiêu phát triển của tôi', 'Add my own goal': 'Thêm mục tiêu của tôi'
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];

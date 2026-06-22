@@ -477,15 +477,17 @@ class Handler(BaseHTTPRequestHandler):
                 existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
                 if not existing or existing.get("empId") != u.get("id"):
                     return self._err("Not allowed.", 403)
-                # staff may only update their own progress / status / rating / feedback
-                for k in ("progress", "status", "rating", "feedback"):
+                # staff may only update their own progress / status / rating / feedback / completion date
+                for k in ("progress", "status", "rating", "feedback", "completedOn"):
                     if k in (body or {}):
                         existing[k] = body[k]
                 existing["id"] = iid
                 return self._json({"ok": True, "item": db.put_collection_item("enrollments", existing)})
             if name == "onboarding":
                 existing = next((x for x in db.list_collection("onboarding") if x.get("id") == iid), None)
-                if not existing or (existing.get("empId") != u.get("id") and existing.get("name") != u.get("name")):
+                # Owner check: prefer empId (unique); only fall back to name when the record has no empId
+                _own = (existing.get("empId") == u.get("id")) if (existing and existing.get("empId")) else (existing and existing.get("name") == u.get("name"))
+                if not existing or not _own:
                     return self._err("Not allowed.", 403)
                 # staff may only mark their OWN onboarding tasks done (irreversible); everything else preserved
                 btasks = (body or {}).get("tasks")
