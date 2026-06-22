@@ -437,6 +437,7 @@ class Handler(BaseHTTPRequestHandler):
     COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
+    PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
@@ -446,6 +447,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
+            return self._err("Payroll changes require Administrator level.", 403)
         item = dict(body or {})
         # For staff self-service records, stamp identity from the session (no impersonation).
         if name in ("claims", "travel", "acks"):
@@ -474,6 +477,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
+            return self._err("Payroll changes require Administrator level.", 403)
         # Non-managers reach this only for 'padr' and 'enrollments' (own records).
         if u.get("role") != "manager":
             if name == "enrollments":
@@ -556,6 +561,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_delete(self, u, name, iid):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        if name in self.PAYROLL_ADMIN and self._caller_level(u) != "admin":
+            return self._err("Payroll changes require Administrator level.", 403)
         db.delete_collection_item(name, iid)
         return self._json({"ok": True})
 

@@ -3393,6 +3393,7 @@ let _userLevel = 'staff'; // 'staff' | 'manager' | 'management' | 'admin'
 const _LEVELS = ['staff', 'manager', 'management', 'admin'];
 const _LEVEL_LABEL = { staff: 'Staff', manager: 'Manager', management: 'Management', admin: 'Administrator' };
 function _lvlRank(l) { const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
+function _requireLevel(min) { if (_lvlRank(_userLevel) < _lvlRank(min)) { toast('This action requires ' + (_LEVEL_LABEL[min] || min) + ' level.', 'warn', 5000); return false; } return true; }
 const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'giang.nguyen@humiley.com', 'huy.nguyen@humiley.com'];
 function _deriveLevel(e) {
   if (!e) return 'staff';
@@ -5349,7 +5350,7 @@ async function tkRenderPayroll() {
   const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
-    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button><button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button></div></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>' + (_lvlRank(_userLevel) >= _lvlRank('admin') ? ('<button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button>') : '') + '</div></div>' +
     '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Calculation</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
@@ -5389,7 +5390,7 @@ function _payRenderReg() {
     '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + (c.adjusted ? ' <span class="badge b-warn" style="font-size:8px;vertical-align:1px">adj</span>' : '') + '</td><td style="white-space:nowrap"><button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayAdjust(\'' + e.id + '\')">' + tkIcon('edit', 12) + 'Adjust</button> <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button> <button class="btn btn-ghost btn-sm" title="Download PDF" style="font-size:10px;padding:4px 7px" onclick="tkDownloadPayslipPDF(\'' + e.id + '\')">' + tkIcon('download', 12) + '</button></td></tr>'; }).join('');
   const period = _payPeriod(); const _yrly = _payYM.m === -1;
   const rolled = (_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual');
-  const rollBar = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700;color:var(--navy)">' + (_yrly ? 'Annual calculation — ' : 'Monthly calculation — ') + period + '</div><div style="font-size:12px;color:var(--text-light)">Per-employee Salary 3P (HML-CB-001). Review the figures below, then roll out to finalise this month\'s pay run.</div></div>' + (rolled ? '<span class="badge b-ok" style="font-size:11px">' + tkIcon('check', 12) + ' Rolled out</span>' : '<button class="btn btn-emerald btn-sm" onclick="tkRollOutPayroll()">' + tkIcon('check') + 'Roll out ' + period + '</button>') + '</div>';
+  const rollBar = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700;color:var(--navy)">' + (_yrly ? 'Annual calculation — ' : 'Monthly calculation — ') + period + '</div><div style="font-size:12px;color:var(--text-light)">Per-employee Salary 3P (HML-CB-001). Review the figures below, then roll out to finalise this month\'s pay run.</div></div>' + (rolled ? '<span class="badge b-ok" style="font-size:11px">' + tkIcon('check', 12) + ' Rolled out</span>' : (_lvlRank(_userLevel) >= _lvlRank('admin') ? ('<button class="btn btn-emerald btn-sm" onclick="tkRollOutPayroll()">' + tkIcon('check') + 'Roll out ' + period + '</button>') : '<span style="font-size:11px;color:var(--text-light)">View only \u00b7 payroll is run by Admin</span>')) + '</div>';
   const grades = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2</b> (Responsibility 10% + Skill 0–5%) + <b style="color:var(--emerald)">P3</b> (KPI 10% × rating) + welfare · SI base = P1+P2 · HML-CB-001.</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' + _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
   el.innerHTML = rollBar + grades + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _payPeriod() + (_yrly ? ' <span class="badge b-info" style="font-size:10px">12 months consolidated</span>' : '') + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
@@ -5401,6 +5402,7 @@ async function _payRenderRuns() {
 }
 /* Individual monthly pay run for one employee (A15). */
 function tkIndivPayRun() {
+  if (!_requireLevel('admin')) return;
   document.getElementById('indivPayOverlay')?.remove();
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const el = document.createElement('div'); el.id = 'indivPayOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
@@ -5412,6 +5414,7 @@ function tkIndivPayRun() {
   document.body.appendChild(el);
 }
 async function tkIndivPayRunGo() {
+  if (!_requireLevel('admin')) return;
   const empId = (document.getElementById('ipr-emp') || {}).value;
   const y = +(document.getElementById('ipr-year') || {}).value, m = +(document.getElementById('ipr-month') || {}).value;
   const e = _hrEmp(empId); if (!e) return;
@@ -5429,6 +5432,7 @@ async function tkIndivPayRunGo() {
   } catch (err) { toast('Could not generate: ' + err.message, 'error', 5000); }
 }
 async function tkCreatePayRun() {
+  if (!_requireLevel('admin')) return;
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period)) { if (!confirm('A pay run for ' + period + ' already exists. Create another?')) return; }
@@ -5443,6 +5447,7 @@ async function tkCreatePayRun() {
 /* Per-employee payroll adjustment editor — override any 3P / statutory parameter + add ad-hoc items. */
 let _payAdjExtra = { earn: [], deduct: [] };
 function tkPayAdjust(empId) {
+  if (!_requireLevel('admin')) return;
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const e = _hrEmp(empId); if (!e) return;
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
@@ -5511,6 +5516,7 @@ async function tkPayAdjReset(empId) {
 }
 /* Roll out (finalise) the current month's company payroll from the per-employee calculation. */
 async function tkRollOutPayroll() {
+  if (!_requireLevel('admin')) return;
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual')) { toast(period + ' is already rolled out', 'warn'); return; }
@@ -6610,8 +6616,9 @@ function tkRenderPermissions() {
   const _PERM_ROWS = [
     ['Self-service — own profile, attendance, leave, claims &amp; training', ['staff', 'manager', 'management', 'admin']],
     ['Approve team requests — leave · claims · travel · PADR', ['manager', 'management', 'admin']],
-    ['People &amp; HR modules — employees, recruitment, performance, devices', ['manager', 'management', 'admin']],
-    ['Payroll &amp; Finance', ['management', 'admin']],
+    ['People &amp; HR — add/edit employees, recruitment, performance, devices', ['manager', 'management', 'admin']],
+    ['View Payroll &amp; Finance', ['management', 'admin']],
+    ['Run / edit Payroll — pay runs, adjustments, roll-out', ['admin']],
     ['Access &amp; Permissions — assign access levels', ['admin']]
   ];
   const mHead = '<tr><th style="text-align:left;width:40%">Capability</th>' + _LEVELS.map(l => '<th style="text-align:center;width:15%;padding:8px 3px"><span style="display:inline-block;padding:3px 7px;border-radius:20px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;background:' + _LV_CLR[l] + '">' + _LEVEL_LABEL[l] + '</span></th>').join('') + '</tr>';
@@ -9949,6 +9956,7 @@ function openAddEmpModal() {
 
 /* Open the Add Employee modal and prepare it (clear fields, fill manager list) */
 function tkOpenAddEmp() {
+  if (!_requireLevel('manager')) return;
   _tkEditEmpId = null;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
   ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary']
@@ -9980,6 +9988,7 @@ function _empGradeChanged(prefillMid) {
 }
 
 async function saveEmployee() {
+  if (!_requireLevel('manager')) return;
   const val = id => (document.getElementById(id)?.value || '').trim();
   const name = val('emp-name'), title = val('emp-title'), dept = val('emp-dept');
   if (!name)  { toast('Full name is required', 'warn'); document.getElementById('emp-name')?.focus(); return; }
