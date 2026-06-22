@@ -3378,7 +3378,7 @@ let _userLevel = 'staff'; // 'staff' | 'manager' | 'management' | 'admin'
 const _LEVELS = ['staff', 'manager', 'management', 'admin'];
 const _LEVEL_LABEL = { staff: 'Staff', manager: 'Manager', management: 'Management', admin: 'Administrator' };
 function _lvlRank(l) { const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
-const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'giang.nguyen@humiley.com'];
+const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'giang.nguyen@humiley.com', 'huy.nguyen@humiley.com'];
 function _deriveLevel(e) {
   if (!e) return 'staff';
   if (e.level && _LEVELS.indexOf(e.level) >= 0) return e.level;
@@ -6318,12 +6318,27 @@ function tkRenderPermissions() {
     _hrKpi('Management', counts.management, '#8B5CF6'), _hrKpi('Admins', counts.admin, '#F59E0B')
   ]);
   const note = '<div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light)">Levels: <b style="color:var(--text-dark)">Staff</b> self-service only · <b style="color:var(--text-dark)">Manager</b> team approvals &amp; people modules · <b style="color:var(--text-dark)">Management</b> + payroll &amp; finance · <b style="color:var(--text-dark)">Admin</b> + access control. Changes take effect on the employee\'s next sign-in.</div>';
+  // ── 4-level permission matrix: what each level can do across the portal ──
+  const _LV_CLR = { staff: '#64748B', manager: '#205090', management: '#8B5CF6', admin: '#F59E0B' };
+  const _PERM_ROWS = [
+    ['Self-service — own profile, attendance, leave, claims &amp; training', ['staff', 'manager', 'management', 'admin']],
+    ['Approve team requests — leave · claims · travel · PADR', ['manager', 'management', 'admin']],
+    ['People &amp; HR modules — employees, recruitment, performance, devices', ['manager', 'management', 'admin']],
+    ['Payroll &amp; Finance', ['management', 'admin']],
+    ['Access &amp; Permissions — assign access levels', ['admin']]
+  ];
+  const mHead = '<tr><th style="text-align:left;width:40%">Capability</th>' + _LEVELS.map(l => '<th style="text-align:center;width:15%;padding:8px 3px"><span style="display:inline-block;padding:3px 7px;border-radius:20px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;background:' + _LV_CLR[l] + '">' + _LEVEL_LABEL[l] + '</span></th>').join('') + '</tr>';
+  const mBody = _PERM_ROWS.map(r => '<tr><td style="font-size:12.5px;font-weight:600;color:var(--text-dark)">' + r[0] + '</td>' + _LEVELS.map(l => '<td style="text-align:center">' + (r[1].indexOf(l) >= 0 ? '<span style="color:#00B060;font-weight:800;font-size:15px">✓</span>' : '<span style="color:#CBD5E1;font-size:15px">—</span>') + '</td>').join('') + '</tr>').join('');
+  const matrix = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px"><div style="padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:11px">' +
+    '<div style="width:38px;height:38px;border-radius:10px;background:rgba(32,80,144,.10);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>' +
+    '<div><div style="font-weight:800;color:var(--navy);font-size:15px">Permission Levels</div><div style="font-size:12px;color:var(--text-light);margin-top:1px">What each of the four access levels can do across the portal</div></div></div>' +
+    '<div style="padding:4px 8px 8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse"><thead>' + mHead + '</thead><tbody>' + mBody + '</tbody></table></div></div>';
   const rows = emps.map(e => {
     const cur = _deriveLevel(e);
     const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td></tr>';
   }).join('');
-  root.innerHTML = kpis + note + '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function tkSetLevel(id, level) {
   const e = _hrEmp(id); if (!e) return;

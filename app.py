@@ -373,7 +373,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("An employee with that email already exists.")
         return self._json({"ok": True, "id": db.create_employee(body)})
 
-    ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com"}
+    ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
     def _caller_level(self, u):
         lv = u.get("level")
