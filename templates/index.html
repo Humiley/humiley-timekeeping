@@ -550,8 +550,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </button>
 
     <p class="login-perm-note" id="login-perm-note-txt">
-      Access requires a valid Humiley Microsoft 365 account<br>
-      with HR &amp; Workplace portal permissions
+      Sign in with your Humiley Microsoft 365 account to continue
     </p>
 
     <!-- ── Role-step panel (shown after simulated MS365 auth in demo) ── -->
@@ -1755,7 +1754,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <!-- HRMS module shortcuts -->
   <div class="card" style="padding:16px 18px;margin-bottom:18px">
     <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR Modules</div>
-    <div id="dash-hr-modules" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px"></div>
+    <div id="dash-hr-modules" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px"></div>
   </div>
 
   <div class="tabs">
@@ -5314,15 +5313,18 @@ function _payRenderDash() {
     _hrKpi('Net Paid', _PAY_FMT(t.net), 'var(--emerald)'),
     _hrKpi('Employer Cost', _PAY_FMT(t.erCost), 'var(--navy)')
   ]);
-  const comp = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Gross Cost Composition (3P)</div>' +
-    _payBar('P1 Position', t.P1, t.gross, '#205090') + _payBar('P2 Person', t.P2, t.gross, '#3168A8') + _payBar('P3 Performance', t.P3, t.gross, '#00B060') + _payBar('Welfare', t.welfare, t.gross, '#F59E0B') + '</div>';
-  const stat = '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:12px">Statutory Contributions</div>' +
-    _payBar('Employee (10.5%)', t.ee, Math.max(t.ee, t.er), '#8B5CF6') + _payBar('Employer (23.5%)', t.er, Math.max(t.ee, t.er), '#205090') + _payBar('PIT withheld', t.pit, Math.max(t.ee, t.er), '#C00000') +
-    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">Employer SI/HI/UI + 2% Trade Union. Total company statutory: ' + _PAY_FMT(t.ee + t.er) + '/mo.</div></div>';
-  const deptMax = Math.max(1, ...Object.values(t.byDept));
-  const dept = '<div class="card" style="padding:16px 18px;margin-top:18px"><div class="card-title" style="margin-bottom:12px">Employer Cost by Department</div>' +
-    Object.keys(t.byDept).sort((a, b) => t.byDept[b] - t.byDept[a]).map(d => _payBar(d, t.byDept[d], deptMax, '#205090')).join('') + '</div>';
-  el.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' + comp + stat + '</div>' + dept;
+  const dk = Object.keys(t.byDept).sort((a, b) => t.byDept[b] - t.byDept[a]);
+  el.innerHTML = kpis +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px;margin-bottom:18px">' +
+      _rptChartCard('Gross Cost Composition (3P)', 'pay-3p', 240) + _rptChartCard('Statutory Contributions', 'pay-stat', 240) +
+    '</div>' +
+    '<div class="card" style="padding:13px 16px;margin-bottom:18px;font-size:12px;color:var(--text-light);border-left:3px solid var(--navy)">Employer SI/HI/UI + 2% Trade Union · Total company statutory: <b style="color:var(--navy)">' + _PAY_FMT(t.ee + t.er) + '/mo</b></div>' +
+    _rptChartCard('Employer Cost by Department', 'pay-dept', 320);
+  if (typeof Chart !== 'undefined') {
+    _mkChart('pay-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [t.P1, t.P2, t.P3, t.welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
+    _mkChart('pay-stat', { type: 'bar', data: { labels: ['Employee 10.5%', 'Employer 23.5%', 'PIT withheld'], datasets: [{ data: [t.ee, t.er, t.pit], backgroundColor: ['#8b5cf6', '#205090', '#C00000'], borderRadius: 6, maxBarThickness: 52 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
+    _mkChart('pay-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => t.byDept[d]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+  }
 }
 function _payRenderReg() {
   const el = document.getElementById('pay-reg'); if (!el) return;
@@ -5901,11 +5903,17 @@ async function tkRenderInbox() {
   await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
-  const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me);
-  const claims = (_HR.claims || []).filter(c => _claimOpen(c));
+  // Direct-manager routing: a department manager only sees requests from their own reports;
+  // HR / management / admin (exec oversight) see every team's requests.
+  const meEmail = ((TK.user || {}).email || '').toLowerCase();
+  const seeAll = _lvlRank(_userLevel) >= _lvlRank('management');
+  const _empOf = (id, name) => (_DEMO_EMPLOYEES || []).find(e => e.id === id) || (_DEMO_EMPLOYEES || []).find(e => e.name === name);
+  const _mine = (id, name) => { if (seeAll) return true; const e = _empOf(id, name); if (!e) return true; return (e.managerEmail || '').toLowerCase() === meEmail; };
+  const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me && _mine(l.emp_id, l.emp_name));
+  const claims = (_HR.claims || []).filter(c => _claimOpen(c) && _mine(c.empId, c.name));
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
-  const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment');
-  const travel = (_HR.travel || []).filter(t => t.status === 'Submitted');
+  const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment' && _mine(p.empId, p.name));
+  const travel = (_HR.travel || []).filter(t => t.status === 'Submitted' && _mine(t.empId, t.name));
   const total = leave.length + claims.length + reqs.length + padr.length + travel.length;
   const kpis = _hrKpiRow([
     _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
@@ -6322,7 +6330,15 @@ function tkRenderHrModules() {
     { id: 'payroll', label: 'Payroll', title: 'Payroll', count: '', icon: '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>' },
     { id: 'reports', label: 'Reports', title: 'Reports & Analytics', count: '', icon: '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>' }
   ];
-  el.innerHTML = mods.map(m => '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" onmouseover="this.style.borderColor=\'var(--navy)\'" onmouseout="this.style.borderColor=\'var(--line)\'" style="position:relative;background:var(--soft-bg);border:1px solid var(--line);border-radius:10px;padding:14px 10px;text-align:center;cursor:pointer;font-family:inherit;transition:border-color .15s">' + (m.count !== '' && m.count != null ? '<span style="position:absolute;top:6px;right:8px;font-size:10px;font-weight:700;color:var(--navy);background:var(--light-tint);padding:1px 6px;border-radius:8px">' + m.count + '</span>' : '') + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom:6px">' + m.icon + '</svg><div style="font-size:12px;font-weight:600;color:var(--navy)">' + m.label + '</div></button>').join('');
+  el.innerHTML = mods.map(m => {
+    const sub = (m.count !== '' && m.count != null) ? String(m.count) : 'Open →';
+    return '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" ' +
+      'onmouseover="this.style.borderColor=\'var(--navy)\';this.style.boxShadow=\'0 4px 14px rgba(32,80,144,.12)\';this.style.transform=\'translateY(-1px)\'" ' +
+      'onmouseout="this.style.borderColor=\'var(--line)\';this.style.boxShadow=\'0 1px 4px rgba(32,80,144,.06)\';this.style.transform=\'none\'" ' +
+      'style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;text-align:left;cursor:pointer;font-family:inherit;transition:all .15s;box-shadow:0 1px 4px rgba(32,80,144,.06);min-width:0">' +
+      '<div style="width:42px;height:42px;border-radius:11px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + m.icon + '</svg></div>' +
+      '<div style="min-width:0;flex:1"><div style="font-size:13.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + m.label + '</div><div style="font-size:11px;color:var(--text-light);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</div></div></button>';
+  }).join('');
 }
 
 /* Manager dashboard — all-HRM metrics across every module. */
