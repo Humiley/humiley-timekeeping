@@ -548,7 +548,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
     <h2 class="login-title">Welcome to Humiley Group Inc.</h2>
     <p class="login-sub">People &amp; Workplace Portal<br>
-      <span style="font-size:12px;color:#9CA3AF">Sign in with your Microsoft 365 work account</span>
+      <span style="font-size:12px;color:#9CA3AF">Sign in with your Microsoft 365 - Humiley account to continue</span>
     </p>
 
     <!-- ── Microsoft 365 SSO button ── -->
@@ -601,13 +601,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-scroll">
-  <div class="sidebar-section-label">Overview</div>
-  <div class="nav-item active" onclick="showView('dashboard',this,'Dashboard')">
+  <div class="sidebar-section-label" data-roles="manager">Overview</div>
+  <div class="nav-item active" data-roles="manager" id="nav-company-dash" onclick="showView('dashboard',this,'Company Dashboard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
-    <span class="nav-label">Dashboard</span>
+    <span class="nav-label">Company Dashboard</span>
   </div>
 
   <div class="sidebar-section-label">My Workspace</div>
+  <div class="nav-item" id="nav-my-dash" onclick="showView('staff-dashboard',this,'My Dashboard')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
+    <span class="nav-label">My Dashboard</span>
+  </div>
   <div class="nav-item" onclick="showView('myprofile',this,'My Profile')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
     <span class="nav-label">My Profile</span>
@@ -787,6 +791,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <!-- KPI cards -->
+  <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">My Workspace at a Glance</div>
   <div class="staff-kpi-grid">
     <div class="staff-kpi">
       <div class="staff-kpi-icon" style="background:rgba(0,176,96,.12)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
@@ -3432,7 +3437,7 @@ async function doLogin(role, opts = {}) {
   try { tkRenderBalances(); } catch (e) {}
   try {
     const wel = document.getElementById('dash-welcome');
-    if (wel && TK.user && TK.user.name) wel.innerHTML = 'Welcome back, <b>' + TK.user.name.split(/\s+/)[0] + '</b>';
+    if (wel && TK.user && TK.user.name) wel.innerHTML = 'Welcome back, <b style="color:var(--emerald)">' + TK.user.name.split(/\s+/)[0] + '</b>';
   } catch (e) {}
   if (role === 'staff') { _initStaffDashboard(); }
   if (role === 'manager') { try { tkLoadInboxBadge(); } catch (e) {} }
@@ -3535,9 +3540,9 @@ function _applyRole(role) {
 
   /* navigate to correct home */
   if (isManager) {
-    showView('dashboard', document.querySelector('.nav-item[onclick*="dashboard"]'), 'Dashboard');
+    showView('dashboard', document.getElementById('nav-company-dash'), 'Company Dashboard');
   } else {
-    showView('staff-dashboard', document.querySelector('.nav-item[onclick*="dashboard"]'), 'My Dashboard');
+    showView('staff-dashboard', document.getElementById('nav-my-dash'), 'My Dashboard');
   }
 }
 
@@ -3547,7 +3552,7 @@ function _initStaffDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const el = document.getElementById('staff-welcome-title');
-  if (el) el.innerHTML = 'Welcome back, <b>' + (_staffName.split(' ').slice(-1)[0] || _staffName) + '</b>';
+  if (el) el.innerHTML = 'Welcome back, <b style="color:var(--emerald)">' + (_staffName.split(' ').slice(-1)[0] || _staffName) + '</b>';
   const dateEl = document.getElementById('staff-welcome-date');
   if (dateEl) dateEl.textContent = greeting + ' · ' + tkFmtDateObj(new Date());
 
@@ -7136,7 +7141,7 @@ const _VI = {
   'Search employees, records…': 'Tìm nhân viên, hồ sơ…', 'Notifications': 'Thông báo',
   'View as Staff': 'Xem như nhân viên', 'Back to Admin view': 'Quay lại quản trị', 'Sign Out': 'Đăng xuất',
   'Welcome to Humiley Group Inc.': 'Chào mừng đến Humiley Group Inc.', 'People & Workplace Portal': 'Cổng Nhân sự & Nơi làm việc',
-  'Sign in with your Microsoft 365 work account': 'Đăng nhập bằng tài khoản Microsoft 365 công ty',
+  'Sign in with your Microsoft 365 - Humiley account to continue': 'Đăng nhập bằng tài khoản Microsoft 365 - Humiley để tiếp tục',
   'Sign in with Microsoft 365': 'Đăng nhập bằng Microsoft 365',
   'Microsoft 365 sign-in successful — select your access level:': 'Đăng nhập Microsoft 365 thành công — chọn cấp truy cập:',
   'Manager / HR Admin': 'Quản lý / Quản trị NS', 'Staff / Employee': 'Nhân viên',
