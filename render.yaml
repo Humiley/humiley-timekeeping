@@ -1,0 +1,15 @@
+# One-click deploy config for Render (https://render.com) — free plan.
+# Render injects $PORT; app.py already reads it and binds 0.0.0.0.
+services:
+  - type: web
+    name: humiley-portal
+    runtime: python
+    plan: free
+    region: singapore        # closest Render region to Vietnam
+    branch: main
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python app.py"
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
