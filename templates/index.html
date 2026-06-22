@@ -5831,45 +5831,96 @@ async function tkEmailPayslip(empId) {
 /* ── IT & Physical Asset Handover (BM.HR-02-06) ──────────────────────────────
    Generate the bilingual handover form pre-filled with the employee's assigned
    assets, e-mail it for signature, and keep a copy in the employee record. */
-function _assetHandoverHTML(e, devs, mgr) {
-  const D = v => (v && String(v).trim()) ? String(v) : '';
+function _assetHandoverPDF(e, devs, mgr) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!J) return null;
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 16; let y = 18;
+  const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK;
+  const D = v => (v && String(v).trim()) ? String(v) : '—';
   const today = tkFmtDateObj(new Date());
-  const navy = '#0f2f5e';
-  const th = t => '<th style="border:1px solid #cfd8e3;padding:6px 8px;background:#eef3fb;color:' + navy + ';text-align:left;font-size:11px">' + t + '</th>';
-  const td = v => '<td style="border:1px solid #cfd8e3;padding:6px 8px;font-size:11.5px">' + (v || '') + '</td>';
-  const hwRows = (devs.length ? devs : [{}]).map(d => '<tr>' + td(D(d.category) || '&mdash;') + td(D(d.name)) + td(D(d.id)) + td(D(d.serial)) + td(D(d.note) || 'New / Good') + '</tr>').join('');
-  const info = (a, b, v) => '<div style="margin-bottom:4px"><span style="font-size:10px;color:#64748b">' + a + ' / ' + b + '</span><div style="font-weight:700;font-size:12.5px">' + (v || '&mdash;') + '</div></div>';
-  return '<div style="font-family:Calibri,Segoe UI,sans-serif;color:#212529;font-size:12px;line-height:1.5">' +
-    '<div style="font-size:11px;color:#64748b;font-weight:700;letter-spacing:.5px">BM.HR-02-06 &nbsp;&bull;&nbsp; Onboarding Package</div>' +
-    '<div style="font-size:18px;font-weight:800;color:' + navy + ';margin:2px 0">IT &amp; Physical Asset Handover Protocol</div>' +
-    '<div style="font-size:12px;color:#475569;font-style:italic;margin-bottom:12px">Quy tr&igrave;nh B&agrave;n giao T&agrave;i s&#7843;n C&ocirc;ng ngh&#7879; Th&ocirc;ng tin &amp; V&#7853;t ch&#7845;t</div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px">' +
-      info('Employee Name / ID', 'H&#7885; t&ecirc;n / M&atilde; NV', (D(e.name) + (e.id ? ' &middot; ' + e.id : ''))) +
-      info('Position / Department', 'V&#7883; tr&iacute; / B&#7897; ph&#7853;n', (D(e.title) + (e.dept ? ' &middot; ' + e.dept : ''))) +
-      info('Manager', 'Qu&#7843;n l&yacute;', mgr ? mgr.name : D(e.managerEmail)) +
-      info('Date of Handover', 'Ng&agrave;y b&agrave;n giao', today) +
-    '</div>' +
-    '<div style="font-weight:800;color:' + navy + ';font-size:13px;margin:10px 0 6px">SECTION A &mdash; IT Hardware &amp; Equipment &middot; Ph&#7847;n c&#7913;ng &amp; Trang b&#7883;</div>' +
-    '<table style="width:100%;border-collapse:collapse"><thead><tr>' + th('Item / T&agrave;i s&#7843;n') + th('Make / Model') + th('Asset Tag / M&atilde;') + th('S/N / S&#7889; seri') + th('Condition / T&igrave;nh tr&#7841;ng') + '</tr></thead><tbody>' + hwRows + '</tbody></table>' +
-    '<div style="font-weight:800;color:' + navy + ';font-size:13px;margin:14px 0 6px">SECTION E &mdash; Acknowledgement &middot; Cam k&#7871;t</div>' +
-    '<ul style="margin:0 0 10px 16px;padding:0;font-size:11.5px;color:#334155">' +
-      '<li>I have received the items above in good working condition. <i>T&ocirc;i &#273;&atilde; nh&#7853;n &#273;&#7847;y &#273;&#7911; c&aacute;c t&agrave;i s&#7843;n n&ecirc;u tr&ecirc;n.</i></li>' +
-      '<li>I will use these assets only for Company business and protect them from loss or unauthorized access.</li>' +
-      '<li>I will report loss, theft, or damage to IT and HSE within 24 hours.</li>' +
-      '<li>I will return all items on or before the last working day; outstanding items may be deducted from final pay where lawful.</li>' +
-    '</ul>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px">' +
-      '<div><div style="border-top:1px solid #94a3b8;padding-top:5px;font-size:11px;color:#64748b">Received by (Employee) &middot; NL&#272; nh&#7853;n<br><b style="color:#212529;font-size:12.5px">' + D(e.name) + '</b></div><div style="font-size:10px;color:#94a3b8;margin-top:20px">Signature / Ch&#7919; k&yacute; &nbsp;&middot;&nbsp; Date / Ng&agrave;y</div></div>' +
-      '<div><div style="border-top:1px solid #94a3b8;padding-top:5px;font-size:11px;color:#64748b">Issued by (IT / HR) &middot; B&agrave;n giao</div><div style="font-size:10px;color:#94a3b8;margin-top:38px">Signature / Ch&#7919; k&yacute; &nbsp;&middot;&nbsp; Date / Ng&agrave;y</div></div>' +
-    '</div></div>';
+  // ── Humiley letterhead ──
+  try { doc.addImage(_LH.logo, 'PNG', M, y - 5, 40, 14); } catch (x) {}
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, GREY);
+  doc.text(_LH.name, W - M, y - 2, { align: 'right' });
+  doc.text(_LH.addr, W - M, y + 2, { align: 'right' });
+  doc.text(_LH.web + '  ·  ' + _LH.email + '  ·  ' + _LH.tel, W - M, y + 6, { align: 'right' });
+  y += 11; doc.setDrawColor.apply(doc, NAVY); doc.setLineWidth(0.7); doc.line(M, y, W - M, y);
+  doc.setDrawColor.apply(doc, _LH_GREEN); doc.line(M, y, M + 26, y); y += 7;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, DARK);
+  doc.text('ASSET & EQUIPMENT HANDOVER', M, y);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, GREY);
+  doc.text('BM.HR-02-06  ·  Onboarding Package', W - M, y, { align: 'right' }); y += 4.5;
+  doc.setFontSize(8); doc.text('Asset & Equipment Handover Protocol  ·  Bien ban Ban giao Tai san & Trang bi', M, y); y += 7;
+  // ── Employee info box ──
+  doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
+  const cX = [M + 4, M + 64, M + 124];
+  const field = (x, yy, lab, val) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
+  };
+  field(cX[0], y + 6, 'Employee / Nhan vien', e.name);
+  field(cX[1], y + 6, 'Employee ID / Ma NV', e.id);
+  field(cX[2], y + 6, 'Date / Ngay ban giao', today);
+  field(cX[0], y + 14.5, 'Position / Bo phan', (D(e.title) + ' · ' + D(e.dept)));
+  field(cX[2], y + 14.5, 'Manager / Quan ly', mgr ? mgr.name : D(e.managerEmail));
+  y += 27;
+  // ── Assets table ──
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY);
+  doc.text('ASSETS & EQUIPMENT ISSUED  ·  Tai san & Trang bi ban giao', M, y); y += 4;
+  const cols = [{ t: 'Item / Tai san', w: 34 }, { t: 'Make / Model', w: 46 }, { t: 'Asset Tag / Ma', w: 30 }, { t: 'S/N', w: 34 }, { t: 'Condition / Tinh trang', w: 34 }];
+  const tW = cols.reduce((a, c) => a + c.w, 0);
+  doc.setFillColor.apply(doc, NAVY); doc.rect(M, y, tW, 7, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.3); doc.setTextColor(255, 255, 255);
+  let hx = M; cols.forEach(c => { doc.text(c.t, hx + 1.6, y + 4.6); hx += c.w; }); y += 7;
+  const rows = devs.length ? devs : [{}];
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8);
+  rows.forEach((d, i) => {
+    const cells = [D(d.category), D(d.name), D(d.id), D(d.serial), (d.note && String(d.note).trim()) ? String(d.note) : 'New / Good'];
+    const wrapped = cells.map((v, ci) => doc.splitTextToSize(String(v), cols[ci].w - 3));
+    const rh = Math.max(8, Math.max.apply(null, wrapped.map(l => l.length)) * 3.6 + 3.5);
+    if (i % 2 === 1) { doc.setFillColor(245, 247, 250); doc.rect(M, y, tW, rh, 'F'); }
+    doc.setTextColor(60, 64, 72); let rx = M;
+    cells.forEach((v, ci) => { doc.text(wrapped[ci], rx + 1.6, y + 4.2); rx += cols[ci].w; });
+    doc.setDrawColor(225, 228, 232); doc.setLineWidth(0.2); doc.rect(M, y, tW, rh);
+    let vx = M; cols.forEach((c, ci) => { if (ci < cols.length - 1) { vx += c.w; doc.line(vx, y, vx, y + rh); } });
+    y += rh;
+  });
+  y += 7;
+  // ── Acknowledgement ──
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY);
+  doc.text('ACKNOWLEDGEMENT  ·  Cam ket', M, y); y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(70, 75, 82);
+  ['I have received the items listed above in good working condition.',
+   'I will use these assets only for Company business and protect them from loss or unauthorized access.',
+   'I will report any loss, theft, or damage to IT and HSE within 24 hours.',
+   'I will return all items on or before my last working day; outstanding items may be deducted from final pay where lawful.'
+  ].forEach(a => { const ls = doc.splitTextToSize('•  ' + a, W - 2 * M - 2); doc.text(ls, M, y); y += ls.length * 4 + 1.5; });
+  y += 6;
+  if (y > 244) { doc.addPage(); y = 24; }
+  // ── Signatures ──
+  const half = (W - 2 * M - 12) / 2;
+  const sig = (x, en, vn, nm) => {
+    doc.setDrawColor(120, 128, 138); doc.setLineWidth(0.4); doc.line(x, y + 16, x + half, y + 16);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, DARK); doc.text(D(nm), x, y + 15);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
+    doc.text(en, x, y + 20); doc.text(vn, x, y + 23.5); doc.text('Signature & Date / Chu ky & Ngay', x, y + 28);
+  };
+  sig(M, 'Received by (Employee)', 'Nguoi nhan (Nhan vien)', e.name);
+  sig(M + half + 12, 'Issued by (IT / HR)', 'Ban giao (IT / HR)', '');
+  // ── Footer ──
+  doc.setFontSize(7.5); doc.setTextColor(150, 156, 164);
+  doc.text(_LH.name + '  ·  ' + _LH.web + '  ·  BM.HR-02-06 Rev 01.0', W / 2, 290, { align: 'center' });
+  return doc;
 }
 async function _assetHandoverPdfDoc(empId) {
   const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(x => x.id === empId); if (!e) return null;
   await tkLoadColl('devices');
   const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
   const devs = (_HR.devices || []).filter(d => ((d.empId && d.empId === e.id) || (d.assignedTo && d.assignedTo === e.name)) && (d.status || '') !== 'Retired');
-  return _htmlToPdfDoc(_assetHandoverHTML(e, devs, mgr), 760, { title: 'IT & ASSET HANDOVER', docCode: 'BM.HR-02-06' });
+  return _assetHandoverPDF(e, devs, mgr);
 }
+
 function _handoverFilename(e) { return 'Humiley_Asset_Handover_' + ((e.name || 'employee').split(' ').join('_')) + '.pdf'; }
 async function tkDownloadHandover(empId) {
   const e = _hrEmp(empId) || {}; toast('Building handover form…', 'info', 1500);
@@ -5894,7 +5945,7 @@ async function tkSendAssetHandover(empId, opts) {
     if (existing && existing.id) { await tkApi('/api/coll/handovers/' + existing.id, { method: 'PATCH', body: Object.assign({}, existing, rec) }); Object.assign(existing, rec); }
     else { const r = await tkApi('/api/coll/handovers', { method: 'POST', body: rec }); rec.id = r && r.id; (_HR.handovers = _HR.handovers || []).push(rec); }
   } catch (x) { console.warn('handover store failed', x.message); }
-  const subject = 'IT & Asset Handover for signature — ' + (e.name || '');
+  const subject = 'Asset & Equipment Handover for signature — ' + (e.name || '');
   const body = 'Dear ' + (e.name || '') + ',\n\nWelcome to Humiley! Please find attached your IT & Physical Asset Handover form (BM.HR-02-06) listing the equipment assigned to you.\n\nKindly review, sign, and return a signed copy to HR@humiley.com.\n\nBy signing you acknowledge receipt of the assets and the obligation to return them in good condition on your last working day.\n\nBest regards,\nHumiley Group Inc. — HR\nHR@humiley.com';
   if (_msalApp && _account) {
     try {
@@ -5943,7 +5994,7 @@ async function tkEmailHandoverToHR(empId) {
   if (h && h.signedB64) { b64 = h.signedB64; fname = h.signedName || _handoverFilename(e); signed = true; }
   else { toast('Preparing handover…', 'info', 1500); const doc = await _assetHandoverPdfDoc(empId); try { if (doc) b64 = doc.output('datauristring').split(',')[1]; } catch (x) {} fname = _handoverFilename(e); }
   if (!b64) { toast('Could not prepare the handover', 'error'); return; }
-  const subject = (signed ? 'Signed ' : '') + 'IT & Asset Handover — ' + (e.name || '');
+  const subject = (signed ? 'Signed ' : '') + 'Asset & Equipment Handover — ' + (e.name || '');
   const body = 'Dear HR,\n\nPlease find attached ' + (signed ? 'my signed ' : 'the ') + 'IT & Physical Asset Handover form (BM.HR-02-06) for ' + (e.name || '') + (e.id ? ' (' + e.id + ')' : '') + '.\n\nI acknowledge receipt of the listed assets and the obligation to return them in good working condition on the last working day.\n\nRegards,\n' + (e.name || '') + '\nHumiley Group Inc.';
   if (_msalApp && _account) {
     try {
@@ -6767,6 +6818,10 @@ async function tkQuickAddSave() {
     closeModal('quickAddModal');
     toast(_qaEditId ? 'Updated' : 'Added successfully');
     if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
+    if (_qaType === 'devices' && !_qaEditId && data.assignedTo && (data.status || 'Assigned') !== 'Available') {
+      const _emp = (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === (data.assignedTo || '').toLowerCase());
+      if (_emp) { try { await tkSendAssetHandover(_emp.id, { auto: true }); } catch (_) {} }
+    }
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
@@ -6924,7 +6979,7 @@ function tkRenderMyProfile() {
     (() => {
       const h = (_HR.handovers || []).find(x => x.empId === e.id);
       const st = h ? (h.status === 'Signed' ? '<span class=\"badge b-ok\" style=\"font-size:10px\">Signed &amp; on file</span>' : '<span class=\"badge b-warn\" style=\"font-size:10px\">Issued &middot; awaiting signature</span>') : '<span class=\"badge\" style=\"font-size:10px;background:var(--soft-bg);color:var(--text-light)\">Not issued yet</span>';
-      const body = '<div style=\"font-size:12.5px;color:var(--text-light);margin-bottom:10px\">IT &amp; Physical Asset Handover (BM.HR-02-06) for the equipment assigned to you. Download, sign, and return to HR@humiley.com.</div>' +
+      const body = '<div style=\"font-size:12.5px;color:var(--text-light);margin-bottom:10px\">Asset &amp; Equipment Handover (BM.HR-02-06) &mdash; all company assets &amp; equipment issued to you at onboarding. Download, sign, and return to HR@humiley.com.</div>' +
         '<div style=\"font-size:12.5px;margin-bottom:12px\">Status: ' + st + (h && h.sentOn ? ' <span style=\"color:var(--text-light)\">&middot; issued ' + tkFmtDate(h.sentOn) + '</span>' : '') + '</div>' +
         '<div style=\"display:flex;flex-wrap:wrap;gap:8px\">' +
           '<button class=\"btn btn-outline btn-sm\" onclick=\"tkDownloadHandover(\'' + e.id + '\')\">' + tkIcon('download', 12) + 'Download form</button>' +
@@ -6933,7 +6988,7 @@ function tkRenderMyProfile() {
           (h && h.signedB64 ? '<button class=\"btn btn-ghost btn-sm\" onclick=\"tkDownloadStoredHandover(\'' + e.id + '\',true)\">View signed</button>' : '') +
           (canEdit ? '<button class=\"btn btn-ghost btn-sm\" onclick=\"tkSendAssetHandover(\'' + e.id + '\')\">Email to employee</button>' : '') +
         '</div>';
-      return sec('IT Asset Handover', body);
+      return sec('Asset Handover', body);
     })() +
     '</div>' +
   '<div class="card" style="padding:18px 20px;margin-top:20px">' +
