@@ -7201,7 +7201,7 @@ async function tkSyncM365Users() {
   } catch (e) {
     toast('Permission needed to read the directory (User.Read.All) — a Microsoft 365 admin must allow it.', 'error', 9000); return;
   }
-  let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone,assignedLicenses&$top=999";
+  let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone,assignedLicenses,givenName,surname&$top=999";
   const users = [];
   try {
     while (url) {
@@ -7237,7 +7237,8 @@ async function tkSyncM365Users() {
       if (st !== (ex.status || 'Active')) patch.status = st;
       if (Object.keys(patch).length) { try { await tkApi('/api/employees/' + ex.id, { method: 'PATCH', body: patch }); Object.assign(ex, patch); updated++; if (patch.status === 'Inactive') deactivated++; } catch (e) {} }
     } else {
-      if (!licensed || !enabled) { skipped++; continue; }   // shared mailbox / disabled -> don't create
+      const isPerson = licensed && enabled && !!(u.givenName && String(u.givenName).trim());
+      if (!isPerson) { skipped++; continue; }   // shared / room / role mailbox (no licence, sign-in disabled, or no first name) -> not a person, don't sync
       const name = u.displayName || email.split('@')[0];
       const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
       try {
