@@ -339,10 +339,12 @@ select.form-control{cursor:pointer}
 /* ── LOGIN OVERLAY ── */
 #login-overlay{position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;border-top:4px solid var(--navy)}
 #login-overlay.fade-out{opacity:0;pointer-events:none}
-.login-card{display:flex;flex-direction:column;align-items:center;width:100%;max-width:440px;padding:0 28px;text-align:center}
+.login-card{display:flex;flex-direction:column;align-items:center;width:100%;max-width:480px;padding:0 28px;text-align:center}
 .login-logo{height:56px;width:auto;max-width:200px;margin:0 auto 20px;display:block}
-.login-title{font-size:26px;font-weight:800;color:var(--navy-deep);margin-bottom:10px}
-.login-sub{font-size:14px;color:var(--text-light);margin-bottom:34px;line-height:1.6}
+.login-title{font-size:clamp(20px,4.6vw,25px);font-weight:800;color:var(--navy-deep);margin-bottom:8px;white-space:nowrap;letter-spacing:-.2px}
+.login-sub{font-size:13px;color:var(--text-light);margin-bottom:30px;line-height:1.55}
+.login-sub span{font-size:12px;color:#9CA3AF}
+.login-perm-note{font-size:12px;color:#9CA3AF;margin-top:16px;line-height:1.5}
 /* ── APP FOOTER ── */
 /* ── LOGIN ROLE-STEP (demo / post-auth role picker) ── */
 #login-role-step{display:none;margin-top:4px}
@@ -4149,7 +4151,7 @@ function tkReqRouting(id) {
     const done = i < step; const cur = i === step && j.status !== 'Approved';
     const ap = apps[i];
     const ic = done ? '<span style="color:var(--emerald)">' + _PENCIL.replace(/.*/, '') + '✓</span>' : (cur ? '●' : '○');
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="width:22px;text-align:center;color:' + (done ? 'var(--emerald)' : cur ? 'var(--navy)' : '#cbd5e1') + ';font-weight:700">' + (done ? '✓' : (i + 1)) + '</div><div style="flex:1"><div style="font-size:13px;font-weight:600">' + role + '</div>' + (ap ? '<div style="font-size:11px;color:var(--text-light)">' + ap.decision + ' · ' + (ap.ts || '') + '</div>' : (cur ? '<div style="font-size:11px;color:var(--navy)">Awaiting decision</div>' : '')) + '</div>' + (cur ? '<button class="btn btn-emerald btn-sm" style="font-size:11px;padding:3px 10px" onclick="tkReqApprove(\'' + id + '\')">Approve</button><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:#C00000" onclick="tkReqReject(\'' + id + '\')">Reject</button>' : '') + '</div>';
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)"><div style="width:22px;text-align:center;color:' + (done ? 'var(--emerald)' : cur ? 'var(--navy)' : '#cbd5e1') + ';font-weight:700">' + (done ? '✓' : (i + 1)) + '</div><div style="flex:1"><div style="font-size:13px;font-weight:600">' + role + '</div>' + (ap ? '<div style="font-size:11px;color:var(--text-light)">' + ap.decision + ' · ' + (ap.ts ? tkFmtDate(ap.ts) : '') + '</div>' : (cur ? '<div style="font-size:11px;color:var(--navy)">Awaiting decision</div>' : '')) + '</div>' + (cur ? '<button class="btn btn-emerald btn-sm" style="font-size:11px;padding:3px 10px" onclick="tkReqApprove(\'' + id + '\')">Approve</button><button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 8px;color:#C00000" onclick="tkReqReject(\'' + id + '\')">Reject</button>' : '') + '</div>';
   }).join('');
   const el = document.createElement('div'); el.id = 'reqRouteOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">Requisition Approval — ' + (j.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'reqRouteOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
@@ -5041,7 +5043,7 @@ function tkPipManage(id) {
   const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
   document.getElementById('pipOverlay')?.remove();
   const acts = (p.actions || []).map(a => '<tr><td style="font-size:12px">' + (a.action || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (a.measure || '') + '</td></tr>').join('') || '<tr><td colspan="2" style="color:var(--text-light);font-size:12px">No actions</td></tr>';
-  const checks = (p.checkins || []).map((c, i) => '<tr><td>W' + (i + 1) + '</td><td>' + (c.date || '') + '</td><td style="font-size:12px">' + (c.note || '') + '</td></tr>').join('') || '<tr><td colspan="3" style="color:var(--text-light);font-size:12px">No check-ins yet</td></tr>';
+  const checks = (p.checkins || []).map((c, i) => '<tr><td>W' + (i + 1) + '</td><td>' + tkFmtDate(c.date) + '</td><td style="font-size:12px">' + (c.note || '') + '</td></tr>').join('') || '<tr><td colspan="3" style="color:var(--text-light);font-size:12px">No check-ins yet</td></tr>';
   const el = document.createElement('div'); el.id = 'pipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">PIP — ' + (p.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'pipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div class="form-group"><label class="form-label">Performance concern (measurable)</label><textarea class="form-control" id="pip-concern">' + _tkEscT(p.concern || '') + '</textarea></div>' +
@@ -5380,7 +5382,7 @@ async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
   const runs = (_HR.payruns || []).slice().sort((a, b) => (a.period < b.period ? 1 : -1));
   el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Runs</div><span style="font-size:11px;color:var(--text-light)">Monthly (company) &amp; individual runs</span></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Scope</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>' +
-    (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (r.created || '') + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — use Create Pay Run or Individual Pay Run.</td></tr>') + '</tbody></table></div></div>';
+    (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — use Create Pay Run or Individual Pay Run.</td></tr>') + '</tbody></table></div></div>';
 }
 /* Individual monthly pay run for one employee (A15). */
 function tkIndivPayRun() {
@@ -5833,7 +5835,7 @@ function tkOpenPolicy(doc) {
   const el = document.createElement('div'); el.id = 'policyOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div><div class="modal-title" style="margin:0">' + doc + '</div>' + (p.rev ? '<div style="font-size:11px;color:var(--text-light)">' + p.rev + '</div>' : '') + '</div><button class="modal-close" onclick="document.getElementById(\'policyOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="overflow:auto;padding:4px 2px;font-size:13.5px;line-height:1.65;color:var(--text-dark)">' + p.body + '</div>' +
-    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' Acknowledged on ' + (acked.ts || '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Close</button></div>'
+    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' Acknowledged on ' + (acked.ts ? tkFmtDate(acked.ts) : '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Close</button></div>'
       : '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="pol-ack-chk" onchange="document.getElementById(\'pol-ack-btn\').disabled=!this.checked"> I have read and understood this policy.</label>' +
         '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Cancel</button><button class="btn btn-emerald" id="pol-ack-btn" disabled onclick="tkConfirmPolicy(this.getAttribute(\'data-doc\'))" data-doc="' + doc.replace(/"/g, '&quot;') + '">' + tkIcon('check') + 'Acknowledge</button></div>') +
     '</div>';
@@ -5970,7 +5972,7 @@ async function tkRenderInbox() {
     sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
   const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
   const auditHtml = '<div id="inbox-audit" style="display:none"><div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Activity Log</div><span style="font-size:11px;color:var(--text-light)">Who did what, when</span></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>' +
-    (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.tsDisp || '') + '</td><td style="font-weight:600">' + (a.actor || '') + '</td><td>' + (a.action || '') + '</td><td>' + (a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + (a.detail || '') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No activity yet</td></tr>') + '</tbody></table></div></div></div>';
+    (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</td><td style="font-weight:600">' + (a.actor || '') + '</td><td>' + (a.action || '') + '</td><td>' + (a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + (a.detail || '') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No activity yet</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkInboxTab(\'pending\',this)">Pending</button><button class="tab" onclick="tkInboxTab(\'audit\',this)">Activity Log</button></div>' + pendingHtml + auditHtml;
   tkUpdateInboxBadge(total);
 }
@@ -6494,7 +6496,7 @@ async function tkRenderDashLevelBand() {
       '<span style="font-weight:700;color:var(--navy);white-space:nowrap">' + (a.actor || '') + '</span>' +
       '<span class="badge b-navy" style="font-size:9px">' + (a.action || '') + '</span>' +
       (same ? '' : '<span style="color:var(--text-dark)">' + (a.target || '') + '</span>') +
-      '<span style="margin-left:auto;font-size:10px;color:var(--text-light);white-space:nowrap">' + (a.tsDisp || '') + '</span></div>'; };
+      '<span style="margin-left:auto;font-size:10px;color:var(--text-light);white-space:nowrap">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</span></div>'; };
     band.innerHTML = card('System &amp; Access (Admin)',
       row([box('Staff', counts.staff, '#205090', I_USER), box('Managers', counts.manager, '#3168A8', I_USERS), box('Management', counts.management, '#8B5CF6', I_SHIELD), box('Admins', counts.admin, '#F59E0B', I_KEY)]) +
       '<div style="margin:12px 0 4px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</a></div>' +
@@ -6767,7 +6769,7 @@ function tkRenderMyProfile() {
     (() => {
       const docs = ['Employee Handbook', 'Code of Conduct & Anti-Harassment', 'IT Acceptable Use Policy', 'Confidentiality, IP & Data', 'HSE / Site Safety', 'C&B Policy (HML-CB-001)'];
       const ackOf = nm => (_HR.acks || []).find(a => a.empId === e.id && a.doc === nm);
-      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer;flex:1;min-width:0;overflow-wrap:break-word" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts || 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px;flex-shrink:0" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
+      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer;flex:1;min-width:0;overflow-wrap:break-word" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts ? tkFmtDate(a.ts) : 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px;flex-shrink:0" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
       return '<div class="card" style="padding:18px 20px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)"><div style="width:32px;height:32px;border-radius:9px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _secIcon('documents') + '</svg></div><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--navy)">Documents &amp; Policies</div></div>' + rows + '</div>';
     })() +
   '</div>' +
@@ -8038,7 +8040,7 @@ async function submitLeave() {
     const colors = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000'];
     const clr = colors[Math.floor(Math.random()*colors.length)];
     const nowD = new Date();
-    const subDate = nowD.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+    const subDate = tkFmtDateObj(nowD);
     const newCard = document.createElement('div');
     newCard.className = 'approval-card';
     newCard.innerHTML = `
@@ -8166,7 +8168,7 @@ function _resolveCard(cardEl, status, reason) {
   const dur     = metaEl[1]?.textContent || '—';
   const dates   = metaEl[2]?.textContent || '—';
   const now     = new Date();
-  const todayStr = now.toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'});
+  const todayStr = tkFmtDateObj(now);
   const initials = name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w=>w[0].toUpperCase()).join('');
   const colors = {'Huy Nguyen Duc':'#205090','Lan Tran':'#00B060','Minh Vu':'#F59E0B','Tuan Nguyen':'#3168A8','Ha Nguyen':'#F97316','Binh Le':'#EF4444'};
   const clr = colors[name] || '#8B5CF6';
@@ -8600,7 +8602,7 @@ function filterTable() {
     }
     return `<tr>
       <td><div class="emp-name">${r.name}</div><div class="emp-dept">${r.dept}</div></td>
-      <td style="font-size:12px">${r.date}</td>
+      <td style="font-size:12px;white-space:nowrap">${tkFmtDate(r.date)}</td>
       <td style="font-weight:600">${r.in || '—'}</td>
       <td style="color:var(--text-light)">${r.out || '—'}</td>
       <td style="font-weight:700;color:var(--navy)">${r.out ? (r.hrs || '—') : 'In progress'}</td>
