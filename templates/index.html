@@ -7213,30 +7213,55 @@ async function tkSyncM365Users() {
     }
   } catch (e) { toast('Could not fetch users: ' + e.message, 'error', 7000); return; }
   const domain = ((TK.user && TK.user.email) || '').split('@')[1] || '';
+  const myEmail = ((TK.user && TK.user.email) || '').toLowerCase();
   await tkBootstrap();
-  const existing = new Set((_DEMO_EMPLOYEES || []).map(e => (e.email || '').toLowerCase()));
-  let created = 0, skipped = 0;
+  const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(e => { byEmail[(e.email || '').toLowerCase()] = e; });
+  const known = new Set();   // org-domain emails Microsoft 365 still lists (any state)
+  let created = 0, updated = 0, deactivated = 0, skipped = 0;
   for (const u of users) {
     const email = (u.mail || u.userPrincipalName || '').toLowerCase();
-    if (!email || (u.userPrincipalName || '').indexOf('#EXT#') >= 0) { skipped++; continue; }
-    if (!(u.assignedLicenses && u.assignedLicenses.length)) { skipped++; continue; }   // shared/room/equipment mailbox -> skip
-    if (domain && !email.endsWith('@' + domain)) { skipped++; continue; }
-    if (existing.has(email)) { skipped++; continue; }
-    const name = u.displayName || email.split('@')[0];
-    const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
-    try {
-      await tkApi('/api/employees', { method: 'POST', body: {
-        name: name, email: email, ini: ini, clr: '#205090',
-        dept: u.department || '', title: u.jobTitle || '', phone: u.mobilePhone || '',
-        role: 'staff', level: 'staff', status: (u.accountEnabled === false ? 'Inactive' : 'Active'),
-        zone: 'HQ', annualTotal: 12, sickTotal: 30
-      } });
-      created++; existing.add(email);
-    } catch (e) { skipped++; }
+    if (!email || (u.userPrincipalName || '').indexOf('#EXT#') >= 0) { skipped++; continue; }   // guest / no mail
+    if (domain && !email.endsWith('@' + domain)) { skipped++; continue; }                        // other org
+    known.add(email);
+    const enabled = u.accountEnabled !== false;
+    const licensed = !!(u.assignedLicenses && u.assignedLicenses.length);
+    const ex = byEmail[email];
+    if (ex) {
+      // keep directory fields in step — never touch level/role/balances/grade/salary
+      const patch = {};
+      if (u.displayName && u.displayName !== ex.name) patch.name = u.displayName;
+      if (u.department && (u.department || '') !== (ex.dept || '')) patch.dept = u.department;
+      if (u.jobTitle && (u.jobTitle || '') !== (ex.title || '')) patch.title = u.jobTitle;
+      if (u.mobilePhone && (u.mobilePhone || '') !== (ex.phone || '')) patch.phone = u.mobilePhone;
+      const st = enabled ? 'Active' : 'Inactive';
+      if (st !== (ex.status || 'Active')) patch.status = st;
+      if (Object.keys(patch).length) { try { await tkApi('/api/employees/' + ex.id, { method: 'PATCH', body: patch }); Object.assign(ex, patch); updated++; if (patch.status === 'Inactive') deactivated++; } catch (e) {} }
+    } else {
+      if (!licensed || !enabled) { skipped++; continue; }   // shared mailbox / disabled -> don't create
+      const name = u.displayName || email.split('@')[0];
+      const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
+      try {
+        await tkApi('/api/employees', { method: 'POST', body: {
+          name: name, email: email, ini: ini, clr: '#205090',
+          dept: u.department || '', title: u.jobTitle || '', phone: u.mobilePhone || '',
+          role: 'staff', level: 'staff', status: 'Active', zone: 'HQ', annualTotal: 12, sickTotal: 30
+        } });
+        created++; byEmail[email] = { email: email };
+      } catch (e) { skipped++; }
+    }
   }
-  tkAudit('Synced users from Microsoft 365', '', created + ' added, ' + skipped + ' skipped');
+  // leavers — org-domain employees Microsoft 365 no longer lists -> mark Inactive
+  for (const e of (_DEMO_EMPLOYEES || [])) {
+    const email = (e.email || '').toLowerCase();
+    if (!email || email === myEmail) continue;
+    if (domain && !email.endsWith('@' + domain)) continue;   // leave non-org / manual records alone
+    if (known.has(email)) continue;                          // still in the directory (status handled above)
+    if ((e.status || 'Active') === 'Inactive') continue;
+    try { await tkApi('/api/employees/' + e.id, { method: 'PATCH', body: { status: 'Inactive' } }); e.status = 'Inactive'; deactivated++; } catch (x) {}
+  }
+  tkAudit('Synced from Microsoft 365', '', created + ' added, ' + updated + ' updated, ' + deactivated + ' inactive');
   try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); } catch (_) {}
-  toast('Microsoft 365 sync complete — ' + created + ' user(s) added, ' + skipped + ' skipped. Set their levels in Access & Permissions.', 'info', 9000);
+  toast('Microsoft 365 sync — ' + created + ' added, ' + updated + ' updated, ' + deactivated + ' marked inactive, ' + skipped + ' skipped.', 'info', 9000);
 }
 
 function _loadDemoUser() {
