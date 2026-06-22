@@ -5202,6 +5202,8 @@ const _PAY_GRADES = [
   { g: 'G10', label: 'Executive / MD', min: 180000000, mid: 240000000, max: 320000000 }
 ];
 function _payGradeIdx(e) {
+  // Respect an explicitly assigned grade (G1–G10) from the employee record first.
+  if (e && e.grade) { const gi = _PAY_GRADES.findIndex(g => g.g === e.grade); if (gi >= 0) return gi; }
   const lvl = (e.jobLevel || '').toLowerCase(), t = (e.title || '').toLowerCase();
   if (/managing director|chief|\bceo\b|\bvp\b|executive/.test(t) || lvl.includes('executive')) return 9;
   if (lvl.includes('director') || t.includes('director')) return 8;
@@ -8435,6 +8437,7 @@ function _editEmpProfile(id) {
   set('emp-family',e.familyStatus); set('emp-education',e.education); set('emp-personalId',e.personalId);
   set('emp-address',e.address); set('emp-emergency',e.emergency); set('emp-english',e.englishCert);
   set('emp-note',e.note); set('emp-annual',e.annualTotal); set('emp-sick',e.sickTotal);
+  set('emp-grade', e.grade); set('emp-salary', e.salary); _empGradeChanged(false);
   set('emp-photo', e.photo);
   const pp = document.getElementById('emp-photo-preview');
   if (pp) { if (e.photo) { pp.style.backgroundImage='url('+e.photo+')'; pp.style.backgroundSize='cover'; pp.style.backgroundPosition='center'; pp.textContent=''; } else { pp.style.backgroundImage=''; pp.textContent='Photo'; } }
@@ -9643,8 +9646,9 @@ function openAddEmpModal() {
 function tkOpenAddEmp() {
   _tkEditEmpId = null;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
-  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo']
+  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary']
     .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
+  const sh = document.getElementById('emp-salary-hint'); if (sh) sh.textContent = '';
   const pp = document.getElementById('emp-photo-preview'); if (pp) { pp.style.backgroundImage = ''; pp.textContent = 'Photo'; }
   const pf = document.getElementById('emp-photo-file'); if (pf) pf.value = '';
   const a = document.getElementById('emp-annual'); if (a) a.value = 12;
@@ -9654,6 +9658,20 @@ function tkOpenAddEmp() {
   if (sel) sel.innerHTML = '<option value="">— None (top of org) —</option>' +
     (_DEMO_EMPLOYEES || []).map(e => '<option value="' + (e.email || '') + '">' + e.name + (e.title ? ' (' + e.title + ')' : '') + '</option>').join('');
   openModal('addEmpModal');
+}
+
+/* Add Employee → Compensation: show the selected grade's band, auto-fill the mid
+   when the salary is blank, and flag a salary that falls outside the grade band. */
+function _empGradeChanged(prefillMid) {
+  const gEl = document.getElementById('emp-grade'); const sEl = document.getElementById('emp-salary');
+  const hint = document.getElementById('emp-salary-hint'); if (!gEl || !sEl || !hint) return;
+  const band = (_PAY_GRADES || []).find(x => x.g === gEl.value);
+  if (!band) { hint.textContent = sEl.value ? 'Custom salary — no grade band selected.' : ''; hint.style.color = 'var(--text-light)'; return; }
+  if (prefillMid && !sEl.value) sEl.value = band.mid;
+  const base = 'Band: ' + _PAY_FMT(band.min) + ' – ' + _PAY_FMT(band.max) + ' · mid ' + _PAY_FMT(band.mid);
+  const sal = parseInt(sEl.value) || 0;
+  if (sal && (sal < band.min || sal > band.max)) { hint.textContent = '⚠ ' + _PAY_FMT(sal) + ' is outside the ' + band.g + ' band. ' + base; hint.style.color = '#C00000'; }
+  else { hint.textContent = base + (sal ? '' : ' — blank uses mid'); hint.style.color = 'var(--text-light)'; }
 }
 
 async function saveEmployee() {
@@ -9681,6 +9699,7 @@ async function saveEmployee() {
     address: val('emp-address'), emergency: val('emp-emergency'),
     englishCert: val('emp-english'), note: val('emp-note'), photo: val('emp-photo'),
     shirtSize: val('emp-shirt'),
+    grade: val('emp-grade') || null, salary: parseInt(val('emp-salary')) || null,
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
   let res;
@@ -9888,6 +9907,31 @@ function saveEmployeeProfile() {
       <div class="form-group"><label class="form-label">Sick Leave (days)</label><input type="number" class="form-control" id="emp-sick" value="30" min="0" max="60"></div>
     </div>
     <div class="form-group"><label class="form-label">Note</label><input type="text" class="form-control" id="emp-note"></div>
+
+    <div style="border-top:1px solid var(--line);margin:8px 0 14px;padding-top:14px">
+      <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px">Compensation — 3P Salary (HML-CB-001)</div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Job Grade (G1–G10)</label>
+          <select class="form-control" id="emp-grade" onchange="_empGradeChanged(true)">
+            <option value="">— Auto from job title —</option>
+            <option value="G1">G1 · Intern</option>
+            <option value="G2">G2 · Fresh / Junior</option>
+            <option value="G3">G3 · Engineer / Officer</option>
+            <option value="G4">G4 · Senior</option>
+            <option value="G5">G5 · Lead / Supervisor</option>
+            <option value="G6">G6 · Asst. Manager</option>
+            <option value="G7">G7 · Manager</option>
+            <option value="G8">G8 · Senior Manager</option>
+            <option value="G9">G9 · Director</option>
+            <option value="G10">G10 · Executive / MD</option>
+          </select></div>
+        <div class="form-group"><label class="form-label">Monthly Gross Salary (₫)</label>
+          <input type="number" class="form-control" id="emp-salary" min="0" step="100000" placeholder="e.g. 22,000,000" oninput="_empGradeChanged(false)">
+          <div id="emp-salary-hint" style="font-size:11px;color:var(--text-light);margin-top:4px"></div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-light)">Pick a grade to load the band; leave salary blank to use the grade mid-point. Gross splits into <b>P1</b>/<b>P2</b>/<b>P3</b> automatically on the payroll run.</div>
+    </div>
 
     <div style="border-top:1px solid var(--line);margin:8px 0 14px;padding-top:14px">
       <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px">Access &amp; Provisioning</div>
