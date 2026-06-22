@@ -590,11 +590,14 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     db.init_db()
-    seeded = db.seed()
-    db.seed_hr()
-    att_added = db.generate_attendance()
-    if att_added:
-        print("  Attendance generated: %d rows." % att_added)
+    seeded = False
+    att_added = 0
+    if not db.get_setting("seed_disabled"):
+        seeded = db.seed()
+        db.seed_hr()
+        att_added = db.generate_attendance()
+        if att_added:
+            print("  Attendance generated: %d rows." % att_added)
     print("=" * 62)
     print("  Humiley Timekeeping & Leave Management")
     print("=" * 62)
