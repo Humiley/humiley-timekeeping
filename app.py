@@ -242,7 +242,10 @@ class Handler(BaseHTTPRequestHandler):
         if not emp:
             return self._err("No employees in the system yet.", 400)
         token = new_session(emp["id"], emp.get("role", role))
-        return self._json({"token": token, "user": dict(emp, role=emp.get("role", role))})
+        user = dict(emp, role=emp.get("role", role))
+        if role == "manager":
+            user["level"] = "admin"   # demo Manager / HR Admin = full admin (view all)
+        return self._json({"token": token, "user": user})
 
     def _auth_m365(self, body):
         token_in = body.get("accessToken", "")

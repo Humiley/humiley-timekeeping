@@ -7022,7 +7022,7 @@ function tkRenderMyProfile() {
     '</div>' +
   '</div>' +
   '<div class="prof-grid">' +
-    sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('System Access', D((_LEVEL_LABEL && _LEVEL_LABEL[e.level]) || (e.role === 'manager' ? 'Manager' : 'Staff'))) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
+    sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('System Access', D((_LEVEL_LABEL && _LEVEL_LABEL[_deriveLevel(e)]) || (e.role === 'manager' ? 'Manager' : 'Staff'))) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
     sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('Shirt / Uniform', D(e.shirtSize)) + row('ID / Passport', D(e.personalId))) +
     sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
     sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
