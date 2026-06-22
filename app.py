@@ -193,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
             nm = seg[0]
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments", "onboarding")))
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments", "onboarding") and not nm.startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -209,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
-            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=True)
+            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(not seg[0].startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: (db.delete_employee(eid), self._json({"ok": True}))[1], manager=True)
@@ -454,9 +454,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "crm_deals", "crm_companies", "crm_contacts", "crm_leads"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments"}
+    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
@@ -501,8 +501,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
-        # Non-managers reach this only for 'padr' and 'enrollments' (own records).
-        if u.get("role") != "manager":
+        # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records).
+        if u.get("role") != "manager" and not name.startswith("crm_"):
             if name == "enrollments":
                 existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
                 if not existing or existing.get("empId") != u.get("id"):

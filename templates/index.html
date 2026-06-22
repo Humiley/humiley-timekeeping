@@ -624,6 +624,29 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">My Devices</span>
   </div>
 
+  <div class="sidebar-section-label">Sales / CRM</div>
+  <div class="nav-item" onclick="showView('crm-dashboard',this,'Sales Dashboard')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg></span>
+    <span class="nav-label">Sales Dashboard</span>
+  </div>
+  <div class="nav-item" onclick="showView('crm-pipeline',this,'Pipeline')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="11" rx="1"/></svg></span>
+    <span class="nav-label">Pipeline</span>
+    <span class="nav-badge hidden" id="badge-crm-deals"></span>
+  </div>
+  <div class="nav-item" onclick="showView('crm-leads',this,'Leads')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></span>
+    <span class="nav-label">Leads</span>
+  </div>
+  <div class="nav-item" onclick="showView('crm-companies',this,'Companies')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg></span>
+    <span class="nav-label">Companies</span>
+  </div>
+  <div class="nav-item" onclick="showView('crm-contacts',this,'Contacts')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+    <span class="nav-label">Contacts</span>
+  </div>
+
   <div class="sidebar-section-label" data-roles="manager">Approvals</div>
   <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
@@ -930,6 +953,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-devices" class="view"><div id="devices-root"></div></div>
 <!-- ═══ VIEW: MY DEVICES (staff) ═══ -->
 <div id="view-mydevices" class="view"><div id="mydevices-root"></div></div>
+<div id="view-crm-dashboard" class="view"><div id="crm-dashboard-root"></div></div>
+<div id="view-crm-pipeline" class="view"><div id="crm-pipeline-root"></div></div>
+<div id="view-crm-leads" class="view"><div id="crm-leads-root"></div></div>
+<div id="view-crm-companies" class="view"><div id="crm-companies-root"></div></div>
+<div id="view-crm-contacts" class="view"><div id="crm-contacts-root"></div></div>
 
 <!-- ═══════════════════════════════════════════════════════
      VIEW: MY PROFILE
@@ -3922,7 +3950,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [], crm_deals: [], crm_companies: [], crm_contacts: [], crm_leads: [] };
 /* Audit log — record who did what, when (persisted to the audit collection). */
 function tkAudit(action, target, detail) {
   const entry = { ts: new Date().toISOString(), tsDisp: new Date().toLocaleString('en-GB'), actor: (TK.user && TK.user.name) || 'System', actorId: (TK.user && TK.user.id) || '', action: action, target: target || '', detail: detail || '' };
@@ -4037,7 +4065,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -6795,7 +6823,28 @@ const _QA_SPECS = {
     { k: 'lunch', label: 'Lunch (₫/mo)', type: 'number' }, { k: 'phone', label: 'Phone (₫/mo)', type: 'number' },
     { k: 'transport', label: 'Transport (₫/mo)', type: 'number' }, { k: 'parking', label: 'Parking (₫/mo)', type: 'number' },
     { k: 'health', label: 'Health plan' }, { k: 'training', label: 'Training budget (₫/yr)', type: 'number' },
-    { k: 'note', label: 'Typical title / note' }] }
+    { k: 'note', label: 'Typical title / note' }] },
+  crm_deals: { title: 'Deal / Opportunity', coll: 'crm_deals', reload: 'crm_deals', fields: [
+    { k: 'title', label: 'Deal name' }, { k: 'company', label: 'Company' }, { k: 'contact', label: 'Contact person' },
+    { k: 'value', label: 'Deal value (₫)', type: 'number' },
+    { k: 'stage', label: 'Stage', type: 'select', options: ['New', 'Qualified', 'Proposal', 'Won', 'Lost'] },
+    { k: 'owner', label: 'Owner (sales rep)', type: 'select', options: 'employees' },
+    { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'note', label: 'Notes' }] },
+  crm_companies: { title: 'Company / Account', coll: 'crm_companies', reload: 'crm_companies', fields: [
+    { k: 'name', label: 'Company name' },
+    { k: 'industry', label: 'Industry', type: 'select', options: ['Construction', 'Manufacturing', 'Real Estate', 'Infrastructure', 'Technology', 'Government', 'Retail', 'Energy', 'Other'] },
+    { k: 'website', label: 'Website', type: 'url' }, { k: 'phone', label: 'Phone' }, { k: 'address', label: 'Address' },
+    { k: 'owner', label: 'Account owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
+  crm_contacts: { title: 'Contact', coll: 'crm_contacts', reload: 'crm_contacts', fields: [
+    { k: 'name', label: 'Full name' }, { k: 'title', label: 'Job title' }, { k: 'company', label: 'Company' },
+    { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
+  crm_leads: { title: 'Lead', coll: 'crm_leads', reload: 'crm_leads', fields: [
+    { k: 'name', label: 'Lead name / contact' }, { k: 'company', label: 'Company' }, { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
+    { k: 'source', label: 'Source', type: 'select', options: ['Website', 'Referral', 'Cold call', 'Event', 'LinkedIn', 'Email campaign', 'Partner', 'Other'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Qualified', 'Unqualified'] },
+    { k: 'value', label: 'Est. value (₫)', type: 'number' },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] }
 };
 let _qaType = null, _qaEditId = null;
 function tkQuickAdd(type, id) {
@@ -6805,7 +6854,7 @@ function tkQuickAdd(type, id) {
   document.getElementById('qa-title').textContent = (id ? 'Edit — ' : '') + spec.title;
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
-    if (f.type === 'select') return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '">' + f.options.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div>';
+    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : (f.options === 'employees' ? [''].concat((_DEMO_EMPLOYEES || []).map(e => e.name)) : []); return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '">' + _opts.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div>'; }
     if (f.type === 'file') {
       const nm = ex ? (ex[f.k + 'Name'] || '') : '';
       return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
@@ -7430,6 +7479,207 @@ function _calcWorkingDays(startDate, endDate) {
 let _currentView = 'dashboard';
 
 /* Manager-only view IDs — staff will be redirected */
+/* ════════════════════ CRM / SALES MODULE (all-staff) ════════════════════ */
+const _CRM_STAGES = ['New', 'Qualified', 'Proposal', 'Won', 'Lost'];
+const _CRM_OPEN = ['New', 'Qualified', 'Proposal'];
+const _CRM_STAGE_CLR = { New: '#3168A8', Qualified: '#8b5cf6', Proposal: '#f59e0b', Won: '#00B060', Lost: '#ef4444' };
+function _crmMoney(n) { try { return _PAY_FMT(Math.round(+n || 0)); } catch (e) { return '₫' + (Math.round(+n || 0)).toLocaleString('en-US'); } }
+function _crmIni(nm) { return (nm || '?').split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join(''); }
+function _crmAva(nm) { const e = (_DEMO_EMPLOYEES || []).find(x => x.name === nm); return e ? tkAvatar(e, 'ava-sm') : '<div class="ava-sm" style="background:' + tkAvatarColor(nm || '') + '">' + _crmIni(nm) + '</div>'; }
+async function _crmLoadAll() { await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_leads')]); }
+function _crmDealBadge(n) { const b = document.getElementById('badge-crm-deals'); if (!b) return; if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
+
+/* ── Pipeline (deals kanban) ── */
+async function crmRenderPipeline() {
+  const root = document.getElementById('crm-pipeline-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies')]);
+  const deals = _HR.crm_deals || [];
+  const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
+  const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
+  const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
+  const wonVal = won.reduce((s, d) => s + (+d.value || 0), 0);
+  const decided = won.length + lost.length; const winRate = decided ? Math.round(won.length / decided * 100) : 0;
+  _crmDealBadge(openDeals.length);
+  const kpis = _hrKpiRow([
+    _hrKpi('Open deals', openDeals.length),
+    _hrKpi('Pipeline value', _crmMoney(pipeVal), '#F59E0B'),
+    _hrKpi('Won value', _crmMoney(wonVal), 'var(--emerald)'),
+    _hrKpi('Win rate', winRate + '%', '#8B5CF6')
+  ]);
+  const cols = _CRM_STAGES.map(st => {
+    const items = deals.filter(d => (d.stage || 'New') === st);
+    const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
+    const cards = items.map(d => {
+      const i = _CRM_OPEN.indexOf(d.stage || 'New');
+      const adv = (i >= 0 && i < _CRM_OPEN.length - 1) ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="crmDealMove(\'' + d.id + '\',\'' + _CRM_OPEN[i + 1] + '\')">→</button>' : '';
+      const close = _CRM_OPEN.includes(d.stage || 'New') ? '<button class="btn btn-emerald btn-sm" title="Mark Won" style="font-size:10px;padding:2px 8px" onclick="crmDealMove(\'' + d.id + '\',\'Won\')">Won</button><button class="btn btn-ghost btn-sm" title="Mark Lost" style="font-size:10px;padding:2px 8px;color:#C00000" onclick="crmDealMove(\'' + d.id + '\',\'Lost\')">Lost</button>' : '';
+      const quote = '<button class="btn btn-ghost btn-sm" title="Quotation PDF" style="font-size:10px;padding:2px 8px" onclick="crmDownloadQuote(\'' + d.id + '\')">Quote</button>';
+      return '<div class="card" style="padding:10px;margin-bottom:8px;border-left:3px solid ' + (_CRM_STAGE_CLR[st] || '#205090') + '">' +
+        '<div style="font-weight:700;font-size:13px">' + (d.title || '(untitled)') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + (d.company || '—') + (d.contact ? ' · ' + d.contact : '') + '</div>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-top:3px">' + _crmMoney(d.value) + '</div>' +
+        (d.owner ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-light)">' + _crmAva(d.owner) + '<span>' + d.owner + '</span></div>' : '') +
+        '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + close + adv + quote + _hrEditDel('crm_deals', d.id, 'crm_deals') + '</div></div>';
+    }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>';
+    return '<div style="flex:1;min-width:185px;background:var(--soft-bg);border-radius:10px;padding:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + (_CRM_STAGE_CLR[st] || '#205090') + ';display:flex;justify-content:space-between"><span>' + st + '</span><span>' + items.length + '</span></div><div style="font-size:11px;color:var(--text-light);margin-bottom:8px">' + _crmMoney(sum) + '</div>' + cards + '</div>';
+  }).join('');
+  const addBtn = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button>';
+  root.innerHTML = kpis + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:700;color:var(--navy)">Sales Pipeline</div>' + addBtn + '</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>';
+}
+function crmDealMove(id, stage) {
+  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) return;
+  tkApi('/api/coll/crm_deals/' + id, { method: 'PATCH', body: Object.assign({}, d, { stage: stage }) })
+    .then(() => { d.stage = stage; try { tkAudit('Deal ' + stage, d.title || '', _crmMoney(d.value)); } catch (e) {} crmRenderPipeline(); toast((d.title || 'Deal') + ' → ' + stage); })
+    .catch(e => toast('Could not update: ' + e.message, 'error'));
+}
+
+/* ── Leads ── */
+async function crmRenderLeads() {
+  const root = document.getElementById('crm-leads-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('crm_leads');
+  const leads = _HR.crm_leads || [];
+  const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
+  const kpis = _hrKpiRow([
+    _hrKpi('Total leads', leads.length),
+    _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
+    _hrKpi('Qualified', leads.filter(l => l.status === 'Qualified').length, 'var(--emerald)'),
+    _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
+  ]);
+  const rows = leads.length ? leads.map(l => '<tr><td style="font-weight:600">' + (l.name || '') + '</td><td>' + (l.company || '—') + '</td><td style="font-size:12px">' + (l.email || '—') + (l.phone ? '<div style="color:var(--text-light)">' + l.phone + '</div>' : '') + '</td><td>' + (l.source || '—') + '</td><td><span class="badge ' + (sc[l.status] || 'b-grey') + '" style="font-size:10px">' + (l.status || 'New') + '</span></td><td style="font-weight:600">' + _crmMoney(l.value) + '</td><td style="white-space:nowrap"><button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>' + _hrEditDel('crm_leads', l.id, 'crm_leads') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No leads yet — click “Add Lead” to start.</td></tr>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Leads</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+async function crmConvertLead(id) {
+  const l = (_HR.crm_leads || []).find(x => x.id === id); if (!l) return;
+  if (!confirm('Convert "' + (l.name || 'lead') + '" into a deal?\n\nThis creates a deal (plus a company & contact) and marks the lead Qualified.')) return;
+  try {
+    if (l.company) { const exists = (_HR.crm_companies || []).some(c => (c.name || '').toLowerCase() === l.company.toLowerCase()); if (!exists) { const r = await tkApi('/api/coll/crm_companies', { method: 'POST', body: { name: l.company, owner: l.owner || '', note: 'From lead' } }); (_HR.crm_companies = _HR.crm_companies || []).push(r.item); } }
+    if (l.name) { const r = await tkApi('/api/coll/crm_contacts', { method: 'POST', body: { name: l.name, company: l.company || '', email: l.email || '', phone: l.phone || '', owner: l.owner || '' } }); (_HR.crm_contacts = _HR.crm_contacts || []).push(r.item); }
+    const rd = await tkApi('/api/coll/crm_deals', { method: 'POST', body: { title: (l.company || l.name) + ' — opportunity', company: l.company || '', contact: l.name || '', value: l.value || 0, stage: 'Qualified', owner: l.owner || '', note: 'Converted from lead' } });
+    (_HR.crm_deals = _HR.crm_deals || []).push(rd.item);
+    await tkApi('/api/coll/crm_leads/' + id, { method: 'PATCH', body: Object.assign({}, l, { status: 'Qualified' }) }); l.status = 'Qualified';
+    try { tkAudit('Lead converted', l.name || '', _crmMoney(l.value)); } catch (e) {}
+    toast('Converted — a new deal is now in the Pipeline', 'success', 6000); crmRenderLeads();
+  } catch (e) { toast('Convert failed: ' + e.message, 'error', 6000); }
+}
+
+/* ── Companies ── */
+async function crmRenderCompanies() {
+  const root = document.getElementById('crm-companies-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_deals')]);
+  const cos = _HR.crm_companies || []; const deals = _HR.crm_deals || [];
+  const kpis = _hrKpiRow([
+    _hrKpi('Companies', cos.length),
+    _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')
+  ]);
+  const rows = cos.length ? cos.map(c => {
+    const dv = deals.filter(d => (d.company || '') === c.name).reduce((s, d) => s + (+d.value || 0), 0);
+    return '<tr><td style="font-weight:600">' + (c.name || '') + '</td><td>' + (c.industry || '—') + '</td><td style="font-size:12px">' + (c.website ? '<a href="' + c.website + '" target="_blank" rel="noopener" style="color:var(--navy)">' + c.website + '</a>' : '—') + '</td><td style="font-size:12px">' + (c.phone || '—') + '</td><td>' + (c.owner || '—') + '</td><td style="font-weight:600">' + _crmMoney(dv) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_companies', c.id, 'crm_companies') + '</td></tr>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No companies yet — click “Add Company”.</td></tr>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Companies / Accounts</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div><div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+/* ── Contacts ── */
+async function crmRenderContacts() {
+  const root = document.getElementById('crm-contacts-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('crm_contacts');
+  const cts = _HR.crm_contacts || [];
+  const kpis = _hrKpiRow([
+    _hrKpi('Contacts', cts.length),
+    _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')
+  ]);
+  const rows = cts.length ? cts.map(c => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(c.name) + '<span style="font-weight:600">' + (c.name || '') + '</span></div></td><td>' + (c.title || '—') + '</td><td>' + (c.company || '—') + '</td><td style="font-size:12px">' + (c.email ? '<a href="mailto:' + c.email + '" style="color:var(--navy)">' + c.email + '</a>' : '—') + '</td><td style="font-size:12px">' + (c.phone || '—') + '</td><td>' + (c.owner || '—') + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_contacts', c.id, 'crm_contacts') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No contacts yet — click “Add Contact”.</td></tr>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Contacts</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+/* ── Sales dashboard ── */
+let _crmDashData = null;
+async function crmRenderDashboard() {
+  const root = document.getElementById('crm-dashboard-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await _crmLoadAll();
+  const deals = _HR.crm_deals || []; const leads = _HR.crm_leads || [];
+  const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
+  const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
+  const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0); const wonVal = won.reduce((s, d) => s + (+d.value || 0), 0);
+  const decided = won.length + lost.length; const winRate = decided ? Math.round(won.length / decided * 100) : 0;
+  const kpis = _hrKpiRow([
+    _hrKpi('Pipeline value', _crmMoney(pipeVal)),
+    _hrKpi('Open deals', openDeals.length, '#3168A8'),
+    _hrKpi('Won value (all)', _crmMoney(wonVal), 'var(--emerald)'),
+    _hrKpi('Win rate', winRate + '%', '#8B5CF6'),
+    _hrKpi('Leads', leads.length, '#F59E0B')
+  ]);
+  const stageVals = _CRM_STAGES.map(st => deals.filter(d => (d.stage || 'New') === st).reduce((s, d) => s + (+d.value || 0), 0));
+  const ownMap = {}; openDeals.forEach(d => { const o = d.owner || 'Unassigned'; ownMap[o] = (ownMap[o] || 0) + (+d.value || 0); });
+  const ownKeys = Object.keys(ownMap).sort((a, b) => ownMap[b] - ownMap[a]).slice(0, 8);
+  const months = []; const now = new Date();
+  for (let i = 5; i >= 0; i--) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ key: dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2), label: dt.toLocaleString('en-US', { month: 'short' }) }); }
+  const wonByM = months.map(m => won.filter(d => (d.closeDate || '').slice(0, 7) === m.key).reduce((s, d) => s + (+d.value || 0), 0));
+  const srcMap = {}; leads.forEach(l => { const s = l.source || 'Other'; srcMap[s] = (srcMap[s] || 0) + 1; });
+  const srcKeys = Object.keys(srcMap);
+  _crmDashData = { stageVals: stageVals, ownLabels: ownKeys, ownVals: ownKeys.map(k => ownMap[k]), monthLabels: months.map(m => m.label), wonByM: wonByM, srcLabels: srcKeys, srcVals: srcKeys.map(k => srcMap[k]) };
+  const grid = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' +
+    _rptChartCard('Pipeline value by stage', 'crm-stage', 240) +
+    _rptChartCard('Open pipeline by sales rep', 'crm-owner', 240) +
+    _rptChartCard('Won value — last 6 months', 'crm-monthly', 240) +
+    _rptChartCard('Lead sources', 'crm-src', 240) + '</div>';
+  root.innerHTML = kpis + grid;
+  setTimeout(_crmBuildDashCharts, 80);
+}
+function _crmBuildDashCharts() {
+  const d = _crmDashData; if (!d || typeof Chart === 'undefined') return;
+  _mkChart('crm-stage', { type: 'bar', data: { labels: _CRM_STAGES, datasets: [{ data: d.stageVals, backgroundColor: ['#3168A8', '#8b5cf6', '#f59e0b', '#00B060', '#ef4444'], borderRadius: 6, maxBarThickness: 46 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
+  _mkChart('crm-owner', { type: 'bar', data: { labels: d.ownLabels, datasets: [{ data: d.ownVals, backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+  _mkChart('crm-monthly', { type: 'line', data: { labels: d.monthLabels, datasets: [{ data: d.wonByM, borderColor: '#00B060', backgroundColor: _grad('rgba(0,176,96,.25)', 'rgba(0,176,96,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: '#00B060', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
+  _mkChart('crm-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Leads' } });
+}
+
+/* ── Quotation PDF on the Humiley letterhead ── */
+function crmQuotePDF(deal) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!J) return null;
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 15;
+  let y = _brandHeader(doc, { title: 'Sales Quotation', subtitle: 'Quote ' + (deal.id || '') });
+  y += 2;
+  doc.setDrawColor(220, 224, 230); doc.setFillColor(248, 250, 252); doc.roundedRect(M, y, W - 2 * M, 24, 2, 2, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK); doc.text('Prepared for', M + 4, y + 6);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, _LH_DARK); doc.text(String(deal.company || '—'), M + 4, y + 12);
+  doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY); doc.text('Attn: ' + (deal.contact || '—'), M + 4, y + 18);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+  doc.text('Account owner: ' + (deal.owner || '—'), W - M - 4, y + 6, { align: 'right' });
+  doc.text('Validity: 30 days', W - M - 4, y + 12, { align: 'right' });
+  y += 30;
+  const net = Math.round(+deal.value || 0); const vat = Math.round(net * 0.1); const tot = net + vat;
+  const fmt = n => 'VND ' + Math.round(n).toLocaleString('en-US');
+  doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(M, y, W - 2 * M, 8, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(255, 255, 255);
+  doc.text('Description', M + 3, y + 5.4); doc.text('Amount', W - M - 3, y + 5.4, { align: 'right' });
+  y += 8;
+  doc.setFont('helvetica', 'normal'); doc.setTextColor.apply(doc, _LH_DARK); doc.setFontSize(9);
+  const desc = doc.splitTextToSize(String(deal.title || 'Professional services'), 120);
+  doc.rect(M, y, W - 2 * M, 12); doc.text(desc, M + 3, y + 5); doc.text(fmt(net), W - M - 3, y + 5, { align: 'right' });
+  y += 12;
+  const totRow = (lab, val, bold) => { doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 10 : 9); doc.text(lab, W - M - 50, y + 5, { align: 'right' }); doc.text(val, W - M - 3, y + 5, { align: 'right' }); if (!bold) { doc.setDrawColor(230, 233, 237); doc.line(M, y + 8, W - M, y + 8); } y += 8; };
+  doc.setTextColor.apply(doc, _LH_DARK); totRow('Subtotal', fmt(net)); totRow('VAT 10%', fmt(vat));
+  doc.setTextColor.apply(doc, _LH_NAVY); totRow('TOTAL', fmt(tot), true);
+  y += 6;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, _LH_GREY);
+  doc.text(doc.splitTextToSize('Terms: Prices in VND, exclusive of taxes unless stated. Quotation valid 30 days from the issue date. Payment terms: 30 days net. This document was generated by the Humiley People & Workplace Portal.', W - 2 * M), M, y);
+  _brandFooter(doc, 1, 1, 'HML-CRM-QUOTE');
+  return doc;
+}
+function crmDownloadQuote(id) {
+  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
+  const doc = crmQuotePDF(d); if (!doc) { toast('PDF engine not ready', 'error'); return; }
+  doc.save('Humiley_Quote_' + (d.company || 'deal').replace(/[^a-z0-9]+/gi, '_') + '.pdf');
+  try { tkAudit('Quotation generated', d.title || '', _crmMoney(d.value)); } catch (e) {}
+}
+
+
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
 const _LEVEL_VIEWS = { payroll: 'management', permissions: 'admin' };
 
@@ -7472,6 +7722,11 @@ function showView(id, navEl, title) {
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
   if (id === 'devices') { try { tkRenderDevices(); } catch (e) { console.warn('devices:', e.message); } }
   if (id === 'mydevices') { try { tkRenderMyDevices(); } catch (e) { console.warn('mydevices:', e.message); } }
+  if (id === 'crm-dashboard') { try { crmRenderDashboard(); } catch (e) { console.warn('crm-dash:', e.message); } }
+  if (id === 'crm-pipeline') { try { crmRenderPipeline(); } catch (e) { console.warn('crm-pipe:', e.message); } }
+  if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
+  if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
+  if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
   if (id === 'performance') { try { tkRenderPerformance(); } catch (e) { console.warn('perf:', e.message); } }
@@ -7734,6 +7989,12 @@ const _VI = {
   'Competency Matrix': 'Ma trận năng lực',
   'Save Changes': 'Lưu thay đổi',
   'removed permanently': 'đã xóa vĩnh viễn',
+  'Sales / CRM': 'Bán hàng / CRM', 'Sales Dashboard': 'Bảng điều khiển bán hàng', 'Sales Pipeline': 'Quy trình bán hàng',
+  'Pipeline': 'Quy trình', 'Leads': 'Khách hàng tiềm năng', 'Companies': 'Công ty', 'Companies / Accounts': 'Công ty / Khách hàng',
+  'Contacts': 'Người liên hệ', 'Add Deal': 'Thêm giao dịch', 'Add Lead': 'Thêm KH tiềm năng', 'Add Company': 'Thêm công ty',
+  'Add Contact': 'Thêm người liên hệ', 'Deal / Opportunity': 'Giao dịch / Cơ hội', 'Company / Account': 'Công ty / Khách hàng',
+  'Open deals': 'Giao dịch đang mở', 'Pipeline value': 'Giá trị quy trình', 'Won value': 'Giá trị đã thắng',
+  'Win rate': 'Tỷ lệ thắng', 'Convert': 'Chuyển đổi', 'Quote': 'Báo giá', 'Total leads': 'Tổng KH tiềm năng',
   'Complete the HSE induction before site access.': 'Hoàn thành đào tạo định hướng HSE trước khi vào công trường.',
   'Compliance': 'Tuân thủ',
   'Condition': 'Tình trạng',
