@@ -5777,6 +5777,8 @@ function tkPayslip(empId) {
 function _openAsOutlook(to, subject, body, attName, attB64) {
   const CRLF = '\r\n';
   const b = 'HMLMIME_' + Math.abs(((subject || '') + (to || '')).length * 1009 + ((attB64 || '').length % 100000));
+  const _aExt = ((attName || '').split('.').pop() || '').toLowerCase();
+  const _attMime = ({ pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }[_aExt] || 'application/octet-stream');
   let eml = '';
   eml += 'To: ' + (to || '') + CRLF;
   eml += 'Subject: ' + (subject || '') + CRLF;
@@ -5785,7 +5787,7 @@ function _openAsOutlook(to, subject, body, attName, attB64) {
   if (attB64) {
     eml += 'Content-Type: multipart/mixed; boundary="' + b + '"' + CRLF + CRLF;
     eml += '--' + b + CRLF + 'Content-Type: text/plain; charset="utf-8"' + CRLF + 'Content-Transfer-Encoding: 8bit' + CRLF + CRLF + (body || '') + CRLF + CRLF;
-    eml += '--' + b + CRLF + 'Content-Type: application/pdf; name="' + attName + '"' + CRLF + 'Content-Transfer-Encoding: base64' + CRLF + 'Content-Disposition: attachment; filename="' + attName + '"' + CRLF + CRLF;
+    eml += '--' + b + CRLF + 'Content-Type: ' + _attMime + '; name="' + attName + '"' + CRLF + 'Content-Transfer-Encoding: base64' + CRLF + 'Content-Disposition: attachment; filename="' + attName + '"' + CRLF + CRLF;
     eml += (attB64.match(/.{1,76}/g) || []).join(CRLF) + CRLF;
     eml += '--' + b + '--' + CRLF;
   } else {
@@ -5794,7 +5796,7 @@ function _openAsOutlook(to, subject, body, attName, attB64) {
   const blob = new Blob([eml], { type: 'message/rfc822' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = ((attName ? attName.replace(/\.pdf$/i, '') : ('Humiley_' + (subject || 'message').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40))) + '.eml');
+  a.href = url; a.download = ((attName ? attName.replace(/\.[a-z0-9]+$/i, '') : ('Humiley_' + (subject || 'message').replace(/[^A-Za-z0-9]+/g, '_').slice(0, 40))) + '.eml');
   document.body.appendChild(a); a.click();
   setTimeout(() => { try { a.remove(); URL.revokeObjectURL(url); } catch (e) {} }, 200);
   return true;
@@ -5946,7 +5948,7 @@ async function tkSendAssetHandover(empId, opts) {
     else { const r = await tkApi('/api/coll/handovers', { method: 'POST', body: rec }); rec.id = r && r.id; (_HR.handovers = _HR.handovers || []).push(rec); }
   } catch (x) { console.warn('handover store failed', x.message); }
   const subject = 'Asset & Equipment Handover for signature — ' + (e.name || '');
-  const body = 'Dear ' + (e.name || '') + ',\n\nWelcome to Humiley! Please find attached your IT & Physical Asset Handover form (BM.HR-02-06) listing the equipment assigned to you.\n\nKindly review, sign, and return a signed copy to HR@humiley.com.\n\nBy signing you acknowledge receipt of the assets and the obligation to return them in good condition on your last working day.\n\nBest regards,\nHumiley Group Inc. — HR\nHR@humiley.com';
+  const body = 'Dear ' + (e.name || '') + ',\n\nWelcome to Humiley! Please find attached your Asset & Equipment Handover form (BM.HR-02-06) listing the equipment assigned to you.\n\nKindly review, sign, and return a signed copy to HR@humiley.com.\n\nBy signing you acknowledge receipt of the assets and the obligation to return them in good condition on your last working day.\n\nBest regards,\nHumiley Group Inc. — HR\nHR@humiley.com';
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
@@ -5995,7 +5997,7 @@ async function tkEmailHandoverToHR(empId) {
   else { toast('Preparing handover…', 'info', 1500); const doc = await _assetHandoverPdfDoc(empId); try { if (doc) b64 = doc.output('datauristring').split(',')[1]; } catch (x) {} fname = _handoverFilename(e); }
   if (!b64) { toast('Could not prepare the handover', 'error'); return; }
   const subject = (signed ? 'Signed ' : '') + 'Asset & Equipment Handover — ' + (e.name || '');
-  const body = 'Dear HR,\n\nPlease find attached ' + (signed ? 'my signed ' : 'the ') + 'IT & Physical Asset Handover form (BM.HR-02-06) for ' + (e.name || '') + (e.id ? ' (' + e.id + ')' : '') + '.\n\nI acknowledge receipt of the listed assets and the obligation to return them in good working condition on the last working day.\n\nRegards,\n' + (e.name || '') + '\nHumiley Group Inc.';
+  const body = 'Dear HR,\n\nPlease find attached ' + (signed ? 'my signed ' : 'the ') + 'Asset & Equipment Handover form (BM.HR-02-06) for ' + (e.name || '') + (e.id ? ' (' + e.id + ')' : '') + '.\n\nI acknowledge receipt of the listed assets and the obligation to return them in good working condition on the last working day.\n\nRegards,\n' + (e.name || '') + '\nHumiley Group Inc.';
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
