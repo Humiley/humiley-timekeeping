@@ -7201,7 +7201,7 @@ async function tkSyncM365Users() {
   } catch (e) {
     toast('Permission needed to read the directory (User.Read.All) — a Microsoft 365 admin must allow it.', 'error', 9000); return;
   }
-  let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone&$top=999";
+  let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone,assignedLicenses&$top=999";
   const users = [];
   try {
     while (url) {
@@ -7219,6 +7219,7 @@ async function tkSyncM365Users() {
   for (const u of users) {
     const email = (u.mail || u.userPrincipalName || '').toLowerCase();
     if (!email || (u.userPrincipalName || '').indexOf('#EXT#') >= 0) { skipped++; continue; }
+    if (!(u.assignedLicenses && u.assignedLicenses.length)) { skipped++; continue; }   // shared/room/equipment mailbox -> skip
     if (domain && !email.endsWith('@' + domain)) { skipped++; continue; }
     if (existing.has(email)) { skipped++; continue; }
     const name = u.displayName || email.split('@')[0];
