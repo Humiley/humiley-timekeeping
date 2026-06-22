@@ -5935,6 +5935,30 @@ function tkDownloadStoredHandover(empId, signed) {
   document.body.appendChild(a); a.click(); setTimeout(() => { try { a.remove(); } catch (e) {} }, 200);
 }
 
+async function tkEmailHandoverToHR(empId) {
+  const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(x => x.id === empId); if (!e) return;
+  await tkLoadColl('handovers');
+  const h = (_HR.handovers || []).find(x => x.empId === e.id);
+  let b64 = '', fname = '', signed = false;
+  if (h && h.signedB64) { b64 = h.signedB64; fname = h.signedName || _handoverFilename(e); signed = true; }
+  else { toast('Preparing handover…', 'info', 1500); const doc = await _assetHandoverPdfDoc(empId); try { if (doc) b64 = doc.output('datauristring').split(',')[1]; } catch (x) {} fname = _handoverFilename(e); }
+  if (!b64) { toast('Could not prepare the handover', 'error'); return; }
+  const subject = (signed ? 'Signed ' : '') + 'IT & Asset Handover — ' + (e.name || '');
+  const body = 'Dear HR,\n\nPlease find attached ' + (signed ? 'my signed ' : 'the ') + 'IT & Physical Asset Handover form (BM.HR-02-06) for ' + (e.name || '') + (e.id ? ' (' + e.id + ')' : '') + '.\n\nI acknowledge receipt of the listed assets and the obligation to return them in good working condition on the last working day.\n\nRegards,\n' + (e.name || '') + '\nHumiley Group Inc.';
+  if (_msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const msg = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: 'HR@humiley.com' } }] };
+      msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: fname, contentType: (/\.pdf$/i.test(fname) ? 'application/pdf' : 'application/octet-stream'), contentBytes: b64 }];
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      if (resp.ok) { tkAudit('Handover emailed to HR', e.name, fname); toast('Handover emailed to HR@humiley.com'); return; }
+    } catch (err) {}
+  }
+  _openAsOutlook('HR@humiley.com', subject, body, fname, b64);
+  tkAudit('Handover to HR prepared for Outlook', e.name, fname);
+  toast('Opening Outlook — handover to HR@humiley.com. Review & Send.', 'info', 6000);
+}
+
 async function tkMyPayslip() {
   await tkLoadColl('reviews');
   const u = TK.user || {}; const e = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
@@ -6905,6 +6929,7 @@ function tkRenderMyProfile() {
         '<div style=\"display:flex;flex-wrap:wrap;gap:8px\">' +
           '<button class=\"btn btn-outline btn-sm\" onclick=\"tkDownloadHandover(\'' + e.id + '\')\">' + tkIcon('download', 12) + 'Download form</button>' +
           '<button class=\"btn btn-primary btn-sm\" onclick=\"tkUploadSignedHandover(\'' + e.id + '\')\">' + tkIcon('check', 12) + 'Upload signed</button>' +
+          '<button class=\"btn btn-outline btn-sm\" onclick=\"tkEmailHandoverToHR(\'' + e.id + '\')\">Email to HR</button>' +
           (h && h.signedB64 ? '<button class=\"btn btn-ghost btn-sm\" onclick=\"tkDownloadStoredHandover(\'' + e.id + '\',true)\">View signed</button>' : '') +
           (canEdit ? '<button class=\"btn btn-ghost btn-sm\" onclick=\"tkSendAssetHandover(\'' + e.id + '\')\">Email to employee</button>' : '') +
         '</div>';
