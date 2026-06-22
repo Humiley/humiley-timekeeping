@@ -3824,7 +3824,14 @@ function tkRenderStaffPortal() {
   const annis = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.m === mIdx && p.y < now.getFullYear(); }).map(e => { const p = _tkDateParts(e.startDate); const yrs = now.getFullYear() - p.y; return { e, d: p.d, label: yrs + ' yr Work Anniversary', kind: 'a' }; });
   const celebs = bdays.concat(annis).sort((a, b) => a.d - b.d);
   const celEl = document.getElementById('staff-celebrations');
-  if (celEl) celEl.innerHTML = celebs.length ? celebs.map(c => personRow(c.e, c.label, chip(MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0'), c.kind === 'b' ? '#8b5cf6' : '#00B060'))).join('') : empty('No celebrations this month');
+  if (celEl) {
+    if (!celebs.length) celEl.innerHTML = empty('No celebrations this month');
+    else {
+      const shown = celebs.slice(0, 8), todayD = now.getDate();
+      celEl.innerHTML = shown.map(c => personRow(c.e, c.label, (c.d === todayD) ? chip('Today', '#F59E0B') : chip(MON[mIdx - 1] + ' ' + String(c.d).padStart(2, '0'), c.kind === 'b' ? '#8b5cf6' : '#00B060'))).join('') +
+        (celebs.length > 8 ? '<div style="text-align:center;font-size:11px;color:var(--text-light);padding:8px 0 2px">+ ' + (celebs.length - 8) + ' more this month</div>' : '');
+    }
+  }
 
   /* Upcoming holidays */
   const hol = PD.holidays.slice().filter(h => h.date >= todayISO).sort((a, b) => a.date < b.date ? -1 : 1).slice(0, 5);
@@ -3841,10 +3848,12 @@ function tkRenderStaffPortal() {
   const teamEl = document.getElementById('staff-team');
   if (teamEl) {
     const mgr = emps.find(e => (e.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    const peers = emps.filter(e => e.dept === me.dept && e.id !== me.id).slice(0, 6);
+    // teammates = same department, excluding myself AND my manager (no duplicate)
+    const peers = emps.filter(e => e.dept === me.dept && e.id !== me.id && (!mgr || e.id !== mgr.id)).slice(0, 8);
     let html = '';
-    if (mgr) html += '<div style="display:flex;align-items:center;gap:11px;padding:9px;border-radius:10px;background:linear-gradient(135deg,#2050900f,#00b06008);border:1px solid var(--line);margin-bottom:8px">' + av(mgr) + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mgr.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (mgr.title || '') + '</div></div>' + chip('Manager', '#00B060') + '</div>';
-    html += peers.length ? peers.map(p => personRow(p, p.title || p.dept || '')).join('') : (mgr ? '' : empty('No teammates listed'));
+    if (mgr) html += '<div style="display:flex;align-items:center;gap:11px;padding:10px;border-radius:10px;background:linear-gradient(135deg,#2050900f,#00b06008);border:1px solid var(--line);margin-bottom:10px">' + av(mgr) + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + mgr.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (mgr.title || '') + '</div></div>' + chip('Manager', '#00B060') + '</div>';
+    if (peers.length) html += '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin:2px 4px 4px">Teammates · ' + peers.length + '</div>' + peers.map(p => personRow(p, p.title || p.dept || '')).join('');
+    else if (!mgr) html += empty('No teammates listed');
     teamEl.innerHTML = html;
   }
 
