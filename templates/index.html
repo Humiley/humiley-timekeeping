@@ -166,8 +166,8 @@ select.form-control{cursor:pointer}
 .sel-filter:focus{border-color:var(--navy)}
 
 /* ── PROGRESS BAR ── */
-.prog-wrap{height:7px;background:var(--line);border-radius:4px;overflow:hidden}
-.prog-fill{height:100%;border-radius:4px;transition:width .3s}
+.prog-wrap{height:9px;background:var(--line);border-radius:5px;overflow:hidden}
+.prog-fill{height:100%;border-radius:5px;transition:width .3s}
 .prog-navy{background:var(--navy)}.prog-emerald{background:var(--emerald)}
 .prog-warn{background:var(--warning)}.prog-danger{background:var(--danger)}
 
@@ -381,6 +381,11 @@ select.form-control{cursor:pointer}
 .role-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px}
 .role-badge.mgr{background:rgba(32,80,144,.12);color:var(--navy)}
 .role-badge.staff{background:rgba(0,176,96,.12);color:var(--emerald-deep)}
+/* Sidebar footer sits on a dark gradient — keep its text/badges light & readable */
+.sidebar-footer .user-name{color:#fff}
+.sidebar-footer .user-role{color:rgba(255,255,255,.7)}
+.sidebar-footer .role-badge.mgr{background:rgba(135,176,255,.22);color:#dbe8ff}
+.sidebar-footer .role-badge.staff{background:rgba(0,176,96,.30);color:#a8f5cf}
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <!-- ════════ CREXTIO-INSPIRED THEME (Humiley navy + emerald) ════════ -->
@@ -6630,9 +6635,14 @@ function tkRenderMyProfile() {
   const av = (x, sz) => (typeof tkAvatar === 'function' ? tkAvatar(x, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (x.clr || '#205090') + '">' + (x.ini || '') + '</div>');
   const photoCss = e.photo ? ('background-image:url(' + e.photo + ');background-size:cover;background-position:center') : ('background:' + (e.clr || '#205090'));
   const sp = _tkDateParts(e.startDate);
-  let svc = '—';
+  let svc = '';
   if (e.serviceDuration && String(e.serviceDuration).trim()) svc = e.serviceDuration;
-  else if (sp) { const yrs = Math.max(0, new Date().getFullYear() - sp.y); svc = yrs ? (yrs + ' year' + (yrs !== 1 ? 's' : '')) : '< 1 year'; }
+  else if (sp) {
+    const now = new Date(); let months = (now.getFullYear() - sp.y) * 12 + (now.getMonth() + 1 - sp.m);
+    if (months < 0) months = 0; const yrs = Math.floor(months / 12), rem = months % 12;
+    svc = yrs >= 1 ? (yrs + ' yr' + (yrs !== 1 ? 's' : '') + (rem ? ' ' + rem + ' mo' : '')) : (months >= 1 ? months + ' month' + (months !== 1 ? 's' : '') : '< 1 month');
+  }
+  const svcLabel = svc ? (svc + ' of service') : 'New joiner';
   const canEdit = (typeof _userRole !== 'undefined' && _userRole === 'manager');
   const ico = p => '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px">' + p + '</svg>';
   const I_MAIL = '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>';
@@ -6667,13 +6677,13 @@ function tkRenderMyProfile() {
   const hBtn = (label, icon, onclick, filled) => '<button onclick="' + onclick + '" style="' + (filled ? 'background:#fff;color:var(--navy);' : 'background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.55);') + 'border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px">' + ico(icon) + label + '</button>';
   const cInfo = (icon, v) => '<span style="display:inline-flex;align-items:center;gap:6px">' + ico(icon) + D(v) + '</span>';
   root.innerHTML =
-  '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">' +
-    '<div style="background:linear-gradient(120deg,#0f2f5e 0%,#205090 55%,#1a7a5e 100%);padding:24px 28px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;color:#fff">' +
+  '<div style="border-radius:14px;overflow:hidden;margin-bottom:20px;box-shadow:0 6px 20px rgba(32,80,144,.15)">' +
+    '<div style="background:linear-gradient(120deg,#0f2f5e 0%,#205090 55%,#1a7a5e 100%);padding:26px 30px;display:flex;align-items:center;gap:22px;flex-wrap:wrap;color:#fff">' +
       '<div style="width:84px;height:84px;border-radius:50%;' + photoCss + ';border:3px solid rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.25);flex-shrink:0">' + (e.photo ? '' : D(e.ini)) + '</div>' +
       '<div style="flex:1;min-width:240px">' +
         '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:23px;font-weight:800;letter-spacing:.3px">' + D(e.name) + '</span><span class="badge ' + ((e.status || 'Active').toLowerCase() !== 'inactive' ? 'b-ok' : 'b-danger') + '" style="font-size:10px">' + D(e.status || 'Active') + '</span></div>' +
         '<div style="font-size:14.5px;font-weight:600;opacity:.96;margin-top:3px">' + D(e.title) + '</div>' +
-        '<div style="font-size:12px;opacity:.82;margin-top:2px">' + D(e.dept) + ' · ' + D(e.id) + ' · ' + svc + ' of service</div>' +
+        '<div style="font-size:12px;opacity:.82;margin-top:2px">' + D(e.dept) + ' · ' + D(e.id) + ' · ' + svcLabel + '</div>' +
         '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;opacity:.95">' + cInfo(I_MAIL, e.email) + cInfo(I_PHONE, e.phone) + cInfo(I_PIN, e.zone) + '</div>' +
       '</div>' +
       '<div style="display:flex;gap:8px;flex-wrap:wrap;align-self:flex-start">' +
