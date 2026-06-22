@@ -31,7 +31,21 @@ Follow the steps in order.
 Each person can sign in **only after** they have an employee record with their real
 **@humiley.com** email.
 
-### Option A — Add one person (good for a few people)
+### Option A (recommended) — Sync from Microsoft 365 (automatic)
+1. Make sure you’re signed in as **Admin** (Tony).
+2. Left menu → **Employee Database** → click **“Sync from Microsoft 365”** (top right).
+3. The first time, a Microsoft window asks to allow **“Read all users’ full profiles.”**
+   Click **Accept** (you must be a Microsoft 365 **admin** to approve this for the company).
+4. ✅ Everyone in your Microsoft 365 directory is imported (name, email, department, job title).
+   Guests and external accounts are skipped. People already in the system are skipped.
+5. Go to **Access & Permissions** (Step 3) to set who is Admin / Editor / Approver / etc.
+
+> If clicking Sync shows **“admin consent required”**: a Microsoft 365 Global Admin must approve
+> the **User.Read.All** permission once — in **portal.azure.com → App registrations →
+> “Humiley Timekeeping” → API permissions → Add a permission → Microsoft Graph → Delegated →
+> User.Read.All → Add → Grant admin consent**. Then click Sync again. (Tell me if you’d like help.)
+
+### Option B — Add one person manually (good for a few people)
 1. Left menu → **Employee Database**.
 2. Click **+ Add Employee** (top right).
 3. Fill in:
