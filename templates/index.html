@@ -3502,7 +3502,7 @@ function _initStaffDashboard() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const el = document.getElementById('staff-welcome-title');
-  if (el) el.innerHTML = 'Welcome back, <b style="color:var(--emerald)">' + (_staffName.split(' ').slice(-1)[0] || _staffName) + '</b>';
+  if (el) el.innerHTML = 'Welcome back, <b style="color:var(--emerald)">' + (_staffName.split(/\s+/)[0] || _staffName) + '</b>';
   const dateEl = document.getElementById('staff-welcome-date');
   if (dateEl) dateEl.innerHTML = '<span>' + greeting + '</span> · ' + tkFmtDateObj(new Date());
 
