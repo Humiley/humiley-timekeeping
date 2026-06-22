@@ -10,8 +10,10 @@
   "portsAttributes": {
     "8000": {
       "label": "Humiley Timekeeping",
+      "visibility": "public",
       "onAutoForward": "openBrowser"
     }
   },
-  "postAttachCommand": "python3 app.py"
+  "postStartCommand": "nohup python3 app.py > /tmp/tk.log 2>&1 &",
+  "postAttachCommand": "bash -lc 'pgrep -f \"python3 app.py\" >/dev/null || (nohup python3 app.py > /tmp/tk.log 2>&1 &)'"
 }
