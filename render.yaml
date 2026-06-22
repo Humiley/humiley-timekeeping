@@ -13,3 +13,10 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"
+      # Fresh deploys start clean with just the admin (Microsoft 365 login + sync ready).
+      - key: TK_BOOTSTRAP_ADMIN
+        value: "1"
+      - key: TK_ADMIN_EMAIL
+        value: "tony.nguyen@humiley.com"
+      - key: TK_ADMIN_NAME
+        value: "Tony Nguyen"

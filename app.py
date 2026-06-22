@@ -593,6 +593,19 @@ def main():
     db.init_db()
     seeded = False
     att_added = 0
+    # Fresh deploy on a host without a persistent disk (e.g. Render free): start
+    # clean with ONLY the admin account so Microsoft 365 sign-in + "Sync from
+    # Microsoft 365" work right away, instead of loading demo data.
+    if os.environ.get("TK_BOOTSTRAP_ADMIN") and not db.list_employees():
+        admin_email = os.environ.get("TK_ADMIN_EMAIL", "tony.nguyen@humiley.com")
+        db.create_employee({
+            "id": "HML-001", "name": os.environ.get("TK_ADMIN_NAME", "Tony Nguyen"),
+            "email": admin_email, "ini": "TN", "clr": "#205090", "dept": "",
+            "title": "Managing Director", "role": "manager", "level": "admin",
+            "status": "Active", "zone": "HQ", "annualTotal": 12, "sickTotal": 30,
+        })
+        db.set_setting("seed_disabled", "1")
+        print("  Bootstrapped clean DB with admin: %s" % admin_email)
     if not db.get_setting("seed_disabled"):
         seeded = db.seed()
         db.seed_hr()
