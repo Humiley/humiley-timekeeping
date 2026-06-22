@@ -564,25 +564,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
 
     <!-- ── Role-step panel (shown after simulated MS365 auth in demo) ── -->
-    <div id="login-role-step">
-      <p class="login-role-step-title">Microsoft 365 sign-in successful — select your access level:</p>
-      <button class="lrs-btn mgr" onclick="doLogin('manager')">
-        <div class="lrs-icon" style="background:rgba(32,80,144,.1)">&#128084;</div>
-        <div class="lrs-text">
-          <span class="lrs-title">Manager / HR Admin</span>
-          <span class="lrs-sub">Full access — all employees, approvals, reports, HR admin</span>
-        </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-      <button class="lrs-btn staff" onclick="doLogin('staff')">
-        <div class="lrs-icon" style="background:rgba(0,176,96,.1)">&#128100;</div>
-        <div class="lrs-text">
-          <span class="lrs-title">Staff / Employee</span>
-          <span class="lrs-sub">Personal view — your check-in, attendance &amp; leave</span>
-        </div>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-    </div>
 
   </div>
 
@@ -3425,16 +3406,10 @@ async function doLogin(role, opts = {}) {
 /* ── Microsoft 365 SSO login (live mode) ── */
 function msalLogin() {
   if (DEMO_MODE()) {
-    /* Demo: simulate MS365 auth → show role-step panel so both Manager & Staff can be tested */
+    /* Demo: simulate Microsoft 365 sign-in — access level comes from the account (no manual pick). */
     const btn = document.querySelector('.login-ms-btn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 23 23" fill="none"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg> Verifying account …'; }
-    const note = document.getElementById('login-perm-note-txt');
-    const step = document.getElementById('login-role-step');
-    setTimeout(() => {
-      if (btn) { btn.style.display = 'none'; }
-      if (note) { note.style.display = 'none'; }
-      if (step) { step.style.display = 'block'; }
-    }, 1000);
+    if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 23 23" fill="none"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg> Signing in …'; }
+    setTimeout(() => { doLogin('manager'); }, 700);
     return;
   }
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
