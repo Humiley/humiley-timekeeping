@@ -953,7 +953,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="_renderEmployeeTable()"></div>
       <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
-      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All</option><option>Active</option><option>Inactive</option></select>
+      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>Active</option><option>All</option><option>Inactive</option></select>
       <span style="font-size:12px;color:var(--text-light);white-space:nowrap" id="emp-count-label">15 employees</span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
@@ -1205,7 +1205,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
             <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
               <option value="">— Select an approved location —</option>
             </select>
-            <button onclick="tkVerifySelectedZone()" style="display:inline-flex;align-items:center;gap:6px;padding:11px 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
+            <button onclick="tkVerifySelectedZone(true)" style="display:inline-flex;align-items:center;gap:6px;padding:11px 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
           </div>
           <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
@@ -2772,7 +2772,7 @@ function tkRenderApprovals() {
       card.className = 'approval-card';
       card.dataset.leaveId = l.id;
       card.innerHTML =
-        '<div class="approval-card-hdr"><div class="ava-md" style="background:#3168A8">' + ini + '</div>' +
+        '<div class="approval-card-hdr"><div class="ava-md" style="background:' + tkAvatarColor(name) + '">' + ini + '</div>' +
         '<div style="flex:1"><div style="font-size:14px;font-weight:700">' + name + '</div>' +
         '<div style="font-size:12px;color:var(--text-light)">' + (l.emp_dept || '') + ' · Pending</div></div>' +
         '<span class="badge b-warn">Pending Manager</span></div>' +
@@ -2864,7 +2864,7 @@ function tkSelectZone() {
   tkVerifySelectedZone();
 }
 
-function tkVerifySelectedZone() {
+function tkVerifySelectedZone(force) {
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
   const z = _tkSelectedZone;
   const status = document.getElementById('ci-verify-status');
@@ -2882,20 +2882,20 @@ function tkVerifySelectedZone() {
   };
   if (status) status.textContent = 'Checking your location…';
   if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — cannot verify your location.'; _tkSetCheckinAllowed(false); return; }
-  // Resolve on the first try: run a fast cached lookup + a live watch in parallel; whichever returns first wins.
-  let _geoDone = false, _watchId = null;
+  // Instant: reuse a recent fix from the app-wide GPS watch (the common case -> no wait)
+  const _cacheFresh = (typeof _lastGpsLat !== 'undefined' && _lastGpsLat !== null && _lastGpsLon !== null && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000);
+  if (!force && _cacheFresh) { evaluate(_lastGpsLat, _lastGpsLon, ' (recent)'); return; }
+  let _geoDone = false;
   const _alert = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ';
-  const _finish = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; if (_watchId != null) { try { navigator.geolocation.clearWatch(_watchId); } catch (e) {} } evaluate(lat, lon, ', ±' + Math.round(acc) + 'm'); };
-  const _denied = () => { if (_geoDone) return; _geoDone = true; if (_watchId != null) { try { navigator.geolocation.clearWatch(_watchId); } catch (e) {} } if (status) status.innerHTML = _alert + '<strong>Location is blocked.</strong> Click the lock icon in the address bar → Location → Allow → reload, then press “Re-check”.'; _tkSetCheckinAllowed(false); };
-  // 1) instant: accept a recent cached fix if one exists (often returns immediately)
-  navigator.geolocation.getCurrentPosition(p => _finish(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); }, { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 });
-  // 2) live high-accuracy watch — handles cold-start GPS far better than a single timed call
-  try {
-    _watchId = navigator.geolocation.watchPosition(p => _finish(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); }, { enableHighAccuracy: true, timeout: 27000, maximumAge: 60000 });
-  } catch (e) {}
-  // gentle progress note + overall give-up
-  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating… GPS can take a few seconds.'; }, 3500);
-  setTimeout(() => { if (_geoDone) return; _geoDone = true; if (_watchId != null) { try { navigator.geolocation.clearWatch(_watchId); } catch (e) {} } if (status) status.innerHTML = _alert + 'Could not get your GPS location yet. Move near a window / open area and press “Re-check”.'; _tkSetCheckinAllowed(false); }, 28000);
+  const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, ', ±' + Math.round(acc) + 'm'); };
+  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked.</strong> Click the lock icon in the address bar → Location → Allow → reload, then press “Re-check”.'; _tkSetCheckinAllowed(false); };
+  const _giveup = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + 'Could not get your GPS location yet. Move near a window / open area and press “Re-check”.'; _tkSetCheckinAllowed(false); };
+  // Escalate to GPS-grade accuracy only if the quick network fix fails (and not when permission is denied)
+  const _slow = () => { if (_geoDone) return; try { navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _giveup(); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }); } catch (e) { _giveup(); } };
+  // Fast network / Wi-Fi fix first — usually ~1s, and well within an office geofence radius
+  navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 });
+  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating…'; }, 3000);
+  setTimeout(_giveup, 12000);
 }
 
 function tkCheckIn() {
@@ -2943,6 +2943,8 @@ let _ciPeriod = 'week';
 function tkCiSetPeriod(v) { _ciPeriod = v; tkRenderCheckin(); }
 function tkRenderCheckin() {
   try { tkPopulateZoneSelect(); } catch (e) {}
+  // warm up GPS so the zone check resolves instantly when the user picks a location
+  try { if (navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try { _lastGpsLat = p.coords.latitude; _lastGpsLon = p.coords.longitude; _gpsTimestamp = Date.now(); } catch (e) {} }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }); } catch (e) {}
   const today = new Date().toISOString().slice(0, 10);
   const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const todayRow = mine.find(r => r.date === today);
@@ -2990,7 +2992,16 @@ function _tkSet(id, v) { const el = document.getElementById(id); if (el) el.text
 /* avatar HTML: photo if present, else coloured initials */
 function tkAvatar(e, cls) {
   if (e && e.photo) return '<div class="' + cls + '" style="background-image:url(' + e.photo + ');background-size:cover;background-position:center"></div>';
-  return '<div class="' + cls + '" style="background:' + ((e && e.clr) || '#205090') + '">' + ((e && e.ini) || '') + '</div>';
+  return '<div class="' + cls + '" style="background:' + ((e && e.clr) || tkAvatarColor(e && (e.email || e.name))) + '">' + ((e && e.ini) || '') + '</div>';
+}
+
+/* deterministic, identity-stable avatar colour from a seed (email / name) — same person -> same colour everywhere */
+const _AVA_PALETTE = ['#205090','#3168A8','#0E7490','#0369A1','#1D7A4C','#059669','#0F766E','#7C3AED','#6D28D9','#4F46E5','#B45309','#A16207','#9D174D','#BE185D'];
+function tkAvatarColor(seed) {
+  const t = String(seed == null ? '' : seed).trim().toLowerCase();
+  if (!t) return _AVA_PALETTE[0];
+  let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  return _AVA_PALETTE[h % _AVA_PALETTE.length];
 }
 
 /* read an uploaded photo into a data URL + live preview */
@@ -3091,7 +3102,7 @@ function tkRenderDashboard() {
     da.innerHTML = pend.length ? pend.map(l => {
       const name = l.emp_name || 'Employee';
       const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-      return '<div class="appr-row"><div class="ava-sm" style="background:#205090">' + ini + '</div>' +
+      return '<div class="appr-row"><div class="ava-sm" style="background:' + tkAvatarColor(name) + '">' + ini + '</div>' +
         '<div class="appr-info"><div class="name">' + name + ' — ' + (l.type || 'Leave') + '</div><div class="meta">' + l.startDate + ' – ' + l.endDate + ' · ' + l.days + ' day(s)' + (l.reason ? ' · ' + l.reason : '') + '</div></div>' +
         '<div class="appr-btns"><button class="btn-approve" onclick="tkApprove(' + l.id + ',this)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></button><button class="btn-reject" onclick="tkReject(' + l.id + ',this)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div></div>';
     }).join('') : '<div style="color:var(--text-light);font-size:13px;padding:14px 0;text-align:center">No pending approvals </div>';
@@ -3755,7 +3766,7 @@ function tkRenderStaffPortal() {
   const todayISO = now.toISOString().slice(0, 10);
   const mIdx = now.getMonth() + 1;
   const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const av = (e, sz) => (typeof tkAvatar === 'function' ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (e.clr || '#205090') + '">' + (e.ini || '') + '</div>');
+  const av = (e, sz) => (typeof tkAvatar === 'function' ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:' + (e.clr || tkAvatarColor(e.email || e.name)) + '">' + (e.ini || '') + '</div>');
   const empty = t => '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:10px 0">' + t + '</div>';
 
   /* Portal content (admin-managed via HR Admin, with defaults) */
@@ -4704,7 +4715,7 @@ const _IMPORT_SPECS = {
       const level = /admin/.test(acc) ? 'admin' : /manager|hr|management/.test(acc) ? 'manager' : 'staff';
       const name = o.name; const ini = (name || '').split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
       const email = o.email || ((name || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, '.') + '@humiley.com');
-      return { name, title: o.title || '', dept: o.dept || '', email, ini, clr: '#205090', zone: 'HQ', role, level, phone: o.phone || '', jobLevel: o.jobLevel || '', employmentType: o.employmentType || 'Full Time', startDate: o.startDate || null, gender: o.gender || '', dob: o.dob || '', shirtSize: o.shirtSize || '', status: 'Active', annualTotal: +o.annualTotal || 12, sickTotal: +o.sickTotal || 30 };
+      return { name, title: o.title || '', dept: o.dept || '', email, ini, clr: tkAvatarColor(email), zone: 'HQ', role, level, phone: o.phone || '', jobLevel: o.jobLevel || '', employmentType: o.employmentType || 'Full Time', startDate: o.startDate || null, gender: o.gender || '', dob: o.dob || '', shirtSize: o.shirtSize || '', status: 'Active', annualTotal: +o.annualTotal || 12, sickTotal: +o.sickTotal || 30 };
     }
   },
   devices: {
@@ -5054,7 +5065,7 @@ async function tkRenderTalent() {
   root.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'talent\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Assess Employee</button></div>' + kpis + grid + succ;
 }
 
-/* Training & Development — Catalog + Competency Matrix (Training Matrix HML-AHU-TM-001) */
+/* Training & Development — Catalog + Competency Matrix (Training Matrix) */
 async function tkRenderTraining() {
   const root = document.getElementById('training-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
@@ -5077,7 +5088,7 @@ async function tkRenderTraining() {
   const colSet = []; comp.forEach(r => Object.keys(r.cells || {}).forEach(k => { if (!colSet.includes(k)) colSet.push(k); }));
   const glyph = s => { const m = { '✓': 'var(--emerald)', 'T': '#F59E0B', 'X': '#EF4444', '—': '#cbd5e1' }; return '<span style="color:' + (m[s] || '#cbd5e1') + ';font-weight:700">' + (s || '—') + '</span>'; };
   const matrix = '<div id="trn-matrix" style="display:none"><div class="card" style="padding:14px 16px;margin-bottom:14px;display:flex;gap:18px;flex-wrap:wrap;font-size:12px"><span><b>Legend:</b></span><span>' + glyph('✓') + ' Trained &amp; current</span><span>' + glyph('T') + ' In progress</span><span>' + glyph('X') + ' Required, not trained</span><span>' + glyph('—') + ' N/A</span></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix — HML-AHU-TM-001</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
     (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis +
     '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'enroll\',this)">Enrolments &amp; Progress</button><button class="tab" onclick="tkTrnTab(\'roadmap\',this)">Development Roadmap</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
@@ -7174,6 +7185,28 @@ async function _getToken() {
 }
 
 /* Pull the organisation's users from Microsoft 365 (Graph /users) and create employee records. */
+let _m365Pending = null;
+
+/* Normalise a Microsoft 365 department string into one of the 8 Humiley departments.
+   Unrecognised values are left untouched (still editable — no data loss). */
+function _normDept(raw) {
+  const d = String(raw == null ? '' : raw).trim();
+  if (!d) return '';
+  const map = [
+    [/hro|human resource|nhân sự|operation/i, 'Human Resource & Operation (HRO)'],
+    [/pmc|project/i,                                   'Project Management Consultant (PMC)'],
+    [/\beng\b|engineer/i,                              'Engineering Consultant (ENG)'],
+    [/\bsal\b|sales|solution sales/i,                  'Solution Sales (SAL)'],
+    [/csm|customer|maintenance/i,                      'Customer Service & Maintenance (CSM)'],
+    [/\bfac\b|factory/i,                               'Factory (FAC)'],
+    [/finance|account/i,                               'Finance Accountant (FA)'],
+    [/\bbm\b|board/i,                                  'Board Management (BM)'],
+  ];
+  for (const m of map) { if (m[0].test(d)) return m[1]; }
+  return d;
+}
+
+/* STEP 1 — fetch licensed Microsoft 365 users and show a preview to confirm BEFORE adding. */
 async function tkSyncM365Users() {
   if (!_requireLevel('manager')) return;
   if (!_msalApp || !_account) { toast('Sign in with Microsoft 365 first.', 'warn', 5000); return; }
@@ -7199,57 +7232,115 @@ async function tkSyncM365Users() {
       url = j['@odata.nextLink'] || '';
     }
   } catch (e) { toast('Could not fetch users: ' + e.message, 'error', 7000); return; }
-  const domain = ((TK.user && TK.user.email) || '').split('@')[1] || '';
+
+  const domain  = ((TK.user && TK.user.email) || '').split('@')[1] || '';
   const myEmail = ((TK.user && TK.user.email) || '').toLowerCase();
   await tkBootstrap();
   const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(e => { byEmail[(e.email || '').toLowerCase()] = e; });
-  const known = new Set();   // org-domain emails Microsoft 365 still lists (any state)
-  let created = 0, updated = 0, deactivated = 0, skipped = 0;
+  const known = new Set();
+  const toCreate = [], toUpdate = [];
+  let skipped = 0;
   for (const u of users) {
     const email = (u.mail || u.userPrincipalName || '').toLowerCase();
     if (!email || (u.userPrincipalName || '').indexOf('#EXT#') >= 0) { skipped++; continue; }   // guest / no mail
     if (domain && !email.endsWith('@' + domain)) { skipped++; continue; }                        // other org
     known.add(email);
-    const enabled = u.accountEnabled !== false;
+    const enabled  = u.accountEnabled !== false;
     const licensed = !!(u.assignedLicenses && u.assignedLicenses.length);
     const ex = byEmail[email];
     if (ex) {
-      // keep directory fields in step — never touch level/role/balances/grade/salary
       const patch = {};
       if (u.displayName && u.displayName !== ex.name) patch.name = u.displayName;
-      if (u.department && (u.department || '') !== (ex.dept || '')) patch.dept = u.department;
+      const nd = _normDept(u.department);
+      if (u.department && nd !== (ex.dept || '')) patch.dept = nd;
       if (u.jobTitle && (u.jobTitle || '') !== (ex.title || '')) patch.title = u.jobTitle;
       if (u.mobilePhone && (u.mobilePhone || '') !== (ex.phone || '')) patch.phone = u.mobilePhone;
       const st = enabled ? 'Active' : 'Inactive';
       if (st !== (ex.status || 'Active')) patch.status = st;
-      if (Object.keys(patch).length) { try { await tkApi('/api/employees/' + ex.id, { method: 'PATCH', body: patch }); Object.assign(ex, patch); updated++; if (patch.status === 'Inactive') deactivated++; } catch (e) {} }
+      if (Object.keys(patch).length) toUpdate.push({ id: ex.id, name: ex.name, patch });
     } else {
       const isPerson = licensed && enabled && !!(u.givenName && String(u.givenName).trim());
-      if (!isPerson) { skipped++; continue; }   // shared / room / role mailbox (no licence, sign-in disabled, or no first name) -> not a person, don't sync
+      if (!isPerson) { skipped++; continue; }   // shared / room / role mailbox (no licence, disabled, or no first name)
       const name = u.displayName || email.split('@')[0];
-      const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
-      try {
-        await tkApi('/api/employees', { method: 'POST', body: {
-          name: name, email: email, ini: ini, clr: '#205090',
-          dept: u.department || '', title: u.jobTitle || '', phone: u.mobilePhone || '',
-          role: 'staff', level: 'staff', status: 'Active', zone: 'HQ', annualTotal: 12, sickTotal: 30
-        } });
-        created++; byEmail[email] = { email: email };
-      } catch (e) { skipped++; }
+      toCreate.push({ email, name, dept: _normDept(u.department), title: u.jobTitle || '', phone: u.mobilePhone || '' });
     }
   }
-  // leavers — org-domain employees Microsoft 365 no longer lists -> mark Inactive
+  const toDeactivate = [];
   for (const e of (_DEMO_EMPLOYEES || [])) {
     const email = (e.email || '').toLowerCase();
     if (!email || email === myEmail) continue;
-    if (domain && !email.endsWith('@' + domain)) continue;   // leave non-org / manual records alone
-    if (known.has(email)) continue;                          // still in the directory (status handled above)
+    if (domain && !email.endsWith('@' + domain)) continue;
+    if (known.has(email)) continue;
     if ((e.status || 'Active') === 'Inactive') continue;
-    try { await tkApi('/api/employees/' + e.id, { method: 'PATCH', body: { status: 'Inactive' } }); e.status = 'Inactive'; deactivated++; } catch (x) {}
+    toDeactivate.push({ id: e.id, name: e.name });
   }
+
+  _m365Pending = { toCreate, toUpdate, toDeactivate, skipped };
+  _m365ShowPreview();
+}
+
+/* STEP 2 — preview modal: tick which licensed users to add. */
+function _m365ShowPreview() {
+  const p = _m365Pending; if (!p) return;
+  document.getElementById('m365SyncOverlay')?.remove();
+  const esc = x => String(x == null ? '' : x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ini = nm => nm.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
+  const rows = p.toCreate.length ? p.toCreate.map((u, i) =>
+    '<tr><td style="text-align:center"><input type="checkbox" data-m365-i="' + i + '" checked style="width:16px;height:16px;accent-color:var(--navy)"></td>' +
+    '<td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:' + tkAvatarColor(u.email) + '">' + ini(u.name) + '</div><span style="font-weight:600">' + esc(u.name) + '</span></div></td>' +
+    '<td style="font-size:12px;color:var(--text-light)">' + esc(u.email) + '</td>' +
+    '<td style="font-size:12px">' + (esc(u.title) || '—') + '</td>' +
+    '<td style="font-size:12px">' + (esc(u.dept) || '—') + '</td></tr>'
+  ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:18px">No new licensed users to add — everyone in Microsoft 365 is already in the system.</td></tr>';
+  const summary = '<div style="font-size:12.5px;color:var(--text-light);margin-bottom:10px">' +
+    '<b style="color:var(--emerald)">' + p.toCreate.length + '</b> new to add · ' +
+    '<b>' + p.toUpdate.length + '</b> existing to update · ' +
+    '<b style="color:var(--danger)">' + p.toDeactivate.length + '</b> leaver(s) to deactivate · ' +
+    p.skipped + ' skipped (guests / shared mailboxes / no licence)</div>';
+  const el = document.createElement('div'); el.id = 'm365SyncOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:720px">' +
+    '<div class="modal-header"><div class="modal-title">Sync from Microsoft 365 — review before adding</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'m365SyncOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    summary +
+    '<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><a onclick="_m365TickAll(true)" style="cursor:pointer;color:var(--navy);font-weight:600">Select all</a><a onclick="_m365TickAll(false)" style="cursor:pointer;color:var(--text-light)">Clear all</a></div>' +
+    '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr><th style="width:34px"></th><th>Name</th><th>Work email (login)</th><th>Job title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'m365SyncOverlay\').remove()">Cancel</button>' +
+    '<button class="btn btn-primary" onclick="tkSyncM365Confirm()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Confirm &amp; sync</button></div></div>';
+  document.body.appendChild(el);
+}
+
+function _m365TickAll(v) { document.querySelectorAll('#m365SyncOverlay [data-m365-i]').forEach(b => { b.checked = v; }); }
+
+/* STEP 3 — apply: create ONLY the ticked users, then update existing + deactivate leavers. */
+async function tkSyncM365Confirm() {
+  const p = _m365Pending; if (!p) return;
+  const picked = new Set(Array.from(document.querySelectorAll('#m365SyncOverlay [data-m365-i]')).filter(b => b.checked).map(b => +b.getAttribute('data-m365-i')));
+  document.getElementById('m365SyncOverlay')?.remove();
+  toast('Syncing Microsoft 365…', 'info', 4000);
+  let created = 0, updated = 0, deactivated = 0;
+  for (let i = 0; i < p.toCreate.length; i++) {
+    if (!picked.has(i)) continue;
+    const u = p.toCreate[i];
+    const ini = u.name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
+    try {
+      await tkApi('/api/employees', { method: 'POST', body: {
+        name: u.name, email: u.email, ini: ini, clr: tkAvatarColor(u.email),
+        dept: u.dept || '', title: u.title || '', phone: u.phone || '',
+        role: 'staff', level: 'staff', status: 'Active', zone: 'HQ', annualTotal: 12, sickTotal: 30
+      } });
+      created++;
+    } catch (e) {}
+  }
+  for (const it of p.toUpdate) {
+    try { await tkApi('/api/employees/' + it.id, { method: 'PATCH', body: it.patch }); updated++; if (it.patch.status === 'Inactive') deactivated++; } catch (e) {}
+  }
+  for (const it of p.toDeactivate) {
+    try { await tkApi('/api/employees/' + it.id, { method: 'PATCH', body: { status: 'Inactive' } }); deactivated++; } catch (e) {}
+  }
+  _m365Pending = null;
   tkAudit('Synced from Microsoft 365', '', created + ' added, ' + updated + ' updated, ' + deactivated + ' inactive');
-  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); } catch (_) {}
-  toast('Microsoft 365 sync — ' + created + ' added, ' + updated + ' updated, ' + deactivated + ' marked inactive, ' + skipped + ' skipped.', 'info', 9000);
+  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkRenderBalances(); } catch (_) {}
+  toast('Microsoft 365 sync complete — ' + created + ' added, ' + updated + ' updated, ' + deactivated + ' deactivated.', 'info', 9000);
 }
 
 function _loadDemoUser() {
@@ -7638,8 +7729,10 @@ const _VI = {
   'Company email and devices may be audited for security and compliance.': 'Email và thiết bị của công ty có thể được kiểm tra nhằm đảm bảo an ninh và tuân thủ.',
   'Compensation follows the Salary 3P model.': 'Chế độ đãi ngộ tuân theo mô hình Lương 3P.',
   'Compensation — 3P Salary (HML-CB-001)': 'Đãi ngộ — Lương 3P (HML-CB-001)',
-  'Competency / Skill Matrix — HML-AHU-TM-001': 'Ma trận Năng lực / Kỹ năng — HML-AHU-TM-001',
+  'Competency / Skill Matrix': 'Ma trận Năng lực / Kỹ năng',
   'Competency Matrix': 'Ma trận năng lực',
+  'Save Changes': 'Lưu thay đổi',
+  'removed permanently': 'đã xóa vĩnh viễn',
   'Complete the HSE induction before site access.': 'Hoàn thành đào tạo định hướng HSE trước khi vào công trường.',
   'Compliance': 'Tuân thủ',
   'Condition': 'Tình trạng',
@@ -8181,6 +8274,10 @@ const _VI = {
   'Succession': 'Kế nhiệm',
   'Summary': 'Tóm tắt',
   'Sync from Microsoft 365': 'Đồng bộ từ Microsoft 365',
+  'Sync from Microsoft 365 — review before adding': 'Đồng bộ từ Microsoft 365 — xem lại trước khi thêm',
+  'Confirm & sync': 'Xác nhận & đồng bộ',
+  'Select all': 'Chọn tất cả',
+  'Clear all': 'Bỏ chọn tất cả',
   'System': 'Hệ thống',
   'System Access / Permission': 'Truy cập hệ thống / Quyền hạn',
   'System Status': 'Trạng thái hệ thống',
@@ -9051,7 +9148,7 @@ function renderLeaveReport() {
   set('lr-days', rows.reduce((s, l) => s + (+l.days || 0), 0));
   const emp = nm => (_DEMO_EMPLOYEES || []).find(e => e.name === nm);
   tbody.innerHTML = rows.length ? rows.map(l => {
-    const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: '#205090', ini: nm.slice(0, 2).toUpperCase() };
+    const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
     return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + nm + '</span></div></td><td>' + (l.emp_dept || l.dept || '') + '</td><td>' + (l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
   }).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-light)">No leave records match your filters.</td></tr>';
 }
@@ -9076,7 +9173,7 @@ function renderInOutReport() {
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
   tbody.innerHTML = rows.map(r => {
     const emp = empMap[r.name];
-    const clr = emp?.clr || '#8B5CF6';
+    const clr = emp?.clr || tkAvatarColor(r.name);
     const ini = r.name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w=>w[0].toUpperCase()).join('');
     const stat = statusMap[r.status]||r.status||'—';
     const bcls = badgeMap[r.status]||'b-grey';
@@ -9129,8 +9226,7 @@ async function submitLeave() {
       });
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
     const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-    const colors = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000'];
-    const clr = colors[Math.floor(Math.random()*colors.length)];
+    const clr = tkAvatarColor(emp);
     const nowD = new Date();
     const subDate = tkFmtDateObj(nowD);
     const newCard = document.createElement('div');
@@ -9262,8 +9358,7 @@ function _resolveCard(cardEl, status, reason) {
   const now     = new Date();
   const todayStr = tkFmtDateObj(now);
   const initials = name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w=>w[0].toUpperCase()).join('');
-  const colors = {'Huy Nguyen Duc':'#205090','Lan Tran':'#00B060','Minh Vu':'#F59E0B','Tuan Nguyen':'#3168A8','Ha Nguyen':'#F97316','Binh Le':'#EF4444'};
-  const clr = colors[name] || '#8B5CF6';
+  const clr = tkAvatarColor(name);
 
   if (status === 'approved') {
     // Add row to Approved table
@@ -9375,7 +9470,7 @@ function tkFmtDateObj(dt) { dt = dt || new Date(); return tkFmtDate(dt.getFullYe
 function _renderEmployeeTable(filter) {
   const search = (document.querySelector('#hr-employees .search-box input')?.value||'').toLowerCase();
   const deptFilter = document.querySelector('#hr-employees .sel-filter')?.value||'All Departments';
-  const statusFilter = document.querySelectorAll('#hr-employees .sel-filter')[1]?.value||'All';
+  const statusFilter = document.querySelectorAll('#hr-employees .sel-filter')[1]?.value||'Active';
   let emps = _DEMO_EMPLOYEES.filter(e => {
     if (filter) return true;
     const matchSearch = !search || e.name.toLowerCase().includes(search) || e.id.toLowerCase().includes(search) || e.email.toLowerCase().includes(search);
@@ -9413,9 +9508,21 @@ function _renderEmployeeTable(filter) {
       <td style="white-space:nowrap">
         <button class="btn btn-primary btn-sm" onclick="_viewEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">View</button>
         <button class="btn btn-ghost btn-sm" onclick="_editEmpProfile('${e.id}')" style="font-size:10px;padding:4px 8px">Edit</button>
+        ${active ? '' : `<button class="btn btn-ghost btn-sm" onclick="_deleteEmp('${e.id}')" style="font-size:10px;padding:4px 8px;color:var(--danger)">Remove</button>`}
       </td>
     </tr>`;
   }).join('');
+  const _cl = document.getElementById('emp-count-label'); if (_cl) _cl.textContent = emps.length + ' employees';
+}
+
+async function _deleteEmp(id) {
+  if (!_requireLevel('admin')) { toast('Only an Admin can permanently remove an employee', 'warn'); return; }
+  const e = (_DEMO_EMPLOYEES || []).find(x => x.id === id); const nm = e ? e.name : 'this employee';
+  if (!confirm('Permanently remove ' + nm + '?\nThis deletes the record and cannot be undone.')) return;
+  try { await tkApi('/api/employees/' + id, { method: 'DELETE' }); }
+  catch (err) { toast('Could not remove employee', 'error'); return; }
+  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkRenderBalances(); } catch (err) {}
+  toast(nm + ' removed permanently');
 }
 
 function tkRenderBalances() {
@@ -9426,7 +9533,7 @@ function tkRenderBalances() {
     const aT = e.annualTotal || 12, aU = e.annualUsed || 0, sT = e.sickTotal || 30, sU = e.sickUsed || 0;
     const aPct = Math.round(aU / Math.max(aT, 1) * 100), sPct = Math.round(sU / Math.max(sT, 1) * 100);
     const active = (e.status || 'Active').toLowerCase() !== 'inactive';
-    return '<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:' + (e.clr || '#205090') + '">' + (e.ini || '') + '</div><span style="font-weight:700">' + e.name + '</span></div></td>' +
+    return '<tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:' + (e.clr || tkAvatarColor(e.email || e.name)) + '">' + (e.ini || '') + '</div><span style="font-weight:700">' + e.name + '</span></div></td>' +
       '<td>' + (e.dept || '—') + '</td>' +
       '<td><div style="font-size:12px">' + aU + ' / ' + aT + ' days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-navy" style="width:' + aPct + '%"></div></div></div></td>' +
       '<td><div style="font-size:12px">' + sU + ' / ' + sT + ' days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:' + sPct + '%"></div></div></div></td>' +
@@ -9450,7 +9557,7 @@ function _viewEmpProfile(id) {
   el.innerHTML = `<div class="modal" style="max-width:580px;padding:0;overflow:hidden">
     <!-- Header -->
     <div style="background:linear-gradient(135deg,var(--navy-deep),var(--navy));padding:24px 28px;display:flex;align-items:center;gap:16px">
-      <div style="width:60px;height:60px;border-radius:50%;${e.photo?('background-image:url('+e.photo+');background-size:cover;background-position:center'):('background:'+e.clr)};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;border:3px solid rgba(255,255,255,.3)">${e.photo?'':e.ini}</div>
+      <div style="width:60px;height:60px;border-radius:50%;${e.photo?('background-image:url('+e.photo+');background-size:cover;background-position:center'):('background:'+(e.clr||tkAvatarColor(e.email||e.name)))};display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;border:3px solid rgba(255,255,255,.3)">${e.photo?'':e.ini}</div>
       <div style="flex:1"><div style="font-size:20px;font-weight:700;color:#fff">${e.name}</div><div style="font-size:13px;color:rgba(255,255,255,.7);margin-top:2px">${e.title} · ${e.dept}</div><div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px">${e.id} · ${yrs} year${yrs!==1?'s':''} of service</div></div>
       <span class="badge ${e.status==='Active'?'b-ok':'b-danger'}">${e.status}</span>
       <button onclick="document.getElementById('empProfileOverlay').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
@@ -9528,7 +9635,13 @@ function _editEmpProfile(id) {
   _tkEditEmpId = e.id;
   const title = m.querySelector('.modal-title');
   if (title) title.textContent = 'Edit Employee — ' + e.name;
-  const set = (k,v) => { const el=document.getElementById(k); if(el) el.value=(v==null?'':v); };
+  const _slE = document.getElementById('emp-save-label'); if (_slE) _slE.textContent = 'Save Changes';
+  const set = (k,v) => {
+    const el = document.getElementById(k); if (!el) return;
+    const vv = (v == null ? '' : String(v));
+    if (el.tagName === 'SELECT' && vv && ![...el.options].some(o => o.value === vv)) { el.add(new Option(vv, vv)); }
+    el.value = vv;
+  };
   // direct-manager dropdown
   const sel = document.getElementById('emp-manager');
   if (sel) sel.innerHTML = '<option value="">— None (top of org) —</option>' +
@@ -10100,7 +10213,7 @@ document.addEventListener('DOMContentLoaded', () => {
     /* Keep updating position silently */
     navigator.geolocation.watchPosition(
       pos => _applyGpsFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy),
-      () => {}, { enableHighAccuracy: true }
+      () => {}, { enableHighAccuracy: false, maximumAge: 30000 }
     );
   }
 });
@@ -10749,6 +10862,7 @@ function tkOpenAddEmp() {
   if (!_requireLevel('manager')) return;
   _tkEditEmpId = null;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
+  const _slA = document.getElementById('emp-save-label'); if (_slA) _slA.textContent = 'Add Employee';
   ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary']
     .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
   const sh = document.getElementById('emp-salary-hint'); if (sh) sh.textContent = '';
@@ -10786,15 +10900,13 @@ async function saveEmployee() {
   if (!dept)  { toast('Please select a department', 'warn'); return; }
 
   const initials = name.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-  const palette = ['#205090','#3168A8','#00B060','#F59E0B','#8B5CF6','#C00000','#163866','#059669','#D97706','#EC4899'];
-  const color = palette[Math.floor((_DEMO_EMPLOYEES || []).length) % palette.length];
   const autoEmail = val('emp-email') || (name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.') + '@humiley.com');
 
   const access = val('emp-access') || 'staff';
   const _accessMap = { staff: { role: 'staff', level: 'staff' }, manager: { role: 'manager', level: 'manager' }, management: { role: 'manager', level: 'management' }, editor: { role: 'manager', level: 'editor' }, admin: { role: 'manager', level: 'admin' } };
   const acc = _accessMap[access] || _accessMap.staff;
   const payload = {
-    name, title, dept, email: autoEmail, ini: initials, clr: color, zone: 'HQ', role: acc.role, level: acc.level,
+    name, title, dept, email: autoEmail, ini: initials, clr: tkAvatarColor(autoEmail || name), zone: 'HQ', role: acc.role, level: acc.level,
     gender: val('emp-gender'), dob: val('emp-dob'), jobLevel: val('emp-level'),
     employmentType: val('emp-type') || 'Full Time', phone: val('emp-phone'),
     startDate: val('emp-start') || null, status: val('emp-status') || 'Active',
@@ -11055,7 +11167,7 @@ function saveEmployeeProfile() {
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addEmpModal')">Cancel</button>
-      <button class="btn btn-emerald" onclick="saveEmployee()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Add Employee</button>
+      <button class="btn btn-emerald" id="emp-save-btn" onclick="saveEmployee()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> <span id="emp-save-label">Add Employee</span></button>
     </div>
   </div>
 </div>
