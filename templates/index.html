@@ -6783,9 +6783,7 @@ async function tkRenderDashLevelBand() {
       '<span style="margin-left:auto;font-size:10px;color:var(--text-light);white-space:nowrap">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</span></div>'; };
     band.innerHTML = card('System &amp; Access (Admin)',
       row([box('Staff', counts.staff, '#205090', I_USER), box('Managers', counts.manager, '#3168A8', I_USERS), box('Management', counts.management, '#8B5CF6', I_SHIELD), box('Admins', counts.admin, '#F59E0B', I_KEY)]) +
-      '<div style="margin:12px 0 4px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</a></div>' +
-      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin:12px 0 6px">Recent activity</div>' +
-      (recent.length ? recent.map(act).join('') : '<div style="font-size:12px;color:var(--text-light)">No activity yet</div>'));
+      '<div style="margin:12px 0 4px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</a></div>');
   } else if (lvl === 'management') {
     let gross = 0, erCost = 0; const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
     emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
