@@ -945,6 +945,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <button class="btn btn-outline btn-sm" onclick="tkImportTemplate('employees')" title="Download Excel template"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Template</button>
       <button class="btn btn-outline btn-sm" onclick="tkImport('employees')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
       <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="tkSyncM365Users()" title="Import users from your Microsoft 365 directory"><svg width="14" height="14" viewBox="0 0 23 23" fill="none" style="margin-right:5px"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>Sync from Microsoft 365</button>
       <button class="btn btn-primary btn-sm" onclick="tkOpenAddEmp()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
     </div>
   </div>
@@ -7183,6 +7184,58 @@ async function _getToken() {
     _msalApp.acquireTokenRedirect({ scopes });
     return null;
   }
+}
+
+/* Pull the organisation's users from Microsoft 365 (Graph /users) and create employee records. */
+async function tkSyncM365Users() {
+  if (!_requireLevel('manager')) return;
+  if (!_msalApp || !_account) { toast('Sign in with Microsoft 365 first.', 'warn', 5000); return; }
+  toast('Connecting to Microsoft 365 directory…', 'info', 4000);
+  let token;
+  try {
+    const scopes = ['https://graph.microsoft.com/User.Read.All'];
+    let r;
+    try { r = await _msalApp.acquireTokenSilent({ scopes, account: _account }); }
+    catch (e) { r = await _msalApp.acquireTokenPopup({ scopes }); }
+    token = r.accessToken;
+  } catch (e) {
+    toast('Permission needed to read the directory (User.Read.All) — a Microsoft 365 admin must allow it.', 'error', 9000); return;
+  }
+  let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone&$top=999";
+  const users = [];
+  try {
+    while (url) {
+      const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      if (!resp.ok) { toast('Microsoft Graph error ' + resp.status + (resp.status === 403 ? ' — admin consent for User.Read.All is required.' : ''), 'error', 9000); return; }
+      const j = await resp.json();
+      (j.value || []).forEach(u => users.push(u));
+      url = j['@odata.nextLink'] || '';
+    }
+  } catch (e) { toast('Could not fetch users: ' + e.message, 'error', 7000); return; }
+  const domain = ((TK.user && TK.user.email) || '').split('@')[1] || '';
+  await tkBootstrap();
+  const existing = new Set((_DEMO_EMPLOYEES || []).map(e => (e.email || '').toLowerCase()));
+  let created = 0, skipped = 0;
+  for (const u of users) {
+    const email = (u.mail || u.userPrincipalName || '').toLowerCase();
+    if (!email || (u.userPrincipalName || '').indexOf('#EXT#') >= 0) { skipped++; continue; }
+    if (domain && !email.endsWith('@' + domain)) { skipped++; continue; }
+    if (existing.has(email)) { skipped++; continue; }
+    const name = u.displayName || email.split('@')[0];
+    const ini = name.split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join('');
+    try {
+      await tkApi('/api/employees', { method: 'POST', body: {
+        name: name, email: email, ini: ini, clr: '#205090',
+        dept: u.department || '', title: u.jobTitle || '', phone: u.mobilePhone || '',
+        role: 'staff', level: 'staff', status: (u.accountEnabled === false ? 'Inactive' : 'Active'),
+        zone: 'HQ', annualTotal: 12, sickTotal: 30
+      } });
+      created++; existing.add(email);
+    } catch (e) { skipped++; }
+  }
+  tkAudit('Synced users from Microsoft 365', '', created + ' added, ' + skipped + ' skipped');
+  try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); } catch (_) {}
+  toast('Microsoft 365 sync complete — ' + created + ' user(s) added, ' + skipped + ' skipped. Set their levels in Access & Permissions.', 'info', 9000);
 }
 
 function _loadDemoUser() {
