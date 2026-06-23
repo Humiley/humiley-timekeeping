@@ -8811,7 +8811,21 @@ function pmRenderOverview() {
     { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') },
     { label: 'File', render: r => _pmFileCell('pm_lessons', r) }
   ], ls));
-  host.innerHTML = kpis + charter + changeTbl + lessonsTbl;
+  const _ovCharts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-bottom:14px">' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Cost overview (EVM)</div><div style="height:200px"><canvas id="pm-ov-cost"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Deliverables by status</div><div style="height:200px"><canvas id="pm-ov-deliv"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule — tasks</div><div style="height:200px"><canvas id="pm-ov-tasks"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Risk exposure</div><div style="height:200px"><canvas id="pm-ov-risk"></canvas></div></div></div>';
+  host.innerHTML = kpis + _ovCharts + charter + changeTbl + lessonsTbl;
+  try {
+    _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'], datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
+    const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
+    if (Object.keys(dS).length) _mkChart('pm-ov-deliv', { type: 'doughnut', data: { labels: Object.keys(dS), datasets: [{ data: Object.values(dS), backgroundColor: Object.keys(dS).map(_pmStatusColor), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Deliv.' } });
+    const tS = {}; _pmScopeFor('pm_tasks', p.id).forEach(t => { const st = t.status || 'Not started'; tS[st] = (tS[st] || 0) + 1; });
+    if (Object.keys(tS).length) _mkChart('pm-ov-tasks', { type: 'doughnut', data: { labels: Object.keys(tS), datasets: [{ data: Object.values(tS), backgroundColor: Object.keys(tS).map(_pmStatusColor), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Tasks' } });
+    const rB = { Low: 0, Medium: 0, High: 0, Critical: 0 }; _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed').forEach(r => { const bd = _pmRiskBand(+r.score || 0).band; if (rB[bd] != null) rB[bd]++; });
+    _mkChart('pm-ov-risk', { type: 'doughnut', data: { labels: ['Low', 'Medium', 'High', 'Critical'], datasets: [{ data: [rB.Low, rB.Medium, rB.High, rB.Critical], backgroundColor: ['#16A34A', '#F59E0B', '#EA580C', '#DC2626'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Risks' } });
+  } catch (e) { }
 }
 
 /* ---------- CRM Won-deal → Project handoff ---------- */
@@ -8872,7 +8886,7 @@ function pmRenderSchedule(pid) {
   // period selector options from the project timeline
   const yA = +pmin.slice(0, 4), yB = +pmax.slice(0, 4); const years = []; for (let yy = yA; yy <= yB; yy++) years.push(yy);
   const monthsOpt = []; { let d = new Date(yA, +pmin.slice(5, 7) - 1, 1); const e = new Date(yB, +pmax.slice(5, 7) - 1, 1); while (d <= e) { monthsOpt.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
-  const mLab = ym => { const a = ym.split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + " '" + a[0].slice(-2); };
+  const mLab = ym => { const a = ym.split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + ' ' + a[0].slice(-2); };
   // resolve selected period -> bounds + zoom
   let selStart = pmin, selEnd = pmax, zoom = false;
   if (_pmSchedSel.charAt(0) === 'Y') { const yv = _pmSchedSel.slice(1); selStart = yv + '-01-01'; selEnd = yv + '-12-31'; zoom = true; }
@@ -8949,11 +8963,11 @@ function pmRenderQuality(pid) {
   const all = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
   const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
   const _qpers = [...new Set(all.map(x => (x.raisedDate || '').slice(0, 7)).filter(Boolean))].sort().reverse();
-  const _mmYY = ym => { const a = String(ym).split('-'); return (a[1] || '') + '/' + (a[0] || '').slice(-2); };
+  const _mmYY = ym => { const a = String(ym).split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + ' ' + (a[0] || '').slice(-2); };
   const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && (!_pmQF.period || (x.raisedDate || '').slice(0, 7) === _pmQF.period));
   const filterBar = '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' +
     '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
-    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'period\',this.value)"><option value="">All months (MM/YY)</option>' + _qpers.map(pp => '<option value="' + pp + '"' + (_pmQF.period === pp ? ' selected' : '') + '>' + _mmYY(pp) + '</option>').join('') + '</select>' +
+    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'period\',this.value)"><option value="">All months</option>' + _qpers.map(pp => '<option value="' + pp + '"' + (_pmQF.period === pp ? ' selected' : '') + '>' + _mmYY(pp) + '</option>').join('') + '</select>' +
     ((_pmQF.contractor || _pmQF.period) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
   const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
