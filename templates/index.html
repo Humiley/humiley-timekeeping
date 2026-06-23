@@ -7791,20 +7791,45 @@ async function crmQBSave(thenExport, fmt) {
 /* ── Sales dashboard ── */
 let _crmDashData = null;
 let _crmPeriod = 'all';
-const _CRM_PERIOD_LABEL = { all: 'all time', week: 'this week', month: 'this month', year: 'this year' };
-function crmSetPeriod(p) { _crmPeriod = p; crmRenderDashboard(); }
+let _crmPeriodMonth = '';
+let _crmPeriodYear = '';
+function _crmPeriodLabel() {
+  if (_crmPeriod === 'week') return 'this week';
+  if (_crmPeriod === 'month') { const p = String(_crmPeriodMonth).split('-'); return p.length > 1 ? new Date(+p[0], +p[1] - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' }) : 'this month'; }
+  if (_crmPeriod === 'year') return String(_crmPeriodYear || '');
+  return 'all time';
+}
+function crmSetPeriod(p) {
+  _crmPeriod = p; const now = new Date();
+  if (p === 'month' && !_crmPeriodMonth) _crmPeriodMonth = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2);
+  if (p === 'year' && !_crmPeriodYear) _crmPeriodYear = String(now.getFullYear());
+  crmRenderDashboard();
+}
+function crmSetPeriodMonth(v) { _crmPeriodMonth = v; crmRenderDashboard(); }
+function crmSetPeriodYear(v) { _crmPeriodYear = v; crmRenderDashboard(); }
 function _crmInPeriod(dateStr) {
   if (_crmPeriod === 'all') return true;
-  const p = String(dateStr || '').split('-'); if (p.length < 3) return false;
-  const d = new Date(+p[0], +p[1] - 1, +p[2]); const now = new Date();
-  if (_crmPeriod === 'week') { const ws = new Date(now); ws.setHours(0, 0, 0, 0); ws.setDate(now.getDate() - ((now.getDay() + 6) % 7)); return d >= ws; }
-  if (_crmPeriod === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
-  if (_crmPeriod === 'year') return d.getFullYear() === now.getFullYear();
+  const ds = String(dateStr || ''); const p = ds.split('-'); if (p.length < 3) return false;
+  if (_crmPeriod === 'week') { const d = new Date(+p[0], +p[1] - 1, +p[2]); const now = new Date(); const ws = new Date(now); ws.setHours(0, 0, 0, 0); ws.setDate(now.getDate() - ((now.getDay() + 6) % 7)); return d >= ws; }
+  if (_crmPeriod === 'month') return ds.slice(0, 7) === _crmPeriodMonth;
+  if (_crmPeriod === 'year') return ds.slice(0, 4) === String(_crmPeriodYear);
   return true;
 }
 function _crmPeriodBar() {
-  const opts = [['all', 'All time'], ['week', 'This week'], ['month', 'This month'], ['year', 'This year']];
-  return '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + opts.map(o => '<button onclick="crmSetPeriod(\'' + o[0] + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;' + (_crmPeriod === o[0] ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + o[1] + '</button>').join('') + '</div></div>';
+  const opts = [['all', 'All time'], ['week', 'This week'], ['month', 'Month'], ['year', 'Year']];
+  const seg = '<div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + opts.map(o => '<button onclick="crmSetPeriod(\'' + o[0] + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;' + (_crmPeriod === o[0] ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + o[1] + '</button>').join('') + '</div>';
+  let extra = '';
+  if (_crmPeriod === 'month') {
+    const now = new Date(); const months = [];
+    for (let i = 0; i < 18; i++) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ k: dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2), l: dt.toLocaleString('en-US', { month: 'short', year: 'numeric' }) }); }
+    extra = '<select class="form-control" title="Choose month" style="width:auto;font-size:12px" onchange="crmSetPeriodMonth(this.value)">' + months.map(m => '<option value="' + m.k + '"' + (m.k === _crmPeriodMonth ? ' selected' : '') + '>' + m.l + '</option>').join('') + '</select>';
+  } else if (_crmPeriod === 'year') {
+    const cy = new Date().getFullYear(); const dy = (_HR.crm_deals || []).map(d => +String(d.wonDate || d.closeDate || '').slice(0, 4)).filter(Boolean);
+    const minY = Math.min(cy - 4, dy.length ? Math.min.apply(null, dy) : cy); const years = [];
+    for (let y = cy; y >= minY; y--) years.push(y);
+    extra = '<select class="form-control" title="Choose year" style="width:auto;font-size:12px" onchange="crmSetPeriodYear(this.value)">' + years.map(y => '<option value="' + y + '"' + (String(y) === String(_crmPeriodYear) ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  }
+  return '<div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">' + seg + extra + '</div>';
 }
 async function crmRenderDashboard() {
   const root = document.getElementById('crm-dashboard-root'); if (!root) return;
@@ -7824,8 +7849,8 @@ async function crmRenderDashboard() {
     _hrKpi('Pipeline value', _crmMoney(pipeVal)),
     _hrKpi('Forecast (weighted)', _crmMoney(openDeals.reduce((s, d) => s + (+d.value || 0) * ((_CRM_PROB[d.stage || 'New'] || 0) / 100), 0)), '#0ea5e9'),
     _hrKpi('Open deals', openDeals.length, '#3168A8'),
-    _hrKpi('Won value (' + _CRM_PERIOD_LABEL[_crmPeriod] + ')', _crmMoney(wonVal), 'var(--emerald)'),
-    _hrKpi('Win rate (' + _CRM_PERIOD_LABEL[_crmPeriod] + ')', winRate + '%', '#8B5CF6'),
+    _hrKpi('Won value (' + _crmPeriodLabel() + ')', _crmMoney(wonVal), 'var(--emerald)'),
+    _hrKpi('Win rate (' + _crmPeriodLabel() + ')', winRate + '%', '#8B5CF6'),
     _hrKpi('Activities overdue', overdue, overdue ? '#ef4444' : 'var(--emerald)'),
     _hrKpi('Due today', dueToday, '#F59E0B')
   ]);
