@@ -7528,7 +7528,7 @@ function _crmIni(nm) { return (nm || '?').split(/\s+/).filter(Boolean).slice(-2)
 function _crmAva(nm) { const e = (_DEMO_EMPLOYEES || []).find(x => x.name === nm); return e ? tkAvatar(e, 'ava-sm') : '<div class="ava-sm" style="background:' + tkAvatarColor(nm || '') + '">' + _crmEsc(_crmIni(nm)) + '</div>'; }
 async function _crmLoadAll() { await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_leads')]); }
 function _crmDealBadge(n) { const b = document.getElementById('badge-crm-deals'); if (!b) return; if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
-function _crmRefreshDealBadge() { _crmDealBadge((_HR.crm_deals || []).filter(d => _CRM_OPEN.includes(d.stage || 'New')).length); }
+function _crmRefreshDealBadge() { const n = (_HR.crm_deals || []).filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => _crmActMeta(d)).filter(a => a && a.diff <= 0).length; _crmDealBadge(n); }
 function _crmTags(s) { return String(s || '').split(',').map(t => t.trim()).filter(Boolean); }
 /* next-activity meta: colour + label from activityDate (overdue red / today amber / upcoming green) */
 function _crmActMeta(d) {
@@ -7542,6 +7542,12 @@ function _crmActMeta(d) {
 }
 
 /* ── Pipeline (deals kanban) ── */
+/* ── shared list filter helpers ── */
+function _crmDistinct(arr, key) { return [...new Set((arr || []).map(x => (x[key] || '').toString().trim()).filter(Boolean))].sort(); }
+function _crmFiltSearch(id, ph, fn) { return '<input id="' + id + '" type="text" placeholder="' + ph + '" class="form-control" style="flex:1;min-width:170px;max-width:300px;font-size:12px" oninput="' + fn + '()">'; }
+function _crmFiltSel(id, label, options, fn) { return '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="' + fn + '()"><option value="">' + label + '</option>' + (options || []).map(o => '<option>' + _crmEsc(o) + '</option>').join('') + '</select>'; }
+function _crmFiltBar(html) { return '<div style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + html + '</div>'; }
+
 async function crmRenderPipeline() {
   const root = document.getElementById('crm-pipeline-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
@@ -7553,7 +7559,7 @@ async function crmRenderPipeline() {
   const wonVal = won.reduce((s, d) => s + (+d.value || 0), 0);
   const decided = won.length + lost.length; const winRate = decided ? Math.round(won.length / decided * 100) : 0;
   const forecast = openDeals.reduce((s, d) => s + (+d.value || 0) * ((_CRM_PROB[d.stage || 'New'] || 0) / 100), 0);
-  _crmDealBadge(openDeals.length);
+  _crmRefreshDealBadge();
   const kpis = _hrKpiRow([
     _hrKpi('Open deals', openDeals.length),
     _hrKpi('Pipeline value', _crmMoney(pipeVal), '#F59E0B'),
@@ -7561,7 +7567,18 @@ async function crmRenderPipeline() {
     _hrKpi('Won value', _crmMoney(wonVal), 'var(--emerald)'),
     _hrKpi('Win rate', winRate + '%', '#8B5CF6')
   ]);
-  const cols = _CRM_STAGES.map(st => {
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-pipe-q', 'Search deals…', 'crmFillPipe') + _crmFiltSel('crm-pipe-owner', 'All salesmen', _crmDistinct(deals, 'owner'), 'crmFillPipe') + _crmFiltSel('crm-pipe-type', 'All types', _CRM_TYPES, 'crmFillPipe'));
+  const addBtn = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_deals') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Sales Pipeline</div>' + addBtn + '</div>' + fbar + '</div><div id="crm-pipe-cols" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px"></div>';
+  crmFillPipe();
+}
+function crmFillPipe() {
+  const host = document.getElementById('crm-pipe-cols'); if (!host) return;
+  const q = (document.getElementById('crm-pipe-q') ? document.getElementById('crm-pipe-q').value : '').toLowerCase();
+  const ow = document.getElementById('crm-pipe-owner') ? document.getElementById('crm-pipe-owner').value : '';
+  const ty = document.getElementById('crm-pipe-type') ? document.getElementById('crm-pipe-type').value : '';
+  const deals = (_HR.crm_deals || []).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
+  host.innerHTML = _CRM_STAGES.map(st => {
     const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
     const cards = items.map(d => {
@@ -7587,8 +7604,6 @@ async function crmRenderPipeline() {
     }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>';
     return '<div class="crm-col" data-stage="' + st + '" ondragover="crmDragOver(event)" ondragleave="crmDragLeave(event)" ondrop="crmDrop(event,\'' + st + '\')" style="flex:1;min-width:190px;background:var(--soft-bg);border-radius:10px;padding:10px;transition:background .12s"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + (_CRM_STAGE_CLR[st] || '#205090') + ';display:flex;justify-content:space-between"><span>' + st + (_CRM_PROB[st] != null ? ' · ' + _CRM_PROB[st] + '%' : '') + '</span><span>' + items.length + '</span></div><div style="font-size:11px;color:var(--text-light);margin-bottom:8px">' + _crmMoney(sum) + '</div>' + cards + '</div>';
   }).join('');
-  const addBtn = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_deals') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button></div>';
-  root.innerHTML = kpis + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:700;color:var(--navy)">Sales Pipeline</div>' + addBtn + '</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>';
 }
 function crmDealMove(id, stage) {
   const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) return;
@@ -7616,19 +7631,29 @@ async function crmRenderLeads() {
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
   const leads = _HR.crm_leads || [];
-  const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
   const kpis = _hrKpiRow([
     _hrKpi('Total leads', leads.length),
     _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
     _hrKpi('Qualified', leads.filter(l => l.status === 'Qualified').length, 'var(--emerald)'),
     _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
   ]);
-  const rows = leads.length ? leads.map(l => {
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(leads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(leads, 'owner'), 'crmFillLeads'));
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
+  crmFillLeads();
+}
+function crmFillLeads() {
+  const tb = document.getElementById('crm-leads-tbody'); if (!tb) return;
+  const q = (document.getElementById('crm-leads-q') ? document.getElementById('crm-leads-q').value : '').toLowerCase();
+  const stt = document.getElementById('crm-leads-status') ? document.getElementById('crm-leads-status').value : '';
+  const src = document.getElementById('crm-leads-source') ? document.getElementById('crm-leads-source').value : '';
+  const ow = document.getElementById('crm-leads-owner') ? document.getElementById('crm-leads-owner').value : '';
+  const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
+  const rows = (_HR.crm_leads || []).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow));
+  tb.innerHTML = rows.length ? rows.map(l => {
     const done = l.converted || l.status === 'Qualified';
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
     return '<tr><td style="font-weight:600">' + _crmEsc(l.name || '') + '</td><td>' + _crmEsc(l.company || '—') + '</td><td style="font-size:12px">' + _crmEsc(l.email || '—') + (l.phone ? '<div style="color:var(--text-light)">' + _crmEsc(l.phone) + '</div>' : '') + '</td><td>' + _crmEsc(l.source || '—') + '</td><td><span class="badge ' + (sc[l.status] || 'b-grey') + '" style="font-size:10px">' + _crmEsc(l.status || 'New') + '</span></td><td style="font-weight:600">' + _crmMoney(l.value) + '</td><td style="white-space:nowrap">' + conv + _hrEditDel('crm_leads', l.id, 'crm_leads') + '</td></tr>';
-  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No leads yet — click “Add Lead” to start.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No leads match your filters.</td></tr>';
 }
 async function crmConvertLead(id) {
   const l = (_HR.crm_leads || []).find(x => x.id === id); if (!l) return;
@@ -7652,47 +7677,62 @@ async function crmRenderCompanies() {
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_deals')]);
   const cos = _HR.crm_companies || []; const deals = _HR.crm_deals || [];
-  const kpis = _hrKpiRow([
-    _hrKpi('Companies', cos.length),
-    _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')
-  ]);
-  const rows = cos.length ? cos.map(c => {
+  const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-co-q', 'Search company…', 'crmFillCompanies') + _crmFiltSel('crm-co-ind', 'All industries', _crmDistinct(cos, 'industry'), 'crmFillCompanies') + _crmFiltSel('crm-co-owner', 'All owners', _crmDistinct(cos, 'owner'), 'crmFillCompanies'));
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
+  crmFillCompanies();
+}
+function crmFillCompanies() {
+  const tb = document.getElementById('crm-co-tbody'); if (!tb) return;
+  const q = (document.getElementById('crm-co-q') ? document.getElementById('crm-co-q').value : '').toLowerCase();
+  const ind = document.getElementById('crm-co-ind') ? document.getElementById('crm-co-ind').value : '';
+  const ow = document.getElementById('crm-co-owner') ? document.getElementById('crm-co-owner').value : '';
+  const deals = _HR.crm_deals || [];
+  const rows = (_HR.crm_companies || []).filter(c => (!q || (c.name || '').toLowerCase().indexOf(q) >= 0) && (!ind || (c.industry || '') === ind) && (!ow || (c.owner || '') === ow));
+  tb.innerHTML = rows.length ? rows.map(c => {
     const dv = deals.filter(d => (d.company || '') === c.name).reduce((s, d) => s + (+d.value || 0), 0);
     const href = _crmHref(c.website);
     const web = c.website ? (href ? '<a href="' + _crmEsc(href) + '" target="_blank" rel="noopener" style="color:var(--navy)">' + _crmEsc(c.website) + '</a>' : _crmEsc(c.website)) : '—';
     return '<tr><td style="font-weight:600">' + _crmEsc(c.name || '') + '</td><td>' + _crmEsc(c.industry || '—') + '</td><td style="font-size:12px">' + web + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="font-weight:600">' + _crmMoney(dv) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_companies', c.id, 'crm_companies') + '</td></tr>';
-  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No companies yet — click “Add Company”.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div><div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No companies match your filters.</td></tr>';
 }
-
 /* ── Contacts ── */
 async function crmRenderContacts() {
   const root = document.getElementById('crm-contacts-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_contacts'), tkLoadColl('crm_companies')]);
   const cts = _HR.crm_contacts || [];
-  const kpis = _hrKpiRow([
-    _hrKpi('Contacts', cts.length),
-    _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')
-  ]);
-  const rows = cts.length ? cts.map(c => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(c.name) + '<span style="font-weight:600">' + _crmEsc(c.name || '') + '</span></div></td><td>' + _crmEsc(c.title || '—') + '</td><td>' + _crmEsc(c.company || '—') + '</td><td style="font-size:12px">' + (c.email ? '<a href="mailto:' + encodeURIComponent(c.email) + '" style="color:var(--navy)">' + _crmEsc(c.email) + '</a>' : '—') + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_contacts', c.id, 'crm_contacts') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No contacts yet — click “Add Contact”.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  const kpis = _hrKpiRow([_hrKpi('Contacts', cts.length), _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')]);
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-ct-q', 'Search name / email / company…', 'crmFillContactsTbl') + _crmFiltSel('crm-ct-co', 'All companies', _crmDistinct(cts, 'company'), 'crmFillContactsTbl') + _crmFiltSel('crm-ct-owner', 'All owners', _crmDistinct(cts, 'owner'), 'crmFillContactsTbl'));
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody id="crm-ct-tbody"></tbody></table></div></div>';
+  crmFillContactsTbl();
 }
-
+function crmFillContactsTbl() {
+  const tb = document.getElementById('crm-ct-tbody'); if (!tb) return;
+  const q = (document.getElementById('crm-ct-q') ? document.getElementById('crm-ct-q').value : '').toLowerCase();
+  const co = document.getElementById('crm-ct-co') ? document.getElementById('crm-ct-co').value : '';
+  const ow = document.getElementById('crm-ct-owner') ? document.getElementById('crm-ct-owner').value : '';
+  const rows = (_HR.crm_contacts || []).filter(c => (!q || ((c.name || '') + ' ' + (c.email || '') + ' ' + (c.company || '')).toLowerCase().indexOf(q) >= 0) && (!co || (c.company || '') === co) && (!ow || (c.owner || '') === ow));
+  tb.innerHTML = rows.length ? rows.map(c => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(c.name) + '<span style="font-weight:600">' + _crmEsc(c.name || '') + '</span></div></td><td>' + _crmEsc(c.title || '—') + '</td><td>' + _crmEsc(c.company || '—') + '</td><td style="font-size:12px">' + (c.email ? '<a href="mailto:' + encodeURIComponent(c.email) + '" style="color:var(--navy)">' + _crmEsc(c.email) + '</a>' : '—') + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_contacts', c.id, 'crm_contacts') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No contacts match your filters.</td></tr>';
+}
 /* ── Products / Services catalog ── */
 async function crmRenderProducts() {
   const root = document.getElementById('crm-products-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await tkLoadColl('crm_products');
   const ps = _HR.crm_products || [];
-  const kpis = _hrKpiRow([
-    _hrKpi('Products / services', ps.length),
-    _hrKpi('Avg unit price', _crmMoney(ps.length ? ps.reduce((s, p) => s + (+p.price || 0), 0) / ps.length : 0), '#8B5CF6')
-  ]);
-  const rows = ps.length ? ps.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-family:monospace;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No products yet — add your catalog so quotations can pick from it.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Product &amp; Service Catalog</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_products') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_products\')">' + _PLUS_SVG + ' Add Product</button></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Category</th><th>Unit</th><th style="text-align:right">Unit price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  const kpis = _hrKpiRow([_hrKpi('Products / services', ps.length), _hrKpi('Avg unit price', _crmMoney(ps.length ? ps.reduce((s, p) => s + (+p.price || 0), 0) / ps.length : 0), '#8B5CF6')]);
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-pr-q', 'Search name / code…', 'crmFillProducts') + _crmFiltSel('crm-pr-type', 'All types', _CRM_TYPES, 'crmFillProducts'));
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Product &amp; Service Catalog</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_products') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_products\')">' + _PLUS_SVG + ' Add Product</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Type</th><th>Unit</th><th style="text-align:right">Unit price</th><th></th></tr></thead><tbody id="crm-pr-tbody"></tbody></table></div></div>';
+  crmFillProducts();
 }
-
+function crmFillProducts() {
+  const tb = document.getElementById('crm-pr-tbody'); if (!tb) return;
+  const q = (document.getElementById('crm-pr-q') ? document.getElementById('crm-pr-q').value : '').toLowerCase();
+  const ty = document.getElementById('crm-pr-type') ? document.getElementById('crm-pr-type').value : '';
+  const rows = (_HR.crm_products || []).filter(p => (!q || ((p.name || '') + ' ' + (p.code || '')).toLowerCase().indexOf(q) >= 0) && (!ty || (p.category || '') === ty));
+  tb.innerHTML = rows.length ? rows.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-family:monospace;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No products match your filters.</td></tr>';
+}
 /* ── Quotation builder (multi-line, catalog picker, live totals) ── */
 let _crmQB = null;
 function crmQuoteBuilder(id) {
@@ -7702,10 +7742,10 @@ function crmQuoteBuilder(id) {
   document.getElementById('crmQBOverlay')?.remove();
   const cat = (_HR.crm_products || []).map((p, i) => '<option value="' + i + '">' + _crmEsc(p.name) + ' — ' + _crmMoney(p.price) + '</option>').join('');
   const el = document.createElement('div'); el.id = 'crmQBOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:880px">' +
+  el.innerHTML = '<div class="modal" style="max-width:980px;width:96vw">' +
     '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
-    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Description</th><th style="width:58px">Qty</th><th style="width:64px">Unit</th><th style="width:120px">Unit price</th><th style="width:56px">Disc%</th><th style="width:120px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
+    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:54px">Qty</th><th style="width:60px">Unit</th><th style="width:122px">Unit price</th><th style="width:52px">Disc%</th><th style="width:110px;text-align:right">Amount</th><th style="width:30px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
     '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
   document.body.appendChild(el);
@@ -7714,12 +7754,12 @@ function crmQuoteBuilder(id) {
 function crmQBRender() {
   const tb = document.getElementById('crm-qb-rows'); if (!tb || !_crmQB) return;
   tb.innerHTML = _crmQB.lines.map((l, i) => '<tr>' +
-    '<td><input class="form-control" style="font-size:12px;min-width:200px" value="' + _tkEscA(l.desc) + '" oninput="_crmQB.lines[' + i + '].desc=this.value"></td>' +
-    '<td><input class="form-control" type="number" min="0" style="font-size:12px" value="' + l.qty + '" oninput="_crmQB.lines[' + i + '].qty=+this.value||0;crmQBTotals()"></td>' +
-    '<td><input class="form-control" style="font-size:12px" value="' + _tkEscA(l.unit) + '" oninput="_crmQB.lines[' + i + '].unit=this.value"></td>' +
-    '<td><input class="form-control" type="number" min="0" step="1000" style="font-size:12px" value="' + l.price + '" oninput="_crmQB.lines[' + i + '].price=+this.value||0;crmQBTotals()"></td>' +
-    '<td><input class="form-control" type="number" min="0" max="100" style="font-size:12px" value="' + l.disc + '" oninput="_crmQB.lines[' + i + '].disc=+this.value||0;crmQBTotals()"></td>' +
-    '<td style="text-align:right;font-weight:600" id="crm-qb-amt-' + i + '">' + _crmMoney(l.qty * l.price * (1 - l.disc / 100)) + '</td>' +
+    '<td><input class="form-control" style="font-size:12px;width:100%" placeholder="Item / service description" value="' + _tkEscA(l.desc) + '" oninput="_crmQB.lines[' + i + '].desc=this.value"></td>' +
+    '<td><input class="form-control" type="number" min="0" style="font-size:12px;width:100%;padding:6px 6px" value="' + l.qty + '" oninput="_crmQB.lines[' + i + '].qty=+this.value||0;crmQBTotals()"></td>' +
+    '<td><input class="form-control" style="font-size:12px;width:100%;padding:6px 6px" value="' + _tkEscA(l.unit) + '" oninput="_crmQB.lines[' + i + '].unit=this.value"></td>' +
+    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;text-align:right" placeholder="0" value="' + _qaMoneyFmt(l.price) + '" oninput="_crmQB.lines[' + i + '].price=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this);crmQBTotals()"></td>' +
+    '<td><input class="form-control" type="number" min="0" max="100" style="font-size:12px;width:100%;padding:6px 6px" value="' + l.disc + '" oninput="_crmQB.lines[' + i + '].disc=+this.value||0;crmQBTotals()"></td>' +
+    '<td style="text-align:right;font-weight:600;white-space:nowrap" id="crm-qb-amt-' + i + '">' + _crmMoney(l.qty * l.price * (1 - l.disc / 100)) + '</td>' +
     '<td><button class="btn btn-ghost btn-sm" title="Remove line" style="color:#C00000;padding:2px 6px" onclick="crmQBRemoveLine(' + i + ')">' + _TRASH + '</button></td></tr>').join('');
   crmQBTotals();
 }
@@ -7734,7 +7774,10 @@ function crmQBRemoveLine(i) { if (!_crmQB) return; _crmQB.lines.splice(i, 1); if
 function crmQBAddFromCatalog() { const sel = document.getElementById('crm-qb-cat'); const p = (_HR.crm_products || [])[+sel.value]; if (p) { _crmQB.lines.push({ desc: p.name + (p.code ? ' [' + p.code + ']' : ''), qty: 1, unit: p.unit || 'pcs', price: Math.round(+p.price || 0), disc: 0 }); crmQBRender(); } sel.value = ''; }
 async function crmQBSave(thenExport, fmt) {
   if (!_crmQB) return; const d = (_HR.crm_deals || []).find(x => x.id === _crmQB.id); if (!d) return;
-  const lines = _crmQB.lines.filter(l => (l.desc || '').trim() || +l.price);
+  const partial = _crmQB.lines.filter(l => ((l.desc || '').trim() || +l.price > 0) && (!(l.desc || '').trim() || !(+l.price > 0)));
+  if (partial.length) { toast('Each line needs a description and a unit price greater than 0.', 'warn', 6000); return; }
+  const lines = _crmQB.lines.filter(l => (l.desc || '').trim() && +l.price > 0);
+  if (!lines.length) { toast('Add at least one line with a description and a unit price before saving.', 'warn', 6000); return; }
   const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 0) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
   try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub }) }); d.lines = lines; d.value = sub; }
   catch (e) { toast('Save failed: ' + e.message, 'error'); return; }
@@ -7745,6 +7788,22 @@ async function crmQBSave(thenExport, fmt) {
 
 /* ── Sales dashboard ── */
 let _crmDashData = null;
+let _crmPeriod = 'all';
+const _CRM_PERIOD_LABEL = { all: 'all time', week: 'this week', month: 'this month', year: 'this year' };
+function crmSetPeriod(p) { _crmPeriod = p; crmRenderDashboard(); }
+function _crmInPeriod(dateStr) {
+  if (_crmPeriod === 'all') return true;
+  const p = String(dateStr || '').split('-'); if (p.length < 3) return false;
+  const d = new Date(+p[0], +p[1] - 1, +p[2]); const now = new Date();
+  if (_crmPeriod === 'week') { const ws = new Date(now); ws.setHours(0, 0, 0, 0); ws.setDate(now.getDate() - ((now.getDay() + 6) % 7)); return d >= ws; }
+  if (_crmPeriod === 'month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  if (_crmPeriod === 'year') return d.getFullYear() === now.getFullYear();
+  return true;
+}
+function _crmPeriodBar() {
+  const opts = [['all', 'All time'], ['week', 'This week'], ['month', 'This month'], ['year', 'This year']];
+  return '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + opts.map(o => '<button onclick="crmSetPeriod(\'' + o[0] + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;' + (_crmPeriod === o[0] ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + o[1] + '</button>').join('') + '</div></div>';
+}
 async function crmRenderDashboard() {
   const root = document.getElementById('crm-dashboard-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
@@ -7752,16 +7811,17 @@ async function crmRenderDashboard() {
   const deals = _HR.crm_deals || []; const leads = _HR.crm_leads || [];
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
-  const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0); const wonVal = won.reduce((s, d) => s + (+d.value || 0), 0);
+  const wonP = won.filter(d => _crmInPeriod(d.wonDate || d.closeDate));
+  const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0); const wonVal = wonP.reduce((s, d) => s + (+d.value || 0), 0);
   const decided = won.length + lost.length; const winRate = decided ? Math.round(won.length / decided * 100) : 0;
-  _crmDealBadge(openDeals.length);
+  _crmRefreshDealBadge();
   const actDeals = openDeals.map(d => ({ d: d, a: _crmActMeta(d) })).filter(x => x.a);
   const overdue = actDeals.filter(x => x.a.diff < 0).length; const dueToday = actDeals.filter(x => x.a.diff === 0).length;
   const kpis = _hrKpiRow([
     _hrKpi('Pipeline value', _crmMoney(pipeVal)),
     _hrKpi('Forecast (weighted)', _crmMoney(openDeals.reduce((s, d) => s + (+d.value || 0) * ((_CRM_PROB[d.stage || 'New'] || 0) / 100), 0)), '#0ea5e9'),
     _hrKpi('Open deals', openDeals.length, '#3168A8'),
-    _hrKpi('Won value (all)', _crmMoney(wonVal), 'var(--emerald)'),
+    _hrKpi('Won value (' + _CRM_PERIOD_LABEL[_crmPeriod] + ')', _crmMoney(wonVal), 'var(--emerald)'),
     _hrKpi('Win rate', winRate + '%', '#8B5CF6'),
     _hrKpi('Activities overdue', overdue, overdue ? '#ef4444' : 'var(--emerald)'),
     _hrKpi('Due today', dueToday, '#F59E0B')
@@ -7792,11 +7852,11 @@ async function crmRenderDashboard() {
   const listCard = (title, rows) => '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div></div><div class="table-wrap"><table style="font-size:12px"><tbody>' + rows + '</tbody></table></div></div>';
   const lists = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-top:18px">' + listCard('Top 5 opportunities (by value)', oppRows) + listCard('Top 5 leads (by value)', leadRows) + listCard('Upcoming activities', actRows) + '</div>';
   const reps = {};
-  deals.forEach(d => { const o = d.owner || 'Unassigned'; const r = reps[o] || (reps[o] = { open: 0, fc: 0, won: 0, oc: 0 }); const v = +d.value || 0; if (_CRM_OPEN.indexOf(d.stage || 'New') >= 0) { r.open += v; r.oc++; r.fc += v * ((_CRM_PROB[d.stage || 'New'] || 0) / 100); } else if (d.stage === 'Won') r.won += v; });
+  deals.forEach(d => { const o = d.owner || 'Unassigned'; const r = reps[o] || (reps[o] = { open: 0, fc: 0, won: 0, oc: 0 }); const v = +d.value || 0; if (_CRM_OPEN.indexOf(d.stage || 'New') >= 0) { r.open += v; r.oc++; r.fc += v * ((_CRM_PROB[d.stage || 'New'] || 0) / 100); } else if (d.stage === 'Won' && _crmInPeriod(d.wonDate || d.closeDate)) r.won += v; });
   const repKeys = Object.keys(reps).sort((a, b) => reps[b].open - reps[a].open);
   const salesRows = repKeys.length ? repKeys.map(o => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(o) + '<span style="font-weight:600">' + _crmEsc(o) + '</span></div></td><td style="text-align:center">' + reps[o].oc + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _crmMoney(reps[o].open) + '</td><td style="text-align:right;color:#0ea5e9;font-weight:700">' + _crmMoney(reps[o].fc) + '</td><td style="text-align:right;color:var(--emerald);font-weight:700">' + _crmMoney(reps[o].won) + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:14px">No deals yet</td></tr>';
   const salesCard = '<div class="card" style="padding:0;overflow:hidden;margin-top:18px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">Sales by salesman</div></div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Salesman</th><th style="text-align:center">Open deals</th><th style="text-align:right">Pipeline value</th><th style="text-align:right">Weighted forecast</th><th style="text-align:right">Won value</th></tr></thead><tbody>' + salesRows + '</tbody></table></div></div>';
-  root.innerHTML = kpis + grid + salesCard + lists;
+  root.innerHTML = _crmPeriodBar() + kpis + grid + salesCard + lists;
   setTimeout(_crmBuildDashCharts, 80);
 }
 function _crmBuildDashCharts() {
