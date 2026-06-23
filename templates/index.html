@@ -7755,7 +7755,7 @@ async function crmRenderPipeline() {
     _hrKpi('Won value', _crmMoney(wonVal), 'var(--emerald)'),
     _hrKpi('Win rate', winRate + '%', '#8B5CF6')
   ]);
-  const fbar = _crmFiltBar(_crmFiltSearch('crm-pipe-q', 'Search deals…', 'crmFillPipe') + _crmFiltSel('crm-pipe-owner', 'All salesmen', _crmDistinct(deals, 'owner'), 'crmFillPipe') + _crmFiltSel('crm-pipe-type', 'All types', _CRM_TYPES, 'crmFillPipe'));
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-pipe-q', 'Search deals…', 'crmFillPipe') + (_userLevel !== 'staff' ? _crmFiltSel('crm-pipe-owner', 'All salesmen', _crmDistinct(deals, 'owner'), 'crmFillPipe') : '') + _crmFiltSel('crm-pipe-type', 'All types', _CRM_TYPES, 'crmFillPipe'));
   const addBtn = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_deals') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button></div>';
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Sales Pipeline</div>' + addBtn + '</div>' + fbar + '</div><div id="crm-pipe-cols" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px"></div>';
   crmFillPipe();
@@ -8044,7 +8044,7 @@ function _crmDashControls() {
   const owners = [...new Set(deals.map(d => d.owner).filter(Boolean))].sort();
   const ownSel = '<select class="form-control" title="Filter by salesman" style="width:auto;font-size:12px" onchange="crmSetDashOwner(this.value)"><option value="">All salesmen</option>' + owners.map(o => '<option' + ((_crmDashOwner || '') === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select>';
   const typeSel = '<select class="form-control" title="Filter by product / service type" style="width:auto;font-size:12px" onchange="crmSetDashType(this.value)"><option value="">All types</option>' + _CRM_TYPES.map(t => '<option' + ((_crmDashType || '') === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
-  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:var(--text-light);font-weight:700">View</span>' + ownSel + typeSel + '</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + _crmPeriodBar() + '</div></div>';
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:var(--text-light);font-weight:700">View</span>' + (_userLevel !== 'staff' ? ownSel : '') + typeSel + '</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + _crmPeriodBar() + '</div></div>';
 }
 async function crmRenderDashboard() {
   const root = document.getElementById('crm-dashboard-root'); if (!root) return;
