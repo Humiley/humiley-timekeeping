@@ -6849,9 +6849,10 @@ const _QA_SPECS = {
     { k: 'health', label: 'Health plan' }, { k: 'training', label: 'Training budget (₫/yr)', type: 'number' },
     { k: 'note', label: 'Typical title / note' }] },
   crm_deals: { title: 'Deal / Opportunity', coll: 'crm_deals', reload: 'crm_deals', fields: [
-    { k: 'title', label: 'Deal name' }, { k: 'company', label: 'Company', type: 'combo', dyn: 'companies', onchange: '_crmFillContacts(this.value)' }, { k: 'contact', label: 'Contact person', type: 'combo', dyn: 'contacts' },
+    { k: 'title', label: 'Deal name' }, { k: 'company', label: 'Account / Company', type: 'combo', dyn: 'companies', onchange: '_crmFillContacts(this.value)' }, { k: 'contact', label: 'Contact person', type: 'combo', dyn: 'contacts' },
     { k: 'value', label: 'Deal value (₫)', type: 'money' },
     { k: 'stage', label: 'Stage', type: 'select', options: ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] },
+    { k: 'ptype', label: 'Product / Service type', type: 'select', options: ['', 'PMC', 'ENG', 'SAL', 'CSM', 'Products', 'Other'] },
     { k: 'owner', label: 'Owner (sales rep)', type: 'select', options: 'employees' },
     { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'tags', label: 'Tags (comma-separated)' }, { k: 'activityType', label: 'Next activity', type: 'select', options: ['', 'Call', 'Email', 'Meeting', 'To-do'] }, { k: 'activityDate', label: 'Activity date', type: 'date' }, { k: 'note', label: 'Notes' }] },
   crm_companies: { title: 'Company / Account', coll: 'crm_companies', reload: 'crm_companies', fields: [
@@ -6860,18 +6861,18 @@ const _QA_SPECS = {
     { k: 'website', label: 'Website', type: 'url' }, { k: 'phone', label: 'Phone' }, { k: 'address', label: 'Address' },
     { k: 'owner', label: 'Account owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
   crm_contacts: { title: 'Contact', coll: 'crm_contacts', reload: 'crm_contacts', fields: [
-    { k: 'name', label: 'Full name' }, { k: 'title', label: 'Job title' }, { k: 'company', label: 'Company', type: 'combo', dyn: 'companies' },
+    { k: 'name', label: 'Full name' }, { k: 'title', label: 'Job title' }, { k: 'company', label: 'Account / Company', type: 'combo', dyn: 'companies' },
     { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
   crm_leads: { title: 'Lead', coll: 'crm_leads', reload: 'crm_leads', fields: [
-    { k: 'name', label: 'Lead name / contact' }, { k: 'company', label: 'Company', type: 'combo', dyn: 'companies' }, { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
+    { k: 'name', label: 'Lead name / contact' }, { k: 'company', label: 'Account / Company', type: 'combo', dyn: 'companies' }, { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
     { k: 'source', label: 'Source', type: 'select', options: ['Website', 'Referral', 'Cold call', 'Event', 'LinkedIn', 'Email campaign', 'Partner', 'Other'] },
     { k: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Qualified', 'Unqualified'] },
     { k: 'value', label: 'Est. value (₫)', type: 'money' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
   crm_products: { title: 'Product / Service', coll: 'crm_products', reload: 'crm_products', fields: [
     { k: 'name', label: 'Product / service name' }, { k: 'code', label: 'Code / SKU' },
-    { k: 'category', label: 'Category', type: 'select', options: ['Equipment', 'Material', 'Service', 'Engineering', 'Installation', 'Maintenance', 'Spare part', 'Other'] },
+    { k: 'category', label: 'Type (PMC/ENG/SAL/CSM/Products/Other)', type: 'select', options: ['PMC', 'ENG', 'SAL', 'CSM', 'Products', 'Other'] },
     { k: 'unit', label: 'Unit', type: 'select', options: ['pcs', 'lot', 'set', 'unit', 'hour', 'day', 'm', 'm2', 'kg'] },
     { k: 'price', label: 'Unit price (₫)', type: 'money' }, { k: 'note', label: 'Notes' }] }
 };
@@ -6926,6 +6927,7 @@ async function tkQuickAddSave() {
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
+    if (['crm_deals', 'crm_leads', 'crm_contacts'].indexOf(_qaType) >= 0 && data.company) { try { await _crmEnsureAccount(data.company, data.owner); } catch (e) {} }
     closeModal('quickAddModal');
     toast(_qaEditId ? 'Updated' : 'Added successfully');
     if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
@@ -7517,6 +7519,7 @@ const _CRM_STAGES = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost
 const _CRM_OPEN = ['New', 'Qualified', 'Proposal', 'Negotiation'];
 const _CRM_STAGE_CLR = { New: '#3168A8', Qualified: '#8b5cf6', Proposal: '#f59e0b', Negotiation: '#0ea5e9', Won: '#00B060', Lost: '#ef4444' };
 const _CRM_PROB = { New: 10, Qualified: 25, Proposal: 50, Negotiation: 75, Won: 100, Lost: 0 };
+const _CRM_TYPES = ['PMC', 'ENG', 'SAL', 'CSM', 'Products', 'Other'];
 /* HTML-escape every user-entered value before it reaches innerHTML (prevents stored XSS) */
 function _crmEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function _crmHref(u) { const v = String(u || '').trim(); return /^https?:\/\//i.test(v) ? v : (v && !/^[a-z]+:/i.test(v) ? 'https://' + v : ''); }
@@ -7577,6 +7580,7 @@ async function crmRenderPipeline() {
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div style="font-weight:700;font-size:13px;flex:1">' + _crmEsc(d.title || '(untitled)') + '</div><div style="white-space:nowrap">' + stars + '</div></div>' +
         '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.company || '—') + (d.contact ? ' · ' + _crmEsc(d.contact) : '') + '</div>' +
         '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-top:3px">' + _crmMoney(d.value) + '</div>' +
+        (d.ptype ? '<div style="margin-top:4px"><span class="badge b-navy" style="font-size:9px">' + _crmEsc(d.ptype) + '</span></div>' : '') +
         (tags ? '<div>' + tags + '</div>' : '') + actHtml + closeHtml +
         (d.owner ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-light)">' + _crmAva(d.owner) + '<span>' + _crmEsc(d.owner) + '</span></div>' : '') +
         '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + close + adv + quote + _hrEditDel('crm_deals', d.id, 'crm_deals') + '</div></div>';
@@ -7770,12 +7774,14 @@ async function crmRenderDashboard() {
   const wonByM = months.map(m => won.filter(d => String(d.wonDate || d.closeDate || '').slice(0, 7) === m.key).reduce((s, d) => s + (+d.value || 0), 0));
   const srcMap = {}; leads.forEach(l => { const s = l.source || 'Other'; srcMap[s] = (srcMap[s] || 0) + 1; });
   const srcKeys = Object.keys(srcMap);
-  _crmDashData = { stageVals: stageVals, ownLabels: ownKeys, ownVals: ownKeys.map(k => ownMap[k]), monthLabels: months.map(m => m.label), wonByM: wonByM, srcLabels: srcKeys, srcVals: srcKeys.map(k => srcMap[k]) };
+  const typeMap = {}; openDeals.forEach(d => { const t = d.ptype || 'Other'; typeMap[t] = (typeMap[t] || 0) + (+d.value || 0); });
+  const typeKeys = _CRM_TYPES.filter(t => typeMap[t]);
+  _crmDashData = { stageVals: stageVals, ownLabels: ownKeys, ownVals: ownKeys.map(k => ownMap[k]), monthLabels: months.map(m => m.label), wonByM: wonByM, srcLabels: srcKeys, srcVals: srcKeys.map(k => srcMap[k]), typeLabels: typeKeys, typeVals: typeKeys.map(k => typeMap[k]) };
   const grid = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">' +
     _rptChartCard('Pipeline value by stage', 'crm-stage', 240) +
     _rptChartCard('Open pipeline by sales rep', 'crm-owner', 240) +
     _rptChartCard('Won value — last 6 months', 'crm-monthly', 240) +
-    _rptChartCard('Lead sources', 'crm-src', 240) + '</div>';
+    _rptChartCard('Lead sources', 'crm-src', 240) + _rptChartCard('Pipeline by product / service type', 'crm-type', 240) + '</div>';
   const badge = { New: 'b-navy', Qualified: 'b-info', Proposal: 'b-warn', Won: 'b-ok', Lost: 'b-danger' };
   const topOpps = openDeals.slice().sort((a, b) => (+b.value || 0) - (+a.value || 0)).slice(0, 5);
   const topLeads = leads.slice().sort((a, b) => (+b.value || 0) - (+a.value || 0)).slice(0, 5);
@@ -7785,7 +7791,12 @@ async function crmRenderDashboard() {
   const actRows = upcoming.length ? upcoming.map(x => '<tr><td><span style="color:' + x.a.clr + ';font-weight:700;font-size:11px;white-space:nowrap">● ' + _crmEsc(x.a.type) + '</span></td><td><div style="font-weight:600;font-size:12px">' + _crmEsc(x.d.title || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.d.company || '—') + ' · ' + _crmEsc(x.d.owner || '—') + '</div></td><td style="text-align:right;font-weight:700;font-size:11px;color:' + x.a.clr + ';white-space:nowrap">' + x.a.lab + '</td></tr>').join('') : '<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:14px">No activities scheduled — set a next step on a deal.</td></tr>';
   const listCard = (title, rows) => '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div></div><div class="table-wrap"><table style="font-size:12px"><tbody>' + rows + '</tbody></table></div></div>';
   const lists = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-top:18px">' + listCard('Top 5 opportunities (by value)', oppRows) + listCard('Top 5 leads (by value)', leadRows) + listCard('Upcoming activities', actRows) + '</div>';
-  root.innerHTML = kpis + grid + lists;
+  const reps = {};
+  deals.forEach(d => { const o = d.owner || 'Unassigned'; const r = reps[o] || (reps[o] = { open: 0, fc: 0, won: 0, oc: 0 }); const v = +d.value || 0; if (_CRM_OPEN.indexOf(d.stage || 'New') >= 0) { r.open += v; r.oc++; r.fc += v * ((_CRM_PROB[d.stage || 'New'] || 0) / 100); } else if (d.stage === 'Won') r.won += v; });
+  const repKeys = Object.keys(reps).sort((a, b) => reps[b].open - reps[a].open);
+  const salesRows = repKeys.length ? repKeys.map(o => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(o) + '<span style="font-weight:600">' + _crmEsc(o) + '</span></div></td><td style="text-align:center">' + reps[o].oc + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _crmMoney(reps[o].open) + '</td><td style="text-align:right;color:#0ea5e9;font-weight:700">' + _crmMoney(reps[o].fc) + '</td><td style="text-align:right;color:var(--emerald);font-weight:700">' + _crmMoney(reps[o].won) + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:14px">No deals yet</td></tr>';
+  const salesCard = '<div class="card" style="padding:0;overflow:hidden;margin-top:18px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">Sales by salesman</div></div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Salesman</th><th style="text-align:center">Open deals</th><th style="text-align:right">Pipeline value</th><th style="text-align:right">Weighted forecast</th><th style="text-align:right">Won value</th></tr></thead><tbody>' + salesRows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + grid + salesCard + lists;
   setTimeout(_crmBuildDashCharts, 80);
 }
 function _crmBuildDashCharts() {
@@ -7794,6 +7805,7 @@ function _crmBuildDashCharts() {
   _mkChart('crm-owner', { type: 'bar', data: { labels: d.ownLabels, datasets: [{ data: d.ownVals, backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   _mkChart('crm-monthly', { type: 'line', data: { labels: d.monthLabels, datasets: [{ data: d.wonByM, borderColor: '#00B060', backgroundColor: _grad('rgba(0,176,96,.25)', 'rgba(0,176,96,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: '#00B060', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
   _mkChart('crm-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Leads' } });
+  _mkChart('crm-type', { type: 'doughnut', data: { labels: d.typeLabels, datasets: [{ data: d.typeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Pipeline', fmt: _money } });
 }
 
 /* dynamic option sources for the quick-add form (employees / companies / contacts) */
@@ -7808,6 +7820,18 @@ function _crmFillContacts(co) {
   const all = (_HR.crm_contacts || []);
   const list = (co ? all.filter(c => (c.company || '').toLowerCase() === String(co).toLowerCase()) : all).map(c => c.name).filter(Boolean);
   dl.innerHTML = list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('');
+}
+/* Make Company the central Account: auto-create a stub account when a new company name is used
+   on a deal / lead / contact, so everything relates to an account (complete its details later). */
+async function _crmEnsureAccount(name, owner) {
+  name = String(name || '').trim(); if (!name) return;
+  await tkLoadColl('crm_companies');
+  if ((_HR.crm_companies || []).some(c => (c.name || '').toLowerCase() === name.toLowerCase())) return;
+  try {
+    const r = await tkApi('/api/coll/crm_companies', { method: 'POST', body: { name: name, owner: owner || '', note: 'Auto-created — please complete details in Companies' } });
+    (_HR.crm_companies = _HR.crm_companies || []).push(r.item);
+    toast('New account “' + name + '” created — add its details in Companies anytime.', 'info', 6000);
+  } catch (e) {}
 }
 
 /* ── Quotation (Humiley official template HML-QT-YYYY-####) ── */
@@ -7934,7 +7958,7 @@ function crmDownloadQuoteXLS(id) {
 /* ── CRM bulk Excel import / export (round-trip; uses the bundled SheetJS) ── */
 const _CRM_LABEL = { crm_deals: 'Deals / Pipeline', crm_leads: 'Leads', crm_companies: 'Companies', crm_contacts: 'Contacts', crm_products: 'Products' };
 const _CRM_COLS = {
-  crm_deals: [['title', 'Deal name'], ['company', 'Company'], ['contact', 'Contact'], ['value', 'Value (VND)'], ['stage', 'Stage'], ['owner', 'Owner'], ['closeDate', 'Expected close (YYYY-MM-DD)'], ['priority', 'Priority (0-3)'], ['tags', 'Tags (comma-separated)'], ['activityType', 'Next activity'], ['activityDate', 'Activity date (YYYY-MM-DD)'], ['note', 'Notes']],
+  crm_deals: [['title', 'Deal name'], ['company', 'Company'], ['contact', 'Contact'], ['value', 'Value (VND)'], ['stage', 'Stage'], ['ptype', 'Type (PMC/ENG/SAL/CSM/Products/Other)'], ['owner', 'Owner'], ['closeDate', 'Expected close (YYYY-MM-DD)'], ['priority', 'Priority (0-3)'], ['tags', 'Tags (comma-separated)'], ['activityType', 'Next activity'], ['activityDate', 'Activity date (YYYY-MM-DD)'], ['note', 'Notes']],
   crm_leads: [['name', 'Lead name'], ['company', 'Company'], ['email', 'Email'], ['phone', 'Phone'], ['source', 'Source'], ['status', 'Status'], ['value', 'Est. value (VND)'], ['owner', 'Owner'], ['note', 'Notes']],
   crm_companies: [['name', 'Company name'], ['industry', 'Industry'], ['website', 'Website'], ['phone', 'Phone'], ['address', 'Address'], ['owner', 'Owner'], ['note', 'Notes']],
   crm_contacts: [['name', 'Full name'], ['title', 'Job title'], ['company', 'Company'], ['email', 'Email'], ['phone', 'Phone'], ['owner', 'Owner'], ['note', 'Notes']],
@@ -8318,7 +8342,7 @@ const _VI = {
   'Competency Matrix': 'Ma trận năng lực',
   'Save Changes': 'Lưu thay đổi',
   'removed permanently': 'đã xóa vĩnh viễn',
-  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Export': 'Xuất', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
+  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Quy trình theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Export': 'Xuất', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
   'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
   'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
   'Sales / CRM': 'Bán hàng / CRM', 'Sales Dashboard': 'Bảng điều khiển bán hàng', 'Sales Pipeline': 'Quy trình bán hàng',
