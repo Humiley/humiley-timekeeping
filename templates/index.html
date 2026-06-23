@@ -8346,16 +8346,14 @@ const _PM_STATUS_HEX = { Pipeline: '#94a3b8', Initiating: '#3168A8', Planning: '
 const _pmStatusHex = s => _PM_STATUS_HEX[s] || '#205090';
 
 /* ---- RBAC: staff=own/member projects · manager=dept · management+=all ---- */
-function _pmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('management'); }
+/* PM visibility: User = only assigned projects (PM or Team member); Manager and above = ALL. */
+function _pmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('manager'); }
 function _pmMembers(p) { return Array.isArray(p.members) ? p.members : String(p.members || '').split(',').map(s => s.trim()).filter(Boolean); }
+function _pmAssigned(p) { const me = ((TK.user && TK.user.name) || '').toLowerCase(); return (p.manager || '').toLowerCase() === me || _pmMembers(p).map(m => m.toLowerCase()).includes(me); }
 function _pmMine(arr) {
   arr = arr || [];
-  if (_pmSeeAll()) return arr;
-  const me = ((TK.user && TK.user.name) || '').toLowerCase();
-  const mine = p => (p.manager || '').toLowerCase() === me || _pmMembers(p).map(m => m.toLowerCase()).includes(me);
-  if (_userLevel === 'staff') return arr.filter(mine);
-  const myDept = ((TK.user && (TK.user.dept || TK.user.department)) || '').toLowerCase();
-  return arr.filter(p => mine(p) || (myDept && (p.dept || '').toLowerCase() === myDept));
+  if (_pmSeeAll()) return arr;            // Manager and above see every project
+  return arr.filter(_pmAssigned);         // User sees only projects assigned to them
 }
 function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.id)); }
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
@@ -8445,7 +8443,8 @@ function pmStatusPDF(pid) {
    ========================================================================== */
 /* generic card + table register used by the simpler tabs */
 function _pmCard(title, addColl, addLabel, inner, extra) {
-  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (addColl ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
+  const canAdd = addColl && (['pm_costs', 'pm_procurement', 'pm_procurement_payments'].indexOf(addColl) < 0 || _pmSeeAll());
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (canAdd ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
 }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
@@ -8472,7 +8471,7 @@ async function pmRenderProjects() {
   ]);
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
   const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects'));
-  const addBtn = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>';
+  const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Projects</div>' + addBtn + '</div>' + fbar + '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
 }
@@ -8492,7 +8491,7 @@ function pmFillProjects() {
       '<td style="text-align:right;font-weight:600">' + _pmMoney(p.contractValue || p.budget) + '</td>' +
       '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">No projects yet. Click <b>New Project</b> to create a Charter — or convert a Won deal from the CRM pipeline.</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">' + (_pmSeeAll() ? 'No projects yet. Click <b>New Project</b> to create a Charter — or convert a Won deal from the CRM pipeline.' : 'You are not assigned to any projects yet. A manager can add you to a project <b>Team</b> (Resources tab) or set you as its Project Manager.') + '</td></tr>';
 }
 
 /* ---------- open + Workspace shell ---------- */
@@ -8525,7 +8524,7 @@ async function pmRenderWorkspace() {
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + (p.phase ? _pmBadge(p.phase, '#3168A8') : '') +
     '<button class="btn btn-ghost btn-sm" onclick="pmCharterPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Charter</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status PDF</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button></div></div>' +
+    (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
     _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--navy)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
