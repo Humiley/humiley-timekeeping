@@ -466,9 +466,21 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         return self._json({"items": db.list_collection(name)})
 
+    @staticmethod
+    def _crm_sanitize(body):
+        # Defense-in-depth: strip angle brackets from CRM string fields so a stored value
+        # can never inject markup when re-rendered (frontend also HTML-escapes on output).
+        out = dict(body or {})
+        for k, v in list(out.items()):
+            if isinstance(v, str):
+                out[k] = v.replace("<", "").replace(">", "")
+        return out
+
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        if name.startswith("crm_"):
+            body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         item = dict(body or {})
@@ -499,6 +511,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        if name.startswith("crm_"):
+            body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records).
