@@ -33,7 +33,7 @@ TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
 # Microsoft 365 config (empty -> demo mode)
 M365 = {
     # Public SPA identifiers (no client secret) — baked in so M365 stays live across restarts.
-    "clientId": os.environ.get("TK_M365_CLIENT_ID", "c6173839-4c88-4fcb-92e1-a2d265260cbf"),
+    "clientId": os.environ.get("TK_M365_CLIENT_ID", "8810a31e-788a-4f96-881c-c522fdc5b338"),
     "tenantId": os.environ.get("TK_M365_TENANT_ID", "2a586c8f-fc2f-4c59-be46-938adfa3579c"),
     "mapsKey": os.environ.get("TK_MAPS_KEY", ""),
 }
