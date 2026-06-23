@@ -6936,7 +6936,7 @@ const _QA_SPECS = {
     { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'date', label: 'Date', type: 'date' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_deliverables: { title: 'Deliverable / WBS', coll: 'pm_deliverables', reload: 'pm_deliverables', fields: [
     { k: 'name', label: 'Deliverable name' }, { k: 'wbsCode', label: 'WBS code (e.g. 1.2.3)' },
-    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'due', label: 'Due', type: 'date' },
+    { k: 'owner', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' }, { k: 'supervisor', label: 'Supervisor (project member)', type: 'select', options: 'pm_members' }, { k: 'due', label: 'Due', type: 'date' },
     { k: 'weight', label: 'Weight', type: 'number' }, { k: 'percentComplete', label: '% complete', type: 'number' },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Submitted', 'Accepted'] },
     { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
@@ -6962,7 +6962,7 @@ const _QA_SPECS = {
     { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'assignedTo', label: 'Assigned to', type: 'select', options: 'employees' },
     { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'due', label: 'Due', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] },
-    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
+    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
     { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' },
     { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
@@ -8092,6 +8092,8 @@ function _qaDynOptions(src, ex) {
   if (src === 'employees') return (_DEMO_EMPLOYEES || []).map(e => e.name).filter(Boolean);
   if (src === 'companies') return (_HR.crm_companies || []).map(c => c.name).filter(Boolean);
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
+  if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
+  if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
   return [];
 }
 function _crmFillContacts(co) {
@@ -8482,9 +8484,22 @@ function _pmCard(title, addColl, addLabel, inner, extra) {
   const canAdd = addColl && (['pm_costs', 'pm_procurement', 'pm_procurement_payments'].indexOf(addColl) < 0 || _pmSeeAll());
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (canAdd ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
 }
+let _pmSort = {};
+function pmTableSort(coll, key) { const c = _pmSort[coll] || {}; _pmSort[coll] = { key: key, dir: (c.key === key ? -c.dir : 1) }; _pmReload(); }
+function _pmCell(col, r) { if (col.sk) return r[col.sk]; if (col.k) return r[col.k]; try { return String(col.render(r)).replace(/<[^>]*>/g, '').replace(/&[a-z]+;/g, ' ').trim(); } catch (e) { return ''; } }
+function _pmSortRows(coll, cols, rows) {
+  const so = _pmSort[coll]; if (!so || !so.key) return rows;
+  const col = cols.find((c, i) => (c.sk || c.k || ('col' + i)) === so.key); if (!col) return rows;
+  const numify = v => { const t = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); return (t === '' || t === '-') ? null : +t; };
+  const vals = rows.map(r => _pmCell(col, r));
+  const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
+  return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
+}
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
-  const head = '<tr>' + cols.map(c => '<th' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + c.label + '</th>').join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  rows = _pmSortRows(coll, cols, rows);
+  const so = _pmSort[coll] || {};
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : ''; return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="Sort"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
@@ -8653,11 +8668,13 @@ function pmRenderScope(pid) {
   const scopeStmt = (p.scopeStatement || p.scopeSummary || p.scopeInclusions || p.scopeExclusions) ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Scope Statement</div>' +
     [['Statement', p.scopeStatement || p.scopeSummary], ['Inclusions', p.scopeInclusions], ['Exclusions', p.scopeExclusions], ['Assumptions', p.scopeAssumptions]].filter(r => r[1]).map(r => '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light)">' + r[0] + '</span><div style="font-size:13px;white-space:pre-wrap">' + _pmEsc(r[1]) + '</div></div>').join('') + '<div style="font-size:11px;color:var(--text-light);margin-top:4px">Edit scope text via the project <b>Edit</b> button.</div></div>' : '';
   const tbl = _pmCard('Work Breakdown Structure (Deliverables)', 'pm_deliverables', 'Add deliverable', _pmTable('pm_deliverables', [
-    { label: 'WBS', render: r => '<span style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
-    { label: 'Deliverable', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
-    { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) }, { label: 'Wt', align: 'right', render: r => _pmEsc(r.weight || 1) },
-    { label: 'Progress', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.percentComplete) + '<span style="font-size:11px">' + _pmPct(r.percentComplete) + '%</span></div>' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
+    { label: 'WBS', sk: 'wbsCode', render: r => '<span style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
+    { label: 'Deliverable', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
+    { label: 'Contractor', sk: 'owner', render: r => r.owner ? _pmBadge(r.owner, '#3168A8') : '—' },
+    { label: 'Supervisor', sk: 'supervisor', render: r => r.supervisor ? '<div style="display:flex;align-items:center;gap:6px">' + _crmAva(r.supervisor) + '<span>' + _pmEsc(r.supervisor) + '</span></div>' : '—' },
+    { label: 'Due', sk: 'due', render: r => _pmFmt(r.due) }, { label: 'Wt', sk: 'weight', align: 'right', render: r => _pmEsc(r.weight || 1) },
+    { label: 'Progress', sk: 'percentComplete', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.percentComplete) + '<span style="font-size:11px">' + _pmPct(r.percentComplete) + '%</span></div>' },
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
   ], ds));
   _pmSet(kpis + scopeStmt + tbl);
 }
@@ -8671,19 +8688,29 @@ function pmRenderSchedule(pid) {
   let dates = []; tasks.forEach(t => { if (t.start) dates.push(t.start); if (t.finish) dates.push(t.finish); }); if (p.startPlanned) dates.push(p.startPlanned); if (p.endPlanned) dates.push(p.endPlanned);
   const min = dates.length ? dates.reduce((a, b) => a < b ? a : b) : _pmToday(), max = dates.length ? dates.reduce((a, b) => a > b ? a : b) : _pmToday();
   const span = Math.max(1, _pmDateDiff(min, max) || 1);
-  const todayOff = Math.max(0, Math.min(100, (_pmDateDiff(min, _pmToday()) || 0) / span * 100));
-  const ganttRows = tasks.map(t => {
-    const s = t.start || min, f = t.finish || t.start || min;
-    let off = Math.max(0, (_pmDateDiff(min, s) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(s, f) || 0) / span) * 100); if (off + w > 100) w = 100 - off;
+  const ROW = 26;
+  const _mlist = [];
+  { let d = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1); const endD = new Date(max);
+    while (d <= endD) { const ds = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-01'; const off = (_pmDateDiff(min, ds) || 0) / span * 100;
+      if (off <= 100.5) _mlist.push({ off: Math.max(0, off), lab: d.toLocaleString('en-US', { month: 'short' }) + ((d.getMonth() === 0 || _mlist.length === 0) ? " '" + String(d.getFullYear()).slice(-2) : '') });
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
+  const _grid = _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;top:0;bottom:0;width:0;border-left:1px solid var(--line)"></div>').join('');
+  const _monthHdr = '<div style="position:relative;height:15px;margin-bottom:6px">' + _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>').join('') + '</div>';
+  const _todayOff = (_pmDateDiff(min, _pmToday()) || 0) / span * 100;
+  const _today = (_todayOff >= 0 && _todayOff <= 100) ? '<div style="position:absolute;left:' + _todayOff + '%;top:0;bottom:0;width:0;border-left:2px dashed #EF4444;z-index:3" title="Today"></div>' : '';
+  const _labels = '<div style="height:21px"></div>' + tasks.map(t => { const crit = String(t.critical) === 'Yes'; return '<div style="height:' + ROW + 'px;display:flex;align-items:center;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px;border-bottom:1px solid var(--soft-bg)">' + (t.wbs ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.wbs) + '</span>' : '') + _pmEsc(t.name || '') + (crit ? ' <span style="color:#EF4444;font-size:9px;font-weight:700;margin-left:4px">CP</span>' : '') + '</div>'; }).join('');
+  const _bars = tasks.map(t => { const sdt = t.start || min, f = t.finish || t.start || min; let off = Math.max(0, (_pmDateDiff(min, sdt) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(sdt, f) || 0) / span) * 100); if (off + w > 100) w = 100 - off;
     const mile = String(t.isMilestone) === 'Yes', crit = String(t.critical) === 'Yes', overdue = t.status !== 'Completed' && t.finish && t.finish < _pmToday();
     const hex = mile ? '#8B5CF6' : crit ? '#EF4444' : overdue ? '#F59E0B' : '#205090';
-    const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:2px;width:12px;height:12px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px" title="Milestone ' + _pmFmt(f) + '"></div>'
-      : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:4px;height:10px;border-radius:4px;background:' + hex + ';opacity:.85" title="' + _pmFmt(s) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
-    return '<tr><td style="font-size:12px;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;padding-right:8px">' + (t.wbs ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px">' + _pmEsc(t.wbs) + '</span> ' : '') + _pmEsc(t.name || '') + (crit ? ' <span style="color:#EF4444;font-size:9px;font-weight:700">CP</span>' : '') + '</td><td style="position:relative;height:18px;min-width:280px">' + bar + '</td><td style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmFmt(t.finish) + '</td></tr>';
-  }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:16px">No tasks yet.</td></tr>';
-  const gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt <span style="font-size:11px;color:var(--text-light);font-weight:400">(' + _pmFmt(min) + ' → ' + _pmFmt(max) + ')</span></div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div>' +
-    '<div style="padding:8px 16px 4px"><table style="width:100%"><tbody>' + ganttRows + '</tbody></table></div>' +
-    '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span></div></div>';
+    const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:7px;width:13px;height:13px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="Milestone ' + _pmFmt(f) + '"></div>'
+      : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:8px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
+    return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
+  const _dates = '<div style="height:21px"></div>' + tasks.map(t => '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + '</div>').join('');
+  const _timeline = _monthHdr + '<div style="position:relative">' + _grid + _today + _bars + '</div>';
+  const gantt = tasks.length ? ('<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt <span style="font-size:11px;color:var(--text-light);font-weight:400">(' + _pmFmt(min) + ' → ' + _pmFmt(max) + ')</span></div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div>' +
+    '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:210px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:320px">' + _timeline + '</div><div style="width:118px;flex-shrink:0">' + _dates + '</div></div>' +
+    '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div></div>')
+    : '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div><div style="padding:16px;color:var(--text-light);text-align:center">No tasks yet — add tasks to see the timeline.</div></div>';
   const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
@@ -8727,7 +8754,8 @@ function pmRenderQuality(pid) {
     { label: 'Discipline', k: 'discipline' },
     { label: 'Result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
     { label: 'Severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
+    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
