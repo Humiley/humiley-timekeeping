@@ -1105,7 +1105,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div class="modal-overlay" id="quickAddModal">
   <div class="modal" style="max-width:480px">
     <div class="modal-header">
-      <div class="modal-title" id="qa-title">Add</div>
+      <div class="modal-title" id="qa-modal-title">Add</div>
       <button class="modal-close" onclick="closeModal('quickAddModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div id="qa-fields"></div>
@@ -6850,7 +6850,7 @@ const _QA_SPECS = {
     { k: 'note', label: 'Typical title / note' }] },
   crm_deals: { title: 'Deal / Opportunity', coll: 'crm_deals', reload: 'crm_deals', fields: [
     { k: 'title', label: 'Deal name' }, { k: 'company', label: 'Company', type: 'combo', dyn: 'companies', onchange: '_crmFillContacts(this.value)' }, { k: 'contact', label: 'Contact person', type: 'combo', dyn: 'contacts' },
-    { k: 'value', label: 'Deal value (₫)', type: 'number' },
+    { k: 'value', label: 'Deal value (₫)', type: 'money' },
     { k: 'stage', label: 'Stage', type: 'select', options: ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'] },
     { k: 'owner', label: 'Owner (sales rep)', type: 'select', options: 'employees' },
     { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'tags', label: 'Tags (comma-separated)' }, { k: 'activityType', label: 'Next activity', type: 'select', options: ['', 'Call', 'Email', 'Meeting', 'To-do'] }, { k: 'activityDate', label: 'Activity date', type: 'date' }, { k: 'note', label: 'Notes' }] },
@@ -6867,24 +6867,27 @@ const _QA_SPECS = {
     { k: 'name', label: 'Lead name / contact' }, { k: 'company', label: 'Company', type: 'combo', dyn: 'companies' }, { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
     { k: 'source', label: 'Source', type: 'select', options: ['Website', 'Referral', 'Cold call', 'Event', 'LinkedIn', 'Email campaign', 'Partner', 'Other'] },
     { k: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Qualified', 'Unqualified'] },
-    { k: 'value', label: 'Est. value (₫)', type: 'number' },
+    { k: 'value', label: 'Est. value (₫)', type: 'money' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
   crm_products: { title: 'Product / Service', coll: 'crm_products', reload: 'crm_products', fields: [
     { k: 'name', label: 'Product / service name' }, { k: 'code', label: 'Code / SKU' },
     { k: 'category', label: 'Category', type: 'select', options: ['Equipment', 'Material', 'Service', 'Engineering', 'Installation', 'Maintenance', 'Spare part', 'Other'] },
     { k: 'unit', label: 'Unit', type: 'select', options: ['pcs', 'lot', 'set', 'unit', 'hour', 'day', 'm', 'm2', 'kg'] },
-    { k: 'price', label: 'Unit price (₫)', type: 'number' }, { k: 'note', label: 'Notes' }] }
+    { k: 'price', label: 'Unit price (₫)', type: 'money' }, { k: 'note', label: 'Notes' }] }
 };
 let _qaType = null, _qaEditId = null;
+function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function _qaMoney(el) { const p = el.selectionStart, n0 = el.value.length; el.value = _qaMoneyFmt(el.value); try { el.selectionStart = el.selectionEnd = Math.max(0, p + (el.value.length - n0)); } catch (e) {} }
 function tkQuickAdd(type, id) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
   const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
-  document.getElementById('qa-title').textContent = (id ? 'Edit — ' : '') + spec.title;
+  document.getElementById('qa-modal-title').textContent = (id ? 'Edit — ' : '') + spec.title;
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'money') return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" inputmode="numeric" autocomplete="off" oninput="_qaMoney(this)" value="' + _tkEscA(_qaMoneyFmt(val)) + '"></div>';
     if (f.type === 'file') {
       const nm = ex ? (ex[f.k + 'Name'] || '') : '';
       return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
@@ -6909,7 +6912,7 @@ async function tkQuickAddSave() {
   const data = {};
   spec.fields.forEach(f => {
     if (f.type === 'file') { data[f.k] = (document.getElementById('qa-' + f.k) || {}).value || ''; data[f.k + 'Name'] = (document.getElementById('qa-' + f.k + '-name') || {}).value || ''; return; }
-    const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; data[f.k] = v;
+    const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   try {
