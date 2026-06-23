@@ -4073,7 +4073,7 @@ const _hrKpi = (label, val, color) => _kpiTile(label, val, _KPI_HEX[color] || co
 /* Icon KPI tile (icon-left + value + label) — the consistent professional KPI used across pages. */
 const _kpiTile = (label, val, color, icon) => '<div class="card" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
   '<div style="width:42px;height:42px;border-radius:11px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
-  '<div style="min-width:0"><div style="font-size:21px;font-weight:800;color:var(--navy);line-height:1.1;white-space:nowrap">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div></div></div>';
+  '<div style="min-width:0"><div style="font-size:21px;font-weight:700;color:var(--navy);line-height:1.1;white-space:nowrap">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div></div></div>';
 const _hrKpiRow = cards => '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">' + cards.join('') + '</div>';
 const _hrStars = n => { n = Math.max(0, Math.min(5, +n || 0)); return '<span style="color:#F59E0B">' + '★'.repeat(n) + '</span><span style="color:#d4d8de">' + '★'.repeat(5 - n) + '</span>'; };
 const _TRASH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -6973,10 +6973,10 @@ const _QA_SPECS = {
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] },
     { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
-    { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' },
-    { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
+    { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' }, { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
+    { k: 'discipline', label: 'Package (Discipline)', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
     { k: 'standardRef', label: 'Standard / spec ref' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
-    { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' }, { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Approved', 'Superseded'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+    { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' }, { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Approved', 'Superseded'] }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_resources: { title: 'Team Member', coll: 'pm_resources', reload: 'pm_resources', fields: [
     { k: 'name', label: 'Member', type: 'select', options: 'employees' }, { k: 'projectRole', label: 'Project role' },
     { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
@@ -6991,7 +6991,7 @@ const _QA_SPECS = {
     { k: 'title', label: 'Issue title' }, { k: 'issueNo', label: 'Issue No.' }, { k: 'category', label: 'Category' },
     { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High'] },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'due', label: 'Due', type: 'date' },
-    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Resolved', 'Closed'] }, { k: 'resolution', label: 'Resolution', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Resolved', 'Closed'] }, { k: 'resolution', label: 'Resolution', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_risks: { title: 'Risk', coll: 'pm_risks', reload: 'pm_risks', fields: [
     { k: 'title', label: 'Risk title' }, { k: 'riskNo', label: 'Risk No.' },
     { k: 'category', label: 'Category', type: 'select', options: ['Technical', 'Schedule', 'Cost', 'External', 'Safety', 'Commercial'] },
@@ -6999,7 +6999,7 @@ const _QA_SPECS = {
     { k: 'responseStrategy', label: 'Response', type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept'] }, { k: 'mitigationActions', label: 'Mitigation actions', type: 'textarea' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' },
     { k: 'residualProbability', label: 'Residual probability', type: 'select', options: ['', '1', '2', '3', '4', '5'] }, { k: 'residualImpact', label: 'Residual impact', type: 'select', options: ['', '1', '2', '3', '4', '5'] },
-    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Mitigating', 'Closed'] }, { k: 'description', label: 'Description', type: 'textarea' }] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Mitigating', 'Closed'] }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_procurement: { title: 'Procurement Package', coll: 'pm_procurement', reload: 'pm_procurement', fields: [
     { k: 'title', label: 'Package / scope' }, { k: 'pkgNo', label: 'Package No.' }, { k: 'vendor', label: 'Vendor / subcontractor', type: 'combo', dyn: 'companies' },
     { k: 'type', label: 'Type', type: 'select', options: ['Contract', 'PO', 'Subcontract', 'Service'] }, { k: 'value', label: 'Value (₫)', type: 'money' },
@@ -8337,6 +8337,7 @@ const _pmPid = () => _pmCurrentProject || sessionStorage.getItem('pm_proj') || '
 const _pmScope = arr => (arr || []).filter(x => x.projectId === _pmPid());
 const _pmScopeFor = (coll, pid) => (_HR[coll] || []).filter(x => x.projectId === pid);
 const _pmMoney = n => _crmMoney(n);
+function _pmMoneyShort(n) { n = +n || 0; const neg = n < 0 ? '-' : ''; const a = Math.abs(n); if (a >= 1e9) return neg + '₫' + (a / 1e9).toFixed(2).replace(/\.?0+$/, '') + 'B'; if (a >= 1e6) return neg + '₫' + (a / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'; if (a >= 1e3) return neg + '₫' + Math.round(a / 1e3) + 'K'; return neg + '₫' + a; }
 const _pmEsc = s => _crmEsc(s == null ? '' : s);
 const _pmInPeriod = (d) => { try { return _crmInPeriod(d); } catch (e) { return true; } };
 function _pmToday() { return new Date().toISOString().slice(0, 10); }
@@ -8499,6 +8500,78 @@ function _pmOpenFile(coll, id) {
   } catch (e) { try { const dl = document.createElement('a'); dl.href = r.attachment; dl.download = r.attachmentName || 'attachment'; dl.click(); } catch (e2) { toast('Could not open the file', 'warn'); } }
 }
 function _pmFileCell(coll, r) { if (!r || !r.attachment) return '—'; return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\')" title="' + _tkEscA(r.attachmentName || 'Open file') + '" style="color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>'; }
+/* ---------- Import tasks from MS Project XML / Excel / CSV ---------- */
+function pmImportBtn() { return '<button class="btn btn-ghost btn-sm" onclick="pmImportTasks()" title="Import schedule from MS Project XML or Excel/CSV"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>'; }
+function _pmXlDate(v) {
+  if (v === '' || v == null) return '';
+  if (typeof v === 'number' && window.XLSX && XLSX.SSF) { const d = XLSX.SSF.parse_date_code(v); if (d) return d.y + '-' + String(d.m).padStart(2, '0') + '-' + String(d.d).padStart(2, '0'); }
+  const s = String(v); const m = s.match(/(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  const d = new Date(s); if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  return '';
+}
+function _pmStatusFromPct(p) { p = +p || 0; return p >= 100 ? 'Completed' : p > 0 ? 'In progress' : 'Not started'; }
+function _pmParseMsProjectXml(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => { try {
+      const xml = new DOMParser().parseFromString(r.result, 'application/xml');
+      if (xml.getElementsByTagName('parsererror').length) return reject(new Error('Not valid XML'));
+      const nodes = [].slice.call(xml.getElementsByTagName('Task'));
+      const g = (t, tag) => { const e = t.getElementsByTagName(tag)[0]; return e ? (e.textContent || '') : ''; };
+      const out = nodes.map(t => {
+        const name = g(t, 'Name'); if (!name || !name.trim()) return null;
+        const pct = +g(t, 'PercentComplete') || 0;
+        return { name: name.trim(), wbs: (g(t, 'WBS') || g(t, 'OutlineNumber') || '').trim(), start: (g(t, 'Start') || '').slice(0, 10), finish: (g(t, 'Finish') || '').slice(0, 10), pctComplete: pct, isMilestone: g(t, 'Milestone') === '1' ? 'Yes' : 'No', critical: g(t, 'Critical') === '1' ? 'Yes' : 'No', status: _pmStatusFromPct(pct) };
+      }).filter(Boolean);
+      resolve(out);
+    } catch (e) { reject(e); } };
+    r.onerror = () => reject(new Error('Could not read file')); r.readAsText(file);
+  });
+}
+function _pmParseTaskSheet(file) {
+  return new Promise((resolve, reject) => {
+    if (!window.XLSX) return reject(new Error('Spreadsheet library not loaded'));
+    const r = new FileReader();
+    r.onload = () => { try {
+      const wb = XLSX.read(r.result, { type: 'binary', cellDates: false });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
+      const pick = (row, keys) => { for (const k of Object.keys(row)) { const lk = k.toLowerCase().trim(); if (keys.some(kk => lk === kk || lk.indexOf(kk) >= 0)) return row[k]; } return ''; };
+      const out = json.map(row => {
+        const name = pick(row, ['task name', 'task_name', 'name', 'task', 'activity']); if (!String(name).trim()) return null;
+        const pct = parseInt(String(pick(row, ['% complete', 'percent complete', 'percent', '% comp', 'complete', '%'])).replace(/[^0-9]/g, '')) || 0;
+        const ms = String(pick(row, ['milestone'])).toLowerCase();
+        return { name: String(name).trim(), wbs: String(pick(row, ['wbs', 'outline', 'task id', 'id']) || '').trim(), start: _pmXlDate(pick(row, ['start'])), finish: _pmXlDate(pick(row, ['finish', 'end'])), pctComplete: pct, assignee: String(pick(row, ['assignee', 'resource', 'owner', 'responsible']) || '').trim(), isMilestone: (ms === 'yes' || ms === '1' || ms === 'true') ? 'Yes' : 'No', status: _pmStatusFromPct(pct) };
+      }).filter(Boolean);
+      resolve(out);
+    } catch (e) { reject(e); } };
+    r.onerror = () => reject(new Error('Could not read file')); r.readAsBinaryString(file);
+  });
+}
+async function pmImportTasks() {
+  const pid = _pmPid(); if (!pid) { toast('Open a project first.', 'warn'); return; }
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xml,.csv,.xlsx,.xls,.mpp';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    const nm = f.name.toLowerCase();
+    try {
+      let rows = [];
+      if (nm.endsWith('.mpp')) { toast('MS Project .mpp is a binary format that browsers cannot read. In MS Project use File → Save As → XML (or export to Excel), then import that file here.', 'warn', 10000); return; }
+      else if (nm.endsWith('.xml')) { rows = await _pmParseMsProjectXml(f); }
+      else if (nm.endsWith('.csv') || nm.endsWith('.xlsx') || nm.endsWith('.xls')) { rows = await _pmParseTaskSheet(f); }
+      else { toast('Unsupported file. Use MS Project XML (.xml), Excel (.xlsx) or CSV.', 'warn', 7000); return; }
+      if (!rows.length) { toast('No tasks found in the file. Check it has a Task Name column / <Task> entries.', 'warn', 7000); return; }
+      if (!confirm('Import ' + rows.length + ' task(s) into this project? They are added to the existing schedule.')) return;
+      let n = 0; const total = rows.length;
+      for (const t of rows) { try { const res = await tkApi('/api/coll/pm_tasks', { method: 'POST', body: Object.assign({ projectId: pid }, t) }); (_HR.pm_tasks = _HR.pm_tasks || []).push(res.item); n++; } catch (e) { } }
+      try { tkAudit('Schedule imported', _pmProj(pid) ? _pmProj(pid).name : '', n + ' tasks'); } catch (e) { }
+      await tkLoadColl('pm_tasks'); pmTab('schedule');
+      toast('Imported ' + n + ' of ' + total + ' task(s) from ' + f.name, 'success', 7000);
+    } catch (e) { toast('Import failed: ' + e.message, 'error', 8000); }
+  };
+  inp.click();
+}
+
 function _pmCard(title, addColl, addLabel, inner, extra) {
   const canAdd = addColl && (['pm_costs', 'pm_procurement', 'pm_procurement_payments'].indexOf(addColl) < 0 || _pmSeeAll());
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (canAdd ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
@@ -8518,7 +8591,7 @@ function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
   const so = _pmSort[coll] || {};
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : ''; return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="Sort"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="Sort"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
@@ -8535,7 +8608,7 @@ async function pmRenderProjects() {
   const onTrack = all.length ? Math.round(all.filter(p => _pmEffectiveRag(p) === 'Green').length / all.length * 100) : 0;
   const kpis = _hrKpiRow([
     _hrKpi('Active projects', active.length),
-    _hrKpi('Portfolio value', _pmMoney(value), '#F59E0B'),
+    _hrKpi('Portfolio value', _pmMoneyShort(value), '#F59E0B'),
     _hrKpi('On-track', onTrack + '%', 'var(--emerald)'),
     _hrKpi('Open high risks', all.reduce((s, p) => s + _pmRiskRollup(p.id).high, 0), '#EF4444')
   ]);
@@ -8736,7 +8809,7 @@ function pmRenderSchedule(pid) {
     { label: 'Assignee', k: 'assignee' }, { label: 'Start', render: r => _pmFmt(r.start) }, { label: 'Finish', render: r => _pmFmt(r.finish) },
     { label: '%', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
     { label: 'Status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
-  ], tasks));
+  ], tasks), pmImportBtn());
   _pmSet(kpis + gantt + tbl);
 }
 
@@ -8744,7 +8817,7 @@ function pmRenderSchedule(pid) {
 function pmRenderCosts(pid) {
   const p = _pmProj(pid), ev = _pmEvm(p);
   const costs = _pmScope(_HR.pm_costs);
-  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoney(ev.bac)), _hrKpi('Actual (AC)', _pmMoney(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoney(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
+  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
   const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
     [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
@@ -8778,8 +8851,8 @@ function pmRenderQuality(pid) {
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
-    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
-    { label: 'Standard', k: 'standardRef' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }
+    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
+    { label: 'Standard', k: 'standardRef' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
   ], itp));
   _pmSet(kpis + tbl + itpTbl);
 }
@@ -8811,14 +8884,16 @@ function pmRenderComms(pid) {
   const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _pmTable('pm_comms', [
     { label: 'Date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
-    { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') }
+    { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') },
+    { label: 'File', render: r => _pmFileCell('pm_comms', r) }
   ], comms), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
   const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _pmTable('pm_issues', [
     { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
     { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') },
+    { label: 'File', render: r => _pmFileCell('pm_issues', r) }
   ], issues));
   _pmSet(kpis + commsTbl + issuesTbl);
 }
@@ -8843,7 +8918,8 @@ function pmRenderRisks(pid) {
     { label: 'P', align: 'center', render: r => _pmEsc(r.probability || '—') }, { label: 'I', align: 'center', render: r => _pmEsc(r.impact || '—') },
     { label: 'Score', align: 'center', render: r => { const b = _pmRiskBand(+r.score || 0); return '<span style="display:inline-block;background:' + b.hex + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 7px">' + (r.score || 0) + ' ' + b.band + '</span>'; } },
     { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
+    { label: 'File', render: r => _pmFileCell('pm_risks', r) }
   ], risks));
   _pmSet(kpis + heat + tbl);
 }
@@ -8853,13 +8929,13 @@ function pmRenderProcurement(pid) {
   const ps = _pmScope(_HR.pm_procurement);
   const committed = ps.reduce((s, x) => s + (+x.value || 0), 0);
   const active = ps.filter(x => x.status === 'Active' || x.status === 'Awarded').length;
-  const kpis = _hrKpiRow([_hrKpi('Packages', ps.length), _hrKpi('Committed value', _pmMoney(committed), '#F59E0B'), _hrKpi('Active / Awarded', active, 'var(--emerald)')]);
+  const kpis = _hrKpiRow([_hrKpi('Packages', ps.length), _hrKpi('Committed value', _pmMoneyShort(committed), '#F59E0B'), _hrKpi('Active / Awarded', active, 'var(--emerald)')]);
   const tbl = _pmCard('Procurement & Subcontracts', 'pm_procurement', 'Add package', _pmTable('pm_procurement', [
-    { label: 'Pkg', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
-    { label: 'Package / Scope', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
-    { label: 'Vendor', k: 'vendor' }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
-    { label: 'Value', align: 'right', render: r => _pmMoney(r.value) }, { label: 'Ret %', align: 'right', render: r => _pmEsc((r.retentionPct || 0) + '%') },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Planned', r.status === 'Completed' || r.status === 'Closed' ? '#00B060' : r.status === 'Active' || r.status === 'Awarded' ? '#205090' : '#94a3b8') }
+    { label: 'Pkg', sk: 'pkgNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
+    { label: 'Package / Scope', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Contractor / Vendor', sk: 'vendor', render: r => r.vendor ? _pmBadge(r.vendor, '#3168A8') : '—' }, { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', '#8B5CF6') },
+    { label: 'Value', sk: 'value', align: 'right', render: r => _pmMoney(r.value) }, { label: 'Ret %', sk: 'retentionPct', align: 'right', render: r => _pmEsc((r.retentionPct || 0) + '%') },
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Planned', r.status === 'Completed' || r.status === 'Closed' ? '#00B060' : r.status === 'Active' || r.status === 'Awarded' ? '#205090' : '#94a3b8') }
   ], ps));
   const pays = _pmScope(_HR.pm_procurement_payments);
   const payTbl = _pmCard('Payment Certificates (IPC)', 'pm_procurement_payments', 'Add cert', _pmTable('pm_procurement_payments', [
@@ -8931,7 +9007,7 @@ async function pmRenderPortfolio() {
   const pCPI = sumAC > 0 ? sumEV / sumAC : 1, pSPI = sumPV > 0 ? sumEV / sumPV : 1;
   const kpis = _hrKpiRow([
     _hrKpi('Active projects', active.length),
-    _hrKpi('Portfolio value', _pmMoney(value), '#F59E0B'),
+    _hrKpi('Portfolio value', _pmMoneyShort(value), '#F59E0B'),
     _hrKpi('On-track', onTrack + '%', 'var(--emerald)'),
     _hrKpi('Portfolio CPI', pCPI.toFixed(2), _ragHex(_pmIndexRag(pCPI))),
     _hrKpi('Portfolio SPI', pSPI.toFixed(2), _ragHex(_pmIndexRag(pSPI)))
