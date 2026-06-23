@@ -8395,7 +8395,7 @@ function _pmEvm(p) {
   const bac = +p.budget || costs.reduce((s, c) => s + (+c.budget || 0), 0);
   const ac = costs.reduce((s, c) => s + (+c.actual || 0), 0) || (+p.actualCost || 0);
   const sr = pmScopeRollup(p.id);
-  const ratio = sr.total ? sr.pctRaw : (Math.max(0, Math.min(100, +p.percentComplete || 0)) / 100);
+  const ratio = (sr.total ? sr.pctRaw : Math.max(0, Math.min(100, +p.percentComplete || 0))) / 100;
   const ev = bac * ratio;
   const tp = _pmTimeElapsedPct(p); const pv = tp != null ? bac * tp : ev;
   const measurable = bac > 0 && (ac > 0 || tp != null);
