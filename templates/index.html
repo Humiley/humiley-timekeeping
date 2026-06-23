@@ -6928,7 +6928,7 @@ const _QA_SPECS = {
     { k: 'rag', label: 'Health (auto if blank)', type: 'select', options: ['', 'Green', 'Amber', 'Red'] },
     { k: 'percentComplete', label: 'Overall % complete', type: 'number' },
     { k: 'objectives', label: 'Objectives', type: 'textarea' }, { k: 'scopeStatement', label: 'Scope summary', type: 'textarea' },
-    { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'image', label: 'Project image (photo / render)', type: 'file' }] },
+    { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'image', label: 'Project image (photo / render)', type: 'file' }, { k: 'sharepointUrl', label: 'SharePoint docs folder (URL)', type: 'url' }] },
   pm_changes: { title: 'Change Request', coll: 'pm_changes', reload: 'pm_changes', fields: [
     { k: 'title', label: 'Change title' },
     { k: 'type', label: 'Type', type: 'select', options: ['Scope', 'Schedule', 'Cost', 'Quality', 'Resource', 'Risk', 'Contract', 'Other'] },
@@ -8572,6 +8572,95 @@ async function pmImportTasks() {
   inp.click();
 }
 
+/* ---------- Project SharePoint link + health legend ---------- */
+function _pmSpBtn(p) { const u = (typeof _crmHref === 'function') ? _crmHref(p && p.sharepointUrl) : (p && p.sharepointUrl); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px" title="Open the project SharePoint document library">' + tkIcon('external', 12) + ' SharePoint</a>' : ''; }
+function _pmHealthLegend() { const dot = (c, t) => '<span style="white-space:nowrap"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + c + ';vertical-align:middle;margin-right:4px"></span>' + t + '</span>'; return '<span style="font-size:11px;color:var(--text-light);display:inline-flex;gap:12px;align-items:center;flex-wrap:wrap">' + dot('#00B060', 'On track') + dot('#F59E0B', 'At risk') + dot('#EF4444', 'Critical') + '</span>'; }
+
+/* ---------- Weekly / Monthly Project Progress Report (PMC -> client) ---------- */
+function pmReportBtns(pid) {
+  return '<button class="btn btn-ghost btn-sm" onclick="pmReport(\'' + pid + '\',\'week\')" style="font-size:11px" title="Weekly progress report (PDF)">' + tkIcon('download', 12) + ' Weekly</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="pmReport(\'' + pid + '\',\'month\')" style="font-size:11px" title="Monthly progress report (PDF)">' + tkIcon('download', 12) + ' Monthly</button>';
+}
+function _pmReportRange(mode) {
+  const now = new Date();
+  if (mode === 'week') {
+    const ws = new Date(now); ws.setHours(0, 0, 0, 0); ws.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    const ns = new Date(we); ns.setDate(we.getDate() + 1); const ne = new Date(ns); ne.setDate(ns.getDate() + 6);
+    return { start: ws, end: we, next: { start: ns, end: ne }, label: _pmFmt(ws.toISOString().slice(0, 10)) + ' to ' + _pmFmt(we.toISOString().slice(0, 10)), kind: 'Weekly', word: 'Week' };
+  }
+  const ms = new Date(now.getFullYear(), now.getMonth(), 1), me = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const ns = new Date(now.getFullYear(), now.getMonth() + 1, 1), ne = new Date(now.getFullYear(), now.getMonth() + 2, 0);
+  return { start: ms, end: me, next: { start: ns, end: ne }, label: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }), kind: 'Monthly', word: 'Month' };
+}
+function _pmInRange(dateStr, r) { if (!dateStr) return false; const d = new Date(String(dateStr).slice(0, 10)); return !isNaN(d.getTime()) && d >= r.start && d <= r.end; }
+function pmReport(pid, mode) {
+  const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
+  const R = _pmReportRange(mode), M = 15, DOC = 'HML-PMC-RPT';
+  let y = _brandHeader(doc, { title: 'Project Progress Report — ' + R.kind, subtitle: _pmPdfTxt((p.code || p.name) + '   ·   ' + R.label), docCode: DOC, confidential: true });
+  const ev = _pmEvm(p), sr = pmScopeRollup(p.id);
+  const np = () => { doc.addPage(); y = _brandHeader(doc, { title: 'Project Progress Report — ' + R.kind + ' (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: DOC }); };
+  const sect = t => { if (y > 262) np(); y += 3; doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(_pmPdfTxt(t), M, y); doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.7); doc.line(M, y + 1.6, M + 20, y + 1.6); y += 7; };
+  const line = (l, v) => { if (y > 274) np(); y = _pmRow(doc, l, v, y); };
+  const sub = t => { if (y > 274) np(); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(70, 76, 84); doc.text(_pmPdfTxt(t), M, y); y += 5; };
+  const bullet = t => { if (y > 278) np(); doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + t), 180); doc.text(L, M + 2, y); y += L.length * 4.6 + 1.6; };
+  const none = () => { if (y > 278) np(); doc.setFont('helvetica', 'italic'); doc.setFontSize(9); doc.setTextColor(140, 146, 154); doc.text('None in this period.', M + 2, y); y += 6; };
+
+  sect('1. Project Snapshot');
+  line('Project', (p.code ? p.code + ' — ' : '') + (p.name || ''));
+  line('Client / Account', p.account || p.client);
+  line('Project Manager', p.manager);
+  line('Reporting Period', R.kind + ':  ' + R.label);
+  line('Status / Phase', (p.status || '') + (p.phase ? '   ·   ' + p.phase : ''));
+  line('Health (RAG)', _pmEffectiveRag(p) + (p.ragReason ? '   —   ' + p.ragReason : ''));
+  line('Overall Progress', sr.pct + '%');
+  line('Contract Value', p.contractValue ? _pmMoney(p.contractValue) : '');
+  line('Planned Start → Finish', _pmFmt(p.startPlanned) + '  →  ' + _pmFmt(p.endPlanned));
+
+  sect('2. Cost & Schedule Performance (EVM)');
+  line('Budget (BAC) / Actual (AC)', _pmMoney(ev.bac) + '    /    ' + _pmMoney(ev.ac));
+  line('Earned Value (EV)', _pmMoney(ev.ev));
+  line('CPI / SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2));
+  line('Forecast (EAC) / Variance (VAC)', _pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac));
+
+  const tasks = _pmScopeFor('pm_tasks', p.id);
+  sect('3. Progress this ' + R.word);
+  const doneNow = tasks.filter(t => t.status === 'Completed' && _pmInRange(t.finish, R));
+  const inprog = tasks.filter(t => t.status === 'In progress');
+  const msNow = tasks.filter(t => String(t.isMilestone) === 'Yes' && _pmInRange(t.finish, R));
+  sub('Completed this ' + R.word.toLowerCase() + ':');
+  if (doneNow.length) doneNow.forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (completed ' + _pmFmt(t.finish) + ')')); else none();
+  sub('Work in progress:');
+  if (inprog.length) inprog.slice(0, 14).forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (' + _pmPct(t.pctComplete) + '%' + (t.assignee ? ', ' + t.assignee : '') + ')')); else none();
+  if (msNow.length) { sub('Milestones reached / due this ' + R.word.toLowerCase() + ':'); msNow.forEach(t => bullet((t.name || '') + '   (' + _pmFmt(t.finish) + ')')); }
+
+  sect('4. Key Risks & Issues');
+  const risks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed').sort((a, b) => (+b.score || 0) - (+a.score || 0)).slice(0, 6);
+  sub('Top open risks:');
+  if (risks.length) risks.forEach(r => bullet('[' + _pmRiskBand(+r.score || 0).band + ' ' + (r.score || 0) + ']  ' + (r.title || '') + '  —  ' + (r.responseStrategy || 'TBD') + (r.owner ? '  (' + r.owner + ')' : ''))); else none();
+  const issues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
+  sub('Open issues:');
+  if (issues.length) issues.slice(0, 10).forEach(i => bullet((i.priority ? '[' + i.priority + ']  ' : '') + (i.title || '') + (i.owner ? '  (' + i.owner + ')' : '') + (i.due ? '  — due ' + _pmFmt(i.due) : ''))); else none();
+
+  sect('5. Document Control & Quality');
+  const rfis = _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open');
+  const ncr = _pmScopeFor('pm_quality', p.id).filter(q => q.type === 'NCR' && q.status !== 'Closed');
+  const chg = _pmScopeFor('pm_changes', p.id).filter(c => c.decision === 'Pending');
+  bullet('Open RFIs / Submittals: ' + rfis.length + (rfis.length ? '   (' + rfis.slice(0, 6).map(r => r.number || '').filter(Boolean).join(', ') + ')' : ''));
+  bullet('Open NCRs: ' + ncr.length + (ncr.length ? '   (' + ncr.slice(0, 6).map(q => q.refNo || q.title || '').filter(Boolean).join(', ') + ')' : ''));
+  bullet('Pending change requests: ' + chg.length + (chg.length ? '   (' + chg.slice(0, 6).map(c => c.crNo || c.title || '').filter(Boolean).join(', ') + ')' : ''));
+  if (p.sharepointUrl) bullet('Full document library: ' + p.sharepointUrl);
+
+  sect('6. Look-ahead (Next ' + R.word + ')');
+  const up = tasks.filter(t => t.status !== 'Completed' && (_pmInRange(t.start, R.next) || _pmInRange(t.finish, R.next))).slice(0, 14);
+  if (up.length) up.forEach(t => bullet((t.wbs ? t.wbs + '  ' : '') + (t.name || '') + '   (' + _pmFmt(t.start) + ' → ' + _pmFmt(t.finish) + ')' + (String(t.isMilestone) === 'Yes' ? '   [Milestone]' : ''))); else none();
+
+  const tp = doc.getNumberOfPages();
+  for (let i = 1; i <= tp; i++) { doc.setPage(i); _brandFooter(doc, i, tp, DOC); }
+  doc.save('Report_' + R.kind + '_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
+  try { tkAudit('PM ' + R.kind + ' report exported', p.name || '', R.label); } catch (e) { }
+}
+
 function _pmCard(title, addColl, addLabel, inner, extra) {
   const canAdd = addColl && (['pm_costs', 'pm_procurement', 'pm_procurement_payments'].indexOf(addColl) < 0 || _pmSeeAll());
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (canAdd ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
@@ -8615,7 +8704,7 @@ async function pmRenderProjects() {
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
   const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects'));
   const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Projects</div>' + addBtn + '</div>' + fbar + '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
 }
 function pmFillProjects() {
@@ -8626,12 +8715,12 @@ function pmFillProjects() {
     const rag = _pmEffectiveRag(p), sr = pmScopeRollup(p.id);
     const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
     return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')">' +
-      '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
+      '<td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
       '<td style="font-weight:600">' + _pmEsc(p.name || '(untitled)') + (p.phase ? '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(p.phase) + '</div>' : '') + '</td>' +
       '<td>' + _pmEsc(p.account || p.client || '—') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span title="' + rag + '" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:7px">' + _pmBar(pct) + '<span style="font-size:11px;color:var(--text-light)">' + pct + '%</span></div></td>' +
-      '<td style="text-align:right;font-weight:600">' + _pmMoney(p.contractValue || p.budget) + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + _pmMoneyShort(p.contractValue || p.budget) + '</td>' +
       '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
   }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">' + (_pmSeeAll() ? 'No projects yet. Click <b>New Project</b> to create a Charter — or convert a Won deal from the CRM pipeline.' : 'You are not assigned to any projects yet. A manager can add you to a project <b>Team</b> (Resources tab) or set you as its Project Manager.') + '</td></tr>';
@@ -8666,7 +8755,7 @@ async function pmRenderWorkspace() {
     '<div><div style="font-weight:800;color:var(--navy);font-size:18px">' + _pmEsc(p.name || '') + '</div><div style="font-size:12px;color:var(--text-light)">' + _pmEsc((p.code || '') + (p.account || p.client ? ' · ' + (p.account || p.client) : '') + (p.manager ? ' · PM: ' + p.manager : '')) + '</div></div></div></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + (p.phase ? _pmBadge(p.phase, '#3168A8') : '') +
     '<button class="btn btn-ghost btn-sm" onclick="pmCharterPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Charter</button>' +
-    '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status PDF</button>' +
+    pmReportBtns(p.id) + _pmSpBtn(p) +
     (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
     _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--navy)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
@@ -8830,7 +8919,7 @@ function pmRenderCosts(pid) {
   ], costs));
   _pmSet(kpis + evmCard + chart + tbl);
   const cats = {}; costs.forEach(c => { const k = c.category || 'Other'; (cats[k] = cats[k] || { b: 0, a: 0 }); cats[k].b += +c.budget || 0; cats[k].a += +c.actual || 0; });
-  if (Object.keys(cats).length) try { _mkChart('pm-cost-chart', { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: 'Budget', data: Object.values(cats).map(x => x.b), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: Object.values(cats).map(x => x.a), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoney(v)) }); } catch (e) { }
+  if (Object.keys(cats).length) try { _mkChart('pm-cost-chart', { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: 'Budget', data: Object.values(cats).map(x => x.b), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: Object.values(cats).map(x => x.a), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) }); } catch (e) { }
 }
 
 /* ---------- 5. Quality (NCR / ITP) ---------- */
@@ -8966,6 +9055,7 @@ function pmRenderStakeholders(pid) {
 
 /* ---------- 11. Doc Control (RFIs / Submittals + Site Daily Reports) ---------- */
 function pmRenderRfis(pid) {
+  const p = _pmProj(pid);
   const rfis = _pmScope(_HR.pm_rfis);
   const open = rfis.filter(r => r.status === 'Open').length;
   const overdue = rfis.filter(r => r.status === 'Open' && r.requiredBy && r.requiredBy < _pmToday()).length;
@@ -8978,7 +9068,7 @@ function pmRenderRfis(pid) {
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
     { label: 'Ball in court', k: 'ballInCourt' }, { label: 'Required by', render: r => _pmFmt(r.requiredBy) },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', /Approved|Closed|Answered/.test(r.status || '') ? '#00B060' : r.status === 'Rejected' ? '#EF4444' : '#F59E0B') }
-  ], rfis));
+  ], rfis), _pmSpBtn(p));
   const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
   const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
     { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
@@ -9029,13 +9119,13 @@ async function pmRenderPortfolio() {
   // table
   const rows = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).map(p => {
     const rag = _pmEffectiveRag(p), e = _pmEvm(p), sr = pmScopeRollup(p.id), pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
-    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
+    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:6px">' + _pmBar(pct) + '<span style="font-size:11px">' + pct + '%</span></div></td>' +
       '<td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.cpi)) + ';font-weight:700">' + e.cpi.toFixed(2) + '</td><td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.spi)) + ';font-weight:700">' + e.spi.toFixed(2) + '</td>' +
-      '<td style="text-align:right;font-weight:600">' + _pmMoney(p.contractValue || p.budget) + '</td><td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td></tr>';
+      '<td style="text-align:right;font-weight:600">' + _pmMoneyShort(p.contractValue || p.budget) + '</td><td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td></tr>';
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">No projects yet.</td></tr>';
-  const table = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px"><div class="card-title">Project Portfolio</div></div><div class="table-wrap"><table style="min-width:860px"><thead><tr><th>Code</th><th>Project</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:center">CPI</th><th style="text-align:center">SPI</th><th style="text-align:right">Value</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  const table = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Portfolio</div>' + _pmHealthLegend() + '</div><div class="table-wrap"><table style="min-width:860px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:center">CPI</th><th style="text-align:center">SPI</th><th style="text-align:right">Value</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
   root.innerHTML = controls + kpis + kpis2 + charts + table;
   // draw charts
   const byStatus = {}; projects.forEach(p => { const k = p.status || 'Planning'; byStatus[k] = (byStatus[k] || 0) + 1; });
@@ -9044,7 +9134,7 @@ async function pmRenderPortfolio() {
     if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Projects' } });
     _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'], datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Health' } });
     const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
-    _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoney(v)) });
+    _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
   } catch (e) { }
 }
