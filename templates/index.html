@@ -9363,7 +9363,7 @@ async function pmSpCreateFoldersGraph(pid) {
       if (res.ok) made++; else if (res.status === 409) exist++; else { failed++; if (!firstErr) { try { firstErr = res.status + ' ' + (await res.text()).slice(0, 220); } catch (ee) {} } }
     } catch (e) { failed++; }
   }
-  alert('SharePoint build result\n\nCreated: ' + made + '\nAlready existed: ' + exist + '\nFailed: ' + failed + (firstErr ? '\n\nFirst error: ' + firstErr : ''));
+  alert('SharePoint folders ready \u2713\n\nCreated: ' + made + ' new\nAlready existed: ' + exist + (failed ? '\nFailed: ' + failed + (firstErr ? '  (' + firstErr + ')' : '') : '') + '\n\nOpen the library in SharePoint to see the full structure.');
   toast('SharePoint: ' + made + ' folder(s) created' + (exist ? ', ' + exist + ' already existed' : '') + (failed ? ', ' + failed + ' failed' : '') + '.', failed ? 'warn' : 'success', 9000);
   try { tkAudit('SharePoint folders created (Graph)', p.name || '', made + ' created / ' + exist + ' existed'); } catch (e) { }
   return true;
