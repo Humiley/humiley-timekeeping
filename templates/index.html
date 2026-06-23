@@ -128,6 +128,7 @@ tr:last-child td{border-bottom:none}
 .b-ok{background:#D1FAE5;color:#065F46}
 .b-warn{background:#FEF3C7;color:#92400E}
 .b-danger{background:#FEE2E2;color:#991B1B}
+.b-orange{background:#FFEDD5;color:#9A3412}
 .b-info{background:#EDE9FE;color:#5B21B6}
 .b-navy{background:var(--light-tint);color:var(--navy)}
 .b-grey{background:#F3F4F6;color:var(--text-light)}
@@ -651,6 +652,16 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">Products</span>
   </div>
 
+  <div class="sidebar-section-label" data-app="pm">PMC / Projects</div>
+  <div class="nav-item" data-app="pm" onclick="showView('pm-dashboard',this,'Portfolio')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span>
+    <span class="nav-label">Portfolio</span><span class="nav-badge hidden" id="badge-pm"></span>
+  </div>
+  <div class="nav-item" data-app="pm" onclick="showView('pm-projects',this,'Projects')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></span>
+    <span class="nav-label">Projects</span>
+  </div>
+
   <div class="sidebar-section-label" data-roles="manager">Approvals</div>
   <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></span>
@@ -963,6 +974,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-crm-companies" class="view"><div id="crm-companies-root"></div></div>
 <div id="view-crm-contacts" class="view"><div id="crm-contacts-root"></div></div>
 <div id="view-crm-products" class="view"><div id="crm-products-root"></div></div>
+<div id="view-pm-dashboard" class="view"><div id="pm-dashboard-root"></div></div>
+<div id="view-pm-projects" class="view"><div id="pm-projects-root"></div></div>
+<div id="view-pm-project" class="view"><div id="pm-project-root"></div></div>
 
 <!-- ═══════════════════════════════════════════════════════
      VIEW: MY PROFILE
@@ -4071,7 +4085,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -6615,7 +6629,8 @@ function tkRenderPermissions() {
     const cur = _deriveLevel(e);
     const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
     const crmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('crm') < 0;
-    const appCell = '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (crmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'crm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> CRM</label>';
+    const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
+    const appCell = '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (crmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'crm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> CRM</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (pmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'pm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> Projects</label>';
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
   root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
@@ -6874,7 +6889,123 @@ const _QA_SPECS = {
     { k: 'name', label: 'Product / service name' }, { k: 'code', label: 'Code / SKU' },
     { k: 'category', label: 'Type (PMC/ENG/SAL/CSM/Products/Other)', type: 'select', options: ['PMC', 'ENG', 'SAL', 'CSM', 'Products', 'Other'] },
     { k: 'unit', label: 'Unit', type: 'select', options: ['pcs', 'lot', 'set', 'unit', 'hour', 'day', 'm', 'm2', 'kg'] },
-    { k: 'price', label: 'Unit price (₫)', type: 'money' }, { k: 'note', label: 'Notes' }] }
+    { k: 'price', label: 'Unit price (₫)', type: 'money' }, { k: 'note', label: 'Notes' }] },
+  pm_projects: { title: 'Project Charter', coll: 'pm_projects', reload: 'pm_projects', fields: [
+    { k: 'name', label: 'Project name' }, { k: 'code', label: 'Project code (e.g. PMC-2026-014)' },
+    { k: 'account', label: 'Client / Account', type: 'combo', dyn: 'companies' }, { k: 'sponsor', label: 'Sponsor' },
+    { k: 'manager', label: 'Project Manager', type: 'select', options: 'employees' },
+    { k: 'dept', label: 'Department', type: 'select', options: ['PMC', 'Engineering', 'Construction Supervision', 'Cost Management', 'Design', 'Safety / HSE', 'Commercial', 'Admin'] },
+    { k: 'location', label: 'Location' },
+    { k: 'contractType', label: 'Contract type', type: 'select', options: ['Lump Sum', 'Unit Rate / BoQ', 'Cost Plus', 'Time & Materials', 'EPC / Turnkey', 'Design-Build', 'PMC Fee (% of CapEx)', 'Man-month'] },
+    { k: 'contractValue', label: 'Contract value (₫)', type: 'money' }, { k: 'budget', label: 'Approved budget (₫)', type: 'money' },
+    { k: 'startPlanned', label: 'Planned start', type: 'date' }, { k: 'endPlanned', label: 'Planned finish', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Pipeline', 'Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing', 'Completed', 'Closed', 'Cancelled'] },
+    { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
+    { k: 'rag', label: 'Health (auto if blank)', type: 'select', options: ['', 'Green', 'Amber', 'Red'] },
+    { k: 'percentComplete', label: 'Overall % complete', type: 'number' }, { k: 'members', label: 'Team members (comma-separated)' },
+    { k: 'objectives', label: 'Objectives', type: 'textarea' }, { k: 'scopeStatement', label: 'Scope summary', type: 'textarea' },
+    { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_changes: { title: 'Change Request', coll: 'pm_changes', reload: 'pm_changes', fields: [
+    { k: 'title', label: 'Change title' }, { k: 'crNo', label: 'CR No.' },
+    { k: 'type', label: 'Type', type: 'select', options: ['Scope', 'Schedule', 'Cost', 'Quality', 'Resource', 'Risk', 'Contract', 'Other'] },
+    { k: 'category', label: 'Category', type: 'select', options: ['Client-requested', 'Design Change', 'Site Condition', 'Regulatory', 'Error / Omission', 'Value Engineering', 'Force Majeure'] },
+    { k: 'impactScheduleDays', label: 'Schedule impact (days)', type: 'number' }, { k: 'impactCost', label: 'Cost impact (₫)', type: 'money' },
+    { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High', 'Critical'] },
+    { k: 'requestedBy', label: 'Requested by', type: 'select', options: 'employees' }, { k: 'requestedDate', label: 'Requested date', type: 'date' },
+    { k: 'decision', label: 'Decision', type: 'select', options: ['Pending', 'Approved', 'Rejected'] }, { k: 'description', label: 'Description', type: 'textarea' }] },
+  pm_lessons: { title: 'Lesson Learned', coll: 'pm_lessons', reload: 'pm_lessons', fields: [
+    { k: 'title', label: 'Title' }, { k: 'category', label: 'Category' },
+    { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
+    { k: 'type', label: 'Type', type: 'select', options: ['Positive', 'Negative', 'Improvement'] },
+    { k: 'situation', label: 'Situation', type: 'textarea' }, { k: 'recommendation', label: 'Recommendation', type: 'textarea' },
+    { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'date', label: 'Date', type: 'date' }] },
+  pm_deliverables: { title: 'Deliverable / WBS', coll: 'pm_deliverables', reload: 'pm_deliverables', fields: [
+    { k: 'name', label: 'Deliverable name' }, { k: 'wbsCode', label: 'WBS code (e.g. 1.2.3)' },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'due', label: 'Due', type: 'date' },
+    { k: 'weight', label: 'Weight', type: 'number' }, { k: 'percentComplete', label: '% complete', type: 'number' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Submitted', 'Accepted'] },
+    { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
+  pm_tasks: { title: 'Task / Milestone', coll: 'pm_tasks', reload: 'pm_tasks', fields: [
+    { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
+    { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
+    { k: 'assignee', label: 'Assignee', type: 'select', options: 'employees' },
+    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
+    { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path?', type: 'select', options: ['No', 'Yes'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
+    { k: 'item', label: 'Cost item' },
+    { k: 'category', label: 'Category', type: 'select', options: ['Labor', 'Material', 'Subcontract', 'Equipment', 'Overhead', 'Other'] },
+    { k: 'budget', label: 'Budget (₫)', type: 'money' }, { k: 'committed', label: 'Committed (₫)', type: 'money' },
+    { k: 'actual', label: 'Actual (₫)', type: 'money' }, { k: 'invoiced', label: 'Invoiced (₫)', type: 'money' },
+    { k: 'period', label: 'Period (YYYY-MM)' }, { k: 'vendor', label: 'Vendor' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Planned', 'Committed', 'Incurred', 'Closed'] }, { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }] },
+  pm_quality: { title: 'Quality Record', coll: 'pm_quality', reload: 'pm_quality', fields: [
+    { k: 'title', label: 'Title' }, { k: 'refNo', label: 'Reference No.' },
+    { k: 'type', label: 'Type', type: 'select', options: ['Inspection', 'NCR', 'Audit', 'Test', 'ITP item'] },
+    { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
+    { k: 'result', label: 'Result', type: 'select', options: ['', 'Pass', 'Fail', 'Open', 'Closed'] }, { k: 'severity', label: 'Severity', type: 'select', options: ['', 'Minor', 'Major', 'Critical'] },
+    { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'assignedTo', label: 'Assigned to', type: 'select', options: 'employees' },
+    { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'due', label: 'Due', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] },
+    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
+  pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
+    { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' },
+    { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
+    { k: 'standardRef', label: 'Standard / spec ref' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
+    { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' }, { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Approved', 'Superseded'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_resources: { title: 'Team Member', coll: 'pm_resources', reload: 'pm_resources', fields: [
+    { k: 'name', label: 'Member', type: 'select', options: 'employees' }, { k: 'projectRole', label: 'Project role' },
+    { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
+    { k: 'raci', label: 'RACI', type: 'select', options: ['R', 'A', 'C', 'I', 'R/A'] }, { k: 'allocationPct', label: 'Allocation %', type: 'number' },
+    { k: 'rate', label: 'Charge rate (₫)', type: 'money' }, { k: 'startDate', label: 'Start', type: 'date' }, { k: 'endDate', label: 'End', type: 'date' }, { k: 'note', label: 'Notes' }] },
+  pm_comms: { title: 'Communication', coll: 'pm_comms', reload: 'pm_comms', fields: [
+    { k: 'subject', label: 'Subject' },
+    { k: 'type', label: 'Type', type: 'select', options: ['Status Report', 'Meeting Minutes', 'Notice', 'Email', 'Letter'] },
+    { k: 'date', label: 'Date', type: 'date' }, { k: 'audience', label: 'Audience / distribution' },
+    { k: 'summary', label: 'Summary', type: 'textarea' }, { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Closed'] }, { k: 'attachment', label: 'Attachment', type: 'file' }] },
+  pm_issues: { title: 'Issue', coll: 'pm_issues', reload: 'pm_issues', fields: [
+    { k: 'title', label: 'Issue title' }, { k: 'issueNo', label: 'Issue No.' }, { k: 'category', label: 'Category' },
+    { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High'] },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'due', label: 'Due', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Resolved', 'Closed'] }, { k: 'resolution', label: 'Resolution', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
+  pm_risks: { title: 'Risk', coll: 'pm_risks', reload: 'pm_risks', fields: [
+    { k: 'title', label: 'Risk title' }, { k: 'riskNo', label: 'Risk No.' },
+    { k: 'category', label: 'Category', type: 'select', options: ['Technical', 'Schedule', 'Cost', 'External', 'Safety', 'Commercial'] },
+    { k: 'probability', label: 'Probability (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] }, { k: 'impact', label: 'Impact (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
+    { k: 'responseStrategy', label: 'Response', type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept'] }, { k: 'mitigationActions', label: 'Mitigation actions', type: 'textarea' },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' },
+    { k: 'residualProbability', label: 'Residual probability', type: 'select', options: ['', '1', '2', '3', '4', '5'] }, { k: 'residualImpact', label: 'Residual impact', type: 'select', options: ['', '1', '2', '3', '4', '5'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Mitigating', 'Closed'] }, { k: 'description', label: 'Description', type: 'textarea' }] },
+  pm_procurement: { title: 'Procurement Package', coll: 'pm_procurement', reload: 'pm_procurement', fields: [
+    { k: 'title', label: 'Package / scope' }, { k: 'pkgNo', label: 'Package No.' }, { k: 'vendor', label: 'Vendor / subcontractor', type: 'combo', dyn: 'companies' },
+    { k: 'type', label: 'Type', type: 'select', options: ['Contract', 'PO', 'Subcontract', 'Service'] }, { k: 'value', label: 'Value (₫)', type: 'money' },
+    { k: 'retentionPct', label: 'Retention %', type: 'number' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Planned', 'Tendered', 'Awarded', 'Active', 'Completed', 'Closed'] },
+    { k: 'awardDate', label: 'Award date', type: 'date' }, { k: 'startDate', label: 'Start', type: 'date' }, { k: 'endDate', label: 'End', type: 'date' }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_procurement_payments: { title: 'Payment Certificate', coll: 'pm_procurement_payments', reload: 'pm_procurement_payments', fields: [
+    { k: 'certNo', label: 'Certificate No.' }, { k: 'period', label: 'Period (YYYY-MM)' },
+    { k: 'grossClaimed', label: 'Gross claimed (₫)', type: 'money' }, { k: 'retentionDeducted', label: 'Retention deducted (₫)', type: 'money' },
+    { k: 'netCertified', label: 'Net certified (₫)', type: 'money' }, { k: 'status', label: 'Status', type: 'select', options: ['Submitted', 'Certified', 'Paid'] },
+    { k: 'certDate', label: 'Certified date', type: 'date' }, { k: 'note', label: 'Notes' }] },
+  pm_stakeholders: { title: 'Stakeholder', coll: 'pm_stakeholders', reload: 'pm_stakeholders', fields: [
+    { k: 'name', label: 'Name' }, { k: 'organization', label: 'Organization', type: 'combo', dyn: 'companies' }, { k: 'role', label: 'Role' },
+    { k: 'internalExternal', label: 'Internal / External', type: 'select', options: ['Internal', 'External'] },
+    { k: 'influence', label: 'Influence', type: 'select', options: ['Low', 'Medium', 'High'] }, { k: 'interest', label: 'Interest', type: 'select', options: ['Low', 'Medium', 'High'] },
+    { k: 'attitude', label: 'Attitude', type: 'select', options: ['Supporter', 'Neutral', 'Resistor', 'Blocker'] },
+    { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' }, { k: 'engagementStrategy', label: 'Engagement strategy', type: 'textarea' }] },
+  pm_rfis: { title: 'RFI / Submittal', coll: 'pm_rfis', reload: 'pm_rfis', fields: [
+    { k: 'subject', label: 'Subject' }, { k: 'number', label: 'Number' },
+    { k: 'type', label: 'Type', type: 'select', options: ['RFI', 'Submittal', 'Transmittal'] },
+    { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
+    { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High'] },
+    { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'requiredBy', label: 'Required by', type: 'date' }, { k: 'ballInCourt', label: 'Ball in court' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Answered', 'Approved', 'Approved-with-comments', 'Rejected', 'Closed'] },
+    { k: 'question', label: 'Question / detail', type: 'textarea' }, { k: 'response', label: 'Response', type: 'textarea' }, { k: 'responseDate', label: 'Response date', type: 'date' }] },
+  pm_sitereports: { title: 'Site Daily Report', coll: 'pm_sitereports', reload: 'pm_sitereports', fields: [
+    { k: 'reportDate', label: 'Report date', type: 'date' }, { k: 'area', label: 'Area / zone' },
+    { k: 'weatherAm', label: 'Weather AM' }, { k: 'weatherPm', label: 'Weather PM' }, { k: 'manpower', label: 'Manpower (count)', type: 'number' },
+    { k: 'equipment', label: 'Equipment on site' }, { k: 'workPerformed', label: 'Work performed', type: 'textarea' },
+    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }] },
 };
 let _qaType = null, _qaEditId = null;
 function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
@@ -6896,6 +7027,7 @@ function tkQuickAdd(type, id) {
         '<input type="hidden" id="' + fid + '" value="' + _tkEscA(val) + '"><input type="hidden" id="' + fid + '-name" value="' + _tkEscA(nm) + '">' +
         '<div id="' + fid + '-info" style="font-size:11px;color:var(--text-light);margin-top:4px">' + (nm ? ('Current: ' + nm) : '') + '</div></div>';
     }
+    if (f.type === 'textarea') return '<div class="form-group"><label class="form-label">' + f.label + '</label><textarea class="form-control" id="' + fid + '" rows="3" style="resize:vertical">' + _crmEsc(val) + '</textarea></div>';
     return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
   }).join('');
   openModal('quickAddModal');
@@ -6916,6 +7048,7 @@ async function tkQuickAddSave() {
     const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
+  if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   try {
     let item;
@@ -6929,6 +7062,7 @@ async function tkQuickAddSave() {
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
     if (['crm_deals', 'crm_leads', 'crm_contacts'].indexOf(_qaType) >= 0 && data.company) { try { await _crmEnsureAccount(data.company, data.owner); } catch (e) {} }
+    if (_qaType === 'pm_projects' && data.account) { try { await _crmEnsureAccount(data.account, data.manager); } catch (e) {} }
     closeModal('quickAddModal');
     toast(_qaEditId ? 'Updated' : 'Added successfully');
     if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
@@ -8162,6 +8296,584 @@ async function crmImportFile(coll, file) {
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
 const _LEVEL_VIEWS = { payroll: 'management', permissions: 'admin' };
 
+/* ===== PROJECT MANAGEMENT SUITE (PMBOK) ===== */
+/* ============================================================================
+   PM SUITE — Project Management (PMBOK-aligned, engineering/PMC-tuned)
+   Single source of truth: constants, RBAC, EVM/rollups, derived fields, PDFs.
+   Reuses CRM/HR helpers: _crmMoney,_crmEsc,_tkEscA,_crmHref,_hrKpi/_hrKpiRow,
+   _mkChart/_doughOpts/_axisOpts/_grad/_BRAND, tkApi/tkLoadColl/_HR, tkQuickAdd,
+   _hrEditDel, _DEMO_EMPLOYEES,_userLevel,_lvlRank, _crmInPeriod, _brandHeader.
+   ========================================================================== */
+let _pmCurrentProject = null;
+let _pmTabK = 'overview';
+const _pmPid = () => _pmCurrentProject || sessionStorage.getItem('pm_proj') || '';
+const _pmScope = arr => (arr || []).filter(x => x.projectId === _pmPid());
+const _pmScopeFor = (coll, pid) => (_HR[coll] || []).filter(x => x.projectId === pid);
+const _pmMoney = n => _crmMoney(n);
+const _pmEsc = s => _crmEsc(s == null ? '' : s);
+const _pmInPeriod = (d) => { try { return _crmInPeriod(d); } catch (e) { return true; } };
+function _pmToday() { return new Date().toISOString().slice(0, 10); }
+function _pmFmt(d) { try { return d ? tkFmtDate(d) : '—'; } catch (e) { return d || '—'; } }
+function _pmNum(v) { return +String(v == null ? '' : v).replace(/[^0-9.\-]/g, '') || 0; }
+function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), d2 = new Date(b); if (isNaN(d1) || isNaN(d2)) return null; return Math.round((d2 - d1) / 86400000); }
+function _pmBadge(txt, hex) { return '<span class="badge" style="background:' + hex + '1f;color:' + hex + ';font-size:10px;font-weight:700">' + _pmEsc(txt) + '</span>'; }
+function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
+function _pmBar(pct, hex) { pct = _pmPct(pct); hex = hex || 'var(--navy)'; return '<div style="background:var(--soft-bg);border-radius:6px;height:7px;overflow:hidden;min-width:60px"><div style="width:' + pct + '%;height:100%;background:' + hex + '"></div></div>'; }
+
+/* ---- enums / palettes ---- */
+const PM_PROJECT_STATUS = ['Pipeline', 'Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing', 'Completed', 'Closed', 'Cancelled'];
+const PM_ACTIVE_STATUS = ['Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing'];
+const PM_TERMINAL_STATUS = ['Completed', 'Closed', 'Cancelled'];
+const PM_PHASE = ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'];
+const PM_DEPT = ['PMC', 'Engineering', 'Construction Supervision', 'Cost Management', 'Design', 'Safety / HSE', 'Commercial', 'Admin'];
+const PM_DISCIPLINE = ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'];
+const PM_PRIORITY = ['Low', 'Medium', 'High', 'Critical'];
+const PM_CONTRACT_TYPE = ['Lump Sum', 'Unit Rate / BoQ', 'Cost Plus', 'Time & Materials', 'EPC / Turnkey', 'Design-Build', 'PMC Fee (% of CapEx)', 'Man-month'];
+const RAG = ['Green', 'Amber', 'Red'];
+const RAG_HEX = { Green: '#00B060', Amber: '#F59E0B', Red: '#EF4444' };
+const RAG_RANK = { Green: 0, Amber: 1, Red: 2 };
+const _ragHex = r => RAG_HEX[r] || '#94a3b8';
+function _ragWorst() { return [].reduce.call(arguments, (w, r) => (RAG_RANK[r] > RAG_RANK[w] ? r : w), 'Green'); }
+function _pmIndexRag(v) { if (v == null) return 'Amber'; if (v >= 0.95) return 'Green'; if (v >= 0.85) return 'Amber'; return 'Red'; }
+const RISK_BANDS = [{ max: 4, band: 'Low', hex: '#16A34A' }, { max: 9, band: 'Medium', hex: '#F59E0B' }, { max: 14, band: 'High', hex: '#EA580C' }, { max: 25, band: 'Critical', hex: '#DC2626' }];
+function _pmRiskBand(score) { if (!score) return { band: '—', hex: '#94a3b8' }; return RISK_BANDS.find(b => score <= b.max) || RISK_BANDS[RISK_BANDS.length - 1]; }
+const RACI = ['R', 'A', 'C', 'I', 'R/A'];
+const RACI_HEX = { R: '#205090', A: '#00B060', C: '#F59E0B', I: '#94a3b8', 'R/A': '#00B060' };
+const SK_QUAD_HEX = { 'Manage Closely': '#205090', 'Keep Satisfied': '#8B5CF6', 'Keep Informed': '#3168A8', 'Monitor': '#94a3b8' };
+function _pmQuadrant(inf, intr) { const hiP = inf === 'High' || inf === 'Medium'; const hiI = intr === 'High' || intr === 'Medium'; return hiP && hiI ? 'Manage Closely' : hiP && !hiI ? 'Keep Satisfied' : !hiP && hiI ? 'Keep Informed' : 'Monitor'; }
+const _PM_STATUS_HEX = { Pipeline: '#94a3b8', Initiating: '#3168A8', Planning: '#8B5CF6', Executing: '#205090', 'Monitoring & Controlling': '#0ea5e9', 'On Hold': '#F59E0B', Closing: '#14b8a6', Completed: '#00B060', Closed: '#64748b', Cancelled: '#EF4444' };
+const _pmStatusHex = s => _PM_STATUS_HEX[s] || '#205090';
+
+/* ---- RBAC: staff=own/member projects · manager=dept · management+=all ---- */
+function _pmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('management'); }
+function _pmMembers(p) { return Array.isArray(p.members) ? p.members : String(p.members || '').split(',').map(s => s.trim()).filter(Boolean); }
+function _pmMine(arr) {
+  arr = arr || [];
+  if (_pmSeeAll()) return arr;
+  const me = ((TK.user && TK.user.name) || '').toLowerCase();
+  const mine = p => (p.manager || '').toLowerCase() === me || _pmMembers(p).map(m => m.toLowerCase()).includes(me);
+  if (_userLevel === 'staff') return arr.filter(mine);
+  const myDept = ((TK.user && (TK.user.dept || TK.user.department)) || '').toLowerCase();
+  return arr.filter(p => mine(p) || (myDept && (p.dept || '').toLowerCase() === myDept));
+}
+function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.id)); }
+function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
+function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
+
+async function _pmLoadAll() {
+  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_quality_itp_items', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports'].map(c => tkLoadColl(c).catch(() => { })));
+}
+
+/* ---- Earned Value Management ---- */
+function _pmTimeElapsedPct(p) { const s = p.startPlanned || p.startBaseline, e = p.endPlanned || p.endBaseline; if (!s || !e) return null; const t0 = new Date(s), t1 = new Date(e), now = new Date(); if (isNaN(t0) || isNaN(t1) || t1 <= t0) return null; return Math.max(0, Math.min(1, (now - t0) / (t1 - t0))); }
+function _pmEvm(p) {
+  if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0 };
+  const costs = _pmScopeFor('pm_costs', p.id);
+  const bac = +p.budget || costs.reduce((s, c) => s + (+c.budget || 0), 0);
+  const ac = costs.reduce((s, c) => s + (+c.actual || 0), 0) || (+p.actualCost || 0);
+  const sr = pmScopeRollup(p.id);
+  const pct = (sr.total ? sr.pct : (+p.percentComplete || 0)) / 100;
+  const ev = bac * pct;
+  const tp = _pmTimeElapsedPct(p); const pv = tp != null ? bac * tp : ev;
+  const cpi = ac > 0 ? ev / ac : 1, spi = pv > 0 ? ev / pv : 1;
+  const eac = cpi > 0 ? bac / cpi : bac;
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: (cpi > 0 ? bac / cpi : bac) - ac, pct: pct * 100 };
+}
+function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || _pmOverdueMilestones(p.id) > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
+function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
+
+/* ---- rollups consumed by Overview + Portfolio ---- */
+function pmScopeRollup(pid) { const ds = _pmScopeFor('pm_deliverables', pid); let wsum = 0, wpct = 0, acc = 0; ds.forEach(d => { const w = +d.weight || 1; wsum += w; wpct += w * _pmPct(d.percentComplete); if ((d.status || '') === 'Accepted') acc++; }); return { pct: wsum ? Math.round(wpct / wsum) : 0, total: ds.length, accepted: acc }; }
+function _pmRiskRollup(pid) { const rs = _pmScopeFor('pm_risks', pid).filter(r => r.status !== 'Closed'); const scored = rs.map(r => +r.score || 0); const high = scored.filter(s => s >= 10).length; const top = scored.length ? Math.max.apply(null, scored) : 0; return { open: rs.length, high: high, top: top, band: _pmRiskBand(top).band }; }
+function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms = ts.filter(t => String(t.isMilestone) === 'Yes'); return { tasks: ts.length, milestones: ms.length, overdueMs: _pmOverdueMilestones(pid), done: ts.filter(t => t.status === 'Completed').length }; }
+
+/* ---- derived fields, computed on save (never trusted from client) ---- */
+function _pmDerive(coll, data) {
+  if (coll === 'pm_risks') { data.score = (+data.probability || 0) * (+data.impact || 0); data.exposureBand = _pmRiskBand(data.score).band; data.residualScore = (+data.residualProbability || 0) * (+data.residualImpact || 0); }
+  if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
+  if (coll === 'pm_tasks') { const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d; }
+}
+
+/* ---- Resources is the sole writer of pm_projects.members[] ---- */
+async function pmSyncMembers(pid) {
+  const p = _pmProj(pid); if (!p) return;
+  const names = [...new Set(_pmScopeFor('pm_resources', pid).map(r => r.name).filter(Boolean))];
+  const members = names.join(', ');
+  if ((p.members || '') === members) return;
+  try { await tkApi('/api/coll/pm_projects/' + pid, { method: 'PATCH', body: Object.assign({}, p, { members: members }) }); p.members = members; } catch (e) { }
+}
+
+/* ---- Letterhead PDFs: Project Charter + Status Report (native jsPDF) ---- */
+function _pmDoc() { const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; return J ? new J('p', 'mm', 'a4') : null; }
+function _pmRow(doc, label, val, y) { const M = 15; doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104); doc.text(String(label).toUpperCase(), M, y); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 36, 44); const lines = doc.splitTextToSize(String(val == null || val === '' ? '—' : val), 120); doc.text(lines, 70, y); return y + Math.max(6, lines.length * 5); }
+function pmCharterPDF(pid) {
+  const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
+  let y = _brandHeader(doc, { title: 'Project Charter', subtitle: p.code || p.name, docCode: 'HML-PMC-CHR', confidential: true });
+  y += 2;
+  const ev = _pmEvm(p);
+  [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Sponsor', p.sponsor], ['Project Manager', p.manager], ['Department', p.dept], ['Location', p.location], ['Contract Type', p.contractType], ['Contract Value', p.contractValue ? _pmMoney(p.contractValue) : ''], ['Approved Budget', p.budget ? _pmMoney(p.budget) : ''], ['Planned Start → Finish', (_pmFmt(p.startPlanned) + '  →  ' + _pmFmt(p.endPlanned))], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Health', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  y += 3; const M = 15;
+  [['Objectives', p.objectives], ['Scope Summary', p.scopeSummary || p.scopeStatement], ['Success Criteria', p.successCriteria || p.acceptanceCriteriaProject], ['Assumptions & Constraints', p.assumptions]].forEach(b => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(b[0], M, y); y += 5;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(String(b[1] || '—'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
+    if (y > 250) { _brandFooter(doc, 1, 1, 'HML-PMC-CHR'); doc.addPage(); y = _brandHeader(doc, { title: 'Project Charter (cont.)', subtitle: p.code || p.name, docCode: 'HML-PMC-CHR' }); }
+  });
+  _brandFooter(doc, 1, 1, 'HML-PMC-CHR');
+  doc.save('Charter_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
+  try { tkAudit('PM Charter exported', p.name || '', p.code || ''); } catch (e) { }
+}
+function pmStatusPDF(pid) {
+  const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
+  let y = _brandHeader(doc, { title: 'Project Status Report', subtitle: (p.code || p.name) + '  ·  ' + _pmFmt(_pmToday()), docCode: 'HML-PMC-STA' });
+  y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
+  [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Manager', p.manager], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall Progress', sr.pct + '%'], ['Health (RAG)', _pmEffectiveRag(p) + (p.ragReason ? '  —  ' + p.ragReason : '')]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  y += 2; const M = 15; doc.setDrawColor(220, 224, 230); doc.line(M, y, 195, y); y += 6;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI', ev.cpi.toFixed(2)], ['SPI', ev.spi.toFixed(2)], ['Forecast (EAC)', _pmMoney(ev.eac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  y += 2; doc.line(M, y, 195, y); y += 6;
+  [['Deliverables Accepted', sr.accepted + ' / ' + sr.total], ['Milestones (overdue)', tr.milestones + ' (' + tr.overdueMs + ')'], ['Open Risks (High+)', rr.open + ' (' + rr.high + ')'], ['Open Issues', _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length], ['Open RFIs', _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open').length]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  _brandFooter(doc, 1, 1, 'HML-PMC-STA');
+  doc.save('Status_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
+  try { tkAudit('PM Status report exported', p.name || '', p.code || ''); } catch (e) { }
+}
+/* ============================================================================
+   PM SHELL — Projects list · Workspace + tabs · Overview · generic register · CRM handoff
+   ========================================================================== */
+/* generic card + table register used by the simpler tabs */
+function _pmCard(title, addColl, addLabel, inner, extra) {
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (addColl ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
+}
+function _pmTable(coll, cols, rows, opts) {
+  opts = opts || {};
+  const head = '<tr>' + cols.map(c => '<th' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + c.label + '</th>').join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
+  return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+}
+
+function _pmReload() { const A = id => { const v = document.getElementById('view-' + id); return v && v.classList.contains('active'); }; if (A('pm-project')) pmTab(_pmTabK); else if (A('pm-projects')) pmRenderProjects(); else if (A('pm-dashboard')) pmRenderPortfolio(); }
+/* ---------- Projects list (RBAC-scoped) ---------- */
+async function pmRenderProjects() {
+  const root = document.getElementById('pm-projects-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await _pmLoadAll();
+  const all = _pmMine(_HR.pm_projects || []);
+  const active = all.filter(p => PM_ACTIVE_STATUS.indexOf(p.status) >= 0 || !p.status);
+  const value = all.reduce((s, p) => s + (+p.contractValue || +p.budget || 0), 0);
+  const onTrack = all.length ? Math.round(all.filter(p => _pmEffectiveRag(p) === 'Green').length / all.length * 100) : 0;
+  const kpis = _hrKpiRow([
+    _hrKpi('Active projects', active.length),
+    _hrKpi('Portfolio value', _pmMoney(value), '#F59E0B'),
+    _hrKpi('On-track', onTrack + '%', 'var(--emerald)'),
+    _hrKpi('Open high risks', all.reduce((s, p) => s + _pmRiskRollup(p.id).high, 0), '#EF4444')
+  ]);
+  _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
+  const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects'));
+  const addBtn = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Projects</div>' + addBtn + '</div>' + fbar + '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
+  pmFillProjects();
+}
+function pmFillProjects() {
+  const tb = document.getElementById('pm-proj-tbody'); if (!tb) return;
+  const q = (_crmLF['pm-pq'] || '').toLowerCase(), st = _crmLF['pm-pstatus'] || '', dp = _crmLF['pm-pdept'] || '';
+  const rows = _pmMine(_HR.pm_projects || []).filter(p => (!q || ((p.code || '') + ' ' + (p.name || '') + ' ' + (p.account || p.client || '') + ' ' + (p.manager || '')).toLowerCase().indexOf(q) >= 0) && (!st || (p.status || '') === st) && (!dp || (p.dept || '') === dp));
+  tb.innerHTML = rows.length ? rows.map(p => {
+    const rag = _pmEffectiveRag(p), sr = pmScopeRollup(p.id);
+    const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
+    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')">' +
+      '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
+      '<td style="font-weight:600">' + _pmEsc(p.name || '(untitled)') + (p.phase ? '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(p.phase) + '</div>' : '') + '</td>' +
+      '<td>' + _pmEsc(p.account || p.client || '—') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
+      '<td><span title="' + rag + '" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '"></span></td>' +
+      '<td><div style="display:flex;align-items:center;gap:7px">' + _pmBar(pct) + '<span style="font-size:11px;color:var(--text-light)">' + pct + '%</span></div></td>' +
+      '<td style="text-align:right;font-weight:600">' + _pmMoney(p.contractValue || p.budget) + '</td>' +
+      '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
+      '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">No projects yet. Click <b>New Project</b> to create a Charter — or convert a Won deal from the CRM pipeline.</td></tr>';
+}
+
+/* ---------- open + Workspace shell ---------- */
+const _PM_TABS = [
+  { k: 'overview', label: 'Overview', fn: 'pmRenderOverview' },
+  { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope' },
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule' },
+  { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts' },
+  { k: 'quality', label: 'Quality', fn: 'pmRenderQuality' },
+  { k: 'resources', label: 'Resources', fn: 'pmRenderResources' },
+  { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms' },
+  { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
+  { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
+  { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders' },
+  { k: 'docs', label: 'Doc Control', fn: 'pmRenderRfis' }
+];
+function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
+async function pmRenderWorkspace() {
+  const root = document.getElementById('pm-project-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await _pmLoadAll();
+  const p = _pmProj(); if (!p) { root.innerHTML = '<div class="card" style="padding:20px">Project not found. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
+  const rag = _pmEffectiveRag(p);
+  const back = '<button class="btn btn-ghost btn-sm" onclick="showView(\'pm-projects\',null,\'Projects\')" style="font-size:12px">' + tkIcon('arrowLeft', 13) + ' Projects</button>';
+  const hdr = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+    '<div>' + back + '<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span>' +
+    '<div><div style="font-weight:800;color:var(--navy);font-size:18px">' + _pmEsc(p.name || '') + '</div><div style="font-size:12px;color:var(--text-light)">' + _pmEsc((p.code || '') + (p.account || p.client ? ' · ' + (p.account || p.client) : '') + (p.manager ? ' · PM: ' + p.manager : '')) + '</div></div></div></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + (p.phase ? _pmBadge(p.phase, '#3168A8') : '') +
+    '<button class="btn btn-ghost btn-sm" onclick="pmCharterPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Charter</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status PDF</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button></div></div>' +
+    '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
+    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--navy)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
+  root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
+  pmTab(_pmTabK);
+}
+function pmTab(k) {
+  const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
+  document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--navy)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
+  try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
+}
+
+/* ---------- Overview tab (Integration: charter summary, EVM headline, changes, lessons) ---------- */
+function pmRenderOverview() {
+  const host = document.getElementById('pm-tab-body'); if (!host) return;
+  const p = _pmProj(); if (!p) return;
+  const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
+  const kpis = _hrKpiRow([
+    _hrKpi('Progress', sr.pct + '%', 'var(--navy)'),
+    _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))),
+    _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi))),
+    _hrKpi('Open risks (High+)', rr.open + ' / ' + rr.high, '#EF4444'),
+    _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
+  ]);
+  const fld = (l, v) => '<div style="margin-bottom:9px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light);letter-spacing:.4px">' + l + '</div><div style="font-size:13px;color:var(--text-dark);margin-top:2px;white-space:pre-wrap">' + _pmEsc(v || '—') + '</div></div>';
+  const charter = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">Project Charter</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px">' +
+    '<div>' + fld('Client / Account', p.account || p.client) + fld('Sponsor', p.sponsor) + fld('Project Manager', p.manager) + fld('Department', p.dept) + fld('Location', p.location) + '</div>' +
+    '<div>' + fld('Contract Type', p.contractType) + fld('Contract Value', p.contractValue ? _pmMoney(p.contractValue) : '') + fld('Approved Budget', p.budget ? _pmMoney(p.budget) : '') + fld('Planned', _pmFmt(p.startPlanned) + ' → ' + _pmFmt(p.endPlanned)) + fld('Team', p.members) + '</div></div>' +
+    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px">' + fld('Objectives', p.objectives) + fld('Scope Summary', p.scopeSummary || p.scopeStatement) + fld('Success Criteria', p.successCriteria || p.acceptanceCriteriaProject) + '</div></div>';
+  // change log
+  const ch = _pmScope(_HR.pm_changes).sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || ''));
+  const changeTbl = _pmCard('Change Control Log', 'pm_changes', 'Add CR', _pmTable('pm_changes', [
+    { label: 'CR No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.crNo || '—') + '</span>' },
+    { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
+    { label: 'Sched Δ (d)', align: 'right', render: r => _pmEsc(r.impactScheduleDays || 0) },
+    { label: 'Cost Δ', align: 'right', render: r => r.impactCost ? _pmMoney(r.impactCost) : '—' },
+    { label: 'Decision', render: r => _pmBadge(r.decision || 'Pending', r.decision === 'Approved' ? '#00B060' : r.decision === 'Rejected' ? '#EF4444' : '#F59E0B') }
+  ], ch));
+  // lessons
+  const ls = _pmScope(_HR.pm_lessons);
+  const lessonsTbl = _pmCard('Lessons Learned', 'pm_lessons', 'Add lesson', _pmTable('pm_lessons', [
+    { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Category', k: 'category' }, { label: 'Phase', k: 'phase' },
+    { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'Positive' ? '#00B060' : '#F59E0B') },
+    { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') }
+  ], ls));
+  host.innerHTML = kpis + charter + changeTbl + lessonsTbl;
+}
+
+/* ---------- CRM Won-deal → Project handoff ---------- */
+async function pmFromDeal(dealId) {
+  const d = (_HR.crm_deals || []).find(x => x.id === dealId); if (!d) { toast('Deal not found', 'warn'); return; }
+  await tkLoadColl('pm_projects');
+  if ((_HR.pm_projects || []).some(p => p.dealId === dealId)) { toast('A project already exists for this deal.', 'warn'); const ex = (_HR.pm_projects || []).find(p => p.dealId === dealId); if (ex) pmOpenProject(ex.id); return; }
+  if (!confirm('Create a PMC project from won deal "' + (d.title || '') + '"?\n\nClient, value and owner carry over — complete the charter afterwards.')) return;
+  const me = (TK.user && TK.user.name) || '';
+  const ownerDept = _crmDeptOf ? _crmDeptOf(d.owner) : '';
+  const body = { name: d.title || (d.company + ' project'), account: d.company || '', accountId: '', contractValue: +d.value || 0, budget: Math.round((+d.value || 0) * 0.8), manager: d.owner || me, dept: (ownerDept && PM_DEPT.indexOf(ownerDept) >= 0) ? ownerDept : 'PMC', status: 'Initiating', phase: 'Concept / Feasibility', rag: 'Green', percentComplete: 0, dealId: dealId, ptype: d.ptype || '', note: 'Created from CRM Won deal' };
+  try {
+    const r = await tkApi('/api/coll/pm_projects', { method: 'POST', body: body });
+    (_HR.pm_projects = _HR.pm_projects || []).push(r.item);
+    try { tkAudit('Project created from deal', d.title || '', _pmMoney(d.value)); } catch (e) { }
+    toast('Project created — opening the charter', 'success', 5000);
+    pmOpenProject(r.item.id);
+  } catch (e) { toast('Could not create project: ' + e.message, 'error', 6000); }
+}
+/* ============================================================================
+   PM TABS — the 10 PMBOK knowledge-area renderers (one per workspace tab)
+   ========================================================================== */
+function _pmWbsCmp(a, b) { a = String(a || ''); b = String(b || ''); const pa = a.split('.').map(Number), pb = b.split('.').map(Number); for (let i = 0; i < Math.max(pa.length, pb.length); i++) { const d = (pa[i] || 0) - (pb[i] || 0); if (d) return d; } return a.localeCompare(b); }
+function _pmSet(html) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = html; }
+
+/* ---------- 2. Scope / WBS ---------- */
+function pmRenderScope(pid) {
+  const p = _pmProj(pid); const sr = pmScopeRollup(pid);
+  const ds = _pmScope(_HR.pm_deliverables).slice().sort((a, b) => _pmWbsCmp(a.wbsCode, b.wbsCode));
+  const kpis = _hrKpiRow([_hrKpi('Deliverables', ds.length), _hrKpi('Accepted', sr.accepted + ' / ' + ds.length, 'var(--emerald)'), _hrKpi('Weighted progress', sr.pct + '%', 'var(--navy)')]);
+  const scopeStmt = (p.scopeStatement || p.scopeSummary || p.scopeInclusions || p.scopeExclusions) ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Scope Statement</div>' +
+    [['Statement', p.scopeStatement || p.scopeSummary], ['Inclusions', p.scopeInclusions], ['Exclusions', p.scopeExclusions], ['Assumptions', p.scopeAssumptions]].filter(r => r[1]).map(r => '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light)">' + r[0] + '</span><div style="font-size:13px;white-space:pre-wrap">' + _pmEsc(r[1]) + '</div></div>').join('') + '<div style="font-size:11px;color:var(--text-light);margin-top:4px">Edit scope text via the project <b>Edit</b> button.</div></div>' : '';
+  const tbl = _pmCard('Work Breakdown Structure (Deliverables)', 'pm_deliverables', 'Add deliverable', _pmTable('pm_deliverables', [
+    { label: 'WBS', render: r => '<span style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
+    { label: 'Deliverable', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
+    { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) }, { label: 'Wt', align: 'right', render: r => (r.weight || 1) },
+    { label: 'Progress', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.percentComplete) + '<span style="font-size:11px">' + _pmPct(r.percentComplete) + '%</span></div>' },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', r.status === 'Accepted' ? '#00B060' : r.status === 'In progress' || r.status === 'Submitted' ? '#3168A8' : '#94a3b8') }
+  ], ds));
+  _pmSet(kpis + scopeStmt + tbl);
+}
+
+/* ---------- 3. Schedule (Gantt) ---------- */
+function pmRenderSchedule(pid) {
+  const p = _pmProj(pid);
+  const tasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
+  const tr = _pmTaskRollup(pid);
+  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Overdue milestones', tr.overdueMs, '#EF4444')]);
+  let dates = []; tasks.forEach(t => { if (t.start) dates.push(t.start); if (t.finish) dates.push(t.finish); }); if (p.startPlanned) dates.push(p.startPlanned); if (p.endPlanned) dates.push(p.endPlanned);
+  const min = dates.length ? dates.reduce((a, b) => a < b ? a : b) : _pmToday(), max = dates.length ? dates.reduce((a, b) => a > b ? a : b) : _pmToday();
+  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  const todayOff = Math.max(0, Math.min(100, (_pmDateDiff(min, _pmToday()) || 0) / span * 100));
+  const ganttRows = tasks.map(t => {
+    const s = t.start || min, f = t.finish || t.start || min;
+    let off = Math.max(0, (_pmDateDiff(min, s) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(s, f) || 0) / span) * 100); if (off + w > 100) w = 100 - off;
+    const mile = String(t.isMilestone) === 'Yes', crit = String(t.critical) === 'Yes', overdue = t.status !== 'Completed' && t.finish && t.finish < _pmToday();
+    const hex = mile ? '#8B5CF6' : crit ? '#EF4444' : overdue ? '#F59E0B' : '#205090';
+    const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:2px;width:12px;height:12px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px" title="Milestone ' + _pmFmt(f) + '"></div>'
+      : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:4px;height:10px;border-radius:4px;background:' + hex + ';opacity:.85" title="' + _pmFmt(s) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
+    return '<tr><td style="font-size:12px;white-space:nowrap;max-width:230px;overflow:hidden;text-overflow:ellipsis;padding-right:8px">' + (t.wbs ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px">' + _pmEsc(t.wbs) + '</span> ' : '') + _pmEsc(t.name || '') + (crit ? ' <span style="color:#EF4444;font-size:9px;font-weight:700">CP</span>' : '') + '</td><td style="position:relative;height:18px;min-width:280px">' + bar + '</td><td style="font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmFmt(t.finish) + '</td></tr>';
+  }).join('') || '<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:16px">No tasks yet.</td></tr>';
+  const gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt <span style="font-size:11px;color:var(--text-light);font-weight:400">(' + _pmFmt(min) + ' → ' + _pmFmt(max) + ')</span></div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div>' +
+    '<div style="padding:8px 16px 4px;position:relative"><div style="position:absolute;left:calc(238px + ' + todayOff + '% * .999);top:8px;bottom:8px;width:0;border-left:2px dashed #EF4444;opacity:.5"></div><table style="width:100%"><tbody>' + ganttRows + '</tbody></table></div>' +
+    '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:4px">Today</span></span></div></div>';
+  const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
+    { label: 'WBS', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
+    { label: 'Task', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
+    { label: 'Assignee', k: 'assignee' }, { label: 'Start', render: r => _pmFmt(r.start) }, { label: 'Finish', render: r => _pmFmt(r.finish) },
+    { label: '%', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', r.status === 'Completed' ? '#00B060' : r.status === 'In progress' ? '#3168A8' : '#94a3b8') }
+  ], tasks));
+  _pmSet(kpis + gantt + tbl);
+}
+
+/* ---------- 4. Cost / EVM ---------- */
+function pmRenderCosts(pid) {
+  const p = _pmProj(pid), ev = _pmEvm(p);
+  const costs = _pmScope(_HR.pm_costs);
+  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoney(ev.bac)), _hrKpi('Actual (AC)', _pmMoney(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoney(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
+  const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
+    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
+  const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
+  const tbl = _pmCard('Cost Register', 'pm_costs', 'Add cost line', _pmTable('pm_costs', [
+    { label: 'Item', render: r => '<span style="font-weight:600">' + _pmEsc(r.item || '') + '</span>' },
+    { label: 'Category', render: r => _pmBadge(r.category || 'Other', '#3168A8') },
+    { label: 'Budget', align: 'right', render: r => _pmMoney(r.budget) }, { label: 'Committed', align: 'right', render: r => _pmMoney(r.committed) },
+    { label: 'Actual', align: 'right', render: r => _pmMoney(r.actual) }, { label: 'Invoiced', align: 'right', render: r => _pmMoney(r.invoiced) },
+    { label: 'Variance', align: 'right', render: r => { const v = (+r.budget || 0) - (+r.actual || 0); return '<span style="color:' + (v < 0 ? '#EF4444' : '#00B060') + '">' + _pmMoney(v) + '</span>'; } }
+  ], costs));
+  _pmSet(kpis + evmCard + chart + tbl);
+  const cats = {}; costs.forEach(c => { const k = c.category || 'Other'; (cats[k] = cats[k] || { b: 0, a: 0 }); cats[k].b += +c.budget || 0; cats[k].a += +c.actual || 0; });
+  if (Object.keys(cats).length) try { _mkChart('pm-cost-chart', { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: 'Budget', data: Object.values(cats).map(x => x.b), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: Object.values(cats).map(x => x.a), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoney(v)) }); } catch (e) { }
+}
+
+/* ---------- 5. Quality (NCR / ITP) ---------- */
+function pmRenderQuality(pid) {
+  const q = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
+  const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
+  const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
+  const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
+  const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', _pmTable('pm_quality', [
+    { label: 'Ref', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
+    { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
+    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Discipline', k: 'discipline' },
+    { label: 'Result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
+    { label: 'Severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') }
+  ], q));
+  const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
+    { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
+    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
+    { label: 'Standard', k: 'standardRef' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }
+  ], itp));
+  _pmSet(kpis + tbl + itpTbl);
+}
+
+/* ---------- 6. Resources (RACI + workload) ---------- */
+function pmRenderResources(pid) {
+  const rs = _pmScope(_HR.pm_resources);
+  const byPerson = {}; rs.forEach(r => { const n = r.name || '—'; byPerson[n] = (byPerson[n] || 0) + (+r.allocationPct || 0); });
+  const over = Object.values(byPerson).filter(v => v > 100).length;
+  const kpis = _hrKpiRow([_hrKpi('Team size', new Set(rs.map(r => r.name).filter(Boolean)).size), _hrKpi('Assignments', rs.length, '#3168A8'), _hrKpi('Over-allocated (>100%)', over, '#EF4444')]);
+  const tbl = _pmCard('Team & RACI', 'pm_resources', 'Add member', _pmTable('pm_resources', [
+    { label: 'Member', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
+    { label: 'Role', k: 'projectRole' }, { label: 'Discipline', k: 'discipline' },
+    { label: 'RACI', render: r => (r.raci ? '<span style="display:inline-block;min-width:26px;text-align:center;background:' + (RACI_HEX[r.raci] || '#94a3b8') + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 6px">' + _pmEsc(r.raci) + '</span>' : '—') },
+    { label: 'Allocation', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.allocationPct, (+r.allocationPct > 100 ? '#EF4444' : 'var(--navy)')) + '<span style="font-size:11px">' + _pmPct(r.allocationPct) + '%</span></div>' },
+    { label: 'Rate', align: 'right', render: r => r.rate ? _pmMoney(r.rate) : '—' }
+  ], rs));
+  const wl = Object.keys(byPerson).length ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Workload (total allocation per person)</div>' + Object.keys(byPerson).sort((a, b) => byPerson[b] - byPerson[a]).map(n => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:150px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(n) + '</div><div style="flex:1">' + _pmBar(Math.min(100, byPerson[n]), byPerson[n] > 100 ? '#EF4444' : '#205090') + '</div><div style="width:48px;text-align:right;font-size:12px;font-weight:700;color:' + (byPerson[n] > 100 ? '#EF4444' : 'var(--navy)') + '">' + byPerson[n] + '%</div></div>').join('') + '</div>' : '';
+  _pmSet(kpis + tbl + wl);
+  pmSyncMembers(pid);
+}
+
+/* ---------- 7. Communications & Issues ---------- */
+function pmRenderComms(pid) {
+  const comms = _pmScope(_HR.pm_comms).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const issues = _pmScope(_HR.pm_issues);
+  const openIss = issues.filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length;
+  const kpis = _hrKpiRow([_hrKpi('Communications', comms.length), _hrKpi('Issues', issues.length, '#3168A8'), _hrKpi('Open issues', openIss, '#EF4444')]);
+  const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _pmTable('pm_comms', [
+    { label: 'Date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
+    { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
+    { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') }
+  ], comms), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
+  const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _pmTable('pm_issues', [
+    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
+    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
+    { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') }
+  ], issues));
+  _pmSet(kpis + commsTbl + issuesTbl);
+}
+
+/* ---------- 8. Risk (5x5 heatmap) ---------- */
+function pmRenderRisks(pid) {
+  const risks = _pmScope(_HR.pm_risks);
+  const rr = _pmRiskRollup(pid);
+  const kpis = _hrKpiRow([_hrKpi('Risks', risks.length), _hrKpi('Open', rr.open, '#F59E0B'), _hrKpi('High / Critical', rr.high, '#EF4444'), _hrKpi('Top score', rr.top + ' (' + rr.band + ')', _pmRiskBand(rr.top).hex)]);
+  let cells = '';
+  for (let im = 5; im >= 1; im--) {
+    cells += '<tr><td style="font-size:10px;color:var(--text-light);text-align:right;padding-right:6px;font-weight:700">' + im + '</td>';
+    for (let pr = 1; pr <= 5; pr++) { const score = im * pr, hex = _pmRiskBand(score).hex, n = risks.filter(r => +r.impact === im && +r.probability === pr && r.status !== 'Closed').length; cells += '<td style="background:' + hex + ';width:46px;height:36px;text-align:center;color:#fff;font-weight:800;font-size:13px;border:2px solid #fff" title="P' + pr + ' × I' + im + ' = ' + score + '">' + (n || '') + '</td>'; }
+    cells += '</tr>';
+  }
+  cells += '<tr><td></td>' + [1, 2, 3, 4, 5].map(p => '<td style="font-size:10px;color:var(--text-light);text-align:center;font-weight:700">' + p + '</td>').join('') + '</tr>';
+  const heat = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Probability × Impact Heatmap</div><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><table style="border-collapse:collapse"><tbody>' + cells + '</tbody></table>' +
+    '<div style="font-size:11px;color:var(--text-light)"><div style="margin-bottom:4px"><b style="color:var(--text-dark)">Rows</b> = Impact (1–5)</div><div style="margin-bottom:8px"><b style="color:var(--text-dark)">Cols</b> = Probability (1–5)</div>' + RISK_BANDS.map(b => '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:' + b.hex + '"></span>' + b.band + '</div>').join('') + '</div></div></div>';
+  const tbl = _pmCard('Risk Register', 'pm_risks', 'Add risk', _pmTable('pm_risks', [
+    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.riskNo || '—') + '</span>' },
+    { label: 'Risk', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Category', k: 'category' },
+    { label: 'P', align: 'center', render: r => r.probability || '—' }, { label: 'I', align: 'center', render: r => r.impact || '—' },
+    { label: 'Score', align: 'center', render: r => { const b = _pmRiskBand(+r.score || 0); return '<span style="display:inline-block;background:' + b.hex + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 7px">' + (r.score || 0) + ' ' + b.band + '</span>'; } },
+    { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') }
+  ], risks));
+  _pmSet(kpis + heat + tbl);
+}
+
+/* ---------- 9. Procurement ---------- */
+function pmRenderProcurement(pid) {
+  const ps = _pmScope(_HR.pm_procurement);
+  const committed = ps.reduce((s, x) => s + (+x.value || 0), 0);
+  const active = ps.filter(x => x.status === 'Active' || x.status === 'Awarded').length;
+  const kpis = _hrKpiRow([_hrKpi('Packages', ps.length), _hrKpi('Committed value', _pmMoney(committed), '#F59E0B'), _hrKpi('Active / Awarded', active, 'var(--emerald)')]);
+  const tbl = _pmCard('Procurement & Subcontracts', 'pm_procurement', 'Add package', _pmTable('pm_procurement', [
+    { label: 'Pkg', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
+    { label: 'Package / Scope', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Vendor', k: 'vendor' }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
+    { label: 'Value', align: 'right', render: r => _pmMoney(r.value) }, { label: 'Ret %', align: 'right', render: r => (r.retentionPct || 0) + '%' },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Planned', r.status === 'Completed' || r.status === 'Closed' ? '#00B060' : r.status === 'Active' || r.status === 'Awarded' ? '#205090' : '#94a3b8') }
+  ], ps));
+  const pays = _pmScope(_HR.pm_procurement_payments);
+  const payTbl = _pmCard('Payment Certificates (IPC)', 'pm_procurement_payments', 'Add cert', _pmTable('pm_procurement_payments', [
+    { label: 'Cert', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.certNo || '—') + '</span>' },
+    { label: 'Period', k: 'period' }, { label: 'Gross', align: 'right', render: r => _pmMoney(r.grossClaimed) },
+    { label: 'Retention', align: 'right', render: r => _pmMoney(r.retentionDeducted) }, { label: 'Net certified', align: 'right', render: r => _pmMoney(r.netCertified) },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Submitted', r.status === 'Paid' ? '#00B060' : '#F59E0B') }
+  ], pays));
+  _pmSet(kpis + tbl + payTbl);
+}
+
+/* ---------- 10. Stakeholders (power/interest grid) ---------- */
+function pmRenderStakeholders(pid) {
+  const sk = _pmScope(_HR.pm_stakeholders);
+  const manage = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === 'Manage Closely').length;
+  const kpis = _hrKpiRow([_hrKpi('Stakeholders', sk.length), _hrKpi('Manage closely', manage, '#205090'), _hrKpi('External', sk.filter(s => s.internalExternal === 'External').length, '#8B5CF6')]);
+  const quad = (name, hexKey) => { const list = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === name); return '<div style="background:' + SK_QUAD_HEX[name] + '12;border:1px solid ' + SK_QUAD_HEX[name] + '44;border-radius:9px;padding:10px;min-height:90px"><div style="font-size:11px;font-weight:800;color:' + SK_QUAD_HEX[name] + ';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">' + name + '</div>' + (list.length ? list.map(s => '<div style="font-size:12px;margin-bottom:3px">• ' + _pmEsc(s.name || '') + (s.organization ? ' <span style="color:var(--text-light)">(' + _pmEsc(s.organization) + ')</span>' : '') + '</div>').join('') : '<div style="font-size:11px;color:var(--text-light)">—</div>') + '</div>'; };
+  const grid = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:4px">Power / Interest Grid (Mendelow)</div><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">↑ Influence (Power) &nbsp;·&nbsp; → Interest</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + quad('Keep Satisfied') + quad('Manage Closely') + quad('Monitor') + quad('Keep Informed') + '</div></div>';
+  const tbl = _pmCard('Stakeholder Register', 'pm_stakeholders', 'Add stakeholder', _pmTable('pm_stakeholders', [
+    { label: 'Name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' }, { label: 'Organization', k: 'organization' }, { label: 'Role', k: 'role' },
+    { label: 'Influence', render: r => _pmBadge(r.influence || '—', r.influence === 'High' ? '#205090' : '#94a3b8') }, { label: 'Interest', render: r => _pmBadge(r.interest || '—', r.interest === 'High' ? '#3168A8' : '#94a3b8') },
+    { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(qd, SK_QUAD_HEX[qd]); } },
+    { label: 'Attitude', k: 'attitude' }
+  ], sk));
+  _pmSet(kpis + grid + tbl);
+}
+
+/* ---------- 11. Doc Control (RFIs / Submittals + Site Daily Reports) ---------- */
+function pmRenderRfis(pid) {
+  const rfis = _pmScope(_HR.pm_rfis);
+  const open = rfis.filter(r => r.status === 'Open').length;
+  const overdue = rfis.filter(r => r.status === 'Open' && r.requiredBy && r.requiredBy < _pmToday()).length;
+  const turns = rfis.filter(r => r.raisedDate && r.responseDate).map(r => _pmDateDiff(r.raisedDate, r.responseDate)).filter(d => d != null && d >= 0);
+  const avg = turns.length ? Math.round(turns.reduce((a, b) => a + b, 0) / turns.length) : 0;
+  const kpis = _hrKpiRow([_hrKpi('RFIs / Submittals', rfis.length), _hrKpi('Open', open, '#F59E0B'), _hrKpi('Overdue', overdue, '#EF4444'), _hrKpi('Avg turnaround', avg + ' d', '#3168A8')]);
+  const tbl = _pmCard('RFIs · Submittals · Transmittals', 'pm_rfis', 'Add RFI', _pmTable('pm_rfis', [
+    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.number || '—') + '</span>' },
+    { label: 'Type', render: r => _pmBadge(r.type || 'RFI', '#3168A8') },
+    { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
+    { label: 'Ball in court', k: 'ballInCourt' }, { label: 'Required by', render: r => _pmFmt(r.requiredBy) },
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', /Approved|Closed|Answered/.test(r.status || '') ? '#00B060' : r.status === 'Rejected' ? '#EF4444' : '#F59E0B') }
+  ], rfis));
+  const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
+  const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
+    { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
+    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }
+  ], sdr));
+  _pmSet(kpis + tbl + sdrTbl);
+}
+/* ============================================================================
+   PM PORTFOLIO — executive cross-project dashboard (the PMC landing screen)
+   ========================================================================== */
+let _pmDashDept = '', _pmDashMgr = '';
+function pmSetDash(which, v) { if (which === 'dept') _pmDashDept = v; else _pmDashMgr = v; pmRenderPortfolio(); }
+async function pmRenderPortfolio() {
+  const root = document.getElementById('pm-dashboard-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await _pmLoadAll();
+  let projects = _pmMine(_HR.pm_projects || []);
+  if (_pmDashDept) projects = projects.filter(p => (p.dept || '') === _pmDashDept);
+  if (_pmDashMgr) projects = projects.filter(p => (p.manager || '') === _pmDashMgr);
+  const active = projects.filter(p => PM_ACTIVE_STATUS.indexOf(p.status) >= 0 || !p.status);
+  const value = projects.reduce((s, p) => s + (+p.contractValue || +p.budget || 0), 0);
+  const onTrack = projects.length ? Math.round(projects.filter(p => _pmEffectiveRag(p) === 'Green').length / projects.length * 100) : 0;
+  const overdueMs = projects.reduce((s, p) => s + _pmOverdueMilestones(p.id), 0);
+  const highRisks = projects.reduce((s, p) => s + _pmRiskRollup(p.id).high, 0);
+  let sumEV = 0, sumAC = 0, sumPV = 0; projects.forEach(p => { const e = _pmEvm(p); sumEV += e.ev; sumAC += e.ac; sumPV += e.pv; });
+  const pCPI = sumAC > 0 ? sumEV / sumAC : 1, pSPI = sumPV > 0 ? sumEV / sumPV : 1;
+  const kpis = _hrKpiRow([
+    _hrKpi('Active projects', active.length),
+    _hrKpi('Portfolio value', _pmMoney(value), '#F59E0B'),
+    _hrKpi('On-track', onTrack + '%', 'var(--emerald)'),
+    _hrKpi('Portfolio CPI', pCPI.toFixed(2), _ragHex(_pmIndexRag(pCPI))),
+    _hrKpi('Portfolio SPI', pSPI.toFixed(2), _ragHex(_pmIndexRag(pSPI)))
+  ]);
+  const kpis2 = _hrKpiRow([_hrKpi('Overdue milestones', overdueMs, '#EF4444'), _hrKpi('Open High/Critical risks', highRisks, '#EF4444'), _hrKpi('Completed', projects.filter(p => PM_TERMINAL_STATUS.indexOf(p.status) >= 0).length, '#64748b')]);
+  // filters
+  const allP = _pmMine(_HR.pm_projects || []);
+  const depts = [...new Set(allP.map(p => p.dept).filter(Boolean))].sort();
+  const mgrs = [...new Set(allP.map(p => p.manager).filter(Boolean))].sort();
+  const fdept = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'dept\',this.value)"><option value="">All departments</option>' + depts.map(d => '<option' + (d === _pmDashDept ? ' selected' : '') + '>' + _pmEsc(d) + '</option>').join('') + '</select>';
+  const fmgr = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'mgr\',this.value)"><option value="">All managers</option>' + mgrs.map(m => '<option' + (m === _pmDashMgr ? ' selected' : '') + '>' + _pmEsc(m) + '</option>').join('') + '</select>';
+  const controls = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">View</span>' + fdept + fmgr + '</div><button class="btn btn-primary btn-sm" onclick="showView(\'pm-projects\',null,\'Projects\')">' + tkIcon('external', 12) + ' All projects</button></div>';
+  // charts
+  const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Projects by status</div><div style="height:210px"><canvas id="pm-ch-status"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Health (RAG)</div><div style="height:210px"><canvas id="pm-ch-rag"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by project</div><div style="height:210px"><canvas id="pm-ch-cost"></canvas></div></div>' +
+    '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule performance (SPI)</div><div style="height:210px"><canvas id="pm-ch-spi"></canvas></div></div></div>';
+  // table
+  const rows = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).map(p => {
+    const rag = _pmEffectiveRag(p), e = _pmEvm(p), sr = pmScopeRollup(p.id), pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
+    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
+      '<td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span></td>' +
+      '<td><div style="display:flex;align-items:center;gap:6px">' + _pmBar(pct) + '<span style="font-size:11px">' + pct + '%</span></div></td>' +
+      '<td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.cpi)) + ';font-weight:700">' + e.cpi.toFixed(2) + '</td><td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.spi)) + ';font-weight:700">' + e.spi.toFixed(2) + '</td>' +
+      '<td style="text-align:right;font-weight:600">' + _pmMoney(p.contractValue || p.budget) + '</td><td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">No projects yet.</td></tr>';
+  const table = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px"><div class="card-title">Project Portfolio</div></div><div class="table-wrap"><table style="min-width:860px"><thead><tr><th>Code</th><th>Project</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:center">CPI</th><th style="text-align:center">SPI</th><th style="text-align:right">Value</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = controls + kpis + kpis2 + charts + table;
+  // draw charts
+  const byStatus = {}; projects.forEach(p => { const k = p.status || 'Planning'; byStatus[k] = (byStatus[k] || 0) + 1; });
+  const byRag = { Green: 0, Amber: 0, Red: 0 }; projects.forEach(p => { byRag[_pmEffectiveRag(p)]++; });
+  try {
+    if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Projects' } });
+    _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'], datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Health' } });
+    const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
+    _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoney(v)) });
+    _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
+  } catch (e) { }
+}
+
 function showView(id, navEl, title) {
   /* staff dashboard redirect — must happen BEFORE the guard check */
   if (_userRole === 'staff' && id === 'dashboard') { id = 'staff-dashboard'; }
@@ -8178,6 +8890,7 @@ function showView(id, navEl, title) {
 
   /* per-user app access — an admin can disable e.g. CRM for a specific user */
   if (id.indexOf('crm-') === 0 && _appDeniedCurrent('crm')) { toast('Access restricted — CRM is not enabled for your account. Ask an admin.', 'warn'); return; }
+  if (id.indexOf('pm-') === 0 && _appDeniedCurrent('pm')) { toast('Access restricted — Projects is not enabled for your account. Ask an admin.', 'warn'); return; }
   /* close the mobile drawer after navigating */
   if (window.matchMedia && window.matchMedia('(max-width:820px)').matches) document.body.classList.remove('sb-open');
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -8209,6 +8922,9 @@ function showView(id, navEl, title) {
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
   if (id === 'crm-products') { try { crmRenderProducts(); } catch (e) { console.warn('crm-prod:', e.message); } }
+  if (id === 'pm-dashboard') { try { pmRenderPortfolio(); } catch (e) { console.warn('pm-dash:', e.message); } }
+  if (id === 'pm-projects') { try { pmRenderProjects(); } catch (e) { console.warn('pm-proj:', e.message); } }
+  if (id === 'pm-project') { try { pmRenderWorkspace(); } catch (e) { console.warn('pm-wsp:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
   if (id === 'performance') { try { tkRenderPerformance(); } catch (e) { console.warn('perf:', e.message); } }
@@ -8474,6 +9190,21 @@ const _VI = {
   'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Quy trình theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Export': 'Xuất', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
   'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
   'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
+  'PMC / Projects': 'PMC / Dự án', 'Portfolio': 'Danh mục dự án', 'Projects': 'Dự án', 'Project Workspace': 'Không gian dự án', 'New Project': 'Dự án mới',
+  'Active projects': 'Dự án đang chạy', 'On-track': 'Đúng tiến độ', 'Portfolio CPI': 'CPI danh mục', 'Portfolio SPI': 'SPI danh mục', 'Project Portfolio': 'Danh mục dự án',
+  'Project Charter': 'Hiến chương dự án', 'Project Manager': 'Quản lý dự án', 'Sponsor': 'Nhà tài trợ', 'Contract Value': 'Giá trị hợp đồng', 'Approved Budget': 'Ngân sách duyệt',
+  'Scope / WBS': 'Phạm vi / WBS', 'Schedule': 'Tiến độ', 'Cost / EVM': 'Chi phí / EVM', 'Quality': 'Chất lượng', 'Resources': 'Nguồn lực', 'Comms & Issues': 'Trao đổi & Vấn đề',
+  'Risk': 'Rủi ro', 'Procurement': 'Mua sắm', 'Stakeholders': 'Bên liên quan', 'Doc Control': 'Kiểm soát tài liệu', 'Overview': 'Tổng quan', 'Deliverables': 'Sản phẩm bàn giao',
+  'Work Breakdown Structure (Deliverables)': 'Cấu trúc phân chia công việc (WBS)', 'Scope Statement': 'Tuyên bố phạm vi', 'Schedule — Gantt': 'Tiến độ — Gantt',
+  'Activities': 'Công việc', 'Milestones': 'Cột mốc', 'Add task': 'Thêm công việc', 'Earned Value Analysis': 'Phân tích giá trị thu được', 'Cost Register': 'Sổ chi phí',
+  'Budget vs Actual by category': 'Ngân sách & Thực tế theo nhóm', 'Budget vs Actual by project': 'Ngân sách & Thực tế theo dự án', 'Inspection & Test Plans (ITP)': 'Kế hoạch kiểm tra & thử nghiệm (ITP)',
+  'Team & RACI': 'Đội ngũ & RACI', 'Communications Log': 'Sổ trao đổi', 'Issue Log': 'Sổ vấn đề', 'Status Report': 'Báo cáo tình trạng', 'Status PDF': 'PDF tình trạng',
+  'Probability × Impact Heatmap': 'Bản đồ nhiệt Xác suất × Tác động', 'Risk Register': 'Sổ rủi ro', 'Add risk': 'Thêm rủi ro', 'Procurement & Subcontracts': 'Mua sắm & Thầu phụ',
+  'Payment Certificates (IPC)': 'Chứng chỉ thanh toán (IPC)', 'Power / Interest Grid (Mendelow)': 'Ma trận Quyền lực / Quan tâm (Mendelow)', 'Stakeholder Register': 'Sổ bên liên quan',
+  'RFIs · Submittals · Transmittals': 'RFI · Hồ sơ trình duyệt · Phiếu chuyển', 'Site Daily Reports': 'Báo cáo công trường hàng ngày', 'Change Control Log': 'Sổ kiểm soát thay đổi',
+  'Lessons Learned': 'Bài học kinh nghiệm', 'Project Code': 'Mã dự án', 'Health': 'Tình trạng', 'Manager': 'Quản lý', 'Add deliverable': 'Thêm sản phẩm', 'Add risk ': 'Thêm rủi ro',
+  'Add CR': 'Thêm yêu cầu thay đổi', 'Add lesson': 'Thêm bài học', 'Add cost line': 'Thêm dòng chi phí', 'Add record': 'Thêm bản ghi', 'Add member': 'Thêm thành viên',
+  'Log comm': 'Ghi trao đổi', 'Add issue': 'Thêm vấn đề', 'Add package': 'Thêm gói thầu', 'Add stakeholder': 'Thêm bên liên quan', 'Add RFI': 'Thêm RFI', 'Add report': 'Thêm báo cáo',
   'Sales / CRM': 'Bán hàng / CRM', 'Sales Dashboard': 'Bảng điều khiển bán hàng', 'Sales Pipeline': 'Quy trình bán hàng',
   'Pipeline': 'Quy trình', 'Leads': 'Khách hàng tiềm năng', 'Companies': 'Công ty', 'Companies / Accounts': 'Công ty / Khách hàng',
   'Contacts': 'Người liên hệ', 'Add Deal': 'Thêm giao dịch', 'Add Lead': 'Thêm KH tiềm năng', 'Add Company': 'Thêm công ty',

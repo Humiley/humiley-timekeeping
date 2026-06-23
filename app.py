@@ -193,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
             nm = seg[0]
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in ("padr", "enrollments", "onboarding") and not nm.startswith("crm_")))
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in self.STAFF_WRITE and nm not in ("onboarding",) and not nm.startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -456,9 +456,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_portfolioSnapshots", "pm_execNotes"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products"}
+    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
@@ -481,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
-        if name.startswith("crm_"):
+        if name.startswith("crm_") or name.startswith("pm_"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -508,17 +508,20 @@ class Handler(BaseHTTPRequestHandler):
         if name == "audit":
             item["actor"] = u.get("name") or "System"
             item["actorId"] = u.get("id") or ""
+        if name.startswith("pm_"):
+            item.setdefault("createdBy", u.get("name"))
+            item.setdefault("createdById", u.get("id"))
         return self._json({"ok": True, "item": db.put_collection_item(name, item)})
 
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
-        if name.startswith("crm_"):
+        if name.startswith("crm_") or name.startswith("pm_"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records).
-        if u.get("role") != "manager" and not name.startswith("crm_"):
+        if u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_"):
             if name == "enrollments":
                 existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
                 if not existing or existing.get("empId") != u.get("id"):
