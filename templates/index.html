@@ -4036,6 +4036,21 @@ function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? t
 const _KPI_HEX = { 'var(--emerald)': '#00B060', 'var(--navy)': '#205090', 'var(--warning)': '#F59E0B' };
 function _kpiIcon(label) {
   const l = (label || '').toLowerCase();
+  if (l === 'cpi' || l === 'spi' || /portfolio cpi|portfolio spi/.test(l)) return '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>';
+  if (/accepted/.test(l)) return '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>';
+  if (/weighted progress|overall progress|^progress$/.test(l)) return '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>';
+  if (/risk/.test(l)) return TK_ICON.alert;
+  if (/milestone/.test(l)) return '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>';
+  if (/overdue|turnaround|\bdue\b/.test(l)) return TK_ICON.clock;
+  if (/deliverable/.test(l)) return '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>';
+  if (/project/.test(l)) return '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>';
+  if (/rfi|submittal|\bdoc/.test(l)) return '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>';
+  if (/stakeholder|\bteam\b/.test(l)) return TK_ICON.users;
+  if (/ncr|quality|inspection|itp/.test(l)) return TK_ICON.shield;
+  if (/issue/.test(l)) return '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>';
+  if (/package|procure|committed|subcontract/.test(l)) return '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>';
+  if (/communication|comms/.test(l)) return '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>';
+  if (/on-track|on track/.test(l)) return TK_ICON.check;
   if (/rate|progress|accept|%/.test(l)) return '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>';
   if (/pay|cost|advance|claim|net|gross|salary|value|₫/.test(l)) return '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
   if (/rating|star|potential|\bhigh\b|avg/.test(l)) return '<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>';
@@ -8344,6 +8359,15 @@ const SK_QUAD_HEX = { 'Manage Closely': '#205090', 'Keep Satisfied': '#8B5CF6', 
 function _pmQuadrant(inf, intr) { const hiP = inf === 'High' || inf === 'Medium'; const hiI = intr === 'High' || intr === 'Medium'; return hiP && hiI ? 'Manage Closely' : hiP && !hiI ? 'Keep Satisfied' : !hiP && hiI ? 'Keep Informed' : 'Monitor'; }
 const _PM_STATUS_HEX = { Pipeline: '#94a3b8', Initiating: '#3168A8', Planning: '#8B5CF6', Executing: '#205090', 'Monitoring & Controlling': '#0ea5e9', 'On Hold': '#F59E0B', Closing: '#14b8a6', Completed: '#00B060', Closed: '#64748b', Cancelled: '#EF4444' };
 const _pmStatusHex = s => _PM_STATUS_HEX[s] || '#205090';
+function _pmStatusColor(s) {
+  s = String(s || '').toLowerCase();
+  if (/(not started|draft|planned|pipeline|on hold|backlog)/.test(s)) return '#94a3b8';        // grey
+  if (/(submitted|pending|tendered|awarded|answered|in review|for review)/.test(s)) return '#F59E0B'; // amber
+  if (/(accepted|approved|completed|closed|resolved|\bwon\b|pass|certified|paid|done)/.test(s)) return '#00B060'; // green
+  if (/(rejected|fail|cancelled|overdue|blocked|unqualified)/.test(s)) return '#EF4444';        // red
+  if (/(in progress|executing|active|mitigating|ongoing|started|monitoring|open)/.test(s)) return '#3168A8'; // blue
+  return '#3168A8';
+}
 
 /* ---- RBAC: staff=own/member projects · manager=dept · management+=all ---- */
 /* PM visibility: User = only assigned projects (PM or Team member); Manager and above = ALL. */
@@ -8633,7 +8657,7 @@ function pmRenderScope(pid) {
     { label: 'Deliverable', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
     { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) }, { label: 'Wt', align: 'right', render: r => _pmEsc(r.weight || 1) },
     { label: 'Progress', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.percentComplete) + '<span style="font-size:11px">' + _pmPct(r.percentComplete) + '%</span></div>' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', r.status === 'Accepted' ? '#00B060' : r.status === 'In progress' || r.status === 'Submitted' ? '#3168A8' : '#94a3b8') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
   ], ds));
   _pmSet(kpis + scopeStmt + tbl);
 }
@@ -8665,7 +8689,7 @@ function pmRenderSchedule(pid) {
     { label: 'Task', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
     { label: 'Assignee', k: 'assignee' }, { label: 'Start', render: r => _pmFmt(r.start) }, { label: 'Finish', render: r => _pmFmt(r.finish) },
     { label: '%', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', r.status === 'Completed' ? '#00B060' : r.status === 'In progress' ? '#3168A8' : '#94a3b8') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
   ], tasks));
   _pmSet(kpis + gantt + tbl);
 }
