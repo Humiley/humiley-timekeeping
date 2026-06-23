@@ -377,9 +377,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("An employee with that email already exists.")
         body = dict(body or {})
         # Only admins may set access level / role on create (prevents privilege escalation).
-        if ("level" in body or "role" in body) and self._caller_level(u) != "admin":
+        if ("level" in body or "role" in body or "appsDenied" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
+            body.pop("appsDenied", None)
         return self._json({"ok": True, "id": db.create_employee(body)})
 
     def _emp_list_for(self, u):
@@ -413,9 +414,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Employee not found.", 404)
         body = dict(body or {})
         # Only admins may change access level or role (prevents privilege escalation).
-        if ("level" in body or "role" in body) and self._caller_level(u) != "admin":
+        if ("level" in body or "role" in body or "appsDenied" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
+            body.pop("appsDenied", None)
         if body:
             db.update_employee(eid, body)
         return self._json({"ok": True})
