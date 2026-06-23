@@ -8862,43 +8862,61 @@ function pmRenderScope(pid) {
 }
 
 /* ---------- 3. Schedule (Gantt) ---------- */
+let _pmSchedSel = '';
+function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
-  const tasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
+  const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
+  let alld = []; allTasks.forEach(t => { if (t.start) alld.push(t.start); if (t.finish) alld.push(t.finish); }); if (p.startPlanned) alld.push(p.startPlanned); if (p.endPlanned) alld.push(p.endPlanned);
+  const pmin = alld.length ? alld.reduce((a, b) => a < b ? a : b) : _pmToday(), pmax = alld.length ? alld.reduce((a, b) => a > b ? a : b) : _pmToday();
+  // period selector options from the project timeline
+  const yA = +pmin.slice(0, 4), yB = +pmax.slice(0, 4); const years = []; for (let yy = yA; yy <= yB; yy++) years.push(yy);
+  const monthsOpt = []; { let d = new Date(yA, +pmin.slice(5, 7) - 1, 1); const e = new Date(yB, +pmax.slice(5, 7) - 1, 1); while (d <= e) { monthsOpt.push(d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2)); d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
+  const mLab = ym => { const a = ym.split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + " '" + a[0].slice(-2); };
+  // resolve selected period -> bounds + zoom
+  let selStart = pmin, selEnd = pmax, zoom = false;
+  if (_pmSchedSel.charAt(0) === 'Y') { const yv = _pmSchedSel.slice(1); selStart = yv + '-01-01'; selEnd = yv + '-12-31'; zoom = true; }
+  else if (_pmSchedSel.charAt(0) === 'M') { const ym = _pmSchedSel.slice(1), a = ym.split('-'); selStart = ym + '-01'; selEnd = ym + '-' + ('0' + new Date(+a[0], +a[1], 0).getDate()).slice(-2); zoom = true; }
+  const overlap = (st, fi) => (st || '9999-99') <= selEnd && (fi || '0000-00') >= selStart;
+  const tasks = zoom ? allTasks.filter(t => overlap(t.start || t.finish, t.finish || t.start)) : allTasks;
+  const min = zoom ? selStart : pmin, max = zoom ? selEnd : pmax, span = Math.max(1, _pmDateDiff(min, max) || 1);
   const tr = _pmTaskRollup(pid);
   const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Overdue milestones', tr.overdueMs, '#EF4444')]);
-  let dates = []; tasks.forEach(t => { if (t.start) dates.push(t.start); if (t.finish) dates.push(t.finish); }); if (p.startPlanned) dates.push(p.startPlanned); if (p.endPlanned) dates.push(p.endPlanned);
-  const min = dates.length ? dates.reduce((a, b) => a < b ? a : b) : _pmToday(), max = dates.length ? dates.reduce((a, b) => a > b ? a : b) : _pmToday();
-  const span = Math.max(1, _pmDateDiff(min, max) || 1);
-  const ROW = 26;
-  const _mlist = [];
-  { let d = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1); const endD = new Date(max);
-    while (d <= endD) { const ds = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-01'; const off = (_pmDateDiff(min, ds) || 0) / span * 100;
-      if (off <= 100.5) _mlist.push({ off: Math.max(0, off), lab: d.toLocaleString('en-US', { month: 'short' }) + ((d.getMonth() === 0 || _mlist.length === 0) ? " '" + String(d.getFullYear()).slice(-2) : '') });
-      d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
-  const _grid = _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;top:0;bottom:0;width:0;border-left:1px solid var(--line)"></div>').join('');
-  const _monthHdr = '<div style="position:relative;height:15px;margin-bottom:6px">' + _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>').join('') + '</div>';
-  const _todayOff = (_pmDateDiff(min, _pmToday()) || 0) / span * 100;
-  const _today = (_todayOff >= 0 && _todayOff <= 100) ? '<div style="position:absolute;left:' + _todayOff + '%;top:0;bottom:0;width:0;border-left:2px dashed #EF4444;z-index:3" title="Today"></div>' : '';
-  const _labels = '<div style="height:21px"></div>' + tasks.map(t => { const crit = String(t.critical) === 'Yes'; return '<div style="height:' + ROW + 'px;display:flex;align-items:center;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:8px;border-bottom:1px solid var(--soft-bg)">' + (t.wbs ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.wbs) + '</span>' : '') + _pmEsc(t.name || '') + (crit ? ' <span style="color:#EF4444;font-size:9px;font-weight:700;margin-left:4px">CP</span>' : '') + '</div>'; }).join('');
-  const _bars = tasks.map(t => { const sdt = t.start || min, f = t.finish || t.start || min; let off = Math.max(0, (_pmDateDiff(min, sdt) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(sdt, f) || 0) / span) * 100); if (off + w > 100) w = 100 - off;
-    const mile = String(t.isMilestone) === 'Yes', crit = String(t.critical) === 'Yes', overdue = t.status !== 'Completed' && t.finish && t.finish < _pmToday();
-    const hex = mile ? '#8B5CF6' : crit ? '#EF4444' : overdue ? '#F59E0B' : '#205090';
-    const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:7px;width:13px;height:13px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="Milestone ' + _pmFmt(f) + '"></div>'
-      : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:8px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
-    return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
-  const _dates = '<div style="height:21px"></div>' + tasks.map(t => '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + '</div>').join('');
-  const _timeline = _monthHdr + '<div style="position:relative">' + _grid + _today + _bars + '</div>';
-  const gantt = tasks.length ? ('<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt <span style="font-size:11px;color:var(--text-light);font-weight:400">(' + _pmFmt(min) + ' → ' + _pmFmt(max) + ')</span></div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div>' +
-    '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:210px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:320px">' + _timeline + '</div><div style="width:118px;flex-shrink:0">' + _dates + '</div></div>' +
-    '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div></div>')
-    : '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Schedule — Gantt</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div><div style="padding:16px;color:var(--text-light);text-align:center">No tasks yet — add tasks to see the timeline.</div></div>';
+  const sel = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSchedSet(this.value)" title="Filter the schedule by period"><option value="">All time</option><optgroup label="By year">' + years.map(yy => '<option value="Y' + yy + '"' + (_pmSchedSel === 'Y' + yy ? ' selected' : '') + '>' + yy + '</option>').join('') + '</optgroup><optgroup label="By month">' + monthsOpt.map(m => '<option value="M' + m + '"' + (_pmSchedSel === 'M' + m ? ' selected' : '') + '>' + mLab(m) + '</option>').join('') + '</optgroup></select>';
+  const hdrTop = '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Schedule — Gantt <span style="font-size:11px;color:var(--text-light);font-weight:400">(' + _pmFmt(min) + ' → ' + _pmFmt(max) + ')</span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + sel + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div></div>';
+  const LBLW = 330, ROW = 30;
+  let gantt;
+  if (!tasks.length) {
+    gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdrTop + '<div style="padding:18px;color:var(--text-light);text-align:center">' + (zoom ? 'No activities in this period.' : 'No tasks yet — add tasks to see the timeline.') + '</div></div>';
+  } else {
+    const _mlist = [];
+    { let d = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1); const endD = new Date(max);
+      while (d <= endD) { const ds = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-01'; const off = (_pmDateDiff(min, ds) || 0) / span * 100;
+        if (off <= 100.5) _mlist.push({ off: Math.max(0, off), lab: d.toLocaleString('en-US', { month: 'short' }) + ((d.getMonth() === 0 || _mlist.length === 0) ? " '" + String(d.getFullYear()).slice(-2) : '') });
+        d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
+    const _grid = _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;top:0;bottom:0;width:0;border-left:1px solid var(--line)"></div>').join('');
+    const _monthHdr = '<div style="position:relative;height:15px;margin-bottom:6px">' + _mlist.map(m => '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>').join('') + '</div>';
+    const _todayOff = (_pmDateDiff(min, _pmToday()) || 0) / span * 100;
+    const _today = (_todayOff >= 0 && _todayOff <= 100) ? '<div style="position:absolute;left:' + _todayOff + '%;top:0;bottom:0;width:0;border-left:2px dashed #EF4444;z-index:3" title="Today"></div>' : '';
+    const _labels = '<div style="height:21px"></div>' + tasks.map(t => { const crit = String(t.critical) === 'Yes'; const full = (t.wbs ? t.wbs + '  ' : '') + (t.name || ''); return '<div title="' + _tkEscA(full) + '" style="height:' + ROW + 'px;display:flex;align-items:center;font-size:11.5px;line-height:1.15;overflow:hidden;padding-right:10px;border-bottom:1px solid var(--soft-bg)"><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + (t.wbs ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.wbs) + '</span>' : '') + _pmEsc(t.name || '') + (crit ? ' <span style="color:#EF4444;font-size:9px;font-weight:700">CP</span>' : '') + '</span></div>'; }).join('');
+    const _bars = tasks.map(t => { const sdt = t.start || min, f = t.finish || t.start || min; let off = Math.max(0, (_pmDateDiff(min, sdt) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(sdt, f) || 0) / span) * 100); if (off > 100) off = 100; if (off + w > 100) w = 100 - off;
+      const mile = String(t.isMilestone) === 'Yes', crit = String(t.critical) === 'Yes', overdue = t.status !== 'Completed' && t.finish && t.finish < _pmToday();
+      const hex = mile ? '#8B5CF6' : crit ? '#EF4444' : overdue ? '#F59E0B' : '#205090';
+      const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:7px;width:13px;height:13px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="Milestone ' + _pmFmt(f) + '"></div>'
+        : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:8px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
+      return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
+    const _dates = '<div style="height:21px"></div>' + tasks.map(t => '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + '</div>').join('');
+    const _timeline = _monthHdr + '<div style="position:relative">' + _grid + _today + _bars + '</div>';
+    gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdrTop +
+      '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:360px">' + _timeline + '</div><div style="width:118px;flex-shrink:0">' + _dates + '</div></div>' +
+      '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div></div>';
+  }
   const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
-    { label: 'WBS', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
-    { label: 'Task', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
-    { label: 'Assignee', k: 'assignee' }, { label: 'Start', render: r => _pmFmt(r.start) }, { label: 'Finish', render: r => _pmFmt(r.finish) },
-    { label: '%', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
+    { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
+    { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
+    { label: 'Assignee', k: 'assignee' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
+    { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
   ], tasks), pmImportBtn());
   _pmSet(kpis + gantt + tbl);
 }
