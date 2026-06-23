@@ -6915,6 +6915,7 @@ async function tkQuickAddSave() {
     if (f.type === 'file') { data[f.k] = (document.getElementById('qa-' + f.k) || {}).value || ''; data[f.k + 'Name'] = (document.getElementById('qa-' + f.k + '-name') || {}).value || ''; return; }
     const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
+  if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   try {
     let item;
@@ -7528,7 +7529,9 @@ function _crmIni(nm) { return (nm || '?').split(/\s+/).filter(Boolean).slice(-2)
 function _crmAva(nm) { const e = (_DEMO_EMPLOYEES || []).find(x => x.name === nm); return e ? tkAvatar(e, 'ava-sm') : '<div class="ava-sm" style="background:' + tkAvatarColor(nm || '') + '">' + _crmEsc(_crmIni(nm)) + '</div>'; }
 async function _crmLoadAll() { await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_leads')]); }
 function _crmDealBadge(n) { const b = document.getElementById('badge-crm-deals'); if (!b) return; if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
-function _crmRefreshDealBadge() { const n = (_HR.crm_deals || []).filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => _crmActMeta(d)).filter(a => a && a.diff <= 0).length; _crmDealBadge(n); }
+function _crmSeeAll() { return _userRole !== 'staff'; }
+function _crmMine(arr) { if (_crmSeeAll()) return arr || []; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return (arr || []).filter(x => ((x.owner || '').toLowerCase()) === me); }
+function _crmRefreshDealBadge() { const n = _crmMine(_HR.crm_deals).filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => _crmActMeta(d)).filter(a => a && a.diff <= 0).length; _crmDealBadge(n); }
 function _crmTags(s) { return String(s || '').split(',').map(t => t.trim()).filter(Boolean); }
 /* next-activity meta: colour + label from activityDate (overdue red / today amber / upcoming green) */
 function _crmActMeta(d) {
@@ -7553,7 +7556,7 @@ async function crmRenderPipeline() {
   const root = document.getElementById('crm-pipeline-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products')]);
-  const deals = _HR.crm_deals || [];
+  const deals = _crmMine(_HR.crm_deals);
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
@@ -7578,7 +7581,7 @@ function crmFillPipe() {
   const q = (document.getElementById('crm-pipe-q') ? document.getElementById('crm-pipe-q').value : '').toLowerCase();
   const ow = document.getElementById('crm-pipe-owner') ? document.getElementById('crm-pipe-owner').value : '';
   const ty = document.getElementById('crm-pipe-type') ? document.getElementById('crm-pipe-type').value : '';
-  const deals = (_HR.crm_deals || []).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
+  const deals = _crmMine(_HR.crm_deals).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
   host.innerHTML = _CRM_STAGES.map(st => {
     const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
@@ -7631,7 +7634,7 @@ async function crmRenderLeads() {
   const root = document.getElementById('crm-leads-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
-  const leads = _HR.crm_leads || [];
+  const leads = _crmMine(_HR.crm_leads);
   const kpis = _hrKpiRow([
     _hrKpi('Total leads', leads.length),
     _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
@@ -7649,7 +7652,7 @@ function crmFillLeads() {
   const src = document.getElementById('crm-leads-source') ? document.getElementById('crm-leads-source').value : '';
   const ow = document.getElementById('crm-leads-owner') ? document.getElementById('crm-leads-owner').value : '';
   const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
-  const rows = (_HR.crm_leads || []).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow));
+  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow));
   tb.innerHTML = rows.length ? rows.map(l => {
     const done = l.converted || l.status === 'Qualified';
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
@@ -7661,9 +7664,9 @@ async function crmConvertLead(id) {
   if (l.converted || l.status === 'Qualified') { toast('This lead has already been converted', 'warn'); return; }
   if (!confirm('Convert "' + (l.name || 'lead') + '" into a deal?\n\nThis creates a deal (plus a company & contact) and marks the lead Qualified.')) return;
   try {
-    if (l.company) { const exists = (_HR.crm_companies || []).some(c => (c.name || '').toLowerCase() === l.company.toLowerCase()); if (!exists) { const r = await tkApi('/api/coll/crm_companies', { method: 'POST', body: { name: l.company, owner: l.owner || '', note: 'From lead' } }); (_HR.crm_companies = _HR.crm_companies || []).push(r.item); } }
-    if (l.name) { const cExists = (_HR.crm_contacts || []).some(c => (c.name || '').toLowerCase() === l.name.toLowerCase() && (c.company || '').toLowerCase() === (l.company || '').toLowerCase()); if (!cExists) { const r = await tkApi('/api/coll/crm_contacts', { method: 'POST', body: { name: l.name, company: l.company || '', email: l.email || '', phone: l.phone || '', owner: l.owner || '' } }); (_HR.crm_contacts = _HR.crm_contacts || []).push(r.item); } }
-    const rd = await tkApi('/api/coll/crm_deals', { method: 'POST', body: { title: (l.company || l.name) + ' — opportunity', company: l.company || '', contact: l.name || '', value: l.value || 0, stage: 'Qualified', owner: l.owner || '', note: 'Converted from lead' } });
+    if (l.company) { const exists = (_HR.crm_companies || []).some(c => (c.name || '').toLowerCase() === l.company.toLowerCase()); if (!exists) { const r = await tkApi('/api/coll/crm_companies', { method: 'POST', body: { name: l.company, owner: l.owner || (TK.user && TK.user.name) || '', note: 'From lead' } }); (_HR.crm_companies = _HR.crm_companies || []).push(r.item); } }
+    if (l.name) { const cExists = (_HR.crm_contacts || []).some(c => (c.name || '').toLowerCase() === l.name.toLowerCase() && (c.company || '').toLowerCase() === (l.company || '').toLowerCase()); if (!cExists) { const r = await tkApi('/api/coll/crm_contacts', { method: 'POST', body: { name: l.name, company: l.company || '', email: l.email || '', phone: l.phone || '', owner: l.owner || (TK.user && TK.user.name) || '' } }); (_HR.crm_contacts = _HR.crm_contacts || []).push(r.item); } }
+    const rd = await tkApi('/api/coll/crm_deals', { method: 'POST', body: { title: (l.company || l.name) + ' — opportunity', company: l.company || '', contact: l.name || '', value: l.value || 0, stage: 'Qualified', owner: l.owner || (TK.user && TK.user.name) || '', note: 'Converted from lead' } });
     (_HR.crm_deals = _HR.crm_deals || []).push(rd.item);
     await tkApi('/api/coll/crm_leads/' + id, { method: 'PATCH', body: Object.assign({}, l, { status: 'Qualified', converted: true }) }); l.status = 'Qualified'; l.converted = true;
     _crmRefreshDealBadge();
@@ -7677,7 +7680,7 @@ async function crmRenderCompanies() {
   const root = document.getElementById('crm-companies-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_deals')]);
-  const cos = _HR.crm_companies || []; const deals = _HR.crm_deals || [];
+  const cos = _HR.crm_companies || []; const deals = _crmMine(_HR.crm_deals);
   const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-co-q', 'Search company…', 'crmFillCompanies') + _crmFiltSel('crm-co-ind', 'All industries', _crmDistinct(cos, 'industry'), 'crmFillCompanies') + _crmFiltSel('crm-co-owner', 'All owners', _crmDistinct(cos, 'owner'), 'crmFillCompanies'));
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
@@ -7688,7 +7691,7 @@ function crmFillCompanies() {
   const q = (document.getElementById('crm-co-q') ? document.getElementById('crm-co-q').value : '').toLowerCase();
   const ind = document.getElementById('crm-co-ind') ? document.getElementById('crm-co-ind').value : '';
   const ow = document.getElementById('crm-co-owner') ? document.getElementById('crm-co-owner').value : '';
-  const deals = _HR.crm_deals || [];
+  const deals = _crmMine(_HR.crm_deals);
   const rows = (_HR.crm_companies || []).filter(c => (!q || (c.name || '').toLowerCase().indexOf(q) >= 0) && (!ind || (c.industry || '') === ind) && (!ow || (c.owner || '') === ow));
   tb.innerHTML = rows.length ? rows.map(c => {
     const dv = deals.filter(d => (d.company || '') === c.name).reduce((s, d) => s + (+d.value || 0), 0);
@@ -7815,18 +7818,36 @@ function _crmInPeriod(dateStr) {
   if (_crmPeriod === 'year') return ds.slice(0, 4) === String(_crmPeriodYear);
   return true;
 }
-function crmPickMonth(v) { if (!v) return; _crmPeriod = 'month'; _crmPeriodMonth = v; crmRenderDashboard(); }
-function crmPickYear(v) { if (!v) return; _crmPeriod = 'year'; _crmPeriodYear = v; crmRenderDashboard(); }
+function _crmSelYear() {
+  if (_crmPeriod === 'month' && _crmPeriodMonth) return _crmPeriodMonth.slice(0, 4);
+  if (_crmPeriod === 'year' && _crmPeriodYear) return String(_crmPeriodYear);
+  return String(new Date().getFullYear());
+}
+function _crmSelMon() { return (_crmPeriod === 'month' && _crmPeriodMonth) ? _crmPeriodMonth.slice(5, 7) : ''; }
+function crmPickMonth(m) {
+  const y = _crmSelYear();
+  if (!m) { _crmPeriod = 'year'; _crmPeriodYear = y; }
+  else { _crmPeriod = 'month'; _crmPeriodMonth = y + '-' + m; }
+  crmRenderDashboard();
+}
+function crmPickYear(y) {
+  if (!y) return;
+  const m = _crmSelMon();
+  if (m) { _crmPeriod = 'month'; _crmPeriodMonth = y + '-' + m; }
+  else { _crmPeriod = 'year'; _crmPeriodYear = y; }
+  crmRenderDashboard();
+}
 function _crmPeriodBar() {
   const now = new Date();
   const btn = (k, l) => '<button onclick="crmSetPeriod(\'' + k + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;' + (_crmPeriod === k ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + l + '</button>';
   const seg = '<div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + btn('all', 'All time') + btn('week', 'This week') + '</div>';
-  const months = []; for (let i = 0; i < 18; i++) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ k: dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2), l: dt.toLocaleString('en-US', { month: 'short', year: 'numeric' }) }); }
-  const mActive = _crmPeriod === 'month';
-  const monthSel = '<select class="form-control" title="Pick a month" style="width:auto;font-size:12px;' + (mActive ? 'border-color:var(--navy);font-weight:700;color:var(--navy)' : '') + '" onchange="crmPickMonth(this.value)">' + (mActive ? '' : '<option value="">Month…</option>') + months.map(m => '<option value="' + m.k + '"' + (mActive && m.k === _crmPeriodMonth ? ' selected' : '') + '>' + m.l + '</option>').join('') + '</select>';
+  const act = (_crmPeriod === 'month' || _crmPeriod === 'year');
+  const selY = _crmSelYear(); const selM = _crmSelMon();
+  const sStyle = (on) => 'width:auto;font-size:12px;' + (on ? 'border-color:var(--navy);font-weight:700;color:var(--navy)' : '');
+  const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthSel = '<select class="form-control" title="Month" style="' + sStyle(_crmPeriod === 'month') + '" onchange="crmPickMonth(this.value)"><option value="">All months</option>' + MN.map((nm, idx) => { const mm = ('0' + (idx + 1)).slice(-2); return '<option value="' + mm + '"' + (selM === mm ? ' selected' : '') + '>' + nm + '</option>'; }).join('') + '</select>';
   const cy = now.getFullYear(); const dy = (_HR.crm_deals || []).map(d => +String(d.wonDate || d.closeDate || '').slice(0, 4)).filter(Boolean); const minY = Math.min(cy - 4, dy.length ? Math.min.apply(null, dy) : cy); const years = []; for (let y = cy; y >= minY; y--) years.push(y);
-  const yActive = _crmPeriod === 'year';
-  const yearSel = '<select class="form-control" title="Pick a year" style="width:auto;font-size:12px;' + (yActive ? 'border-color:var(--navy);font-weight:700;color:var(--navy)' : '') + '" onchange="crmPickYear(this.value)">' + (yActive ? '' : '<option value="">Year…</option>') + years.map(y => '<option value="' + y + '"' + (yActive && String(y) === String(_crmPeriodYear) ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  const yearSel = '<select class="form-control" title="Year" style="' + sStyle(act) + '" onchange="crmPickYear(this.value)">' + years.map(y => '<option value="' + y + '"' + (String(y) === selY ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   return seg + monthSel + yearSel;
 }
 let _crmDashOwner = '';
@@ -7834,7 +7855,7 @@ let _crmDashType = '';
 function crmSetDashOwner(v) { _crmDashOwner = v; crmRenderDashboard(); }
 function crmSetDashType(v) { _crmDashType = v; crmRenderDashboard(); }
 function _crmDashControls() {
-  const deals = _HR.crm_deals || [];
+  const deals = _crmMine(_HR.crm_deals);
   const owners = [...new Set(deals.map(d => d.owner).filter(Boolean))].sort();
   const ownSel = '<select class="form-control" title="Filter by salesman" style="width:auto;font-size:12px" onchange="crmSetDashOwner(this.value)"><option value="">All salesmen</option>' + owners.map(o => '<option' + ((_crmDashOwner || '') === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select>';
   const typeSel = '<select class="form-control" title="Filter by product / service type" style="width:auto;font-size:12px" onchange="crmSetDashType(this.value)"><option value="">All types</option>' + _CRM_TYPES.map(t => '<option' + ((_crmDashType || '') === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
@@ -7845,8 +7866,8 @@ async function crmRenderDashboard() {
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await _crmLoadAll();
   const _fO = _crmDashOwner || '', _fT = _crmDashType || '';
-  const deals = (_HR.crm_deals || []).filter(d => (!_fO || (d.owner || '') === _fO) && (!_fT || (d.ptype || '') === _fT));
-  const leads = (_HR.crm_leads || []).filter(l => !_fO || (l.owner || '') === _fO);
+  const deals = _crmMine(_HR.crm_deals).filter(d => (!_fO || (d.owner || '') === _fO) && (!_fT || (d.ptype || '') === _fT));
+  const leads = _crmMine(_HR.crm_leads).filter(l => !_fO || (l.owner || '') === _fO);
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
   const wonP = won.filter(d => _crmInPeriod(d.wonDate || d.closeDate));
