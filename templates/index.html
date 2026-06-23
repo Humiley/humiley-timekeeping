@@ -8793,7 +8793,7 @@ async function pmSaveSpLink(pid) {
     try { tkAudit('SharePoint link saved', p.name || '', url); } catch (e) { }
     toast(url ? 'SharePoint link saved — generating folder-creation script…' : 'SharePoint link cleared', 'success', 5000);
     pmTab('overview');
-    if (url) setTimeout(function () { pmSpScript(pid); }, 300);
+    if (url) setTimeout(function () { pmSpBuildFolders(pid); }, 300);
   } catch (e) { toast('Save failed: ' + e.message, 'error', 6000); }
 }
 function _pmOverviewSpCard(p) {
@@ -9293,7 +9293,7 @@ function _pmFoldersCard(p) {
   });
   const head = '<thead><tr>' + ['Folder', 'Owner', 'Confidentiality', 'Retention'].map(function (h) { return '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('') + '</tr></thead>';
   const table = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">' + head + '<tbody>' + rows + '</tbody></table></div>';
-  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
+  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button>' + ((window._msalApp && _account) ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSpCreateFoldersGraph(\'' + p.id + '\')" title="Create the folders directly in SharePoint via Microsoft 365">' + tkIcon('external', 12) + ' Create in SharePoint</button>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
   const banner = canDeep ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">Linked to <a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" style="color:var(--navy);word-break:break-all">' + _pmEsc(base.length > 70 ? base.slice(0, 70) + '…' : base) + '</a> — every folder below opens directly in SharePoint.</div>' : (linked ? '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">This looks like a SharePoint <b>share link</b> — <b>Open library</b> opens it, but for a one-click link into each sub-folder paste the folder\'s <b>address-bar URL</b> (the one containing <code>/Shared Documents/…</code>) into <b>Edit → SharePoint docs folder</b>.</div>' : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">Paste your project\'s SharePoint folder link in <b>Edit → SharePoint docs folder</b> and Save — then every folder below becomes a one-click link. Use <b>Create folders (script)</b> to auto-build the empty structure in SharePoint.</div>');
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Document Structure (SharePoint)</div>' + tools + '</div><div style="padding:12px 16px">' + banner + table + '</div></div>';
 }
@@ -9316,6 +9316,53 @@ function pmSpScript(pid) {
   } catch (e) { toast('Download failed: ' + e.message, 'error', 6000); }
   try { tkAudit('PM SharePoint folder script generated', p.name || '', paths.length + ' folders'); } catch (e) { }
 }
+
+function pmSpBuildFolders(pid) {
+  if (window._msalApp && _account) { toast('Creating SharePoint folders…'); pmSpCreateFoldersGraph(pid).then(function (ok) { if (!ok) pmSpScript(pid); }).catch(function () { pmSpScript(pid); }); }
+  else { pmSpScript(pid); }
+}
+async function pmSpCreateFoldersGraph(pid) {
+  const p = _pmProj(pid); if (!p) return false;
+  if (!(window._msalApp && _account)) return false;
+  const base = _pmSpBase(p), ctx = base ? _pmSpCtx(base) : null;
+  if (!ctx || (ctx.mode !== 'view' && ctx.mode !== 'path')) { toast('Paste the folder address-bar URL (…/Shared Documents/…) to auto-create folders in SharePoint.', 'warn', 8000); return false; }
+  let host, rootRel;
+  try { const u = new URL(base); host = u.hostname; rootRel = String(ctx.root || '').replace(/^\/+|\/+$/g, ''); } catch (e) { return false; }
+  const segs = rootRel.split('/'), sIdx = segs.indexOf('sites');
+  if (sIdx < 0 || segs.length < sIdx + 2) { toast('Unrecognised SharePoint site URL — use Create folders (script) instead.', 'warn', 8000); return false; }
+  const sitePath = '/' + segs.slice(sIdx, sIdx + 2).join('/');
+  const afterSite = segs.slice(sIdx + 2), libName = afterSite[0] || 'Shared Documents', projRel = afterSite.slice(1).join('/');
+  let token;
+  try { const r = await _msalApp.acquireTokenSilent({ scopes: ['Sites.ReadWrite.All'], account: _account }); token = r.accessToken; }
+  catch (e) { try { const r2 = await _msalApp.acquireTokenPopup({ scopes: ['Sites.ReadWrite.All'] }); token = r2.accessToken; } catch (e2) { toast('SharePoint permission not granted: ' + (e2.message || e2), 'error', 9000); return false; } }
+  const G = 'https://graph.microsoft.com/v1.0', H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  let siteId, driveId;
+  try {
+    const sr = await fetch(G + '/sites/' + host + ':' + sitePath, { headers: H }); if (!sr.ok) throw new Error('site ' + sr.status); siteId = (await sr.json()).id;
+    const dr = await fetch(G + '/sites/' + siteId + '/drives', { headers: H }); if (!dr.ok) throw new Error('drives ' + dr.status);
+    const drives = ((await dr.json()).value) || [];
+    const drv = drives.find(function (d) { return d.name === libName; }) || drives.find(function (d) { return /shared documents|^documents$/i.test(d.name || ''); }) || drives.find(function (d) { return (d.webUrl || '').toLowerCase().indexOf(encodeURI(libName).toLowerCase()) >= 0; }) || drives[0];
+    if (!drv) throw new Error('no document library'); driveId = drv.id;
+  } catch (e) { toast('Could not resolve the SharePoint library (' + (e.message || e) + ') — use Create folders (script).', 'error', 9000); return false; }
+  const allDirs = new Set();
+  const addPath = function (path) { const parts = path.split('/'); let acc = ''; parts.forEach(function (seg) { acc = acc ? acc + '/' + seg : seg; allDirs.add(acc); }); };
+  if (projRel) addPath(projRel);
+  _pmSpRelPaths().forEach(function (r) { addPath((projRel ? projRel + '/' : '') + r); });
+  const sorted = [...allDirs].sort(function (a, b) { return a.split('/').length - b.split('/').length || a.localeCompare(b); });
+  let made = 0, exist = 0, failed = 0;
+  for (const dir of sorted) {
+    const idx = dir.lastIndexOf('/'), parent = idx >= 0 ? dir.slice(0, idx) : '', name = idx >= 0 ? dir.slice(idx + 1) : dir;
+    const enc = parent ? ':/' + parent.split('/').map(encodeURIComponent).join('/') + ':' : '';
+    try {
+      const res = await fetch(G + '/drives/' + driveId + '/root' + enc + '/children', { method: 'POST', headers: H, body: JSON.stringify({ name: name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }) });
+      if (res.ok) made++; else if (res.status === 409) exist++; else failed++;
+    } catch (e) { failed++; }
+  }
+  toast('SharePoint: ' + made + ' folder(s) created' + (exist ? ', ' + exist + ' already existed' : '') + (failed ? ', ' + failed + ' failed' : '') + '.', failed ? 'warn' : 'success', 9000);
+  try { tkAudit('SharePoint folders created (Graph)', p.name || '', made + ' created / ' + exist + ' existed'); } catch (e) { }
+  return true;
+}
+
 
 function pmRenderRfis(pid) {
   const p = _pmProj(pid);
