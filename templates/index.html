@@ -7815,21 +7815,19 @@ function _crmInPeriod(dateStr) {
   if (_crmPeriod === 'year') return ds.slice(0, 4) === String(_crmPeriodYear);
   return true;
 }
+function crmPickMonth(v) { if (!v) return; _crmPeriod = 'month'; _crmPeriodMonth = v; crmRenderDashboard(); }
+function crmPickYear(v) { if (!v) return; _crmPeriod = 'year'; _crmPeriodYear = v; crmRenderDashboard(); }
 function _crmPeriodBar() {
-  const opts = [['all', 'All time'], ['week', 'This week'], ['month', 'Month'], ['year', 'Year']];
-  const seg = '<div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + opts.map(o => '<button onclick="crmSetPeriod(\'' + o[0] + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:5px 12px;border-radius:6px;' + (_crmPeriod === o[0] ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + o[1] + '</button>').join('') + '</div>';
-  let extra = '';
-  if (_crmPeriod === 'month') {
-    const now = new Date(); const months = [];
-    for (let i = 0; i < 18; i++) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ k: dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2), l: dt.toLocaleString('en-US', { month: 'short', year: 'numeric' }) }); }
-    extra = '<select class="form-control" title="Choose month" style="width:auto;font-size:12px" onchange="crmSetPeriodMonth(this.value)">' + months.map(m => '<option value="' + m.k + '"' + (m.k === _crmPeriodMonth ? ' selected' : '') + '>' + m.l + '</option>').join('') + '</select>';
-  } else if (_crmPeriod === 'year') {
-    const cy = new Date().getFullYear(); const dy = (_HR.crm_deals || []).map(d => +String(d.wonDate || d.closeDate || '').slice(0, 4)).filter(Boolean);
-    const minY = Math.min(cy - 4, dy.length ? Math.min.apply(null, dy) : cy); const years = [];
-    for (let y = cy; y >= minY; y--) years.push(y);
-    extra = '<select class="form-control" title="Choose year" style="width:auto;font-size:12px" onchange="crmSetPeriodYear(this.value)">' + years.map(y => '<option value="' + y + '"' + (String(y) === String(_crmPeriodYear) ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
-  }
-  return seg + extra;
+  const now = new Date();
+  const btn = (k, l) => '<button onclick="crmSetPeriod(\'' + k + '\')" style="border:none;cursor:pointer;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;' + (_crmPeriod === k ? 'background:var(--navy);color:#fff' : 'background:transparent;color:var(--text-light)') + '">' + l + '</button>';
+  const seg = '<div style="display:inline-flex;background:var(--soft-bg);border-radius:8px;padding:3px;gap:2px">' + btn('all', 'All time') + btn('week', 'This week') + '</div>';
+  const months = []; for (let i = 0; i < 18; i++) { const dt = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push({ k: dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2), l: dt.toLocaleString('en-US', { month: 'short', year: 'numeric' }) }); }
+  const mActive = _crmPeriod === 'month';
+  const monthSel = '<select class="form-control" title="Pick a month" style="width:auto;font-size:12px;' + (mActive ? 'border-color:var(--navy);font-weight:700;color:var(--navy)' : '') + '" onchange="crmPickMonth(this.value)">' + (mActive ? '' : '<option value="">Month…</option>') + months.map(m => '<option value="' + m.k + '"' + (mActive && m.k === _crmPeriodMonth ? ' selected' : '') + '>' + m.l + '</option>').join('') + '</select>';
+  const cy = now.getFullYear(); const dy = (_HR.crm_deals || []).map(d => +String(d.wonDate || d.closeDate || '').slice(0, 4)).filter(Boolean); const minY = Math.min(cy - 4, dy.length ? Math.min.apply(null, dy) : cy); const years = []; for (let y = cy; y >= minY; y--) years.push(y);
+  const yActive = _crmPeriod === 'year';
+  const yearSel = '<select class="form-control" title="Pick a year" style="width:auto;font-size:12px;' + (yActive ? 'border-color:var(--navy);font-weight:700;color:var(--navy)' : '') + '" onchange="crmPickYear(this.value)">' + (yActive ? '' : '<option value="">Year…</option>') + years.map(y => '<option value="' + y + '"' + (yActive && String(y) === String(_crmPeriodYear) ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  return seg + monthSel + yearSel;
 }
 let _crmDashOwner = '';
 let _crmDashType = '';
