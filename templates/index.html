@@ -8741,7 +8741,8 @@ const _PM_TABS = [
   { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
   { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
   { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders' },
-  { k: 'docs', label: 'Doc Control', fn: 'pmRenderRfis' }
+  { k: 'docs', label: 'Doc Control', fn: 'pmRenderRfis' },
+  { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments' }
 ];
 function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
 async function pmRenderWorkspace() {
@@ -9165,32 +9166,47 @@ const _PM_SP_TPL = [
 
 function _pmConfClr(c) { return c === 'Restricted' ? '#DC2626' : c === 'Confidential' ? '#D97706' : '#64748B'; }
 function _pmSpBase(p) { return (typeof _crmHref === 'function') ? _crmHref(p && p.sharepointUrl) : ((p && p.sharepointUrl) || ''); }
-function _pmSpCleanBase(base) { try { const u = new URL(base); const idp = u.searchParams.get('id'); if (idp) return (u.origin + idp).replace(/\/+$/, ''); return (u.origin + u.pathname).replace(/\/+$/, ''); } catch (e) { return String(base || '').replace(/\/+$/, ''); } }
-function _pmSpFolderUrl(base, rel) { return base.replace(/\/+$/, '') + '/' + rel.split('/').map(encodeURIComponent).join('/'); }
+function _pmSpCtx(base) {
+  try {
+    const u = new URL(base);
+    if (/^\/:[a-z]:\//i.test(u.pathname)) return { mode: 'token', open: base };
+    const idp = u.searchParams.get('id');
+    if (idp) return { mode: 'view', view: u.origin + u.pathname, root: idp.replace(/\/+$/, ''), viewid: u.searchParams.get('viewid') || '', open: base };
+    const path = decodeURIComponent(u.pathname).replace(/\/+$/, '');
+    return { mode: 'path', origin: u.origin, root: path, open: u.origin + path.split('/').map(encodeURIComponent).join('/') };
+  } catch (e) { return { mode: 'none', open: String(base || '') }; }
+}
+function _pmSpFolderUrl(ctx, rel) {
+  if (!ctx) return '';
+  if (ctx.mode === 'view') return ctx.view + '?id=' + encodeURIComponent(ctx.root + '/' + rel) + (ctx.viewid ? '&viewid=' + encodeURIComponent(ctx.viewid) : '');
+  if (ctx.mode === 'path') return ctx.origin + ctx.root.split('/').map(encodeURIComponent).join('/') + '/' + rel.split('/').map(encodeURIComponent).join('/');
+  return '';
+}
 function _pmSpRelPaths() { const out = []; let parent = ''; _PM_SP_TPL.forEach(function (r) { if (r[0] === 1) { parent = r[1]; out.push(r[1]); } else { out.push(parent + '/' + r[1]); } }); return out; }
 function pmSpCopyPaths() { const t = _pmSpRelPaths().join('\n'); if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(t).then(function () { toast('Folder list copied (' + _pmSpRelPaths().length + ' folders)', 'success'); }).catch(function () { toast('Copy failed', 'warn'); }); } else { toast('Clipboard not available', 'warn'); } }
 function _pmFoldersCard(p) {
-  const base = _pmSpBase(p), linked = !!base, cb = linked ? _pmSpCleanBase(base) : '';
+  const base = _pmSpBase(p), ctx = base ? _pmSpCtx(base) : null, linked = !!base, canDeep = !!(ctx && (ctx.mode === 'view' || ctx.mode === 'path'));
   const fIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" style="vertical-align:-2px;margin-right:5px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
   let parent = '', rows = '';
   _PM_SP_TPL.forEach(function (r) {
     const lvl = r[0], name = r[1], docs = r[2], owner = r[3], conf = r[4], ret = r[5];
     const rel = lvl === 1 ? (parent = name, name) : parent + '/' + name;
     const ind = lvl === 1 ? 0 : 22;
-    const nameHtml = linked ? '<a href="' + _tkEscA(_pmSpFolderUrl(cb, rel)) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;font-weight:' + (lvl === 1 ? 700 : 600) + '">' + _pmEsc(name) + '</a>' : '<span style="font-weight:' + (lvl === 1 ? 700 : 600) + ';color:var(--text-dark)">' + _pmEsc(name) + '</span>';
+    const nameHtml = canDeep ? '<a href="' + _tkEscA(_pmSpFolderUrl(ctx, rel)) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;font-weight:' + (lvl === 1 ? 700 : 600) + '">' + _pmEsc(name) + '</a>' : '<span style="font-weight:' + (lvl === 1 ? 700 : 600) + ';color:var(--text-dark)">' + _pmEsc(name) + '</span>';
     rows += '<tr style="border-bottom:1px solid var(--soft-bg)' + (lvl === 1 ? ';background:rgba(32,80,144,.03)' : '') + '"><td style="padding:6px 8px 6px ' + (12 + ind) + 'px">' + fIcon + nameHtml + (docs ? '<div style="font-size:10.5px;color:var(--text-light);margin-left:18px">' + _pmEsc(docs) + '</div>' : '') + '</td><td style="padding:6px 8px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(owner) + '</td><td style="padding:6px 8px"><span style="font-size:9.5px;font-weight:700;color:#fff;background:' + _pmConfClr(conf) + ';padding:2px 7px;border-radius:10px;white-space:nowrap">' + conf + '</span></td><td style="padding:6px 8px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(ret) + '</td></tr>';
   });
   const head = '<thead><tr>' + ['Folder', 'Owner', 'Confidentiality', 'Retention'].map(function (h) { return '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('') + '</tr></thead>';
   const table = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">' + head + '<tbody>' + rows + '</tbody></table></div>';
-  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(cb) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
-  const banner = linked ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">Linked to <a href="' + _tkEscA(cb) + '" target="_blank" rel="noopener" style="color:var(--navy);word-break:break-all">' + _pmEsc(base.length > 70 ? base.slice(0, 70) + '…' : base) + '</a> — every folder below opens directly in SharePoint.</div>' : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">Paste your project\'s SharePoint folder link in <b>Edit → SharePoint docs folder</b> and Save — then every folder below becomes a one-click link. Use <b>Create folders (script)</b> to auto-build the empty structure in SharePoint.</div>';
+  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
+  const banner = canDeep ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">Linked to <a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" style="color:var(--navy);word-break:break-all">' + _pmEsc(base.length > 70 ? base.slice(0, 70) + '…' : base) + '</a> — every folder below opens directly in SharePoint.</div>' : (linked ? '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">This looks like a SharePoint <b>share link</b> — <b>Open library</b> opens it, but for a one-click link into each sub-folder paste the folder\'s <b>address-bar URL</b> (the one containing <code>/Shared Documents/…</code>) into <b>Edit → SharePoint docs folder</b>.</div>' : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">Paste your project\'s SharePoint folder link in <b>Edit → SharePoint docs folder</b> and Save — then every folder below becomes a one-click link. Use <b>Create folders (script)</b> to auto-build the empty structure in SharePoint.</div>');
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Document Structure (SharePoint)</div>' + tools + '</div><div style="padding:12px 16px">' + banner + table + '</div></div>';
 }
 function pmSpScript(pid) {
   const p = _pmProj(pid); if (!p) return;
   const base = _pmSpBase(p);
   let siteUrl = 'https://YOURTENANT.sharepoint.com/sites/Projects', libRoot = (p.code || p.name || 'Project').replace(/[^A-Za-z0-9_\-]+/g, '_');
-  try { if (base) { const u = new URL(base); const idp = u.searchParams.get('id'); let sr = idp ? decodeURIComponent(idp) : decodeURIComponent(u.pathname); const m = sr.match(/^(\/sites\/[^\/]+)\/(.*)$/); if (m) { siteUrl = u.origin + m[1]; libRoot = m[2].replace(/\/+$/, ''); } else { siteUrl = u.origin; libRoot = sr.replace(/^\/+/, '').replace(/\/+$/, ''); } } } catch (e) { }
+  const ctx = base ? _pmSpCtx(base) : null;
+  if (ctx && (ctx.mode === 'view' || ctx.mode === 'path')) { try { const o = new URL(base).origin; const sr = ctx.root; const m = sr.match(/^(\/sites\/[^\/]+)\/(.*)$/); if (m) { siteUrl = o + m[1]; libRoot = m[2].replace(/\/+$/, ''); } else { siteUrl = o; libRoot = sr.replace(/^\/+/, '').replace(/\/+$/, ''); } } catch (e) { } }
   const paths = _pmSpRelPaths();
   const arr = paths.map(function (f) { return '  "' + f + '"'; }).join(',\n');
   const L = ['# ============================================================', '#  Humiley PMC - auto-create SharePoint project folder structure', '#  Project: ' + ((p.code ? p.code + ' - ' : '') + (p.name || '')), '#  Generated by the Humiley People & Workplace Portal', '# ------------------------------------------------------------', '#  1) One-time setup:  Install-Module PnP.PowerShell -Scope CurrentUser', '#  2) Check $SiteUrl and $LibRoot below, then run this script in PowerShell.', '#     It creates any missing (empty) folders and skips ones that already exist.', '# ============================================================', '', '$SiteUrl = "' + siteUrl + '"', '$LibRoot = "' + libRoot + '"   # library + project root, e.g. "Shared Documents/2026-031-Coastal"', '', 'Connect-PnPOnline -Url $SiteUrl -Interactive', '', '$folders = @(', arr, ')', '', 'foreach ($f in $folders) {', '  $target = "$LibRoot/$f"', '  Resolve-PnPFolder -SiteRelativePath $target | Out-Null', '  Write-Host "  ensured  $target"', '}', 'Write-Host ("Done - " + $folders.Count + " folders ensured under " + $LibRoot)'];
@@ -9225,7 +9241,14 @@ function pmRenderRfis(pid) {
     { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
     { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }
   ], sdr));
-  _pmSet(kpis + tbl + sdrTbl + _pmFoldersCard(p));
+  _pmSet(kpis + tbl + sdrTbl);
+}
+function pmRenderDocuments(pid) {
+  const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
+  const linked = !!_pmSpBase(p);
+  const sections = _PM_SP_TPL.filter(function (r) { return r[0] === 1; }).length;
+  const kpis = _hrKpiRow([_hrKpi('Folders', _PM_SP_TPL.length, 'var(--navy)'), _hrKpi('Top-level sections', sections, '#8B5CF6'), _hrKpi('SharePoint', linked ? 'Linked' : 'Not linked', linked ? 'var(--emerald)' : '#F59E0B')]);
+  _pmSet(kpis + _pmFoldersCard(p));
 }
 /* ============================================================================
    PM PORTFOLIO — executive cross-project dashboard (the PMC landing screen)
@@ -9383,6 +9406,11 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'Documents': 'Tài liệu',
+  'Folders': 'Số thư mục',
+  'Top-level sections': 'Mục cấp cao',
+  'Linked': 'Đã liên kết',
+  'Not linked': 'Chưa liên kết',
   'Day range': 'Khoảng ngày',
   'Project Document Structure (SharePoint)': 'Cấu trúc thư mục dự án (SharePoint)',
   'Open library': 'Mở thư viện',
