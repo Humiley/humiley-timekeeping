@@ -6904,21 +6904,21 @@ const _QA_SPECS = {
     { k: 'rag', label: 'Health (auto if blank)', type: 'select', options: ['', 'Green', 'Amber', 'Red'] },
     { k: 'percentComplete', label: 'Overall % complete', type: 'number' },
     { k: 'objectives', label: 'Objectives', type: 'textarea' }, { k: 'scopeStatement', label: 'Scope summary', type: 'textarea' },
-    { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+    { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'image', label: 'Project image (photo / render)', type: 'file' }] },
   pm_changes: { title: 'Change Request', coll: 'pm_changes', reload: 'pm_changes', fields: [
-    { k: 'title', label: 'Change title' }, { k: 'crNo', label: 'CR No.' },
+    { k: 'title', label: 'Change title' },
     { k: 'type', label: 'Type', type: 'select', options: ['Scope', 'Schedule', 'Cost', 'Quality', 'Resource', 'Risk', 'Contract', 'Other'] },
     { k: 'category', label: 'Category', type: 'select', options: ['Client-requested', 'Design Change', 'Site Condition', 'Regulatory', 'Error / Omission', 'Value Engineering', 'Force Majeure'] },
     { k: 'impactScheduleDays', label: 'Schedule impact (days)', type: 'number' }, { k: 'impactCost', label: 'Cost impact (₫)', type: 'money' },
     { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High', 'Critical'] },
     { k: 'requestedBy', label: 'Requested by', type: 'select', options: 'employees' }, { k: 'requestedDate', label: 'Requested date', type: 'date' },
-    { k: 'decision', label: 'Decision', type: 'select', options: ['Pending', 'Approved', 'Rejected'] }, { k: 'description', label: 'Description', type: 'textarea' }] },
+    { k: 'decision', label: 'Decision', type: 'select', options: ['Pending', 'Approved', 'Rejected'] }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_lessons: { title: 'Lesson Learned', coll: 'pm_lessons', reload: 'pm_lessons', fields: [
     { k: 'title', label: 'Title' }, { k: 'category', label: 'Category' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'type', label: 'Type', type: 'select', options: ['Positive', 'Negative', 'Improvement'] },
     { k: 'situation', label: 'Situation', type: 'textarea' }, { k: 'recommendation', label: 'Recommendation', type: 'textarea' },
-    { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'date', label: 'Date', type: 'date' }] },
+    { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'date', label: 'Date', type: 'date' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_deliverables: { title: 'Deliverable / WBS', coll: 'pm_deliverables', reload: 'pm_deliverables', fields: [
     { k: 'name', label: 'Deliverable name' }, { k: 'wbsCode', label: 'WBS code (e.g. 1.2.3)' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'due', label: 'Due', type: 'date' },
@@ -7048,7 +7048,7 @@ async function tkQuickAddSave() {
     const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
-  if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); }
+  if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   try {
     let item;
@@ -8394,6 +8394,18 @@ function _pmDerive(coll, data) {
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
   if (coll === 'pm_tasks') { const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d; }
 }
+/* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
+const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' } };
+function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
+function _pmAutoNumber(coll, data) {
+  const sp = _PM_NUMSPEC[coll]; if (!sp) return;
+  if (String(data[sp.f] || '').trim()) return;
+  const pid = data.projectId || _pmPid(); if (!pid) return;
+  let tag = sp.tag; if (coll === 'pm_quality') tag = ({ NCR: 'NCR', Inspection: 'INS', Audit: 'AUD', Test: 'TST', 'ITP item': 'ITP' })[data.type] || 'QA';
+  const nums = _pmScopeFor(coll, pid).map(x => { const m = String(x[sp.f] || '').match(/(\d+)\s*$/); return m ? +m[1] : 0; });
+  const seq = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
+  data[sp.f] = _pmPrefix3(pid) + '-' + tag + '-' + ('00' + seq).slice(-3);
+}
 
 /* ---- Resources is the sole writer of pm_projects.members[] ---- */
 async function pmSyncMembers(pid) {
@@ -8549,10 +8561,16 @@ function pmRenderOverview() {
     _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
   ]);
   const fld = (l, v) => '<div style="margin-bottom:9px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light);letter-spacing:.4px">' + l + '</div><div style="font-size:13px;color:var(--text-dark);margin-top:2px;white-space:pre-wrap">' + _pmEsc(v || '—') + '</div></div>';
-  const charter = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">Project Charter</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px">' +
-    '<div>' + fld('Client / Account', p.account || p.client) + fld('Sponsor', p.sponsor) + fld('Project Manager', p.manager) + fld('Department', p.dept) + fld('Location', p.location) + '</div>' +
-    '<div>' + fld('Contract Type', p.contractType) + fld('Contract Value', p.contractValue ? _pmMoney(p.contractValue) : '') + fld('Approved Budget', p.budget ? _pmMoney(p.budget) : '') + fld('Planned', _pmFmt(p.startPlanned) + ' → ' + _pmFmt(p.endPlanned)) + fld('Team', p.members) + '</div></div>' +
-    '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px">' + fld('Objectives', p.objectives) + fld('Scope Summary', p.scopeSummary || p.scopeStatement) + fld('Success Criteria', p.successCriteria || p.acceptanceCriteriaProject) + '</div></div>';
+  const _pmImg = p.image ? '<img src="' + _tkEscA(p.image) + '" alt="Project image" style="width:250px;max-width:38vw;height:172px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">' : '<div style="width:250px;max-width:38vw;height:172px;border-radius:10px;border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-light);font-size:12px;padding:12px;gap:4px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>No project image<span style="font-size:11px">Add one via the Edit button</span></div>';
+  const charter = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">Project Charter</div>' +
+    '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">' +
+      '<div style="flex:1;min-width:280px;display:grid;grid-template-columns:1fr 1fr;gap:0 26px">' +
+        '<div>' + fld('Client / Account', p.account || p.client) + fld('Sponsor', p.sponsor) + fld('Project Manager', p.manager) + fld('Department', p.dept) + fld('Location', p.location) + '</div>' +
+        '<div>' + fld('Contract Type', p.contractType) + fld('Contract Value', p.contractValue ? _pmMoney(p.contractValue) : '') + fld('Approved Budget', p.budget ? _pmMoney(p.budget) : '') + fld('Planned', _pmFmt(p.startPlanned) + ' → ' + _pmFmt(p.endPlanned)) + fld('Team', p.members) + '</div>' +
+      '</div>' +
+      '<div style="flex-shrink:0">' + _pmImg + '</div>' +
+    '</div>' +
+    '<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">' + fld('Objectives', p.objectives) + fld('Scope Summary', p.scopeSummary || p.scopeStatement) + fld('Success Criteria', p.successCriteria || p.acceptanceCriteriaProject) + '</div></div>';
   // change log
   const ch = _pmScope(_HR.pm_changes).sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || ''));
   const changeTbl = _pmCard('Change Control Log', 'pm_changes', 'Add CR', _pmTable('pm_changes', [
@@ -8561,7 +8579,8 @@ function pmRenderOverview() {
     { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Sched Δ (d)', align: 'right', render: r => _pmEsc(r.impactScheduleDays || 0) },
     { label: 'Cost Δ', align: 'right', render: r => r.impactCost ? _pmMoney(r.impactCost) : '—' },
-    { label: 'Decision', render: r => _pmBadge(r.decision || 'Pending', r.decision === 'Approved' ? '#00B060' : r.decision === 'Rejected' ? '#EF4444' : '#F59E0B') }
+    { label: 'Decision', render: r => _pmBadge(r.decision || 'Pending', r.decision === 'Approved' ? '#00B060' : r.decision === 'Rejected' ? '#EF4444' : '#F59E0B') },
+    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
   ], ch));
   // lessons
   const ls = _pmScope(_HR.pm_lessons);
@@ -8569,7 +8588,8 @@ function pmRenderOverview() {
     { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Category', k: 'category' }, { label: 'Phase', k: 'phase' },
     { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'Positive' ? '#00B060' : '#F59E0B') },
-    { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') }
+    { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') },
+    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
   ], ls));
   host.innerHTML = kpis + charter + changeTbl + lessonsTbl;
 }
