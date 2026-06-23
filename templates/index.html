@@ -3474,7 +3474,7 @@ function msalLogin() {
     return;
   }
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
-  _msalApp.loginRedirect({ scopes: ['User.Read'] });
+  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'] });
 }
 
 /* ── Logout ── */
@@ -9318,17 +9318,17 @@ function pmSpScript(pid) {
 }
 
 function pmSpBuildFolders(pid) {
-  if (window._msalApp && _account) { toast('Creating SharePoint folders…'); pmSpCreateFoldersGraph(pid).then(function (ok) { if (!ok) pmSpScript(pid); }).catch(function () { pmSpScript(pid); }); }
+  if (window._msalApp) { toast('Creating SharePoint folders…'); pmSpCreateFoldersGraph(pid).then(function (ok) { if (!ok) pmSpScript(pid); }).catch(function () { pmSpScript(pid); }); }
   else { pmSpScript(pid); }
 }
 async function pmSpCreateFoldersGraph(pid) {
   const p = _pmProj(pid); if (!p) return false;
-  if (!(window._msalApp && _account)) return false;
+  if (!window._msalApp) { alert('Microsoft 365 is not initialised — reload the page and sign in again.'); return false; }
   const base = _pmSpBase(p), ctx = base ? _pmSpCtx(base) : null;
   if (!ctx || ctx.mode === 'none') { toast('No SharePoint link found on this project.', 'warn', 8000); return false; }
   let token;
-  try { const r = await _msalApp.acquireTokenSilent({ scopes: ['Sites.ReadWrite.All'], account: _account }); token = r.accessToken; }
-  catch (e) { try { const r2 = await _msalApp.acquireTokenPopup({ scopes: ['Sites.ReadWrite.All'] }); token = r2.accessToken; } catch (e2) { toast('SharePoint permission not granted: ' + (e2.message || e2), 'error', 9000); return false; } }
+  try { const acct = _account || (_msalApp.getAllAccounts()[0]); const r = await _msalApp.acquireTokenSilent({ scopes: ['Sites.ReadWrite.All'], account: acct }); token = r.accessToken; }
+  catch (e) { alert('Could not get a SharePoint token (' + (e.errorCode || e.message || e) + ').\n\nPlease SIGN OUT and SIGN IN again with Microsoft 365 — that grants the SharePoint permission to your session — then click Save & build folders. (Chrome works more reliably than Safari here.)'); return false; }
   const G = 'https://graph.microsoft.com/v1.0', H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
   let driveId, baseRef, projRel = '';
   try {
@@ -9348,21 +9348,22 @@ async function pmSpCreateFoldersGraph(pid) {
       const drv = drives.find(function (d) { return d.name === libName; }) || drives.find(function (d) { return /shared documents|^documents$/i.test(d.name || ''); }) || drives.find(function (d) { return (d.webUrl || '').toLowerCase().indexOf(encodeURI(libName).toLowerCase()) >= 0; }) || drives[0];
       if (!drv) throw new Error('no document library'); driveId = drv.id; baseRef = 'root';
     }
-  } catch (e) { toast('Could not resolve SharePoint (' + (e.message || e) + ') — use Create folders (script).', 'error', 9000); return false; }
+  } catch (e) { alert('SharePoint RESOLVE failed:\n' + (e.message || e)); toast('Could not resolve SharePoint (' + (e.message || e) + ').', 'error', 9000); return false; }
   const allDirs = new Set();
   const addPath = function (path) { const parts = path.split('/'); let acc = ''; parts.forEach(function (seg) { acc = acc ? acc + '/' + seg : seg; allDirs.add(acc); }); };
   if (projRel) addPath(projRel);
   _pmSpRelPaths().forEach(function (r) { addPath((projRel ? projRel + '/' : '') + r); });
   const sorted = [...allDirs].sort(function (a, b) { return a.split('/').length - b.split('/').length || a.localeCompare(b); });
-  let made = 0, exist = 0, failed = 0;
+  let made = 0, exist = 0, failed = 0, firstErr = '';
   for (const dir of sorted) {
     const idx = dir.lastIndexOf('/'), parent = idx >= 0 ? dir.slice(0, idx) : '', name = idx >= 0 ? dir.slice(idx + 1) : dir;
     const enc = parent ? ':/' + parent.split('/').map(encodeURIComponent).join('/') + ':' : '';
     try {
       const res = await fetch(G + '/drives/' + driveId + '/' + baseRef + enc + '/children', { method: 'POST', headers: H, body: JSON.stringify({ name: name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }) });
-      if (res.ok) made++; else if (res.status === 409) exist++; else failed++;
+      if (res.ok) made++; else if (res.status === 409) exist++; else { failed++; if (!firstErr) { try { firstErr = res.status + ' ' + (await res.text()).slice(0, 220); } catch (ee) {} } }
     } catch (e) { failed++; }
   }
+  alert('SharePoint build result\n\nCreated: ' + made + '\nAlready existed: ' + exist + '\nFailed: ' + failed + (firstErr ? '\n\nFirst error: ' + firstErr : ''));
   toast('SharePoint: ' + made + ' folder(s) created' + (exist ? ', ' + exist + ' already existed' : '') + (failed ? ', ' + failed + ' failed' : '') + '.', failed ? 'warn' : 'success', 9000);
   try { tkAudit('SharePoint folders created (Graph)', p.name || '', made + ' created / ' + exist + ' existed'); } catch (e) { }
   return true;
