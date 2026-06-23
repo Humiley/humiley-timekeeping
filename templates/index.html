@@ -7559,7 +7559,7 @@ async function crmRenderPipeline() {
     }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>';
     return '<div class="crm-col" data-stage="' + st + '" ondragover="crmDragOver(event)" ondragleave="crmDragLeave(event)" ondrop="crmDrop(event,\'' + st + '\')" style="flex:1;min-width:190px;background:var(--soft-bg);border-radius:10px;padding:10px;transition:background .12s"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + (_CRM_STAGE_CLR[st] || '#205090') + ';display:flex;justify-content:space-between"><span>' + st + '</span><span>' + items.length + '</span></div><div style="font-size:11px;color:var(--text-light);margin-bottom:8px">' + _crmMoney(sum) + '</div>' + cards + '</div>';
   }).join('');
-  const addBtn = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button>';
+  const addBtn = '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_deals') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button></div>';
   root.innerHTML = kpis + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:700;color:var(--navy)">Sales Pipeline</div>' + addBtn + '</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>';
 }
 function crmDealMove(id, stage) {
@@ -7600,7 +7600,7 @@ async function crmRenderLeads() {
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
     return '<tr><td style="font-weight:600">' + _crmEsc(l.name || '') + '</td><td>' + _crmEsc(l.company || '—') + '</td><td style="font-size:12px">' + _crmEsc(l.email || '—') + (l.phone ? '<div style="color:var(--text-light)">' + _crmEsc(l.phone) + '</div>' : '') + '</td><td>' + _crmEsc(l.source || '—') + '</td><td><span class="badge ' + (sc[l.status] || 'b-grey') + '" style="font-size:10px">' + _crmEsc(l.status || 'New') + '</span></td><td style="font-weight:600">' + _crmMoney(l.value) + '</td><td style="white-space:nowrap">' + conv + _hrEditDel('crm_leads', l.id, 'crm_leads') + '</td></tr>';
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No leads yet — click “Add Lead” to start.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Leads</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div><div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function crmConvertLead(id) {
   const l = (_HR.crm_leads || []).find(x => x.id === id); if (!l) return;
@@ -7634,7 +7634,7 @@ async function crmRenderCompanies() {
     const web = c.website ? (href ? '<a href="' + _crmEsc(href) + '" target="_blank" rel="noopener" style="color:var(--navy)">' + _crmEsc(c.website) + '</a>' : _crmEsc(c.website)) : '—';
     return '<tr><td style="font-weight:600">' + _crmEsc(c.name || '') + '</td><td>' + _crmEsc(c.industry || '—') + '</td><td style="font-size:12px">' + web + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="font-weight:600">' + _crmMoney(dv) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_companies', c.id, 'crm_companies') + '</td></tr>';
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No companies yet — click “Add Company”.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Companies / Accounts</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div><div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div><div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
 /* ── Contacts ── */
@@ -7648,7 +7648,7 @@ async function crmRenderContacts() {
     _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')
   ]);
   const rows = cts.length ? cts.map(c => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(c.name) + '<span style="font-weight:600">' + _crmEsc(c.name || '') + '</span></div></td><td>' + _crmEsc(c.title || '—') + '</td><td>' + _crmEsc(c.company || '—') + '</td><td style="font-size:12px">' + (c.email ? '<a href="mailto:' + encodeURIComponent(c.email) + '" style="color:var(--navy)">' + _crmEsc(c.email) + '</a>' : '—') + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_contacts', c.id, 'crm_contacts') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No contacts yet — click “Add Contact”.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Contacts</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
 /* ── Products / Services catalog ── */
@@ -7662,7 +7662,7 @@ async function crmRenderProducts() {
     _hrKpi('Avg unit price', _crmMoney(ps.length ? ps.reduce((s, p) => s + (+p.price || 0), 0) / ps.length : 0), '#8B5CF6')
   ]);
   const rows = ps.length ? ps.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-family:monospace;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No products yet — add your catalog so quotations can pick from it.</td></tr>';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Product &amp; Service Catalog</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_products\')">' + _PLUS_SVG + ' Add Product</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Category</th><th>Unit</th><th style="text-align:right">Unit price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Product &amp; Service Catalog</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_products') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_products\')">' + _PLUS_SVG + ' Add Product</button></div></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Category</th><th>Unit</th><th style="text-align:right">Unit price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
 /* ── Quotation builder (multi-line, catalog picker, live totals) ── */
@@ -7903,6 +7903,81 @@ function crmDownloadQuoteXLS(id) {
   _crmDownloadBlob(m.ref + ' - ' + (d.company || 'deal').replace(/[^a-z0-9]+/gi, '_') + '.xls', crmQuoteXLS(d), 'application/vnd.ms-excel');
   try { tkAudit('Quotation Excel', d.title || '', m.ref); } catch (e) {}
   toast('Excel quotation downloaded — opens in Excel', 'success', 5000);
+}
+
+
+/* ── CRM bulk Excel import / export (round-trip; uses the bundled SheetJS) ── */
+const _CRM_LABEL = { crm_deals: 'Deals / Pipeline', crm_leads: 'Leads', crm_companies: 'Companies', crm_contacts: 'Contacts', crm_products: 'Products' };
+const _CRM_COLS = {
+  crm_deals: [['title', 'Deal name'], ['company', 'Company'], ['contact', 'Contact'], ['value', 'Value (VND)'], ['stage', 'Stage'], ['owner', 'Owner'], ['closeDate', 'Expected close (YYYY-MM-DD)'], ['priority', 'Priority (0-3)'], ['tags', 'Tags (comma-separated)'], ['activityType', 'Next activity'], ['activityDate', 'Activity date (YYYY-MM-DD)'], ['note', 'Notes']],
+  crm_leads: [['name', 'Lead name'], ['company', 'Company'], ['email', 'Email'], ['phone', 'Phone'], ['source', 'Source'], ['status', 'Status'], ['value', 'Est. value (VND)'], ['owner', 'Owner'], ['note', 'Notes']],
+  crm_companies: [['name', 'Company name'], ['industry', 'Industry'], ['website', 'Website'], ['phone', 'Phone'], ['address', 'Address'], ['owner', 'Owner'], ['note', 'Notes']],
+  crm_contacts: [['name', 'Full name'], ['title', 'Job title'], ['company', 'Company'], ['email', 'Email'], ['phone', 'Phone'], ['owner', 'Owner'], ['note', 'Notes']],
+  crm_products: [['name', 'Product / service'], ['code', 'Code / SKU'], ['category', 'Category'], ['unit', 'Unit'], ['price', 'Unit price (VND)'], ['note', 'Notes']]
+};
+const _CRM_ID_COL = 'ID (do not edit)';
+const _CRM_NUM = { value: 1, price: 1 };
+function _crmIeBtns(coll) {
+  const ic = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px">';
+  const imp = ic + '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  const exp = ic + '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+  return '<button class="btn btn-ghost btn-sm" title="Import from Excel / CSV" onclick="crmImport(\'' + coll + '\')">' + imp + 'Import</button>' +
+    '<button class="btn btn-ghost btn-sm" title="Export to Excel" onclick="crmExport(\'' + coll + '\')">' + exp + 'Export</button>' +
+    '<button class="btn btn-ghost btn-sm" title="Download a blank Excel template" onclick="crmExport(\'' + coll + '\',true)">Template</button>';
+}
+function crmExport(coll, templateOnly) {
+  const cols = _CRM_COLS[coll]; if (!cols) return;
+  if (typeof XLSX === 'undefined') { toast('Excel engine not loaded — check your connection', 'error'); return; }
+  const data = templateOnly ? [] : (_HR[coll] || []);
+  const header = [_CRM_ID_COL].concat(cols.map(c => c[1]));
+  const rows = data.map(r => { const o = {}; o[_CRM_ID_COL] = r.id || ''; cols.forEach(c => o[c[1]] = (r[c[0]] == null ? '' : r[c[0]])); return o; });
+  if (!rows.length) { const o = {}; header.forEach(h => o[h] = ''); rows.push(o); }
+  const ws = XLSX.utils.json_to_sheet(rows, { header: header });
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, (_CRM_LABEL[coll] || 'CRM').slice(0, 28).replace(/[\\/?*\[\]]/g, ' '));
+  const tag = templateOnly ? 'template' : new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, 'Humiley_CRM_' + coll.replace('crm_', '') + '_' + tag + '.xlsx');
+  if (!templateOnly) { try { tkAudit('CRM export', coll, rows.length + ' rows'); } catch (e) {} toast('Exported ' + (_HR[coll] || []).length + ' ' + (_CRM_LABEL[coll] || coll), 'success', 4000); }
+}
+function crmImport(coll) {
+  if (typeof XLSX === 'undefined') { toast('Excel engine not loaded — check your connection', 'error'); return; }
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.xlsx,.xls,.csv';
+  inp.onchange = e => { const f = e.target.files && e.target.files[0]; if (f) crmImportFile(coll, f); };
+  inp.click();
+}
+async function crmImportFile(coll, file) {
+  const cols = _CRM_COLS[coll]; if (!cols) return;
+  let raw;
+  try { const buf = await file.arrayBuffer(); const wb = XLSX.read(buf, { type: 'array' }); const ws = wb.Sheets[wb.SheetNames[0]]; raw = XLSX.utils.sheet_to_json(ws, { defval: '' }); }
+  catch (e) { toast('Could not read the file: ' + e.message, 'error', 6000); return; }
+  const labMap = {}; cols.forEach(c => { labMap[c[1].toLowerCase()] = c[0]; labMap[c[0].toLowerCase()] = c[0]; });
+  const recs = raw.map(row => {
+    const o = {}; let id = '';
+    Object.keys(row).forEach(h => {
+      const hl = String(h).toLowerCase().trim();
+      if (hl === _CRM_ID_COL.toLowerCase() || hl === 'id') { id = String(row[h] == null ? '' : row[h]).trim(); return; }
+      const k = labMap[hl]; if (!k) return;
+      let v = row[h];
+      if (_CRM_NUM[k] && v !== '' && v != null) v = Math.round(+String(v).replace(/[^0-9.\-]/g, '')) || 0;
+      else if (typeof v === 'string') v = v.trim();
+      o[k] = v;
+    });
+    return { id: id, data: o };
+  }).filter(r => Object.keys(r.data).length && Object.values(r.data).some(v => String(v).trim() !== ''));
+  if (!recs.length) { toast('No data rows found — keep the header row from the template / export.', 'warn', 7000); return; }
+  const newN = recs.filter(r => !r.id).length, updN = recs.length - newN;
+  if (!confirm('Import ' + recs.length + ' row(s) into ' + (_CRM_LABEL[coll] || coll) + '?\n\n• ' + newN + ' new record(s) will be created\n• ' + updN + ' existing record(s) will be updated (rows that kept their ID)')) return;
+  toast('Importing ' + recs.length + ' rows…', 'info', 4000);
+  let created = 0, updated = 0, failed = 0;
+  for (const r of recs) {
+    try {
+      const ex = r.id && (_HR[coll] || []).find(x => x.id === r.id);
+      if (ex) { await tkApi('/api/coll/' + coll + '/' + r.id, { method: 'PATCH', body: Object.assign({}, ex, r.data) }); updated++; }
+      else { await tkApi('/api/coll/' + coll, { method: 'POST', body: r.data }); created++; }
+    } catch (e) { failed++; }
+  }
+  await tkLoadColl(coll); try { if (_HR_RELOAD[coll]) _HR_RELOAD[coll](); } catch (e) {}
+  try { tkAudit('CRM import', coll, created + ' created, ' + updated + ' updated'); } catch (e) {}
+  toast('Import complete — ' + created + ' added, ' + updated + ' updated' + (failed ? ', ' + failed + ' failed' : ''), failed ? 'warn' : 'success', 8000);
 }
 
 
@@ -8216,7 +8291,7 @@ const _VI = {
   'Competency Matrix': 'Ma trận năng lực',
   'Save Changes': 'Lưu thay đổi',
   'removed permanently': 'đã xóa vĩnh viễn',
-  'Products': 'Sản phẩm', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
+  'Products': 'Sản phẩm', 'Import': 'Nhập', 'Export': 'Xuất', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
   'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
   'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
   'Sales / CRM': 'Bán hàng / CRM', 'Sales Dashboard': 'Bảng điều khiển bán hàng', 'Sales Pipeline': 'Quy trình bán hàng',
