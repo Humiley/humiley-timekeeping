@@ -481,6 +481,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
+            return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
@@ -516,6 +518,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
+            return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
@@ -589,6 +593,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "item": db.put_collection_item("padr", existing)})
         item = dict(body or {})
         item["id"] = iid
+        if name.startswith("pm_"):
+            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            if existing:
+                if existing.get("createdBy") is not None:
+                    item["createdBy"] = existing.get("createdBy")
+                if existing.get("createdById") is not None:
+                    item["createdById"] = existing.get("createdById")
         # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
         # must not be able to rewrite who a claim/travel/exit belongs to).
         if name in ("claims", "travel", "acks"):
