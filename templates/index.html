@@ -7086,6 +7086,7 @@ async function tkQuickAddSave() {
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
   if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
+  const _prevSpUrl = (_qaType === 'pm_projects' && _qaEditId) ? (((_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {}).sharepointUrl || '') : '';
   try {
     let item;
     if (_qaEditId) {
@@ -7102,6 +7103,10 @@ async function tkQuickAddSave() {
     closeModal('quickAddModal');
     toast(_qaEditId ? 'Updated' : 'Added successfully');
     if (_HR_RELOAD[spec.reload]) _HR_RELOAD[spec.reload]();
+    if (_qaType === 'pm_projects' && item && item.sharepointUrl && item.sharepointUrl !== _prevSpUrl) {
+      if (_msalApp && _account) { try { await pmSpCreateFoldersGraph(item.id); } catch (e) {} }
+      else { toast('SharePoint link saved — open the project\'s Documents tab to create the folders.', 'success', 6000); }
+    }
     if (_qaType === 'devices' && !_qaEditId && data.assignedTo && (data.status || 'Assigned') !== 'Available') {
       const _emp = (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === (data.assignedTo || '').toLowerCase());
       if (_emp) { try { await tkSendAssetHandover(_emp.id, { auto: true }); } catch (_) {} }
@@ -8855,7 +8860,7 @@ function pmRenderOverview() {
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Deliverables by status</div><div style="height:200px"><canvas id="pm-ov-deliv"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule — tasks</div><div style="height:200px"><canvas id="pm-ov-tasks"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Risk exposure</div><div style="height:200px"><canvas id="pm-ov-risk"></canvas></div></div></div>';
-  host.innerHTML = kpis + _ovCharts + _pmOverviewSpCard(p) + charter + changeTbl + lessonsTbl;
+  host.innerHTML = kpis + _ovCharts + charter + changeTbl + lessonsTbl;
   try {
     _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'].map(_pmT), datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
