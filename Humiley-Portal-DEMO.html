@@ -3563,16 +3563,44 @@ function doLogout() {
   window.location.replace(window.location.origin + '/');
 }
 
-/* ── Admin view switcher: let an Admin flip into the Staff workspace ── */
-function tkToggleView() {
-  if (!TK.user || TK.user.role !== 'manager') return;  // admins only
+/* ── Admin view switcher: let an Admin flip into the Staff workspace ──
+   In DEMO mode the switch steps into a representative employee's identity so the
+   preview shows real staff data — including their My Training onboarding checklist.
+   In LIVE mode it simply re-scopes the Admin's own account to the staff workspace. */
+let _adminUserBackup = null;
+function _pickDemoStaff() {
+  const emps = _DEMO_EMPLOYEES || [];
+  const onbs = _HR.onboarding || [];
+  // prefer an employee with an in-progress onboarding checklist so its steps are visible
+  for (const o of onbs) {
+    if (Array.isArray(o.tasks) && o.tasks.some(t => !t.done)) {
+      const e = emps.find(x => x.id === o.empId) || emps.find(x => (x.name || '').trim().toLowerCase() === (o.name || '').trim().toLowerCase());
+      if (e && e.role !== 'manager') return e;
+    }
+  }
+  return emps.find(e => e.role !== 'manager') || emps[0] || null;
+}
+async function tkToggleView() {
+  const canToggle = !!_adminUserBackup || (TK.user && TK.user.role === 'manager');  // admins only
+  if (!canToggle) return;
   if (_userRole === 'manager') {
     _userRole = 'staff';
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) {
+      try { await tkLoadColl('onboarding'); } catch (e) {}
+      const sample = _pickDemoStaff();
+      if (sample) {
+        if (!_adminUserBackup) _adminUserBackup = { user: TK.user, name: _staffName, ini: _staffInitials };
+        TK.user = Object.assign({}, sample, { role: 'staff' });
+        _staffName = sample.name || _staffName;
+        _staffInitials = sample.ini || (sample.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
+      }
+    }
     _applyRole('staff');
     try { _initStaffDashboard(); } catch (e) {}
-    if (typeof toast === 'function') toast('Now viewing as Staff — your personal workspace');
+    if (typeof toast === 'function') toast('Now viewing as Staff — ' + ((TK.user || {}).name || 'employee') + '’s workspace');
   } else {
     _userRole = 'manager';
+    if (_adminUserBackup) { TK.user = _adminUserBackup.user; _staffName = _adminUserBackup.name; _staffInitials = _adminUserBackup.ini; _adminUserBackup = null; }
     _applyRole('manager');
     if (typeof toast === 'function') toast('Back to Admin view');
   }
@@ -3582,7 +3610,7 @@ function tkToggleView() {
 function tkUpdateViewToggle() {
   const btn = document.getElementById('tk-view-toggle');
   if (!btn) return;
-  const isAdmin = TK.user && TK.user.role === 'manager';
+  const isAdmin = !!_adminUserBackup || (TK.user && TK.user.role === 'manager');
   btn.classList.toggle('hidden', !isAdmin);
   const userSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
   const shieldSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>';
