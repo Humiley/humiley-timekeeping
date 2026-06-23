@@ -710,8 +710,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
     <span class="nav-label">Training &amp; Dev</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('hradmin',this,'HR Admin')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
+    <span class="nav-label">HR Admin</span>
+  </div>
 
-  <div class="sidebar-section-label" data-roles="manager">Settings</div>
+  <div class="sidebar-section-label" data-roles="manager">System Setting</div>
   <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
     <span class="nav-label">Work Schedules</span>
@@ -734,10 +738,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('payroll',this,'Payroll')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
-  </div>
-  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('hradmin',this,'HR Admin')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
-    <span class="nav-label">HR Admin</span>
   </div>
   <div class="nav-item" data-roles="manager" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
@@ -4652,7 +4652,16 @@ async function tkRenderMyTraining() {
     '<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="tkMyTrainingSave(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Save</button>' + (x.status !== 'Completed' ? '<button class="btn btn-emerald btn-sm" onclick="tkMyTrainingComplete(\'' + x.id + '\')">' + tkIcon('check', 12) + 'Mark Complete</button>' : '<span class="badge b-ok" style="font-size:10px;align-self:center">' + tkIcon('check', 11) + 'Completed</span>') + '</div></div>'; }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">You have no course enrolments yet. Your manager will enroll you, or check the course catalog.</div>';
   // ── My Onboarding Checklist (tick to complete — irreversible, syncs to HR/Admin) ──
   let onbCard = '';
-  const myOnb = (_HR.onboarding || []).find(o => (o.empId && o.empId === me.id) || (o.name && o.name === me.name));
+  // Match the signed-in user's onboarding doc robustly: by id, then case/space-insensitive name, then email.
+  // Falls back to TK.user when the roster lookup (_tkMe) comes up empty (e.g. a brand-new hire not yet in the cached list).
+  const _u = TK.user || {};
+  const _meId = me.id || _u.id;
+  const _meName = (me.name || _u.name || '').trim().toLowerCase();
+  const _meEmail = (me.email || _u.email || '').trim().toLowerCase();
+  const myOnb = (_HR.onboarding || []).find(o =>
+    (o.empId && _meId && o.empId === _meId) ||
+    (o.name && _meName && (o.name || '').trim().toLowerCase() === _meName) ||
+    (o.email && _meEmail && (o.email || '').trim().toLowerCase() === _meEmail));
   if (myOnb && Array.isArray(myOnb.tasks) && myOnb.tasks.length) {
     const tasks = myOnb.tasks, total = tasks.length, done = tasks.filter(t => t.done).length;
     const phases = []; tasks.forEach(t => { const ph = t.phase || 'Tasks'; if (!t.done && !phases.includes(ph)) phases.push(ph); });
@@ -4703,7 +4712,7 @@ async function tkMyOnboardingTick(onbId, idx, cb) {
   if (cb) cb.disabled = true;
   o.tasks[idx].done = true;
   try {
-    await tkApi('/api/coll/onboarding/' + onbId, { method: 'PATCH', body: { tasks: o.tasks } });
+    await tkApi('/api/coll/onboarding/' + onbId, { method: 'PATCH', body: o });   // full object — backend PATCH replaces the whole item
     tkAudit('Onboarding step completed', (TK.user || {}).name, o.tasks[idx].label);
     if (o.tasks.every(t => t.done)) {
       const me = _tkMe() || {};
@@ -6283,7 +6292,7 @@ async function tkRenderInbox() {
   const auditHtml = '<div id="inbox-audit" style="display:none"><div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Activity Log</div><span style="font-size:11px;color:var(--text-light)">Who did what, when</span></div><div class="table-wrap"><table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>' +
     (audit.length ? audit.map(a => '<tr><td style="font-size:11px;white-space:nowrap;color:var(--text-light)">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</td><td style="font-weight:600">' + (a.actor || '') + '</td><td>' + (a.action || '') + '</td><td>' + (a.target || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + (a.detail || '') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">No activity yet</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis + '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkInboxTab(\'pending\',this)">Pending</button><button class="tab" onclick="tkInboxTab(\'audit\',this)">Activity Log</button></div>' + pendingHtml + auditHtml;
-  tkUpdateInboxBadge(total);
+  const _pend = _inboxPendingIds(); _inboxMarkSeen(_pend); tkUpdateInboxBadge(_pend);   // viewing the inbox = seen → badge clears
 }
 function tkInboxTab(tab, el) { ['pending', 'audit'].forEach(t => { const p = document.getElementById('inbox-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#inbox-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
 async function tkInboxLeave(id, status) {
@@ -6335,9 +6344,35 @@ async function tkInboxClaimItem(claimId, itemId, status) {
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
-function tkUpdateInboxBadge(total) {
+/* ── Approval-Inbox notification badge ──────────────────────────────────────
+   The badge behaves like a notification: it shows the count of pending items
+   the user has NOT yet seen, and turns OFF once they open the inbox. It comes
+   back on (with the new count) whenever fresh items arrive. "Seen" state is a
+   per-user snapshot of pending item keys, kept in localStorage. */
+function _inboxSeenKey() { return 'tkInboxSeen_' + ((TK.user && TK.user.id) || 'anon'); }
+function _inboxSeenSet() { try { return new Set(JSON.parse(localStorage.getItem(_inboxSeenKey()) || '[]')); } catch (e) { return new Set(); } }
+function _inboxMarkSeen(ids) { try { localStorage.setItem(_inboxSeenKey(), JSON.stringify(ids || [])); } catch (e) {} }
+/* Keys of every pending-approval item the current user can action — same direct-manager routing as the inbox. */
+function _inboxPendingIds() {
+  const me = TK.user && TK.user.id;
+  const meEmail = ((TK.user || {}).email || '').toLowerCase();
+  const seeAll = _lvlRank(_userLevel) >= _lvlRank('management');
+  const _empOf = (id, name) => (_DEMO_EMPLOYEES || []).find(e => e.id === id) || (_DEMO_EMPLOYEES || []).find(e => e.name === name);
+  const _mine = (id, name) => { if (seeAll) return true; const e = _empOf(id, name); if (!e) return true; return (e.managerEmail || '').toLowerCase() === meEmail; };
+  const ids = [];
+  (_DEMO_LEAVE || []).forEach(l => { if ((l.status || '').toLowerCase() === 'pending' && l.emp_id !== me && _mine(l.emp_id, l.emp_name)) ids.push('lv:' + l.id); });
+  (_HR.claims || []).forEach(c => { if (_claimOpen(c) && _mine(c.empId, c.name)) ids.push('cl:' + c.id); });
+  (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') ids.push('jb:' + j.id); });
+  (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment' && _mine(p.empId, p.name)) ids.push('pa:' + p.id); });
+  (_HR.travel || []).forEach(t => { if (t.status === 'Submitted' && _mine(t.empId, t.name)) ids.push('tv:' + t.id); });
+  return ids;
+}
+function tkUpdateInboxBadge(pending) {
   const b = document.getElementById('badge-inbox'); if (!b) return;
-  if (total > 0) { b.textContent = total; b.classList.remove('hidden'); } else { b.classList.add('hidden'); }
+  const ids = Array.isArray(pending) ? pending : _inboxPendingIds();   // numeric/empty arg → recompute keys
+  const seen = _inboxSeenSet();
+  const unseen = ids.filter(x => !seen.has(x)).length;
+  if (unseen > 0) { b.textContent = unseen; b.classList.remove('hidden'); } else { b.classList.add('hidden'); }
 }
 async function tkLoadInboxBadge() {
   try {
@@ -6669,9 +6704,18 @@ function tkRenderPermissions() {
     const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
     const hrOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('hr') < 0;
     const appCell = '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (crmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'crm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> CRM</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (pmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'pm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> Projects</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (hrOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'hr\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> HR</label>';
-    return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
+    const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
+    return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
-  root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
+}
+/* Live filter for the Assign Access Levels table — matches name, email, position or department. */
+function tkPermFilter(q) {
+  q = (q || '').trim().toLowerCase();
+  const rows = document.querySelectorAll('#permissions-root tr[data-perm-search]');
+  let shown = 0;
+  rows.forEach(tr => { const hit = !q || (tr.getAttribute('data-perm-search') || '').indexOf(q) >= 0; tr.style.display = hit ? '' : 'none'; if (hit) shown++; });
+  const nr = document.getElementById('perm-noresult'); if (nr) nr.style.display = (rows.length && shown === 0) ? 'block' : 'none';
 }
 async function tkSetLevel(id, level) {
   if (!_requireLevel('admin')) return;
@@ -9605,8 +9649,9 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
-  'Settings': 'Cài đặt',
+  'System Setting': 'Cài đặt hệ thống',
   'HR': 'Nhân sự',
+  'HR Admin': 'Quản trị nhân sự',
   'Cost Variance (CV)': 'Chênh lệch chi phí (CV)',
   'Schedule Variance (SV)': 'Chênh lệch tiến độ (SV)',
   'Forecast (EAC)': 'Dự báo khi hoàn thành (EAC)',
