@@ -7529,8 +7529,17 @@ function _crmIni(nm) { return (nm || '?').split(/\s+/).filter(Boolean).slice(-2)
 function _crmAva(nm) { const e = (_DEMO_EMPLOYEES || []).find(x => x.name === nm); return e ? tkAvatar(e, 'ava-sm') : '<div class="ava-sm" style="background:' + tkAvatarColor(nm || '') + '">' + _crmEsc(_crmIni(nm)) + '</div>'; }
 async function _crmLoadAll() { await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_leads')]); }
 function _crmDealBadge(n) { const b = document.getElementById('badge-crm-deals'); if (!b) return; if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
-function _crmSeeAll() { return _userRole !== 'staff'; }
-function _crmMine(arr) { if (_crmSeeAll()) return arr || []; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return (arr || []).filter(x => ((x.owner || '').toLowerCase()) === me); }
+/* CRM visibility: staff=own only · manager=own department · management/editor/admin=all */
+function _crmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('management'); }
+function _crmDeptOf(name) { if (!name) return ''; const n = String(name).toLowerCase(); const e = (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === n); return e ? (e.dept || '') : ''; }
+function _crmMine(arr) {
+  arr = arr || [];
+  if (_crmSeeAll()) return arr;
+  const me = ((TK.user && TK.user.name) || '').toLowerCase();
+  if (_userLevel === 'staff') return arr.filter(x => ((x.owner || '').toLowerCase()) === me);
+  const myDept = ((TK.user && (TK.user.dept || TK.user.department)) || '').toLowerCase();
+  return arr.filter(x => { const o = (x.owner || ''); if (o.toLowerCase() === me) return true; return myDept ? (_crmDeptOf(o).toLowerCase() === myDept) : false; });
+}
 function _crmRefreshDealBadge() { const n = _crmMine(_HR.crm_deals).filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => _crmActMeta(d)).filter(a => a && a.diff <= 0).length; _crmDealBadge(n); }
 function _crmTags(s) { return String(s || '').split(',').map(t => t.trim()).filter(Boolean); }
 /* next-activity meta: colour + label from activityDate (overdue red / today amber / upcoming green) */
