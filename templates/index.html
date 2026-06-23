@@ -522,6 +522,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   /* hero & headers stack cleanly */
   .staff-hero{flex-direction:column;align-items:flex-start;gap:14px;padding:18px 20px}
   .page-header,.view-header{flex-wrap:wrap;gap:10px}
+  .tk-hero>div{flex-wrap:wrap}
+  .tk-hero select,.tk-hero .sel-filter{max-width:100%}
   /* modals fill the screen */
   .modal{width:96vw;max-width:96vw;padding:18px}
   .modal-footer{flex-wrap:wrap}
@@ -679,37 +681,37 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-badge" id="badge-pending">4</span>
   </div>
 
-  <div class="sidebar-section-label" data-roles="manager">People &amp; Talent</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('database',this,'Employee Database')">
+  <div class="sidebar-section-label" data-roles="manager" data-app="hr">People &amp; Talent</div>
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('database',this,'Employee Database')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></span>
     <span class="nav-label">Employee Database</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('recruitment',this,'Recruitment')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('recruitment',this,'Recruitment')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></span>
     <span class="nav-label">Recruitment</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('onboarding',this,'Onboarding')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('onboarding',this,'Onboarding')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg></span>
     <span class="nav-label">Onboarding</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('offboarding',this,'Offboarding &amp; Exit')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('offboarding',this,'Offboarding &amp; Exit')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg></span>
     <span class="nav-label">Offboarding</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('performance',this,'Performance Management')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('performance',this,'Performance Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></span>
     <span class="nav-label">Performance</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('talent',this,'Talent Management')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('talent',this,'Talent Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg></span>
     <span class="nav-label">Talent</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('training',this,'Training &amp; Development')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('training',this,'Training &amp; Development')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg></span>
     <span class="nav-label">Training &amp; Dev</span>
   </div>
 
-  <div class="sidebar-section-label" data-roles="manager">Workplace</div>
+  <div class="sidebar-section-label" data-roles="manager">Settings</div>
   <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
     <span class="nav-label">Work Schedules</span>
@@ -719,9 +721,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-label">GPS Locations</span>
     <span class="nav-badge" id="badge-anomaly">2</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <span class="nav-label">Access &amp; Permissions</span>
+  </div>
 
   <div class="sidebar-section-label" data-roles="manager">Finance &amp; Admin</div>
-  <div class="nav-item" data-roles="manager" onclick="showView('devices',this,'Device &amp; Asset Management')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('devices',this,'Device &amp; Asset Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
     <span class="nav-label">Devices &amp; Assets</span>
   </div>
@@ -729,17 +735,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
   </div>
-  <div class="nav-item" data-roles="manager" onclick="showView('hradmin',this,'HR Admin')">
+  <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('hradmin',this,'HR Admin')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/><path d="M16 11l1.5 1.5L20 10"/></svg></span>
     <span class="nav-label">HR Admin</span>
   </div>
-  <div class="nav-item" data-roles="manager" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
+  <div class="nav-item" data-roles="manager" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
     <span class="nav-label">Reports</span>
-  </div>
-  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
-    <span class="nav-label">Access &amp; Permissions</span>
   </div>
 
 
@@ -6665,7 +6667,8 @@ function tkRenderPermissions() {
     const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
     const crmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('crm') < 0;
     const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
-    const appCell = '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (crmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'crm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> CRM</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (pmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'pm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> Projects</label>';
+    const hrOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('hr') < 0;
+    const appCell = '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" ' + (crmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'crm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> CRM</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (pmOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'pm\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> Projects</label> <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (hrOn ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'hr\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> HR</label>';
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
   root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
@@ -9602,6 +9605,8 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'Settings': 'Cài đặt',
+  'HR': 'Nhân sự',
   'Cost Variance (CV)': 'Chênh lệch chi phí (CV)',
   'Schedule Variance (SV)': 'Chênh lệch tiến độ (SV)',
   'Forecast (EAC)': 'Dự báo khi hoàn thành (EAC)',
