@@ -6965,7 +6965,7 @@ const _QA_SPECS = {
     { k: 'status', label: 'Status', type: 'select', options: ['Planned', 'Committed', 'Incurred', 'Closed'] }, { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }] },
   pm_quality: { title: 'Quality Record', coll: 'pm_quality', reload: 'pm_quality', fields: [
     { k: 'title', label: 'Title' }, { k: 'refNo', label: 'Reference No.' },
-    { k: 'type', label: 'Type', type: 'select', options: ['Inspection', 'NCR', 'Audit', 'Test', 'ITP item'] },
+    { k: 'type', label: 'Type', type: 'select', options: ['Inspection', 'NCR', 'Audit', 'Test', 'ITP item'] }, { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
     { k: 'discipline', label: 'Discipline', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
     { k: 'result', label: 'Result', type: 'select', options: ['', 'Pass', 'Fail', 'Open', 'Closed'] }, { k: 'severity', label: 'Severity', type: 'select', options: ['', 'Minor', 'Major', 'Critical'] },
     { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'assignedTo', label: 'Assigned to', type: 'select', options: 'employees' },
@@ -8929,13 +8929,15 @@ function pmRenderQuality(pid) {
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
   const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', _pmTable('pm_quality', [
-    { label: 'Ref', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
-    { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
-    { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Ref', sk: 'refNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
+    { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
+    { label: 'Title', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
     { label: 'Discipline', k: 'discipline' },
-    { label: 'Result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
-    { label: 'Severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
+    { label: 'Raised', sk: 'raisedDate', render: r => _pmFmt(r.raisedDate) },
+    { label: 'Result', sk: 'result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
+    { label: 'Severity', sk: 'severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_quality', r) }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
