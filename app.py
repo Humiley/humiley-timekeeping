@@ -50,9 +50,28 @@ CONTENT_TYPES = {
 }
 
 
+def _persist_sessions():
+    try:
+        db.set_setting("_sessions", json.dumps(SESSIONS))
+    except Exception:
+        pass
+
+
+def _load_sessions():
+    try:
+        data = json.loads(db.get_setting("_sessions") or "{}")
+        now = time.time()
+        for tok, ses in (data or {}).items():
+            if isinstance(ses, dict) and ses.get("expires", 0) > now:
+                SESSIONS[tok] = ses
+    except Exception:
+        pass
+
+
 def new_session(emp_id, role):
     token = secrets.token_urlsafe(32)
     SESSIONS[token] = {"emp_id": emp_id, "role": role, "expires": time.time() + SESSION_TTL}
+    _persist_sessions()
     return token
 
 
@@ -621,6 +640,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     db.init_db()
+    _load_sessions()
     seeded = False
     att_added = 0
     # Fresh deploy on a host without a persistent disk (e.g. Render free): start

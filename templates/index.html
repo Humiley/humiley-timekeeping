@@ -2740,6 +2740,14 @@ const DEMO_MODE = () => SP_CONFIG.clientId === 'YOUR_CLIENT_ID';
 ────────────────────────────────────────────────────────── */
 const TK = { token: sessionStorage.getItem('tk_token') || null, user: null, cfg: null };
 
+let _tkSessExpShown = false;
+function _tkSessionExpired() {
+  if (_tkSessExpShown) return; _tkSessExpShown = true;
+  try { toast('Your session has expired — please sign in again to continue.', 'warn', 8000); } catch (e) {}
+  TK.token = null; TK.user = null;
+  try { const ov = document.getElementById('login-overlay'); if (ov) { ov.style.display = ''; ov.classList.remove('fade-out'); } } catch (e) {}
+  setTimeout(() => { _tkSessExpShown = false; }, 12000);
+}
 async function tkApi(path, opts = {}) {
   const headers = opts.headers || {};
   if (TK.token) headers['Authorization'] = 'Bearer ' + TK.token;
@@ -2750,6 +2758,7 @@ async function tkApi(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers });
   if (!res.ok) {
     let e; try { e = await res.json(); } catch (_) {}
+    if (res.status === 401) { try { _tkSessionExpired(); } catch (_) {} }
     throw new Error((e && e.error) || ('HTTP ' + res.status));
   }
   return res.json();
