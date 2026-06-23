@@ -8924,12 +8924,23 @@ function pmRenderCosts(pid) {
 }
 
 /* ---------- 5. Quality (NCR / ITP) ---------- */
+let _pmQF = { contractor: '', period: '' };
+function pmQSet(k, v) { _pmQF[k] = v; pmTab('quality'); }
+function pmQClear() { _pmQF = { contractor: '', period: '' }; pmTab('quality'); }
 function pmRenderQuality(pid) {
-  const q = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
+  const all = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
+  const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
+  const _qpers = [...new Set(all.map(x => (x.raisedDate || '').slice(0, 7)).filter(Boolean))].sort().reverse();
+  const _mmYY = ym => { const a = String(ym).split('-'); return (a[1] || '') + '/' + (a[0] || '').slice(-2); };
+  const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && (!_pmQF.period || (x.raisedDate || '').slice(0, 7) === _pmQF.period));
+  const filterBar = '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' +
+    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
+    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'period\',this.value)"><option value="">All months (MM/YY)</option>' + _qpers.map(pp => '<option value="' + pp + '"' + (_pmQF.period === pp ? ' selected' : '') + '>' + _mmYY(pp) + '</option>').join('') + '</select>' +
+    ((_pmQF.contractor || _pmQF.period) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
   const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
-  const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', _pmTable('pm_quality', [
+  const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
     { label: 'Ref', sk: 'refNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
     { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
     { label: 'Title', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
