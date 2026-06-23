@@ -7402,7 +7402,7 @@ async function initAuth() {
 
   /* LIVE Microsoft 365 mode */
   _msalApp = new msal.PublicClientApplication({
-    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: window.location.origin + '/' },
+    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: window.location.origin },
     cache: { cacheLocation: 'sessionStorage' }
   });
   _msalApp.handleRedirectPromise().then(async resp => {
