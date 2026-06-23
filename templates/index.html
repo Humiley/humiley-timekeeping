@@ -8610,14 +8610,14 @@ function pmRenderOverview() {
     _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
   ]);
   const fld = (l, v) => '<div style="margin-bottom:9px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--emerald);letter-spacing:.4px">' + l + '</div><div style="font-size:13px;color:var(--text-dark);margin-top:2px;white-space:pre-wrap">' + _pmEsc(v || '—') + '</div></div>';
-  const _pmImg = p.image ? '<img src="' + _tkEscA(p.image) + '" alt="Project image" style="width:330px;max-width:42vw;height:235px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">' : '<div style="width:330px;max-width:42vw;height:235px;border-radius:10px;border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-light);font-size:12px;padding:12px;gap:4px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>No project image<span style="font-size:11px">Add one via the Edit button</span></div>';
+  const _pmImg = p.image ? '<img src="' + _tkEscA(p.image) + '" alt="Project image" style="width:330px;max-width:42vw;height:100%;min-height:210px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">' : '<div style="width:330px;max-width:42vw;height:100%;min-height:210px;border-radius:10px;border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-light);font-size:12px;padding:12px;gap:4px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>No project image<span style="font-size:11px">Add one via the Edit button</span></div>';
   const charter = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">Project Charter</div>' +
-    '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">' +
+    '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:stretch">' +
       '<div style="flex:1;min-width:280px;display:grid;grid-template-columns:1fr 1fr;gap:0 26px">' +
         '<div>' + fld('Client / Account', p.account || p.client) + fld('Sponsor', p.sponsor) + fld('Project Manager', p.manager) + fld('Department', p.dept) + fld('Location', p.location) + '</div>' +
         '<div>' + fld('Contract Type', p.contractType) + fld('Contract Value', p.contractValue ? _pmMoney(p.contractValue) : '') + fld('Approved Budget', p.budget ? _pmMoney(p.budget) : '') + fld('Planned', _pmFmt(p.startPlanned) + ' → ' + _pmFmt(p.endPlanned)) + fld('Team', p.members) + '</div>' +
       '</div>' +
-      '<div style="flex-shrink:0">' + _pmImg + '</div>' +
+      '<div style="flex-shrink:0;align-self:stretch">' + _pmImg + '</div>' +
     '</div>' +
     '<div style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">' + fld('Objectives', p.objectives) + fld('Scope Summary', p.scopeSummary || p.scopeStatement) + fld('Success Criteria', p.successCriteria || p.acceptanceCriteriaProject) + '</div></div>';
   // change log
