@@ -646,6 +646,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
     <span class="nav-label">Contacts</span>
   </div>
+  <div class="nav-item" onclick="showView('crm-products',this,'Products')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg></span>
+    <span class="nav-label">Products</span>
+  </div>
 
   <div class="sidebar-section-label" data-roles="manager">Approvals</div>
   <div class="nav-item" data-roles="manager" onclick="showView('inbox',this,'Approval Inbox')">
@@ -958,6 +962,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 <div id="view-crm-leads" class="view"><div id="crm-leads-root"></div></div>
 <div id="view-crm-companies" class="view"><div id="crm-companies-root"></div></div>
 <div id="view-crm-contacts" class="view"><div id="crm-contacts-root"></div></div>
+<div id="view-crm-products" class="view"><div id="crm-products-root"></div></div>
 
 <!-- ═══════════════════════════════════════════════════════
      VIEW: MY PROFILE
@@ -3950,7 +3955,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [], crm_deals: [], crm_companies: [], crm_contacts: [], crm_leads: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [], crm_deals: [], crm_companies: [], crm_contacts: [], crm_leads: [], crm_products: [] };
 /* Audit log — record who did what, when (persisted to the audit collection). */
 function tkAudit(action, target, detail) {
   const entry = { ts: new Date().toISOString(), tsDisp: new Date().toLocaleString('en-GB'), actor: (TK.user && TK.user.name) || 'System', actorId: (TK.user && TK.user.id) || '', action: action, target: target || '', detail: detail || '' };
@@ -4065,7 +4070,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -6592,6 +6597,7 @@ function tkRenderPermissions() {
     ['Self-service — own profile, attendance, leave, claims &amp; training', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Approve team requests — leave · claims · travel · PADR', ['manager', 'management', 'editor', 'admin']],
     ['People &amp; HR — add/edit employees, recruitment, performance, devices', ['manager', 'management', 'editor', 'admin']],
+     ['Sales / CRM — pipeline, leads, contacts, products, quotations', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['View Payroll &amp; Finance', ['management', 'editor', 'admin']],
     ['Run / edit Payroll — pay runs, adjustments, roll-out', ['editor', 'admin']],
     ['Access &amp; Permissions — assign access levels', ['admin']]
@@ -6829,7 +6835,7 @@ const _QA_SPECS = {
     { k: 'value', label: 'Deal value (₫)', type: 'number' },
     { k: 'stage', label: 'Stage', type: 'select', options: ['New', 'Qualified', 'Proposal', 'Won', 'Lost'] },
     { k: 'owner', label: 'Owner (sales rep)', type: 'select', options: 'employees' },
-    { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'note', label: 'Notes' }] },
+    { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'tags', label: 'Tags (comma-separated)' }, { k: 'activityType', label: 'Next activity', type: 'select', options: ['', 'Call', 'Email', 'Meeting', 'To-do'] }, { k: 'activityDate', label: 'Activity date', type: 'date' }, { k: 'note', label: 'Notes' }] },
   crm_companies: { title: 'Company / Account', coll: 'crm_companies', reload: 'crm_companies', fields: [
     { k: 'name', label: 'Company name' },
     { k: 'industry', label: 'Industry', type: 'select', options: ['Construction', 'Manufacturing', 'Real Estate', 'Infrastructure', 'Technology', 'Government', 'Retail', 'Energy', 'Other'] },
@@ -6844,7 +6850,12 @@ const _QA_SPECS = {
     { k: 'source', label: 'Source', type: 'select', options: ['Website', 'Referral', 'Cold call', 'Event', 'LinkedIn', 'Email campaign', 'Partner', 'Other'] },
     { k: 'status', label: 'Status', type: 'select', options: ['New', 'Contacted', 'Qualified', 'Unqualified'] },
     { k: 'value', label: 'Est. value (₫)', type: 'number' },
-    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] }
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
+  crm_products: { title: 'Product / Service', coll: 'crm_products', reload: 'crm_products', fields: [
+    { k: 'name', label: 'Product / service name' }, { k: 'code', label: 'Code / SKU' },
+    { k: 'category', label: 'Category', type: 'select', options: ['Equipment', 'Material', 'Service', 'Engineering', 'Installation', 'Maintenance', 'Spare part', 'Other'] },
+    { k: 'unit', label: 'Unit', type: 'select', options: ['pcs', 'lot', 'set', 'unit', 'hour', 'day', 'm', 'm2', 'kg'] },
+    { k: 'price', label: 'Unit price (₫)', type: 'number' }, { k: 'note', label: 'Notes' }] }
 };
 let _qaType = null, _qaEditId = null;
 function tkQuickAdd(type, id) {
@@ -7486,7 +7497,6 @@ const _CRM_OPEN = ['New', 'Qualified', 'Proposal'];
 const _CRM_STAGE_CLR = { New: '#3168A8', Qualified: '#8b5cf6', Proposal: '#f59e0b', Won: '#00B060', Lost: '#ef4444' };
 /* HTML-escape every user-entered value before it reaches innerHTML (prevents stored XSS) */
 function _crmEsc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-/* safe http(s) href or '' */
 function _crmHref(u) { const v = String(u || '').trim(); return /^https?:\/\//i.test(v) ? v : (v && !/^[a-z]+:/i.test(v) ? 'https://' + v : ''); }
 function _crmMoney(n) { try { return _PAY_FMT(Math.round(+n || 0)); } catch (e) { return '₫' + (Math.round(+n || 0)).toLocaleString('en-US'); } }
 function _crmIni(nm) { return (nm || '?').split(/\s+/).filter(Boolean).slice(-2).map(w => (w[0] || '').toUpperCase()).join(''); }
@@ -7494,12 +7504,23 @@ function _crmAva(nm) { const e = (_DEMO_EMPLOYEES || []).find(x => x.name === nm
 async function _crmLoadAll() { await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_leads')]); }
 function _crmDealBadge(n) { const b = document.getElementById('badge-crm-deals'); if (!b) return; if (n > 0) { b.textContent = n; b.classList.remove('hidden'); } else { b.classList.add('hidden'); } }
 function _crmRefreshDealBadge() { _crmDealBadge((_HR.crm_deals || []).filter(d => _CRM_OPEN.includes(d.stage || 'New')).length); }
+function _crmTags(s) { return String(s || '').split(',').map(t => t.trim()).filter(Boolean); }
+/* next-activity meta: colour + label from activityDate (overdue red / today amber / upcoming green) */
+function _crmActMeta(d) {
+  if (!d || !d.activityDate) return null;
+  const p = String(d.activityDate).split('-'); if (p.length < 3) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const ad = new Date(+p[0], +p[1] - 1, +p[2]); const diff = Math.round((ad - today) / 86400000);
+  const clr = diff < 0 ? '#ef4444' : diff === 0 ? '#f59e0b' : '#00B060';
+  const lab = diff < 0 ? ('Overdue ' + (-diff) + 'd') : diff === 0 ? 'Today' : ('in ' + diff + 'd');
+  return { clr: clr, lab: lab, type: d.activityType || 'To-do', diff: diff };
+}
 
 /* ── Pipeline (deals kanban) ── */
 async function crmRenderPipeline() {
   const root = document.getElementById('crm-pipeline-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts')]);
+  await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products')]);
   const deals = _HR.crm_deals || [];
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
@@ -7514,21 +7535,29 @@ async function crmRenderPipeline() {
     _hrKpi('Win rate', winRate + '%', '#8B5CF6')
   ]);
   const cols = _CRM_STAGES.map(st => {
-    const items = deals.filter(d => (d.stage || 'New') === st);
+    const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
     const cards = items.map(d => {
       const i = _CRM_OPEN.indexOf(d.stage || 'New');
       const adv = (i >= 0 && i < _CRM_OPEN.length - 1) ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="crmDealMove(\'' + d.id + '\',\'' + _CRM_OPEN[i + 1] + '\')">→</button>' : '';
       const close = _CRM_OPEN.includes(d.stage || 'New') ? '<button class="btn btn-emerald btn-sm" title="Mark Won" style="font-size:10px;padding:2px 8px" onclick="crmDealMove(\'' + d.id + '\',\'Won\')">Won</button><button class="btn btn-ghost btn-sm" title="Mark Lost" style="font-size:10px;padding:2px 8px;color:#C00000" onclick="crmDealMove(\'' + d.id + '\',\'Lost\')">Lost</button>' : '';
-      const quote = '<button class="btn btn-ghost btn-sm" title="Quotation PDF (letterhead)" style="font-size:10px;padding:2px 7px" onclick="crmDownloadQuote(\'' + d.id + '\')">PDF</button><button class="btn btn-ghost btn-sm" title="Quotation Excel" style="font-size:10px;padding:2px 7px" onclick="crmDownloadQuoteXLS(\'' + d.id + '\')">XLS</button>';
-      return '<div class="card" style="padding:10px;margin-bottom:8px;border-left:3px solid ' + (_CRM_STAGE_CLR[st] || '#205090') + '">' +
-        '<div style="font-weight:700;font-size:13px">' + _crmEsc(d.title || '(untitled)') + '</div>' +
+      const quote = '<button class="btn btn-ghost btn-sm" title="Build quotation (PDF / Excel)" style="font-size:10px;padding:2px 8px" onclick="crmQuoteBuilder(\'' + d.id + '\')">Quote</button>';
+      const pr = +d.priority || 0;
+      const stars = [1, 2, 3].map(n => '<span title="Set priority" onclick="event.stopPropagation();crmSetPriority(\'' + d.id + '\',' + (pr === n ? n - 1 : n) + ')" style="cursor:pointer;font-size:13px;color:' + (n <= pr ? '#f59e0b' : '#cbd5e1') + '">★</span>').join('');
+      const tags = _crmTags(d.tags).map(t => '<span style="display:inline-block;background:' + tkAvatarColor(t) + '1f;color:' + tkAvatarColor(t) + ';border-radius:8px;padding:1px 7px;font-size:10px;font-weight:600;margin:3px 3px 0 0">' + _crmEsc(t) + '</span>').join('');
+      const act = _crmActMeta(d);
+      const actHtml = act ? '<div style="margin-top:5px;font-size:10.5px;font-weight:600;color:' + act.clr + '"><span style="font-size:9px">●</span> ' + _crmEsc(act.type) + ' · ' + act.lab + '</div>' : '';
+      const closeOverdue = (_CRM_OPEN.includes(d.stage || 'New') && d.closeDate && (_crmActMeta({ activityDate: d.closeDate }) || {}).diff < 0);
+      const closeHtml = d.closeDate ? '<div style="margin-top:3px;font-size:10px;color:' + (closeOverdue ? '#ef4444' : 'var(--text-light)') + '">Close: ' + _crmEsc(tkFmtDate(d.closeDate)) + (closeOverdue ? ' (overdue)' : '') + '</div>' : '';
+      return '<div class="card" draggable="true" ondragstart="crmDragStart(event,\'' + d.id + '\')" style="padding:10px;margin-bottom:8px;border-left:3px solid ' + (_CRM_STAGE_CLR[st] || '#205090') + ';cursor:grab">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:6px"><div style="font-weight:700;font-size:13px;flex:1">' + _crmEsc(d.title || '(untitled)') + '</div><div style="white-space:nowrap">' + stars + '</div></div>' +
         '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.company || '—') + (d.contact ? ' · ' + _crmEsc(d.contact) : '') + '</div>' +
         '<div style="font-size:13px;font-weight:700;color:var(--navy);margin-top:3px">' + _crmMoney(d.value) + '</div>' +
+        (tags ? '<div>' + tags + '</div>' : '') + actHtml + closeHtml +
         (d.owner ? '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:var(--text-light)">' + _crmAva(d.owner) + '<span>' + _crmEsc(d.owner) + '</span></div>' : '') +
         '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + close + adv + quote + _hrEditDel('crm_deals', d.id, 'crm_deals') + '</div></div>';
     }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>';
-    return '<div style="flex:1;min-width:185px;background:var(--soft-bg);border-radius:10px;padding:10px"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + (_CRM_STAGE_CLR[st] || '#205090') + ';display:flex;justify-content:space-between"><span>' + st + '</span><span>' + items.length + '</span></div><div style="font-size:11px;color:var(--text-light);margin-bottom:8px">' + _crmMoney(sum) + '</div>' + cards + '</div>';
+    return '<div class="crm-col" data-stage="' + st + '" ondragover="crmDragOver(event)" ondragleave="crmDragLeave(event)" ondrop="crmDrop(event,\'' + st + '\')" style="flex:1;min-width:190px;background:var(--soft-bg);border-radius:10px;padding:10px;transition:background .12s"><div style="font-size:11px;font-weight:700;text-transform:uppercase;color:' + (_CRM_STAGE_CLR[st] || '#205090') + ';display:flex;justify-content:space-between"><span>' + st + '</span><span>' + items.length + '</span></div><div style="font-size:11px;color:var(--text-light);margin-bottom:8px">' + _crmMoney(sum) + '</div>' + cards + '</div>';
   }).join('');
   const addBtn = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_deals\')">' + _PLUS_SVG + ' Add Deal</button>';
   root.innerHTML = kpis + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:14px;font-weight:700;color:var(--navy)">Sales Pipeline</div>' + addBtn + '</div><div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px">' + cols + '</div>';
@@ -7541,6 +7570,17 @@ function crmDealMove(id, stage) {
     .then(() => { Object.assign(d, patch); try { tkAudit('Deal ' + stage, d.title || '', _crmMoney(d.value)); } catch (e) {} crmRenderPipeline(); toast((d.title || 'Deal') + ' → ' + stage); })
     .catch(e => toast('Could not update: ' + e.message, 'error'));
 }
+function crmSetPriority(id, n) {
+  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) return;
+  d.priority = n;
+  tkApi('/api/coll/crm_deals/' + id, { method: 'PATCH', body: Object.assign({}, d, { priority: n }) }).then(() => crmRenderPipeline()).catch(() => {});
+}
+/* drag-and-drop: move a deal card between stage columns with the mouse */
+let _crmDragId = null;
+function crmDragStart(e, id) { _crmDragId = id; try { e.dataTransfer.setData('text/plain', id); e.dataTransfer.effectAllowed = 'move'; } catch (_) {} }
+function crmDragOver(e) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (_) {} const c = e.currentTarget; if (c) c.style.background = '#e7eef7'; }
+function crmDragLeave(e) { const c = e.currentTarget; if (c) c.style.background = 'var(--soft-bg)'; }
+function crmDrop(e, stage) { e.preventDefault(); const c = e.currentTarget; if (c) c.style.background = 'var(--soft-bg)'; const id = _crmDragId || (e.dataTransfer && e.dataTransfer.getData('text/plain')); _crmDragId = null; if (!id) return; const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d || (d.stage || 'New') === stage) return; crmDealMove(id, stage); }
 
 /* ── Leads ── */
 async function crmRenderLeads() {
@@ -7611,6 +7651,70 @@ async function crmRenderContacts() {
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Contacts</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 
+/* ── Products / Services catalog ── */
+async function crmRenderProducts() {
+  const root = document.getElementById('crm-products-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('crm_products');
+  const ps = _HR.crm_products || [];
+  const kpis = _hrKpiRow([
+    _hrKpi('Products / services', ps.length),
+    _hrKpi('Avg unit price', _crmMoney(ps.length ? ps.reduce((s, p) => s + (+p.price || 0), 0) / ps.length : 0), '#8B5CF6')
+  ]);
+  const rows = ps.length ? ps.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-family:monospace;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No products yet — add your catalog so quotations can pick from it.</td></tr>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">Product &amp; Service Catalog</div><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_products\')">' + _PLUS_SVG + ' Add Product</button></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Code</th><th>Category</th><th>Unit</th><th style="text-align:right">Unit price</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+/* ── Quotation builder (multi-line, catalog picker, live totals) ── */
+let _crmQB = null;
+function crmQuoteBuilder(id) {
+  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
+  const base = (Array.isArray(d.lines) && d.lines.length) ? d.lines : [{ desc: d.title || '', qty: 1, unit: 'lot', price: Math.round(+d.value || 0), disc: 0 }];
+  _crmQB = { id: id, lines: base.map(l => ({ desc: l.desc || l.description || '', qty: +l.qty || 1, unit: l.unit || 'lot', price: Math.round(+l.price || +l.unitPrice || 0), disc: +l.disc || 0 })) };
+  document.getElementById('crmQBOverlay')?.remove();
+  const cat = (_HR.crm_products || []).map((p, i) => '<option value="' + i + '">' + _crmEsc(p.name) + ' — ' + _crmMoney(p.price) + '</option>').join('');
+  const el = document.createElement('div'); el.id = 'crmQBOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:880px">' +
+    '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Description</th><th style="width:58px">Qty</th><th style="width:64px">Unit</th><th style="width:120px">Unit price</th><th style="width:56px">Disc%</th><th style="width:120px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
+    '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
+  document.body.appendChild(el);
+  crmQBRender();
+}
+function crmQBRender() {
+  const tb = document.getElementById('crm-qb-rows'); if (!tb || !_crmQB) return;
+  tb.innerHTML = _crmQB.lines.map((l, i) => '<tr>' +
+    '<td><input class="form-control" style="font-size:12px;min-width:200px" value="' + _tkEscA(l.desc) + '" oninput="_crmQB.lines[' + i + '].desc=this.value"></td>' +
+    '<td><input class="form-control" type="number" min="0" style="font-size:12px" value="' + l.qty + '" oninput="_crmQB.lines[' + i + '].qty=+this.value||0;crmQBTotals()"></td>' +
+    '<td><input class="form-control" style="font-size:12px" value="' + _tkEscA(l.unit) + '" oninput="_crmQB.lines[' + i + '].unit=this.value"></td>' +
+    '<td><input class="form-control" type="number" min="0" step="1000" style="font-size:12px" value="' + l.price + '" oninput="_crmQB.lines[' + i + '].price=+this.value||0;crmQBTotals()"></td>' +
+    '<td><input class="form-control" type="number" min="0" max="100" style="font-size:12px" value="' + l.disc + '" oninput="_crmQB.lines[' + i + '].disc=+this.value||0;crmQBTotals()"></td>' +
+    '<td style="text-align:right;font-weight:600" id="crm-qb-amt-' + i + '">' + _crmMoney(l.qty * l.price * (1 - l.disc / 100)) + '</td>' +
+    '<td><button class="btn btn-ghost btn-sm" title="Remove line" style="color:#C00000;padding:2px 6px" onclick="crmQBRemoveLine(' + i + ')">' + _TRASH + '</button></td></tr>').join('');
+  crmQBTotals();
+}
+function crmQBTotals() {
+  if (!_crmQB) return; let sub = 0;
+  _crmQB.lines.forEach((l, i) => { const amt = Math.round((+l.qty || 0) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)); const c = document.getElementById('crm-qb-amt-' + i); if (c) c.textContent = _crmMoney(amt); sub += amt; });
+  const vat = Math.round(sub * 0.1), grand = sub + vat;
+  const t = document.getElementById('crm-qb-totals'); if (t) t.innerHTML = 'Subtotal: <b style="color:var(--text)">' + _crmMoney(sub) + '</b> &nbsp;·&nbsp; VAT 10%: <b style="color:var(--text)">' + _crmMoney(vat) + '</b> &nbsp;·&nbsp; <span style="color:var(--navy);font-size:15px">Grand total: <b>' + _crmMoney(grand) + '</b></span>';
+}
+function crmQBAddLine() { if (!_crmQB) return; _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
+function crmQBRemoveLine(i) { if (!_crmQB) return; _crmQB.lines.splice(i, 1); if (!_crmQB.lines.length) _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
+function crmQBAddFromCatalog() { const sel = document.getElementById('crm-qb-cat'); const p = (_HR.crm_products || [])[+sel.value]; if (p) { _crmQB.lines.push({ desc: p.name + (p.code ? ' [' + p.code + ']' : ''), qty: 1, unit: p.unit || 'pcs', price: Math.round(+p.price || 0), disc: 0 }); crmQBRender(); } sel.value = ''; }
+async function crmQBSave(thenExport, fmt) {
+  if (!_crmQB) return; const d = (_HR.crm_deals || []).find(x => x.id === _crmQB.id); if (!d) return;
+  const lines = _crmQB.lines.filter(l => (l.desc || '').trim() || +l.price);
+  const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 0) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
+  try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub }) }); d.lines = lines; d.value = sub; }
+  catch (e) { toast('Save failed: ' + e.message, 'error'); return; }
+  toast('Quotation saved (' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ')');
+  document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
+  if (thenExport) { if (fmt === 'xls') crmDownloadQuoteXLS(d.id); else crmDownloadQuote(d.id); }
+}
+
 /* ── Sales dashboard ── */
 let _crmDashData = null;
 async function crmRenderDashboard() {
@@ -7623,12 +7727,15 @@ async function crmRenderDashboard() {
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0); const wonVal = won.reduce((s, d) => s + (+d.value || 0), 0);
   const decided = won.length + lost.length; const winRate = decided ? Math.round(won.length / decided * 100) : 0;
   _crmDealBadge(openDeals.length);
+  const actDeals = openDeals.map(d => ({ d: d, a: _crmActMeta(d) })).filter(x => x.a);
+  const overdue = actDeals.filter(x => x.a.diff < 0).length; const dueToday = actDeals.filter(x => x.a.diff === 0).length;
   const kpis = _hrKpiRow([
     _hrKpi('Pipeline value', _crmMoney(pipeVal)),
     _hrKpi('Open deals', openDeals.length, '#3168A8'),
     _hrKpi('Won value (all)', _crmMoney(wonVal), 'var(--emerald)'),
     _hrKpi('Win rate', winRate + '%', '#8B5CF6'),
-    _hrKpi('Leads', leads.length, '#F59E0B')
+    _hrKpi('Activities overdue', overdue, overdue ? '#ef4444' : 'var(--emerald)'),
+    _hrKpi('Due today', dueToday, '#F59E0B')
   ]);
   const stageVals = _CRM_STAGES.map(st => deals.filter(d => (d.stage || 'New') === st).reduce((s, d) => s + (+d.value || 0), 0));
   const ownMap = {}; openDeals.forEach(d => { const o = d.owner || 'Unassigned'; ownMap[o] = (ownMap[o] || 0) + (+d.value || 0); });
@@ -7649,8 +7756,10 @@ async function crmRenderDashboard() {
   const topLeads = leads.slice().sort((a, b) => (+b.value || 0) - (+a.value || 0)).slice(0, 5);
   const oppRows = topOpps.length ? topOpps.map((d, i) => '<tr><td style="color:var(--text-light);font-weight:700">' + (i + 1) + '</td><td><div style="font-weight:600;font-size:12.5px">' + _crmEsc(d.title || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.company || '—') + '</div></td><td><span class="badge ' + (badge[d.stage] || 'b-grey') + '" style="font-size:10px">' + _crmEsc(d.stage || 'New') + '</span></td><td style="text-align:right;font-weight:700;color:var(--navy);white-space:nowrap">' + _crmMoney(d.value) + '</td></tr>').join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-light);padding:14px">No open opportunities</td></tr>';
   const leadRows = topLeads.length ? topLeads.map((l, i) => '<tr><td style="color:var(--text-light);font-weight:700">' + (i + 1) + '</td><td><div style="font-weight:600;font-size:12.5px">' + _crmEsc(l.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.company || '—') + ' · ' + _crmEsc(l.source || '—') + '</div></td><td><span class="badge ' + ({ New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' }[l.status] || 'b-grey') + '" style="font-size:10px">' + _crmEsc(l.status || 'New') + '</span></td><td style="text-align:right;font-weight:700;color:var(--navy);white-space:nowrap">' + _crmMoney(l.value) + '</td></tr>').join('') : '<tr><td colspan="4" style="text-align:center;color:var(--text-light);padding:14px">No leads</td></tr>';
+  const upcoming = actDeals.slice().sort((a, b) => a.a.diff - b.a.diff).slice(0, 6);
+  const actRows = upcoming.length ? upcoming.map(x => '<tr><td><span style="color:' + x.a.clr + ';font-weight:700;font-size:11px;white-space:nowrap">● ' + _crmEsc(x.a.type) + '</span></td><td><div style="font-weight:600;font-size:12px">' + _crmEsc(x.d.title || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.d.company || '—') + ' · ' + _crmEsc(x.d.owner || '—') + '</div></td><td style="text-align:right;font-weight:700;font-size:11px;color:' + x.a.clr + ';white-space:nowrap">' + x.a.lab + '</td></tr>').join('') : '<tr><td colspan="3" style="text-align:center;color:var(--text-light);padding:14px">No activities scheduled — set a next step on a deal.</td></tr>';
   const listCard = (title, rows) => '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div></div><div class="table-wrap"><table style="font-size:12px"><tbody>' + rows + '</tbody></table></div></div>';
-  const lists = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-top:18px">' + listCard('Top 5 opportunities (by value)', oppRows) + listCard('Top 5 leads (by value)', leadRows) + '</div>';
+  const lists = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:18px;margin-top:18px">' + listCard('Top 5 opportunities (by value)', oppRows) + listCard('Top 5 leads (by value)', leadRows) + listCard('Upcoming activities', actRows) + '</div>';
   root.innerHTML = kpis + grid + lists;
   setTimeout(_crmBuildDashCharts, 80);
 }
@@ -7669,7 +7778,6 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   return [];
 }
-/* cascade: when the Company combo changes, refilter the Contact suggestions to that company */
 function _crmFillContacts(co) {
   const dl = document.getElementById('dl-contact'); if (!dl) return;
   const all = (_HR.crm_contacts || []);
@@ -7681,9 +7789,9 @@ function _crmFillContacts(co) {
 function _crmQuoteModel(deal) {
   const owner = (_DEMO_EMPLOYEES || []).find(e => e.name === deal.owner);
   const lines = (Array.isArray(deal.lines) && deal.lines.length)
-    ? deal.lines.map((ln, i) => ({ item: ln.item || (i + 1), desc: ln.desc || ln.description || '', qty: +ln.qty || 1, unit: ln.unit || 'lot', price: Math.round(+ln.price || +ln.unitPrice || 0) }))
-    : [{ item: 1, desc: deal.title || 'Engineering services & equipment', qty: 1, unit: 'lot', price: Math.round(+deal.value || 0) }];
-  lines.forEach(l => l.amount = Math.round(l.qty * l.price));
+    ? deal.lines.map((ln, i) => ({ item: ln.item || (i + 1), desc: ln.desc || ln.description || '', qty: +ln.qty || 1, unit: ln.unit || 'lot', price: Math.round(+ln.price || +ln.unitPrice || 0), disc: +ln.disc || 0 }))
+    : [{ item: 1, desc: deal.title || 'Engineering services & equipment', qty: 1, unit: 'lot', price: Math.round(+deal.value || 0), disc: 0 }];
+  lines.forEach(l => l.amount = Math.round(l.qty * l.price * (1 - (l.disc || 0) / 100)));
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const discount = Math.round(+deal.discount || 0);
   const vat = Math.round((subtotal - discount) * 0.10);
@@ -7845,6 +7953,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
+  if (id === 'crm-products') { try { crmRenderProducts(); } catch (e) { console.warn('crm-prod:', e.message); } }
   if (id === 'recruitment') { try { tkRenderRecruitment(); } catch (e) { console.warn('recruit:', e.message); } }
   if (id === 'onboarding') { try { tkRenderOnboarding(); } catch (e) { console.warn('onboard:', e.message); } }
   if (id === 'performance') { try { tkRenderPerformance(); } catch (e) { console.warn('perf:', e.message); } }
@@ -8107,6 +8216,9 @@ const _VI = {
   'Competency Matrix': 'Ma trận năng lực',
   'Save Changes': 'Lưu thay đổi',
   'removed permanently': 'đã xóa vĩnh viễn',
+  'Products': 'Sản phẩm', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
+  'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
+  'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
   'Sales / CRM': 'Bán hàng / CRM', 'Sales Dashboard': 'Bảng điều khiển bán hàng', 'Sales Pipeline': 'Quy trình bán hàng',
   'Pipeline': 'Quy trình', 'Leads': 'Khách hàng tiềm năng', 'Companies': 'Công ty', 'Companies / Accounts': 'Công ty / Khách hàng',
   'Contacts': 'Người liên hệ', 'Add Deal': 'Thêm giao dịch', 'Add Lead': 'Thêm KH tiềm năng', 'Add Company': 'Thêm công ty',
