@@ -6998,6 +6998,7 @@ const _QA_SPECS = {
   pm_risks: { title: 'Risk', coll: 'pm_risks', reload: 'pm_risks', fields: [
     { k: 'title', label: 'Risk title' }, { k: 'riskNo', label: 'Risk No.' },
     { k: 'category', label: 'Category', type: 'select', options: ['Technical', 'Schedule', 'Cost', 'External', 'Safety', 'Commercial'] },
+    { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
     { k: 'probability', label: 'Probability (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] }, { k: 'impact', label: 'Impact (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
     { k: 'responseStrategy', label: 'Response', type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept'] }, { k: 'mitigationActions', label: 'Mitigation actions', type: 'textarea' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' },
@@ -8741,7 +8742,7 @@ const _PM_TABS = [
   { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
   { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
   { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders' },
-  { k: 'docs', label: 'Doc Control', fn: 'pmRenderRfis' },
+  { k: 'docs', label: 'Docs Control', fn: 'pmRenderRfis' },
   { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments' }
 ];
 function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
@@ -8774,6 +8775,31 @@ function pmTab(k) {
 
 /* ---------- Overview tab (Integration: charter summary, EVM headline, changes, lessons) ---------- */
 function _pmT(x) { try { return (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && _VI[x] && _VI[x] !== x) ? _VI[x] : x; } catch (e) { return x; } }
+async function pmSaveSpLink(pid) {
+  const p = _pmProj(pid); if (!p) return;
+  const inp = document.getElementById('pm-ov-sp'); const url = inp ? String(inp.value || '').trim() : '';
+  try {
+    const body = Object.assign({}, p, { sharepointUrl: url });
+    await tkApi('/api/coll/pm_projects/' + pid, { method: 'PATCH', body: body });
+    p.sharepointUrl = url;
+    try { tkAudit('SharePoint link saved', p.name || '', url); } catch (e) { }
+    toast(url ? 'SharePoint link saved — generating folder-creation script…' : 'SharePoint link cleared', 'success', 5000);
+    pmTab('overview');
+    if (url) setTimeout(function () { pmSpScript(pid); }, 300);
+  } catch (e) { toast('Save failed: ' + e.message, 'error', 6000); }
+}
+function _pmOverviewSpCard(p) {
+  const canEdit = (typeof _pmCanEditProject === 'function') ? _pmCanEditProject(p) : _pmSeeAll();
+  const base = _pmSpBase(p), ctx = base ? _pmSpCtx(base) : null;
+  const folderSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const open = base ? '<a href="' + _tkEscA(ctx ? ctx.open : base) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '';
+  const viewAll = '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmTab(\'documents\')">' + folderSvg + 'View all folders</button>';
+  const hint = '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:9px">Paste the project\'s SharePoint document-library link, then <b>Save &amp; build folders</b>. The standard PMC folder structure is generated as a one-time setup script (run once by IT helpdesk — SharePoint permissions are managed by IT). Browse every folder in the <b>Documents</b> tab.</div>';
+  let row;
+  if (canEdit) row = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="pm-ov-sp" type="url" value="' + _tkEscA(base || '') + '" placeholder="https://…sharepoint.com/sites/Projects/Shared Documents/2026-031" style="flex:1;min-width:260px;font-size:12.5px;padding:8px 11px;border:1px solid var(--border);border-radius:8px"><button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSaveSpLink(\'' + p.id + '\')">' + tkIcon('download', 12) + ' Save &amp; build folders</button>' + open + viewAll + '</div>';
+  else row = base ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + open + viewAll + '</div>' : '<div style="font-size:12px;color:var(--text-light)">No SharePoint link set yet — a project manager can add it.</div>';
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Project Documents (SharePoint)</div>' + hint + row + '</div>';
+}
 function pmRenderOverview() {
   const host = document.getElementById('pm-tab-body'); if (!host) return;
   const p = _pmProj(); if (!p) return;
@@ -8821,7 +8847,7 @@ function pmRenderOverview() {
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Deliverables by status</div><div style="height:200px"><canvas id="pm-ov-deliv"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule — tasks</div><div style="height:200px"><canvas id="pm-ov-tasks"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Risk exposure</div><div style="height:200px"><canvas id="pm-ov-risk"></canvas></div></div></div>';
-  host.innerHTML = kpis + _ovCharts + charter + changeTbl + lessonsTbl;
+  host.innerHTML = kpis + _ovCharts + _pmOverviewSpCard(p) + charter + changeTbl + lessonsTbl;
   try {
     _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'].map(_pmT), datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
@@ -9046,25 +9072,46 @@ function pmRenderResources(pid) {
 }
 
 /* ---------- 7. Communications & Issues ---------- */
+let _pmFilt = {};
+function pmFiltSet(coll, k, v) { (_pmFilt[coll] = _pmFilt[coll] || {})[k] = v; _pmReload(); }
+function pmFiltClear(coll) { _pmFilt[coll] = {}; _pmReload(); }
+function _pmFiltApply(coll, rows, specs) { const f = _pmFilt[coll] || {}; const g = {}; (specs || []).forEach(function (sp) { g[sp.k] = sp.get || function (r) { return r[sp.k]; }; }); return rows.filter(function (r) { return Object.keys(f).every(function (k) { if (!f[k]) return true; const gv = (g[k] || function (x) { return x[k]; })(r); return String(gv == null ? '' : gv) === String(f[k]); }); }); }
+function _pmFiltBar(coll, rows, specs) {
+  if (!rows.length) return '';
+  const f = _pmFilt[coll] || {};
+  const sels = specs.map(function (sp) {
+    const gt = sp.get || function (r) { return r[sp.k]; };
+    const opts = [...new Set(rows.map(gt).filter(function (v) { return v != null && v !== ''; }).map(String))].sort();
+    if (!opts.length) return '';
+    return '<select class="form-control" style="width:auto;font-size:12px" onchange="pmFiltSet(\'' + coll + '\',\'' + sp.k + '\',this.value)"><option value="">' + sp.label + ': All</option>' + opts.map(function (o) { return '<option' + ((f[sp.k] || '') === o ? ' selected' : '') + '>' + _pmEsc(o) + '</option>'; }).join('') + '</select>';
+  }).join('');
+  const active = Object.keys(f).some(function (k) { return f[k]; });
+  const shown = _pmFiltApply(coll, rows, specs).length;
+  return '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' + sels + (active ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmFiltClear(\'' + coll + '\')">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + shown + ' of ' + rows.length + '</span>' : '') + '</div>';
+}
 function pmRenderComms(pid) {
   const comms = _pmScope(_HR.pm_comms).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const issues = _pmScope(_HR.pm_issues);
   const openIss = issues.filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length;
   const kpis = _hrKpiRow([_hrKpi('Communications', comms.length), _hrKpi('Issues', issues.length, '#3168A8'), _hrKpi('Open issues', openIss, '#EF4444')]);
-  const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _pmTable('pm_comms', [
+  const _cSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'audience', label: 'Audience' }];
+  const _cBar = _pmFiltBar('pm_comms', comms, _cSpecs), _cRows = _pmFiltApply('pm_comms', comms, _cSpecs);
+  const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
     { label: 'Date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
     { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') },
     { label: 'File', render: r => _pmFileCell('pm_comms', r) }
-  ], comms), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
-  const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _pmTable('pm_issues', [
+  ], _cRows), '<button class="btn btn-ghost btn-sm" onclick="pmStatusPDF(\'' + pid + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Status Report</button>');
+  const _iSpecs = [{ k: 'priority', label: 'Priority' }, { k: 'status', label: 'Status' }, { k: 'owner', label: 'Owner' }];
+  const _iBar = _pmFiltBar('pm_issues', issues, _iSpecs), _iRows = _pmFiltApply('pm_issues', issues, _iSpecs);
+  const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
     { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
     { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_issues', r) }
-  ], issues));
+  ], _iRows));
   _pmSet(kpis + commsTbl + issuesTbl);
 }
 
@@ -9082,15 +9129,17 @@ function pmRenderRisks(pid) {
   cells += '<tr><td></td>' + [1, 2, 3, 4, 5].map(p => '<td style="font-size:10px;color:var(--text-light);text-align:center;font-weight:700">' + p + '</td>').join('') + '</tr>';
   const heat = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Probability × Impact Heatmap</div><div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><table style="border-collapse:collapse"><tbody>' + cells + '</tbody></table>' +
     '<div style="font-size:11px;color:var(--text-light)"><div style="margin-bottom:4px"><b style="color:var(--text-dark)">Rows</b> = Impact (1–5)</div><div style="margin-bottom:8px"><b style="color:var(--text-dark)">Cols</b> = Probability (1–5)</div>' + RISK_BANDS.map(b => '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:' + b.hex + '"></span>' + b.band + '</div>').join('') + '</div></div></div>';
-  const tbl = _pmCard('Risk Register', 'pm_risks', 'Add risk', _pmTable('pm_risks', [
+  const _rSpecs = [{ k: 'category', label: 'Category' }, { k: 'responseStrategy', label: 'Response' }, { k: 'owner', label: 'Owner' }, { k: 'contractor', label: 'Contractor' }, { k: 'status', label: 'Status' }];
+  const _rBar = _pmFiltBar('pm_risks', risks, _rSpecs), _rRows = _pmFiltApply('pm_risks', risks, _rSpecs);
+  const tbl = _pmCard('Risk Register', 'pm_risks', 'Add risk', _rBar + _pmTable('pm_risks', [
     { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.riskNo || '—') + '</span>' },
     { label: 'Risk', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Category', k: 'category' },
     { label: 'P', align: 'center', render: r => _pmEsc(r.probability || '—') }, { label: 'I', align: 'center', render: r => _pmEsc(r.impact || '—') },
     { label: 'Score', align: 'center', render: r => { const b = _pmRiskBand(+r.score || 0); return '<span style="display:inline-block;background:' + b.hex + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 7px">' + (r.score || 0) + ' ' + b.band + '</span>'; } },
-    { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' },
+    { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' }, { label: 'Contractor / Sub', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_risks', r) }
-  ], risks));
+  ], _rRows));
   _pmSet(kpis + heat + tbl);
 }
 
@@ -9100,20 +9149,24 @@ function pmRenderProcurement(pid) {
   const committed = ps.reduce((s, x) => s + (+x.value || 0), 0);
   const active = ps.filter(x => x.status === 'Active' || x.status === 'Awarded').length;
   const kpis = _hrKpiRow([_hrKpi('Packages', ps.length), _hrKpi('Committed value', _pmMoneyShort(committed), '#F59E0B'), _hrKpi('Active / Awarded', active, 'var(--emerald)')]);
-  const tbl = _pmCard('Procurement & Subcontracts', 'pm_procurement', 'Add package', _pmTable('pm_procurement', [
+  const _pSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'vendor', label: 'Contractor / Vendor' }];
+  const _pBar = _pmFiltBar('pm_procurement', ps, _pSpecs), _pRows = _pmFiltApply('pm_procurement', ps, _pSpecs);
+  const tbl = _pmCard('Procurement & Subcontracts', 'pm_procurement', 'Add package', _pBar + _pmTable('pm_procurement', [
     { label: 'Pkg', sk: 'pkgNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
     { label: 'Package / Scope', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Contractor / Vendor', sk: 'vendor', render: r => r.vendor ? _pmBadge(r.vendor, '#3168A8') : '—' }, { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', '#8B5CF6') },
     { label: 'Value', sk: 'value', align: 'right', render: r => _pmMoney(r.value) }, { label: 'Ret %', sk: 'retentionPct', align: 'right', render: r => _pmEsc((r.retentionPct || 0) + '%') },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Planned', r.status === 'Completed' || r.status === 'Closed' ? '#00B060' : r.status === 'Active' || r.status === 'Awarded' ? '#205090' : '#94a3b8') }
-  ], ps));
+  ], _pRows));
   const pays = _pmScope(_HR.pm_procurement_payments);
-  const payTbl = _pmCard('Payment Certificates (IPC)', 'pm_procurement_payments', 'Add cert', _pmTable('pm_procurement_payments', [
+  const _paySpecs = [{ k: 'status', label: 'Status' }, { k: 'period', label: 'Period' }];
+  const _payBar = _pmFiltBar('pm_procurement_payments', pays, _paySpecs), _payRows = _pmFiltApply('pm_procurement_payments', pays, _paySpecs);
+  const payTbl = _pmCard('Payment Certificates (IPC)', 'pm_procurement_payments', 'Add cert', _payBar + _pmTable('pm_procurement_payments', [
     { label: 'Cert', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.certNo || '—') + '</span>' },
     { label: 'Period', k: 'period' }, { label: 'Gross', align: 'right', render: r => _pmMoney(r.grossClaimed) },
     { label: 'Retention', align: 'right', render: r => _pmMoney(r.retentionDeducted) }, { label: 'Net certified', align: 'right', render: r => _pmMoney(r.netCertified) },
     { label: 'Status', render: r => _pmBadge(r.status || 'Submitted', r.status === 'Paid' ? '#00B060' : '#F59E0B') }
-  ], pays));
+  ], _payRows));
   _pmSet(kpis + tbl + payTbl);
 }
 
@@ -9125,12 +9178,14 @@ function pmRenderStakeholders(pid) {
   const quad = (name, hexKey) => { const list = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === name); return '<div style="background:' + SK_QUAD_HEX[name] + '12;border:1px solid ' + SK_QUAD_HEX[name] + '44;border-radius:9px;padding:10px;min-height:90px"><div style="font-size:11px;font-weight:800;color:' + SK_QUAD_HEX[name] + ';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">' + name + '</div>' + (list.length ? list.map(s => '<div style="font-size:12px;margin-bottom:3px">• ' + _pmEsc(s.name || '') + (s.organization ? ' <span style="color:var(--text-light)">(' + _pmEsc(s.organization) + ')</span>' : '') + '</div>').join('') : '<div style="font-size:11px;color:var(--text-light)">—</div>') + '</div>'; };
   const grid = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:4px">Power / Interest Grid (Mendelow)</div><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">↑ Influence (Power) &nbsp;·&nbsp; → Interest</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + quad('Keep Satisfied') + quad('Manage Closely') + quad('Monitor') + quad('Keep Informed') + '</div></div>';
-  const tbl = _pmCard('Stakeholder Register', 'pm_stakeholders', 'Add stakeholder', _pmTable('pm_stakeholders', [
+  const _sSpecs = [{ k: 'organization', label: 'Organization' }, { k: 'influence', label: 'Influence' }, { k: 'interest', label: 'Interest' }, { k: 'quadrant', label: 'Quadrant', get: x => x.quadrant || _pmQuadrant(x.influence, x.interest) }, { k: 'attitude', label: 'Attitude' }];
+  const _sBar = _pmFiltBar('pm_stakeholders', sk, _sSpecs), _sRows = _pmFiltApply('pm_stakeholders', sk, _sSpecs);
+  const tbl = _pmCard('Stakeholder Register', 'pm_stakeholders', 'Add stakeholder', _sBar + _pmTable('pm_stakeholders', [
     { label: 'Name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' }, { label: 'Organization', k: 'organization' }, { label: 'Role', k: 'role' },
     { label: 'Influence', render: r => _pmBadge(r.influence || '—', r.influence === 'High' ? '#205090' : '#94a3b8') }, { label: 'Interest', render: r => _pmBadge(r.interest || '—', r.interest === 'High' ? '#3168A8' : '#94a3b8') },
     { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(qd, SK_QUAD_HEX[qd]); } },
     { label: 'Attitude', k: 'attitude' }
-  ], sk));
+  ], _sRows));
   _pmSet(kpis + grid + tbl);
 }
 
@@ -9432,6 +9487,11 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'Project Documents (SharePoint)': 'Tài liệu dự án (SharePoint)',
+  'Save & build folders': 'Lưu & tạo thư mục',
+  'View all folders': 'Xem tất cả thư mục',
+  'Docs Control': 'Kiểm soát tài liệu',
+  'Contractor / Sub': 'Nhà thầu / Thầu phụ',
   'ITP Schedule (timeline)': 'Lịch ITP (dòng thời gian)',
   'Planned start': 'Bắt đầu dự kiến',
   'Planned finish': 'Kết thúc dự kiến',
