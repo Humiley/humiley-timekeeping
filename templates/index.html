@@ -8680,7 +8680,7 @@ function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
   const so = _pmSort[coll] || {};
-  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="Sort"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
+  const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
@@ -8853,11 +8853,12 @@ function pmRenderScope(pid) {
     { label: 'Deliverable', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
     { label: 'Contractor', sk: 'owner', render: r => r.owner ? _pmBadge(r.owner, '#3168A8') : '—' },
     { label: 'Supervisor', sk: 'supervisor', render: r => r.supervisor ? '<div style="display:flex;align-items:center;gap:6px">' + _crmAva(r.supervisor) + '<span>' + _pmEsc(r.supervisor) + '</span></div>' : '—' },
-    { label: 'Due', sk: 'due', render: r => _pmFmt(r.due) }, { label: 'Wt', sk: 'weight', align: 'right', render: r => _pmEsc(r.weight || 1) },
+    { label: 'Due', sk: 'due', render: r => _pmFmt(r.due) }, { label: 'Weight', sk: 'weight', tip: 'Weight = how much this deliverable counts toward the weighted % complete (2 counts twice as much as 1)', align: 'right', render: r => _pmEsc(r.weight || 1) },
     { label: 'Progress', sk: 'percentComplete', render: r => '<div style="display:flex;align-items:center;gap:6px">' + _pmBar(r.percentComplete) + '<span style="font-size:11px">' + _pmPct(r.percentComplete) + '%</span></div>' },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
   ], ds));
-  _pmSet(kpis + scopeStmt + tbl);
+  const wtNote = '<div style="font-size:11px;color:var(--text-light);padding:2px 4px 10px"><b>Weight</b> = each deliverable&rsquo;s relative contribution to the project&rsquo;s <b>weighted % complete</b> — a deliverable with weight 2 advances overall progress twice as much as one with weight 1.</div>';
+  _pmSet(kpis + scopeStmt + tbl + wtNote);
 }
 
 /* ---------- 3. Schedule (Gantt) ---------- */
@@ -11207,7 +11208,8 @@ function tkFmtDate(v) {
   else if (sl) { m = +sl[1]; d = +sl[2]; y = +sl[3]; if (m > 12 && d <= 12) { const t = m; m = d; d = t; } if (y < 100) y += 2000; }
   else return v;
   if (m < 1 || m > 12 || d < 1 || d > 31) return v;
-  return MON[m - 1] + ' ' + d + ' - ' + y;   // e.g. "June 20 - 2026"
+  const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return MON3[m - 1] + '-' + String(d).padStart(2, '0') + '-' + String(y).slice(-2);   // e.g. "Jun-06-26"
 }
 /* Format a Date object the same way ("June 20 - 2026"). */
 function tkFmtDateObj(dt) { dt = dt || new Date(); return tkFmtDate(dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate()); }
