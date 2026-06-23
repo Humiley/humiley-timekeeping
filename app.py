@@ -218,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
         if path.startswith("/api/leave/"):
             lid = path.rsplit("/", 1)[1]
-            return self._guard(lambda u: self._leave_status(u, lid, body))
+            return self._guard(lambda u: self._leave_status(u, lid, body), manager=True)
         if path.startswith("/api/zones/"):
             zid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._zone_update(zid, body), manager=True)
@@ -228,7 +228,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
-            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(not seg[0].startswith("crm_")))
+            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(seg[0] not in self.STAFF_WRITE and not seg[0].startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: (db.delete_employee(eid), self._json({"ok": True}))[1], manager=True)
@@ -479,12 +479,17 @@ class Handler(BaseHTTPRequestHandler):
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
+    # minimum access LEVEL required to READ a collection (self-service collections stay open)
+    READ_MIN = {"payruns": "management", "payadjust": "management", "reviews": "manager", "talent": "manager", "exits": "manager", "jobs": "manager", "competency": "manager"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        need = self.READ_MIN.get(name)
+        if need and self._level_rank(self._caller_level(u)) < self._level_rank(need):
+            return self._err("Access restricted to %s level or above." % need, 403)
         return self._json({"items": db.list_collection(name)})
 
     @staticmethod

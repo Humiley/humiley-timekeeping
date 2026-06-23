@@ -4196,7 +4196,7 @@ function tkReqRouting(id) {
 async function tkReqApprove(id) {
   const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
   const step = j.appStep || 0;
-  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Approved', ts: new Date().toLocaleDateString('en-GB') };
+  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Approved', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   j.appStep = step + 1;
   j.status = j.appStep >= _REQ_CHAIN.length ? 'Approved' : 'Pending ' + _REQ_CHAIN[j.appStep];
   try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition approved · ' + _REQ_CHAIN[step], j.title, j.status); toast(_REQ_CHAIN[step] + ' approved'); tkReqRouting(id); tkRenderRecruitment(); }
@@ -4205,7 +4205,7 @@ async function tkReqApprove(id) {
 async function tkReqReject(id) {
   const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
   const step = j.appStep || 0;
-  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Rejected', ts: new Date().toLocaleDateString('en-GB') };
+  j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Rejected', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   j.status = 'On Hold';
   try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition rejected · ' + _REQ_CHAIN[step], j.title, ''); toast('Requisition rejected at ' + _REQ_CHAIN[step], 'warn'); document.getElementById('reqRouteOverlay')?.remove(); tkRenderRecruitment(); }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
@@ -5090,7 +5090,7 @@ function tkPipManage(id) {
 function tkPipAddCheck(id) {
   const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
   const note = (document.getElementById('pip-newcheck') || {}).value; if (!note) return;
-  p.checkins = p.checkins || []; p.checkins.push({ date: new Date().toLocaleDateString('en-GB'), note: note });
+  p.checkins = p.checkins || []; p.checkins.push({ date: tkFmtDate(new Date().toISOString().slice(0, 10)), note: note });
   tkApi('/api/coll/pip/' + id, { method: 'PATCH', body: p }).then(() => { toast('Check-in added'); tkPipManage(id); });
 }
 async function tkPipSave(id) {
@@ -5447,7 +5447,7 @@ async function tkIndivPayRunGo() {
   const c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m) });
   const period = _PAY_MONTHS[m] + ' ' + y;
   try {
-    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'individual', empId: empId, empName: e.name, period: period, count: 1, gross: c.grossPay, net: c.net, ee: c.si, er: c.erTotal, pit: c.pit, erCost: c.employerCost, grade: c.grade, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'individual', empId: empId, empName: e.name, period: period, count: 1, gross: c.grossPay, net: c.net, ee: c.si, er: c.erTotal, pit: c.pit, erCost: c.employerCost, grade: c.grade, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.payruns = _HR.payruns || []).push(res.item);
     tkAudit('Individual pay run', e.name, period + ' · net ' + _PAY_FMT(c.net));
     document.getElementById('indivPayOverlay')?.remove();
@@ -5463,7 +5463,7 @@ async function tkCreatePayRun() {
   if ((_HR.payruns || []).some(r => r.period === period)) { if (!confirm('A pay run for ' + period + ' already exists. Create another?')) return; }
   const t = _payTotals;
   try {
-    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.payruns = _HR.payruns || []).push(res.item);
     _payRenderRuns();
     toast('Pay run created for ' + period + ' — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
@@ -5548,7 +5548,7 @@ async function tkRollOutPayroll() {
   const t = _payTotals;
   if (!confirm('Roll out ' + period + ' payroll?\n\n' + t.count + ' employees · gross ' + _PAY_FMT(t.gross) + ' · net ' + _PAY_FMT(t.net) + '\n\nThis finalises the month and records the pay run.')) return;
   try {
-    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'company', period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: new Date().toLocaleDateString('en-GB') } });
+    const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'company', period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.payruns = _HR.payruns || []).push(res.item);
     tkAudit('Payroll rolled out', period, t.count + ' employees · net ' + _PAY_FMT(t.net));
     toast(period + ' payroll rolled out — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
@@ -6152,7 +6152,7 @@ async function tkConfirmPolicy(doc) {
   const e = _tkMe(); if (!e) return;
   if ((_HR.acks || []).find(a => a.empId === e.id && a.doc === doc)) { document.getElementById('policyOverlay')?.remove(); toast('Already acknowledged'); return; }
   try {
-    const res = await tkApi('/api/coll/acks', { method: 'POST', body: { doc: doc, ts: new Date().toLocaleDateString('en-GB') } });
+    const res = await tkApi('/api/coll/acks', { method: 'POST', body: { doc: doc, ts: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc);
     document.getElementById('policyOverlay')?.remove(); toast('Acknowledged: ' + doc); tkRenderMyProfile();
   }
@@ -6230,7 +6230,7 @@ async function tkClaimSave() {
   if (!items.length) { toast('Add at least one item with an amount', 'warn'); return; }
   const total = items.reduce((s, it) => s + it.amount, 0);
   const title = (document.getElementById('claim-title') || {}).value || (items.length > 1 ? items.length + ' items' : items[0].category);
-  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, items: items, amount: total, status: 'Submitted', ts: new Date().toLocaleDateString('en-GB') };
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   try {
     await tkApi('/api/coll/claims', { method: 'POST', body });
     tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
@@ -7774,7 +7774,7 @@ function crmFillPipe() {
       const adv = (i >= 0 && i < _CRM_OPEN.length - 1) ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="crmDealMove(\'' + d.id + '\',\'' + _CRM_OPEN[i + 1] + '\')">→</button>' : '';
       const close = _CRM_OPEN.includes(d.stage || 'New') ? '<button class="btn btn-emerald btn-sm" title="Mark Won" style="font-size:10px;padding:2px 8px" onclick="crmDealMove(\'' + d.id + '\',\'Won\')">Won</button><button class="btn btn-ghost btn-sm" title="Mark Lost" style="font-size:10px;padding:2px 8px;color:#C00000" onclick="crmDealMove(\'' + d.id + '\',\'Lost\')">Lost</button>' : '';
       const quote = '<button class="btn btn-ghost btn-sm" title="Build quotation (PDF / Excel)" style="font-size:10px;padding:2px 8px" onclick="crmQuoteBuilder(\'' + d.id + '\')">Quote</button>';
-      const pmBtn = (d.stage === 'Won' && typeof _appDeniedCurrent === 'function' && !_appDeniedCurrent('pm')) ? '<button class="btn btn-ghost btn-sm" title="Create a PMC project from this won deal" style="font-size:10px;padding:2px 8px;color:var(--navy);font-weight:700" onclick="event.stopPropagation();pmFromDeal(\'' + d.id + '\')">+ Project</button>' : '';
+      const pmBtn = (d.stage === 'Won' && typeof _appDeniedCurrent === 'function' && !_appDeniedCurrent('pm') && typeof _pmSeeAll === 'function' && _pmSeeAll()) ? '<button class="btn btn-ghost btn-sm" title="Create a PMC project from this won deal" style="font-size:10px;padding:2px 8px;color:var(--navy);font-weight:700" onclick="event.stopPropagation();pmFromDeal(\'' + d.id + '\')">+ Project</button>' : '';
       const pr = +d.priority || 0;
       const stars = [1, 2, 3].map(n => '<span title="Set priority" onclick="event.stopPropagation();crmSetPriority(\'' + d.id + '\',' + (pr === n ? n - 1 : n) + ')" style="cursor:pointer;font-size:13px;color:' + (n <= pr ? '#f59e0b' : '#cbd5e1') + '">★</span>').join('');
       const tags = _crmTags(d.tags).map(t => '<span style="display:inline-block;background:' + tkAvatarColor(t) + '1f;color:' + tkAvatarColor(t) + ';border-radius:8px;padding:1px 7px;font-size:10px;font-weight:600;margin:3px 3px 0 0">' + _crmEsc(t) + '</span>').join('');
@@ -8413,7 +8413,7 @@ function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || 
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
 async function _pmLoadAll() {
-  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_quality_itp_items', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports'].map(c => tkLoadColl(c).catch(() => { })));
+  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports'].map(c => tkLoadColl(c).catch(() => { })));
 }
 
 /* ---- Earned Value Management ---- */
@@ -8610,7 +8610,7 @@ function _pmReportRange(mode) {
   const ns = new Date(now.getFullYear(), now.getMonth() + 1, 1), ne = new Date(now.getFullYear(), now.getMonth() + 2, 0);
   return { start: ms, end: me, next: { start: ns, end: ne }, label: now.toLocaleString('en-US', { month: 'long', year: 'numeric' }), kind: 'Monthly', word: 'Month' };
 }
-function _pmInRange(dateStr, r) { if (!dateStr) return false; const d = new Date(String(dateStr).slice(0, 10)); return !isNaN(d.getTime()) && d >= r.start && d <= r.end; }
+function _pmInRange(dateStr, r) { if (!dateStr) return false; const a = String(dateStr).slice(0, 10).split('-'); const d = new Date(+a[0], (+a[1] || 1) - 1, +a[2] || 1); return !isNaN(d.getTime()) && d >= r.start && d <= r.end; }
 function pmReport(pid, mode) {
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
   const R = _pmReportRange(mode), M = 15, DOC = 'HML-PMC-RPT';
@@ -8693,12 +8693,13 @@ function _pmSortRows(coll, cols, rows) {
   const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
   return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
 }
+function _pmRowEditable(coll) { const sw = ['pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
   const so = _pmSort[coll] || {};
   const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
-  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + _hrEditDel(coll, r.id, coll) + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
+  const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
   return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 
@@ -8815,7 +8816,7 @@ function _pmOverviewSpCard(p) {
 }
 function pmRenderOverview() {
   const host = document.getElementById('pm-tab-body'); if (!host) return;
-  const p = _pmProj(); if (!p) return;
+  const p = _pmProj(); if (!p) { host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'; return; }
   const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
   const kpis = _hrKpiRow([
     _hrKpi('Progress', sr.pct + '%', 'var(--navy)'),
@@ -9103,7 +9104,7 @@ function _pmFiltBar(coll, rows, specs) {
     const gt = sp.get || function (r) { return r[sp.k]; };
     const opts = [...new Set(rows.map(gt).filter(function (v) { return v != null && v !== ''; }).map(String))].sort();
     if (!opts.length) return '';
-    return '<select class="form-control" style="width:auto;font-size:12px" onchange="pmFiltSet(\'' + coll + '\',\'' + sp.k + '\',this.value)"><option value="">' + sp.label + ': All</option>' + opts.map(function (o) { return '<option' + ((f[sp.k] || '') === o ? ' selected' : '') + '>' + _pmEsc(o) + '</option>'; }).join('') + '</select>';
+    return '<select class="form-control" style="width:auto;font-size:12px" onchange="pmFiltSet(\'' + coll + '\',\'' + sp.k + '\',this.value)"><option value="">' + _pmT(sp.label) + ': ' + _pmT('All') + '</option>' + opts.map(function (o) { return '<option value="' + _tkEscA(o) + '"' + ((f[sp.k] || '') === o ? ' selected' : '') + '>' + _pmEsc(_pmT(o)) + '</option>'; }).join('') + '</select>';
   }).join('');
   const active = Object.keys(f).some(function (k) { return f[k]; });
   const shown = _pmFiltApply(coll, rows, specs).length;
@@ -9191,11 +9192,12 @@ function pmRenderProcurement(pid) {
 }
 
 /* ---------- 10. Stakeholders (power/interest grid) ---------- */
+function _pmQuadLabel(q) { if (typeof _LANG === 'undefined' || _LANG.cur !== 'vi') return q; const m = { 'Manage Closely': 'Quản lý sát', 'Keep Satisfied': 'Giữ hài lòng', 'Keep Informed': 'Thông báo thường xuyên', 'Monitor': 'Theo dõi' }; return m[q] || q; }
 function pmRenderStakeholders(pid) {
   const sk = _pmScope(_HR.pm_stakeholders);
   const manage = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === 'Manage Closely').length;
   const kpis = _hrKpiRow([_hrKpi('Stakeholders', sk.length), _hrKpi('Manage closely', manage, '#205090'), _hrKpi('External', sk.filter(s => s.internalExternal === 'External').length, '#8B5CF6')]);
-  const quad = (name, hexKey) => { const list = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === name); return '<div style="background:' + SK_QUAD_HEX[name] + '12;border:1px solid ' + SK_QUAD_HEX[name] + '44;border-radius:9px;padding:10px;min-height:90px"><div style="font-size:11px;font-weight:800;color:' + SK_QUAD_HEX[name] + ';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">' + name + '</div>' + (list.length ? list.map(s => '<div style="font-size:12px;margin-bottom:3px">• ' + _pmEsc(s.name || '') + (s.organization ? ' <span style="color:var(--text-light)">(' + _pmEsc(s.organization) + ')</span>' : '') + '</div>').join('') : '<div style="font-size:11px;color:var(--text-light)">—</div>') + '</div>'; };
+  const quad = (name, hexKey) => { const list = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === name); return '<div style="background:' + SK_QUAD_HEX[name] + '12;border:1px solid ' + SK_QUAD_HEX[name] + '44;border-radius:9px;padding:10px;min-height:90px"><div style="font-size:11px;font-weight:800;color:' + SK_QUAD_HEX[name] + ';text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">' + _pmQuadLabel(name) + '</div>' + (list.length ? list.map(s => '<div style="font-size:12px;margin-bottom:3px">• ' + _pmEsc(s.name || '') + (s.organization ? ' <span style="color:var(--text-light)">(' + _pmEsc(s.organization) + ')</span>' : '') + '</div>').join('') : '<div style="font-size:11px;color:var(--text-light)">—</div>') + '</div>'; };
   const grid = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:4px">Power / Interest Grid (Mendelow)</div><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">↑ Influence (Power) &nbsp;·&nbsp; → Interest</div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' + quad('Keep Satisfied') + quad('Manage Closely') + quad('Monitor') + quad('Keep Informed') + '</div></div>';
   const _sSpecs = [{ k: 'organization', label: 'Organization' }, { k: 'influence', label: 'Influence' }, { k: 'interest', label: 'Interest' }, { k: 'quadrant', label: 'Quadrant', get: x => x.quadrant || _pmQuadrant(x.influence, x.interest) }, { k: 'attitude', label: 'Attitude' }];
@@ -9203,7 +9205,7 @@ function pmRenderStakeholders(pid) {
   const tbl = _pmCard('Stakeholder Register', 'pm_stakeholders', 'Add stakeholder', _sBar + _pmTable('pm_stakeholders', [
     { label: 'Name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' }, { label: 'Organization', k: 'organization' }, { label: 'Role', k: 'role' },
     { label: 'Influence', render: r => _pmBadge(r.influence || '—', r.influence === 'High' ? '#205090' : '#94a3b8') }, { label: 'Interest', render: r => _pmBadge(r.interest || '—', r.interest === 'High' ? '#3168A8' : '#94a3b8') },
-    { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(qd, SK_QUAD_HEX[qd]); } },
+    { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(_pmQuadLabel(qd), SK_QUAD_HEX[qd]); } },
     { label: 'Attitude', k: 'attitude' }
   ], _sRows));
   _pmSet(kpis + grid + tbl);
@@ -9459,8 +9461,8 @@ async function pmRenderPortfolio() {
   const byStatus = {}; projects.forEach(p => { const k = p.status || 'Planning'; byStatus[k] = (byStatus[k] || 0) + 1; });
   const byRag = { Green: 0, Amber: 0, Red: 0 }; projects.forEach(p => { byRag[_pmEffectiveRag(p)]++; });
   try {
-    if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Projects' } });
-    _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'], datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Health' } });
+    if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus).map(_pmT), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Projects') } });
+    _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'].map(_pmT), datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Health') } });
     const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
     _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
@@ -9600,6 +9602,34 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'Cost Variance (CV)': 'Chênh lệch chi phí (CV)',
+  'Schedule Variance (SV)': 'Chênh lệch tiến độ (SV)',
+  'Forecast (EAC)': 'Dự báo khi hoàn thành (EAC)',
+  'Var. at Completion (VAC)': 'Chênh lệch khi hoàn thành (VAC)',
+  'To Complete (ETC)': 'Chi phí còn lại (ETC)',
+  'Earned Value Analysis': 'Phân tích giá trị thu được',
+  'No records yet.': 'Chưa có bản ghi nào.',
+  'Search projects…': 'Tìm dự án…',
+  'All status': 'Tất cả trạng thái',
+  'Contract value': 'Giá trị hợp đồng',
+  'Member': 'Thành viên',
+  'Allocation': 'Phân bổ',
+  'Rate': 'Đơn giá',
+  'Workload (total allocation per person)': 'Khối lượng (phân bổ theo người)',
+  'Item': 'Hạng mục',
+  'Committed': 'Đã cam kết',
+  'Invoiced': 'Đã xuất hóa đơn',
+  'Variance': 'Chênh lệch',
+  'Sched Δ (d)': 'Δ Tiến độ (ngày)',
+  'Cost Δ': 'Δ Chi phí',
+  'Pkg': 'Gói',
+  'Weather': 'Thời tiết',
+  'Green': 'Xanh (Tốt)',
+  'Amber': 'Vàng (Cảnh báo)',
+  'Red': 'Đỏ (Nguy cơ)',
+  'Confidential': 'Bảo mật',
+  'Restricted': 'Hạn chế',
+  'Internal': 'Nội bộ',
   'Day range': 'Khoảng ngày',
   'Project Documents (SharePoint)': 'Tài liệu dự án (SharePoint)',
   'Save & build folders': 'Lưu & tạo thư mục',
