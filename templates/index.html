@@ -363,6 +363,11 @@ select.form-control{cursor:pointer}
 
 /* ── ROLE-BASED SIDEBAR ITEMS ── */
 .nav-item[data-roles]{transition:opacity .2s}
+.sidebar-section-label.sb-clickable{cursor:pointer;display:flex;align-items:center;justify-content:space-between;border-radius:6px;margin:0 6px;padding-left:10px;padding-right:8px}
+.sidebar-section-label.sb-clickable:hover{color:rgba(255,255,255,.75) !important;background:rgba(255,255,255,.06)}
+.sb-chev{opacity:.55;transition:transform .2s;display:inline-flex;flex-shrink:0}
+#sidebar.collapsed .sb-group{display:block !important}
+#sidebar.collapsed .sb-chev{display:none}
 /* ── STAFF DASHBOARD ── */
 .staff-hero{background:linear-gradient(135deg,var(--navy-deep) 0%,var(--navy) 60%,var(--emerald-deep) 100%);border-radius:14px;padding:28px 32px;color:#fff;display:flex;align-items:center;justify-content:space-between;margin-bottom:22px;position:relative;overflow:hidden}
 .staff-hero::after{content:'';position:absolute;right:-20px;top:-20px;width:180px;height:180px;background:rgba(255,255,255,.05);border-radius:50%}
@@ -3526,6 +3531,7 @@ function _applyRole(role) {
     if (rank < need) el.style.display = 'none';
   });
   try { _applyAppAccess(); } catch (e) {}
+  try { _sbInit(); } catch (e) {}
 
   /* update sidebar user card — show the actual signed-in person */
   const badge    = document.getElementById('sidebar-role-badge');
@@ -6638,7 +6644,9 @@ function tkRenderPermissions() {
     ['Self-service — own profile, attendance, leave, claims &amp; training', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Approve team requests — leave · claims · travel · PADR', ['manager', 'management', 'editor', 'admin']],
     ['People &amp; HR — add/edit employees, recruitment, performance, devices', ['manager', 'management', 'editor', 'admin']],
-     ['Sales / CRM — on for all by default; switch off per user in the table below', ['staff', 'manager', 'management', 'editor', 'admin']],
+    ['Sales / CRM — access module: dashboard, pipeline, leads, companies, contacts, products (on by default; toggle per user below)', ['staff', 'manager', 'management', 'editor', 'admin']],
+    ['Sales / CRM — create / edit deals, leads, companies, contacts &amp; products', ['staff', 'manager', 'management', 'editor', 'admin']],
+    ['Sales / CRM — convert a Won deal into a PMC project', ['manager', 'management', 'editor', 'admin']],
     ['Projects (PMC) — access workspace: assigned projects, schedule &amp; reports', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Projects (PMC) — update registers (tasks · risk · issue · RFI · quality)', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Projects (PMC) — create projects, edit charter / cost / procurement &amp; see all projects', ['manager', 'management', 'editor', 'admin']],
@@ -8994,12 +9002,19 @@ function pmRenderCosts(pid) {
 let _pmQF = { contractor: '', period: '' };
 function pmQSet(k, v) { _pmQF[k] = v; pmTab('quality'); }
 function pmQClear() { _pmQF = { contractor: '', period: '' }; pmTab('quality'); }
+let _pmItpRange = '';
+function pmItpRange() { const f = (document.getElementById('pm-itp-from') || {}).value || ''; const t = (document.getElementById('pm-itp-to') || {}).value || ''; _pmItpRange = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('quality'); }
+function pmItpRangeClear() { _pmItpRange = ''; pmTab('quality'); }
 function _pmItpTimeline(itps) {
-  const dated = itps.filter(function (t) { return t.plannedStart || t.plannedFinish; }).slice().sort(function (a, b) { return (a.plannedStart || a.plannedFinish || '').localeCompare(b.plannedStart || b.plannedFinish || ''); });
-  const hdr = '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">ITP Schedule (timeline)</div></div>';
-  if (!dated.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="padding:16px;color:var(--text-light);font-size:12px;text-align:center">No ITP dates yet — set <b>Planned start</b> / <b>Planned finish</b> on an ITP to see the timeline.</div></div>';
+  const _itpIsR = _pmItpRange.charAt(0) === 'R', _itpRp = _itpIsR ? _pmItpRange.slice(1).split('_') : ['', ''];
+  let dated = itps.filter(function (t) { return t.plannedStart || t.plannedFinish; }).slice().sort(function (a, b) { return (a.plannedStart || a.plannedFinish || '').localeCompare(b.plannedStart || b.plannedFinish || ''); });
+  if (_itpIsR && (_itpRp[0] || _itpRp[1])) { const rs = _itpRp[0] || '0000-00-00', re = _itpRp[1] || '9999-12-31'; dated = dated.filter(function (t) { const st = t.plannedStart || t.plannedFinish, fi = t.plannedFinish || t.plannedStart; return (st || '9999') <= re && (fi || '0000') >= rs; }); }
+  const _itpRangeUi = '<span style="font-size:11px;color:var(--text-light)">Day range</span><input type="date" id="pm-itp-from" value="' + (_itpRp[0] || '') + '" onchange="pmItpRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px"><span style="color:var(--text-light)">→</span><input type="date" id="pm-itp-to" value="' + (_itpRp[1] || '') + '" onchange="pmItpRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px">' + (_itpIsR ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmItpRangeClear()">Clear</button>' : '');
+  const hdr = '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">ITP Schedule (timeline)</div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + _itpRangeUi + '</div></div>';
+  if (!dated.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="padding:16px;color:var(--text-light);font-size:12px;text-align:center">' + (_itpIsR ? 'No ITP in this day range.' : 'No ITP dates yet — set <b>Planned start</b> / <b>Planned finish</b> on an ITP to see the timeline.') + '</div></div>';
   let alld = []; dated.forEach(function (t) { if (t.plannedStart) alld.push(t.plannedStart); if (t.plannedFinish) alld.push(t.plannedFinish); });
-  const min = alld.reduce(function (a, b) { return a < b ? a : b; }), max = alld.reduce(function (a, b) { return a > b ? a : b; });
+  let min = alld.reduce(function (a, b) { return a < b ? a : b; }), max = alld.reduce(function (a, b) { return a > b ? a : b; });
+  if (_itpIsR) { if (_itpRp[0]) min = _itpRp[0]; if (_itpRp[1]) max = _itpRp[1]; }
   const span = Math.max(1, _pmDateDiff(min, max) || 1), ROW = 28, LBLW = 250;
   const _ml = [];
   { let d = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1); const endD = new Date(max);
@@ -9394,6 +9409,45 @@ async function pmRenderPortfolio() {
   } catch (e) { }
 }
 
+function _sbKey(lab) { return 'sbsec_' + (lab.dataset.sbkey || (lab.textContent || '').trim()); }
+function _sbSet(lab, collapsed) { if (lab._grp) lab._grp.style.display = collapsed ? 'none' : ''; const c = lab.querySelector('.sb-chev'); if (c) c.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)'; lab._collapsed = collapsed; }
+function _sbToggle(lab) { const c = !lab._collapsed; _sbSet(lab, c); try { localStorage.setItem(_sbKey(lab), c ? '1' : '0'); } catch (e) {} }
+function _sbWrap() {
+  const scroll = document.querySelector('.sidebar-scroll'); if (!scroll || scroll._sbWrapped) return;
+  [...scroll.querySelectorAll('.sidebar-section-label')].forEach(function (lab) {
+    lab.dataset.sbkey = (lab.textContent || '').trim();
+    const grp = document.createElement('div'); grp.className = 'sb-group';
+    const items = []; let n = lab.nextElementSibling;
+    while (n && !n.classList.contains('sidebar-section-label')) { items.push(n); n = n.nextElementSibling; }
+    if (items.length) { lab.parentNode.insertBefore(grp, items[0]); items.forEach(function (it) { grp.appendChild(it); }); }
+    lab._grp = grp;
+    if (!lab.querySelector('.sb-chev')) {
+      lab.classList.add('sb-clickable');
+      const chev = document.createElement('span'); chev.className = 'sb-chev'; chev.innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2"><polyline points="6 9 12 15 18 9"/></svg>';
+      lab.appendChild(chev);
+      lab.addEventListener('click', function () { _sbToggle(lab); });
+    }
+  });
+  scroll._sbWrapped = true;
+}
+function _sbInit() {
+  _sbWrap();
+  const scroll = document.querySelector('.sidebar-scroll'); if (!scroll) return;
+  const labels = [...scroll.querySelectorAll('.sidebar-section-label')];
+  const active = scroll.querySelector('.nav-item.active');
+  let activeLab = null; if (active) { for (const lab of labels) { if (lab._grp && lab._grp.contains(active)) { activeLab = lab; break; } } }
+  labels.forEach(function (lab) {
+    let st = null; try { st = localStorage.getItem(_sbKey(lab)); } catch (e) {}
+    const collapsed = st === '1' ? true : st === '0' ? false : (lab !== activeLab);
+    _sbSet(lab, collapsed);
+  });
+}
+function _sbRevealActive() {
+  const scroll = document.querySelector('.sidebar-scroll'); if (!scroll) return;
+  const act = scroll.querySelector('.nav-item.active'); if (!act) return;
+  const grp = act.closest('.sb-group'); if (!grp || grp.style.display !== 'none') return;
+  const lab = grp.previousElementSibling; if (lab && lab.classList.contains('sidebar-section-label')) _sbSet(lab, false);
+}
 function showView(id, navEl, title) {
   /* staff dashboard redirect — must happen BEFORE the guard check */
   if (_userRole === 'staff' && id === 'dashboard') { id = 'staff-dashboard'; }
@@ -9421,6 +9475,7 @@ function showView(id, navEl, title) {
   const navId = id === 'staff-dashboard' ? 'dashboard' : id;
   const nav = navEl || document.querySelector(`.nav-item[onclick*="'${navId}'"]`);
   if (nav) nav.classList.add('active');
+  try { _sbRevealActive(); } catch (e) {}
   _currentView = id;
   const pageTitle = title || id;
   const titleEl = document.getElementById('topbarTitle');
@@ -9487,6 +9542,7 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'Day range': 'Khoảng ngày',
   'Project Documents (SharePoint)': 'Tài liệu dự án (SharePoint)',
   'Save & build folders': 'Lưu & tạo thư mục',
   'View all folders': 'Xem tất cả thư mục',
