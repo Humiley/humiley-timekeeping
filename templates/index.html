@@ -6978,7 +6978,7 @@ const _QA_SPECS = {
   pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
     { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' }, { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
     { k: 'discipline', label: 'Package (Discipline)', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
-    { k: 'standardRef', label: 'Standard / spec ref' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
+    { k: 'standardRef', label: 'Standard / spec ref' }, { k: 'plannedStart', label: 'Planned start', type: 'date' }, { k: 'plannedFinish', label: 'Planned finish', type: 'date' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
     { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' }, { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Approved', 'Superseded'] }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_resources: { title: 'Team Member', coll: 'pm_resources', reload: 'pm_resources', fields: [
     { k: 'name', label: 'Member', type: 'select', options: 'employees' }, { k: 'projectRole', label: 'Project role' },
@@ -8968,6 +8968,32 @@ function pmRenderCosts(pid) {
 let _pmQF = { contractor: '', period: '' };
 function pmQSet(k, v) { _pmQF[k] = v; pmTab('quality'); }
 function pmQClear() { _pmQF = { contractor: '', period: '' }; pmTab('quality'); }
+function _pmItpTimeline(itps) {
+  const dated = itps.filter(function (t) { return t.plannedStart || t.plannedFinish; }).slice().sort(function (a, b) { return (a.plannedStart || a.plannedFinish || '').localeCompare(b.plannedStart || b.plannedFinish || ''); });
+  const hdr = '<div class="card-hdr" style="padding:12px 16px"><div class="card-title">ITP Schedule (timeline)</div></div>';
+  if (!dated.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="padding:16px;color:var(--text-light);font-size:12px;text-align:center">No ITP dates yet — set <b>Planned start</b> / <b>Planned finish</b> on an ITP to see the timeline.</div></div>';
+  let alld = []; dated.forEach(function (t) { if (t.plannedStart) alld.push(t.plannedStart); if (t.plannedFinish) alld.push(t.plannedFinish); });
+  const min = alld.reduce(function (a, b) { return a < b ? a : b; }), max = alld.reduce(function (a, b) { return a > b ? a : b; });
+  const span = Math.max(1, _pmDateDiff(min, max) || 1), ROW = 28, LBLW = 250;
+  const _ml = [];
+  { let d = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1); const endD = new Date(max);
+    while (d <= endD) { const ds = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-01'; const off = (_pmDateDiff(min, ds) || 0) / span * 100;
+      if (off <= 100.5) _ml.push({ off: Math.max(0, off), lab: d.toLocaleString('en-US', { month: 'short' }) + ((d.getMonth() === 0 || _ml.length === 0) ? " '" + String(d.getFullYear()).slice(-2) : '') });
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1); } }
+  const grid = _ml.map(function (m) { return '<div style="position:absolute;left:' + m.off + '%;top:0;bottom:0;width:0;border-left:1px solid var(--line)"></div>'; }).join('');
+  const monthHdr = '<div style="position:relative;height:15px;margin-bottom:6px">' + _ml.map(function (m) { return '<div style="position:absolute;left:' + m.off + '%;font-size:10px;font-weight:700;color:var(--text-light);white-space:nowrap;padding-left:3px">' + m.lab + '</div>'; }).join('') + '</div>';
+  const todayOff = (_pmDateDiff(min, _pmToday()) || 0) / span * 100;
+  const today = (todayOff >= 0 && todayOff <= 100) ? '<div style="position:absolute;left:' + todayOff + '%;top:0;bottom:0;width:0;border-left:2px dashed #EF4444;z-index:3" title="Today"></div>' : '';
+  const clr = function (st) { return st === 'Approved' ? '#00B060' : st === 'Superseded' ? '#94a3b8' : '#F59E0B'; };
+  const labels = '<div style="height:21px"></div>' + dated.map(function (t) { const full = (t.itpNo ? t.itpNo + '  ' : '') + (t.title || ''); return '<div title="' + _tkEscA(full) + '" style="height:' + ROW + 'px;display:flex;align-items:center;font-size:11px;line-height:1.15;overflow:hidden;padding-right:10px;border-bottom:1px solid var(--soft-bg)"><span style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">' + (t.itpNo ? '<span style="font-family:monospace;color:var(--text-light);font-size:10px;margin-right:5px">' + _pmEsc(t.itpNo) + '</span>' : '') + _pmEsc(t.title || '') + '</span></div>'; }).join('');
+  const bars = dated.map(function (t) { const sdt = t.plannedStart || t.plannedFinish, f = t.plannedFinish || t.plannedStart; let off = Math.max(0, (_pmDateDiff(min, sdt) || 0) / span * 100); let w = Math.max(1.5, ((_pmDateDiff(sdt, f) || 0) / span) * 100); if (off > 100) off = 100; if (off + w > 100) w = 100 - off; const hex = clr(t.status); const point = sdt === f;
+    const bar = point ? '<div style="position:absolute;left:' + off + '%;top:5px;width:12px;height:12px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="' + _pmFmt(f) + '"></div>' : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:7px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + '"></div>';
+    return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
+  const dates = '<div style="height:21px"></div>' + dated.map(function (t) { return '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:10.5px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.plannedFinish || t.plannedStart) + '</div>'; }).join('');
+  const timeline = monthHdr + '<div style="position:relative">' + grid + today + bars + '</div>';
+  const legend = '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#00B060;border-radius:2px"></span> Approved</span><span><span style="display:inline-block;width:10px;height:8px;background:#F59E0B;border-radius:2px"></span> Draft</span><span><span style="display:inline-block;width:10px;height:8px;background:#94a3b8;border-radius:2px"></span> Superseded</span><span><span style="display:inline-block;width:9px;height:9px;background:#94a3b8;transform:rotate(45deg)"></span> Single date</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div>';
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdr + '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + labels + '</div><div style="flex:1;min-width:340px">' + timeline + '</div><div style="width:96px;flex-shrink:0">' + dates + '</div></div>' + legend + '</div>';
+}
 function pmRenderQuality(pid) {
   const all = _pmScope(_HR.pm_quality), itp = _pmScope(_HR.pm_quality_itp);
   const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
@@ -8996,9 +9022,9 @@ function pmRenderQuality(pid) {
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
-    { label: 'Standard', k: 'standardRef' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
+    { label: 'Standard', k: 'standardRef' }, { label: 'Planned', sk: 'plannedStart', render: r => (r.plannedStart || r.plannedFinish) ? _pmFmt(r.plannedStart) + (r.plannedFinish && r.plannedFinish !== r.plannedStart ? ' → ' + _pmFmt(r.plannedFinish) : '') : '—' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
   ], itp));
-  _pmSet(kpis + tbl + itpTbl);
+  _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
 }
 
 /* ---------- 6. Resources (RACI + workload) ---------- */
@@ -9406,6 +9432,12 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* PM module VN terms */
+  'ITP Schedule (timeline)': 'Lịch ITP (dòng thời gian)',
+  'Planned start': 'Bắt đầu dự kiến',
+  'Planned finish': 'Kết thúc dự kiến',
+  'Planned': 'Dự kiến',
+  'Superseded': 'Đã thay thế',
+  'Single date': 'Một ngày',
   'Documents': 'Tài liệu',
   'Folders': 'Số thư mục',
   'Top-level sections': 'Mục cấp cao',
