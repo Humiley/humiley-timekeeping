@@ -8444,19 +8444,20 @@ async function pmSyncMembers(pid) {
 }
 
 /* ---- Letterhead PDFs: Project Charter + Status Report (native jsPDF) ---- */
+function _pmPdfTxt(s) { return String(s == null ? '' : s).replace(/₫/g, 'VND ').replace(/→/g, ' to ').replace(/[—–]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"'); }
 function _pmDoc() { const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; return J ? new J('p', 'mm', 'a4') : null; }
-function _pmRow(doc, label, val, y) { const M = 15; doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104); doc.text(String(label).toUpperCase(), M, y); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 36, 44); const lines = doc.splitTextToSize(String(val == null || val === '' ? '—' : val), 120); doc.text(lines, 70, y); return y + Math.max(6, lines.length * 5); }
+function _pmRow(doc, label, val, y) { const M = 15; doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104); doc.text(_pmPdfTxt(String(label).toUpperCase()), M, y); doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 36, 44); const lines = doc.splitTextToSize(_pmPdfTxt(val == null || val === '' ? '-' : val), 120); doc.text(lines, 70, y); return y + Math.max(6, lines.length * 5); }
 function pmCharterPDF(pid) {
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
-  let y = _brandHeader(doc, { title: 'Project Charter', subtitle: p.code || p.name, docCode: 'HML-PMC-CHR', confidential: true });
+  let y = _brandHeader(doc, { title: 'Project Charter', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CHR', confidential: true });
   y += 2;
   const ev = _pmEvm(p);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Sponsor', p.sponsor], ['Project Manager', p.manager], ['Department', p.dept], ['Location', p.location], ['Contract Type', p.contractType], ['Contract Value', p.contractValue ? _pmMoney(p.contractValue) : ''], ['Approved Budget', p.budget ? _pmMoney(p.budget) : ''], ['Planned Start → Finish', (_pmFmt(p.startPlanned) + '  →  ' + _pmFmt(p.endPlanned))], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Health', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 3; const M = 15;
   [['Objectives', p.objectives], ['Scope Summary', p.scopeSummary || p.scopeStatement], ['Success Criteria', p.successCriteria || p.acceptanceCriteriaProject], ['Assumptions & Constraints', p.assumptions]].forEach(b => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(b[0], M, y); y += 5;
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(String(b[1] || '—'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
-    if (y > 250) { _brandFooter(doc, 1, 1, 'HML-PMC-CHR'); doc.addPage(); y = _brandHeader(doc, { title: 'Project Charter (cont.)', subtitle: p.code || p.name, docCode: 'HML-PMC-CHR' }); }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt(b[1] || '-'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
+    if (y > 250) { _brandFooter(doc, 1, 1, 'HML-PMC-CHR'); doc.addPage(); y = _brandHeader(doc, { title: 'Project Charter (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CHR' }); }
   });
   _brandFooter(doc, 1, 1, 'HML-PMC-CHR');
   doc.save('Charter_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
@@ -8464,7 +8465,7 @@ function pmCharterPDF(pid) {
 }
 function pmStatusPDF(pid) {
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
-  let y = _brandHeader(doc, { title: 'Project Status Report', subtitle: (p.code || p.name) + '  ·  ' + _pmFmt(_pmToday()), docCode: 'HML-PMC-STA' });
+  let y = _brandHeader(doc, { title: 'Project Status Report', subtitle: _pmPdfTxt((p.code || p.name) + '  -  ' + _pmFmt(_pmToday())), docCode: 'HML-PMC-STA' });
   y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Manager', p.manager], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall Progress', sr.pct + '%'], ['Health (RAG)', _pmEffectiveRag(p) + (p.ragReason ? '  —  ' + p.ragReason : '')]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; const M = 15; doc.setDrawColor(220, 224, 230); doc.line(M, y, 195, y); y += 6;
@@ -8480,6 +8481,15 @@ function pmStatusPDF(pid) {
    PM SHELL — Projects list · Workspace + tabs · Overview · generic register · CRM handoff
    ========================================================================== */
 /* generic card + table register used by the simpler tabs */
+function _pmOpenFile(coll, id) {
+  const r = (_HR[coll] || []).find(x => x.id === id); if (!r || !r.attachment) { toast('No file attached', 'warn'); return; }
+  try {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(r.attachment);
+    if (m) { const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); const blob = new Blob([a], { type: m[1] }); const u = URL.createObjectURL(blob); const w = window.open(u, '_blank'); if (!w) { const dl = document.createElement('a'); dl.href = u; dl.download = r.attachmentName || 'attachment'; dl.click(); } setTimeout(() => URL.revokeObjectURL(u), 60000); }
+    else { window.open(r.attachment, '_blank'); }
+  } catch (e) { try { const dl = document.createElement('a'); dl.href = r.attachment; dl.download = r.attachmentName || 'attachment'; dl.click(); } catch (e2) { toast('Could not open the file', 'warn'); } }
+}
+function _pmFileCell(coll, r) { if (!r || !r.attachment) return '—'; return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\')" title="' + _tkEscA(r.attachmentName || 'Open file') + '" style="color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>'; }
 function _pmCard(title, addColl, addLabel, inner, extra) {
   const canAdd = addColl && (['pm_costs', 'pm_procurement', 'pm_procurement_payments'].indexOf(addColl) < 0 || _pmSeeAll());
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">' + title + '</div><div style="display:flex;gap:6px;flex-wrap:wrap">' + (extra || '') + (canAdd ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'' + addColl + '\')">' + _PLUS_SVG + ' ' + (addLabel || 'Add') + '</button>' : '') + '</div></div>' + inner + '</div>';
@@ -8599,8 +8609,8 @@ function pmRenderOverview() {
     _hrKpi('Open risks (High+)', rr.open + ' / ' + rr.high, '#EF4444'),
     _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
   ]);
-  const fld = (l, v) => '<div style="margin-bottom:9px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light);letter-spacing:.4px">' + l + '</div><div style="font-size:13px;color:var(--text-dark);margin-top:2px;white-space:pre-wrap">' + _pmEsc(v || '—') + '</div></div>';
-  const _pmImg = p.image ? '<img src="' + _tkEscA(p.image) + '" alt="Project image" style="width:250px;max-width:38vw;height:172px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">' : '<div style="width:250px;max-width:38vw;height:172px;border-radius:10px;border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-light);font-size:12px;padding:12px;gap:4px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>No project image<span style="font-size:11px">Add one via the Edit button</span></div>';
+  const fld = (l, v) => '<div style="margin-bottom:9px"><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--emerald);letter-spacing:.4px">' + l + '</div><div style="font-size:13px;color:var(--text-dark);margin-top:2px;white-space:pre-wrap">' + _pmEsc(v || '—') + '</div></div>';
+  const _pmImg = p.image ? '<img src="' + _tkEscA(p.image) + '" alt="Project image" style="width:330px;max-width:42vw;height:235px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">' : '<div style="width:330px;max-width:42vw;height:235px;border-radius:10px;border:1px dashed var(--border);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--text-light);font-size:12px;padding:12px;gap:4px"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>No project image<span style="font-size:11px">Add one via the Edit button</span></div>';
   const charter = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">Project Charter</div>' +
     '<div style="display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start">' +
       '<div style="flex:1;min-width:280px;display:grid;grid-template-columns:1fr 1fr;gap:0 26px">' +
@@ -8619,7 +8629,7 @@ function pmRenderOverview() {
     { label: 'Sched Δ (d)', align: 'right', render: r => _pmEsc(r.impactScheduleDays || 0) },
     { label: 'Cost Δ', align: 'right', render: r => r.impactCost ? _pmMoney(r.impactCost) : '—' },
     { label: 'Decision', render: r => _pmBadge(r.decision || 'Pending', r.decision === 'Approved' ? '#00B060' : r.decision === 'Rejected' ? '#EF4444' : '#F59E0B') },
-    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
+    { label: 'File', render: r => _pmFileCell('pm_changes', r) }
   ], ch));
   // lessons
   const ls = _pmScope(_HR.pm_lessons);
@@ -8628,7 +8638,7 @@ function pmRenderOverview() {
     { label: 'Category', k: 'category' }, { label: 'Phase', k: 'phase' },
     { label: 'Type', render: r => _pmBadge(r.type || '—', r.type === 'Positive' ? '#00B060' : '#F59E0B') },
     { label: 'Recommendation', render: r => _pmEsc(r.recommendation || '—') },
-    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
+    { label: 'File', render: r => _pmFileCell('pm_lessons', r) }
   ], ls));
   host.innerHTML = kpis + charter + changeTbl + lessonsTbl;
 }
@@ -8755,7 +8765,7 @@ function pmRenderQuality(pid) {
     { label: 'Result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
     { label: 'Severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
-    { label: 'File', render: r => r.attachment ? _attachLink(r) : '—' }
+    { label: 'File', render: r => _pmFileCell('pm_quality', r) }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
