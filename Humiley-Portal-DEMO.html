@@ -7217,12 +7217,47 @@ function tkQuickAdd(type, id) {
   }).join('');
   openModal('quickAddModal');
 }
-/* Read an attachment into a hidden field as a data-URL (used by file-type quick-add fields). */
-function _qaReadFile(input, k) {
+/* Which SharePoint sub-folder each PMC register's attachments go to (relative to the project root). */
+const _PM_UPLOAD_DIR = {
+  pm_changes: '10_Change_Management_ECN',
+  pm_lessons: '09_Project_Closeout',
+  pm_quality: '07_Validation_GMP_Compliance',
+  pm_quality_itp: '06_Commissioning_Qualification',
+  pm_comms: '12_Meeting_Minutes_Correspondence',
+  pm_issues: '11_Risk_Issue_Register_Live',
+  pm_risks: '11_Risk_Issue_Register_Live',
+  pm_rfis: '05_Construction_Installation/03_Site_Instructions_RFI',
+  pm_procurement: '04_Procurement_Subcontracts',
+  pm_sitereports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports'
+};
+/* Read an attachment for a file-type quick-add field. For PMC document attachments the file is
+   uploaded to the project's SharePoint folder (only the link is kept in the DB — keeps SQLite lean);
+   everything else (and demo / not-signed-in / no SharePoint link) falls back to an in-DB data URL. */
+async function _qaReadFile(input, k) {
   const f = input.files && input.files[0]; if (!f) return;
-  if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB)', 'warn'); input.value = ''; return; }
+  const v = document.getElementById('qa-' + k), n = document.getElementById('qa-' + k + '-name'), info = document.getElementById('qa-' + k + '-info');
+  const coll = (_QA_SPECS[_qaType] || {}).coll || '';
+  const canSP = k === 'attachment' && coll.indexOf('pm_') === 0 && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
+  if (canSP) {
+    const p = _pmProj();
+    if (p && _pmSpBase(p)) {
+      if (f.size > 100 * 1024 * 1024) { toast('File too large (max 100 MB)', 'warn'); input.value = ''; return; }
+      if (info) info.textContent = 'Uploading to SharePoint…';
+      try {
+        const res = await _graphUploadFile(f, p, _PM_UPLOAD_DIR[coll] || '');
+        if (v) v.value = res.webUrl; if (n) n.value = f.name;
+        if (info) info.innerHTML = '✓ Stored in SharePoint: <a href="' + _tkEscA(res.webUrl) + '" target="_blank" rel="noopener" style="color:var(--navy)">' + _pmEsc(f.name) + '</a>';
+        toast('Uploaded to the project SharePoint folder', 'success', 5000);
+        return;
+      } catch (e) {
+        if (info) info.textContent = '';
+        toast('SharePoint upload failed (' + (e.message || e) + ') — storing in app instead.', 'warn', 8000);
+      }
+    }
+  }
+  if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB). Tip: link the project to SharePoint to store large files there.', 'warn'); input.value = ''; return; }
   const r = new FileReader();
-  r.onload = e => { const v = document.getElementById('qa-' + k); const n = document.getElementById('qa-' + k + '-name'); const info = document.getElementById('qa-' + k + '-info'); if (v) v.value = e.target.result; if (n) n.value = f.name; if (info) info.textContent = 'Attached: ' + f.name; };
+  r.onload = e => { if (v) v.value = e.target.result; if (n) n.value = f.name; if (info) info.textContent = 'Attached: ' + f.name; };
   r.readAsDataURL(f);
 }
 async function tkQuickAddSave() {
@@ -9449,7 +9484,7 @@ function _pmFoldersCard(p) {
   });
   const head = '<thead><tr>' + ['Folder', 'Owner', 'Confidentiality', 'Retention'].map(function (h) { return '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('') + '</tr></thead>';
   const table = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">' + head + '<tbody>' + rows + '</tbody></table></div>';
-  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button>' + ((_msalApp && _account) ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSpCreateFoldersGraph(\'' + p.id + '\')" title="Create the folders directly in SharePoint via Microsoft 365">' + tkIcon('external', 12) + ' Create in SharePoint</button>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
+  const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button>' + ((_msalApp && _account) ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSpCreateFoldersGraph(\'' + p.id + '\')" title="Create the folders directly in SharePoint via Microsoft 365">' + tkIcon('external', 12) + ' Create in SharePoint</button>' : '') + ((_msalApp && _account && _pmCanEditProject(p)) ? '<button class="btn btn-emerald btn-sm" style="font-size:11px" onclick="pmSpUploadPick(\'' + p.id + '\')" title="Upload a file straight into the project SharePoint folder">' + tkIcon('external', 12) + ' Upload file</button>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
   const banner = canDeep ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">Linked to <a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" style="color:var(--navy);word-break:break-all">' + _pmEsc(base.length > 70 ? base.slice(0, 70) + '…' : base) + '</a> — every folder below opens directly in SharePoint.</div>' : (linked ? '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">This looks like a SharePoint <b>share link</b> — <b>Open library</b> opens it, but for a one-click link into each sub-folder paste the folder\'s <b>address-bar URL</b> (the one containing <code>/Shared Documents/…</code>) into <b>Edit → SharePoint docs folder</b>.</div>' : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">Paste your project\'s SharePoint folder link in <b>Edit → SharePoint docs folder</b> and Save — then every folder below becomes a one-click link. Use <b>Create folders (script)</b> to auto-build the empty structure in SharePoint.</div>');
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Document Structure (SharePoint)</div>' + tools + '</div><div style="padding:12px 16px">' + banner + table + '</div></div>';
 }
@@ -9523,6 +9558,99 @@ async function pmSpCreateFoldersGraph(pid) {
   toast('SharePoint: ' + made + ' folder(s) created' + (exist ? ', ' + exist + ' already existed' : '') + (failed ? ', ' + failed + ' failed' : '') + '.', failed ? 'warn' : 'success', 9000);
   try { tkAudit('SharePoint folders created (Graph)', p.name || '', made + ' created / ' + exist + ' existed'); } catch (e) { }
   return true;
+}
+
+/* ── Upload a file straight into a project's SharePoint folder (Microsoft Graph) ──────────────
+   Files are stored in SharePoint, not the app database — only the returned webUrl is kept.
+   Mirrors the resolve + token logic of pmSpCreateFoldersGraph. Returns {webUrl,name,size,id}. */
+const _GRAPH = 'https://graph.microsoft.com/v1.0';
+async function _pmSpToken() {
+  const acct = _account || (_msalApp && _msalApp.getAllAccounts()[0]);
+  const r = await _msalApp.acquireTokenSilent({ scopes: ['Sites.ReadWrite.All'], account: acct });
+  return r.accessToken;
+}
+/* Resolve a project's SharePoint link to { driveId, baseRef, projRel } (same logic as the folder builder). */
+async function _pmSpResolve(base, ctx, token) {
+  const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  let driveId, baseRef, projRel = '';
+  if (ctx.mode === 'token') {
+    const sid = 'u!' + btoa(unescape(encodeURIComponent(base))).replace(/=+$/, '').replace(/\//g, '_').replace(/\+/g, '-');
+    const ir = await fetch(_GRAPH + '/shares/' + sid + '/driveItem?$select=id,parentReference', { headers: H }); if (!ir.ok) throw new Error('share ' + ir.status);
+    const it = await ir.json(); driveId = (it.parentReference || {}).driveId; baseRef = 'items/' + it.id;
+    if (!driveId) throw new Error('no drive on shared item');
+  } else {
+    const u = new URL(base); const host = u.hostname; const rootRel = String(ctx.root || '').replace(/^\/+|\/+$/g, '');
+    const segs = rootRel.split('/'), sIdx = segs.indexOf('sites');
+    if (sIdx < 0 || segs.length < sIdx + 2) throw new Error('unrecognised site URL');
+    const sitePath = '/' + segs.slice(sIdx, sIdx + 2).join('/'), afterSite = segs.slice(sIdx + 2), libName = afterSite[0] || 'Shared Documents'; projRel = afterSite.slice(1).join('/');
+    const sr = await fetch(_GRAPH + '/sites/' + host + ':' + sitePath, { headers: H }); if (!sr.ok) throw new Error('site ' + sr.status); const siteId = (await sr.json()).id;
+    const dr = await fetch(_GRAPH + '/sites/' + siteId + '/drives', { headers: H }); if (!dr.ok) throw new Error('drives ' + dr.status);
+    const drives = ((await dr.json()).value) || [];
+    const drv = drives.find(function (d) { return d.name === libName; }) || drives.find(function (d) { return /shared documents|^documents$/i.test(d.name || ''); }) || drives.find(function (d) { return (d.webUrl || '').toLowerCase().indexOf(encodeURI(libName).toLowerCase()) >= 0; }) || drives[0];
+    if (!drv) throw new Error('no document library'); driveId = drv.id; baseRef = 'root';
+  }
+  return { driveId, baseRef, projRel };
+}
+/* Best-effort create a (possibly nested) sub-folder; returns the path if usable, '' if it could not be ensured. */
+async function _pmSpEnsureDir(driveId, baseRef, dirPath, token) {
+  if (!dirPath) return '';
+  const H = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+  const parts = dirPath.split('/'); let acc = '';
+  for (const seg of parts) {
+    const parent = acc; acc = acc ? acc + '/' + seg : seg;
+    const enc = parent ? ':/' + parent.split('/').map(encodeURIComponent).join('/') + ':' : '';
+    try {
+      const res = await fetch(_GRAPH + '/drives/' + driveId + '/' + baseRef + enc + '/children', { method: 'POST', headers: H, body: JSON.stringify({ name: seg, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }) });
+      if (!res.ok && res.status !== 409) return '';   // 409 = already exists (fine)
+    } catch (e) { return ''; }
+  }
+  return dirPath;
+}
+async function _graphUploadFile(file, project, subPath) {
+  if (typeof DEMO_MODE === 'function' && DEMO_MODE()) throw new Error('demo mode');
+  if (!_msalApp || !_account) throw new Error('not signed in to Microsoft 365');
+  const base = _pmSpBase(project), ctx = base ? _pmSpCtx(base) : null;
+  if (!ctx || ctx.mode === 'none') throw new Error('no SharePoint link on project');
+  const token = await _pmSpToken();
+  const { driveId, baseRef, projRel } = await _pmSpResolve(base, ctx, token);
+  let dir = [projRel, subPath].filter(Boolean).join('/');
+  if (dir) { const ensured = await _pmSpEnsureDir(driveId, baseRef, dir, token); if (!ensured) dir = projRel || ''; }   // fall back to project root
+  const encDir = dir ? dir.split('/').map(encodeURIComponent).join('/') + '/' : '';
+  const itemPath = _GRAPH + '/drives/' + driveId + '/' + baseRef + ':/' + encDir + encodeURIComponent(file.name);
+  if (file.size <= 4 * 1024 * 1024) {
+    const res = await fetch(itemPath + ':/content?@microsoft.graph.conflictBehavior=rename', { method: 'PUT', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    if (!res.ok) throw new Error('upload ' + res.status + ' ' + (await res.text()).slice(0, 160));
+    const it = await res.json(); return { webUrl: it.webUrl, name: file.name, size: file.size, id: it.id };
+  }
+  // large file → resumable upload session, 5 MiB chunks
+  const sres = await fetch(itemPath + ':/createUploadSession', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'rename', name: file.name } }) });
+  if (!sres.ok) throw new Error('session ' + sres.status);
+  const uploadUrl = (await sres.json()).uploadUrl; const CH = 5 * 1024 * 1024; let start = 0, last;
+  while (start < file.size) {
+    const end = Math.min(start + CH, file.size);
+    const cr = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + file.size }, body: file.slice(start, end) });
+    if (!cr.ok && cr.status !== 202) throw new Error('chunk ' + cr.status);
+    last = cr; start = end;
+  }
+  const it = await last.json(); return { webUrl: it.webUrl, name: file.name, size: file.size, id: it.id };
+}
+/* Documents-tab: pick a file and upload it straight into the project's SharePoint folder. */
+function pmSpUploadPick(pid) {
+  const p = _pmProj(pid); if (!p) return;
+  if (!_pmSpBase(p)) { toast('Add the SharePoint folder link first (Overview → Save & build folders).', 'warn', 7000); return; }
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.onchange = async function () {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 100 * 1024 * 1024) { toast('File too large (max 100 MB)', 'warn'); return; }
+    toast('Uploading “' + f.name + '” to SharePoint…');
+    try {
+      const res = await _graphUploadFile(f, p, '');   // project root folder
+      toast('Uploaded to SharePoint ✓ — opening…', 'success', 6000);
+      try { tkAudit('File uploaded to SharePoint', p.name || '', f.name); } catch (e) {}
+      if (res.webUrl) window.open(res.webUrl, '_blank', 'noopener');
+    } catch (e) { toast('Upload failed: ' + (e.message || e), 'error', 9000); }
+  };
+  inp.click();
 }
 
 
