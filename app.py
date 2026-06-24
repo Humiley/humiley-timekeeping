@@ -234,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(seg[0] not in self.STAFF_WRITE and not seg[0].startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
-            return self._guard(lambda u: (db.delete_employee(eid), self._json({"ok": True}))[1], manager=True)
+            return self._guard(lambda u: self._emp_delete(u, eid), manager=True)
         if path.startswith("/api/zones/"):
             zid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: (db.delete_zone(int(zid)), self._json({"ok": True}))[1], manager=True)
@@ -460,6 +460,14 @@ class Handler(BaseHTTPRequestHandler):
         if isinstance(raw, (list, tuple, set)):
             return set(str(x).strip().lower() for x in raw if str(x).strip())
         return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
+
+    def _emp_delete(self, u, eid):
+        # Deleting an employee record is destructive — require Approver (management) or above,
+        # not just any manager-tier (Contributor) account.
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Management access required to delete an employee.", 403)
+        db.delete_employee(eid)
+        return self._json({"ok": True})
 
     def _emp_update(self, u, eid, body):
         if not db.get_employee(eid):

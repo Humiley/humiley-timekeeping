@@ -4510,7 +4510,10 @@ async function tkAddNewHireGo() {
   const picked = [...document.querySelectorAll('.nh-act:checked')].map(c => +c.getAttribute('data-i'));
   const tasks = _ONBOARD_TEMPLATE.filter((t, i) => picked.includes(i)).map(t => ({ label: t.label, phase: t.phase, done: false }));
   try {
-    const r = await tkApi('/api/coll/onboarding', { method: 'POST', body: { name: name, role: g('nh-role'), startDate: g('nh-start'), tasks: tasks, milestones: _onboardMilestones() } });
+    const _ex = (_DEMO_EMPLOYEES || []).find(e => (e.name || '').trim().toLowerCase() === name.toLowerCase());
+    const _body = { name: name, role: g('nh-role'), startDate: g('nh-start'), tasks: tasks, milestones: _onboardMilestones() };
+    if (_ex) { _body.empId = _ex.id; if (_ex.email) _body.email = _ex.email; }   // link to roster so the user reliably sees their checklist (avoids homonym mismatch)
+    const r = await tkApi('/api/coll/onboarding', { method: 'POST', body: _body });
     if (r && r.item) (_HR.onboarding = _HR.onboarding || []).push(r.item);
     tkAudit('New hire onboarding started', name, tasks.length + ' activities');
     document.getElementById('newHireOverlay').remove(); toast('Onboarding started for ' + name + ' (' + tasks.length + ' activities)'); tkRenderOnboarding();
@@ -4558,10 +4561,11 @@ function _onboardMilestoneHtml(o) {
   }).join('');
   return '<div style="background:var(--soft-bg);border-radius:8px;padding:8px 10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin-bottom:3px">Probation milestones</div>' + rows + '</div>';
 }
-function tkOnboardToggle(id, idx, checked) {
-  const o = _HR.onboarding.find(x => x.id === id); if (!o || !o.tasks || !o.tasks[idx]) return;
+async function tkOnboardToggle(id, idx, checked) {
+  const o = (_HR.onboarding || []).find(x => x.id === id); if (!o || !o.tasks || !o.tasks[idx]) return;
   o.tasks[idx].done = checked;
-  fetch('/api/coll/onboarding/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(o) }).then(r => r.json()).then(() => tkRenderOnboarding());
+  try { await tkApi('/api/coll/onboarding/' + id, { method: 'PATCH', body: o }); tkRenderOnboarding(); }
+  catch (e) { o.tasks[idx].done = !checked; toast('Could not save: ' + e.message, 'error', 5000); tkRenderOnboarding(); }
 }
 async function tkOnboardMilestone(id, mi, status) {
   const o = (_HR.onboarding || []).find(x => x.id === id); if (!o || !o.milestones || !o.milestones[mi]) return;
@@ -6529,13 +6533,7 @@ function tkUpdateInboxBadge(pending) {
 async function tkLoadInboxBadge() {
   try {
     await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
-    const me = TK.user && TK.user.id;
-    const total = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me).length +
-      (_HR.claims || []).filter(c => _claimOpen(c)).length +
-      (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft').length +
-      (_HR.padr || []).filter(p => p.status === 'Self-assessment').length +
-      (_HR.travel || []).filter(t => t.status === 'Submitted').length;
-    tkUpdateInboxBadge(total);
+    tkUpdateInboxBadge();   // recompute (with direct-manager routing) against the per-user seen-set
   } catch (e) {}
 }
 
@@ -6900,6 +6898,7 @@ async function tkSetApp(id, app, allowed) {
 /* Manager dashboard — HR module shortcut grid */
 function tkRenderHrModules() {
   const el = document.getElementById('dash-hr-modules'); if (!el) return;
+  if (typeof _appDeniedCurrent === 'function' && _appDeniedCurrent('hr')) { el.innerHTML = ''; return; }   // HR app disabled for this user
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const openReq = (_HR.jobs || []).filter(j => j.status !== 'Closed').reduce((s, j) => s + (parseInt(j.openings, 10) || 0), 0);
   const onboard = (_HR.onboarding || []).filter(o => (o.tasks || []).some(t => !t.done)).length;
@@ -8574,6 +8573,7 @@ async function crmImportFile(coll, file) {
 
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
 const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', permissions: 'admin' };
+const _HR_VIEWS = new Set(['database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 
 /* ===== PROJECT MANAGEMENT SUITE (PMBOK) ===== */
 /* ============================================================================
@@ -9699,7 +9699,11 @@ function pmSpUploadPick(pid) {
       toast('Uploaded to SharePoint ✓ — opening…', 'success', 6000);
       try { tkAudit('File uploaded to SharePoint', p.name || '', f.name); } catch (e) {}
       if (res.webUrl) window.open(res.webUrl, '_blank', 'noopener');
-    } catch (e) { toast('Upload failed: ' + (e.message || e), 'error', 9000); }
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/signed in|token|401|InteractionRequired|expired/i.test(msg)) toast('Microsoft 365 session expired — refresh the page and sign in again, then retry the upload.', 'warn', 9000);
+      else toast('Upload failed: ' + msg, 'error', 9000);
+    }
   };
   inp.click();
 }
@@ -9853,6 +9857,7 @@ function showView(id, navEl, title) {
   /* per-user app access — an admin can disable e.g. CRM for a specific user */
   if (id.indexOf('crm-') === 0 && _appDeniedCurrent('crm')) { toast('Access restricted — CRM is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('pm-') === 0 && _appDeniedCurrent('pm')) { toast('Access restricted — Projects is not enabled for your account. Ask an admin.', 'warn'); return; }
+  if (_HR_VIEWS.has(id) && _appDeniedCurrent('hr')) { toast('Access restricted — HR is not enabled for your account. Ask an admin.', 'warn'); return; }
   /* close the mobile drawer after navigating */
   if (window.matchMedia && window.matchMedia('(max-width:820px)').matches) document.body.classList.remove('sb-open');
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
