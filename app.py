@@ -102,6 +102,7 @@ def graph_me(access_token):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "HumileyTimekeeping/2.0"
+    MAX_BODY = 30 * 1024 * 1024   # reject request bodies larger than 30 MB (memory-safety)
 
     # -- io helpers ---------------------------------------------------------
     def _json(self, obj, status=200):
@@ -119,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
         n = int(self.headers.get("Content-Length", 0))
         if not n:
             return {}
+        if n > self.MAX_BODY:
+            return {}   # oversized payload — drop it (a TLS reverse proxy returns a proper 413)
         try:
             return json.loads(self.rfile.read(n).decode("utf-8"))
         except (ValueError, UnicodeDecodeError):
@@ -267,10 +270,33 @@ class Handler(BaseHTTPRequestHandler):
             user["level"] = "admin"   # demo Manager / HR Admin = full admin (view all)
         return self._json({"token": token, "user": user})
 
+    @staticmethod
+    def _jwt_claims(token):
+        """Best-effort decode of a JWT payload (no signature verification). Returns dict or None."""
+        try:
+            import base64
+            seg = token.split(".")[1]
+            seg += "=" * (-len(seg) % 4)
+            return json.loads(base64.urlsafe_b64decode(seg).decode("utf-8"))
+        except Exception:
+            return None
+
     def _auth_m365(self, body):
         token_in = body.get("accessToken", "")
         if not token_in:
             return self._err("Missing access token.", 400)
+        # Validate the token's critical claims against our Entra app/tenant before trusting it
+        # (defence against replaying a Graph token minted for another app the user also consented to).
+        claims = self._jwt_claims(token_in)
+        if claims:
+            if claims.get("exp") and claims["exp"] < time.time():
+                return self._err("Microsoft 365 token expired — please sign in again.", 401)
+            tid = claims.get("tid")
+            if M365.get("tenantId") and tid and tid != M365["tenantId"]:
+                return self._err("Sign-in is from an unexpected Microsoft 365 tenant.", 403)
+            appid = claims.get("appid") or claims.get("azp")
+            if M365.get("clientId") and appid and appid != M365["clientId"]:
+                return self._err("This Microsoft 365 token was not issued for the Humiley Portal.", 403)
         email = graph_me(token_in)
         if not email:
             return self._err("Could not verify Microsoft 365 account.", 401)
@@ -428,6 +454,13 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return 1
 
+    def _apps_denied(self, u):
+        """The set of app ids (crm/pm/hr) an admin has disabled for this user."""
+        raw = u.get("appsDenied")
+        if isinstance(raw, (list, tuple, set)):
+            return set(str(x).strip().lower() for x in raw if str(x).strip())
+        return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
+
     def _emp_update(self, u, eid, body):
         if not db.get_employee(eid):
             return self._err("Employee not found.", 404)
@@ -479,18 +512,40 @@ class Handler(BaseHTTPRequestHandler):
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
-    # minimum access LEVEL required to READ a collection (self-service collections stay open)
-    READ_MIN = {"payruns": "management", "payadjust": "management", "reviews": "manager", "talent": "manager", "exits": "manager", "jobs": "manager", "competency": "manager"}
+    # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
+    # management; recruitment/audit stay manager. Anything not listed AND not in
+    # SELF_OWNED / a shared catalog (courses, learningpaths) is open to managers only
+    # for staff via the self-owner scoping below.
+    READ_MIN = {"payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
+                "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
+                "competency": "manager", "audit": "manager"}
+    # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
+    SELF_OWNED = {"claims", "travel", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
+    # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
+    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        # per-user app access — an admin can disable CRM / Projects / HR for a user
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        if app and app in self._apps_denied(u):
+            return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
+        # minimum access level to read
         need = self.READ_MIN.get(name)
         if need and self._level_rank(self._caller_level(u)) < self._level_rank(need):
             return self._err("Access restricted to %s level or above." % need, 403)
-        return self._json({"items": db.list_collection(name)})
+        items = db.list_collection(name)
+        # staff see ONLY their own records in self-service collections (no cross-employee read)
+        if self._caller_level(u) == "staff" and name in self.SELF_OWNED:
+            myid, myname = u.get("id"), u.get("name")
+            items = [it for it in items
+                     if it.get("empId") == myid
+                     or (not it.get("empId") and myname and it.get("name") == myname)
+                     or (myname and it.get("assignedTo") == myname)]
+        return self._json({"items": items})
 
     @staticmethod
     def _crm_sanitize(body):
@@ -661,7 +716,7 @@ def main():
         })
         db.set_setting("seed_disabled", "1")
         print("  Bootstrapped clean DB with admin: %s" % admin_email)
-    if not db.get_setting("seed_disabled"):
+    if os.environ.get("TK_ALLOW_SEED") and not db.get_setting("seed_disabled"):
         seeded = db.seed()
         db.seed_hr()
         att_added = db.generate_attendance()
