@@ -303,6 +303,10 @@ class Handler(BaseHTTPRequestHandler):
         emp = db.get_employee_by_email(email)
         if not emp:
             return self._err("No employee record for %s. Ask an admin to add you." % email, 403)
+        # Self-heal protected super-admins so a mistaken demotion can never lock them out.
+        if email in self.ADMIN_EMAILS and (emp.get("level") != "admin" or emp.get("role") != "manager"):
+            db.update_employee(emp["id"], {"level": "admin", "role": "manager"})
+            emp["level"] = "admin"; emp["role"] = "manager"
         token = new_session(emp["id"], emp.get("role", "staff"))
         return self._json({"token": token, "user": dict(emp, role=emp.get("role", "staff"))})
 
@@ -439,11 +443,13 @@ class Handler(BaseHTTPRequestHandler):
     ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
     def _caller_level(self, u):
+        # Protected super-admins are ALWAYS admin — they can never be demoted or locked out,
+        # regardless of what the stored level says.
+        if (u.get("email") or "").lower() in self.ADMIN_EMAILS:
+            return "admin"
         lv = u.get("level")
         if lv in ("staff", "manager", "management", "editor", "admin"):
             return lv
-        if (u.get("email") or "").lower() in self.ADMIN_EMAILS:
-            return "admin"
         if u.get("role") == "manager":
             return "management" if re.search(r"director|managing|chief|head|coo|ceo|cfo", u.get("title") or "", re.I) else "manager"
         return "staff"
@@ -470,11 +476,17 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     def _emp_update(self, u, eid, body):
-        if not db.get_employee(eid):
+        ex = db.get_employee(eid)
+        if not ex:
             return self._err("Employee not found.", 404)
         body = dict(body or {})
         # Only admins may change access level or role (prevents privilege escalation).
         if ("level" in body or "role" in body or "appsDenied" in body) and self._caller_level(u) != "admin":
+            body.pop("level", None)
+            body.pop("role", None)
+            body.pop("appsDenied", None)
+        # Protected super-admins can never be demoted — drop any level/role/app change on them.
+        if (ex.get("email") or "").lower() in self.ADMIN_EMAILS:
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
