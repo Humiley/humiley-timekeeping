@@ -20,8 +20,9 @@ Follow the steps in order.
 
 > **If you see a “redirect URI mismatch” error:**
 > Go to **portal.azure.com → Microsoft Entra ID → App registrations → “Humiley Timekeeping”
-> → Authentication → Single-page application → Add URI**, paste exactly:
-> `https://orange-giggle-qv7jwj45jgv7h4wwv-8000.app.github.dev/`
+> → Authentication → Single-page application → Add URI**, paste your portal address **with NO
+> trailing slash** (must match the browser address bar's origin exactly), e.g.:
+> `https://orange-giggle-qv7jwj45jgv7h4wwv-8000.app.github.dev`
 > then **Save** and try again. (Send me a message if it happens.)
 
 ---

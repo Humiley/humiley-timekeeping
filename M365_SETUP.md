@@ -14,10 +14,10 @@ Azure Portal → **Microsoft Entra ID → App registrations → New registration
 
 - **Name:** Humiley People & Workplace Portal
 - **Supported account types:** *Accounts in this organizational directory only (Single tenant)*
-- **Redirect URI:** platform **Single-page application (SPA)**, value = your portal URL **with a trailing slash**, e.g.
-  - `https://humiley-portal.onrender.com/`  (Render)
-  - `https://your-domain.com/`  (Mat Bao)
-  - Add one entry per URL you use. (The Codespaces preview URL can be added too.)
+- **Redirect URI:** platform **Single-page application (SPA)**, value = your portal URL **with NO trailing slash** (the app uses `window.location.origin`, which has no trailing slash — Entra matches it exactly), e.g.
+  - `https://humiley-portal.onrender.com`  (Render)
+  - `https://your-domain.com`  (Mat Bao)
+  - Add one entry per URL you use (Render URL, custom domain, and the Codespaces preview URL). **Do not add a trailing slash** or you will get an `AADSTS` redirect-mismatch at sign-in.
 
 After it's created, copy:
 - **Application (client) ID**  → this is your `CLIENT_ID`
