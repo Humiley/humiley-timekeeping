@@ -8100,7 +8100,7 @@ async function crmRenderCompanies() {
   const root = document.getElementById('crm-companies-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_deals')]);
-  const cos = _HR.crm_companies || []; const deals = _crmMine(_HR.crm_deals);
+  const cos = _crmMine(_HR.crm_companies); const deals = _crmMine(_HR.crm_deals);
   const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-co-q', 'Search company…', 'crmFillCompanies') + _crmFiltSel('crm-co-ind', 'All industries', _crmDistinct(cos, 'industry'), 'crmFillCompanies') + _crmFiltSel('crm-co-owner', 'All owners', _crmDistinct(cos, 'owner'), 'crmFillCompanies'));
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
@@ -8112,7 +8112,7 @@ function crmFillCompanies() {
   const ind = document.getElementById('crm-co-ind') ? document.getElementById('crm-co-ind').value : '';
   const ow = document.getElementById('crm-co-owner') ? document.getElementById('crm-co-owner').value : '';
   const deals = _crmMine(_HR.crm_deals);
-  const rows = (_HR.crm_companies || []).filter(c => (!q || (c.name || '').toLowerCase().indexOf(q) >= 0) && (!ind || (c.industry || '') === ind) && (!ow || (c.owner || '') === ow));
+  const rows = _crmMine(_HR.crm_companies).filter(c => (!q || (c.name || '').toLowerCase().indexOf(q) >= 0) && (!ind || (c.industry || '') === ind) && (!ow || (c.owner || '') === ow));
   tb.innerHTML = rows.length ? rows.map(c => {
     const dv = deals.filter(d => (d.company || '') === c.name).reduce((s, d) => s + (+d.value || 0), 0);
     const href = _crmHref(c.website);
@@ -8125,7 +8125,7 @@ async function crmRenderContacts() {
   const root = document.getElementById('crm-contacts-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await Promise.all([tkLoadColl('crm_contacts'), tkLoadColl('crm_companies')]);
-  const cts = _HR.crm_contacts || [];
+  const cts = _crmMine(_HR.crm_contacts);
   const kpis = _hrKpiRow([_hrKpi('Contacts', cts.length), _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-ct-q', 'Search name / email / company…', 'crmFillContactsTbl') + _crmFiltSel('crm-ct-co', 'All companies', _crmDistinct(cts, 'company'), 'crmFillContactsTbl') + _crmFiltSel('crm-ct-owner', 'All owners', _crmDistinct(cts, 'owner'), 'crmFillContactsTbl'));
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody id="crm-ct-tbody"></tbody></table></div></div>';
@@ -8136,7 +8136,7 @@ function crmFillContactsTbl() {
   const q = (document.getElementById('crm-ct-q') ? document.getElementById('crm-ct-q').value : '').toLowerCase();
   const co = document.getElementById('crm-ct-co') ? document.getElementById('crm-ct-co').value : '';
   const ow = document.getElementById('crm-ct-owner') ? document.getElementById('crm-ct-owner').value : '';
-  const rows = (_HR.crm_contacts || []).filter(c => (!q || ((c.name || '') + ' ' + (c.email || '') + ' ' + (c.company || '')).toLowerCase().indexOf(q) >= 0) && (!co || (c.company || '') === co) && (!ow || (c.owner || '') === ow));
+  const rows = _crmMine(_HR.crm_contacts).filter(c => (!q || ((c.name || '') + ' ' + (c.email || '') + ' ' + (c.company || '')).toLowerCase().indexOf(q) >= 0) && (!co || (c.company || '') === co) && (!ow || (c.owner || '') === ow));
   tb.innerHTML = rows.length ? rows.map(c => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(c.name) + '<span style="font-weight:600">' + _crmEsc(c.name || '') + '</span></div></td><td>' + _crmEsc(c.title || '—') + '</td><td>' + _crmEsc(c.company || '—') + '</td><td style="font-size:12px">' + (c.email ? '<a href="mailto:' + encodeURIComponent(c.email) + '" style="color:var(--navy)">' + _crmEsc(c.email) + '</a>' : '—') + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_contacts', c.id, 'crm_contacts') + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No contacts match your filters.</td></tr>';
 }
 /* ── Products / Services catalog ── */

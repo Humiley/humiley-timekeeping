@@ -545,6 +545,20 @@ class Handler(BaseHTTPRequestHandler):
                      if it.get("empId") == myid
                      or (not it.get("empId") and myname and it.get("name") == myname)
                      or (myname and it.get("assignedTo") == myname)]
+        # CRM records: salesperson (staff) sees own, manager sees their department,
+        # management+ sees all. crm_products is a shared catalogue and is never scoped.
+        if name.startswith("crm_") and name != "crm_products":
+            lvl = self._caller_level(u)
+            if self._level_rank(lvl) < self._level_rank("management"):
+                myname = u.get("name") or ""
+                if lvl == "staff":
+                    items = [it for it in items if (it.get("owner") or "") == myname]
+                else:
+                    mydept = u.get("dept") or u.get("department") or ""
+                    deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+                    items = [it for it in items
+                             if (it.get("owner") or "") == myname
+                             or (mydept and deptof.get(it.get("owner") or "") == mydept)]
         return self._json({"items": items})
 
     @staticmethod
