@@ -3515,6 +3515,7 @@ async function doLogin(role, opts = {}) {
   toast(role === 'manager'
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
+  try { _resetIdleTimer(); } catch (e) {}   // arm the 10-minute inactivity auto-logout
 }
 
 /* ── Microsoft 365 SSO login (live mode) ── */
@@ -3527,7 +3528,9 @@ function msalLogin() {
     return;
   }
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
-  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'] });
+  /* prompt:'login' forces a fresh sign-in every time (no silent SSO) — so the browser can't
+     "keep the pass", and Microsoft re-challenges 2-step verification on each login. */
+  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'], prompt: 'login' });
 }
 
 /* ── Logout ── */
@@ -3540,6 +3543,25 @@ function doLogout() {
   if (typeof toast === 'function') toast('Signed out');
   window.location.replace(window.location.origin + '/');
 }
+
+/* ── Auto sign-out after 10 minutes of inactivity ──────────────────────────────
+   When the session is cleared the next sign-in goes through a full Microsoft login
+   (prompt:'login'), which re-challenges 2-step verification. */
+let _idleTimer = null;
+const _IDLE_MS = 10 * 60 * 1000;
+function _resetIdleTimer() {
+  if (!TK.token) return;                 // only while signed in
+  clearTimeout(_idleTimer);
+  _idleTimer = setTimeout(_idleLogout, _IDLE_MS);
+}
+function _idleLogout() {
+  if (!TK.token) return;
+  try { toast('Signed out after 10 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
+  setTimeout(doLogout, 1200);
+}
+['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
+  try { document.addEventListener(ev, _resetIdleTimer, { passive: true }); } catch (e) {}
+});
 
 /* ── Admin view switcher: let an Admin flip into the Staff workspace ──
    In DEMO mode the switch steps into a representative employee's identity so the
