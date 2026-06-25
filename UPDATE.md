@@ -28,6 +28,21 @@ This is the routine "ship the latest changes" runbook. It updates **only the cod
 
 ---
 
+## ⚡ The easy way (one command)
+
+After connecting (Step 0), just run the helper script — it does **backup → pull → rebuild →
+health-check** for you:
+
+```bash
+cd /opt/humiley-timekeeping && git pull && ./update.sh
+```
+
+(The first `git pull` is only so you have the latest `update.sh`; after that, `./update.sh`
+alone is enough since it pulls again internally.) Then hard-refresh your browser. ✅
+The manual steps below are the same thing, broken out, in case you ever want to do it by hand.
+
+---
+
 ## STEP 0 — Connect to the server
 
 Vietnix panel → VPS → **Open Xterm.js Console** (browser terminal) → log in as `root`.
