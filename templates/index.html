@@ -5022,51 +5022,50 @@ function devFillTable() {
     return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
 }
-/* ── Batch add several devices in one modal (multi-row grid) ───────────────────── */
-let _devBatch = null;
+/* ── Batch add several devices — one stacked card per item (same UX as the Claim items) ── */
 function _devCats() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'category').options) || ['Other']; } catch (e) { return ['Other']; } }
 function _devStatuses() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'status').options) || ['Available']; } catch (e) { return ['Available']; } }
-function _devBlankRow() { return { name: '', category: _devCats()[0] || 'Other', serial: '', assignedTo: '', department: '', qty: 1, unitPrice: 0, status: 'Available' }; }
+let _devBatchSeq = 0;
+function _devLineHtml() {
+  const i = _devBatchSeq++;
+  const cats = _devCats(), sts = _devStatuses();
+  return '<div class="dev-line" data-di="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Device / Equipment Name</label><input class="form-control dev-name" placeholder="e.g. Dell Latitude 5440"></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control dev-cat">' + cats.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Status</label><select class="form-control dev-status">' + sts.map(o => '<option' + (o === 'Available' ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Serial / Asset Tag</label><input class="form-control dev-serial"></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Department</label><input class="form-control dev-dept"></div></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Assigned To (employee)</label><input class="form-control dev-assigned" list="dev-batch-emps" placeholder="— unassigned"></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Quantity</label><input class="form-control dev-qty" type="number" min="1" value="1"></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Unit Price (₫)</label><input class="form-control dev-price" type="number" min="0" placeholder="0"></div></div>' +
+    '<div style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:11px" onclick="this.closest(\'.dev-line\').remove()">Remove device</button></div></div>';
+}
+function _devBatchAddRow() { const w = document.getElementById('dev-batch-lines'); if (w) w.insertAdjacentHTML('beforeend', _devLineHtml()); }
 function tkDeviceBatchAdd() {
-  _devBatch = [_devBlankRow(), _devBlankRow(), _devBlankRow()];
-  document.getElementById('devBatchOverlay')?.remove();
+  document.getElementById('devBatchOverlay')?.remove(); _devBatchSeq = 0;
   const emps = (typeof _qaDynOptions === 'function' ? _qaDynOptions('employees') : []) || [];
   const dl = '<datalist id="dev-batch-emps">' + emps.map(n => '<option value="' + _tkEscA(n) + '"></option>').join('') + '</datalist>';
   const el = document.createElement('div'); el.id = 'devBatchOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:1060px;width:97vw">' +
-    '<div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">One row per item, then “Save all”. Same item ×10? put 10 in Quantity on a single row.</div>' + dl +
-    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Name *</th><th style="width:120px">Category</th><th style="width:108px">Serial / Tag</th><th style="width:150px">Assigned To</th><th style="width:108px">Department</th><th style="width:50px">Qty</th><th style="width:108px">Unit Price</th><th style="width:110px">Status</th><th style="width:26px"></th></tr></thead><tbody id="dev-batch-rows"></tbody></table></div>' +
-    '<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="_devBatchAddRow()">' + _PLUS_SVG + ' Add row</button></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devBatchOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="_devBatchSave()">Save all</button></div></div>';
+  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">One card per item, then “Save all”. Same item ×10? put 10 in Quantity.</div>' + dl +
+    '<div id="dev-batch-lines"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="_devBatchAddRow()">' + tkIcon('plus') + 'Add device</button>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devBatchOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="_devBatchSave()">' + tkIcon('check') + 'Save all</button></div></div>';
   document.body.appendChild(el);
-  _devBatchRender();
+  _devBatchAddRow();  // start with one card; "Add device" adds more
 }
-function _devBatchRender() {
-  const tb = document.getElementById('dev-batch-rows'); if (!tb || !_devBatch) return;
-  const catOpts = _devCats(), stOpts = _devStatuses();
-  tb.innerHTML = _devBatch.map((r, i) =>
-    '<tr>' +
-    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" placeholder="e.g. Dell Latitude 5440" value="' + _tkEscA(r.name) + '" oninput="_devBatch[' + i + '].name=this.value"></td>' +
-    '<td><select class="form-control" style="font-size:12px;width:100%" onchange="_devBatch[' + i + '].category=this.value">' + catOpts.map(o => '<option' + (r.category === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
-    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" value="' + _tkEscA(r.serial) + '" oninput="_devBatch[' + i + '].serial=this.value"></td>' +
-    '<td><input class="form-control" list="dev-batch-emps" style="font-size:12px;width:100%;min-width:0" placeholder="— unassigned" value="' + _tkEscA(r.assignedTo) + '" oninput="_devBatch[' + i + '].assignedTo=this.value"></td>' +
-    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" value="' + _tkEscA(r.department) + '" oninput="_devBatch[' + i + '].department=this.value"></td>' +
-    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:center;padding:6px 2px" value="' + (r.qty || 1) + '" oninput="_devBatch[' + i + '].qty=+(this.value.replace(/[^0-9]/g,\'\'))||1"></td>' +
-    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:right" placeholder="0" value="' + _qaMoneyFmt(r.unitPrice) + '" oninput="_devBatch[' + i + '].unitPrice=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this)"></td>' +
-    '<td><select class="form-control" style="font-size:12px;width:100%" onchange="_devBatch[' + i + '].status=this.value">' + stOpts.map(o => '<option' + (r.status === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
-    '<td><button class="btn btn-ghost btn-sm" title="Remove row" style="color:#C00000;padding:2px 6px" onclick="_devBatchRemoveRow(' + i + ')">' + _TRASH + '</button></td>' +
-    '</tr>').join('');
-}
-function _devBatchAddRow() { if (!_devBatch) return; _devBatch.push(_devBlankRow()); _devBatchRender(); }
-function _devBatchRemoveRow(i) { if (!_devBatch) return; _devBatch.splice(i, 1); if (!_devBatch.length) _devBatch.push(_devBlankRow()); _devBatchRender(); }
 async function _devBatchSave() {
-  if (!_devBatch) return;
-  const rows = _devBatch.filter(r => (r.name || '').trim());
+  const cards = Array.from(document.querySelectorAll('#dev-batch-lines .dev-line'));
+  const g = (c, sel) => (c.querySelector(sel) || {}).value || '';
+  const rows = cards.map(c => ({
+    name: g(c, '.dev-name').trim(), category: g(c, '.dev-cat') || 'Other', serial: g(c, '.dev-serial'),
+    assignedTo: g(c, '.dev-assigned'), department: g(c, '.dev-dept'),
+    qty: +g(c, '.dev-qty') || 1, unitPrice: +g(c, '.dev-price') || 0, status: g(c, '.dev-status') || 'Available'
+  })).filter(r => r.name);
   if (!rows.length) { toast('Add at least one device with a name.', 'warn'); return; }
   let ok = 0, fail = 0;
   for (const r of rows) {
-    const body = { name: r.name.trim(), category: r.category || 'Other', serial: r.serial || '', assignedTo: r.assignedTo || '', empId: '', department: r.department || '', qty: +r.qty || 1, unitPrice: +r.unitPrice || 0, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
+    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
     try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
   }
   document.getElementById('devBatchOverlay')?.remove();
