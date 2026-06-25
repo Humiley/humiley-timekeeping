@@ -8732,11 +8732,12 @@ function _pmDerive(coll, data) {
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
   if (coll === 'pm_tasks') {
     const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d;
-    /* Stamp/clear the ACTUAL finish so "early vs late vs target" is computable.
-       Complete (status Completed or 100%) and no actual finish yet → use the planned
-       finish if it's already in the past, else today. Re-opened task → clear it. */
+    /* The day you mark a task complete IS its actual finish (today's date), and that's
+       what we compare against the target (finish) → early / on-time / late. A PM can still
+       override with the editable "Actual finish" field. Re-opening a task clears it so it
+       re-stamps next time it's completed. */
     const done = String(data.status) === 'Completed' || _pmPct(data.pctComplete) === 100;
-    if (done) { if (!data.actualFinish) data.actualFinish = (data.finish && data.finish <= _pmToday()) ? data.finish : _pmToday(); }
+    if (done) { if (!data.actualFinish) data.actualFinish = _pmToday(); }
     else { data.actualFinish = ''; }
   }
 }
