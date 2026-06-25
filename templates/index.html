@@ -8637,16 +8637,19 @@ function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), 
 function _pmBadge(txt, hex) { return '<span class="badge" style="background:' + hex + '1f;color:' + hex + ';font-size:10px;font-weight:700">' + _pmEsc(txt) + '</span>'; }
 function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
 function _pmBar(pct, hex) { pct = _pmPct(pct); hex = hex || 'var(--navy)'; return '<div style="background:var(--soft-bg);border-radius:6px;height:7px;overflow:hidden;min-width:60px"><div style="width:' + pct + '%;height:100%;background:' + hex + '"></div></div>'; }
-/* For a COMPLETED task with a target (finish) and actual finish, return a green
-   "Nd early / On time" or red "Nd late" pill vs its target date. Empty otherwise. */
+/* For a COMPLETED task, return a pill vs its target (finish) date — the number of
+   days is whatever the real difference is (1 day and up). Colours:
+   late = red, on time = blue, early = green. Empty if not completed / no dates. */
 function _pmDelivery(t) {
   if (!t) return '';
   const done = String(t.status) === 'Completed' || _pmPct(t.pctComplete) === 100;
   if (!done || !t.finish || !t.actualFinish) return '';
   const d = _pmDateDiff(t.finish, t.actualFinish);   // + = finished AFTER target (late)
   if (d == null) return '';
-  const late = d > 0, hex = late ? '#EF4444' : '#00B060';
-  const label = d === 0 ? 'On time' : late ? (d + 'd late') : ((-d) + 'd early');
+  let hex, label;
+  if (d > 0) { hex = '#EF4444'; label = d + 'd late'; }                           // late → red
+  else if (d === 0) { hex = '#205090'; label = 'On time'; }                       // on time → blue
+  else { hex = '#00B060'; label = (-d) + 'd early'; }                             // early → green
   return _pmBadge(label, hex);
 }
 
