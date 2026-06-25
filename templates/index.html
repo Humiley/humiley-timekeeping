@@ -1159,19 +1159,19 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="kpi-grid">
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#2050901f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">Present Today</div><div class="kpi-value" id="kpi-present">42</div><div class="kpi-delta up" id="kpi-present-delta">▲ 91.3% of 46</div></div>
+      <div style="min-width:0"><div class="kpi-label">Present Today</div><div class="kpi-value" id="kpi-present">0</div><div class="kpi-delta up" id="kpi-present-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#00B0601f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">On Time</div><div class="kpi-value" id="kpi-ontime">38</div><div class="kpi-delta up" id="kpi-ontime-delta">▲ 90.5% on-time rate</div></div>
+      <div style="min-width:0"><div class="kpi-label">On Time</div><div class="kpi-value" id="kpi-ontime">0</div><div class="kpi-delta up" id="kpi-ontime-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#F59E0B1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">Late Arrivals</div><div class="kpi-value" id="kpi-late">4</div><div class="kpi-delta dn" id="kpi-late-delta">▲ 2 more than yesterday</div></div>
+      <div style="min-width:0"><div class="kpi-label">Late Arrivals</div><div class="kpi-value" id="kpi-late">0</div><div class="kpi-delta dn" id="kpi-late-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#8B5CF61f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">On Leave</div><div class="kpi-value" id="kpi-onleave">4</div><div class="kpi-delta neu" id="kpi-leave-delta">2 pending approval</div></div>
+      <div style="min-width:0"><div class="kpi-label">On Leave</div><div class="kpi-value" id="kpi-onleave">0</div><div class="kpi-delta neu" id="kpi-leave-delta">—</div></div>
     </div>
   </div>
 
@@ -1306,7 +1306,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div>
       <h1 id="att-view-title">Attendance Records</h1>
-      <p id="att-summary">46 employees · Today's records</p>
+      <p id="att-summary">Today's records</p>
     </div>
     <div style="display:flex;gap:8px" id="att-mgr-btns">
       <button class="btn btn-outline btn-sm" onclick="exportAttendance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
@@ -1349,19 +1349,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <table id="att-table">
         <thead><tr><th>Employee</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Hours</th><th>GPS Zone</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody id="att-tbody">
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#205090">HN</div><div><div style="font-size:13px;font-weight:700">Huy Nguyen Duc</div><div style="font-size:11px;color:var(--text-light)">Managing Director</div></div></div></td><td>Engineering</td><td style="font-weight:600">08:02</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)" id="dur-att">7h 12m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#00B060">LT</div><div><div style="font-size:13px;font-weight:700">Lan Tran</div><div style="font-size:11px;color:var(--text-light)">HR Manager</div></div></div></td><td>HR &amp; Admin</td><td style="font-weight:600">08:18</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)">6h 56m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#F59E0B">MV</div><div><div style="font-size:13px;font-weight:700">Minh Vu</div><div style="font-size:11px;color:var(--text-light)">Project Manager</div></div></div></td><td>Projects</td><td style="font-weight:600">09:14</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--warning)">6h 00m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-warn">Late 44m</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#8B5CF6">PD</div><div><div style="font-size:13px;font-weight:700">Phuc Dang</div><div style="font-size:11px;color:var(--text-light)">Finance Lead</div></div></div></td><td>Finance</td><td style="font-weight:600">07:58</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)">7h 16m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#C00000">HaN</div><div><div style="font-size:13px;font-weight:700">Ha Nguyen</div><div style="font-size:11px;color:var(--text-light)">Sales Executive</div></div></div></td><td>Sales</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td><span class="badge b-info">On Leave</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#F59E0B">BL</div><div><div style="font-size:13px;font-weight:700">Binh Le</div><div style="font-size:11px;color:var(--text-light)">Field Engineer</div></div></div></td><td>Field Services</td><td style="font-weight:600">07:58</td><td style="color:var(--text-light)">In progress</td><td>7h 16m</td><td><span class="badge b-danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Out Zone</span></td><td><span class="badge b-warn">Anomaly</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#163866">DT</div><div><div style="font-size:13px;font-weight:700">Duc Thanh</div><div style="font-size:11px;color:var(--text-light)">Senior Engineer</div></div></div></td><td>Engineering</td><td style="font-weight:600">08:05</td><td style="color:var(--text-light)">In progress</td><td>7h 09m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#00B060">MQ</div><div><div style="font-size:13px;font-weight:700">Mai Quynh</div><div style="font-size:11px;color:var(--text-light)">Project Coordinator</div></div></div></td><td>Projects</td><td style="font-weight:600">08:00</td><td style="color:var(--text-light)">In progress</td><td>7h 14m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
+          <tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:26px">No attendance records yet.</td></tr>
         </tbody>
       </table>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12px;color:var(--text-light)">
-      <span>Showing 8 of 46 employees · <span style="color:var(--emerald);font-weight:700">38 On Time</span> · <span style="color:var(--warning);font-weight:700">4 Late</span> · <span style="color:var(--danger);font-weight:700">0 Absent</span> · <span style="color:var(--info);font-weight:700">4 On Leave</span></span>
+      <span id="att-foot-summary">No records</span>
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="attChangePage(-1)">← Prev</button>
         <button class="btn btn-outline btn-sm" id="att-pg-1" onclick="attGotoPage(1)">1</button>
@@ -1932,10 +1925,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="rpt-attendance">
 
   <div class="kpi-grid">
-    <div class="kpi-card c-navy"><div class="kpi-label">Avg On-Time Rate</div><div class="kpi-value">91.2%</div><div class="kpi-delta up">▲ 3.1% vs April</div></div>
-    <div class="kpi-card c-emerald"><div class="kpi-label">Total Hours Worked</div><div class="kpi-value">6,840h</div><div class="kpi-delta neu">May MTD</div></div>
-    <div class="kpi-card c-warn"><div class="kpi-label">Leave Days Taken</div><div class="kpi-value">47d</div><div class="kpi-delta neu">May MTD</div></div>
-    <div class="kpi-card c-danger"><div class="kpi-label">GPS Anomalies</div><div class="kpi-value">7</div><div class="kpi-delta dn">▲ 3 vs last month</div></div>
+    <div class="kpi-card c-navy"><div class="kpi-label">Avg On-Time Rate</div><div class="kpi-value" id="rpt-att-ontime">—</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-emerald"><div class="kpi-label">Total Hours Worked</div><div class="kpi-value" id="rpt-att-hours">0h</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-warn"><div class="kpi-label">Leave Days Taken</div><div class="kpi-value" id="rpt-att-leave">0d</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-danger"><div class="kpi-label">GPS Anomalies</div><div class="kpi-value" id="rpt-att-anom">0</div><div class="kpi-delta neu">All records</div></div>
   </div>
 
   <div class="grid-2 mb22">
@@ -1954,13 +1947,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="chart-wrap" style="height:170px"><canvas id="deptChart"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-hdr"><div class="card-title">Top Insights — May 2026</div></div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
-        <div style="padding:10px;background:#D1FAE5;border-radius:8px;border-left:3px solid var(--emerald)"><strong>Field Services</strong> has the highest on-time rate this month at 96.4%.</div>
-        <div style="padding:10px;background:#FEF3C7;border-radius:8px;border-left:3px solid var(--warning)"><strong>Projects</strong> department has the most late arrivals (7 this month). Consider review.</div>
-        <div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy)">Average daily working hours: <strong>8.6h</strong> — above the 8h standard.</div>
-        <div style="padding:10px;background:#FEE2E2;border-radius:8px;border-left:3px solid var(--danger)">3 employees have less than 3 days annual leave remaining (May 2026).</div>
-        <div style="padding:10px;background:#D1FAE5;border-radius:8px;border-left:3px solid var(--emerald)">GPS anomaly rate: <strong>1.8%</strong> — below 5% target threshold.</div>
+      <div class="card-hdr"><div class="card-title">Top Insights</div></div>
+      <div id="rpt-att-insights" style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+        <div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy);color:var(--text-light)">No insights yet — they appear once attendance data is recorded.</div>
       </div>
     </div>
   </div>
@@ -1977,11 +1966,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <!-- Summary KPIs -->
     <div class="stat-boxes" style="margin-bottom:16px">
-      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="lr-total">18</div><div class="stat-lbl">Total Requests</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="lr-approved">11</div><div class="stat-lbl">Approved</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="lr-pending">4</div><div class="stat-lbl">Pending</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="lr-rejected">3</div><div class="stat-lbl">Rejected</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="lr-days">42</div><div class="stat-lbl">Total Days</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="lr-total">0</div><div class="stat-lbl">Total Requests</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="lr-approved">0</div><div class="stat-lbl">Approved</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="lr-pending">0</div><div class="stat-lbl">Pending</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="lr-rejected">0</div><div class="stat-lbl">Rejected</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="lr-days">0</div><div class="stat-lbl">Total Days</div></div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
@@ -1992,14 +1981,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <table>
           <thead><tr><th>Employee</th><th>Department</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Approved By</th></tr></thead>
           <tbody id="leave-report-tbody">
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#205090">HN</div><span style="font-weight:600">Huy Nguyen Duc</span></div></td><td>Engineering</td><td>Annual Leave</td><td>Apr 1</td><td>Apr 4</td><td>4</td><td style="font-size:11px;color:var(--text-light)">Personal travel</td><td><span class="badge b-ok">Approved</span></td><td>Self</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#3168A8">TN</div><span style="font-weight:600">Tuan Nguyen</span></div></td><td>Projects</td><td>Annual Leave</td><td>May 12</td><td>May 14</td><td>3</td><td style="font-size:11px;color:var(--text-light)">Sister's wedding</td><td><span class="badge b-warn">Pending</span></td><td>—</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F59E0B">MV</div><span style="font-weight:600">Minh Vu</span></div></td><td>Projects</td><td>Sick Leave</td><td>May 10</td><td>May 10</td><td>1</td><td style="font-size:11px;color:var(--text-light)">Fever/flu</td><td><span class="badge b-warn">Pending</span></td><td>—</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#163866">BL</div><span style="font-weight:600">Binh Le</span></div></td><td>Field Services</td><td>Annual Leave</td><td>Apr 28</td><td>Apr 30</td><td>3</td><td style="font-size:11px;color:var(--text-light)">Family visit</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#8B5CF6">KP</div><span style="font-weight:600">Kim Pham</span></div></td><td>Engineering</td><td>Sick Leave</td><td>Apr 22</td><td>Apr 23</td><td>2</td><td style="font-size:11px;color:var(--text-light)">Medical</td><td><span class="badge b-ok">Approved</span></td><td>Lan Tran</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#00B060">MQ</div><span style="font-weight:600">Mai Quynh</span></div></td><td>Projects</td><td>Comp-off</td><td>May 2</td><td>May 2</td><td>1</td><td style="font-size:11px;color:var(--text-light)">Overtime compensation</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F59E0B">DT</div><span style="font-weight:600">Duc Thanh</span></div></td><td>Engineering</td><td>Annual Leave</td><td>Apr 15</td><td>Apr 18</td><td>4</td><td style="font-size:11px;color:var(--text-light)">Holiday</td><td><span class="badge b-danger">Rejected</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F97316">HA</div><span style="font-weight:600">Ha Nguyen</span></div></td><td>Field Services</td><td>Sick Leave</td><td>Apr 8</td><td>Apr 9</td><td>2</td><td style="font-size:11px;color:var(--text-light)">Back pain</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:24px">No leave records yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -2007,21 +1989,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <!-- Leave usage by type chart area -->
     <div class="grid-2" style="margin-top:16px">
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Leave by Type — May 2026</div></div>
-        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Annual Leave</span><span style="font-weight:700">11 requests · 25 days</span></div><div class="prog-wrap"><div class="prog-fill prog-navy" style="width:62%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Sick Leave</span><span style="font-weight:700">5 requests · 10 days</span></div><div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:28%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Comp-off</span><span style="font-weight:700">2 requests · 3 days</span></div><div class="prog-wrap"><div class="prog-fill prog-warn" style="width:8%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Unpaid</span><span style="font-weight:700">0 requests</span></div><div class="prog-wrap"><div class="prog-fill prog-danger" style="width:0%"></div></div></div>
+        <div class="card-hdr"><div class="card-title">Leave by Type</div></div>
+        <div id="rpt-leave-bytype" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+          <div style="color:var(--text-light);font-size:12px">No leave records yet.</div>
         </div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Top Leave Users — 2026 YTD</div></div>
-        <div style="display:flex;flex-direction:column;gap:0">
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#F59E0B">MV</div><div style="flex:1"><div style="font-weight:600">Minh Vu</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-warn" style="width:67%"></div></div></div><span style="font-weight:700;color:var(--navy)">8d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#205090">HN</div><div style="flex:1"><div style="font-weight:600">Huy Nguyen Duc</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:33%"></div></div></div><span style="font-weight:700;color:var(--navy)">4d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#163866">BL</div><div style="flex:1"><div style="font-weight:600">Binh Le</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-danger" style="width:25%"></div></div></div><span style="font-weight:700;color:var(--navy)">3d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12px"><div class="ava-sm" style="background:#8B5CF6">PD</div><div style="flex:1"><div style="font-weight:600">Phuc Dang</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:25%"></div></div></div><span style="font-weight:700;color:var(--navy)">3d used</span></div>
+        <div class="card-hdr"><div class="card-title">Top Leave Users</div></div>
+        <div id="rpt-leave-top" style="display:flex;flex-direction:column;gap:0">
+          <div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>
         </div>
       </div>
     </div>
@@ -2033,21 +2009,21 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…" oninput="renderInOutReport()"></div>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
-      <input type="date" class="sel-filter" value="2026-05-09" onchange="renderInOutReport()" style="font-size:12px">
+      <input type="date" class="sel-filter" onchange="renderInOutReport()" style="font-size:12px">
     </div>
     <!-- Summary -->
     <div class="stat-boxes" style="margin-bottom:16px">
-      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="io-total">42</div><div class="stat-lbl">Total Records</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="io-ontime">31</div><div class="stat-lbl">On Time</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="io-late">8</div><div class="stat-lbl">Late Arrivals</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="io-absent">3</div><div class="stat-lbl">Absent</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="io-avghrs">8h 12m</div><div class="stat-lbl">Avg Hours</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="io-total">0</div><div class="stat-lbl">Total Records</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="io-ontime">0</div><div class="stat-lbl">On Time</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="io-late">0</div><div class="stat-lbl">Late Arrivals</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="io-absent">0</div><div class="stat-lbl">Absent</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="io-avghrs">—</div><div class="stat-lbl">Avg Hours</div></div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-        <div class="card-title">Employee In/Out Log — May 9, 2026</div>
+        <div class="card-title">Employee In/Out Log</div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="renderInOutReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="tkRefreshInOut()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
           <button class="btn btn-outline btn-sm" onclick="toast('Exporting In/Out log to Excel…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
         </div>
       </div>
@@ -2968,7 +2944,9 @@ function tkCheckIn() {
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   _checkedIn = true;
   _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: _tkSelectedZone.name });
-  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon });
+  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon })
+    .then(() => tkBootstrap().catch(() => {}))
+    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   try { filterTable(); } catch (e) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('rec-checkin', t); set('rec-zone', 'In Zone'); set('dur-val', '0h 0m');
@@ -2986,7 +2964,9 @@ function tkCheckOut() {
   if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   _checkedIn = false;
-  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t });
+  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t })
+    .then(() => tkBootstrap().catch(() => {}))
+    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
   if (rec) { rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); const tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm'; }
   try { filterTable(); } catch (e) {}
@@ -3516,6 +3496,7 @@ async function doLogin(role, opts = {}) {
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
   try { _resetIdleTimer(); } catch (e) {}   // arm the 10-minute inactivity auto-logout
+  try { _armManagerPoll(); } catch (e) {}   // managers: live auto-refresh of admin views
 }
 
 /* ── Microsoft 365 SSO login (live mode) ── */
@@ -3562,6 +3543,28 @@ function _idleLogout() {
 ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
   try { document.addEventListener(ev, _resetIdleTimer, { passive: true }); } catch (e) {}
 });
+
+/* ── Manager/admin live auto-refresh ───────────────────────────────────────────
+   The admin's browser only loaded its data at login, so a staff check-in/leave
+   wouldn't appear until a manual refresh. This re-pulls from the DB every 30s and
+   re-renders whatever admin view is open, so activity from ALL users shows up live. */
+let _mgrPollTimer = null;
+function _armManagerPoll() {
+  if (_mgrPollTimer) { clearInterval(_mgrPollTimer); _mgrPollTimer = null; }
+  if (_userRole !== 'manager') return;
+  _mgrPollTimer = setInterval(async () => {
+    if (!TK.token || _userRole !== 'manager') { clearInterval(_mgrPollTimer); _mgrPollTimer = null; return; }
+    if (document.hidden) return;                 // skip a backgrounded tab
+    try { await tkBootstrap(); } catch (e) { return; }
+    try {
+      const v = _currentView;
+      if (v === 'dashboard') { tkRenderDashboard(); tkRenderHrMetrics(); }
+      else if (v === 'attendance') { filterTable(); }
+      else if (v === 'reports') { _renderRptAttendance(); renderInOutReport(); renderLeaveReport(); }
+      else if (v === 'manager' && typeof loadManagerView === 'function') { loadManagerView(); }
+    } catch (e) {}
+  }, 30000);
+}
 
 /* ── Admin view switcher: let an Admin flip into the Staff workspace ──
    In DEMO mode the switch steps into a representative employee's identity so the
@@ -4990,21 +4993,85 @@ async function tkRenderDevices() {
   const byCat = {}, byStatus = {}, valByDept = {};
   d.forEach(x => { const q = +x.qty || 1; byCat[x.category || 'Other'] = (byCat[x.category || 'Other'] || 0) + q; byStatus[x.status || '—'] = (byStatus[x.status || '—'] || 0) + q; valByDept[x.department || '—'] = (valByDept[x.department || '—'] || 0) + q * (+x.unitPrice || 0); });
   const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
-  const rows = d.length ? d.slice().sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || '')).map(x => {
-    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
-  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
   root.innerHTML =
-    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-outline btn-sm" onclick="tkDeviceBatchAdd()">' + tkIcon('plus') + 'Add Several</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div><div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
+    '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + '</div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
+  devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
     _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
     _mkChart('dev-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#3168A8', '#00B060', '#F59E0B', '#94a3b8', '#EF4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
     _mkChart('dev-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => valByDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   }
+}
+/* Asset Register — (re)fill the table body from _HR.devices applying the search + filters. */
+function devFillTable() {
+  const tb = document.getElementById('dev-tbody'); if (!tb) return;
+  const q = (_crmLF['dev-q'] || '').toLowerCase();
+  const cat = _crmLF['dev-cat'] || '', st = _crmLF['dev-status'] || '', dept = _crmLF['dev-dept'] || '';
+  const list = (_HR.devices || []).filter(x => {
+    const hay = ((x.name || '') + ' ' + (x.serial || '') + ' ' + (x.assignedTo || '') + ' ' + (x.department || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!cat || (x.category || '') === cat) && (!st || (x.status || '') === st) && (!dept || (x.department || '') === dept);
+  }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
+  tb.innerHTML = list.length ? list.map(x => {
+    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
+}
+/* ── Batch add several devices in one modal (multi-row grid) ───────────────────── */
+let _devBatch = null;
+function _devCats() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'category').options) || ['Other']; } catch (e) { return ['Other']; } }
+function _devStatuses() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'status').options) || ['Available']; } catch (e) { return ['Available']; } }
+function _devBlankRow() { return { name: '', category: _devCats()[0] || 'Other', serial: '', assignedTo: '', department: '', qty: 1, unitPrice: 0, status: 'Available' }; }
+function tkDeviceBatchAdd() {
+  _devBatch = [_devBlankRow(), _devBlankRow(), _devBlankRow()];
+  document.getElementById('devBatchOverlay')?.remove();
+  const emps = (typeof _qaDynOptions === 'function' ? _qaDynOptions('employees') : []) || [];
+  const dl = '<datalist id="dev-batch-emps">' + emps.map(n => '<option value="' + _tkEscA(n) + '"></option>').join('') + '</datalist>';
+  const el = document.createElement('div'); el.id = 'devBatchOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:1060px;width:97vw">' +
+    '<div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">One row per item, then “Save all”. Same item ×10? put 10 in Quantity on a single row.</div>' + dl +
+    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Name *</th><th style="width:120px">Category</th><th style="width:108px">Serial / Tag</th><th style="width:150px">Assigned To</th><th style="width:108px">Department</th><th style="width:50px">Qty</th><th style="width:108px">Unit Price</th><th style="width:110px">Status</th><th style="width:26px"></th></tr></thead><tbody id="dev-batch-rows"></tbody></table></div>' +
+    '<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="_devBatchAddRow()">' + _PLUS_SVG + ' Add row</button></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devBatchOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="_devBatchSave()">Save all</button></div></div>';
+  document.body.appendChild(el);
+  _devBatchRender();
+}
+function _devBatchRender() {
+  const tb = document.getElementById('dev-batch-rows'); if (!tb || !_devBatch) return;
+  const catOpts = _devCats(), stOpts = _devStatuses();
+  tb.innerHTML = _devBatch.map((r, i) =>
+    '<tr>' +
+    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" placeholder="e.g. Dell Latitude 5440" value="' + _tkEscA(r.name) + '" oninput="_devBatch[' + i + '].name=this.value"></td>' +
+    '<td><select class="form-control" style="font-size:12px;width:100%" onchange="_devBatch[' + i + '].category=this.value">' + catOpts.map(o => '<option' + (r.category === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
+    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" value="' + _tkEscA(r.serial) + '" oninput="_devBatch[' + i + '].serial=this.value"></td>' +
+    '<td><input class="form-control" list="dev-batch-emps" style="font-size:12px;width:100%;min-width:0" placeholder="— unassigned" value="' + _tkEscA(r.assignedTo) + '" oninput="_devBatch[' + i + '].assignedTo=this.value"></td>' +
+    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" value="' + _tkEscA(r.department) + '" oninput="_devBatch[' + i + '].department=this.value"></td>' +
+    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:center;padding:6px 2px" value="' + (r.qty || 1) + '" oninput="_devBatch[' + i + '].qty=+(this.value.replace(/[^0-9]/g,\'\'))||1"></td>' +
+    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:right" placeholder="0" value="' + _qaMoneyFmt(r.unitPrice) + '" oninput="_devBatch[' + i + '].unitPrice=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this)"></td>' +
+    '<td><select class="form-control" style="font-size:12px;width:100%" onchange="_devBatch[' + i + '].status=this.value">' + stOpts.map(o => '<option' + (r.status === o ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></td>' +
+    '<td><button class="btn btn-ghost btn-sm" title="Remove row" style="color:#C00000;padding:2px 6px" onclick="_devBatchRemoveRow(' + i + ')">' + _TRASH + '</button></td>' +
+    '</tr>').join('');
+}
+function _devBatchAddRow() { if (!_devBatch) return; _devBatch.push(_devBlankRow()); _devBatchRender(); }
+function _devBatchRemoveRow(i) { if (!_devBatch) return; _devBatch.splice(i, 1); if (!_devBatch.length) _devBatch.push(_devBlankRow()); _devBatchRender(); }
+async function _devBatchSave() {
+  if (!_devBatch) return;
+  const rows = _devBatch.filter(r => (r.name || '').trim());
+  if (!rows.length) { toast('Add at least one device with a name.', 'warn'); return; }
+  let ok = 0, fail = 0;
+  for (const r of rows) {
+    const body = { name: r.name.trim(), category: r.category || 'Other', serial: r.serial || '', assignedTo: r.assignedTo || '', empId: '', department: r.department || '', qty: +r.qty || 1, unitPrice: +r.unitPrice || 0, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
+    try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
+  }
+  document.getElementById('devBatchOverlay')?.remove();
+  toast(ok + ' device' + (ok === 1 ? '' : 's') + ' added' + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'warn' : undefined);
+  try { await tkRenderDevices(); } catch (e) {}
 }
 /* Staff — devices assigned to the signed-in employee. */
 async function tkRenderMyDevices() {
@@ -6318,10 +6385,16 @@ function tkClaimRecalc() {
   const el = document.getElementById('claim-total'); if (el) el.textContent = _PAY_FMT(t);
 }
 function tkClaimAddLine() { const w = document.getElementById('claim-lines'); if (w) { w.insertAdjacentHTML('beforeend', _claimLineHtml()); } }
-function tkSubmitClaim() {
+async function tkSubmitClaim() {
   document.getElementById('claimOverlay')?.remove(); _claimRowSeq = 0;
+  try { await tkLoadColl('travel'); } catch (e) {}
+  const me = _tkMe ? _tkMe() : null; const myName = (TK.user || {}).name || '';
+  const myTrips = (_HR.travel || []).filter(t => (me && t.empId === me.id) || (t.name && t.name === myName));
+  const tripOpts = '<option value="">— select a trip —</option>' + myTrips.map(t => '<option value="' + t.id + '">' + _tkEscA((t.dest || 'Trip') + ' · ' + tkFmtDate(t.from) + '→' + tkFmtDate(t.to) + (t.status ? ' · ' + t.status : '')) + '</option>').join('');
   const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:520px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Type</label><select class="form-control" id="claim-type" onchange="tkClaimTypeChange()"><option value="Other">Other</option><option value="Travel">Travel</option></select></div>' +
+    '<div class="form-group" id="claim-travel-wrap" style="display:none"><label class="form-label">Related travel trip</label><select class="form-control" id="claim-travelId" onchange="tkClaimTripPick()">' + tripOpts + '</select>' + (myTrips.length ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:4px">No travel requests yet — create one first under Travel Requests.</div>') + '</div>' +
     '<div class="form-group"><label class="form-label">Claim title / trip</label><input class="form-control" id="claim-title" placeholder="e.g. Hanoi site visit 12–14 Jun"></div>' +
     '<div style="font-weight:700;font-size:13px;margin:4px 0 6px;color:var(--navy)">Items</div>' +
     '<div id="claim-lines"></div>' +
@@ -6330,6 +6403,19 @@ function tkSubmitClaim() {
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
   tkClaimAddLine();
+}
+/* Show the "Related travel trip" picker only when the claim type is Travel. */
+function tkClaimTypeChange() {
+  const kind = (document.getElementById('claim-type') || {}).value || 'Other';
+  const wrap = document.getElementById('claim-travel-wrap');
+  if (wrap) wrap.style.display = kind === 'Travel' ? '' : 'none';
+}
+/* When a trip is picked, prefill the claim title from the trip if still empty. */
+function tkClaimTripPick() {
+  const sel = document.getElementById('claim-travelId'); if (!sel) return;
+  const t = (_HR.travel || []).find(x => x.id === sel.value);
+  const titleEl = document.getElementById('claim-title');
+  if (t && titleEl && !titleEl.value.trim()) titleEl.value = (t.dest || 'Travel') + ' ' + tkFmtDate(t.from) + '–' + tkFmtDate(t.to);
 }
 async function tkClaimSave() {
   const e = _tkMe();
@@ -6346,7 +6432,9 @@ async function tkClaimSave() {
   if (!items.length) { toast('Add at least one item with an amount', 'warn'); return; }
   const total = items.reduce((s, it) => s + it.amount, 0);
   const title = (document.getElementById('claim-title') || {}).value || (items.length > 1 ? items.length + ' items' : items[0].category);
-  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const claimKind = (document.getElementById('claim-type') || {}).value || 'Other';
+  const travelId = claimKind === 'Travel' ? ((document.getElementById('claim-travelId') || {}).value || '') : '';
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   try {
     await tkApi('/api/coll/claims', { method: 'POST', body });
     tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
@@ -6416,8 +6504,10 @@ function _claimRowsHtml(claims, isMgr) {
   if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
   return claims.map(c => {
     const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
+    const trip = c.travelId ? (_HR.travel || []).find(t => t.id === c.travelId) : null;
+    const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
     const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve all</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject all</button>' : '';
-    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
     const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
       its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
@@ -7026,7 +7116,7 @@ const _QA_SPECS = {
     { k: 'name', label: 'Device / Equipment Name' },
     { k: 'category', label: 'Category', type: 'select', options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Vehicle', 'Tool', 'PPE / Safety', 'Uniform / Shirt', 'Access Card', 'SIM / Phone Plan', 'Furniture', 'Software License', 'Other'] },
     { k: 'serial', label: 'Serial / Asset Tag' },
-    { k: 'assignedTo', label: 'Assigned To (employee)' },
+    { k: 'assignedTo', label: 'Assigned To (employee)', type: 'combo', dyn: 'employees' },
     { k: 'department', label: 'Department' },
     { k: 'qty', label: 'Quantity', type: 'number' },
     { k: 'unitPrice', label: 'Unit Price (₫)', type: 'number' },
@@ -7112,7 +7202,7 @@ const _QA_SPECS = {
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee', type: 'select', options: 'employees' },
-    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
+    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
     { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path?', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
@@ -8548,6 +8638,18 @@ function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), 
 function _pmBadge(txt, hex) { return '<span class="badge" style="background:' + hex + '1f;color:' + hex + ';font-size:10px;font-weight:700">' + _pmEsc(txt) + '</span>'; }
 function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
 function _pmBar(pct, hex) { pct = _pmPct(pct); hex = hex || 'var(--navy)'; return '<div style="background:var(--soft-bg);border-radius:6px;height:7px;overflow:hidden;min-width:60px"><div style="width:' + pct + '%;height:100%;background:' + hex + '"></div></div>'; }
+/* For a COMPLETED task with a target (finish) and actual finish, return a green
+   "Nd early / On time" or red "Nd late" pill vs its target date. Empty otherwise. */
+function _pmDelivery(t) {
+  if (!t) return '';
+  const done = String(t.status) === 'Completed' || _pmPct(t.pctComplete) === 100;
+  if (!done || !t.finish || !t.actualFinish) return '';
+  const d = _pmDateDiff(t.finish, t.actualFinish);   // + = finished AFTER target (late)
+  if (d == null) return '';
+  const late = d > 0, hex = late ? '#EF4444' : '#00B060';
+  const label = d === 0 ? 'On time' : late ? (d + 'd late') : ((-d) + 'd early');
+  return _pmBadge(label, hex);
+}
 
 /* ---- enums / palettes ---- */
 const PM_PROJECT_STATUS = ['Pipeline', 'Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing', 'Completed', 'Closed', 'Cancelled'];
@@ -8629,7 +8731,15 @@ function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms 
 function _pmDerive(coll, data) {
   if (coll === 'pm_risks') { data.score = (+data.probability || 0) * (+data.impact || 0); data.exposureBand = _pmRiskBand(data.score).band; data.residualScore = (+data.residualProbability || 0) * (+data.residualImpact || 0); }
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
-  if (coll === 'pm_tasks') { const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d; }
+  if (coll === 'pm_tasks') {
+    const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d;
+    /* Stamp/clear the ACTUAL finish so "early vs late vs target" is computable.
+       Complete (status Completed or 100%) and no actual finish yet → use the planned
+       finish if it's already in the past, else today. Re-opened task → clear it. */
+    const done = String(data.status) === 'Completed' || _pmPct(data.pctComplete) === 100;
+    if (done) { if (!data.actualFinish) data.actualFinish = (data.finish && data.finish <= _pmToday()) ? data.finish : _pmToday(); }
+    else { data.actualFinish = ''; }
+  }
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
 const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' } };
@@ -9152,10 +9262,10 @@ function pmRenderSchedule(pid) {
       const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:7px;width:13px;height:13px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="Milestone ' + _pmFmt(f) + '"></div>'
         : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:8px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
       return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
-    const _dates = '<div style="height:21px"></div>' + tasks.map(t => '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + '</div>').join('');
+    const _dates = '<div style="height:21px"></div>' + tasks.map(t => { const dl = _pmDelivery(t); return '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;gap:5px;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + (dl ? ' ' + dl : '') + '</div>'; }).join('');
     const _timeline = _monthHdr + '<div style="position:relative">' + _grid + _today + _bars + '</div>';
     gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdrTop +
-      '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:360px">' + _timeline + '</div><div style="width:118px;flex-shrink:0">' + _dates + '</div></div>' +
+      '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:360px">' + _timeline + '</div><div style="width:172px;flex-shrink:0">' + _dates + '</div></div>' +
       '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div></div>';
   }
   const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
@@ -9163,7 +9273,8 @@ function pmRenderSchedule(pid) {
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
     { label: 'Assignee', k: 'assignee' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
     { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
-    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
+    { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], tasks), pmImportBtn());
   _pmSet(kpis + gantt + tbl);
 }
@@ -10651,6 +10762,17 @@ const _VI = {
   'New Leave Request': 'Yêu cầu nghỉ phép mới',
   'New Request': 'Yêu cầu mới',
   'New Travel Request': 'Yêu cầu công tác mới',
+  'Travel': 'Công tác',
+  'Related travel trip': 'Chuyến công tác liên quan',
+  '— select a trip —': '— chọn chuyến công tác —',
+  'No travel requests yet — create one first under Travel Requests.': 'Chưa có yêu cầu công tác — hãy tạo một yêu cầu trong mục Yêu cầu công tác.',
+  'Add several devices / equipment': 'Thêm nhiều thiết bị / tài sản',
+  'Add Several': 'Thêm nhiều',
+  'Add row': 'Thêm dòng',
+  'Save all': 'Lưu tất cả',
+  'Delivery': 'Tiến độ',
+  'Actual finish': 'Hoàn thành thực tế',
+  'Finish (target)': 'Hoàn thành (mục tiêu)',
   'New employee onboarding reminder': 'Nhắc nhở nhập việc nhân viên mới',
   'Next →': 'Tiếp →',
   'No': 'Không',
@@ -11666,6 +11788,7 @@ function switchReportTab(tab, el) {
   });
   const active = document.getElementById('rpt-' + tab);
   if (active) active.style.display = 'block';
+  if (tab === 'attendance') _renderRptAttendance();
   if (tab === 'inout') renderInOutReport();
   if (tab === 'leave') renderLeaveReport();
   if (tab === 'recruit') tkRenderRecruitReport();
@@ -11758,6 +11881,50 @@ function renderLeaveReport() {
     const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
     return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + nm + '</span></div></td><td>' + (l.emp_dept || l.dept || '') + '</td><td>' + (l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
   }).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-light)">No leave records match your filters.</td></tr>';
+  // Leave-by-type bars (data-driven)
+  const byType = {}; rows.forEach(l => { const t = l.type || 'Other'; (byType[t] = byType[t] || { n: 0, d: 0 }); byType[t].n++; byType[t].d += (+l.days || 0); });
+  const maxD = Math.max(1, ...Object.values(byType).map(v => v.d));
+  const typeColors = { 'Annual Leave': 'prog-navy', 'Sick Leave': 'prog-emerald', 'Comp-off': 'prog-warn', 'Unpaid': 'prog-danger' };
+  const btEl = document.getElementById('rpt-leave-bytype');
+  if (btEl) btEl.innerHTML = Object.keys(byType).length ? Object.keys(byType).sort((a, b) => byType[b].d - byType[a].d).map(t =>
+    '<div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>' + t + '</span><span style="font-weight:700">' + byType[t].n + ' requests · ' + byType[t].d + ' days</span></div><div class="prog-wrap"><div class="prog-fill ' + (typeColors[t] || 'prog-navy') + '" style="width:' + Math.round(byType[t].d / maxD * 100) + '%"></div></div></div>'
+  ).join('') : '<div style="color:var(--text-light);font-size:12px">No leave records yet.</div>';
+  // Top leave users (data-driven)
+  const byUser = {}; rows.forEach(l => { const nm = l.emp_name || l.name || 'Employee'; byUser[nm] = (byUser[nm] || 0) + (+l.days || 0); });
+  const uk = Object.keys(byUser).sort((a, b) => byUser[b] - byUser[a]).slice(0, 5);
+  const maxU = Math.max(1, ...uk.map(u => byUser[u]));
+  const topEl = document.getElementById('rpt-leave-top');
+  if (topEl) topEl.innerHTML = uk.length ? uk.map((nm, i) => { const e2 = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() }; return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' + (i < uk.length - 1 ? 'border-bottom:1px solid var(--soft-bg);' : '') + 'font-size:12px">' + _hrAv(e2) + '<div style="flex:1"><div style="font-weight:600">' + nm + '</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:' + Math.round(byUser[nm] / maxU * 100) + '%"></div></div></div><span style="font-weight:700;color:var(--navy)">' + byUser[nm] + 'd used</span></div>'; }).join('') : '<div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>';
+}
+
+/* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
+function _renderRptAttendance() {
+  const att = _DEMO_ATTENDANCE || [];
+  const total = att.length;
+  const ontime = att.filter(r => r.status === 'on-time').length;
+  const late = att.filter(r => r.status === 'late').length;
+  const rate = total ? Math.round(ontime / total * 100) : 0;
+  let mins = 0;
+  att.forEach(r => { if (r.in && r.out) { const [ih, im] = r.in.split(':').map(Number); const [oh, om] = r.out.split(':').map(Number); const d = (oh * 60 + om) - (ih * 60 + im); if (d > 0) mins += d; } });
+  const hours = Math.round(mins / 60);
+  const leaveDays = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved').reduce((s, l) => s + (+l.days || 0), 0);
+  const anom = att.filter(r => (r.loc || '') === 'Out of Zone').length;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('rpt-att-ontime', total ? rate + '%' : '—');
+  set('rpt-att-hours', hours.toLocaleString() + 'h');
+  set('rpt-att-leave', leaveDays + 'd');
+  set('rpt-att-anom', anom);
+  const ins = document.getElementById('rpt-att-insights');
+  if (ins) {
+    const items = [];
+    if (total) {
+      items.push(['#D1FAE5', 'var(--emerald)', 'On-time rate across all records: <strong>' + rate + '%</strong>.']);
+      if (late) items.push(['#FEF3C7', 'var(--warning)', '<strong>' + late + '</strong> late arrival' + (late > 1 ? 's' : '') + ' recorded.']);
+      if (anom) items.push(['#FEE2E2', 'var(--danger)', '<strong>' + anom + '</strong> GPS anomaly record' + (anom > 1 ? 's' : '') + ' (out of zone).']);
+      const avgH = mins / total / 60; if (avgH > 0) items.push(['var(--light-tint)', 'var(--navy)', 'Average working hours: <strong>' + (Math.round(avgH * 10) / 10) + 'h</strong> per record.']);
+    }
+    ins.innerHTML = items.length ? items.map(a => '<div style="padding:10px;background:' + a[0] + ';border-radius:8px;border-left:3px solid ' + a[1] + '">' + a[2] + '</div>').join('') : '<div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy);color:var(--text-light)">No insights yet — they appear once attendance data is recorded.</div>';
+  }
 }
 
 function renderInOutReport() {
@@ -11775,7 +11942,6 @@ function renderInOutReport() {
     const matchT = statF === 'All Status' || stat === statF;
     return matchS && matchD && matchT;
   }).slice(0,40);
-  if (rows.length === 0) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-light)">No records match your filters.</td></tr>'; return; }
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
   tbody.innerHTML = rows.map(r => {
@@ -11798,12 +11964,13 @@ function renderInOutReport() {
       <td style="font-size:11px;color:${isOT?'var(--warning)':'var(--text-light)'};font-weight:${isOT?'700':'400'}">${isOT?'+'+Math.round((totalMin-480)/60*10)/10+'h OT':'—'}</td>
     </tr>`;
   }).join('');
+  if (!rows.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-light)">No records match your filters.</td></tr>';
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;
   document.getElementById('io-absent').textContent = rows.filter(r=>r.status==='absent').length;
   const validMins = rows.filter(r=>r.in&&r.out).map(r=>{const[ih,im]=r.in.split(':').map(Number);const[oh,om]=r.out.split(':').map(Number);return(oh*60+om)-(ih*60+im);});
-  if (validMins.length) { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); document.getElementById('io-avghrs').textContent=Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; }
+  document.getElementById('io-avghrs').textContent = validMins.length ? (() => { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); return Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; })() : '—';
 }
 
 function exportCurrentReport() {
@@ -12039,23 +12206,7 @@ async function rejectLeaveCard(btn, itemId) {
 /* ──────────────────────────────────────────────────────────
    14. HR ADMIN
 ────────────────────────────────────────────────────────── */
-let _DEMO_EMPLOYEES = [
-  { id:'EMP001', name:'Huy Nguyen Duc', ini:'HN', clr:'#205090', dept:'Engineering', title:'Managing Director', email:'huy.nguyen@humiley.com', phone:'+84 909 840 714', startDate:'2018-12-01', status:'Active', zone:'HQ', gender:'Male', dob:'1982-03-15', taxId:'0123456789', bank:'123456789 — Vietcombank', emergency:'Nguyen Thi Hoa (+84 908 111 222)', address:'I3-2608 Ha Do Centrosa, D10 HCMC', annualUsed:4, annualTotal:12, sickUsed:0, sickTotal:30, compoff:2 },
-  { id:'EMP002', name:'Lan Tran', ini:'LT', clr:'#00B060', dept:'HR & Admin', title:'HR Manager', email:'lan.tran@humiley.com', phone:'+84 901 234 567', startDate:'2019-03-15', status:'Active', zone:'HQ', gender:'Female', dob:'1988-07-22', taxId:'0234567890', bank:'234567890 — ACB', emergency:'Tran Van Nam (+84 907 222 333)', address:'123 Nguyen Thi Minh Khai, D1 HCMC', annualUsed:2, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP003', name:'Minh Vu', ini:'MV', clr:'#F59E0B', dept:'Projects', title:'Project Manager', email:'minh.vu@humiley.com', phone:'+84 912 345 678', startDate:'2020-01-10', status:'Active', zone:'HQ', gender:'Male', dob:'1990-11-30', taxId:'0345678901', bank:'345678901 — Techcombank', emergency:'Vu Thi Lan (+84 906 333 444)', address:'456 Le Van Sy, D3 HCMC', annualUsed:6, annualTotal:12, sickUsed:2, sickTotal:30, compoff:0 },
-  { id:'EMP004', name:'Phuc Dang', ini:'PD', clr:'#8B5CF6', dept:'Finance', title:'Finance Lead', email:'phuc.dang@humiley.com', phone:'+84 923 456 789', startDate:'2020-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'1987-04-18', taxId:'0456789012', bank:'456789012 — BIDV', emergency:'Dang Thi Thu (+84 905 444 555)', address:'789 Truong Chinh, Tan Binh HCMC', annualUsed:3, annualTotal:12, sickUsed:0, sickTotal:30, compoff:1 },
-  { id:'EMP005', name:'Binh Le', ini:'BL', clr:'#EF4444', dept:'Field Services', title:'Field Engineer', email:'binh.le@humiley.com', phone:'+84 934 567 890', startDate:'2021-03-01', status:'Active', zone:'Factory', gender:'Male', dob:'1992-09-05', taxId:'0567890123', bank:'567890123 — MB Bank', emergency:'Le Van Binh (+84 904 555 666)', address:'Long An Province', annualUsed:3, annualTotal:12, sickUsed:0, sickTotal:30, compoff:3 },
-  { id:'EMP006', name:'Duc Thanh', ini:'DT', clr:'#163866', dept:'Engineering', title:'Senior Engineer', email:'duc.thanh@humiley.com', phone:'+84 945 678 901', startDate:'2021-06-15', status:'Active', zone:'HQ', gender:'Male', dob:'1993-02-14', taxId:'0678901234', bank:'678901234 — VPBank', emergency:'Thanh Thi Nga (+84 903 666 777)', address:'234 Dinh Tien Hoang, Binh Thanh HCMC', annualUsed:2, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP007', name:'Kim Pham', ini:'KP', clr:'#8B5CF6', dept:'Engineering', title:'Electrical Engineer', email:'kim.pham@humiley.com', phone:'+84 956 789 012', startDate:'2022-01-10', status:'Active', zone:'HQ', gender:'Female', dob:'1995-06-28', taxId:'0789012345', bank:'789012345 — Sacombank', emergency:'Pham Van Kinh (+84 902 777 888)', address:'567 CMT8, D10 HCMC', annualUsed:1, annualTotal:12, sickUsed:2, sickTotal:30, compoff:0 },
-  { id:'EMP008', name:'Mai Quynh', ini:'MQ', clr:'#00B060', dept:'Projects', title:'Project Coordinator', email:'mai.quynh@humiley.com', phone:'+84 967 890 123', startDate:'2022-03-15', status:'Active', zone:'HQ', gender:'Female', dob:'1996-12-10', taxId:'0890123456', bank:'890123456 — VietinBank', emergency:'Quynh Van Mai (+84 901 888 999)', address:'890 Vo Van Tan, D3 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:1 },
-  { id:'EMP009', name:'An Nguyen', ini:'AN', clr:'#3168A8', dept:'Engineering', title:'Automation Engineer', email:'an.nguyen@humiley.com', phone:'+84 978 901 234', startDate:'2022-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'1994-08-20', taxId:'0901234567', bank:'901234567 — Agribank', emergency:'Nguyen Thi An (+84 900 999 000)', address:'123 Hai Ba Trung, D1 HCMC', annualUsed:2, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP010', name:'Ha Nguyen', ini:'HN', clr:'#F97316', dept:'Field Services', title:'Site Engineer', email:'ha.nguyen@humiley.com', phone:'+84 989 012 345', startDate:'2023-01-15', status:'Active', zone:'Factory', gender:'Female', dob:'1997-03-25', taxId:'0012345678', bank:'012345678 — OCB', emergency:'Nguyen Van Ha (+84 908 000 111)', address:'Long An Province', annualUsed:1, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP011', name:'Tuan Nguyen', ini:'TN', clr:'#3168A8', dept:'Projects', title:'Engineer', email:'tuan.nguyen@humiley.com', phone:'+84 901 123 456', startDate:'2023-04-01', status:'Active', zone:'HQ', gender:'Male', dob:'1998-05-15', taxId:'0123456780', bank:'123456780 — Vietcombank', emergency:'Nguyen Thi Tuan (+84 907 111 222)', address:'456 Pham Ngu Lao, D1 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP012', name:'Linh Vo', ini:'LV', clr:'#10B981', dept:'HR & Admin', title:'HR Officer', email:'linh.vo@humiley.com', phone:'+84 912 234 567', startDate:'2023-07-01', status:'Active', zone:'HQ', gender:'Female', dob:'1999-09-09', taxId:'0234567801', bank:'234567801 — ACB', emergency:'Vo Van Linh (+84 906 222 333)', address:'789 Nguyen Hue, D1 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP013', name:'Trong Phan', ini:'TP', clr:'#6366F1', dept:'Field Services', title:'Technician', email:'trong.phan@humiley.com', phone:'+84 923 345 678', startDate:'2023-09-15', status:'Active', zone:'Factory', gender:'Male', dob:'2000-01-20', taxId:'0345678012', bank:'345678012 — Techcombank', emergency:'Phan Thi Trong (+84 905 333 444)', address:'Long An Province', annualUsed:0, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP014', name:'Thu Hoang', ini:'TH', clr:'#EC4899', dept:'Finance', title:'Accountant', email:'thu.hoang@humiley.com', phone:'+84 934 456 789', startDate:'2024-01-10', status:'Active', zone:'HQ', gender:'Female', dob:'1998-07-14', taxId:'0456780123', bank:'456780123 — BIDV', emergency:'Hoang Van Thu (+84 904 444 555)', address:'234 Le Loi, D1 HCMC', annualUsed:0, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP015', name:'Nam Bui', ini:'NB', clr:'#14B8A6', dept:'Engineering', title:'Intern Engineer', email:'nam.bui@humiley.com', phone:'+84 945 567 890', startDate:'2024-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'2002-04-08', taxId:'0567801234', bank:'567801234 — MB Bank', emergency:'Bui Thi Nam (+84 903 555 666)', address:'567 Nguyen Trai, D5 HCMC', annualUsed:0, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-];
+let _DEMO_EMPLOYEES = [];  /* production: real data loaded from API via tkBootstrap() */
 
 /* Format a date value as "07 May 2025". Handles M/D/YYYY (source CSV) and YYYY-MM-DD. */
 function tkFmtDate(v) {
@@ -12321,65 +12472,14 @@ function editBalance(btnOrName) {
 /* ──────────────────────────────────────────────────────────
    15. ATTENDANCE TABLE
 ────────────────────────────────────────────────────────── */
-let _DEMO_ATTENDANCE = [
-  // ── May 9, 2026 (Today) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-09', in:'07:58', out:'17:30', status:'on-time', hrs:'9h 32m', loc:'HQ' },
-  { name:'Tran Thi Bao',       dept:'Project Mgmt', date:'2026-05-09', in:'08:22', out:'17:45', status:'late',    hrs:'9h 23m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-09', in:'07:52', out:'17:05', status:'on-time', hrs:'9h 13m', loc:'HQ' },
-  { name:'Pham Thi Dung',      dept:'HRBP',         date:'2026-05-09', in:'08:35', out:'17:30', status:'late',    hrs:'8h 55m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-09', in:'08:04', out:'17:15', status:'on-time', hrs:'9h 11m', loc:'HQ' },
-  { name:'Nguyen Thi Fanh',    dept:'Field Svcs',   date:'2026-05-09', in:null,    out:null,    status:'absent',  hrs:'—',      loc:null  },
-  { name:'Do Quoc Gia',        dept:'Engineering',  date:'2026-05-09', in:'08:09', out:'17:40', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Bui Thi Hoa',        dept:'Proposal',     date:'2026-05-09', in:'08:48', out:'17:30', status:'late',    hrs:'8h 42m', loc:'HQ' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-09', in:'07:55', out:'17:30', status:'on-time', hrs:'9h 35m', loc:'HQ' },
-  { name:'Vo Thi Lan',         dept:'Finance',      date:'2026-05-09', in:'08:12', out:'17:45', status:'on-time', hrs:'9h 33m', loc:'HQ' },
-  { name:'Nguyen Duc Manh',    dept:'Field Svcs',   date:'2026-05-09', in:'07:30', out:'16:30', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Le Thi Ngoc',        dept:'HRBP',         date:'2026-05-09', in:'08:01', out:'17:00', status:'on-time', hrs:'8h 59m', loc:'HQ' },
-  { name:'Pham Van Phuc',      dept:'Project Mgmt', date:'2026-05-09', in:'08:55', out:'18:10', status:'late',    hrs:'9h 15m', loc:'HQ' },
-  { name:'Hoang Thi Quynh',    dept:'Engineering',  date:'2026-05-09', in:'07:58', out:'17:20', status:'on-time', hrs:'9h 22m', loc:'HQ' },
-  { name:'Do Van Son',         dept:'Field Svcs',   date:'2026-05-09', in:null,    out:null,    status:'absent',  hrs:'—',      loc:null  },
-  { name:'Nguyen Thi Thu',     dept:'Proposal',     date:'2026-05-09', in:'08:05', out:'17:30', status:'on-time', hrs:'9h 25m', loc:'HQ' },
-  { name:'Bui Quoc Uy',        dept:'Engineering',  date:'2026-05-09', in:'08:14', out:'17:45', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Tran Thi Viet',      dept:'Finance',      date:'2026-05-09', in:'08:30', out:'17:30', status:'late',    hrs:'9h 00m', loc:'HQ' },
-  { name:'Le Van Xuan',        dept:'Project Mgmt', date:'2026-05-09', in:'08:02', out:'17:15', status:'on-time', hrs:'9h 13m', loc:'HQ' },
-  { name:'Pham Thi Yen',       dept:'HRBP',         date:'2026-05-09', in:'08:07', out:'17:00', status:'on-time', hrs:'8h 53m', loc:'HQ' },
-  { name:'Vo Minh Duc',        dept:'Engineering',  date:'2026-05-09', in:'08:10', out:'17:40', status:'on-time', hrs:'9h 30m', loc:'HQ' },
-  { name:'Kim Thi Linh',       dept:'Field Svcs',   date:'2026-05-09', in:'07:45', out:'16:45', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Dang Van Thanh',     dept:'Proposal',     date:'2026-05-09', in:'08:41', out:'17:30', status:'late',    hrs:'8h 49m', loc:'HQ' },
-  // ── May 8, 2026 (Yesterday) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-08', in:'08:01', out:'17:32', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Tran Thi Bao',       dept:'Project Mgmt', date:'2026-05-08', in:'08:11', out:'17:40', status:'on-time', hrs:'9h 29m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-08', in:'08:00', out:'17:00', status:'on-time', hrs:'9h 00m', loc:'HQ' },
-  { name:'Pham Thi Dung',      dept:'HRBP',         date:'2026-05-08', in:'08:20', out:'17:30', status:'late',    hrs:'9h 10m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-08', in:'08:05', out:'17:15', status:'on-time', hrs:'9h 10m', loc:'HQ' },
-  { name:'Nguyen Thi Fanh',    dept:'Field Svcs',   date:'2026-05-08', in:'07:55', out:'16:55', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-08', in:'08:15', out:'17:30', status:'late',    hrs:'9h 15m', loc:'HQ' },
-  { name:'Vo Thi Lan',         dept:'Finance',      date:'2026-05-08', in:'08:08', out:'17:45', status:'on-time', hrs:'9h 37m', loc:'HQ' },
-  { name:'Hoang Thi Quynh',    dept:'Engineering',  date:'2026-05-08', in:'07:50', out:'17:10', status:'on-time', hrs:'9h 20m', loc:'HQ' },
-  { name:'Nguyen Thi Thu',     dept:'Proposal',     date:'2026-05-08', in:'08:03', out:'17:25', status:'on-time', hrs:'9h 22m', loc:'HQ' },
-  // ── May 7, 2026 (Wednesday) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-07', in:'07:59', out:'17:30', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-07', in:'08:10', out:'17:05', status:'on-time', hrs:'8h 55m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-07', in:'08:00', out:'17:00', status:'on-time', hrs:'9h 00m', loc:'HQ' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-07', in:'07:52', out:'17:30', status:'on-time', hrs:'9h 38m', loc:'HQ' },
-  { name:'Pham Van Phuc',      dept:'Project Mgmt', date:'2026-05-07', in:'08:40', out:'18:00', status:'late',    hrs:'9h 20m', loc:'HQ' },
-  { name:'Dang Van Thanh',     dept:'Proposal',     date:'2026-05-07', in:'08:00', out:'17:30', status:'on-time', hrs:'9h 30m', loc:'HQ' },
-  { name:'Le Van Xuan',        dept:'Project Mgmt', date:'2026-05-07', in:'08:04', out:'17:15', status:'on-time', hrs:'9h 11m', loc:'HQ' },
-  { name:'Kim Thi Linh',       dept:'Field Svcs',   date:'2026-05-07', in:'07:40', out:'16:40', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Bui Quoc Uy',        dept:'Engineering',  date:'2026-05-07', in:'08:20', out:'17:45', status:'late',    hrs:'9h 25m', loc:'HQ' },
-  { name:'Do Quoc Gia',        dept:'Engineering',  date:'2026-05-07', in:'08:05', out:'17:40', status:'on-time', hrs:'9h 35m', loc:'HQ' },
-];
+let _DEMO_ATTENDANCE = [];  /* production: real data loaded from API via tkBootstrap() */
 
 /* ── Demo leave data (used by staff dashboard and leave view) ── */
-let _DEMO_LEAVE = [
-  { type: 'Annual Leave',    startDate: '2026-05-19', endDate: '2026-05-23', days: 5, status: 'pending',  reason: 'Family vacation' },
-  { type: 'Sick Leave',      startDate: '2026-04-28', endDate: '2026-04-28', days: 1, status: 'approved', reason: 'Medical appointment' },
-  { type: 'Annual Leave',    startDate: '2026-03-10', endDate: '2026-03-14', days: 5, status: 'approved', reason: 'Annual leave' },
-  { type: 'Maternity Leave', startDate: '2026-02-01', endDate: '2026-02-28', days: 28, status: 'approved', reason: 'Maternity' },
-  { type: 'Sick Leave',      startDate: '2026-01-15', endDate: '2026-01-15', days: 1, status: 'rejected', reason: 'Overlap with project deadline' },
-];
+let _DEMO_LEAVE = [];  /* production: real data loaded from API via tkBootstrap() */
 
-function loadAttendance() { filterTable(); }
+async function loadAttendance() { try { await tkBootstrap(); } catch (e) {} filterTable(); }
+/* Re-pull from the DB then refresh the In/Out report (used by its Refresh button). */
+async function tkRefreshInOut() { try { await tkBootstrap(); } catch (e) {} renderInOutReport(); }
 
 function filterTable() {
   const isStaff = _userRole === 'staff';
@@ -12426,12 +12526,15 @@ function filterTable() {
       <td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td>
     </tr>`;
   }).join('');
+  if (!pageRows.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:26px">No attendance records yet.</td></tr>';
   // update summary line + KPI dashboard
   const ontime = rows.filter(r=>r.status==='on-time').length;
   const late   = rows.filter(r=>r.status==='late').length;
   const absent = rows.filter(r=>r.status==='absent').length;
   const summary = document.getElementById('att-summary');
   if (summary) summary.textContent = rows.length + ' records · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent';
+  const foot = document.getElementById('att-foot-summary');
+  if (foot) foot.textContent = rows.length ? ('Showing ' + pageRows.length + ' of ' + rows.length + ' · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent') : 'No records';
   const kp = document.getElementById('att-kpis');
   if (kp && typeof _kpiTile === 'function') {
     const rate = rows.length ? Math.round(ontime / rows.length * 100) : 0;
@@ -12458,9 +12561,12 @@ function exportAttendance() {
 /* ──────────────────────────────────────────────────────────
    16. DASHBOARD
 ────────────────────────────────────────────────────────── */
-function refreshDashboard() {
-  toast('Dashboard refreshed');
+async function refreshDashboard() {
+  try { await tkBootstrap(); } catch (e) {}
+  try { tkRenderDashboard(); } catch (e) {}
+  try { tkRenderHrMetrics(); } catch (e) {}
   initDashChart();
+  toast('Dashboard refreshed');
 }
 
 function filterDashboard(period, el) {
@@ -12608,9 +12714,6 @@ function initDashChart(period = 'week') {
     const a = _tkDateParts(dates[0]), b = _tkDateParts(dates[dates.length - 1]);
     const t = document.getElementById('dash-att-title');
     if (t && a && b) t.textContent = 'Daily Attendance — ' + a.d + ' ' + MON[a.m - 1] + ' → ' + b.d + ' ' + MON[b.m - 1] + ' ' + b.y;
-  } else {
-    labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    present = [46, 48, 45, 50, 47]; late = [6, 5, 7, 4, 5]; absent = [3, 2, 4, 1, 3];
   }
   const _legend = { position: 'top', align: 'end', labels: { font: { family: 'Calibri', size: 12 }, color: '#374151', usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 } };
   _dashChart = new Chart(ctx, {
@@ -12641,6 +12744,7 @@ function initDashChart(period = 'week') {
 }
 
 function initReportCharts() {
+  try { _renderRptAttendance(); } catch (e) {}
   _initTrendChart();
   _initLeaveChart();
   _initDeptChart();
@@ -12654,9 +12758,9 @@ function _initTrendChart() {
   // Real: present vs late by recent date.
   const byDate = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (!r.date) return; (byDate[r.date] = byDate[r.date] || { p: 0, l: 0 }); if (r.status === 'late') byDate[r.date].l++; else if (r.in || r.clock_in) byDate[r.date].p++; });
   const dts = Object.keys(byDate).sort().slice(-10);
-  const tLabels = dts.length ? dts.map(d => { const p = _tkDateParts(d); return p ? p.d + '/' + p.m : d; }) : ['Jan', 'Feb', 'Mar', 'Apr', 'May'];
-  const tPresent = dts.length ? dts.map(d => byDate[d].p) : [44, 46, 45, 48, 47];
-  const tLate = dts.length ? dts.map(d => byDate[d].l) : [8, 6, 7, 5, 6];
+  const tLabels = dts.map(d => { const p = _tkDateParts(d); return p ? p.d + '/' + p.m : d; });
+  const tPresent = dts.map(d => byDate[d].p);
+  const tLate = dts.map(d => byDate[d].l);
   _trendChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -12683,8 +12787,8 @@ function _initLeaveChart() {
   if (_leaveChart) _leaveChart.destroy();
   // Real: leave days grouped by type.
   const byType = {}; (_DEMO_LEAVE || []).forEach(l => { const t = l.type || 'Other'; byType[t] = (byType[t] || 0) + (+l.days || 1); });
-  const lLabels = Object.keys(byType).length ? Object.keys(byType) : ['Annual', 'Sick', 'Maternity', 'Paternity', 'Unpaid'];
-  const lVals = Object.keys(byType).length ? lLabels.map(t => byType[t]) : [45, 18, 8, 3, 6];
+  const lLabels = Object.keys(byType);
+  const lVals = lLabels.map(t => byType[t]);
   _leaveChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
