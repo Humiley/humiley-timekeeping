@@ -720,6 +720,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-section-label" data-roles="manager">Finance</div>
+  <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('finance',this,'Finance Control')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M19 9l-5 5-3-3-4 4"/></svg></span>
+    <span class="nav-label">Finance Control</span>
+  </div>
   <div class="nav-item" data-roles="manager" data-app="hr" onclick="showView('devices',this,'Device &amp; Asset Management')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
     <span class="nav-label">Devices &amp; Assets</span>
@@ -1120,6 +1124,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
   <div id="payments-root"></div>
+</div>
+
+<div id="view-finance" class="view">
+  <div class="page-header">
+    <div><h1>Finance Control</h1><p>Company-wide control of all payments, claims &amp; travel — approve, track and view every submission</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('fin-export','Humiley_Finance_Control.pdf',{title:'FINANCE CONTROL — COMPANY',docCode:'HML-FIN-CTL'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="tkRenderFinance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
+    </div>
+  </div>
+  <div id="finance-root"></div>
 </div>
 
 <div id="view-permissions" class="view">
@@ -6854,6 +6869,91 @@ async function tkPaymentDecision(id, status) {
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 
+/* ════════ Finance Control — company-wide view of all payments, claims & travel ════════ */
+function _tkPreviewUrl(att, name) {
+  if (!att) { toast('No file attached', 'warn'); return; }
+  try {
+    const m = /^data:([^;]+);base64,(.*)$/.exec(att);
+    if (m) { const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); const blob = new Blob([a], { type: m[1] }); const u = URL.createObjectURL(blob); tkFilePreview(u, name || 'attachment', m[1]); setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) {} }, 300000); }
+    else tkFilePreview(att, name || 'attachment', '');
+  } catch (e) { try { window.open(att, '_blank'); } catch (e2) { toast('Could not open the file', 'warn'); } }
+}
+/* Open a submission's attachment (payments/travel carry it directly; claims on their first item). */
+function tkFinShow(coll, id) {
+  const r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('Not found', 'warn'); return; }
+  let att = r.attachment, name = r.attachmentName;
+  if (!att && Array.isArray(r.items)) { const it = r.items.find(i => i.attachment); if (it) { att = it.attachment; name = it.attachmentName; } }
+  _tkPreviewUrl(att, name);
+}
+const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
+const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
+const _finPending = s => s === 'Submitted' || s === 'Partially approved';
+function _finItems() {
+  const out = [];
+  (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.dueDate || '', hasFile: !!p.attachment }));
+  (_HR.claims || []).forEach(c => out.push({ kind: 'Claim', coll: 'claims', id: c.id, ref: c.title || c.type || '', who: c.name || '', dept: c.dept || '', category: c.claimType || 'Claim', amount: _claimTotal(c), status: _claimRollup(c), date: '', hasFile: !!(Array.isArray(c.items) && c.items.some(i => i.attachment)) }));
+  (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || '', hasFile: !!t.attachment }));
+  return out;
+}
+async function tkFinDecide(kind, id, status) {
+  try {
+    if (kind === 'Payment') await tkPaymentDecision(id, status);
+    else if (kind === 'Travel') await tkTravelDecision(id, status);
+    else await tkInboxClaim(id, status);
+  } catch (e) {}
+  try { tkRenderFinance(); } catch (e) {}
+}
+async function tkRenderFinance() {
+  const root = document.getElementById('finance-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await Promise.all([tkLoadColl('payments'), tkLoadColl('claims'), tkLoadColl('travel')]);
+  const items = _finItems();
+  const done = items.filter(i => i.status === 'Approved' || i.status === 'Paid');
+  const outflow = done.reduce((s, i) => s + i.amount, 0);
+  const pend = items.filter(i => _finPending(i.status));
+  const pendVal = pend.reduce((s, i) => s + i.amount, 0);
+  const paid = items.filter(i => i.status === 'Paid').reduce((s, i) => s + i.amount, 0);
+  const kpis = _hrKpiRow([
+    _kpiTile('Approved outflow', _PAY_FMT(outflow), '#205090', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+    _kpiTile('Pending approvals', pend.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Pending value', _PAY_FMT(pendVal), '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
+    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>')
+  ]);
+  const byCat = {}, byDept = {}, byKind = {};
+  done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
+  const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'fin-cat') + _rptChartCard('Spend by Department', 'fin-dept') + _rptChartCard('By Type', 'fin-kind') + '</div>';
+  // Pending approvals — act on everything from one place
+  const act = i => { const a = "tkFinDecide('" + i.kind + "','" + i.id + "','Approved')", r = "tkFinDecide('" + i.kind + "','" + i.id + "','Rejected')"; return '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="' + a + '">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="' + r + '">' + tkIcon('x', 12) + 'Reject</button>'; };
+  const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
+  const pendRows = pend.length ? pend.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(i.dept) + '</div></td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td>' + fileCell(i) + '</td><td style="white-space:nowrap">' + act(i) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No pending finance approvals — all clear.</td></tr>';
+  const pendCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pending Approvals</div><span style="font-size:11px;color:var(--text-light)">Payments · Claims · Travel — ' + pend.length + ' waiting</span></div><div class="table-wrap"><table><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th style="text-align:right">Amount</th><th>File</th><th></th></tr></thead><tbody>' + pendRows + '</tbody></table></div></div>';
+  // Full company register — searchable
+  const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    _crmFiltSearch('fin-q', 'Search requester / reference / category…', 'finFillTable') +
+    _crmFiltSel('fin-kind', 'All types', ['Payment', 'Claim', 'Travel'], 'finFillTable') +
+    _crmFiltSel('fin-status', 'All status', ['Submitted', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
+    _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
+  const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
+  root.innerHTML = '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
+  finFillTable();
+  if (typeof Chart !== 'undefined') {
+    const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
+    if (ck.length) _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+    if (dk.length) _mkChart('fin-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+    if (kk.length) _mkChart('fin-kind', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+  }
+}
+function finFillTable() {
+  const tb = document.getElementById('fin-tbody'); if (!tb) return;
+  const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '';
+  const list = _finItems().filter(i => {
+    const hay = ((i.ref || '') + ' ' + (i.who || '') + ' ' + (i.category || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept);
+  }).sort((a, b) => b.amount - a.amount);
+  const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
+  tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + i.status + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
+}
+
 /* ════════ Offboarding & Exit (FRM-012 Resignation / FRM-013 Termination / FRM-014 Exit Clearance · Article 46 severance) ════════ */
 const _EXIT_TYPES = ['Resignation', 'End of contract', 'Termination', 'Retirement', 'Mutual agreement'];
 const _EXIT_CLEARANCE = [
@@ -7467,12 +7567,12 @@ const _QA_SPECS = {
     { k: 'priority', label: 'Priority', type: 'select', options: ['Low', 'Medium', 'High'] },
     { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'requiredBy', label: 'Required by', type: 'date' }, { k: 'ballInCourt', label: 'Ball in court' },
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Answered', 'Approved', 'Approved-with-comments', 'Rejected', 'Closed'] },
-    { k: 'question', label: 'Question / detail', type: 'textarea' }, { k: 'response', label: 'Response', type: 'textarea' }, { k: 'responseDate', label: 'Response date', type: 'date' }] },
+    { k: 'question', label: 'Question / detail', type: 'textarea' }, { k: 'response', label: 'Response', type: 'textarea' }, { k: 'responseDate', label: 'Response date', type: 'date' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_sitereports: { title: 'Site Daily Report', coll: 'pm_sitereports', reload: 'pm_sitereports', fields: [
     { k: 'reportDate', label: 'Report date', type: 'date' }, { k: 'area', label: 'Area / zone' },
     { k: 'weatherAm', label: 'Weather AM' }, { k: 'weatherPm', label: 'Weather PM' }, { k: 'manpower', label: 'Manpower (count)', type: 'number' },
     { k: 'equipment', label: 'Equipment on site' }, { k: 'workPerformed', label: 'Work performed', type: 'textarea' },
-    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }] },
+    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
 };
 let _qaType = null, _qaEditId = null;
 function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
@@ -8808,7 +8908,7 @@ async function crmImportFile(coll, file) {
 
 
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
-const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', permissions: 'admin' };
+const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', finance: 'management', permissions: 'admin' };
 const _HR_VIEWS = new Set(['database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 
 /* ===== PROJECT MANAGEMENT SUITE (PMBOK) ===== */
@@ -9003,15 +9103,37 @@ function pmStatusPDF(pid) {
    PM SHELL — Projects list · Workspace + tabs · Overview · generic register · CRM handoff
    ========================================================================== */
 /* generic card + table register used by the simpler tabs */
+/* Universal in-app file preview — images/PDF render inline in a modal; anything else
+   offers Open/Download. Used by PM registers, Finance, claims/travel/payment attachments. */
+function tkFilePreview(url, name, mime) {
+  document.getElementById('filePreviewOverlay')?.remove();
+  name = name || 'File'; mime = mime || '';
+  const isImg = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|svg|bmp)(\?|$)/i.test(name) || /^data:image/i.test(url);
+  const isPdf = /pdf/i.test(mime) || /\.pdf(\?|$)/i.test(name) || /^data:application\/pdf/i.test(url);
+  const inner = isImg ? '<img src="' + url + '" style="max-width:100%;max-height:72vh;display:block;margin:0 auto;border-radius:8px">'
+    : isPdf ? '<iframe src="' + url + '" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>'
+    : '<div style="padding:36px;text-align:center;color:var(--text-light)">This file type can’t preview inline.<br><br><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary">Open / Download</a></div>';
+  const el = document.createElement('div'); el.id = 'filePreviewOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:880px;width:95vw"><div class="modal-header"><div class="modal-title">' + _crmEsc(name) + '</div><button class="modal-close" onclick="document.getElementById(\'filePreviewOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' + inner +
+    '<div class="modal-footer"><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-ghost">Open in new tab</a><button class="btn btn-primary" onclick="document.getElementById(\'filePreviewOverlay\').remove()">Close</button></div></div>';
+  document.body.appendChild(el);
+}
 function _pmOpenFile(coll, id) {
   const r = (_HR[coll] || []).find(x => x.id === id); if (!r || !r.attachment) { toast('No file attached', 'warn'); return; }
   try {
     const m = /^data:([^;]+);base64,(.*)$/.exec(r.attachment);
-    if (m) { const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); const blob = new Blob([a], { type: m[1] }); const u = URL.createObjectURL(blob); const w = window.open(u, '_blank'); if (!w) { const dl = document.createElement('a'); dl.href = u; dl.download = r.attachmentName || 'attachment'; dl.click(); } setTimeout(() => URL.revokeObjectURL(u), 60000); }
-    else { window.open(r.attachment, '_blank'); }
-  } catch (e) { try { const dl = document.createElement('a'); dl.href = r.attachment; dl.download = r.attachmentName || 'attachment'; dl.click(); } catch (e2) { toast('Could not open the file', 'warn'); } }
+    if (m) {
+      const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+      const blob = new Blob([a], { type: m[1] }); const u = URL.createObjectURL(blob);
+      tkFilePreview(u, r.attachmentName || 'attachment', m[1]);
+      setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) {} }, 300000);
+    } else { tkFilePreview(r.attachment, r.attachmentName || 'attachment', ''); }
+  } catch (e) { try { window.open(r.attachment, '_blank'); } catch (e2) { toast('Could not open the file', 'warn'); } }
 }
-function _pmFileCell(coll, r) { if (!r || !r.attachment) return '—'; return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\')" title="' + _tkEscA(r.attachmentName || 'Open file') + '" style="color:var(--navy)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>'; }
+function _pmFileCell(coll, r) {
+  if (!r || !r.attachment) return '<span style="color:var(--text-light)">—</span>';
+  return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\')" title="' + _tkEscA(r.attachmentName || 'Show file') + '" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>';
+}
 /* ---------- Import tasks from MS Project XML / Excel / CSV ---------- */
 function pmImportBtn() { return '<button class="btn btn-ghost btn-sm" onclick="pmImportTasks()" title="Import schedule from MS Project XML or Excel/CSV"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>'; }
 function _pmXlDate(v) {
@@ -9983,12 +10105,13 @@ function pmRenderRfis(pid) {
     { label: 'Type', render: r => _pmBadge(r.type || 'RFI', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
     { label: 'Ball in court', k: 'ballInCourt' }, { label: 'Required by', render: r => _pmFmt(r.requiredBy) },
-    { label: 'Status', render: r => _pmBadge(r.status || 'Open', /Approved|Closed|Answered/.test(r.status || '') ? '#00B060' : r.status === 'Rejected' ? '#EF4444' : '#F59E0B') }
+    { label: 'Status', render: r => _pmBadge(r.status || 'Open', /Approved|Closed|Answered/.test(r.status || '') ? '#00B060' : r.status === 'Rejected' ? '#EF4444' : '#F59E0B') },
+    { label: 'File', render: r => _pmFileCell('pm_rfis', r) }
   ], rfis), _pmSpBtn(p));
   const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
   const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
     { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
-    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }
+    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }, { label: 'File', render: r => _pmFileCell('pm_sitereports', r) }
   ], sdr));
   _pmSet(kpis + tbl + sdrTbl);
 }
@@ -10165,6 +10288,7 @@ function showView(id, navEl, title) {
   if (id === 'leave') { try { tkRenderLeaveView(); } catch (e) { console.warn('leave:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
   if (id === 'payments') { try { tkRenderPayments(); } catch (e) { console.warn('payments:', e.message); } }
+  if (id === 'finance') { try { tkRenderFinance(); } catch (e) { console.warn('finance:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
@@ -10236,6 +10360,25 @@ const _VI = {
   'Company card': 'Thẻ công ty',
   'Cheque': 'Séc',
   'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
+  'Finance Control': 'Kiểm soát tài chính',
+  'Company-wide control of all payments, claims & travel — approve, track and view every submission': 'Kiểm soát toàn công ty tất cả thanh toán, chi phí & công tác — duyệt, theo dõi và xem mọi hồ sơ',
+  'Approved outflow': 'Chi đã duyệt',
+  'Pending approvals': 'Chờ duyệt',
+  'Pending value': 'Giá trị chờ duyệt',
+  'Spend by Department': 'Chi tiêu theo phòng ban',
+  'By Type': 'Theo loại',
+  'Pending Approvals': 'Chờ duyệt',
+  'Company Finance Register': 'Sổ tài chính công ty',
+  'Every submission across the company': 'Mọi hồ sơ trong toàn công ty',
+  'Payments · Claims · Travel — ': 'Thanh toán · Chi phí · Công tác — ',
+  'Reference': 'Tham chiếu',
+  'File': 'Tệp',
+  'Show': 'Xem',
+  'Payment': 'Thanh toán',
+  'Claim': 'Chi phí',
+  'All types': 'Tất cả loại',
+  'No pending finance approvals — all clear.': 'Không có khoản chờ duyệt — đã xử lý hết.',
+  'No finance records match your filters.': 'Không có bản ghi tài chính phù hợp bộ lọc.',
   'Search': 'Tìm kiếm',
   'Import CSV': 'Nhập CSV',
   'Import Excel': 'Nhập Excel',
