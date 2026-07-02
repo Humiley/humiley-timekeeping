@@ -6,7 +6,7 @@
 <title>Humiley Group Inc. — People & Workplace Portal</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-input,textarea,select,button{font-family:'Segoe UI',system-ui,Arial,sans-serif}
+input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif}
 :root{
   --navy:#205090;--navy-deep:#163866;--navy-light:#3168A8;
   --emerald:#00B060;--emerald-deep:#008548;
@@ -16,7 +16,7 @@ input,textarea,select,button{font-family:'Segoe UI',system-ui,Arial,sans-serif}
   --white:#FFFFFF;
 }
 html,body{margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;overflow:hidden}
+body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;overflow:hidden}
 
 /* ── SIDEBAR ── */
 #sidebar{width:228px;min-width:228px;background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);display:flex;flex-direction:column;height:100vh;transition:width .25s;overflow:hidden}
@@ -2991,6 +2991,29 @@ function tkRenderCheckin() {
   const today = new Date().toISOString().slice(0, 10);
   const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const todayRow = mine.find(r => r.date === today);
+  // Restore check-in/out state on EVERY render (survives reload / navigate-away / deploy refresh):
+  // an open check-in = today has a check-in time and no check-out yet → we are checked in and
+  // Check Out must ALWAYS be available (never locked by schedule/time — for outside jobs).
+  const _cinToday = todayRow && (todayRow.in || todayRow.clock_in);
+  const _coutToday = todayRow && (todayRow.out || todayRow.clock_out);
+  const _openToday = !!(_cinToday && !_coutToday);
+  _checkedIn = _openToday;
+  (function () {
+    const bo = document.getElementById('btn-checkout');
+    if (bo) {
+      if (_openToday) { bo.disabled = false; bo.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; bo.style.color = '#fff'; bo.style.cursor = 'pointer'; }
+      else { bo.disabled = true; bo.style.background = '#e2e8f0'; bo.style.color = '#94a3b8'; bo.style.cursor = 'not-allowed'; }
+    }
+    const zsel = document.getElementById('ci-zone-select');
+    if (_openToday) {
+      _tkSetCheckinAllowed(false);                 // already in → hide Check In
+      if (zsel) zsel.disabled = true;
+      const st = document.getElementById('ci-verify-status');
+      if (st && _cinToday) st.innerHTML = '<span style="color:var(--emerald);font-weight:700">✓ Checked in at ' + _cinToday + '</span> — you can check out anytime.';
+    } else {
+      if (zsel) zsel.disabled = false;             // free to pick a zone and check in again
+    }
+  })();
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   // Today's Record
   set('rec-checkin', todayRow && (todayRow.in || todayRow.clock_in) ? (todayRow.in || todayRow.clock_in) : '—');
@@ -3108,6 +3131,33 @@ async function tkEmailLeaveApproval(res, lv) {
   toast('Opening email to ' + mgrName + ' — press Send to notify them.', 'info', 6000);
   window.location.href = 'mailto:' + encodeURIComponent(res.managerEmail) +
     '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+}
+
+/* Generic HTML approval-request email for claims / travel — carries a prominent
+   "Review & Approve in Portal" button that opens the app (Approval Inbox, where the
+   Approve / Reject / Review buttons live). Falls back to the plain notify (Teams/webhook). */
+async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText) {
+  const portal = window.location.origin + '/';
+  mgrName = mgrName || 'Manager';
+  const html = '<p>Hi ' + mgrName + ',</p><p>' + heading + '</p>' + (detailsHtml || '') +
+    '<p style="margin:16px 0"><a href="' + portal + '" style="background:#205090;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Review &amp; Approve in Portal</a></p>' +
+    '<p style="color:#666;font-size:12px">Open the portal and go to <b>Approval Inbox</b> to <b>Approve</b>, <b>Reject</b> or <b>Review</b> this request.</p>' +
+    '<p style="color:#999;font-size:12px">Humiley People &amp; Workplace</p>';
+  const text = 'Hi ' + mgrName + ',\n\n' + heading + '\n\n' + (detailsText || '') +
+    '\n\nReview & approve in the portal: ' + portal + '\n(Open the Approval Inbox to Approve / Reject / Review.)\n\nHumiley People & Workplace';
+  if (_msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true })
+      });
+      if (resp.ok) return true;
+    } catch (e) { /* fall through to plain notify */ }
+  }
+  try { tkNotifyGraph(to, subject, text); } catch (e) {}
+  return false;
 }
 
 /* Render the manager Dashboard from REAL data (KPIs, activity, approvals, dept). */
@@ -4926,7 +4976,7 @@ const _IMPORT_SPECS = {
       { h: 'department', lbl: 'Department', keys: ['department', 'dept'], sample: 'Engineering' },
       { h: 'qty', lbl: 'Qty', keys: ['qty', 'quantity'], num: true, sample: 1 },
       { h: 'unitPrice', lbl: 'Unit Price', keys: ['unitprice', 'price', 'cost'], num: true, sample: 22000000 },
-      { h: 'purchaseDate', lbl: 'Purchase Date', keys: ['purchasedate', 'purchase', 'date'], sample: '2026-01-15' },
+      { h: 'purchaseDate', lbl: 'Provided Date', keys: ['purchasedate', 'purchase', 'date', 'provideddate', 'provided'], sample: '2026-01-15' },
       { h: 'status', lbl: 'Status', keys: ['status'], sample: 'Available' },
       { h: 'note', lbl: 'Note', keys: ['note', 'notes', 'remark'], sample: '' }
     ],
@@ -4999,7 +5049,7 @@ async function tkRenderDevices() {
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
     '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + '</div>' +
-    '<div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
+    '<div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
   devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
@@ -5086,7 +5136,7 @@ async function tkRenderMyDevices() {
     _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
   ]);
   const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + (x.photo ? _devPhotoCell(x, 38) : _devIcon(x.category, 38)) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
-    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Issued: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Provided: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">' + cards + '</div>';
@@ -6438,7 +6488,10 @@ async function tkClaimSave() {
     await tkApi('/api/coll/claims', { method: 'POST', body });
     tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
     const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
-    if (mgr) tkNotifyGraph(mgr.email, 'Claim to approve', (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.\n\nHumiley HR');
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
+      '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
+      (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.');
     document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
   }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
@@ -6645,7 +6698,10 @@ async function tkTravelSave() {
     await tkApi('/api/coll/travel', { method: 'POST', body });
     tkAudit('Travel request submitted', body.name, body.dest);
     const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    if (mgr) tkNotifyGraph(mgr.email, 'Travel request to approve', (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.\n\nHumiley HR');
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
+      '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
+      (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.');
     document.getElementById('travelOverlay').remove(); toast('Travel request submitted'); tkRenderTravelClaims();
   } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
 }
@@ -7119,7 +7175,7 @@ const _QA_SPECS = {
     { k: 'department', label: 'Department' },
     { k: 'qty', label: 'Quantity', type: 'number' },
     { k: 'unitPrice', label: 'Unit Price (₫)', type: 'number' },
-    { k: 'purchaseDate', label: 'Purchase Date', type: 'date' },
+    { k: 'purchaseDate', label: 'Provided Date', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Assigned', 'Available', 'In Repair', 'Retired', 'Lost'] },
     { k: 'note', label: 'Note' },
     { k: 'photo', label: 'Photo / Attachment (image, PDF…)', type: 'file' }] },
@@ -7287,7 +7343,9 @@ function tkQuickAdd(type, id) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
   const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
-  document.getElementById('qa-modal-title').textContent = (id ? 'Edit — ' : '') + spec.title;
+  const _titleEl = document.getElementById('qa-modal-title');
+  if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
+  else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
@@ -7304,6 +7362,8 @@ function tkQuickAdd(type, id) {
     return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
   }).join('');
   openModal('quickAddModal');
+  // Belt-and-suspenders: translate the modal now if in VN (don't depend on observer timing).
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(document.getElementById('quickAddModal')); } catch (e) {}
 }
 /* Which SharePoint sub-folder each PMC register's attachments go to (relative to the project root). */
 const _PM_UPLOAD_DIR = {
@@ -9998,6 +10058,171 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Edit —': 'Sửa —',
+  'Search': 'Tìm kiếm',
+  'Import CSV': 'Nhập CSV',
+  'Import Excel': 'Nhập Excel',
+  'Export CSV': 'Xuất CSV',
+  'Refresh': 'Làm mới',
+  'Add grade': 'Thêm bậc',
+  'Post a Job / Requisition': 'Đăng tuyển / Yêu cầu tuyển dụng',
+  'Job Grade': 'Bậc công việc',
+  'Source of need': 'Nguồn nhu cầu',
+  'Candidate Name': 'Tên ứng viên',
+  'Applying For': 'Ứng tuyển vị trí',
+  'Source': 'Nguồn',
+  'Rating (0–5)': 'Đánh giá (0–5)',
+  'Role / Position': 'Vai trò / Vị trí',
+  'New Company Goal': 'Mục tiêu công ty mới',
+  'Goal': 'Mục tiêu',
+  'Owner / Team': 'Phụ trách / Nhóm',
+  'Progress %': 'Tiến độ %',
+  'Due Date': 'Ngày đến hạn',
+  'Add Performance Review': 'Thêm đánh giá hiệu suất',
+  'Employee Name': 'Tên nhân viên',
+  'Rating (1–5)': 'Đánh giá (1–5)',
+  'Course Title': 'Tên khóa học',
+  'Course Link (URL)': 'Liên kết khóa học (URL)',
+  'Attachment (PDF / Doc / Slides)': 'Tệp đính kèm (PDF / Doc / Slides)',
+  'Device / Equipment Name': 'Tên thiết bị / trang bị',
+  'Serial / Asset Tag': 'Số sê-ri / Mã tài sản',
+  'Assigned To (employee)': 'Cấp cho (nhân viên)',
+  'Quantity': 'Số lượng',
+  'Unit Price (₫)': 'Đơn giá (₫)',
+  'Photo / Attachment (image, PDF…)': 'Ảnh / Tệp đính kèm (ảnh, PDF…)',
+  'Talent Assessment': 'Đánh giá nhân tài',
+  '9-Box': 'Ma trận 9 ô',
+  'Benefits by Grade': 'Phúc lợi theo bậc',
+  'Lunch (₫/mo)': 'Ăn trưa (₫/tháng)',
+  'Phone (₫/mo)': 'Điện thoại (₫/tháng)',
+  'Transport (₫/mo)': 'Đi lại (₫/tháng)',
+  'Parking (₫/mo)': 'Gửi xe (₫/tháng)',
+  'Training budget (₫/yr)': 'Ngân sách đào tạo (₫/năm)',
+  'Typical title / note': 'Chức danh điển hình / ghi chú',
+  'Deal name': 'Tên thương vụ',
+  'Account / Company': 'Khách hàng / Công ty',
+  'Contact person': 'Người liên hệ',
+  'Deal value (₫)': 'Giá trị thương vụ (₫)',
+  'Owner (sales rep)': 'Phụ trách (NV kinh doanh)',
+  'Expected close': 'Dự kiến chốt',
+  'Tags (comma-separated)': 'Thẻ (phân tách bằng dấu phẩy)',
+  'Next activity': 'Hoạt động tiếp theo',
+  'Activity date': 'Ngày hoạt động',
+  'Company name': 'Tên công ty',
+  'Industry': 'Ngành',
+  'Website': 'Trang web',
+  'Account owner': 'Phụ trách khách hàng',
+  'Job title': 'Chức danh',
+  'Lead name / contact': 'Tên khách hàng tiềm năng / liên hệ',
+  'Est. value (₫)': 'Giá trị ước tính (₫)',
+  'Product / Service': 'Sản phẩm / Dịch vụ',
+  'Product / service name': 'Tên sản phẩm / dịch vụ',
+  'Code / SKU': 'Mã / SKU',
+  'Type (PMC/ENG/SAL/CSM/Products/Other)': 'Loại (PMC/ENG/SAL/CSM/Sản phẩm/Khác)',
+  'Unit': 'Đơn vị',
+  'Unit price (₫)': 'Đơn giá (₫)',
+  'Project name': 'Tên dự án',
+  'Project code (e.g. PMC-2026-014)': 'Mã dự án (vd. PMC-2026-014)',
+  'Contract type': 'Loại hợp đồng',
+  'Contract value (₫)': 'Giá trị hợp đồng (₫)',
+  'Approved budget (₫)': 'Ngân sách được duyệt (₫)',
+  'Health (auto if blank)': 'Tình trạng (tự động nếu để trống)',
+  'Overall % complete': 'Tổng % hoàn thành',
+  'Scope summary': 'Tóm tắt phạm vi',
+  'Success criteria': 'Tiêu chí thành công',
+  'Project image (photo / render)': 'Hình ảnh dự án (ảnh / phối cảnh)',
+  'SharePoint docs folder (URL)': 'Thư mục tài liệu SharePoint (URL)',
+  'Change Request': 'Yêu cầu thay đổi',
+  'Change title': 'Tiêu đề thay đổi',
+  'Schedule impact (days)': 'Ảnh hưởng tiến độ (ngày)',
+  'Cost impact (₫)': 'Ảnh hưởng chi phí (₫)',
+  'Requested by': 'Người yêu cầu',
+  'Requested date': 'Ngày yêu cầu',
+  'Description': 'Mô tả',
+  'Attachment (image or PDF)': 'Tệp đính kèm (ảnh hoặc PDF)',
+  'Lesson Learned': 'Bài học kinh nghiệm',
+  'Situation': 'Tình huống',
+  'Raised by': 'Người nêu',
+  'Deliverable / WBS': 'Sản phẩm bàn giao / WBS',
+  'Deliverable name': 'Tên sản phẩm bàn giao',
+  'WBS code (e.g. 1.2.3)': 'Mã WBS (vd. 1.2.3)',
+  'Contractor / Subcontractor': 'Nhà thầu / Nhà thầu phụ',
+  'Supervisor (project member)': 'Giám sát (thành viên dự án)',
+  '% complete': '% hoàn thành',
+  'Acceptance criteria': 'Tiêu chí nghiệm thu',
+  'Task / Milestone': 'Công việc / Mốc',
+  'Task name': 'Tên công việc',
+  'WBS code': 'Mã WBS',
+  'Milestone?': 'Mốc?',
+  'Critical path?': 'Đường găng?',
+  'Cost Line': 'Dòng chi phí',
+  'Cost item': 'Hạng mục chi phí',
+  'Budget (₫)': 'Ngân sách (₫)',
+  'Committed (₫)': 'Đã cam kết (₫)',
+  'Actual (₫)': 'Thực tế (₫)',
+  'Invoiced (₫)': 'Đã xuất hóa đơn (₫)',
+  'Period (YYYY-MM)': 'Kỳ (YYYY-MM)',
+  'Quality Record': 'Hồ sơ chất lượng',
+  'Reference No.': 'Số tham chiếu',
+  'Assigned to': 'Phân công cho',
+  'Raised date': 'Ngày nêu',
+  'Corrective action': 'Hành động khắc phục',
+  'Inspection & Test Plan': 'Kế hoạch kiểm tra & thử nghiệm',
+  'ITP title': 'Tiêu đề ITP',
+  'Package (Discipline)': 'Gói (Bộ môn)',
+  'Standard / spec ref': 'Tiêu chuẩn / tham chiếu kỹ thuật',
+  'Prepared by': 'Người lập',
+  'Approved by': 'Người duyệt',
+  'Team Member': 'Thành viên nhóm',
+  'Project role': 'Vai trò dự án',
+  'Allocation %': 'Phân bổ %',
+  'Charge rate (₫)': 'Đơn giá tính phí (₫)',
+  'End': 'Kết thúc',
+  'Communication': 'Trao đổi thông tin',
+  'Audience / distribution': 'Đối tượng / phân phối',
+  'Attachment': 'Tệp đính kèm',
+  'Issue': 'Vấn đề',
+  'Issue title': 'Tiêu đề vấn đề',
+  'Issue No.': 'Số vấn đề',
+  'Resolution': 'Giải pháp',
+  'Risk title': 'Tiêu đề rủi ro',
+  'Risk No.': 'Số rủi ro',
+  'Probability (1-5)': 'Xác suất (1-5)',
+  'Impact (1-5)': 'Mức tác động (1-5)',
+  'Mitigation actions': 'Biện pháp giảm thiểu',
+  'Residual probability': 'Xác suất còn lại',
+  'Residual impact': 'Tác động còn lại',
+  'Procurement Package': 'Gói mua sắm',
+  'Package / scope': 'Gói / phạm vi',
+  'Package No.': 'Số gói',
+  'Vendor / subcontractor': 'Nhà cung cấp / nhà thầu phụ',
+  'Value (₫)': 'Giá trị (₫)',
+  'Retention %': 'Giữ lại %',
+  'Award date': 'Ngày trao thầu',
+  'Payment Certificate': 'Chứng nhận thanh toán',
+  'Certificate No.': 'Số chứng nhận',
+  'Gross claimed (₫)': 'Tổng yêu cầu (₫)',
+  'Retention deducted (₫)': 'Khấu trừ giữ lại (₫)',
+  'Net certified (₫)': 'Giá trị xác nhận thuần (₫)',
+  'Certified date': 'Ngày xác nhận',
+  'Stakeholder': 'Bên liên quan',
+  'Internal / External': 'Nội bộ / Bên ngoài',
+  'Engagement strategy': 'Chiến lược gắn kết',
+  'RFI / Submittal': 'RFI / Đệ trình',
+  'Question / detail': 'Câu hỏi / chi tiết',
+  'Response date': 'Ngày phản hồi',
+  'Site Daily Report': 'Báo cáo công trường hàng ngày',
+  'Report date': 'Ngày báo cáo',
+  'Area / zone': 'Khu vực / phân khu',
+  'Weather AM': 'Thời tiết sáng',
+  'Weather PM': 'Thời tiết chiều',
+  'Manpower (count)': 'Nhân lực (số người)',
+  'Equipment on site': 'Thiết bị tại công trường',
+  'Delays / issues': 'Chậm trễ / vấn đề',
+  'Safety incidents': 'Sự cố an toàn',
+  'Sales Quotation': 'Báo giá bán hàng',
+  'Project Charter (cont.)': 'Điều lệ dự án (tiếp)',
+  'Project Status Report': 'Báo cáo trạng thái dự án',
   /* PM module VN terms */
   'System Setting': 'Cài đặt hệ thống',
   'HR': 'Nhân sự',
@@ -10909,6 +11134,9 @@ const _VI = {
   'Projects · PM': 'Dự án · PM',
   'Projects · Submitted May 8, 2026': 'Dự án · Đã gửi 8 tháng 5, 2026',
   'Proposal': 'Đề xuất',
+  'Provided': 'Ngày cấp',
+  'Provided Date': 'Ngày cấp',
+  'Provided:': 'Đã cấp:',
   'Provision on hire': 'Cấp phát khi tuyển dụng',
   'Purchase': 'Mua sắm',
   'Purpose': 'Mục đích',
