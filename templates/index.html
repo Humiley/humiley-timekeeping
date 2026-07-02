@@ -1120,6 +1120,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1 id="pay-page-title">Payment Requests</h1><p>Request &amp; approve operational and purchase payments — one register for the whole process</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" id="pay-export-btn" onclick="tkExportElementPDF('pay-export','Humiley_Payment_Register.pdf',{title:'PAYMENT REQUEST REGISTER',docCode:'HML-FIN-PAY'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+      <button class="btn btn-outline btn-sm" id="pay-xls-btn" onclick="tkPayExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export Excel</button>
       <button class="btn btn-primary btn-sm" onclick="tkNewPayment()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Payment Request</button>
     </div>
   </div>
@@ -1131,6 +1132,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div><h1>Finance Control</h1><p>Company-wide control of all payments, claims &amp; travel — approve, track and view every submission</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('fin-export','Humiley_Finance_Control.pdf',{title:'FINANCE CONTROL — COMPANY',docCode:'HML-FIN-CTL'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+      <button class="btn btn-outline btn-sm" onclick="tkFinExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export Excel</button>
       <button class="btn btn-primary btn-sm" onclick="tkRenderFinance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
     </div>
   </div>
@@ -6818,7 +6820,7 @@ function payFillTable() {
     const act = !isMgr ? '' : (s === 'Submitted'
       ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>'
       : s === 'Approved' ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
-    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + s + '</span></td><td style="white-space:nowrap">' + act + '</td></tr>';
+    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + s + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
 }
 function tkNewPayment() {
@@ -6952,6 +6954,53 @@ function finFillTable() {
   }).sort((a, b) => b.amount - a.amount);
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
   tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + i.status + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
+}
+/* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
+async function tkPaymentVoucherPDF(id) {
+  const p = (_HR.payments || []).find(x => x.id === id); if (!p) { toast('Payment not found', 'warn'); return; }
+  toast('Building voucher…', 'info', 2000);
+  const row = (l, v) => '<tr><td style="padding:6px 10px;color:#5C6470;width:180px;border-bottom:1px solid #eef1f4">' + l + '</td><td style="padding:6px 10px;font-weight:600;border-bottom:1px solid #eef1f4">' + (v || '—') + '</td></tr>';
+  const sign = (role, name) => '<td style="width:33%;padding:0 10px;text-align:center;vertical-align:bottom"><div style="height:46px"></div><div style="border-top:1px solid #9aa4b2;padding-top:6px;font-size:12px"><b>' + role + '</b><br><span style="color:#5C6470">' + (name || '&nbsp;') + '</span></div></td>';
+  const html = '<div style="font-size:13px">' +
+    '<h2 style="color:#205090;margin:0 0 2px">Payment Request Voucher</h2>' +
+    '<div style="color:#5C6470;font-size:12px;margin-bottom:12px">' + _crmEsc(p.reqNo || '') + ' &middot; ' + tkFmtDate(p.ts) + '</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+    row('Requested by', _crmEsc(p.name || '')) + row('Department', _crmEsc(p.department || '')) +
+    row('Payee / Vendor', _crmEsc(p.payee || '')) + row('Category', _crmEsc(p.category || '')) +
+    row('Payment method', _crmEsc(p.method || '')) + row('Invoice / PO No.', _crmEsc(p.invoiceNo || '')) +
+    row('Amount', '<span style="color:#205090;font-size:16px">' + _PAY_FMT(p.amount || 0) + '</span>') +
+    row('Due date', tkFmtDate(p.dueDate)) + row('Status', p.status || 'Submitted') +
+    (p.approvedBy ? row('Approved by', _crmEsc(p.approvedBy)) : '') + (p.paidOn ? row('Paid on', tkFmtDate(p.paidOn)) : '') +
+    (p.note ? row('Note', _crmEsc(p.note)) : '') +
+    '</table>' +
+    '<table style="width:100%;margin-top:34px;border-collapse:collapse"><tr>' + sign('Requested by', p.name) + sign('Approved by', p.approvedBy) + sign('Paid by / Finance', '') + '</tr></table>' +
+    '</div>';
+  const doc = await _htmlToPdfDoc(html, 720, { title: 'PAYMENT REQUEST VOUCHER', subtitle: p.reqNo || '', docCode: 'HML-FIN-PAY' });
+  if (!doc) { toast('PDF engine not loaded', 'warn'); return; }
+  doc.save('Humiley_Payment_' + (p.reqNo || 'voucher') + '.pdf');
+  toast('Voucher PDF downloaded');
+}
+/* Export the payment register (respecting current filters) to Excel. */
+function tkPayExportXLS() {
+  if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
+  const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '';
+  const list = (_HR.payments || []).filter(p => { const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase(); return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept); });
+  const rows = list.map(p => ({ 'No.': p.reqNo || '', 'Requested by': p.name || '', Department: p.department || '', Payee: p.payee || '', Category: p.category || '', Method: p.method || '', Purpose: p.purpose || '', Amount: +p.amount || 0, 'Due date': p.dueDate || '', 'Invoice/PO': p.invoiceNo || '', Status: p.status || 'Submitted', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' }));
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ['No.', 'Requested by', 'Department', 'Payee', 'Category', 'Method', 'Purpose', 'Amount', 'Due date', 'Invoice/PO', 'Status', 'Approved by', 'Paid on'] });
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Payments');
+  XLSX.writeFile(wb, 'Humiley_Payments_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  toast('Excel exported');
+}
+/* Export the whole company finance register (respecting current filters) to Excel. */
+function tkFinExportXLS() {
+  if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
+  const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '';
+  const list = _finItems().filter(i => { const hay = ((i.ref || '') + ' ' + (i.who || '') + ' ' + (i.category || '')).toLowerCase(); return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept); });
+  const rows = list.map(i => ({ Type: i.kind, 'Requested by': i.who, Reference: i.ref, Category: i.category, Department: i.dept, Amount: i.amount, Status: i.status }));
+  const ws = XLSX.utils.json_to_sheet(rows, { header: ['Type', 'Requested by', 'Reference', 'Category', 'Department', 'Amount', 'Status'] });
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Finance');
+  XLSX.writeFile(wb, 'Humiley_Finance_Register_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  toast('Excel exported');
 }
 
 /* ════════ Offboarding & Exit (FRM-012 Resignation / FRM-013 Termination / FRM-014 Exit Clearance · Article 46 severance) ════════ */
@@ -10383,6 +10432,7 @@ const _VI = {
   'Import CSV': 'Nhập CSV',
   'Import Excel': 'Nhập Excel',
   'Export CSV': 'Xuất CSV',
+  'Export Excel': 'Xuất Excel',
   'Refresh': 'Làm mới',
   'Add grade': 'Thêm bậc',
   'Post a Job / Requisition': 'Đăng tuyển / Yêu cầu tuyển dụng',
