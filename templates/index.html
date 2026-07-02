@@ -627,6 +627,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
     <span class="nav-label" id="nav-tc-label">Travel Expense</span>
   </div>
+  <div class="nav-item" onclick="showView('payments',this,'Payment Requests')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><circle cx="7" cy="15" r="1.2"/><line x1="11" y1="15" x2="15" y2="15"/></svg></span>
+    <span class="nav-label" id="nav-pay-label">Payment Requests</span>
+  </div>
   <div class="nav-item" onclick="showView('mydevices',this,'My Devices')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
     <span class="nav-label">My Devices</span>
@@ -1105,6 +1109,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
   <div id="travelclaims-root"></div>
+</div>
+
+<div id="view-payments" class="view">
+  <div class="page-header">
+    <div><h1 id="pay-page-title">Payment Requests</h1><p>Request &amp; approve operational and purchase payments — one register for the whole process</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" id="pay-export-btn" onclick="tkExportElementPDF('pay-export','Humiley_Payment_Register.pdf',{title:'PAYMENT REQUEST REGISTER',docCode:'HML-FIN-PAY'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="tkNewPayment()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Payment Request</button>
+    </div>
+  </div>
+  <div id="payments-root"></div>
 </div>
 
 <div id="view-permissions" class="view">
@@ -3545,7 +3560,7 @@ async function doLogin(role, opts = {}) {
   toast(role === 'manager'
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
-  try { _resetIdleTimer(); } catch (e) {}   // arm the 10-minute inactivity auto-logout
+  try { _resetIdleTimer(); } catch (e) {}   // arm the 45-minute inactivity auto-logout
   try { _armManagerPoll(); } catch (e) {}   // managers: live auto-refresh of admin views
 }
 
@@ -3575,11 +3590,11 @@ function doLogout() {
   window.location.replace(window.location.origin + '/');
 }
 
-/* ── Auto sign-out after 10 minutes of inactivity ──────────────────────────────
+/* ── Auto sign-out after 45 minutes of inactivity ──────────────────────────────
    When the session is cleared the next sign-in goes through a full Microsoft login
    (prompt:'login'), which re-challenges 2-step verification. */
 let _idleTimer = null;
-const _IDLE_MS = 10 * 60 * 1000;
+const _IDLE_MS = 45 * 60 * 1000;
 function _resetIdleTimer() {
   if (!TK.token) return;                 // only while signed in
   clearTimeout(_idleTimer);
@@ -3587,7 +3602,7 @@ function _resetIdleTimer() {
 }
 function _idleLogout() {
   if (!TK.token) return;
-  try { toast('Signed out after 10 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
+  try { toast('Signed out after 45 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
   setTimeout(doLogout, 1200);
 }
 ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
@@ -6501,7 +6516,7 @@ async function tkClaimSave() {
 async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
+  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
   // Direct-manager routing: a department manager only sees requests from their own reports;
@@ -6515,11 +6530,12 @@ async function tkRenderInbox() {
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
   const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment' && _mine(p.empId, p.name));
   const travel = (_HR.travel || []).filter(t => t.status === 'Submitted' && _mine(t.empId, t.name));
-  const total = leave.length + claims.length + reqs.length + padr.length + travel.length;
+  const payments = (_HR.payments || []).filter(p => (p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name));
+  const total = leave.length + claims.length + reqs.length + padr.length + travel.length + payments.length;
   const kpis = _hrKpiRow([
     _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
     _hrKpi('Leave', leave.length), _hrKpi('Travel', travel.length, '#3168A8'),
-    _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Requisitions', reqs.length, '#205090')
+    _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Payments', payments.length, '#00B060'), _hrKpi('Requisitions', reqs.length, '#205090')
   ]);
   const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
   const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
@@ -6527,10 +6543,12 @@ async function tkRenderInbox() {
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
   const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
+  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
   const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
     sec('Travel Requests', travel.length, travelRows) +
     sec('Benefit &amp; Welfare Claims', claims.length, claimRows) +
+    sec('Payment Requests', payments.length, payRows) +
     sec('Recruitment Requisitions', reqs.length, reqRows) +
     sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
   const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
@@ -6612,6 +6630,7 @@ function _inboxPendingIds() {
   (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') ids.push('jb:' + j.id); });
   (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment' && _mine(p.empId, p.name)) ids.push('pa:' + p.id); });
   (_HR.travel || []).forEach(t => { if (t.status === 'Submitted' && _mine(t.empId, t.name)) ids.push('tv:' + t.id); });
+  (_HR.payments || []).forEach(p => { if ((p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name)) ids.push('pay:' + p.id); });
   return ids;
 }
 function tkUpdateInboxBadge(pending) {
@@ -6623,7 +6642,7 @@ function tkUpdateInboxBadge(pending) {
 }
 async function tkLoadInboxBadge() {
   try {
-    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
+    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
     tkUpdateInboxBadge();   // recompute (with direct-manager routing) against the per-user seen-set
   } catch (e) {}
 }
@@ -6715,6 +6734,114 @@ async function tkTravelDecision(id, status) {
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
+
+/* ════════ Payment Requests — request / approve / pay register (operations & purchasing) ════════ */
+const _PAY_CATS = ['Operating expense', 'Purchase — Goods', 'Purchase — Service', 'Utilities', 'Rent / Lease', 'Repair / Maintenance', 'Logistics / Freight', 'Subcontractor', 'Marketing', 'Travel-related', 'Tax / Statutory', 'Other'];
+const _PAY_METHODS = ['Bank transfer', 'Cash', 'Company card', 'Cheque'];
+const _payCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : 'b-warn';
+function _payNextNo() {
+  const y = new Date().getFullYear();
+  const nums = (_HR.payments || []).map(p => { const m = String(p.reqNo || '').match(/PR-\d{4}-(\d+)/); return m ? +m[1] : 0; });
+  const n = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
+  return 'PR-' + y + '-' + ('00' + n).slice(-3);
+}
+async function tkRenderPayments() {
+  const root = document.getElementById('payments-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('payments');
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const _title = isMgr ? 'Payment Requests' : 'My Payment Requests';
+  { const h = document.getElementById('pay-page-title'); if (h) h.textContent = _title; const nl = document.getElementById('nav-pay-label'); if (nl) nl.textContent = _title; const tt = document.getElementById('topbarTitle'); if (tt && _currentView === 'payments') tt.textContent = _title; const eb = document.getElementById('pay-export-btn'); if (eb) eb.style.display = isMgr ? '' : 'none'; }
+  const all = (_HR.payments || []).slice();
+  const sum = arr => arr.reduce((s, p) => s + (+p.amount || 0), 0);
+  const pending = all.filter(p => (p.status || 'Submitted') === 'Submitted');
+  const kpis = _hrKpiRow([
+    _kpiTile('Requests', all.length, '#205090', '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+    _kpiTile('Pending', pending.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Approved value', _PAY_FMT(sum(all.filter(p => p.status === 'Approved'))), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    _kpiTile('Paid value', _PAY_FMT(sum(all.filter(p => p.status === 'Paid'))), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>')
+  ]);
+  const dash = isMgr ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'pay-cat') + _rptChartCard('Status Breakdown', 'pay-status') + '</div>' : '';
+  const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    _crmFiltSearch('pay-q', 'Search no. / payee / purpose…', 'payFillTable') +
+    _crmFiltSel('pay-status-f', 'All status', ['Submitted', 'Approved', 'Rejected', 'Paid'], 'payFillTable') +
+    _crmFiltSel('pay-cat-f', 'All categories', _crmDistinct(all, 'category'), 'payFillTable') +
+    _crmFiltSel('pay-dept-f', 'All departments', _crmDistinct(all, 'department'), 'payFillTable') + '</div>';
+  root.innerHTML = '<div id="pay-export">' + kpis + dash +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Payment Register</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All requests · Approve / Reject / Mark paid' : 'Mine') + '</span></div>' +
+    fbar +
+    '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
+  payFillTable();
+  if (isMgr && typeof Chart !== 'undefined') {
+    const byCat = {}, byStatus = {};
+    all.forEach(p => { byCat[p.category || 'Other'] = (byCat[p.category || 'Other'] || 0) + (+p.amount || 0); byStatus[p.status || 'Submitted'] = (byStatus[p.status || 'Submitted'] || 0) + 1; });
+    const ck = Object.keys(byCat), sk = Object.keys(byStatus);
+    if (ck.length) _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
+    if (sk.length) _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#F59E0B', '#00B060', '#EF4444', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
+  }
+}
+function payFillTable() {
+  const tb = document.getElementById('pay-tbody'); if (!tb) return;
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '';
+  const list = (_HR.payments || []).filter(p => {
+    const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept);
+  }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
+  tb.innerHTML = list.length ? list.map(p => {
+    const s = p.status || 'Submitted';
+    const act = !isMgr ? '' : (s === 'Submitted'
+      ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>'
+      : s === 'Approved' ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
+    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + s + '</span></td><td style="white-space:nowrap">' + act + '</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
+}
+function tkNewPayment() {
+  document.getElementById('paymentOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'paymentOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">New Payment Request</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies — July"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat">' + _PAY_CATS.map(c => '<option>' + c + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + _PAY_METHODS.map(m => '<option>' + m + '</option>').join('') + '</select></div></div>' +
+    '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
+    _ATTACH_FIELD('pay-attach', 'Attach invoice / quote (image or PDF)') +
+    '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
+  document.body.appendChild(el);
+  try { const me = _tkMe && _tkMe(); if (me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; } } catch (e) {}
+}
+async function tkPaymentSave() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const me = _tkMe ? _tkMe() : null;
+  const amount = +g('pay-amount') || 0;
+  if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
+  if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  try {
+    const res = await tkApi('/api/coll/payments', { method: 'POST', body });
+    tkAudit('Payment request submitted', body.name, body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount));
+    const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
+      '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
+      (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.');
+    document.getElementById('paymentOverlay').remove(); toast('Payment request submitted for approval'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+  } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+}
+async function tkPaymentDecision(id, status) {
+  const p = (_HR.payments || []).find(x => x.id === id); if (!p) return;
+  p.status = status;
+  if (status === 'Approved') p.approvedBy = (TK.user || {}).name || '';
+  if (status === 'Paid') p.paidOn = new Date().toISOString().slice(0, 10);
+  try {
+    await tkApi('/api/coll/payments/' + id, { method: 'PATCH', body: p });
+    tkAudit('Payment ' + status.toLowerCase(), p.name || '', (p.reqNo || '') + ' · ' + _PAY_FMT(p.amount || 0));
+    const e = _hrEmp(p.empId) || {};
+    tkMailRequester(e.email, e.name || p.name, 'Your payment request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour payment request ' + (p.reqNo || '') + ' (' + (p.payee || '') + ', ' + _PAY_FMT(p.amount || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+    toast('Payment ' + status.toLowerCase()); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
 
 /* ════════ Offboarding & Exit (FRM-012 Resignation / FRM-013 Termination / FRM-014 Exit Clearance · Article 46 severance) ════════ */
 const _EXIT_TYPES = ['Resignation', 'End of contract', 'Termination', 'Retirement', 'Mutual agreement'];
@@ -10026,6 +10153,7 @@ function showView(id, navEl, title) {
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   if (id === 'leave') { try { tkRenderLeaveView(); } catch (e) { console.warn('leave:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
+  if (id === 'payments') { try { tkRenderPayments(); } catch (e) { console.warn('payments:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
@@ -10059,6 +10187,44 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   'Edit —': 'Sửa —',
+  'Payment Requests': 'Đề nghị thanh toán',
+  'My Payment Requests': 'Đề nghị thanh toán của tôi',
+  'New Payment Request': 'Đề nghị thanh toán mới',
+  'Payment Register': 'Sổ thanh toán',
+  'Request & approve operational and purchase payments — one register for the whole process': 'Đề nghị & phê duyệt thanh toán vận hành và mua sắm — một sổ theo dõi toàn bộ quy trình',
+  'Purpose / description': 'Mục đích / mô tả',
+  'Payment method': 'Hình thức thanh toán',
+  'Payee / Vendor': 'Người nhận / Nhà cung cấp',
+  'Payee': 'Người nhận',
+  'Amount (VND)': 'Số tiền (VND)',
+  'Due date': 'Ngày đến hạn',
+  'Due': 'Đến hạn',
+  'Invoice / PO No.': 'Số hóa đơn / PO',
+  'Attach invoice / quote (image or PDF)': 'Đính kèm hóa đơn / báo giá (ảnh hoặc PDF)',
+  'No.': 'Số',
+  'Mark paid': 'Đánh dấu đã trả',
+  'Submitted': 'Đã gửi',
+  'Paid': 'Đã thanh toán',
+  'Payments': 'Thanh toán',
+  'Spend by Category': 'Chi tiêu theo hạng mục',
+  'All requests': 'Tất cả đề nghị',
+  'All requests · Approve / Reject / Mark paid': 'Tất cả đề nghị · Duyệt / Từ chối / Đánh dấu đã trả',
+  'Mine': 'Của tôi',
+  'Operating expense': 'Chi phí vận hành',
+  'Purchase — Goods': 'Mua sắm — Hàng hóa',
+  'Purchase — Service': 'Mua sắm — Dịch vụ',
+  'Utilities': 'Tiện ích',
+  'Rent / Lease': 'Thuê / Cho thuê',
+  'Repair / Maintenance': 'Sửa chữa / Bảo trì',
+  'Logistics / Freight': 'Vận chuyển / Cước',
+  'Subcontractor': 'Nhà thầu phụ',
+  'Travel-related': 'Liên quan công tác',
+  'Tax / Statutory': 'Thuế / Nghĩa vụ',
+  'Bank transfer': 'Chuyển khoản',
+  'Cash': 'Tiền mặt',
+  'Company card': 'Thẻ công ty',
+  'Cheque': 'Séc',
+  'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
   'Search': 'Tìm kiếm',
   'Import CSV': 'Nhập CSV',
   'Import Excel': 'Nhập Excel',
