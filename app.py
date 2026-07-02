@@ -162,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/approve":
             return self._approve_via_link(qs)
+        if path == "/capprove":
+            return self._coll_approve_via_link(qs)
         if path == "/api/config":
             return self._json({"demo": DEMO_MODE, "clientId": M365["clientId"],
                                "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"]})
@@ -418,6 +420,49 @@ class Handler(BaseHTTPRequestHandler):
                           lv.get("startDate", ""), lv.get("endDate", ""), verb),
                           "#00B060" if new_status == "approved" else "#C00000")
 
+    def _coll_approve_via_link(self, qs):
+        """One-click Approve / Reject / Mark-paid from an email link (no login), by token.
+        Covers expense claims, travel requests and payment requests."""
+        token = qs.get("t", [""])[0] or qs.get("token", [""])[0]
+        action = (qs.get("action", ["approve"])[0]).lower()
+        if not token:
+            return self._html("Invalid link", "This approval link is not valid.", "#C00000")
+        LABEL = {"claims": "expense claim", "travel": "travel request", "payments": "payment request"}
+        for coll in ("claims", "travel", "payments"):
+            item = next((x for x in db.list_collection(coll) if x.get("token") == token), None)
+            if not item:
+                continue
+            who = item.get("name") or "the employee"
+            cur = item.get("status") or "Submitted"
+            detail = item.get("reqNo") or item.get("title") or item.get("dest") or ""
+            if action == "paid" and coll == "payments":
+                new_status = "Paid"
+            elif action in ("reject", "decline", "deny"):
+                if cur != "Submitted":
+                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                new_status = "Rejected"
+            else:
+                if cur != "Submitted":
+                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                new_status = "Approved"
+            item["status"] = new_status
+            if new_status == "Paid":
+                item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
+            if coll == "claims" and isinstance(item.get("items"), list):
+                for it in item["items"]:
+                    if (it.get("status") or "Submitted") == "Submitted":
+                        it["status"] = new_status
+            if new_status == "Approved":
+                item["approvedBy"] = item.get("approvedBy") or "Email approval"
+            db.put_collection_item(coll, item)
+            color = "#00B060" if new_status in ("Approved", "Paid") else "#C00000"
+            return self._html(LABEL[coll].capitalize() + " " + new_status.lower(),
+                              "%s's %s%s has been <b>%s</b>. You can close this tab." % (
+                                  who, LABEL[coll], (" (" + detail + ")" if detail else ""), new_status.lower()),
+                              color)
+        return self._html("Invalid or expired link",
+                          "This approval link is not valid — the item may have been removed. Please review it in the app.", "#C00000")
+
     # -- employees ----------------------------------------------------------
     def _emp_create(self, u, body):
         if not body.get("name") or not body.get("email"):
@@ -605,6 +650,9 @@ class Handler(BaseHTTPRequestHandler):
         if name in ("claims", "travel", "payments", "acks"):
             item["empId"] = u.get("id")
             item["name"] = u.get("name")
+        # Unguessable token for one-click email Approve/Reject (no login), like leave.
+        if name in ("claims", "travel", "payments"):
+            item.setdefault("token", secrets.token_urlsafe(18))
         # Staff-created PADR cycle: stamp identity, force self-service shape (no mgr scores/rating).
         if name == "padr" and u.get("role") != "manager":
             item["empId"] = u.get("id")

@@ -3151,15 +3151,23 @@ async function tkEmailLeaveApproval(res, lv) {
 /* Generic HTML approval-request email for claims / travel — carries a prominent
    "Review & Approve in Portal" button that opens the app (Approval Inbox, where the
    Approve / Reject / Review buttons live). Falls back to the plain notify (Teams/webhook). */
-async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText) {
-  const portal = window.location.origin + '/';
+async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText, token) {
+  const base = window.location.origin;
+  const portal = base + '/';
   mgrName = mgrName || 'Manager';
-  const html = '<p>Hi ' + mgrName + ',</p><p>' + heading + '</p>' + (detailsHtml || '') +
-    '<p style="margin:16px 0"><a href="' + portal + '" style="background:#205090;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Review &amp; Approve in Portal</a></p>' +
-    '<p style="color:#666;font-size:12px">Open the portal and go to <b>Approval Inbox</b> to <b>Approve</b>, <b>Reject</b> or <b>Review</b> this request.</p>' +
+  // One-click Approve / Reject (no login) when a token is supplied — mirrors the leave flow.
+  const approve = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=approve' : '';
+  const reject = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=reject' : '';
+  const oneClick = token ? ('<p style="margin:16px 0">' +
+    '<a href="' + approve + '" style="background:#00B060;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Approve</a>&nbsp;&nbsp;' +
+    '<a href="' + reject + '" style="background:#C00000;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Reject</a></p>') : '';
+  const html = '<p>Hi ' + mgrName + ',</p><p>' + heading + '</p>' + (detailsHtml || '') + oneClick +
+    '<p style="margin:14px 0"><a href="' + portal + '" style="background:#205090;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Open in Portal to Review</a></p>' +
+    '<p style="color:#666;font-size:12px">Tip: use <b>Approve</b> / <b>Reject</b> above for one-click, or open the portal <b>Approval Inbox</b> to review full details first.</p>' +
     '<p style="color:#999;font-size:12px">Humiley People &amp; Workplace</p>';
   const text = 'Hi ' + mgrName + ',\n\n' + heading + '\n\n' + (detailsText || '') +
-    '\n\nReview & approve in the portal: ' + portal + '\n(Open the Approval Inbox to Approve / Reject / Review.)\n\nHumiley People & Workplace';
+    (token ? ('\n\nApprove: ' + approve + '\nReject:  ' + reject) : '') +
+    '\n\nOr review in the portal: ' + portal + '\n\nHumiley People & Workplace';
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
@@ -6500,13 +6508,14 @@ async function tkClaimSave() {
   const travelId = claimKind === 'Travel' ? ((document.getElementById('claim-travelId') || {}).value || '') : '';
   const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   try {
-    await tkApi('/api/coll/claims', { method: 'POST', body });
+    const _r = await tkApi('/api/coll/claims', { method: 'POST', body });
     tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
     const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
     if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
       '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
       '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
-      (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.');
+      (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.',
+      (_r && _r.item && _r.item.token));
     document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
   }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
@@ -6714,13 +6723,14 @@ async function tkTravelSave() {
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
   const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: g('tr-attach'), attachmentName: g('tr-attachname'), status: 'Submitted' };
   try {
-    await tkApi('/api/coll/travel', { method: 'POST', body });
+    const _r = await tkApi('/api/coll/travel', { method: 'POST', body });
     tkAudit('Travel request submitted', body.name, body.dest);
     const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
     if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
       '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
       '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
-      (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.');
+      (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
+      (_r && _r.item && _r.item.token));
     document.getElementById('travelOverlay').remove(); toast('Travel request submitted'); tkRenderTravelClaims();
   } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
 }
@@ -6825,7 +6835,8 @@ async function tkPaymentSave() {
     if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
       '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
       '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
-      (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.');
+      (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
+      (res && res.item && res.item.token));
     document.getElementById('paymentOverlay').remove(); toast('Payment request submitted for approval'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
   } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
 }
