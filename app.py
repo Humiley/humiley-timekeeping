@@ -162,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/approve":
             return self._approve_via_link(qs)
+        if path == "/capprove":
+            return self._coll_approve_via_link(qs)
         if path == "/api/config":
             return self._json({"demo": DEMO_MODE, "clientId": M365["clientId"],
                                "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"]})
@@ -418,6 +420,49 @@ class Handler(BaseHTTPRequestHandler):
                           lv.get("startDate", ""), lv.get("endDate", ""), verb),
                           "#00B060" if new_status == "approved" else "#C00000")
 
+    def _coll_approve_via_link(self, qs):
+        """One-click Approve / Reject / Mark-paid from an email link (no login), by token.
+        Covers expense claims, travel requests and payment requests."""
+        token = qs.get("t", [""])[0] or qs.get("token", [""])[0]
+        action = (qs.get("action", ["approve"])[0]).lower()
+        if not token:
+            return self._html("Invalid link", "This approval link is not valid.", "#C00000")
+        LABEL = {"claims": "expense claim", "travel": "travel request", "payments": "payment request"}
+        for coll in ("claims", "travel", "payments"):
+            item = next((x for x in db.list_collection(coll) if x.get("token") == token), None)
+            if not item:
+                continue
+            who = item.get("name") or "the employee"
+            cur = item.get("status") or "Submitted"
+            detail = item.get("reqNo") or item.get("title") or item.get("dest") or ""
+            if action == "paid" and coll == "payments":
+                new_status = "Paid"
+            elif action in ("reject", "decline", "deny"):
+                if cur != "Submitted":
+                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                new_status = "Rejected"
+            else:
+                if cur != "Submitted":
+                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                new_status = "Approved"
+            item["status"] = new_status
+            if new_status == "Paid":
+                item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
+            if coll == "claims" and isinstance(item.get("items"), list):
+                for it in item["items"]:
+                    if (it.get("status") or "Submitted") == "Submitted":
+                        it["status"] = new_status
+            if new_status == "Approved":
+                item["approvedBy"] = item.get("approvedBy") or "Email approval"
+            db.put_collection_item(coll, item)
+            color = "#00B060" if new_status in ("Approved", "Paid") else "#C00000"
+            return self._html(LABEL[coll].capitalize() + " " + new_status.lower(),
+                              "%s's %s%s has been <b>%s</b>. You can close this tab." % (
+                                  who, LABEL[coll], (" (" + detail + ")" if detail else ""), new_status.lower()),
+                              color)
+        return self._html("Invalid or expired link",
+                          "This approval link is not valid — the item may have been removed. Please review it in the app.", "#C00000")
+
     # -- employees ----------------------------------------------------------
     def _emp_create(self, u, body):
         if not body.get("name") or not body.get("email"):
@@ -528,9 +573,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_portfolioSnapshots", "pm_execNotes"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_portfolioSnapshots", "pm_execNotes"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
+    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -540,7 +585,7 @@ class Handler(BaseHTTPRequestHandler):
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
-    SELF_OWNED = {"claims", "travel", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
+    SELF_OWNED = {"claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
     HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
@@ -602,9 +647,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         item = dict(body or {})
         # For staff self-service records, stamp identity from the session (no impersonation).
-        if name in ("claims", "travel", "acks"):
+        if name in ("claims", "travel", "payments", "acks"):
             item["empId"] = u.get("id")
             item["name"] = u.get("name")
+        # Unguessable token for one-click email Approve/Reject (no login), like leave.
+        if name in ("claims", "travel", "payments"):
+            item.setdefault("token", secrets.token_urlsafe(18))
         # Staff-created PADR cycle: stamp identity, force self-service shape (no mgr scores/rating).
         if name == "padr" and u.get("role") != "manager":
             item["empId"] = u.get("id")
@@ -715,7 +763,7 @@ class Handler(BaseHTTPRequestHandler):
                     item["createdById"] = existing.get("createdById")
         # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
         # must not be able to rewrite who a claim/travel/exit belongs to).
-        if name in ("claims", "travel", "acks"):
+        if name in ("claims", "travel", "payments", "acks"):
             existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
             if existing:
                 item["empId"] = existing.get("empId", item.get("empId"))

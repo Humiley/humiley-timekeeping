@@ -6,7 +6,7 @@
 <title>Humiley Group Inc. — People & Workplace Portal</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-input,textarea,select,button{font-family:'Segoe UI',system-ui,Arial,sans-serif}
+input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif}
 :root{
   --navy:#205090;--navy-deep:#163866;--navy-light:#3168A8;
   --emerald:#00B060;--emerald-deep:#008548;
@@ -16,7 +16,7 @@ input,textarea,select,button{font-family:'Segoe UI',system-ui,Arial,sans-serif}
   --white:#FFFFFF;
 }
 html,body{margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;overflow:hidden}
+body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;overflow:hidden}
 
 /* ── SIDEBAR ── */
 #sidebar{width:228px;min-width:228px;background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);display:flex;flex-direction:column;height:100vh;transition:width .25s;overflow:hidden}
@@ -627,6 +627,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg></span>
     <span class="nav-label" id="nav-tc-label">Travel Expense</span>
   </div>
+  <div class="nav-item" onclick="showView('payments',this,'Payment Requests')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><circle cx="7" cy="15" r="1.2"/><line x1="11" y1="15" x2="15" y2="15"/></svg></span>
+    <span class="nav-label" id="nav-pay-label">Payment Requests</span>
+  </div>
   <div class="nav-item" onclick="showView('mydevices',this,'My Devices')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></span>
     <span class="nav-label">My Devices</span>
@@ -1107,6 +1111,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="travelclaims-root"></div>
 </div>
 
+<div id="view-payments" class="view">
+  <div class="page-header">
+    <div><h1 id="pay-page-title">Payment Requests</h1><p>Request &amp; approve operational and purchase payments — one register for the whole process</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" id="pay-export-btn" onclick="tkExportElementPDF('pay-export','Humiley_Payment_Register.pdf',{title:'PAYMENT REQUEST REGISTER',docCode:'HML-FIN-PAY'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+      <button class="btn btn-primary btn-sm" onclick="tkNewPayment()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Payment Request</button>
+    </div>
+  </div>
+  <div id="payments-root"></div>
+</div>
+
 <div id="view-permissions" class="view">
   <div class="page-header">
     <div><h1>Access &amp; Permissions</h1><p>Grant each employee their access level — User · Contributor · Approver · Editor · Admin</p></div>
@@ -1159,19 +1174,19 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="kpi-grid">
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#2050901f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">Present Today</div><div class="kpi-value" id="kpi-present">42</div><div class="kpi-delta up" id="kpi-present-delta">▲ 91.3% of 46</div></div>
+      <div style="min-width:0"><div class="kpi-label">Present Today</div><div class="kpi-value" id="kpi-present">0</div><div class="kpi-delta up" id="kpi-present-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#00B0601f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">On Time</div><div class="kpi-value" id="kpi-ontime">38</div><div class="kpi-delta up" id="kpi-ontime-delta">▲ 90.5% on-time rate</div></div>
+      <div style="min-width:0"><div class="kpi-label">On Time</div><div class="kpi-value" id="kpi-ontime">0</div><div class="kpi-delta up" id="kpi-ontime-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#F59E0B1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">Late Arrivals</div><div class="kpi-value" id="kpi-late">4</div><div class="kpi-delta dn" id="kpi-late-delta">▲ 2 more than yesterday</div></div>
+      <div style="min-width:0"><div class="kpi-label">Late Arrivals</div><div class="kpi-value" id="kpi-late">0</div><div class="kpi-delta dn" id="kpi-late-delta">—</div></div>
     </div>
     <div class="kpi-card" style="display:flex;align-items:center;gap:14px">
       <div style="width:46px;height:46px;border-radius:12px;background:#8B5CF61f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-      <div style="min-width:0"><div class="kpi-label">On Leave</div><div class="kpi-value" id="kpi-onleave">4</div><div class="kpi-delta neu" id="kpi-leave-delta">2 pending approval</div></div>
+      <div style="min-width:0"><div class="kpi-label">On Leave</div><div class="kpi-value" id="kpi-onleave">0</div><div class="kpi-delta neu" id="kpi-leave-delta">—</div></div>
     </div>
   </div>
 
@@ -1306,7 +1321,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="page-header">
     <div>
       <h1 id="att-view-title">Attendance Records</h1>
-      <p id="att-summary">46 employees · Today's records</p>
+      <p id="att-summary">Today's records</p>
     </div>
     <div style="display:flex;gap:8px" id="att-mgr-btns">
       <button class="btn btn-outline btn-sm" onclick="exportAttendance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
@@ -1349,19 +1364,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <table id="att-table">
         <thead><tr><th>Employee</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Hours</th><th>GPS Zone</th><th>Status</th><th>Actions</th></tr></thead>
         <tbody id="att-tbody">
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#205090">HN</div><div><div style="font-size:13px;font-weight:700">Huy Nguyen Duc</div><div style="font-size:11px;color:var(--text-light)">Managing Director</div></div></div></td><td>Engineering</td><td style="font-weight:600">08:02</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)" id="dur-att">7h 12m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#00B060">LT</div><div><div style="font-size:13px;font-weight:700">Lan Tran</div><div style="font-size:11px;color:var(--text-light)">HR Manager</div></div></div></td><td>HR &amp; Admin</td><td style="font-weight:600">08:18</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)">6h 56m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#F59E0B">MV</div><div><div style="font-size:13px;font-weight:700">Minh Vu</div><div style="font-size:11px;color:var(--text-light)">Project Manager</div></div></div></td><td>Projects</td><td style="font-weight:600">09:14</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--warning)">6h 00m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-warn">Late 44m</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#8B5CF6">PD</div><div><div style="font-size:13px;font-weight:700">Phuc Dang</div><div style="font-size:11px;color:var(--text-light)">Finance Lead</div></div></div></td><td>Finance</td><td style="font-weight:600">07:58</td><td style="color:var(--text-light)">In progress</td><td style="font-weight:700;color:var(--navy)">7h 16m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#C00000">HaN</div><div><div style="font-size:13px;font-weight:700">Ha Nguyen</div><div style="font-size:11px;color:var(--text-light)">Sales Executive</div></div></div></td><td>Sales</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td style="color:var(--text-light)">—</td><td><span class="badge b-info">On Leave</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#F59E0B">BL</div><div><div style="font-size:13px;font-weight:700">Binh Le</div><div style="font-size:11px;color:var(--text-light)">Field Engineer</div></div></div></td><td>Field Services</td><td style="font-weight:600">07:58</td><td style="color:var(--text-light)">In progress</td><td>7h 16m</td><td><span class="badge b-danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Out Zone</span></td><td><span class="badge b-warn">Anomaly</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#163866">DT</div><div><div style="font-size:13px;font-weight:700">Duc Thanh</div><div style="font-size:11px;color:var(--text-light)">Senior Engineer</div></div></div></td><td>Engineering</td><td style="font-weight:600">08:05</td><td style="color:var(--text-light)">In progress</td><td>7h 09m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
-          <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#00B060">MQ</div><div><div style="font-size:13px;font-weight:700">Mai Quynh</div><div style="font-size:11px;color:var(--text-light)">Project Coordinator</div></div></div></td><td>Projects</td><td style="font-weight:600">08:00</td><td style="color:var(--text-light)">In progress</td><td>7h 14m</td><td><span class="badge b-ok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> In Zone</span></td><td><span class="badge b-ok">On Time</span></td><td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td></tr>
+          <tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:26px">No attendance records yet.</td></tr>
         </tbody>
       </table>
     </div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:12px;color:var(--text-light)">
-      <span>Showing 8 of 46 employees · <span style="color:var(--emerald);font-weight:700">38 On Time</span> · <span style="color:var(--warning);font-weight:700">4 Late</span> · <span style="color:var(--danger);font-weight:700">0 Absent</span> · <span style="color:var(--info);font-weight:700">4 On Leave</span></span>
+      <span id="att-foot-summary">No records</span>
       <div style="display:flex;gap:6px">
         <button class="btn btn-ghost btn-sm" onclick="attChangePage(-1)">← Prev</button>
         <button class="btn btn-outline btn-sm" id="att-pg-1" onclick="attGotoPage(1)">1</button>
@@ -1932,10 +1940,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="rpt-attendance">
 
   <div class="kpi-grid">
-    <div class="kpi-card c-navy"><div class="kpi-label">Avg On-Time Rate</div><div class="kpi-value">91.2%</div><div class="kpi-delta up">▲ 3.1% vs April</div></div>
-    <div class="kpi-card c-emerald"><div class="kpi-label">Total Hours Worked</div><div class="kpi-value">6,840h</div><div class="kpi-delta neu">May MTD</div></div>
-    <div class="kpi-card c-warn"><div class="kpi-label">Leave Days Taken</div><div class="kpi-value">47d</div><div class="kpi-delta neu">May MTD</div></div>
-    <div class="kpi-card c-danger"><div class="kpi-label">GPS Anomalies</div><div class="kpi-value">7</div><div class="kpi-delta dn">▲ 3 vs last month</div></div>
+    <div class="kpi-card c-navy"><div class="kpi-label">Avg On-Time Rate</div><div class="kpi-value" id="rpt-att-ontime">—</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-emerald"><div class="kpi-label">Total Hours Worked</div><div class="kpi-value" id="rpt-att-hours">0h</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-warn"><div class="kpi-label">Leave Days Taken</div><div class="kpi-value" id="rpt-att-leave">0d</div><div class="kpi-delta neu">All records</div></div>
+    <div class="kpi-card c-danger"><div class="kpi-label">GPS Anomalies</div><div class="kpi-value" id="rpt-att-anom">0</div><div class="kpi-delta neu">All records</div></div>
   </div>
 
   <div class="grid-2 mb22">
@@ -1954,13 +1962,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="chart-wrap" style="height:170px"><canvas id="deptChart"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-hdr"><div class="card-title">Top Insights — May 2026</div></div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
-        <div style="padding:10px;background:#D1FAE5;border-radius:8px;border-left:3px solid var(--emerald)"><strong>Field Services</strong> has the highest on-time rate this month at 96.4%.</div>
-        <div style="padding:10px;background:#FEF3C7;border-radius:8px;border-left:3px solid var(--warning)"><strong>Projects</strong> department has the most late arrivals (7 this month). Consider review.</div>
-        <div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy)">Average daily working hours: <strong>8.6h</strong> — above the 8h standard.</div>
-        <div style="padding:10px;background:#FEE2E2;border-radius:8px;border-left:3px solid var(--danger)">3 employees have less than 3 days annual leave remaining (May 2026).</div>
-        <div style="padding:10px;background:#D1FAE5;border-radius:8px;border-left:3px solid var(--emerald)">GPS anomaly rate: <strong>1.8%</strong> — below 5% target threshold.</div>
+      <div class="card-hdr"><div class="card-title">Top Insights</div></div>
+      <div id="rpt-att-insights" style="display:flex;flex-direction:column;gap:8px;font-size:12px">
+        <div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy);color:var(--text-light)">No insights yet — they appear once attendance data is recorded.</div>
       </div>
     </div>
   </div>
@@ -1977,11 +1981,11 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <!-- Summary KPIs -->
     <div class="stat-boxes" style="margin-bottom:16px">
-      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="lr-total">18</div><div class="stat-lbl">Total Requests</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="lr-approved">11</div><div class="stat-lbl">Approved</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="lr-pending">4</div><div class="stat-lbl">Pending</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="lr-rejected">3</div><div class="stat-lbl">Rejected</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="lr-days">42</div><div class="stat-lbl">Total Days</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="lr-total">0</div><div class="stat-lbl">Total Requests</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="lr-approved">0</div><div class="stat-lbl">Approved</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="lr-pending">0</div><div class="stat-lbl">Pending</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="lr-rejected">0</div><div class="stat-lbl">Rejected</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="lr-days">0</div><div class="stat-lbl">Total Days</div></div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
@@ -1992,14 +1996,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
         <table>
           <thead><tr><th>Employee</th><th>Department</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th>Approved By</th></tr></thead>
           <tbody id="leave-report-tbody">
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#205090">HN</div><span style="font-weight:600">Huy Nguyen Duc</span></div></td><td>Engineering</td><td>Annual Leave</td><td>Apr 1</td><td>Apr 4</td><td>4</td><td style="font-size:11px;color:var(--text-light)">Personal travel</td><td><span class="badge b-ok">Approved</span></td><td>Self</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#3168A8">TN</div><span style="font-weight:600">Tuan Nguyen</span></div></td><td>Projects</td><td>Annual Leave</td><td>May 12</td><td>May 14</td><td>3</td><td style="font-size:11px;color:var(--text-light)">Sister's wedding</td><td><span class="badge b-warn">Pending</span></td><td>—</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F59E0B">MV</div><span style="font-weight:600">Minh Vu</span></div></td><td>Projects</td><td>Sick Leave</td><td>May 10</td><td>May 10</td><td>1</td><td style="font-size:11px;color:var(--text-light)">Fever/flu</td><td><span class="badge b-warn">Pending</span></td><td>—</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#163866">BL</div><span style="font-weight:600">Binh Le</span></div></td><td>Field Services</td><td>Annual Leave</td><td>Apr 28</td><td>Apr 30</td><td>3</td><td style="font-size:11px;color:var(--text-light)">Family visit</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#8B5CF6">KP</div><span style="font-weight:600">Kim Pham</span></div></td><td>Engineering</td><td>Sick Leave</td><td>Apr 22</td><td>Apr 23</td><td>2</td><td style="font-size:11px;color:var(--text-light)">Medical</td><td><span class="badge b-ok">Approved</span></td><td>Lan Tran</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#00B060">MQ</div><span style="font-weight:600">Mai Quynh</span></div></td><td>Projects</td><td>Comp-off</td><td>May 2</td><td>May 2</td><td>1</td><td style="font-size:11px;color:var(--text-light)">Overtime compensation</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F59E0B">DT</div><span style="font-weight:600">Duc Thanh</span></div></td><td>Engineering</td><td>Annual Leave</td><td>Apr 15</td><td>Apr 18</td><td>4</td><td style="font-size:11px;color:var(--text-light)">Holiday</td><td><span class="badge b-danger">Rejected</span></td><td>Huy Nguyen</td></tr>
-            <tr><td><div class="d-flex-gap"><div class="ava-sm" style="background:#F97316">HA</div><span style="font-weight:600">Ha Nguyen</span></div></td><td>Field Services</td><td>Sick Leave</td><td>Apr 8</td><td>Apr 9</td><td>2</td><td style="font-size:11px;color:var(--text-light)">Back pain</td><td><span class="badge b-ok">Approved</span></td><td>Huy Nguyen</td></tr>
+            <tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:24px">No leave records yet.</td></tr>
           </tbody>
         </table>
       </div>
@@ -2007,21 +2004,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <!-- Leave usage by type chart area -->
     <div class="grid-2" style="margin-top:16px">
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Leave by Type — May 2026</div></div>
-        <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Annual Leave</span><span style="font-weight:700">11 requests · 25 days</span></div><div class="prog-wrap"><div class="prog-fill prog-navy" style="width:62%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Sick Leave</span><span style="font-weight:700">5 requests · 10 days</span></div><div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:28%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Comp-off</span><span style="font-weight:700">2 requests · 3 days</span></div><div class="prog-wrap"><div class="prog-fill prog-warn" style="width:8%"></div></div></div>
-          <div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Unpaid</span><span style="font-weight:700">0 requests</span></div><div class="prog-wrap"><div class="prog-fill prog-danger" style="width:0%"></div></div></div>
+        <div class="card-hdr"><div class="card-title">Leave by Type</div></div>
+        <div id="rpt-leave-bytype" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+          <div style="color:var(--text-light);font-size:12px">No leave records yet.</div>
         </div>
       </div>
       <div class="card">
-        <div class="card-hdr"><div class="card-title">Top Leave Users — 2026 YTD</div></div>
-        <div style="display:flex;flex-direction:column;gap:0">
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#F59E0B">MV</div><div style="flex:1"><div style="font-weight:600">Minh Vu</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-warn" style="width:67%"></div></div></div><span style="font-weight:700;color:var(--navy)">8d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#205090">HN</div><div style="flex:1"><div style="font-weight:600">Huy Nguyen Duc</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:33%"></div></div></div><span style="font-weight:700;color:var(--navy)">4d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--soft-bg);font-size:12px"><div class="ava-sm" style="background:#163866">BL</div><div style="flex:1"><div style="font-weight:600">Binh Le</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-danger" style="width:25%"></div></div></div><span style="font-weight:700;color:var(--navy)">3d used</span></div>
-          <div style="display:flex;align-items:center;gap:10px;padding:7px 0;font-size:12px"><div class="ava-sm" style="background:#8B5CF6">PD</div><div style="flex:1"><div style="font-weight:600">Phuc Dang</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:25%"></div></div></div><span style="font-weight:700;color:var(--navy)">3d used</span></div>
+        <div class="card-hdr"><div class="card-title">Top Leave Users</div></div>
+        <div id="rpt-leave-top" style="display:flex;flex-direction:column;gap:0">
+          <div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>
         </div>
       </div>
     </div>
@@ -2033,21 +2024,21 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…" oninput="renderInOutReport()"></div>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
-      <input type="date" class="sel-filter" value="2026-05-09" onchange="renderInOutReport()" style="font-size:12px">
+      <input type="date" class="sel-filter" onchange="renderInOutReport()" style="font-size:12px">
     </div>
     <!-- Summary -->
     <div class="stat-boxes" style="margin-bottom:16px">
-      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="io-total">42</div><div class="stat-lbl">Total Records</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="io-ontime">31</div><div class="stat-lbl">On Time</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="io-late">8</div><div class="stat-lbl">Late Arrivals</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="io-absent">3</div><div class="stat-lbl">Absent</div></div>
-      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="io-avghrs">8h 12m</div><div class="stat-lbl">Avg Hours</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--navy)" id="io-total">0</div><div class="stat-lbl">Total Records</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--emerald)" id="io-ontime">0</div><div class="stat-lbl">On Time</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--warning)" id="io-late">0</div><div class="stat-lbl">Late Arrivals</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--danger)" id="io-absent">0</div><div class="stat-lbl">Absent</div></div>
+      <div class="stat-box"><div class="stat-num" style="color:var(--info)" id="io-avghrs">—</div><div class="stat-lbl">Avg Hours</div></div>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-        <div class="card-title">Employee In/Out Log — May 9, 2026</div>
+        <div class="card-title">Employee In/Out Log</div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost btn-sm" onclick="renderInOutReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
+          <button class="btn btn-ghost btn-sm" onclick="tkRefreshInOut()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
           <button class="btn btn-outline btn-sm" onclick="toast('Exporting In/Out log to Excel…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
         </div>
       </div>
@@ -2968,7 +2959,9 @@ function tkCheckIn() {
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   _checkedIn = true;
   _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: _tkSelectedZone.name });
-  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon });
+  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon })
+    .then(() => tkBootstrap().catch(() => {}))
+    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   try { filterTable(); } catch (e) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('rec-checkin', t); set('rec-zone', 'In Zone'); set('dur-val', '0h 0m');
@@ -2986,7 +2979,9 @@ function tkCheckOut() {
   if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   _checkedIn = false;
-  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t });
+  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t })
+    .then(() => tkBootstrap().catch(() => {}))
+    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
   if (rec) { rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); const tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm'; }
   try { filterTable(); } catch (e) {}
@@ -3011,6 +3006,29 @@ function tkRenderCheckin() {
   const today = new Date().toISOString().slice(0, 10);
   const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const todayRow = mine.find(r => r.date === today);
+  // Restore check-in/out state on EVERY render (survives reload / navigate-away / deploy refresh):
+  // an open check-in = today has a check-in time and no check-out yet → we are checked in and
+  // Check Out must ALWAYS be available (never locked by schedule/time — for outside jobs).
+  const _cinToday = todayRow && (todayRow.in || todayRow.clock_in);
+  const _coutToday = todayRow && (todayRow.out || todayRow.clock_out);
+  const _openToday = !!(_cinToday && !_coutToday);
+  _checkedIn = _openToday;
+  (function () {
+    const bo = document.getElementById('btn-checkout');
+    if (bo) {
+      if (_openToday) { bo.disabled = false; bo.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; bo.style.color = '#fff'; bo.style.cursor = 'pointer'; }
+      else { bo.disabled = true; bo.style.background = '#e2e8f0'; bo.style.color = '#94a3b8'; bo.style.cursor = 'not-allowed'; }
+    }
+    const zsel = document.getElementById('ci-zone-select');
+    if (_openToday) {
+      _tkSetCheckinAllowed(false);                 // already in → hide Check In
+      if (zsel) zsel.disabled = true;
+      const st = document.getElementById('ci-verify-status');
+      if (st && _cinToday) st.innerHTML = '<span style="color:var(--emerald);font-weight:700">✓ Checked in at ' + _cinToday + '</span> — you can check out anytime.';
+    } else {
+      if (zsel) zsel.disabled = false;             // free to pick a zone and check in again
+    }
+  })();
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   // Today's Record
   set('rec-checkin', todayRow && (todayRow.in || todayRow.clock_in) ? (todayRow.in || todayRow.clock_in) : '—');
@@ -3128,6 +3146,41 @@ async function tkEmailLeaveApproval(res, lv) {
   toast('Opening email to ' + mgrName + ' — press Send to notify them.', 'info', 6000);
   window.location.href = 'mailto:' + encodeURIComponent(res.managerEmail) +
     '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+}
+
+/* Generic HTML approval-request email for claims / travel — carries a prominent
+   "Review & Approve in Portal" button that opens the app (Approval Inbox, where the
+   Approve / Reject / Review buttons live). Falls back to the plain notify (Teams/webhook). */
+async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText, token) {
+  const base = window.location.origin;
+  const portal = base + '/';
+  mgrName = mgrName || 'Manager';
+  // One-click Approve / Reject (no login) when a token is supplied — mirrors the leave flow.
+  const approve = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=approve' : '';
+  const reject = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=reject' : '';
+  const oneClick = token ? ('<p style="margin:16px 0">' +
+    '<a href="' + approve + '" style="background:#00B060;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Approve</a>&nbsp;&nbsp;' +
+    '<a href="' + reject + '" style="background:#C00000;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Reject</a></p>') : '';
+  const html = '<p>Hi ' + mgrName + ',</p><p>' + heading + '</p>' + (detailsHtml || '') + oneClick +
+    '<p style="margin:14px 0"><a href="' + portal + '" style="background:#205090;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Open in Portal to Review</a></p>' +
+    '<p style="color:#666;font-size:12px">Tip: use <b>Approve</b> / <b>Reject</b> above for one-click, or open the portal <b>Approval Inbox</b> to review full details first.</p>' +
+    '<p style="color:#999;font-size:12px">Humiley People &amp; Workplace</p>';
+  const text = 'Hi ' + mgrName + ',\n\n' + heading + '\n\n' + (detailsText || '') +
+    (token ? ('\n\nApprove: ' + approve + '\nReject:  ' + reject) : '') +
+    '\n\nOr review in the portal: ' + portal + '\n\nHumiley People & Workplace';
+  if (_msalApp && _account) {
+    try {
+      const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true })
+      });
+      if (resp.ok) return true;
+    } catch (e) { /* fall through to plain notify */ }
+  }
+  try { tkNotifyGraph(to, subject, text); } catch (e) {}
+  return false;
 }
 
 /* Render the manager Dashboard from REAL data (KPIs, activity, approvals, dept). */
@@ -3515,7 +3568,8 @@ async function doLogin(role, opts = {}) {
   toast(role === 'manager'
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
-  try { _resetIdleTimer(); } catch (e) {}   // arm the 10-minute inactivity auto-logout
+  try { _resetIdleTimer(); } catch (e) {}   // arm the 45-minute inactivity auto-logout
+  try { _armManagerPoll(); } catch (e) {}   // managers: live auto-refresh of admin views
 }
 
 /* ── Microsoft 365 SSO login (live mode) ── */
@@ -3544,11 +3598,11 @@ function doLogout() {
   window.location.replace(window.location.origin + '/');
 }
 
-/* ── Auto sign-out after 10 minutes of inactivity ──────────────────────────────
+/* ── Auto sign-out after 45 minutes of inactivity ──────────────────────────────
    When the session is cleared the next sign-in goes through a full Microsoft login
    (prompt:'login'), which re-challenges 2-step verification. */
 let _idleTimer = null;
-const _IDLE_MS = 10 * 60 * 1000;
+const _IDLE_MS = 45 * 60 * 1000;
 function _resetIdleTimer() {
   if (!TK.token) return;                 // only while signed in
   clearTimeout(_idleTimer);
@@ -3556,12 +3610,34 @@ function _resetIdleTimer() {
 }
 function _idleLogout() {
   if (!TK.token) return;
-  try { toast('Signed out after 10 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
+  try { toast('Signed out after 45 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
   setTimeout(doLogout, 1200);
 }
 ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
   try { document.addEventListener(ev, _resetIdleTimer, { passive: true }); } catch (e) {}
 });
+
+/* ── Manager/admin live auto-refresh ───────────────────────────────────────────
+   The admin's browser only loaded its data at login, so a staff check-in/leave
+   wouldn't appear until a manual refresh. This re-pulls from the DB every 30s and
+   re-renders whatever admin view is open, so activity from ALL users shows up live. */
+let _mgrPollTimer = null;
+function _armManagerPoll() {
+  if (_mgrPollTimer) { clearInterval(_mgrPollTimer); _mgrPollTimer = null; }
+  if (_userRole !== 'manager') return;
+  _mgrPollTimer = setInterval(async () => {
+    if (!TK.token || _userRole !== 'manager') { clearInterval(_mgrPollTimer); _mgrPollTimer = null; return; }
+    if (document.hidden) return;                 // skip a backgrounded tab
+    try { await tkBootstrap(); } catch (e) { return; }
+    try {
+      const v = _currentView;
+      if (v === 'dashboard') { tkRenderDashboard(); tkRenderHrMetrics(); }
+      else if (v === 'attendance') { filterTable(); }
+      else if (v === 'reports') { _renderRptAttendance(); renderInOutReport(); renderLeaveReport(); }
+      else if (v === 'manager' && typeof loadManagerView === 'function') { loadManagerView(); }
+    } catch (e) {}
+  }, 30000);
+}
 
 /* ── Admin view switcher: let an Admin flip into the Staff workspace ──
    In DEMO mode the switch steps into a representative employee's identity so the
@@ -4923,7 +4999,7 @@ const _IMPORT_SPECS = {
       { h: 'department', lbl: 'Department', keys: ['department', 'dept'], sample: 'Engineering' },
       { h: 'qty', lbl: 'Qty', keys: ['qty', 'quantity'], num: true, sample: 1 },
       { h: 'unitPrice', lbl: 'Unit Price', keys: ['unitprice', 'price', 'cost'], num: true, sample: 22000000 },
-      { h: 'purchaseDate', lbl: 'Purchase Date', keys: ['purchasedate', 'purchase', 'date'], sample: '2026-01-15' },
+      { h: 'purchaseDate', lbl: 'Provided Date', keys: ['purchasedate', 'purchase', 'date', 'provideddate', 'provided'], sample: '2026-01-15' },
       { h: 'status', lbl: 'Status', keys: ['status'], sample: 'Available' },
       { h: 'note', lbl: 'Note', keys: ['note', 'notes', 'remark'], sample: '' }
     ],
@@ -4990,21 +5066,84 @@ async function tkRenderDevices() {
   const byCat = {}, byStatus = {}, valByDept = {};
   d.forEach(x => { const q = +x.qty || 1; byCat[x.category || 'Other'] = (byCat[x.category || 'Other'] || 0) + q; byStatus[x.status || '—'] = (byStatus[x.status || '—'] || 0) + q; valByDept[x.department || '—'] = (valByDept[x.department || '—'] || 0) + q * (+x.unitPrice || 0); });
   const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
-  const rows = d.length ? d.slice().sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || '')).map(x => {
-    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
-  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">No devices yet — click “Add Device”.</td></tr>';
   root.innerHTML =
-    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-outline btn-sm" onclick="tkDeviceBatchAdd()">' + tkIcon('plus') + 'Add Several</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div><div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Purchase</th><th>Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
+    '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + '</div>' +
+    '<div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
+  devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
     _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
     _mkChart('dev-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#3168A8', '#00B060', '#F59E0B', '#94a3b8', '#EF4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
     _mkChart('dev-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => valByDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   }
+}
+/* Asset Register — (re)fill the table body from _HR.devices applying the search + filters. */
+function devFillTable() {
+  const tb = document.getElementById('dev-tbody'); if (!tb) return;
+  const q = (_crmLF['dev-q'] || '').toLowerCase();
+  const cat = _crmLF['dev-cat'] || '', st = _crmLF['dev-status'] || '', dept = _crmLF['dev-dept'] || '';
+  const list = (_HR.devices || []).filter(x => {
+    const hay = ((x.name || '') + ' ' + (x.serial || '') + ' ' + (x.assignedTo || '') + ' ' + (x.department || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!cat || (x.category || '') === cat) && (!st || (x.status || '') === st) && (!dept || (x.department || '') === dept);
+  }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
+  tb.innerHTML = list.length ? list.map(x => {
+    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
+}
+/* ── Batch add several devices — one stacked card per item (same UX as the Claim items) ── */
+function _devCats() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'category').options) || ['Other']; } catch (e) { return ['Other']; } }
+function _devStatuses() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'status').options) || ['Available']; } catch (e) { return ['Available']; } }
+let _devBatchSeq = 0;
+function _devLineHtml() {
+  const i = _devBatchSeq++;
+  const cats = _devCats(), sts = _devStatuses();
+  return '<div class="dev-line" data-di="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Device / Equipment Name</label><input class="form-control dev-name" placeholder="e.g. Dell Latitude 5440"></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control dev-cat">' + cats.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Status</label><select class="form-control dev-status">' + sts.map(o => '<option' + (o === 'Available' ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Serial / Asset Tag</label><input class="form-control dev-serial"></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Department</label><input class="form-control dev-dept"></div></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Assigned To (employee)</label><input class="form-control dev-assigned" list="dev-batch-emps" placeholder="— unassigned"></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Quantity</label><input class="form-control dev-qty" type="number" min="1" value="1"></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Unit Price (₫)</label><input class="form-control dev-price" type="number" min="0" placeholder="0"></div></div>' +
+    '<div style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:11px" onclick="this.closest(\'.dev-line\').remove()">Remove device</button></div></div>';
+}
+function _devBatchAddRow() { const w = document.getElementById('dev-batch-lines'); if (w) w.insertAdjacentHTML('beforeend', _devLineHtml()); }
+function tkDeviceBatchAdd() {
+  document.getElementById('devBatchOverlay')?.remove(); _devBatchSeq = 0;
+  const emps = (typeof _qaDynOptions === 'function' ? _qaDynOptions('employees') : []) || [];
+  const dl = '<datalist id="dev-batch-emps">' + emps.map(n => '<option value="' + _tkEscA(n) + '"></option>').join('') + '</datalist>';
+  const el = document.createElement('div'); el.id = 'devBatchOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">One card per item, then “Save all”. Same item ×10? put 10 in Quantity.</div>' + dl +
+    '<div id="dev-batch-lines"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="_devBatchAddRow()">' + tkIcon('plus') + 'Add device</button>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devBatchOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="_devBatchSave()">' + tkIcon('check') + 'Save all</button></div></div>';
+  document.body.appendChild(el);
+  _devBatchAddRow();  // start with one card; "Add device" adds more
+}
+async function _devBatchSave() {
+  const cards = Array.from(document.querySelectorAll('#dev-batch-lines .dev-line'));
+  const g = (c, sel) => (c.querySelector(sel) || {}).value || '';
+  const rows = cards.map(c => ({
+    name: g(c, '.dev-name').trim(), category: g(c, '.dev-cat') || 'Other', serial: g(c, '.dev-serial'),
+    assignedTo: g(c, '.dev-assigned'), department: g(c, '.dev-dept'),
+    qty: +g(c, '.dev-qty') || 1, unitPrice: +g(c, '.dev-price') || 0, status: g(c, '.dev-status') || 'Available'
+  })).filter(r => r.name);
+  if (!rows.length) { toast('Add at least one device with a name.', 'warn'); return; }
+  let ok = 0, fail = 0;
+  for (const r of rows) {
+    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
+    try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
+  }
+  document.getElementById('devBatchOverlay')?.remove();
+  toast(ok + ' device' + (ok === 1 ? '' : 's') + ' added' + (fail ? ' · ' + fail + ' failed' : ''), fail ? 'warn' : undefined);
+  try { await tkRenderDevices(); } catch (e) {}
 }
 /* Staff — devices assigned to the signed-in employee. */
 async function tkRenderMyDevices() {
@@ -5020,7 +5159,7 @@ async function tkRenderMyDevices() {
     _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
   ]);
   const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + (x.photo ? _devPhotoCell(x, 38) : _devIcon(x.category, 38)) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
-    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Issued: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Provided: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">' + cards + '</div>';
@@ -6318,10 +6457,16 @@ function tkClaimRecalc() {
   const el = document.getElementById('claim-total'); if (el) el.textContent = _PAY_FMT(t);
 }
 function tkClaimAddLine() { const w = document.getElementById('claim-lines'); if (w) { w.insertAdjacentHTML('beforeend', _claimLineHtml()); } }
-function tkSubmitClaim() {
+async function tkSubmitClaim() {
   document.getElementById('claimOverlay')?.remove(); _claimRowSeq = 0;
+  try { await tkLoadColl('travel'); } catch (e) {}
+  const me = _tkMe ? _tkMe() : null; const myName = (TK.user || {}).name || '';
+  const myTrips = (_HR.travel || []).filter(t => (me && t.empId === me.id) || (t.name && t.name === myName));
+  const tripOpts = '<option value="">— select a trip —</option>' + myTrips.map(t => '<option value="' + t.id + '">' + _tkEscA((t.dest || 'Trip') + ' · ' + tkFmtDate(t.from) + '→' + tkFmtDate(t.to) + (t.status ? ' · ' + t.status : '')) + '</option>').join('');
   const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:520px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Type</label><select class="form-control" id="claim-type" onchange="tkClaimTypeChange()"><option value="Other">Other</option><option value="Travel">Travel</option></select></div>' +
+    '<div class="form-group" id="claim-travel-wrap" style="display:none"><label class="form-label">Related travel trip</label><select class="form-control" id="claim-travelId" onchange="tkClaimTripPick()">' + tripOpts + '</select>' + (myTrips.length ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:4px">No travel requests yet — create one first under Travel Requests.</div>') + '</div>' +
     '<div class="form-group"><label class="form-label">Claim title / trip</label><input class="form-control" id="claim-title" placeholder="e.g. Hanoi site visit 12–14 Jun"></div>' +
     '<div style="font-weight:700;font-size:13px;margin:4px 0 6px;color:var(--navy)">Items</div>' +
     '<div id="claim-lines"></div>' +
@@ -6330,6 +6475,19 @@ function tkSubmitClaim() {
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'claimOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkClaimSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
   tkClaimAddLine();
+}
+/* Show the "Related travel trip" picker only when the claim type is Travel. */
+function tkClaimTypeChange() {
+  const kind = (document.getElementById('claim-type') || {}).value || 'Other';
+  const wrap = document.getElementById('claim-travel-wrap');
+  if (wrap) wrap.style.display = kind === 'Travel' ? '' : 'none';
+}
+/* When a trip is picked, prefill the claim title from the trip if still empty. */
+function tkClaimTripPick() {
+  const sel = document.getElementById('claim-travelId'); if (!sel) return;
+  const t = (_HR.travel || []).find(x => x.id === sel.value);
+  const titleEl = document.getElementById('claim-title');
+  if (t && titleEl && !titleEl.value.trim()) titleEl.value = (t.dest || 'Travel') + ' ' + tkFmtDate(t.from) + '–' + tkFmtDate(t.to);
 }
 async function tkClaimSave() {
   const e = _tkMe();
@@ -6346,12 +6504,18 @@ async function tkClaimSave() {
   if (!items.length) { toast('Add at least one item with an amount', 'warn'); return; }
   const total = items.reduce((s, it) => s + it.amount, 0);
   const title = (document.getElementById('claim-title') || {}).value || (items.length > 1 ? items.length + ' items' : items[0].category);
-  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const claimKind = (document.getElementById('claim-type') || {}).value || 'Other';
+  const travelId = claimKind === 'Travel' ? ((document.getElementById('claim-travelId') || {}).value || '') : '';
+  const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   try {
-    await tkApi('/api/coll/claims', { method: 'POST', body });
+    const _r = await tkApi('/api/coll/claims', { method: 'POST', body });
     tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
     const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
-    if (mgr) tkNotifyGraph(mgr.email, 'Claim to approve', (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.\n\nHumiley HR');
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
+      '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
+      (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.',
+      (_r && _r.item && _r.item.token));
     document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
   }
   catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
@@ -6361,7 +6525,7 @@ async function tkClaimSave() {
 async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
+  await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
   // Direct-manager routing: a department manager only sees requests from their own reports;
@@ -6375,11 +6539,12 @@ async function tkRenderInbox() {
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
   const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment' && _mine(p.empId, p.name));
   const travel = (_HR.travel || []).filter(t => t.status === 'Submitted' && _mine(t.empId, t.name));
-  const total = leave.length + claims.length + reqs.length + padr.length + travel.length;
+  const payments = (_HR.payments || []).filter(p => (p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name));
+  const total = leave.length + claims.length + reqs.length + padr.length + travel.length + payments.length;
   const kpis = _hrKpiRow([
     _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
     _hrKpi('Leave', leave.length), _hrKpi('Travel', travel.length, '#3168A8'),
-    _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Requisitions', reqs.length, '#205090')
+    _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Payments', payments.length, '#00B060'), _hrKpi('Requisitions', reqs.length, '#205090')
   ]);
   const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
   const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
@@ -6387,10 +6552,12 @@ async function tkRenderInbox() {
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
   const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
+  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
   const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
     sec('Travel Requests', travel.length, travelRows) +
     sec('Benefit &amp; Welfare Claims', claims.length, claimRows) +
+    sec('Payment Requests', payments.length, payRows) +
     sec('Recruitment Requisitions', reqs.length, reqRows) +
     sec('PADR Self-Assessments', padr.length, padrRows) + '</div>';
   const audit = (_HR.audit || []).slice().sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 60);
@@ -6416,8 +6583,10 @@ function _claimRowsHtml(claims, isMgr) {
   if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
   return claims.map(c => {
     const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
+    const trip = c.travelId ? (_HR.travel || []).find(t => t.id === c.travelId) : null;
+    const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
     const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve all</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject all</button>' : '';
-    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
     const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
       its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
@@ -6470,6 +6639,7 @@ function _inboxPendingIds() {
   (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') ids.push('jb:' + j.id); });
   (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment' && _mine(p.empId, p.name)) ids.push('pa:' + p.id); });
   (_HR.travel || []).forEach(t => { if (t.status === 'Submitted' && _mine(t.empId, t.name)) ids.push('tv:' + t.id); });
+  (_HR.payments || []).forEach(p => { if ((p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name)) ids.push('pay:' + p.id); });
   return ids;
 }
 function tkUpdateInboxBadge(pending) {
@@ -6481,7 +6651,7 @@ function tkUpdateInboxBadge(pending) {
 }
 async function tkLoadInboxBadge() {
   try {
-    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel')]);
+    await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
     tkUpdateInboxBadge();   // recompute (with direct-manager routing) against the per-user seen-set
   } catch (e) {}
 }
@@ -6553,10 +6723,14 @@ async function tkTravelSave() {
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
   const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: g('tr-attach'), attachmentName: g('tr-attachname'), status: 'Submitted' };
   try {
-    await tkApi('/api/coll/travel', { method: 'POST', body });
+    const _r = await tkApi('/api/coll/travel', { method: 'POST', body });
     tkAudit('Travel request submitted', body.name, body.dest);
     const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    if (mgr) tkNotifyGraph(mgr.email, 'Travel request to approve', (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.\n\nHumiley HR');
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
+      '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
+      (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
+      (_r && _r.item && _r.item.token));
     document.getElementById('travelOverlay').remove(); toast('Travel request submitted'); tkRenderTravelClaims();
   } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
 }
@@ -6570,6 +6744,115 @@ async function tkTravelDecision(id, status) {
   } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
 function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
+
+/* ════════ Payment Requests — request / approve / pay register (operations & purchasing) ════════ */
+const _PAY_CATS = ['Operating expense', 'Purchase — Goods', 'Purchase — Service', 'Utilities', 'Rent / Lease', 'Repair / Maintenance', 'Logistics / Freight', 'Subcontractor', 'Marketing', 'Travel-related', 'Tax / Statutory', 'Other'];
+const _PAY_METHODS = ['Bank transfer', 'Cash', 'Company card', 'Cheque'];
+const _payCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : 'b-warn';
+function _payNextNo() {
+  const y = new Date().getFullYear();
+  const nums = (_HR.payments || []).map(p => { const m = String(p.reqNo || '').match(/PR-\d{4}-(\d+)/); return m ? +m[1] : 0; });
+  const n = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
+  return 'PR-' + y + '-' + ('00' + n).slice(-3);
+}
+async function tkRenderPayments() {
+  const root = document.getElementById('payments-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  await tkLoadColl('payments');
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const _title = isMgr ? 'Payment Requests' : 'My Payment Requests';
+  { const h = document.getElementById('pay-page-title'); if (h) h.textContent = _title; const nl = document.getElementById('nav-pay-label'); if (nl) nl.textContent = _title; const tt = document.getElementById('topbarTitle'); if (tt && _currentView === 'payments') tt.textContent = _title; const eb = document.getElementById('pay-export-btn'); if (eb) eb.style.display = isMgr ? '' : 'none'; }
+  const all = (_HR.payments || []).slice();
+  const sum = arr => arr.reduce((s, p) => s + (+p.amount || 0), 0);
+  const pending = all.filter(p => (p.status || 'Submitted') === 'Submitted');
+  const kpis = _hrKpiRow([
+    _kpiTile('Requests', all.length, '#205090', '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+    _kpiTile('Pending', pending.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Approved value', _PAY_FMT(sum(all.filter(p => p.status === 'Approved'))), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    _kpiTile('Paid value', _PAY_FMT(sum(all.filter(p => p.status === 'Paid'))), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>')
+  ]);
+  const dash = isMgr ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'pay-cat') + _rptChartCard('Status Breakdown', 'pay-status') + '</div>' : '';
+  const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    _crmFiltSearch('pay-q', 'Search no. / payee / purpose…', 'payFillTable') +
+    _crmFiltSel('pay-status-f', 'All status', ['Submitted', 'Approved', 'Rejected', 'Paid'], 'payFillTable') +
+    _crmFiltSel('pay-cat-f', 'All categories', _crmDistinct(all, 'category'), 'payFillTable') +
+    _crmFiltSel('pay-dept-f', 'All departments', _crmDistinct(all, 'department'), 'payFillTable') + '</div>';
+  root.innerHTML = '<div id="pay-export">' + kpis + dash +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Payment Register</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All requests · Approve / Reject / Mark paid' : 'Mine') + '</span></div>' +
+    fbar +
+    '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
+  payFillTable();
+  if (isMgr && typeof Chart !== 'undefined') {
+    const byCat = {}, byStatus = {};
+    all.forEach(p => { byCat[p.category || 'Other'] = (byCat[p.category || 'Other'] || 0) + (+p.amount || 0); byStatus[p.status || 'Submitted'] = (byStatus[p.status || 'Submitted'] || 0) + 1; });
+    const ck = Object.keys(byCat), sk = Object.keys(byStatus);
+    if (ck.length) _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
+    if (sk.length) _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#F59E0B', '#00B060', '#EF4444', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
+  }
+}
+function payFillTable() {
+  const tb = document.getElementById('pay-tbody'); if (!tb) return;
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '';
+  const list = (_HR.payments || []).filter(p => {
+    const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept);
+  }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
+  tb.innerHTML = list.length ? list.map(p => {
+    const s = p.status || 'Submitted';
+    const act = !isMgr ? '' : (s === 'Submitted'
+      ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>'
+      : s === 'Approved' ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
+    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + s + '</span></td><td style="white-space:nowrap">' + act + '</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
+}
+function tkNewPayment() {
+  document.getElementById('paymentOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'paymentOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">New Payment Request</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies — July"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat">' + _PAY_CATS.map(c => '<option>' + c + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + _PAY_METHODS.map(m => '<option>' + m + '</option>').join('') + '</select></div></div>' +
+    '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
+    _ATTACH_FIELD('pay-attach', 'Attach invoice / quote (image or PDF)') +
+    '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
+  document.body.appendChild(el);
+  try { const me = _tkMe && _tkMe(); if (me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; } } catch (e) {}
+}
+async function tkPaymentSave() {
+  const g = id => (document.getElementById(id) || {}).value || '';
+  const me = _tkMe ? _tkMe() : null;
+  const amount = +g('pay-amount') || 0;
+  if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
+  if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  try {
+    const res = await tkApi('/api/coll/payments', { method: 'POST', body });
+    tkAudit('Payment request submitted', body.name, body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount));
+    const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
+      '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
+      '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
+      (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
+      (res && res.item && res.item.token));
+    document.getElementById('paymentOverlay').remove(); toast('Payment request submitted for approval'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+  } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+}
+async function tkPaymentDecision(id, status) {
+  const p = (_HR.payments || []).find(x => x.id === id); if (!p) return;
+  p.status = status;
+  if (status === 'Approved') p.approvedBy = (TK.user || {}).name || '';
+  if (status === 'Paid') p.paidOn = new Date().toISOString().slice(0, 10);
+  try {
+    await tkApi('/api/coll/payments/' + id, { method: 'PATCH', body: p });
+    tkAudit('Payment ' + status.toLowerCase(), p.name || '', (p.reqNo || '') + ' · ' + _PAY_FMT(p.amount || 0));
+    const e = _hrEmp(p.empId) || {};
+    tkMailRequester(e.email, e.name || p.name, 'Your payment request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour payment request ' + (p.reqNo || '') + ' (' + (p.payee || '') + ', ' + _PAY_FMT(p.amount || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+    toast('Payment ' + status.toLowerCase()); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+}
 
 /* ════════ Offboarding & Exit (FRM-012 Resignation / FRM-013 Termination / FRM-014 Exit Clearance · Article 46 severance) ════════ */
 const _EXIT_TYPES = ['Resignation', 'End of contract', 'Termination', 'Retirement', 'Mutual agreement'];
@@ -7026,11 +7309,11 @@ const _QA_SPECS = {
     { k: 'name', label: 'Device / Equipment Name' },
     { k: 'category', label: 'Category', type: 'select', options: ['Laptop', 'Desktop', 'Monitor', 'Phone', 'Tablet', 'Printer', 'Vehicle', 'Tool', 'PPE / Safety', 'Uniform / Shirt', 'Access Card', 'SIM / Phone Plan', 'Furniture', 'Software License', 'Other'] },
     { k: 'serial', label: 'Serial / Asset Tag' },
-    { k: 'assignedTo', label: 'Assigned To (employee)' },
+    { k: 'assignedTo', label: 'Assigned To (employee)', type: 'combo', dyn: 'employees' },
     { k: 'department', label: 'Department' },
     { k: 'qty', label: 'Quantity', type: 'number' },
     { k: 'unitPrice', label: 'Unit Price (₫)', type: 'number' },
-    { k: 'purchaseDate', label: 'Purchase Date', type: 'date' },
+    { k: 'purchaseDate', label: 'Provided Date', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Assigned', 'Available', 'In Repair', 'Retired', 'Lost'] },
     { k: 'note', label: 'Note' },
     { k: 'photo', label: 'Photo / Attachment (image, PDF…)', type: 'file' }] },
@@ -7112,7 +7395,7 @@ const _QA_SPECS = {
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee', type: 'select', options: 'employees' },
-    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
+    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
     { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path?', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
@@ -7198,7 +7481,9 @@ function tkQuickAdd(type, id) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
   const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
-  document.getElementById('qa-modal-title').textContent = (id ? 'Edit — ' : '') + spec.title;
+  const _titleEl = document.getElementById('qa-modal-title');
+  if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
+  else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
@@ -7215,6 +7500,8 @@ function tkQuickAdd(type, id) {
     return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
   }).join('');
   openModal('quickAddModal');
+  // Belt-and-suspenders: translate the modal now if in VN (don't depend on observer timing).
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(document.getElementById('quickAddModal')); } catch (e) {}
 }
 /* Which SharePoint sub-folder each PMC register's attachments go to (relative to the project root). */
 const _PM_UPLOAD_DIR = {
@@ -8548,6 +8835,21 @@ function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), 
 function _pmBadge(txt, hex) { return '<span class="badge" style="background:' + hex + '1f;color:' + hex + ';font-size:10px;font-weight:700">' + _pmEsc(txt) + '</span>'; }
 function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
 function _pmBar(pct, hex) { pct = _pmPct(pct); hex = hex || 'var(--navy)'; return '<div style="background:var(--soft-bg);border-radius:6px;height:7px;overflow:hidden;min-width:60px"><div style="width:' + pct + '%;height:100%;background:' + hex + '"></div></div>'; }
+/* For a COMPLETED task, return a pill vs its target (finish) date — the number of
+   days is whatever the real difference is (1 day and up). Colours:
+   late = red, on time = blue, early = green. Empty if not completed / no dates. */
+function _pmDelivery(t) {
+  if (!t) return '';
+  const done = String(t.status) === 'Completed' || _pmPct(t.pctComplete) === 100;
+  if (!done || !t.finish || !t.actualFinish) return '';
+  const d = _pmDateDiff(t.finish, t.actualFinish);   // + = finished AFTER target (late)
+  if (d == null) return '';
+  let hex, label;
+  if (d > 0) { hex = '#EF4444'; label = d + 'd late'; }                           // late → red
+  else if (d === 0) { hex = '#205090'; label = 'On time'; }                       // on time → blue
+  else { hex = '#00B060'; label = (-d) + 'd early'; }                             // early → green
+  return _pmBadge(label, hex);
+}
 
 /* ---- enums / palettes ---- */
 const PM_PROJECT_STATUS = ['Pipeline', 'Initiating', 'Planning', 'Executing', 'Monitoring & Controlling', 'On Hold', 'Closing', 'Completed', 'Closed', 'Cancelled'];
@@ -8629,7 +8931,16 @@ function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms 
 function _pmDerive(coll, data) {
   if (coll === 'pm_risks') { data.score = (+data.probability || 0) * (+data.impact || 0); data.exposureBand = _pmRiskBand(data.score).band; data.residualScore = (+data.residualProbability || 0) * (+data.residualImpact || 0); }
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
-  if (coll === 'pm_tasks') { const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d; }
+  if (coll === 'pm_tasks') {
+    const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d;
+    /* The day you mark a task complete IS its actual finish (today's date), and that's
+       what we compare against the target (finish) → early / on-time / late. A PM can still
+       override with the editable "Actual finish" field. Re-opening a task clears it so it
+       re-stamps next time it's completed. */
+    const done = String(data.status) === 'Completed' || _pmPct(data.pctComplete) === 100;
+    if (done) { if (!data.actualFinish) data.actualFinish = _pmToday(); }
+    else { data.actualFinish = ''; }
+  }
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
 const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' } };
@@ -9152,10 +9463,10 @@ function pmRenderSchedule(pid) {
       const bar = mile ? '<div style="position:absolute;left:' + off + '%;top:7px;width:13px;height:13px;background:' + hex + ';transform:rotate(45deg);margin-left:-6px;z-index:2" title="Milestone ' + _pmFmt(f) + '"></div>'
         : '<div style="position:absolute;left:' + off + '%;width:' + w + '%;top:8px;height:11px;border-radius:4px;background:' + hex + ';opacity:.9;z-index:2" title="' + _pmFmt(sdt) + ' → ' + _pmFmt(f) + ' · ' + _pmPct(t.pctComplete) + '%"><div style="width:' + _pmPct(t.pctComplete) + '%;height:100%;background:rgba(255,255,255,.5);border-radius:4px"></div></div>';
       return '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + '</div>'; }).join('');
-    const _dates = '<div style="height:21px"></div>' + tasks.map(t => '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + '</div>').join('');
+    const _dates = '<div style="height:21px"></div>' + tasks.map(t => { const dl = _pmDelivery(t); return '<div style="height:' + ROW + 'px;display:flex;align-items:center;justify-content:flex-end;gap:5px;font-size:11px;color:var(--text-light);white-space:nowrap;border-bottom:1px solid var(--soft-bg)">' + _pmFmt(t.finish) + (dl ? ' ' + dl : '') + '</div>'; }).join('');
     const _timeline = _monthHdr + '<div style="position:relative">' + _grid + _today + _bars + '</div>';
     gantt = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdrTop +
-      '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:360px">' + _timeline + '</div><div style="width:118px;flex-shrink:0">' + _dates + '</div></div>' +
+      '<div style="display:flex;padding:10px 16px 4px;overflow-x:auto"><div style="width:' + LBLW + 'px;flex-shrink:0">' + _labels + '</div><div style="flex:1;min-width:360px">' + _timeline + '</div><div style="width:172px;flex-shrink:0">' + _dates + '</div></div>' +
       '<div style="padding:6px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg)"></span> Milestone</span><span><span style="color:#EF4444">CP</span> Critical</span><span><span style="border-left:2px dashed #EF4444;padding-left:5px">Today</span></span></div></div>';
   }
   const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
@@ -9163,7 +9474,8 @@ function pmRenderSchedule(pid) {
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
     { label: 'Assignee', k: 'assignee' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
     { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
-    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) }
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
+    { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], tasks), pmImportBtn());
   _pmSet(kpis + gantt + tbl);
 }
@@ -9852,6 +10164,7 @@ function showView(id, navEl, title) {
   if (id === 'inbox') { try { tkRenderInbox(); } catch (e) { console.warn('inbox:', e.message); } }
   if (id === 'leave') { try { tkRenderLeaveView(); } catch (e) { console.warn('leave:', e.message); } }
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
+  if (id === 'payments') { try { tkRenderPayments(); } catch (e) { console.warn('payments:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
@@ -9884,6 +10197,209 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Edit —': 'Sửa —',
+  'Payment Requests': 'Đề nghị thanh toán',
+  'My Payment Requests': 'Đề nghị thanh toán của tôi',
+  'New Payment Request': 'Đề nghị thanh toán mới',
+  'Payment Register': 'Sổ thanh toán',
+  'Request & approve operational and purchase payments — one register for the whole process': 'Đề nghị & phê duyệt thanh toán vận hành và mua sắm — một sổ theo dõi toàn bộ quy trình',
+  'Purpose / description': 'Mục đích / mô tả',
+  'Payment method': 'Hình thức thanh toán',
+  'Payee / Vendor': 'Người nhận / Nhà cung cấp',
+  'Payee': 'Người nhận',
+  'Amount (VND)': 'Số tiền (VND)',
+  'Due date': 'Ngày đến hạn',
+  'Due': 'Đến hạn',
+  'Invoice / PO No.': 'Số hóa đơn / PO',
+  'Attach invoice / quote (image or PDF)': 'Đính kèm hóa đơn / báo giá (ảnh hoặc PDF)',
+  'No.': 'Số',
+  'Mark paid': 'Đánh dấu đã trả',
+  'Submitted': 'Đã gửi',
+  'Paid': 'Đã thanh toán',
+  'Payments': 'Thanh toán',
+  'Spend by Category': 'Chi tiêu theo hạng mục',
+  'All requests': 'Tất cả đề nghị',
+  'All requests · Approve / Reject / Mark paid': 'Tất cả đề nghị · Duyệt / Từ chối / Đánh dấu đã trả',
+  'Mine': 'Của tôi',
+  'Operating expense': 'Chi phí vận hành',
+  'Purchase — Goods': 'Mua sắm — Hàng hóa',
+  'Purchase — Service': 'Mua sắm — Dịch vụ',
+  'Utilities': 'Tiện ích',
+  'Rent / Lease': 'Thuê / Cho thuê',
+  'Repair / Maintenance': 'Sửa chữa / Bảo trì',
+  'Logistics / Freight': 'Vận chuyển / Cước',
+  'Subcontractor': 'Nhà thầu phụ',
+  'Travel-related': 'Liên quan công tác',
+  'Tax / Statutory': 'Thuế / Nghĩa vụ',
+  'Bank transfer': 'Chuyển khoản',
+  'Cash': 'Tiền mặt',
+  'Company card': 'Thẻ công ty',
+  'Cheque': 'Séc',
+  'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
+  'Search': 'Tìm kiếm',
+  'Import CSV': 'Nhập CSV',
+  'Import Excel': 'Nhập Excel',
+  'Export CSV': 'Xuất CSV',
+  'Refresh': 'Làm mới',
+  'Add grade': 'Thêm bậc',
+  'Post a Job / Requisition': 'Đăng tuyển / Yêu cầu tuyển dụng',
+  'Job Grade': 'Bậc công việc',
+  'Source of need': 'Nguồn nhu cầu',
+  'Candidate Name': 'Tên ứng viên',
+  'Applying For': 'Ứng tuyển vị trí',
+  'Source': 'Nguồn',
+  'Rating (0–5)': 'Đánh giá (0–5)',
+  'Role / Position': 'Vai trò / Vị trí',
+  'New Company Goal': 'Mục tiêu công ty mới',
+  'Goal': 'Mục tiêu',
+  'Owner / Team': 'Phụ trách / Nhóm',
+  'Progress %': 'Tiến độ %',
+  'Due Date': 'Ngày đến hạn',
+  'Add Performance Review': 'Thêm đánh giá hiệu suất',
+  'Employee Name': 'Tên nhân viên',
+  'Rating (1–5)': 'Đánh giá (1–5)',
+  'Course Title': 'Tên khóa học',
+  'Course Link (URL)': 'Liên kết khóa học (URL)',
+  'Attachment (PDF / Doc / Slides)': 'Tệp đính kèm (PDF / Doc / Slides)',
+  'Device / Equipment Name': 'Tên thiết bị / trang bị',
+  'Serial / Asset Tag': 'Số sê-ri / Mã tài sản',
+  'Assigned To (employee)': 'Cấp cho (nhân viên)',
+  'Quantity': 'Số lượng',
+  'Unit Price (₫)': 'Đơn giá (₫)',
+  'Photo / Attachment (image, PDF…)': 'Ảnh / Tệp đính kèm (ảnh, PDF…)',
+  'Talent Assessment': 'Đánh giá nhân tài',
+  '9-Box': 'Ma trận 9 ô',
+  'Benefits by Grade': 'Phúc lợi theo bậc',
+  'Lunch (₫/mo)': 'Ăn trưa (₫/tháng)',
+  'Phone (₫/mo)': 'Điện thoại (₫/tháng)',
+  'Transport (₫/mo)': 'Đi lại (₫/tháng)',
+  'Parking (₫/mo)': 'Gửi xe (₫/tháng)',
+  'Training budget (₫/yr)': 'Ngân sách đào tạo (₫/năm)',
+  'Typical title / note': 'Chức danh điển hình / ghi chú',
+  'Deal name': 'Tên thương vụ',
+  'Account / Company': 'Khách hàng / Công ty',
+  'Contact person': 'Người liên hệ',
+  'Deal value (₫)': 'Giá trị thương vụ (₫)',
+  'Owner (sales rep)': 'Phụ trách (NV kinh doanh)',
+  'Expected close': 'Dự kiến chốt',
+  'Tags (comma-separated)': 'Thẻ (phân tách bằng dấu phẩy)',
+  'Next activity': 'Hoạt động tiếp theo',
+  'Activity date': 'Ngày hoạt động',
+  'Company name': 'Tên công ty',
+  'Industry': 'Ngành',
+  'Website': 'Trang web',
+  'Account owner': 'Phụ trách khách hàng',
+  'Job title': 'Chức danh',
+  'Lead name / contact': 'Tên khách hàng tiềm năng / liên hệ',
+  'Est. value (₫)': 'Giá trị ước tính (₫)',
+  'Product / Service': 'Sản phẩm / Dịch vụ',
+  'Product / service name': 'Tên sản phẩm / dịch vụ',
+  'Code / SKU': 'Mã / SKU',
+  'Type (PMC/ENG/SAL/CSM/Products/Other)': 'Loại (PMC/ENG/SAL/CSM/Sản phẩm/Khác)',
+  'Unit': 'Đơn vị',
+  'Unit price (₫)': 'Đơn giá (₫)',
+  'Project name': 'Tên dự án',
+  'Project code (e.g. PMC-2026-014)': 'Mã dự án (vd. PMC-2026-014)',
+  'Contract type': 'Loại hợp đồng',
+  'Contract value (₫)': 'Giá trị hợp đồng (₫)',
+  'Approved budget (₫)': 'Ngân sách được duyệt (₫)',
+  'Health (auto if blank)': 'Tình trạng (tự động nếu để trống)',
+  'Overall % complete': 'Tổng % hoàn thành',
+  'Scope summary': 'Tóm tắt phạm vi',
+  'Success criteria': 'Tiêu chí thành công',
+  'Project image (photo / render)': 'Hình ảnh dự án (ảnh / phối cảnh)',
+  'SharePoint docs folder (URL)': 'Thư mục tài liệu SharePoint (URL)',
+  'Change Request': 'Yêu cầu thay đổi',
+  'Change title': 'Tiêu đề thay đổi',
+  'Schedule impact (days)': 'Ảnh hưởng tiến độ (ngày)',
+  'Cost impact (₫)': 'Ảnh hưởng chi phí (₫)',
+  'Requested by': 'Người yêu cầu',
+  'Requested date': 'Ngày yêu cầu',
+  'Description': 'Mô tả',
+  'Attachment (image or PDF)': 'Tệp đính kèm (ảnh hoặc PDF)',
+  'Lesson Learned': 'Bài học kinh nghiệm',
+  'Situation': 'Tình huống',
+  'Raised by': 'Người nêu',
+  'Deliverable / WBS': 'Sản phẩm bàn giao / WBS',
+  'Deliverable name': 'Tên sản phẩm bàn giao',
+  'WBS code (e.g. 1.2.3)': 'Mã WBS (vd. 1.2.3)',
+  'Contractor / Subcontractor': 'Nhà thầu / Nhà thầu phụ',
+  'Supervisor (project member)': 'Giám sát (thành viên dự án)',
+  '% complete': '% hoàn thành',
+  'Acceptance criteria': 'Tiêu chí nghiệm thu',
+  'Task / Milestone': 'Công việc / Mốc',
+  'Task name': 'Tên công việc',
+  'WBS code': 'Mã WBS',
+  'Milestone?': 'Mốc?',
+  'Critical path?': 'Đường găng?',
+  'Cost Line': 'Dòng chi phí',
+  'Cost item': 'Hạng mục chi phí',
+  'Budget (₫)': 'Ngân sách (₫)',
+  'Committed (₫)': 'Đã cam kết (₫)',
+  'Actual (₫)': 'Thực tế (₫)',
+  'Invoiced (₫)': 'Đã xuất hóa đơn (₫)',
+  'Period (YYYY-MM)': 'Kỳ (YYYY-MM)',
+  'Quality Record': 'Hồ sơ chất lượng',
+  'Reference No.': 'Số tham chiếu',
+  'Assigned to': 'Phân công cho',
+  'Raised date': 'Ngày nêu',
+  'Corrective action': 'Hành động khắc phục',
+  'Inspection & Test Plan': 'Kế hoạch kiểm tra & thử nghiệm',
+  'ITP title': 'Tiêu đề ITP',
+  'Package (Discipline)': 'Gói (Bộ môn)',
+  'Standard / spec ref': 'Tiêu chuẩn / tham chiếu kỹ thuật',
+  'Prepared by': 'Người lập',
+  'Approved by': 'Người duyệt',
+  'Team Member': 'Thành viên nhóm',
+  'Project role': 'Vai trò dự án',
+  'Allocation %': 'Phân bổ %',
+  'Charge rate (₫)': 'Đơn giá tính phí (₫)',
+  'End': 'Kết thúc',
+  'Communication': 'Trao đổi thông tin',
+  'Audience / distribution': 'Đối tượng / phân phối',
+  'Attachment': 'Tệp đính kèm',
+  'Issue': 'Vấn đề',
+  'Issue title': 'Tiêu đề vấn đề',
+  'Issue No.': 'Số vấn đề',
+  'Resolution': 'Giải pháp',
+  'Risk title': 'Tiêu đề rủi ro',
+  'Risk No.': 'Số rủi ro',
+  'Probability (1-5)': 'Xác suất (1-5)',
+  'Impact (1-5)': 'Mức tác động (1-5)',
+  'Mitigation actions': 'Biện pháp giảm thiểu',
+  'Residual probability': 'Xác suất còn lại',
+  'Residual impact': 'Tác động còn lại',
+  'Procurement Package': 'Gói mua sắm',
+  'Package / scope': 'Gói / phạm vi',
+  'Package No.': 'Số gói',
+  'Vendor / subcontractor': 'Nhà cung cấp / nhà thầu phụ',
+  'Value (₫)': 'Giá trị (₫)',
+  'Retention %': 'Giữ lại %',
+  'Award date': 'Ngày trao thầu',
+  'Payment Certificate': 'Chứng nhận thanh toán',
+  'Certificate No.': 'Số chứng nhận',
+  'Gross claimed (₫)': 'Tổng yêu cầu (₫)',
+  'Retention deducted (₫)': 'Khấu trừ giữ lại (₫)',
+  'Net certified (₫)': 'Giá trị xác nhận thuần (₫)',
+  'Certified date': 'Ngày xác nhận',
+  'Stakeholder': 'Bên liên quan',
+  'Internal / External': 'Nội bộ / Bên ngoài',
+  'Engagement strategy': 'Chiến lược gắn kết',
+  'RFI / Submittal': 'RFI / Đệ trình',
+  'Question / detail': 'Câu hỏi / chi tiết',
+  'Response date': 'Ngày phản hồi',
+  'Site Daily Report': 'Báo cáo công trường hàng ngày',
+  'Report date': 'Ngày báo cáo',
+  'Area / zone': 'Khu vực / phân khu',
+  'Weather AM': 'Thời tiết sáng',
+  'Weather PM': 'Thời tiết chiều',
+  'Manpower (count)': 'Nhân lực (số người)',
+  'Equipment on site': 'Thiết bị tại công trường',
+  'Delays / issues': 'Chậm trễ / vấn đề',
+  'Safety incidents': 'Sự cố an toàn',
+  'Sales Quotation': 'Báo giá bán hàng',
+  'Project Charter (cont.)': 'Điều lệ dự án (tiếp)',
+  'Project Status Report': 'Báo cáo trạng thái dự án',
   /* PM module VN terms */
   'System Setting': 'Cài đặt hệ thống',
   'HR': 'Nhân sự',
@@ -10651,6 +11167,17 @@ const _VI = {
   'New Leave Request': 'Yêu cầu nghỉ phép mới',
   'New Request': 'Yêu cầu mới',
   'New Travel Request': 'Yêu cầu công tác mới',
+  'Travel': 'Công tác',
+  'Related travel trip': 'Chuyến công tác liên quan',
+  '— select a trip —': '— chọn chuyến công tác —',
+  'No travel requests yet — create one first under Travel Requests.': 'Chưa có yêu cầu công tác — hãy tạo một yêu cầu trong mục Yêu cầu công tác.',
+  'Add several devices / equipment': 'Thêm nhiều thiết bị / tài sản',
+  'Add Several': 'Thêm nhiều',
+  'Add row': 'Thêm dòng',
+  'Save all': 'Lưu tất cả',
+  'Delivery': 'Tiến độ',
+  'Actual finish': 'Hoàn thành thực tế',
+  'Finish (target)': 'Hoàn thành (mục tiêu)',
   'New employee onboarding reminder': 'Nhắc nhở nhập việc nhân viên mới',
   'Next →': 'Tiếp →',
   'No': 'Không',
@@ -10784,6 +11311,9 @@ const _VI = {
   'Projects · PM': 'Dự án · PM',
   'Projects · Submitted May 8, 2026': 'Dự án · Đã gửi 8 tháng 5, 2026',
   'Proposal': 'Đề xuất',
+  'Provided': 'Ngày cấp',
+  'Provided Date': 'Ngày cấp',
+  'Provided:': 'Đã cấp:',
   'Provision on hire': 'Cấp phát khi tuyển dụng',
   'Purchase': 'Mua sắm',
   'Purpose': 'Mục đích',
@@ -11666,6 +12196,7 @@ function switchReportTab(tab, el) {
   });
   const active = document.getElementById('rpt-' + tab);
   if (active) active.style.display = 'block';
+  if (tab === 'attendance') _renderRptAttendance();
   if (tab === 'inout') renderInOutReport();
   if (tab === 'leave') renderLeaveReport();
   if (tab === 'recruit') tkRenderRecruitReport();
@@ -11758,6 +12289,50 @@ function renderLeaveReport() {
     const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
     return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + nm + '</span></div></td><td>' + (l.emp_dept || l.dept || '') + '</td><td>' + (l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + (l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
   }).join('') : '<tr><td colspan="9" style="text-align:center;padding:24px;color:var(--text-light)">No leave records match your filters.</td></tr>';
+  // Leave-by-type bars (data-driven)
+  const byType = {}; rows.forEach(l => { const t = l.type || 'Other'; (byType[t] = byType[t] || { n: 0, d: 0 }); byType[t].n++; byType[t].d += (+l.days || 0); });
+  const maxD = Math.max(1, ...Object.values(byType).map(v => v.d));
+  const typeColors = { 'Annual Leave': 'prog-navy', 'Sick Leave': 'prog-emerald', 'Comp-off': 'prog-warn', 'Unpaid': 'prog-danger' };
+  const btEl = document.getElementById('rpt-leave-bytype');
+  if (btEl) btEl.innerHTML = Object.keys(byType).length ? Object.keys(byType).sort((a, b) => byType[b].d - byType[a].d).map(t =>
+    '<div><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>' + t + '</span><span style="font-weight:700">' + byType[t].n + ' requests · ' + byType[t].d + ' days</span></div><div class="prog-wrap"><div class="prog-fill ' + (typeColors[t] || 'prog-navy') + '" style="width:' + Math.round(byType[t].d / maxD * 100) + '%"></div></div></div>'
+  ).join('') : '<div style="color:var(--text-light);font-size:12px">No leave records yet.</div>';
+  // Top leave users (data-driven)
+  const byUser = {}; rows.forEach(l => { const nm = l.emp_name || l.name || 'Employee'; byUser[nm] = (byUser[nm] || 0) + (+l.days || 0); });
+  const uk = Object.keys(byUser).sort((a, b) => byUser[b] - byUser[a]).slice(0, 5);
+  const maxU = Math.max(1, ...uk.map(u => byUser[u]));
+  const topEl = document.getElementById('rpt-leave-top');
+  if (topEl) topEl.innerHTML = uk.length ? uk.map((nm, i) => { const e2 = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() }; return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' + (i < uk.length - 1 ? 'border-bottom:1px solid var(--soft-bg);' : '') + 'font-size:12px">' + _hrAv(e2) + '<div style="flex:1"><div style="font-weight:600">' + nm + '</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:' + Math.round(byUser[nm] / maxU * 100) + '%"></div></div></div><span style="font-weight:700;color:var(--navy)">' + byUser[nm] + 'd used</span></div>'; }).join('') : '<div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>';
+}
+
+/* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
+function _renderRptAttendance() {
+  const att = _DEMO_ATTENDANCE || [];
+  const total = att.length;
+  const ontime = att.filter(r => r.status === 'on-time').length;
+  const late = att.filter(r => r.status === 'late').length;
+  const rate = total ? Math.round(ontime / total * 100) : 0;
+  let mins = 0;
+  att.forEach(r => { if (r.in && r.out) { const [ih, im] = r.in.split(':').map(Number); const [oh, om] = r.out.split(':').map(Number); const d = (oh * 60 + om) - (ih * 60 + im); if (d > 0) mins += d; } });
+  const hours = Math.round(mins / 60);
+  const leaveDays = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved').reduce((s, l) => s + (+l.days || 0), 0);
+  const anom = att.filter(r => (r.loc || '') === 'Out of Zone').length;
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('rpt-att-ontime', total ? rate + '%' : '—');
+  set('rpt-att-hours', hours.toLocaleString() + 'h');
+  set('rpt-att-leave', leaveDays + 'd');
+  set('rpt-att-anom', anom);
+  const ins = document.getElementById('rpt-att-insights');
+  if (ins) {
+    const items = [];
+    if (total) {
+      items.push(['#D1FAE5', 'var(--emerald)', 'On-time rate across all records: <strong>' + rate + '%</strong>.']);
+      if (late) items.push(['#FEF3C7', 'var(--warning)', '<strong>' + late + '</strong> late arrival' + (late > 1 ? 's' : '') + ' recorded.']);
+      if (anom) items.push(['#FEE2E2', 'var(--danger)', '<strong>' + anom + '</strong> GPS anomaly record' + (anom > 1 ? 's' : '') + ' (out of zone).']);
+      const avgH = mins / total / 60; if (avgH > 0) items.push(['var(--light-tint)', 'var(--navy)', 'Average working hours: <strong>' + (Math.round(avgH * 10) / 10) + 'h</strong> per record.']);
+    }
+    ins.innerHTML = items.length ? items.map(a => '<div style="padding:10px;background:' + a[0] + ';border-radius:8px;border-left:3px solid ' + a[1] + '">' + a[2] + '</div>').join('') : '<div style="padding:10px;background:var(--light-tint);border-radius:8px;border-left:3px solid var(--navy);color:var(--text-light)">No insights yet — they appear once attendance data is recorded.</div>';
+  }
 }
 
 function renderInOutReport() {
@@ -11775,7 +12350,6 @@ function renderInOutReport() {
     const matchT = statF === 'All Status' || stat === statF;
     return matchS && matchD && matchT;
   }).slice(0,40);
-  if (rows.length === 0) { tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-light)">No records match your filters.</td></tr>'; return; }
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
   tbody.innerHTML = rows.map(r => {
@@ -11798,12 +12372,13 @@ function renderInOutReport() {
       <td style="font-size:11px;color:${isOT?'var(--warning)':'var(--text-light)'};font-weight:${isOT?'700':'400'}">${isOT?'+'+Math.round((totalMin-480)/60*10)/10+'h OT':'—'}</td>
     </tr>`;
   }).join('');
+  if (!rows.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-light)">No records match your filters.</td></tr>';
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;
   document.getElementById('io-absent').textContent = rows.filter(r=>r.status==='absent').length;
   const validMins = rows.filter(r=>r.in&&r.out).map(r=>{const[ih,im]=r.in.split(':').map(Number);const[oh,om]=r.out.split(':').map(Number);return(oh*60+om)-(ih*60+im);});
-  if (validMins.length) { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); document.getElementById('io-avghrs').textContent=Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; }
+  document.getElementById('io-avghrs').textContent = validMins.length ? (() => { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); return Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; })() : '—';
 }
 
 function exportCurrentReport() {
@@ -12039,23 +12614,7 @@ async function rejectLeaveCard(btn, itemId) {
 /* ──────────────────────────────────────────────────────────
    14. HR ADMIN
 ────────────────────────────────────────────────────────── */
-let _DEMO_EMPLOYEES = [
-  { id:'EMP001', name:'Huy Nguyen Duc', ini:'HN', clr:'#205090', dept:'Engineering', title:'Managing Director', email:'huy.nguyen@humiley.com', phone:'+84 909 840 714', startDate:'2018-12-01', status:'Active', zone:'HQ', gender:'Male', dob:'1982-03-15', taxId:'0123456789', bank:'123456789 — Vietcombank', emergency:'Nguyen Thi Hoa (+84 908 111 222)', address:'I3-2608 Ha Do Centrosa, D10 HCMC', annualUsed:4, annualTotal:12, sickUsed:0, sickTotal:30, compoff:2 },
-  { id:'EMP002', name:'Lan Tran', ini:'LT', clr:'#00B060', dept:'HR & Admin', title:'HR Manager', email:'lan.tran@humiley.com', phone:'+84 901 234 567', startDate:'2019-03-15', status:'Active', zone:'HQ', gender:'Female', dob:'1988-07-22', taxId:'0234567890', bank:'234567890 — ACB', emergency:'Tran Van Nam (+84 907 222 333)', address:'123 Nguyen Thi Minh Khai, D1 HCMC', annualUsed:2, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP003', name:'Minh Vu', ini:'MV', clr:'#F59E0B', dept:'Projects', title:'Project Manager', email:'minh.vu@humiley.com', phone:'+84 912 345 678', startDate:'2020-01-10', status:'Active', zone:'HQ', gender:'Male', dob:'1990-11-30', taxId:'0345678901', bank:'345678901 — Techcombank', emergency:'Vu Thi Lan (+84 906 333 444)', address:'456 Le Van Sy, D3 HCMC', annualUsed:6, annualTotal:12, sickUsed:2, sickTotal:30, compoff:0 },
-  { id:'EMP004', name:'Phuc Dang', ini:'PD', clr:'#8B5CF6', dept:'Finance', title:'Finance Lead', email:'phuc.dang@humiley.com', phone:'+84 923 456 789', startDate:'2020-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'1987-04-18', taxId:'0456789012', bank:'456789012 — BIDV', emergency:'Dang Thi Thu (+84 905 444 555)', address:'789 Truong Chinh, Tan Binh HCMC', annualUsed:3, annualTotal:12, sickUsed:0, sickTotal:30, compoff:1 },
-  { id:'EMP005', name:'Binh Le', ini:'BL', clr:'#EF4444', dept:'Field Services', title:'Field Engineer', email:'binh.le@humiley.com', phone:'+84 934 567 890', startDate:'2021-03-01', status:'Active', zone:'Factory', gender:'Male', dob:'1992-09-05', taxId:'0567890123', bank:'567890123 — MB Bank', emergency:'Le Van Binh (+84 904 555 666)', address:'Long An Province', annualUsed:3, annualTotal:12, sickUsed:0, sickTotal:30, compoff:3 },
-  { id:'EMP006', name:'Duc Thanh', ini:'DT', clr:'#163866', dept:'Engineering', title:'Senior Engineer', email:'duc.thanh@humiley.com', phone:'+84 945 678 901', startDate:'2021-06-15', status:'Active', zone:'HQ', gender:'Male', dob:'1993-02-14', taxId:'0678901234', bank:'678901234 — VPBank', emergency:'Thanh Thi Nga (+84 903 666 777)', address:'234 Dinh Tien Hoang, Binh Thanh HCMC', annualUsed:2, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP007', name:'Kim Pham', ini:'KP', clr:'#8B5CF6', dept:'Engineering', title:'Electrical Engineer', email:'kim.pham@humiley.com', phone:'+84 956 789 012', startDate:'2022-01-10', status:'Active', zone:'HQ', gender:'Female', dob:'1995-06-28', taxId:'0789012345', bank:'789012345 — Sacombank', emergency:'Pham Van Kinh (+84 902 777 888)', address:'567 CMT8, D10 HCMC', annualUsed:1, annualTotal:12, sickUsed:2, sickTotal:30, compoff:0 },
-  { id:'EMP008', name:'Mai Quynh', ini:'MQ', clr:'#00B060', dept:'Projects', title:'Project Coordinator', email:'mai.quynh@humiley.com', phone:'+84 967 890 123', startDate:'2022-03-15', status:'Active', zone:'HQ', gender:'Female', dob:'1996-12-10', taxId:'0890123456', bank:'890123456 — VietinBank', emergency:'Quynh Van Mai (+84 901 888 999)', address:'890 Vo Van Tan, D3 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:1 },
-  { id:'EMP009', name:'An Nguyen', ini:'AN', clr:'#3168A8', dept:'Engineering', title:'Automation Engineer', email:'an.nguyen@humiley.com', phone:'+84 978 901 234', startDate:'2022-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'1994-08-20', taxId:'0901234567', bank:'901234567 — Agribank', emergency:'Nguyen Thi An (+84 900 999 000)', address:'123 Hai Ba Trung, D1 HCMC', annualUsed:2, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP010', name:'Ha Nguyen', ini:'HN', clr:'#F97316', dept:'Field Services', title:'Site Engineer', email:'ha.nguyen@humiley.com', phone:'+84 989 012 345', startDate:'2023-01-15', status:'Active', zone:'Factory', gender:'Female', dob:'1997-03-25', taxId:'0012345678', bank:'012345678 — OCB', emergency:'Nguyen Van Ha (+84 908 000 111)', address:'Long An Province', annualUsed:1, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP011', name:'Tuan Nguyen', ini:'TN', clr:'#3168A8', dept:'Projects', title:'Engineer', email:'tuan.nguyen@humiley.com', phone:'+84 901 123 456', startDate:'2023-04-01', status:'Active', zone:'HQ', gender:'Male', dob:'1998-05-15', taxId:'0123456780', bank:'123456780 — Vietcombank', emergency:'Nguyen Thi Tuan (+84 907 111 222)', address:'456 Pham Ngu Lao, D1 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP012', name:'Linh Vo', ini:'LV', clr:'#10B981', dept:'HR & Admin', title:'HR Officer', email:'linh.vo@humiley.com', phone:'+84 912 234 567', startDate:'2023-07-01', status:'Active', zone:'HQ', gender:'Female', dob:'1999-09-09', taxId:'0234567801', bank:'234567801 — ACB', emergency:'Vo Van Linh (+84 906 222 333)', address:'789 Nguyen Hue, D1 HCMC', annualUsed:1, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP013', name:'Trong Phan', ini:'TP', clr:'#6366F1', dept:'Field Services', title:'Technician', email:'trong.phan@humiley.com', phone:'+84 923 345 678', startDate:'2023-09-15', status:'Active', zone:'Factory', gender:'Male', dob:'2000-01-20', taxId:'0345678012', bank:'345678012 — Techcombank', emergency:'Phan Thi Trong (+84 905 333 444)', address:'Long An Province', annualUsed:0, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-  { id:'EMP014', name:'Thu Hoang', ini:'TH', clr:'#EC4899', dept:'Finance', title:'Accountant', email:'thu.hoang@humiley.com', phone:'+84 934 456 789', startDate:'2024-01-10', status:'Active', zone:'HQ', gender:'Female', dob:'1998-07-14', taxId:'0456780123', bank:'456780123 — BIDV', emergency:'Hoang Van Thu (+84 904 444 555)', address:'234 Le Loi, D1 HCMC', annualUsed:0, annualTotal:12, sickUsed:1, sickTotal:30, compoff:0 },
-  { id:'EMP015', name:'Nam Bui', ini:'NB', clr:'#14B8A6', dept:'Engineering', title:'Intern Engineer', email:'nam.bui@humiley.com', phone:'+84 945 567 890', startDate:'2024-06-01', status:'Active', zone:'HQ', gender:'Male', dob:'2002-04-08', taxId:'0567801234', bank:'567801234 — MB Bank', emergency:'Bui Thi Nam (+84 903 555 666)', address:'567 Nguyen Trai, D5 HCMC', annualUsed:0, annualTotal:12, sickUsed:0, sickTotal:30, compoff:0 },
-];
+let _DEMO_EMPLOYEES = [];  /* production: real data loaded from API via tkBootstrap() */
 
 /* Format a date value as "07 May 2025". Handles M/D/YYYY (source CSV) and YYYY-MM-DD. */
 function tkFmtDate(v) {
@@ -12321,65 +12880,14 @@ function editBalance(btnOrName) {
 /* ──────────────────────────────────────────────────────────
    15. ATTENDANCE TABLE
 ────────────────────────────────────────────────────────── */
-let _DEMO_ATTENDANCE = [
-  // ── May 9, 2026 (Today) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-09', in:'07:58', out:'17:30', status:'on-time', hrs:'9h 32m', loc:'HQ' },
-  { name:'Tran Thi Bao',       dept:'Project Mgmt', date:'2026-05-09', in:'08:22', out:'17:45', status:'late',    hrs:'9h 23m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-09', in:'07:52', out:'17:05', status:'on-time', hrs:'9h 13m', loc:'HQ' },
-  { name:'Pham Thi Dung',      dept:'HRBP',         date:'2026-05-09', in:'08:35', out:'17:30', status:'late',    hrs:'8h 55m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-09', in:'08:04', out:'17:15', status:'on-time', hrs:'9h 11m', loc:'HQ' },
-  { name:'Nguyen Thi Fanh',    dept:'Field Svcs',   date:'2026-05-09', in:null,    out:null,    status:'absent',  hrs:'—',      loc:null  },
-  { name:'Do Quoc Gia',        dept:'Engineering',  date:'2026-05-09', in:'08:09', out:'17:40', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Bui Thi Hoa',        dept:'Proposal',     date:'2026-05-09', in:'08:48', out:'17:30', status:'late',    hrs:'8h 42m', loc:'HQ' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-09', in:'07:55', out:'17:30', status:'on-time', hrs:'9h 35m', loc:'HQ' },
-  { name:'Vo Thi Lan',         dept:'Finance',      date:'2026-05-09', in:'08:12', out:'17:45', status:'on-time', hrs:'9h 33m', loc:'HQ' },
-  { name:'Nguyen Duc Manh',    dept:'Field Svcs',   date:'2026-05-09', in:'07:30', out:'16:30', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Le Thi Ngoc',        dept:'HRBP',         date:'2026-05-09', in:'08:01', out:'17:00', status:'on-time', hrs:'8h 59m', loc:'HQ' },
-  { name:'Pham Van Phuc',      dept:'Project Mgmt', date:'2026-05-09', in:'08:55', out:'18:10', status:'late',    hrs:'9h 15m', loc:'HQ' },
-  { name:'Hoang Thi Quynh',    dept:'Engineering',  date:'2026-05-09', in:'07:58', out:'17:20', status:'on-time', hrs:'9h 22m', loc:'HQ' },
-  { name:'Do Van Son',         dept:'Field Svcs',   date:'2026-05-09', in:null,    out:null,    status:'absent',  hrs:'—',      loc:null  },
-  { name:'Nguyen Thi Thu',     dept:'Proposal',     date:'2026-05-09', in:'08:05', out:'17:30', status:'on-time', hrs:'9h 25m', loc:'HQ' },
-  { name:'Bui Quoc Uy',        dept:'Engineering',  date:'2026-05-09', in:'08:14', out:'17:45', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Tran Thi Viet',      dept:'Finance',      date:'2026-05-09', in:'08:30', out:'17:30', status:'late',    hrs:'9h 00m', loc:'HQ' },
-  { name:'Le Van Xuan',        dept:'Project Mgmt', date:'2026-05-09', in:'08:02', out:'17:15', status:'on-time', hrs:'9h 13m', loc:'HQ' },
-  { name:'Pham Thi Yen',       dept:'HRBP',         date:'2026-05-09', in:'08:07', out:'17:00', status:'on-time', hrs:'8h 53m', loc:'HQ' },
-  { name:'Vo Minh Duc',        dept:'Engineering',  date:'2026-05-09', in:'08:10', out:'17:40', status:'on-time', hrs:'9h 30m', loc:'HQ' },
-  { name:'Kim Thi Linh',       dept:'Field Svcs',   date:'2026-05-09', in:'07:45', out:'16:45', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Dang Van Thanh',     dept:'Proposal',     date:'2026-05-09', in:'08:41', out:'17:30', status:'late',    hrs:'8h 49m', loc:'HQ' },
-  // ── May 8, 2026 (Yesterday) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-08', in:'08:01', out:'17:32', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Tran Thi Bao',       dept:'Project Mgmt', date:'2026-05-08', in:'08:11', out:'17:40', status:'on-time', hrs:'9h 29m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-08', in:'08:00', out:'17:00', status:'on-time', hrs:'9h 00m', loc:'HQ' },
-  { name:'Pham Thi Dung',      dept:'HRBP',         date:'2026-05-08', in:'08:20', out:'17:30', status:'late',    hrs:'9h 10m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-08', in:'08:05', out:'17:15', status:'on-time', hrs:'9h 10m', loc:'HQ' },
-  { name:'Nguyen Thi Fanh',    dept:'Field Svcs',   date:'2026-05-08', in:'07:55', out:'16:55', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-08', in:'08:15', out:'17:30', status:'late',    hrs:'9h 15m', loc:'HQ' },
-  { name:'Vo Thi Lan',         dept:'Finance',      date:'2026-05-08', in:'08:08', out:'17:45', status:'on-time', hrs:'9h 37m', loc:'HQ' },
-  { name:'Hoang Thi Quynh',    dept:'Engineering',  date:'2026-05-08', in:'07:50', out:'17:10', status:'on-time', hrs:'9h 20m', loc:'HQ' },
-  { name:'Nguyen Thi Thu',     dept:'Proposal',     date:'2026-05-08', in:'08:03', out:'17:25', status:'on-time', hrs:'9h 22m', loc:'HQ' },
-  // ── May 7, 2026 (Wednesday) ──
-  { name:'Nguyen Van An',      dept:'Engineering',  date:'2026-05-07', in:'07:59', out:'17:30', status:'on-time', hrs:'9h 31m', loc:'HQ' },
-  { name:'Le Van Cuong',       dept:'Engineering',  date:'2026-05-07', in:'08:10', out:'17:05', status:'on-time', hrs:'8h 55m', loc:'HQ' },
-  { name:'Hoang Van Em',       dept:'Finance',      date:'2026-05-07', in:'08:00', out:'17:00', status:'on-time', hrs:'9h 00m', loc:'HQ' },
-  { name:'Tran Minh Khoa',     dept:'Engineering',  date:'2026-05-07', in:'07:52', out:'17:30', status:'on-time', hrs:'9h 38m', loc:'HQ' },
-  { name:'Pham Van Phuc',      dept:'Project Mgmt', date:'2026-05-07', in:'08:40', out:'18:00', status:'late',    hrs:'9h 20m', loc:'HQ' },
-  { name:'Dang Van Thanh',     dept:'Proposal',     date:'2026-05-07', in:'08:00', out:'17:30', status:'on-time', hrs:'9h 30m', loc:'HQ' },
-  { name:'Le Van Xuan',        dept:'Project Mgmt', date:'2026-05-07', in:'08:04', out:'17:15', status:'on-time', hrs:'9h 11m', loc:'HQ' },
-  { name:'Kim Thi Linh',       dept:'Field Svcs',   date:'2026-05-07', in:'07:40', out:'16:40', status:'on-time', hrs:'9h 00m', loc:'Factory' },
-  { name:'Bui Quoc Uy',        dept:'Engineering',  date:'2026-05-07', in:'08:20', out:'17:45', status:'late',    hrs:'9h 25m', loc:'HQ' },
-  { name:'Do Quoc Gia',        dept:'Engineering',  date:'2026-05-07', in:'08:05', out:'17:40', status:'on-time', hrs:'9h 35m', loc:'HQ' },
-];
+let _DEMO_ATTENDANCE = [];  /* production: real data loaded from API via tkBootstrap() */
 
 /* ── Demo leave data (used by staff dashboard and leave view) ── */
-let _DEMO_LEAVE = [
-  { type: 'Annual Leave',    startDate: '2026-05-19', endDate: '2026-05-23', days: 5, status: 'pending',  reason: 'Family vacation' },
-  { type: 'Sick Leave',      startDate: '2026-04-28', endDate: '2026-04-28', days: 1, status: 'approved', reason: 'Medical appointment' },
-  { type: 'Annual Leave',    startDate: '2026-03-10', endDate: '2026-03-14', days: 5, status: 'approved', reason: 'Annual leave' },
-  { type: 'Maternity Leave', startDate: '2026-02-01', endDate: '2026-02-28', days: 28, status: 'approved', reason: 'Maternity' },
-  { type: 'Sick Leave',      startDate: '2026-01-15', endDate: '2026-01-15', days: 1, status: 'rejected', reason: 'Overlap with project deadline' },
-];
+let _DEMO_LEAVE = [];  /* production: real data loaded from API via tkBootstrap() */
 
-function loadAttendance() { filterTable(); }
+async function loadAttendance() { try { await tkBootstrap(); } catch (e) {} filterTable(); }
+/* Re-pull from the DB then refresh the In/Out report (used by its Refresh button). */
+async function tkRefreshInOut() { try { await tkBootstrap(); } catch (e) {} renderInOutReport(); }
 
 function filterTable() {
   const isStaff = _userRole === 'staff';
@@ -12426,12 +12934,15 @@ function filterTable() {
       <td><button class="btn btn-ghost btn-sm" onclick="viewAttendanceRecord(this)">View</button></td>
     </tr>`;
   }).join('');
+  if (!pageRows.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:26px">No attendance records yet.</td></tr>';
   // update summary line + KPI dashboard
   const ontime = rows.filter(r=>r.status==='on-time').length;
   const late   = rows.filter(r=>r.status==='late').length;
   const absent = rows.filter(r=>r.status==='absent').length;
   const summary = document.getElementById('att-summary');
   if (summary) summary.textContent = rows.length + ' records · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent';
+  const foot = document.getElementById('att-foot-summary');
+  if (foot) foot.textContent = rows.length ? ('Showing ' + pageRows.length + ' of ' + rows.length + ' · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent') : 'No records';
   const kp = document.getElementById('att-kpis');
   if (kp && typeof _kpiTile === 'function') {
     const rate = rows.length ? Math.round(ontime / rows.length * 100) : 0;
@@ -12458,9 +12969,12 @@ function exportAttendance() {
 /* ──────────────────────────────────────────────────────────
    16. DASHBOARD
 ────────────────────────────────────────────────────────── */
-function refreshDashboard() {
-  toast('Dashboard refreshed');
+async function refreshDashboard() {
+  try { await tkBootstrap(); } catch (e) {}
+  try { tkRenderDashboard(); } catch (e) {}
+  try { tkRenderHrMetrics(); } catch (e) {}
   initDashChart();
+  toast('Dashboard refreshed');
 }
 
 function filterDashboard(period, el) {
@@ -12608,9 +13122,6 @@ function initDashChart(period = 'week') {
     const a = _tkDateParts(dates[0]), b = _tkDateParts(dates[dates.length - 1]);
     const t = document.getElementById('dash-att-title');
     if (t && a && b) t.textContent = 'Daily Attendance — ' + a.d + ' ' + MON[a.m - 1] + ' → ' + b.d + ' ' + MON[b.m - 1] + ' ' + b.y;
-  } else {
-    labels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
-    present = [46, 48, 45, 50, 47]; late = [6, 5, 7, 4, 5]; absent = [3, 2, 4, 1, 3];
   }
   const _legend = { position: 'top', align: 'end', labels: { font: { family: 'Calibri', size: 12 }, color: '#374151', usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 } };
   _dashChart = new Chart(ctx, {
@@ -12641,6 +13152,7 @@ function initDashChart(period = 'week') {
 }
 
 function initReportCharts() {
+  try { _renderRptAttendance(); } catch (e) {}
   _initTrendChart();
   _initLeaveChart();
   _initDeptChart();
@@ -12654,9 +13166,9 @@ function _initTrendChart() {
   // Real: present vs late by recent date.
   const byDate = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (!r.date) return; (byDate[r.date] = byDate[r.date] || { p: 0, l: 0 }); if (r.status === 'late') byDate[r.date].l++; else if (r.in || r.clock_in) byDate[r.date].p++; });
   const dts = Object.keys(byDate).sort().slice(-10);
-  const tLabels = dts.length ? dts.map(d => { const p = _tkDateParts(d); return p ? p.d + '/' + p.m : d; }) : ['Jan', 'Feb', 'Mar', 'Apr', 'May'];
-  const tPresent = dts.length ? dts.map(d => byDate[d].p) : [44, 46, 45, 48, 47];
-  const tLate = dts.length ? dts.map(d => byDate[d].l) : [8, 6, 7, 5, 6];
+  const tLabels = dts.map(d => { const p = _tkDateParts(d); return p ? p.d + '/' + p.m : d; });
+  const tPresent = dts.map(d => byDate[d].p);
+  const tLate = dts.map(d => byDate[d].l);
   _trendChart = new Chart(ctx, {
     type: 'line',
     data: {
@@ -12683,8 +13195,8 @@ function _initLeaveChart() {
   if (_leaveChart) _leaveChart.destroy();
   // Real: leave days grouped by type.
   const byType = {}; (_DEMO_LEAVE || []).forEach(l => { const t = l.type || 'Other'; byType[t] = (byType[t] || 0) + (+l.days || 1); });
-  const lLabels = Object.keys(byType).length ? Object.keys(byType) : ['Annual', 'Sick', 'Maternity', 'Paternity', 'Unpaid'];
-  const lVals = Object.keys(byType).length ? lLabels.map(t => byType[t]) : [45, 18, 8, 3, 6];
+  const lLabels = Object.keys(byType);
+  const lVals = lLabels.map(t => byType[t]);
   _leaveChart = new Chart(ctx, {
     type: 'doughnut',
     data: {
