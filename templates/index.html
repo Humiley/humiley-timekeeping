@@ -6828,7 +6828,7 @@ function tkNewPayment() {
   const el = document.createElement('div'); el.id = 'paymentOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">New Payment Request</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies — July"></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat">' + _PAY_CATS.map(c => '<option>' + c + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + _PAY_METHODS.map(m => '<option>' + m + '</option>').join('') + '</select></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + _PAY_CATS.map(c => '<option>' + c + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + _PAY_METHODS.map(m => '<option>' + m + '</option>').join('') + '</select></div></div>' +
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
@@ -6844,7 +6844,7 @@ async function tkPaymentSave() {
   const amount = +g('pay-amount') || 0;
   if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
-  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   try {
     const res = await tkApi('/api/coll/payments', { method: 'POST', body });
     tkAudit('Payment request submitted', body.name, body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount));
@@ -6923,7 +6923,7 @@ async function tkRenderFinance() {
   ]);
   const byCat = {}, byDept = {}, byKind = {};
   done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
-  const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'fin-cat') + _rptChartCard('Spend by Department', 'fin-dept') + _rptChartCard('By Type', 'fin-kind') + '</div>';
+  const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'fin-cat') + _rptChartCard('Spend by Department', 'fin-dept-c') + _rptChartCard('By Type', 'fin-kind-c') + '</div>';
   // Pending approvals — act on everything from one place
   const act = i => { const a = "tkFinDecide('" + i.kind + "','" + i.id + "','Approved')", r = "tkFinDecide('" + i.kind + "','" + i.id + "','Rejected')"; return '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="' + a + '">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="' + r + '">' + tkIcon('x', 12) + 'Reject</button>'; };
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
@@ -6941,8 +6941,8 @@ async function tkRenderFinance() {
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
     if (ck.length) _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
-    if (dk.length) _mkChart('fin-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
-    if (kk.length) _mkChart('fin-kind', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+    if (dk.length) _mkChart('fin-dept-c', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+    if (kk.length) _mkChart('fin-kind-c', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
   }
 }
 function finFillTable() {

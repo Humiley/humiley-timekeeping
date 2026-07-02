@@ -436,6 +436,8 @@ class Handler(BaseHTTPRequestHandler):
             cur = item.get("status") or "Submitted"
             detail = item.get("reqNo") or item.get("title") or item.get("dest") or ""
             if action == "paid" and coll == "payments":
+                if cur != "Approved":
+                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — it must be approved before it can be marked paid." % (who, cur), "#205090")
                 new_status = "Paid"
             elif action in ("reject", "decline", "deny"):
                 if cur != "Submitted":
@@ -624,6 +626,10 @@ class Handler(BaseHTTPRequestHandler):
                     items = [it for it in items
                              if (it.get("owner") or "") == myname
                              or (mydept and deptof.get(it.get("owner") or "") == mydept)]
+        # Never expose the one-click approval token in list reads — only the create response
+        # carries it (once, for the email). Stops a requester from reading their own token and
+        # self-approving via the unauthenticated /capprove link.
+        items = [{k: v for k, v in it.items() if k != "token"} for it in items]
         return self._json({"items": items})
 
     @staticmethod
