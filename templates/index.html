@@ -3579,6 +3579,10 @@ async function _esignGo() {
       const cr = await tkApi('/api/coll/' + opts.createColl, { method: 'POST', body: opts.createBody });
       created = cr && cr.item; id = created && created.id; coll = opts.createColl;
       if (!id) throw new Error('Could not create the record.');
+    } else if (opts.createFn) {
+      // Caller creates the record its own way (e.g. leave posts to /api/leave) and returns { id, item }.
+      created = await opts.createFn(); id = created && created.id;
+      if (!id) throw new Error('Could not create the record.');
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
@@ -12697,54 +12701,59 @@ async function submitLeave() {
   const days = _calcWorkingDays(start, end);
 
   if (true) {  /* always use standalone Python backend (SharePoint removed) */
-    await new Promise(r => setTimeout(r, 700));
-    /* persist to backend, then refresh the pending list from the database */
-    tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason })
-      .then(async (res) => {
+    const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
+    /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
+       create it, then stamp the submitter's signature onto the new record. */
+    tkESign({
+      meaning: 'Submit — Leave ' + type + ' · ' + start + ' → ' + end + ' (' + days + ' day' + (days !== 1 ? 's' : '') + ')',
+      createFn: async () => {
+        const res = await tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason });
+        return { id: res && res.id, res: res };
+      },
+      onDone: async (item, created) => {
+        const res = created && created.res;
         try { await tkBootstrap(); tkRenderApprovals(); tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
         if (res && res.token && res.managerEmail) {
           try { await tkEmailLeaveApproval(res, { type, start, end, days, reason }); } catch (e) { console.warn('leave email:', e.message); }
         } else if (res && !res.managerEmail) {
           toast('Submitted. No direct manager set — ask HR to assign one for approval routing.', 'warn', 6000);
         }
-      });
-    const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
-    const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
-    const clr = tkAvatarColor(emp);
-    const nowD = new Date();
-    const subDate = tkFmtDateObj(nowD);
-    const newCard = document.createElement('div');
-    newCard.className = 'approval-card';
-    newCard.innerHTML = `
-      <div class="approval-card-hdr">
-        <div class="ava-md" style="background:${clr}">${initials}</div>
-        <div style="flex:1">
-          <div style="font-size:14px;font-weight:700">${emp}</div>
-          <div style="font-size:12px;color:var(--text-light)">Management · Submitted ${subDate}</div>
-        </div>
-        <span class="badge b-warn">Pending Manager</span>
-      </div>
-      <div class="approval-meta">
-        <div class="approval-meta-item">Leave Type<span>${type}</span></div>
-        <div class="approval-meta-item">Duration<span>${days} Day${days!==1?'s':''}</span></div>
-        <div class="approval-meta-item">Dates<span>${start} – ${end}</span></div>
-      </div>
-      <div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px">
-        <strong>Reason:</strong> ${reason}
-      </div>
-      <div class="approval-actions">
-        <button class="btn btn-ghost btn-sm" onclick="viewLeaveDetail(this)">View Details</button>
-        <button class="btn-reject" onclick="rejectLeaveCard(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-        <button class="btn-approve" onclick="approveLeaveCard(this,'new')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-      </div>`;
-    const pending = document.getElementById('leave-pending');
-    if (pending) { const list = pending.querySelector('div'); if (list) list.prepend(newCard); }
-    // Update pending tab badge count
-    const tabs = document.querySelectorAll('#leave-tabs .tab');
-    if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur+1) + ')'; }
-    closeModal('leaveModal');
-    setTimeout(() => { switchLeaveTab('pending', document.querySelector('#leave-tabs .tab')); }, 100);
-    toast('Leave request submitted — ' + days + ' working day(s)');
+        const initials = emp.trim().split(/\s+/).filter(Boolean).slice(-2).map(w => w[0].toUpperCase()).join('');
+        const clr = tkAvatarColor(emp);
+        const subDate = tkFmtDateObj(new Date());
+        const newCard = document.createElement('div');
+        newCard.className = 'approval-card';
+        newCard.innerHTML = `
+          <div class="approval-card-hdr">
+            <div class="ava-md" style="background:${clr}">${initials}</div>
+            <div style="flex:1">
+              <div style="font-size:14px;font-weight:700">${emp}</div>
+              <div style="font-size:12px;color:var(--text-light)">Management · Submitted ${subDate}</div>
+            </div>
+            <span class="badge b-warn">Pending Manager</span>
+          </div>
+          <div class="approval-meta">
+            <div class="approval-meta-item">Leave Type<span>${type}</span></div>
+            <div class="approval-meta-item">Duration<span>${days} Day${days!==1?'s':''}</span></div>
+            <div class="approval-meta-item">Dates<span>${start} – ${end}</span></div>
+          </div>
+          <div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px">
+            <strong>Reason:</strong> ${reason}
+          </div>
+          <div class="approval-actions">
+            <button class="btn btn-ghost btn-sm" onclick="viewLeaveDetail(this)">View Details</button>
+            <button class="btn-reject" onclick="rejectLeaveCard(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
+            <button class="btn-approve" onclick="approveLeaveCard(this,'new')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
+          </div>`;
+        const pending = document.getElementById('leave-pending');
+        if (pending) { const list = pending.querySelector('div'); if (list) list.prepend(newCard); }
+        const tabs = document.querySelectorAll('#leave-tabs .tab');
+        if (tabs[0]) { const cur = parseInt(tabs[0].textContent.match(/\d+/)?.[0] || '0'); tabs[0].textContent = 'Pending (' + (cur + 1) + ')'; }
+        closeModal('leaveModal');
+        setTimeout(() => { switchLeaveTab('pending', document.querySelector('#leave-tabs .tab')); }, 100);
+        toast('Leave request submitted & signed — ' + days + ' working day(s)');
+      }
+    });
     return;
   }
 
