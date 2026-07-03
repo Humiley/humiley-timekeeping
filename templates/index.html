@@ -3525,6 +3525,67 @@ async function tkGeocodeAddress() {
    2. ROLE-BASED AUTH & LOGIN
 ────────────────────────────────────────────────────────── */
 let _msalApp = null, _account = null;
+
+/* ── 21 CFR Part 11 electronic signature ─────────────────────────────────────────
+   Every submit / approve / reject / mark-paid is signed: the signer re-authenticates
+   with Microsoft 365 (fresh sign-in), the server verifies the sign-in is recent, then
+   stamps an immutable signature (signer · UTC time · meaning) on the record + audit trail. */
+let _esignPending = null;
+async function _esignReauth() {
+  if ((typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp || !_account) return { demo: true };
+  const res = await _msalApp.acquireTokenPopup({ scopes: ['User.Read'], prompt: 'login' });
+  return { idToken: (res && res.idToken) || '' };
+}
+function tkESign(opts) {
+  document.getElementById('esignOverlay')?.remove();
+  _esignPending = opts || {};
+  const who = (TK.user || {}).name || 'You', email = (TK.user || {}).email || '';
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  const el = document.createElement('div'); el.id = 'esignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">Electronic Signature</div><button class="modal-close" onclick="document.getElementById(\'esignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Electronic record &middot; 21 CFR Part 11</div>' +
+    '<div class="card" style="padding:12px 14px;background:var(--light-tint);font-size:13px;line-height:1.8">' +
+    '<div><span style="color:var(--text-light)">Signer</span> — <b>' + _crmEsc(who) + '</b>' + (email ? ' <span style="color:var(--text-light)">(' + _crmEsc(email) + ')</span>' : '') + '</div>' +
+    '<div><span style="color:var(--text-light)">Date &amp; time (UTC)</span> — <b id="esign-clock">—</b></div>' +
+    '<div><span style="color:var(--text-light)">Meaning</span> — <b>' + _crmEsc(opts.meaning || '') + '</b></div>' +
+    '</div>' +
+    '<label style="display:flex;gap:8px;align-items:flex-start;margin:12px 2px;font-size:12px"><input type="checkbox" id="esign-cert" style="margin-top:2px"><span>I certify that this electronic signature is the legally binding equivalent of my handwritten signature.</span></label>' +
+    '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + (demo ? 'Demo mode — recorded without Microsoft 365 re-authentication.' : 'You will re-authenticate with Microsoft 365 to complete this signature.') + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'esignOverlay\').remove()">Cancel</button><button class="btn btn-primary" id="esign-go" onclick="_esignGo()">' + tkIcon('check') + 'Sign' + (demo ? '' : ' with Microsoft 365') + '</button></div></div>';
+  document.body.appendChild(el);
+  const tick = () => { const ov = document.getElementById('esignOverlay'); if (!ov) { clearInterval(el._clk); return; } const c = document.getElementById('esign-clock'); if (c) c.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; };
+  tick(); el._clk = setInterval(tick, 1000);
+}
+async function _esignGo() {
+  if (!(document.getElementById('esign-cert') || {}).checked) { toast('Please tick the certification box to sign.', 'warn'); return; }
+  const opts = _esignPending; if (!opts) return;
+  const btn = document.getElementById('esign-go'); if (btn) { btn.disabled = true; btn.textContent = 'Signing…'; }
+  let reauth;
+  try { reauth = await _esignReauth(); }
+  catch (e) { toast('Microsoft 365 sign-in was cancelled — nothing was signed.', 'warn', 5000); if (btn) { btn.disabled = false; btn.textContent = 'Sign'; } return; }
+  try {
+    let coll = opts.coll, id = opts.id, created = null;
+    if (opts.createColl) {
+      const cr = await tkApi('/api/coll/' + opts.createColl, { method: 'POST', body: opts.createBody });
+      created = cr && cr.item; id = created && created.id; coll = opts.createColl;
+      if (!id) throw new Error('Could not create the record.');
+    }
+    const res = await tkApi('/api/esign', { method: 'POST', body: { coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', idToken: (reauth && reauth.idToken) || '' } });
+    document.getElementById('esignOverlay')?.remove();
+    toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
+    if (opts.onDone) { try { opts.onDone((res && res.item) || null, created); } catch (e) {} }
+  } catch (e) {
+    toast('Could not sign: ' + e.message, 'error', 6000);
+    if (btn) { btn.disabled = false; btn.textContent = 'Sign'; }
+  }
+}
+/* Signature manifestation — list of who signed, when (UTC) and the meaning, for record detail + PDFs. */
+function _esignManifest(rec, opts) {
+  const sigs = (rec && rec.signatures) || []; if (!sigs.length) return '';
+  const small = opts && opts.small;
+  return '<div style="margin-top:8px">' + sigs.map(s => '<div style="font-size:' + (small ? '10.5' : '11.5') + 'px;color:var(--text-light);display:flex;align-items:center;gap:5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg><b style="color:var(--text-dark)">' + _crmEsc(s.name || '') + '</b> · ' + _crmEsc(s.meaning || '') + ' · ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + '</div>').join('') + '</div>';
+}
+
 let _userRole = null;   // 'manager' | 'staff'
 let _userLevel = 'staff'; // 'staff' | 'manager' | 'management' | 'admin'
 const _LEVELS = ['staff', 'manager', 'management', 'editor', 'admin'];
@@ -6524,18 +6585,19 @@ async function tkClaimSave() {
   const claimKind = (document.getElementById('claim-type') || {}).value || 'Other';
   const travelId = claimKind === 'Travel' ? ((document.getElementById('claim-travelId') || {}).value || '') : '';
   const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
-  try {
-    const _r = await tkApi('/api/coll/claims', { method: 'POST', body });
-    tkAudit('Claim submitted', body.name, title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total));
-    const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
-    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
-      '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
-      '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
-      (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.',
-      (_r && _r.item && _r.item.token));
-    document.getElementById('claimOverlay').remove(); toast('Claim submitted for approval'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
-  }
-  catch (err) { toast('Could not submit: ' + err.message, 'error', 5000); }
+  tkESign({
+    createColl: 'claims', createBody: body,
+    meaning: 'Submission — Claim ' + title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total),
+    onDone: (item, created) => {
+      const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
+      if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
+        '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
+        '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
+        (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.',
+        (created && created.token));
+      const co = document.getElementById('claimOverlay'); if (co) co.remove(); toast('Claim submitted & signed'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
+    }
+  });
 }
 
 /* Unified Approval Inbox — every pending action in one place. */
@@ -6607,21 +6669,21 @@ function _claimRowsHtml(claims, isMgr) {
     const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
       its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
-      '</tbody></table></td></tr>';
+      '</tbody></table>' + _esignManifest(c) + '</td></tr>';
     return summary + detail;
   }).join('');
 }
-async function tkInboxClaim(id, status) {
+function tkInboxClaim(id, status) {
   const c = (_HR.claims || []).find(x => x.id === id); if (!c) return;
-  c.status = status;
-  if (Array.isArray(c.items)) c.items.forEach(it => { if ((it.status || 'Submitted') === 'Submitted') it.status = status; });
-  try {
-    await tkApi('/api/coll/claims/' + id, { method: 'PATCH', body: c });
-    tkAudit('Claim ' + status.toLowerCase(), c.name || '', (c.title || c.type || '') + ' ' + _PAY_FMT(_claimTotal(c)));
-    const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Your expense claim was ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour expense claim "' + (c.title || c.type || '') + '" (' + _PAY_FMT(_claimTotal(c)) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-    toast('Claim ' + status.toLowerCase()); try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {}
-  }
-  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+  tkESign({
+    coll: 'claims', id: id, setStatus: status,
+    meaning: status + ' — Claim ' + (c.title || c.type || '') + ' · ' + _PAY_FMT(_claimTotal(c)),
+    onDone: (item) => {
+      if (item) { const i = (_HR.claims || []).findIndex(x => x.id === id); if (i >= 0) _HR.claims[i] = item; }
+      const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Your expense claim was ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour expense claim "' + (c.title || c.type || '') + '" (' + _PAY_FMT(_claimTotal(c)) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
+    }
+  });
 }
 async function tkInboxClaimItem(claimId, itemId, status) {
   const c = (_HR.claims || []).find(x => x.id === claimId); if (!c || !Array.isArray(c.items)) return;
@@ -6739,26 +6801,31 @@ async function tkTravelSave() {
   const me = _tkMe ? _tkMe() : null;
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
   const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: g('tr-attach'), attachmentName: g('tr-attachname'), status: 'Submitted' };
-  try {
-    const _r = await tkApi('/api/coll/travel', { method: 'POST', body });
-    tkAudit('Travel request submitted', body.name, body.dest);
-    const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
-      '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
-      '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
-      (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
-      (_r && _r.item && _r.item.token));
-    document.getElementById('travelOverlay').remove(); toast('Travel request submitted'); tkRenderTravelClaims();
-  } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+  tkESign({
+    createColl: 'travel', createBody: body,
+    meaning: 'Submission — Travel ' + (body.dest || '') + ' · ' + _PAY_FMT(body.cost),
+    onDone: (item, created) => {
+      const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+      if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
+        '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
+        '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
+        (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
+        (created && created.token));
+      const tov = document.getElementById('travelOverlay'); if (tov) tov.remove(); toast('Travel request submitted & signed'); tkRenderTravelClaims();
+    }
+  });
 }
-async function tkTravelDecision(id, status) {
-  const t = (_HR.travel || []).find(x => x.id === id); if (!t) return; t.status = status;
-  try {
-    await tkApi('/api/coll/travel/' + id, { method: 'PATCH', body: t });
-    tkAudit('Travel ' + status.toLowerCase(), t.name || '', t.dest + ' · ' + _PAY_FMT(t.cost || 0));
-    const e = _hrEmp(t.empId) || {}; tkMailRequester(e.email, e.name || t.name, 'Your travel request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour travel request to ' + (t.dest || '') + ' (' + (t.from || '') + (t.to ? ' → ' + t.to : '') + ', est. ' + _PAY_FMT(t.cost || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-    toast('Travel ' + status.toLowerCase()); tkRenderTravelClaims(); try { tkRenderInbox(); } catch (x) {}
-  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+function tkTravelDecision(id, status) {
+  const t = (_HR.travel || []).find(x => x.id === id); if (!t) return;
+  tkESign({
+    coll: 'travel', id: id, setStatus: status,
+    meaning: status + ' — Travel ' + (t.dest || '') + ' · ' + _PAY_FMT(t.cost || 0),
+    onDone: (item) => {
+      if (item) { const i = (_HR.travel || []).findIndex(x => x.id === id); if (i >= 0) _HR.travel[i] = item; }
+      const e = _hrEmp(t.empId) || {}; tkMailRequester(e.email, e.name || t.name, 'Your travel request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour travel request to ' + (t.dest || '') + ' (' + (t.from || '') + (t.to ? ' → ' + t.to : '') + ', est. ' + _PAY_FMT(t.cost || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      tkRenderTravelClaims(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
+    }
+  });
 }
 function tkTCDecision(id, status) { return tkInboxClaim(id, status); }
 
@@ -6845,30 +6912,33 @@ async function tkPaymentSave() {
   if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
   const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
-  try {
-    const res = await tkApi('/api/coll/payments', { method: 'POST', body });
-    tkAudit('Payment request submitted', body.name, body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount));
-    const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-    if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
-      '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
-      '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
-      (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
-      (res && res.item && res.item.token));
-    document.getElementById('paymentOverlay').remove(); toast('Payment request submitted for approval'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
-  } catch (e) { toast('Could not submit: ' + e.message, 'error', 5000); }
+  tkESign({
+    createColl: 'payments', createBody: body,
+    meaning: 'Submission — Payment ' + body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount),
+    onDone: (item, created) => {
+      const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
+      if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
+        '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
+        '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
+        (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
+        (created && created.token));
+      const po = document.getElementById('paymentOverlay'); if (po) po.remove();
+      toast('Payment request submitted & signed'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+    }
+  });
 }
-async function tkPaymentDecision(id, status) {
+function tkPaymentDecision(id, status) {
   const p = (_HR.payments || []).find(x => x.id === id); if (!p) return;
-  p.status = status;
-  if (status === 'Approved') p.approvedBy = (TK.user || {}).name || '';
-  if (status === 'Paid') p.paidOn = new Date().toISOString().slice(0, 10);
-  try {
-    await tkApi('/api/coll/payments/' + id, { method: 'PATCH', body: p });
-    tkAudit('Payment ' + status.toLowerCase(), p.name || '', (p.reqNo || '') + ' · ' + _PAY_FMT(p.amount || 0));
-    const e = _hrEmp(p.empId) || {};
-    tkMailRequester(e.email, e.name || p.name, 'Your payment request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour payment request ' + (p.reqNo || '') + ' (' + (p.payee || '') + ', ' + _PAY_FMT(p.amount || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-    toast('Payment ' + status.toLowerCase()); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
-  } catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+  tkESign({
+    coll: 'payments', id: id, setStatus: status,
+    meaning: status + ' — Payment ' + (p.reqNo || '') + ' · ' + (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0),
+    onDone: (item) => {
+      if (item) { const i = (_HR.payments || []).findIndex(x => x.id === id); if (i >= 0) _HR.payments[i] = item; }
+      const e = _hrEmp(p.empId) || {};
+      tkMailRequester(e.email, e.name || p.name, 'Your payment request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour payment request ' + (p.reqNo || '') + ' (' + (p.payee || '') + ', ' + _PAY_FMT(p.amount || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      tkRenderPayments(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
+    }
+  });
 }
 
 /* ════════ Finance Control — company-wide view of all payments, claims & travel ════════ */
@@ -6897,13 +6967,11 @@ function _finItems() {
   (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || '', hasFile: !!t.attachment }));
   return out;
 }
-async function tkFinDecide(kind, id, status) {
-  try {
-    if (kind === 'Payment') await tkPaymentDecision(id, status);
-    else if (kind === 'Travel') await tkTravelDecision(id, status);
-    else await tkInboxClaim(id, status);
-  } catch (e) {}
-  try { tkRenderFinance(); } catch (e) {}
+function tkFinDecide(kind, id, status) {
+  // Each decision opens the e-signature modal; its onDone re-renders Finance.
+  if (kind === 'Payment') tkPaymentDecision(id, status);
+  else if (kind === 'Travel') tkTravelDecision(id, status);
+  else tkInboxClaim(id, status);
 }
 async function tkRenderFinance() {
   const root = document.getElementById('finance-root'); if (!root) return;
@@ -6974,6 +7042,7 @@ async function tkPaymentVoucherPDF(id) {
     (p.note ? row('Note', _crmEsc(p.note)) : '') +
     '</table>' +
     '<table style="width:100%;margin-top:34px;border-collapse:collapse"><tr>' + sign('Requested by', p.name) + sign('Approved by', p.approvedBy) + sign('Paid by / Finance', '') + '</tr></table>' +
+    ((p.signatures && p.signatures.length) ? '<div style="margin-top:22px;padding-top:8px;border-top:1px solid #eef1f4;font-size:10.5px;color:#5C6470"><b style="color:#205090">Electronic signatures — 21 CFR Part 11</b>' + p.signatures.map(s => '<div style="margin-top:3px">✓ <b style="color:#1F2937">' + _crmEsc(s.name || '') + '</b> — ' + _crmEsc(s.meaning || '') + ' — ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + ' — ' + _crmEsc(s.method || '') + '</div>').join('') + '</div>' : '') +
     '</div>';
   const doc = await _htmlToPdfDoc(html, 720, { title: 'PAYMENT REQUEST VOUCHER', subtitle: p.reqNo || '', docCode: 'HML-FIN-PAY' });
   if (!doc) { toast('PDF engine not loaded', 'warn'); return; }
@@ -10428,6 +10497,15 @@ const _VI = {
   'All types': 'Tất cả loại',
   'No pending finance approvals — all clear.': 'Không có khoản chờ duyệt — đã xử lý hết.',
   'No finance records match your filters.': 'Không có bản ghi tài chính phù hợp bộ lọc.',
+  'Electronic Signature': 'Chữ ký điện tử',
+  'Signer': 'Người ký',
+  'Date & time (UTC)': 'Ngày & giờ (UTC)',
+  'Meaning': 'Ý nghĩa',
+  'I certify that this electronic signature is the legally binding equivalent of my handwritten signature.': 'Tôi xác nhận chữ ký điện tử này có giá trị pháp lý tương đương chữ ký tay của tôi.',
+  'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hoàn tất chữ ký này.',
+  'Demo mode — recorded without Microsoft 365 re-authentication.': 'Chế độ demo — ghi nhận mà không xác thực lại Microsoft 365.',
+  'Sign with Microsoft 365': 'Ký bằng Microsoft 365',
+  'Sign': 'Ký',
   'Search': 'Tìm kiếm',
   'Import CSV': 'Nhập CSV',
   'Import Excel': 'Nhập Excel',

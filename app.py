@@ -192,6 +192,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_demo(body)
         if path == "/api/auth/m365":
             return self._auth_m365(body)
+        if path == "/api/esign":
+            return self._guard(lambda u: self._esign(u, body))
         if path == "/api/attendance/checkin":
             return self._guard(lambda u: self._checkin(u, body))
         if path == "/api/attendance/checkout":
@@ -311,6 +313,91 @@ class Handler(BaseHTTPRequestHandler):
             emp["level"] = "admin"; emp["role"] = "manager"
         token = new_session(emp["id"], emp.get("role", "staff"))
         return self._json({"token": token, "user": dict(emp, role=emp.get("role", "staff"))})
+
+    # -- 21 CFR Part 11 electronic signatures -------------------------------
+    @staticmethod
+    def _utc_now():
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def _esign_fresh(self, id_token, max_age=600):
+        """Validate a FRESH Microsoft 365 ID token for an electronic signature (Part 11 §11.200):
+        tenant + audience must match our Entra app, and auth_time must be within max_age seconds —
+        proving the user just re-authenticated interactively for this signing."""
+        claims = self._jwt_claims(id_token)
+        if not claims:
+            return False, "Could not read the Microsoft 365 sign-in."
+        now = time.time()
+        if claims.get("exp") and claims["exp"] < now:
+            return False, "The signing sign-in expired — please try again."
+        tid = claims.get("tid")
+        if M365.get("tenantId") and tid and tid != M365["tenantId"]:
+            return False, "Signed in from an unexpected Microsoft 365 tenant."
+        aud = claims.get("aud")
+        if M365.get("clientId") and aud and aud != M365["clientId"]:
+            return False, "This sign-in was not issued for the Humiley Portal."
+        at = claims.get("auth_time")
+        if at is None:
+            return False, "The sign-in did not include an authentication time."
+        try:
+            if now - float(at) > max_age:
+                return False, "Please re-authenticate to sign — the sign-in is not recent enough."
+        except (TypeError, ValueError):
+            return False, "Invalid authentication time in the sign-in."
+        email = claims.get("preferred_username") or claims.get("upn") or claims.get("email") or ""
+        return True, {"name": claims.get("name") or email, "email": email, "auth_time": int(float(at)), "oid": claims.get("oid")}
+
+    def _esign(self, u, body):
+        """Apply an electronic signature to a record (Part 11): re-authenticate the signer via a
+        fresh M365 sign-in, stamp an immutable signature manifestation (signer, UTC time, meaning,
+        method) onto the record, optionally set its status, and write a secure audit-trail entry."""
+        coll = body.get("coll"); iid = body.get("id"); meaning = (body.get("meaning") or "").strip()
+        set_status = body.get("setStatus")
+        if not coll or not iid or not meaning:
+            return self._err("coll, id and meaning are required.", 400)
+        # Identify + re-authenticate the signer.
+        if DEMO_MODE:
+            method = "Demo mode (no re-authentication)"; auth_time = None
+            signer_name = u.get("name") or "User"; signer_email = (u.get("email") or "").lower()
+        else:
+            ok, info = self._esign_fresh(body.get("idToken") or "")
+            if not ok:
+                return self._err(info, 401)
+            method = "Microsoft 365 re-authentication"; auth_time = info.get("auth_time")
+            signer_name = info.get("name") or u.get("name") or "User"
+            signer_email = (info.get("email") or "").lower()
+            sess_email = (u.get("email") or "").lower()
+            if signer_email and sess_email and signer_email != sess_email:
+                return self._err("The Microsoft 365 account you signed with does not match your session.", 403)
+        # Authorization: approving / rejecting / paying is a manager act; submitting is the owner's own.
+        if set_status and set_status != "Submitted" and u.get("role") != "manager":
+            return self._err("Manager access required to approve, reject or mark paid.", 403)
+        if coll not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        item = next((x for x in db.list_collection(coll) if x.get("id") == iid), None)
+        if not item:
+            return self._err("Record not found.", 404)
+        sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
+               "ts": self._utc_now(), "meaning": meaning, "method": method}
+        if auth_time:
+            sig["authTime"] = auth_time
+        item.setdefault("signatures", []).append(sig)
+        if set_status:
+            item["status"] = set_status
+            if coll == "claims" and isinstance(item.get("items"), list):
+                for it in item["items"]:
+                    if (it.get("status") or "Submitted") == "Submitted":
+                        it["status"] = set_status
+            if set_status == "Approved":
+                item["approvedBy"] = signer_name
+            if set_status == "Paid":
+                item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
+        db.put_collection_item(coll, item)
+        db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
+            "action": "E-signature — " + meaning,
+            "target": coll + "/" + str(iid),
+            "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
 
     # -- attendance ---------------------------------------------------------
     def _attendance_list(self, u, qs):
