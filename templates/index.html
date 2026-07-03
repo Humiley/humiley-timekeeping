@@ -3330,28 +3330,38 @@ function tkMarkAllRead() {
   const p = document.getElementById('notif-panel'); if (p) p.classList.remove('open');
 }
 
-async function tkApprove(id, btn) {
+function tkApprove(id, btn) {
   if (_userRole !== 'manager') { toast('Only managers can approve leave.', 'warn'); return; }
-  const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
   const _l = (_DEMO_LEAVE || []).find(x => x.id == id) || {}; const _e = _hrEmp(_l.emp_id) || {};
-  await tkPersist('/api/leave/' + id, { status: 'approved' }, 'PATCH');
-  tkAudit('Leave approved', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
-  tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was approved', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been APPROVED by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-  try { await tkBootstrap(); } catch (e) {}
-  tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
-  if (typeof toast === 'function') toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Leave approved');
+  tkESign({
+    coll: 'leave', id: id, setStatus: 'approved',
+    meaning: 'Approve — Leave ' + (_l.type || '') + ' · ' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : ''),
+    onDone: async () => {
+      const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+      tkAudit('Leave approved', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
+      tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was approved', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been APPROVED by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      try { await tkBootstrap(); } catch (e) {}
+      tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
+      if (typeof toast === 'function') toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Leave approved & signed');
+    }
+  });
 }
 
-async function tkReject(id, btn) {
+function tkReject(id, btn) {
   if (_userRole !== 'manager') { toast('Only managers can reject leave.', 'warn'); return; }
-  const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
   const _l = (_DEMO_LEAVE || []).find(x => x.id == id) || {}; const _e = _hrEmp(_l.emp_id) || {};
-  await tkPersist('/api/leave/' + id, { status: 'rejected' }, 'PATCH');
-  tkAudit('Leave rejected', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
-  tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was rejected', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been REJECTED by ' + ((TK.user || {}).name || 'your manager') + '. Please speak with your manager for details.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-  try { await tkBootstrap(); } catch (e) {}
-  tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
-  if (typeof toast === 'function') toast('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Leave rejected');
+  tkESign({
+    coll: 'leave', id: id, setStatus: 'rejected',
+    meaning: 'Reject — Leave ' + (_l.type || '') + ' · ' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : ''),
+    onDone: async () => {
+      const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
+      tkAudit('Leave rejected', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
+      tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was rejected', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been REJECTED by ' + ((TK.user || {}).name || 'your manager') + '. Please speak with your manager for details.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      try { await tkBootstrap(); } catch (e) {}
+      tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
+      if (typeof toast === 'function') toast('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Leave rejected & signed');
+    }
+  });
 }
 
 /* ── Interactive map pin picker ──
@@ -3569,6 +3579,8 @@ async function _esignGo() {
       const cr = await tkApi('/api/coll/' + opts.createColl, { method: 'POST', body: opts.createBody });
       created = cr && cr.item; id = created && created.id; coll = opts.createColl;
       if (!id) throw new Error('Could not create the record.');
+    } else if (opts.updateFn) {
+      await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
     const res = await tkApi('/api/esign', { method: 'POST', body: { coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', idToken: (reauth && reauth.idToken) || '' } });
     document.getElementById('esignOverlay')?.remove();
@@ -4880,11 +4892,26 @@ async function tkPadrSave(id) {
   p.status = document.getElementById('padr-status').value;
   p.rating = +document.getElementById('padr-rating').value || 0;
   p.idp = document.getElementById('padr-idp').value;
+  const finalizing = (p.status === 'Finalized');
+  const persist = async () => { await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p }); };
+  const afterSave = () => {
+    tkAudit('PADR ' + (finalizing ? 'finalized' : 'updated'), p.name || '', p.rating ? ('Rating ' + p.rating + '/5') : p.status);
+    if (finalizing) { const e = _hrEmp(p.empId) || {}; tkNotifyGraph(e.email, 'Your PADR review is finalized', 'Hi ' + (e.name || '') + ', your ' + (p.cycle || '') + ' performance review has been finalized with a rating of ' + (p.rating || '-') + '/5.\n\nHumiley HR'); }
+    const ov = document.getElementById('padrOverlay'); if (ov) ov.remove();
+    toast(finalizing ? 'PADR finalized & signed' : 'PADR updated'); tkRenderPerformance();
+  };
   try {
-    await tkApi('/api/coll/padr/' + id, { method: 'PATCH', body: p });
-    tkAudit('PADR ' + (p.status === 'Finalized' ? 'finalized' : 'updated'), p.name || '', p.rating ? ('Rating ' + p.rating + '/5') : p.status);
-    if (p.status === 'Finalized') { const e = _hrEmp(p.empId) || {}; tkNotifyGraph(e.email, 'Your PADR review is finalized', 'Hi ' + (e.name || '') + ', your ' + (p.cycle || '') + ' performance review has been finalized with a rating of ' + (p.rating || '-') + '/5.\n\nHumiley HR'); }
-    document.getElementById('padrOverlay').remove(); toast('PADR updated'); tkRenderPerformance();
+    if (finalizing) {
+      // 21 CFR Part 11: finalizing a review is a signed approval — save the scores first, then stamp the signature onto the record.
+      tkESign({
+        coll: 'padr', id: id,
+        meaning: 'Finalized PADR — ' + (p.name || '') + ' · ' + (p.cycle || '') + ' · Rating ' + (p.rating || '-') + '/5',
+        updateFn: persist,
+        onDone: afterSave
+      });
+    } else {
+      await persist(); afterSave();
+    }
   }
   catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
 }
@@ -6646,14 +6673,18 @@ async function tkRenderInbox() {
   const _pend = _inboxPendingIds(); _inboxMarkSeen(_pend); tkUpdateInboxBadge(_pend);   // viewing the inbox = seen → badge clears
 }
 function tkInboxTab(tab, el) { ['pending', 'audit'].forEach(t => { const p = document.getElementById('inbox-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#inbox-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
-async function tkInboxLeave(id, status) {
+function tkInboxLeave(id, status) {
   const l = (_DEMO_LEAVE || []).find(x => x.id == id) || {};
   const emp = _hrEmp(l.emp_id) || {};
-  await tkPersist('/api/leave/' + id, { status: status }, 'PATCH');
-  tkAudit('Leave ' + status, l.emp_name || emp.name || '', (l.type || '') + ' ' + (l.startDate || '') + '→' + (l.endDate || ''));
-  tkMailRequester(emp.email, emp.name || l.emp_name, 'Your leave request was ' + status, 'Dear ' + (emp.name || '') + ',\n\nYour ' + (l.type || 'leave') + ' request (' + (l.startDate || '') + ' to ' + (l.endDate || '') + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-  try { await tkBootstrap(); } catch (e) {}
-  toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
+  tkESign({
+    coll: 'leave', id: id, setStatus: status,
+    meaning: (status.charAt(0).toUpperCase() + status.slice(1)) + ' — Leave ' + (l.type || '') + ' · ' + (l.startDate || '') + ' → ' + (l.endDate || ''),
+    onDone: async () => {
+      tkMailRequester(emp.email, emp.name || l.emp_name, 'Your leave request was ' + status, 'Dear ' + (emp.name || '') + ',\n\nYour ' + (l.type || 'leave') + ' request (' + (l.startDate || '') + ' to ' + (l.endDate || '') + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      try { await tkBootstrap(); } catch (e) {}
+      toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
+    }
+  });
 }
 /* Expandable multi-line claim table — used by both the Inbox and Travel & Claims. */
 const _claimBadgeCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Partially approved' ? 'b-info' : 'b-warn';

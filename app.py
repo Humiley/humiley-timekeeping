@@ -368,18 +368,35 @@ class Handler(BaseHTTPRequestHandler):
             sess_email = (u.get("email") or "").lower()
             if signer_email and sess_email and signer_email != sess_email:
                 return self._err("The Microsoft 365 account you signed with does not match your session.", 403)
-        # Authorization: approving / rejecting / paying is a manager act; submitting is the owner's own.
-        if set_status and set_status != "Submitted" and u.get("role") != "manager":
+        # Authorization: an APPROVAL decision (approve / reject / mark-paid) is a manager act;
+        # submitting / self-service status changes are the record owner's own.
+        is_approval = bool(set_status) and str(set_status).strip().lower() in ("approved", "rejected", "paid")
+        if is_approval and u.get("role") != "manager":
             return self._err("Manager access required to approve, reject or mark paid.", 403)
+        sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
+               "ts": self._utc_now(), "meaning": meaning, "method": method}
+        if auth_time:
+            sig["authTime"] = auth_time
+        # Leave lives in its own structured table (not the generic JSON collections).
+        if coll == "leave":
+            lv = db.get_leave(int(iid)) if str(iid).isdigit() else None
+            if not lv:
+                return self._err("Leave record not found.", 404)
+            if u.get("role") != "manager" and lv.get("emp_id") and lv.get("emp_id") != u.get("id"):
+                return self._err("You can only sign your own record.", 403)
+            row = db.append_leave_signature(int(iid), sig, new_status=(set_status or None))
+            db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
+                "action": "E-signature — " + meaning, "target": "leave/" + str(iid),
+                "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
+                "ts": self._utc_now()})
+            return self._json({"ok": True, "item": {k: v for k, v in (row or {}).items() if k != "token"}})
         if coll not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
         item = next((x for x in db.list_collection(coll) if x.get("id") == iid), None)
         if not item:
             return self._err("Record not found.", 404)
-        sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
-               "ts": self._utc_now(), "meaning": meaning, "method": method}
-        if auth_time:
-            sig["authTime"] = auth_time
+        if u.get("role") != "manager" and item.get("empId") and item.get("empId") != u.get("id"):
+            return self._err("You can only sign your own record.", 403)
         item.setdefault("signatures", []).append(sig)
         if set_status:
             item["status"] = set_status

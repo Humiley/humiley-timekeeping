@@ -141,6 +141,10 @@ def init_db():
         conn.execute("ALTER TABLE leave ADD COLUMN token TEXT")  # approval-link token
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE leave ADD COLUMN signatures TEXT")  # 21 CFR Part 11 e-signatures (JSON)
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -790,6 +794,31 @@ def set_leave_status(leave_id, status, note=None):
     conn.execute("UPDATE leave SET status = ?, note = ? WHERE id = ?", (status, note, leave_id))
     conn.commit()
     conn.close()
+
+
+def append_leave_signature(leave_id, sig, new_status=None):
+    """Append a 21 CFR Part 11 e-signature (dict) to a leave record, optionally set its status.
+    Returns the row (dict) or None if not found."""
+    row = _row("SELECT * FROM leave WHERE id = ?", (leave_id,))
+    if not row:
+        return None
+    try:
+        sigs = json.loads(row.get("signatures") or "[]")
+    except Exception:
+        sigs = []
+    sigs.append(sig)
+    conn = get_conn()
+    if new_status is not None:
+        conn.execute("UPDATE leave SET signatures = ?, status = ? WHERE id = ?",
+                     (json.dumps(sigs), new_status, leave_id))
+    else:
+        conn.execute("UPDATE leave SET signatures = ? WHERE id = ?", (json.dumps(sigs), leave_id))
+    conn.commit()
+    conn.close()
+    out = dict(row); out["signatures"] = sigs
+    if new_status is not None:
+        out["status"] = new_status
+    return out
 
 
 # ---------------------------------------------------------------------------
