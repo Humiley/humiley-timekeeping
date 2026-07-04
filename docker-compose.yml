@@ -8,6 +8,9 @@ services:
     environment:
       - TK_ADMIN_EMAIL=${TK_ADMIN_EMAIL:-tony.nguyen@humiley.com}
       - TK_ADMIN_NAME=${TK_ADMIN_NAME:-Tony Nguyen}
+      # Signature-PIN pepper — kept out of the DB so a database leak can't crack PINs offline.
+      # Generated once into .env by update.sh; never change it or existing PINs stop verifying.
+      - TK_ESIGN_PEPPER=${TK_ESIGN_PEPPER:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:

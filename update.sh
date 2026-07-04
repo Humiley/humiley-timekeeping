@@ -43,6 +43,20 @@ fi
 say "Pulling latest code…"
 git pull
 
+# 2.5) Ensure the signature-PIN pepper exists (generated ONCE, then reused forever).
+#      Kept only in .env (gitignored) so a DB-file leak alone cannot crack PINs offline.
+#      NEVER regenerate an existing value — that would invalidate every enrolled PIN.
+touch .env
+if grep -qE '^TK_ESIGN_PEPPER=..' .env; then
+  say "Signature-PIN pepper already set (.env) — leaving it unchanged."
+else
+  say "Generating a signature-PIN pepper (first run)…"
+  PEP="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  sed -i.bak '/^TK_ESIGN_PEPPER=/d' .env && rm -f .env.bak      # drop any empty placeholder line
+  printf 'TK_ESIGN_PEPPER=%s\n' "$PEP" >> .env
+  echo "    saved to .env — BACK UP this file. Do not change TK_ESIGN_PEPPER or existing PINs stop working."
+fi
+
 # 3) Rebuild + restart — the humiley_data volume (your DB) is left untouched
 say "Rebuilding and restarting…"
 docker compose up -d --build
