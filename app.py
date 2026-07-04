@@ -155,6 +155,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
+        if path in ("/privacy", "/privacy.html"):   # public privacy policy (App Store requirement)
+            return self._serve_file(os.path.join(STATIC_DIR, "privacy.html"))
         if path == "/sw.js":   # service worker must be served from the origin root for full scope
             return self._serve_file(os.path.join(STATIC_DIR, "sw.js"))
         if path in ("/manifest.webmanifest", "/favicon.ico"):

@@ -52,7 +52,7 @@ npx cap open ios                 # opens Xcode
 3. Pick a real device or *Any iOS Device (arm64)* and **Product → Archive**.
 4. In the Organizer window that opens: **Distribute App** → **App Store Connect** → upload.
 5. In **App Store Connect** (<https://appstoreconnect.apple.com>): create the app record
-   (name, category = Business, privacy policy URL, screenshots), attach the build, and submit
+   (name, category = Business, privacy policy URL = **https://portal.humiley.com/privacy**, screenshots), attach the build, and submit
    to **TestFlight** (internal testing, instant) or the **App Store** (review, ~1–3 days).
 
 ### App details already set for you
