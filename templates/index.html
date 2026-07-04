@@ -3565,6 +3565,27 @@ async function tkGeocodeAddress() {
    2. ROLE-BASED AUTH & LOGIN
 ────────────────────────────────────────────────────────── */
 let _msalApp = null, _account = null;
+/* ── Native (Capacitor iOS/Android) Microsoft 365 sign-in ──────────────────────────────
+   In the App Store wrapper the portal runs in a WKWebView, and Microsoft blocks its login
+   page from rendering inside an embedded web view. So on native we open the Microsoft login
+   in the SYSTEM browser and catch the redirect back via a custom URL scheme. All of this is
+   gated behind _isNative() — on the website / PWA it is false and nothing here runs, so the
+   web sign-in is completely unchanged. */
+function _isNative() { try { return !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()); } catch (e) { return false; } }
+const _NATIVE_REDIRECT = 'msauth.com.humiley.portal://auth';
+function _nativeNav(url) { try { window.Capacitor.Plugins.Browser.open({ url: url }); } catch (e) {} return false; }  // don't navigate the webview
+function _onRedirect() { return _isNative() ? _nativeNav : undefined; }  // undefined on web = MSAL navigates normally
+function _wireNativeAuth() {
+  if (!_isNative()) return;
+  try {
+    window.Capacitor.Plugins.App.addListener('appUrlOpen', function (ev) {
+      const url = ev && ev.url; if (!url || url.indexOf('msauth.com.humiley.portal') < 0) return;
+      try { window.Capacitor.Plugins.Browser.close(); } catch (e) {}
+      try { localStorage.setItem('msal_native_redirect', url); } catch (e) {}
+      window.location.reload();   // reload so MSAL completes the token exchange on next load
+    });
+  } catch (e) {}
+}
 
 /* ── 21 CFR Part 11 electronic signature ─────────────────────────────────────────
    Every submit / approve / reject / mark-paid is signed: the signer re-authenticates
@@ -3942,7 +3963,7 @@ function msalLogin() {
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
   /* prompt:'login' forces a fresh sign-in every time (no silent SSO) — so the browser can't
      "keep the pass", and Microsoft re-challenges 2-step verification on each login. */
-  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'], prompt: 'login' });
+  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'], prompt: 'login', onRedirectNavigate: _onRedirect() });
 }
 
 /* ── Logout ── */
@@ -8644,10 +8665,13 @@ async function initAuth() {
 
   /* LIVE Microsoft 365 mode */
   _msalApp = new msal.PublicClientApplication({
-    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: window.location.origin },
-    cache: { cacheLocation: 'sessionStorage' }
+    auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: _isNative() ? _NATIVE_REDIRECT : window.location.origin },
+    cache: { cacheLocation: _isNative() ? 'localStorage' : 'sessionStorage' }
   });
-  _msalApp.handleRedirectPromise().then(async resp => {
+  _wireNativeAuth();
+  let _pendingNative = null;
+  try { if (_isNative()) { _pendingNative = localStorage.getItem('msal_native_redirect'); if (_pendingNative) localStorage.removeItem('msal_native_redirect'); } } catch (e) {}
+  _msalApp.handleRedirectPromise(_pendingNative || undefined).then(async resp => {
     if (resp) _account = resp.account;
     else {
       const accts = _msalApp.getAllAccounts();
@@ -8677,7 +8701,7 @@ async function _getToken() {
     const r = await _msalApp.acquireTokenSilent({ scopes, account: _account });
     return r.accessToken;
   } catch {
-    _msalApp.acquireTokenRedirect({ scopes });
+    _msalApp.acquireTokenRedirect({ scopes, onRedirectNavigate: _onRedirect() });
     return null;
   }
 }

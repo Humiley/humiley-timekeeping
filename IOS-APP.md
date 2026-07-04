@@ -61,17 +61,44 @@ npx cap open ios                 # opens Xcode
 - Icon: `mobile/resources/icon.png` · Splash: `mobile/resources/splash.png` (navy brand)
 - Status-bar / splash background: `#0b2649`
 
-### Important: Microsoft 365 sign-in inside the app
-Microsoft sometimes blocks sign-in inside an embedded web view for security. The config already
-allows the Microsoft login domains (`login.microsoftonline.com`, `*.msauth.net`, …). If sign-in
-is refused inside the wrapped app, the fix is one of:
-- In **Entra ID (Azure AD) → App registrations → Humiley Portal → Authentication**, add the iOS
-  redirect and allow public-client/native flows; **or**
-- Have the portal open the M365 login in the **system browser** (ASWebAuthenticationSession)
-  instead of the in-app web view. *(Tell me and I'll add this to the portal — it's a small change.)*
+### Microsoft 365 sign-in inside the app — already wired
 
-The **PWA (Phase 1) has no such issue** because it runs in real Safari — which is why it's the
-recommended path unless you specifically need the App Store listing.
+Microsoft blocks its login page from rendering inside an embedded web view. The portal now
+handles this automatically **when it detects it's running in the native app** (gated behind
+`Capacitor.isNativePlatform()` — the website/PWA is completely unchanged): it opens the Microsoft
+login in the **system browser**, then catches the redirect back through a custom URL scheme and
+finishes the sign-in. `CapacitorHttp` is enabled so the token exchange isn't blocked by CORS.
+
+Two small config steps remain (they can only be done on the Mac / in your Azure tenant):
+
+**1. Register the redirect URI in Entra ID (Azure AD)**
+App registrations → **Humiley Portal** → **Authentication** → **Add a platform** →
+**Mobile and desktop applications** → add this redirect URI:
+```
+msauth.com.humiley.portal://auth
+```
+(Keep the existing **Single-page application** platform with `https://portal.humiley.com` — that's
+what the website + PWA use.) Under **Advanced settings**, set **Allow public client flows = Yes**.
+
+**2. Register the URL scheme in Xcode**
+In `mobile/ios/App/App/Info.plist`, add (Capacitor's App plugin handles the callback automatically
+once the scheme is registered — no AppDelegate edit needed):
+```xml
+<key>CFBundleURLTypes</key>
+<array>
+  <dict>
+    <key>CFBundleURLSchemes</key>
+    <array><string>msauth.com.humiley.portal</string></array>
+  </dict>
+</array>
+```
+
+**Test on a device**, sign in once, and confirm it returns to the app. If the token exchange still
+fails, the robust fallback is the native **`@capacitor-community/msal`** plugin (native MSAL +
+ASWebAuthenticationSession) — tell me and I'll switch the native path to it.
+
+> The **PWA (Phase 1) never has this issue** because it runs in real Safari — still the recommended
+> path for day-to-day team use.
 
 ### App Store review note
 Apple guideline 4.2 can reject apps that are "just a web page." The portal is a full business
