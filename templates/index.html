@@ -3676,7 +3676,7 @@ async function _esignGo() {
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
-    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '' }, signAuth) });
+    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '' }, signAuth) });
     const pe = document.getElementById('esign-pin'); if (pe) pe.value = '';   // never leave the PIN in the DOM
     document.getElementById('esignOverlay')?.remove();
     toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
@@ -6997,7 +6997,8 @@ function _aprCls(status) {
   if (String(status) === 'Partially approved') return 'b-info';
   return M[_aprState(status)] || 'b-warn';
 }
-/* Build the Review/Approve + Reject buttons for a record; decideFn(id, targetStatus). */
+/* Build the Review/Approve + Reject buttons for a record; decideFn(id, targetStatus).
+   itemMode → per-claim-line buttons calling tkInboxClaimItem(claimId, itemId, targetStatus). */
 function _aprBtns(status, decideFn, id, opts) {
   opts = opts || {};
   const a = _aprAction(status);
@@ -7007,8 +7008,11 @@ function _aprBtns(status, decideFn, id, opts) {
   const stop = opts.stop ? 'event.stopPropagation();' : '';
   const to = opts.leave ? a.to.toLowerCase() : a.to;
   const rej = opts.leave ? 'rejected' : 'Rejected';
-  return '<button class="btn-approve" style="' + sz + '" onclick="' + stop + decideFn + '(' + idq + ',\'' + to + '\')">' + tkIcon('check', 12) + a.label + '</button> ' +
-    '<button class="btn-reject" style="' + sz + '" onclick="' + stop + decideFn + '(' + idq + ',\'' + rej + '\')">' + tkIcon('x', 12) + 'Reject</button>';
+  const call = t => opts.itemMode
+    ? "tkInboxClaimItem('" + String(opts.claimId).replace(/'/g, "\\'") + "'," + idq + ",'" + t + "')"
+    : decideFn + '(' + idq + ",'" + t + "')";
+  return '<button class="btn-approve" style="' + sz + '" onclick="' + stop + call(to) + '">' + tkIcon('check', 12) + a.label + '</button> ' +
+    '<button class="btn-reject" style="' + sz + '" onclick="' + stop + call(rej) + '">' + tkIcon('x', 12) + 'Reject</button>';
 }
 /* Expandable multi-line claim table — used by both the Inbox and Travel & Claims. */
 const _claimBadgeCls = s => _aprCls(s);
@@ -7021,8 +7025,9 @@ function _claimRowsHtml(claims, isMgr) {
     const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
     const allBtns = _aprBtns(st, 'tkInboxClaim', c.id, { small: true, stop: true });
     const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
-    const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th></tr></thead><tbody>' +
-      its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + _aprLabel(it.status || 'Submitted') + '</span></td></tr>').join('') +
+    const lineBtns = it => (it.id && it.id !== 'legacy') ? _aprBtns(it.status || 'Submitted', null, it.id, { small: true, itemMode: true, claimId: c.id }) : '';
+    const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><div style="font-size:10.5px;color:var(--text-light);margin-bottom:6px">Review / approve each line, or use “Review all / Approve all” above.</div><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th><th></th></tr></thead><tbody>' +
+      its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + _aprLabel(it.status || 'Submitted') + '</span></td><td style="white-space:nowrap">' + lineBtns(it) + '</td></tr>').join('') +
       '</tbody></table>' + _esignManifest(c) + '</td></tr>';
     return summary + detail;
   }).join('');
@@ -7039,17 +7044,20 @@ function tkInboxClaim(id, status) {
     }
   });
 }
-async function tkInboxClaimItem(claimId, itemId, status) {
+function tkInboxClaimItem(claimId, itemId, status) {
   const c = (_HR.claims || []).find(x => x.id === claimId); if (!c || !Array.isArray(c.items)) return;
   const it = c.items.find(x => x.id === itemId); if (!it) return;
-  it.status = status; c.status = _claimRollup(c);
-  try {
-    await tkApi('/api/coll/claims/' + claimId, { method: 'PATCH', body: c });
-    tkAudit('Claim item ' + status.toLowerCase(), c.name || '', (it.category || '') + ' ' + _PAY_FMT(it.amount || 0));
-    const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Expense claim item ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour claim item "' + (it.category || '') + '" (' + _PAY_FMT(it.amount || 0) + ') was ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '. Overall claim status: ' + c.status + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
-    toast('Item ' + status.toLowerCase()); try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {}
-  }
-  catch (e) { toast('Could not save: ' + e.message, 'error', 5000); }
+  const isReview = String(status).toLowerCase() === 'reviewed';
+  const verb = isReview ? 'Review' : (String(status).toLowerCase() === 'rejected' ? 'Reject' : 'Approve');
+  tkESign({
+    coll: 'claims', id: claimId, itemId: itemId, setStatus: status,
+    meaning: verb + ' — Claim item: ' + (it.category || 'item') + ' · ' + _PAY_FMT(it.amount || 0),
+    onDone: (item) => {
+      if (item) { const i = (_HR.claims || []).findIndex(x => x.id === claimId); if (i >= 0) _HR.claims[i] = item; }
+      const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Expense claim item ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour claim item "' + (it.category || '') + '" (' + _PAY_FMT(it.amount || 0) + ') was ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
+    }
+  });
 }
 /* ── Approval-Inbox notification badge ──────────────────────────────────────
    The badge behaves like a notification: it shows the count of pending items

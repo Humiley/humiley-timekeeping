@@ -420,6 +420,24 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return None
 
+    @staticmethod
+    def _claim_rollup(items):
+        """Roll a claim's overall status up from its line-item statuses (mirrors the frontend)."""
+        if not items:
+            return "Submitted"
+        st = lambda it: it.get("status") or "Submitted"
+        if any(st(it) == "Submitted" for it in items):
+            return "Partially approved" if any(st(it) in ("Approved", "Rejected", "Reviewed") for it in items) else "Submitted"
+        if all(st(it) == "Reviewed" for it in items):
+            return "Reviewed"
+        if all(st(it) == "Approved" for it in items):
+            return "Approved"
+        if all(st(it) == "Rejected" for it in items):
+            return "Rejected"
+        if any(st(it) == "Reviewed" for it in items):
+            return "Reviewed"
+        return "Partially approved"
+
     def _esign(self, u, body):
         """Apply an electronic signature to a record (Part 11): re-authenticate the signer via a
         fresh M365 sign-in, stamp an immutable signature manifestation (signer, UTC time, meaning,
@@ -488,6 +506,30 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Record not found.", 404)
         if u.get("role") != "manager" and item.get("empId") and item.get("empId") != u.get("id"):
             return self._err("You can only sign your own record.", 403)
+        # Per-line-item signed decision on a claim (itemId present): review / approve / reject one line.
+        item_id = body.get("itemId")
+        if coll == "claims" and item_id:
+            lines = item.get("items") if isinstance(item.get("items"), list) else []
+            line = next((x for x in lines if x.get("id") == item_id), None)
+            if not line:
+                return self._err("Claim item not found.", 404)
+            synth = [{"meaning": "review", "userId": line.get("reviewedById")}] if line.get("reviewedById") else []
+            _err = self._appr_check(u, "claims", line.get("status") or "Submitted", set_status, synth, item.get("empId"))
+            if _err:
+                return self._err(_err, 403)
+            item.setdefault("signatures", []).append(sig)
+            if set_status:
+                line["status"] = set_status
+                if set_status == "Reviewed":
+                    line["reviewedBy"] = signer_name; line["reviewedById"] = u.get("id")
+                elif set_status == "Approved":
+                    line["approvedBy"] = signer_name
+                item["status"] = self._claim_rollup(lines)
+            db.put_collection_item("claims", item)
+            db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
+                "action": "E-signature — " + meaning, "target": "claims/" + str(iid) + "/item/" + str(item_id),
+                "detail": (set_status or "signed") + " · " + method, "ts": self._utc_now()})
+            return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
         if _err:
             return self._err(_err, 403)
