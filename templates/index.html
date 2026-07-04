@@ -7463,12 +7463,19 @@ function tkFinShow(coll, id) {
 }
 const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
 const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
-/* One Finance area, many tabs — shown to Management/Director across all finance views. */
+/* One Finance area, tabbed. Management/Director see the full oversight tabs; a regular user
+   sees only Overview + Request in the Payment area (and sets their signing PIN in My Profile). */
 function _finTabBar(active) {
-  if (_lvlRank(_userLevel) < _lvlRank('management')) return '';
-  const tabs = [['finance', 'Overview'], ['payments', 'Payments'], ['travelclaims', 'Claims & Travel'], ['esigngov', 'Signatures']];
-  if (_lvlRank(_userLevel) >= _lvlRank('admin')) tabs.push(['permissions', 'Permissions']);
-  return '<div class="tabs" style="margin:0 0 16px" data-html2canvas-ignore="true">' + tabs.map(t => '<button class="tab' + (t[0] === active ? ' active' : '') + '" onclick="showView(\'' + t[0] + '\',null,\'' + t[1] + '\')">' + _t(t[1]) + '</button>').join('') + '</div>';
+  const mk = arr => '<div class="tabs" style="margin:0 0 16px" data-html2canvas-ignore="true">' + arr.map(t => '<button class="tab' + (t.active ? ' active' : '') + '" onclick="' + t.onclick + '">' + _t(t.label) + '</button>').join('') + '</div>';
+  if (_lvlRank(_userLevel) >= _lvlRank('management')) {
+    const tabs = [['finance', 'Overview'], ['payments', 'Payments'], ['travelclaims', 'Claims & Travel'], ['esigngov', 'Signatures']];
+    return mk(tabs.map(t => ({ label: t[1], active: t[0] === active, onclick: "showView('" + t[0] + "',null,'" + t[1] + "')" })));
+  }
+  if (active !== 'payments') return '';   // regular users only get the minimal bar on the Payment view
+  return mk([
+    { label: 'Overview', active: true, onclick: "showView('payments',null,'Payment Requests')" },
+    { label: 'Request', active: false, onclick: 'tkNewPayment()' }
+  ]);
 }
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
@@ -7831,7 +7838,7 @@ function tkRenderPermissions() {
     const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
     return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
-  root.innerHTML = _finTabBar('permissions') + kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
+  root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
 }
 /* Live filter for the Assign Access Levels table — matches name, email, position or department. */
 function tkPermFilter(q) {
@@ -10973,6 +10980,7 @@ const _VI = {
   'Claims & Travel': 'Chi phí & Công tác',
   'Signatures': 'Chữ ký',
   'Permissions': 'Phân quyền',
+  'Request': 'Đề nghị',
   // ── 3-level approval workflow ──
   'Pending Review': 'Chờ xem xét',
   'Pending Approval': 'Chờ phê duyệt',
