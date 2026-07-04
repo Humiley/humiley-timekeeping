@@ -957,6 +957,19 @@ def get_pin_status(emp_id):
             "expired": expired, "ageDays": age_days, "setAt": st}
 
 
+def all_pin_statuses():
+    """PIN status for every employee (manager governance view). Never returns hash/salt material."""
+    out = []
+    for e in list_employees():
+        st = get_pin_status(e.get("id"))
+        out.append({"empId": e.get("id"), "name": e.get("name"), "dept": e.get("dept"),
+                    "title": e.get("title"), "email": e.get("email"),
+                    "enrolled": st.get("enrolled", False), "setAt": st.get("setAt"),
+                    "locked": st.get("locked", False), "expired": st.get("expired", False),
+                    "revoked": st.get("revoked", False), "mustChange": st.get("mustChange", False)})
+    return out
+
+
 def set_pin(emp_id, new_pin, enrolled_via="M365 session", enrolled_oid=None):
     """Enroll or change the PIN (upsert). Blocks immediate reuse of the previous PIN.
     Returns (ok, reason)."""

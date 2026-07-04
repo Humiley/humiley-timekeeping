@@ -732,6 +732,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('esigngov',this,'Signature Governance')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <span class="nav-label">Signature Governance</span>
+  </div>
   <div class="nav-item" data-roles="manager" data-level="management" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
     <span class="nav-label">Reports</span>
@@ -1137,6 +1141,17 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
   </div>
   <div id="finance-root"></div>
+</div>
+
+<div id="view-esigngov" class="view">
+  <div class="page-header">
+    <div><h1>Signature Governance</h1><p>Who has enrolled a signing PIN, and the full 21 CFR Part 11 electronic-signature audit trail</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="tkEsignGovExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export Excel</button>
+      <button class="btn btn-primary btn-sm" onclick="tkRenderESignGov()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
+    </div>
+  </div>
+  <div id="esigngov-root"></div>
 </div>
 
 <div id="view-permissions" class="view">
@@ -3772,6 +3787,68 @@ function _pinStatusInner() {
     btns = '<button class="btn btn-outline btn-sm" onclick="tkPinSetup(\'change\')">' + _t('Change PIN') + '</button> <button class="btn btn-ghost btn-sm" onclick="tkPinRemove()" style="margin-left:6px">' + _t('Remove PIN') + '</button>';
   }
   return '<div style="margin-bottom:8px">' + head + '</div><div style="font-size:12.5px;color:var(--text-light);line-height:1.55;margin-bottom:12px">' + sub + '</div>' + btns;
+}
+
+/* ── Signature Governance (manager view): PIN enrollment status + e-signature audit trail ── */
+let _esignGovData = { pins: [], sig: [] };
+function _esignGovRow(a) {
+  return '<tr>' +
+    '<td style="padding:7px 18px;font-size:11.5px;color:var(--text-light);white-space:nowrap;border-top:1px solid var(--line)">' + _crmEsc((a.ts || '').replace('T', ' ').replace('Z', ' UTC')) + '</td>' +
+    '<td style="padding:7px 8px;font-weight:600;border-top:1px solid var(--line)">' + _crmEsc(a.actor || '') + '</td>' +
+    '<td style="padding:7px 8px;border-top:1px solid var(--line)">' + _crmEsc((a.action || '').replace(/^E-signature\s*(PIN)?\s*[—-]?\s*/i, '') || 'signed') + '</td>' +
+    '<td style="padding:7px 8px;font-size:11.5px;color:var(--text-light);border-top:1px solid var(--line)">' + _crmEsc(a.target || '') + '</td>' +
+    '<td style="padding:7px 8px;font-size:11.5px;color:var(--text-light);border-top:1px solid var(--line)">' + _crmEsc(a.detail || '') + '</td>' +
+  '</tr>';
+}
+function _esignGovFilter(q) {
+  q = (q || '').toLowerCase();
+  const rows = (_esignGovData.sig || []).filter(a => !q || ((a.actor || '') + ' ' + (a.action || '') + ' ' + (a.target || '') + ' ' + (a.detail || '') + ' ' + (a.ts || '')).toLowerCase().indexOf(q) >= 0);
+  const body = document.getElementById('esigngov-audit-body'); if (!body) return;
+  body.innerHTML = rows.slice(0, 300).map(_esignGovRow).join('') || '<tr><td colspan="5" style="padding:14px 18px;color:var(--text-light)">No matching events.</td></tr>';
+}
+async function tkPinGovRevoke(empId, name) {
+  if (!confirm('De-authorize the signing PIN for ' + (name || 'this employee') + '?\n\nThey will have to set a new PIN before they can sign with a PIN again. You cannot see or set their PIN.')) return;
+  try { await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'revoke', empId: empId } }); toast('Signing PIN de-authorized'); tkRenderESignGov(); }
+  catch (e) { toast(e.message || 'Could not de-authorize', 'error', 5000); }
+}
+function tkEsignGovExportXLS() {
+  if (typeof XLSX === 'undefined') { toast('Excel library not loaded', 'warn'); return; }
+  const d = _esignGovData || { pins: [], sig: [] };
+  const st = p => p.revoked ? 'De-authorized' : p.mustChange ? 'Must re-enroll' : !p.enrolled ? 'No PIN' : p.locked ? 'Locked' : p.expired ? 'Expired' : 'Active';
+  const wb = XLSX.utils.book_new();
+  const pinAoA = [['Employee', 'Dept', 'Title', 'Email', 'PIN status', 'PIN set (UTC)']].concat((d.pins || []).map(p => [p.name, p.dept, p.title, p.email, st(p), p.setAt || '']));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(pinAoA), 'PIN status');
+  const audAoA = [['When (UTC)', 'Signer', 'Action', 'Record', 'Detail']].concat((d.sig || []).map(a => [a.ts || '', a.actor || '', a.action || '', a.target || '', a.detail || '']));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(audAoA), 'Audit trail');
+  XLSX.writeFile(wb, 'Humiley_Signature_Governance.xlsx');
+}
+async function tkRenderESignGov() {
+  const root = document.getElementById('esigngov-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  let pins = [], audit = [];
+  try { const r = await tkApi('/api/esign/pin/all'); pins = (r && r.pins) || []; } catch (e) {}
+  try { const r = await tkApi('/api/coll/audit'); audit = (r && (r.items || r)) || []; if (!Array.isArray(audit)) audit = []; } catch (e) {}
+  const sig = audit.filter(a => /E-signature/i.test(a.action || '')).sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
+  _esignGovData = { pins: pins, sig: sig };
+  const enrolled = pins.filter(p => p.enrolled && !p.revoked && !p.mustChange).length;
+  const locked = pins.filter(p => p.locked).length;
+  const notset = pins.filter(p => !p.enrolled || p.revoked || p.mustChange).length;
+  const kpi = (label, val, hex) => '<div class="card" style="padding:14px 16px;flex:1;min-width:120px"><div style="font-size:24px;font-weight:800;color:' + hex + '">' + val + '</div><div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' + label + '</div></div>';
+  const kpis = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">' +
+    kpi('Employees', pins.length, 'var(--navy)') + kpi('PIN enrolled', enrolled, '#0a7a45') +
+    kpi('No PIN yet', notset, '#5C6470') + kpi('Locked now', locked, locked ? '#c0392b' : 'var(--navy)') + '</div>';
+  const pill = (t, bg, fg) => '<span style="display:inline-block;padding:2px 9px;border-radius:11px;font-size:10.5px;font-weight:700;background:' + bg + ';color:' + fg + '">' + t + '</span>';
+  const statCell = p => p.revoked ? pill('De-authorized', '#fdecec', '#c0392b') : p.mustChange ? pill('Reset — must re-enroll', '#fff4e5', '#a15c00') : !p.enrolled ? pill('No PIN', '#eef1f5', '#5C6470') : p.locked ? pill('Locked', '#fdecec', '#c0392b') : p.expired ? pill('Expired', '#fff4e5', '#a15c00') : pill('Active', '#e7f7ef', '#0a7a45');
+  const prows = pins.map(p => '<tr>' +
+    '<td style="padding:8px 18px;font-weight:600;border-top:1px solid var(--line)">' + _crmEsc(p.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(p.dept || '') + (p.title ? ' · ' + _crmEsc(p.title) : '') + '</div></td>' +
+    '<td style="padding:8px;border-top:1px solid var(--line)">' + statCell(p) + '</td>' +
+    '<td style="padding:8px;font-size:12px;color:var(--text-light);border-top:1px solid var(--line)">' + (p.setAt ? tkFmtDate(p.setAt) : '—') + '</td>' +
+    '<td style="padding:8px;text-align:right;border-top:1px solid var(--line)">' + ((p.enrolled && !p.revoked) ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:3px 9px;color:#c0392b" onclick="tkPinGovRevoke(\'' + p.empId + '\',\'' + _crmEsc((p.name || '').replace(/['"\\]/g, '')) + '\')">De-authorize</button>' : '') + '</td>' +
+  '</tr>').join('');
+  const pinTable = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div style="padding:14px 18px;font-size:13px;font-weight:800;color:var(--navy);border-bottom:1px solid var(--line)">Signing-PIN enrollment</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--text-light);font-size:11px"><th style="padding:8px 18px">Employee</th><th style="padding:8px">PIN status</th><th style="padding:8px">PIN set</th><th></th></tr></thead><tbody>' + prows + '</tbody></table></div></div>';
+  const auditRows = sig.slice(0, 300).map(_esignGovRow).join('');
+  const auditCard = '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)"><span style="font-size:13px;font-weight:800;color:var(--navy)">Electronic-signature audit trail</span><input id="esigngov-search" placeholder="Filter signer / action / record…" oninput="_esignGovFilter(this.value)" style="border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px;font-family:inherit;min-width:200px"></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--text-light);font-size:11px"><th style="padding:8px 18px">When (UTC)</th><th style="padding:8px">Signer</th><th style="padding:8px">Action</th><th style="padding:8px">Record</th><th style="padding:8px">Detail</th></tr></thead><tbody id="esigngov-audit-body">' + (auditRows || '<tr><td colspan="5" style="padding:14px 18px;color:var(--text-light)">No electronic-signature events recorded yet.</td></tr>') + '</tbody></table></div></div>';
+  root.innerHTML = kpis + pinTable + auditCard;
 }
 
 let _userRole = null;   // 'manager' | 'staff'
@@ -9237,7 +9314,7 @@ async function crmImportFile(coll, file) {
 
 
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
-const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', finance: 'management', permissions: 'admin' };
+const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', finance: 'management', esigngov: 'management', permissions: 'admin' };
 const _HR_VIEWS = new Set(['database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 
 /* ===== PROJECT MANAGEMENT SUITE (PMBOK) ===== */
@@ -10618,6 +10695,7 @@ function showView(id, navEl, title) {
   if (id === 'travelclaims') { try { tkRenderTravelClaims(); } catch (e) { console.warn('travel:', e.message); } }
   if (id === 'payments') { try { tkRenderPayments(); } catch (e) { console.warn('payments:', e.message); } }
   if (id === 'finance') { try { tkRenderFinance(); } catch (e) { console.warn('finance:', e.message); } }
+  if (id === 'esigngov') { try { tkRenderESignGov(); } catch (e) { console.warn('esigngov:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }

@@ -180,6 +180,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_get(u))
+        if path == "/api/esign/pin/all":
+            return self._guard(lambda u: self._json({"pins": db.all_pin_statuses()}), manager=True)
         if path.startswith("/api/coll/"):
             name = path[len("/api/coll/"):].split("/")[0]
             return self._guard(lambda u: self._coll_list(u, name))
