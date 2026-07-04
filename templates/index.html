@@ -736,6 +736,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
     <span class="nav-label">Signature Governance</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/></svg></span>
+    <span class="nav-label">Access &amp; Permissions</span>
+  </div>
   <div class="nav-item" data-roles="manager" data-level="management" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
     <span class="nav-label">Reports</span>
@@ -750,10 +754,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
     <span class="nav-label">GPS Locations</span>
     <span class="nav-badge" id="badge-anomaly">2</span>
-  </div>
-  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
-    <span class="nav-label">Access &amp; Permissions</span>
   </div>
 
 
@@ -1145,7 +1145,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
 <div id="view-esigngov" class="view">
   <div class="page-header">
-    <div><h1>Signature Governance</h1><p>Who has enrolled a signing PIN, and the full 21 CFR Part 11 electronic-signature audit trail</p></div>
+    <div><h1>Signature Governance</h1><p>Who has enrolled a signing PIN, and the full electronic-signature audit trail</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="tkEsignGovExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export Excel</button>
       <button class="btn btn-primary btn-sm" onclick="tkRenderESignGov()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
@@ -3620,7 +3620,7 @@ function tkESign(opts) {
   }
   const el = document.createElement('div'); el.id = 'esignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">' + _t('Electronic Signature') + '</div><button class="modal-close" onclick="document.getElementById(\'esignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Electronic record &middot; 21 CFR Part 11</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Electronic record</div>' +
     '<div class="card" style="padding:12px 14px;background:var(--light-tint);font-size:13px;line-height:1.8">' +
     '<div><span style="color:var(--text-light)">' + _t('Signer') + '</span> — <b>' + _crmEsc(who) + '</b>' + (email ? ' <span style="color:var(--text-light)">(' + _crmEsc(email) + ')</span>' : '') + '</div>' +
     '<div><span style="color:var(--text-light)">' + _t('Date & time (UTC)') + '</span> — <b id="esign-clock">—</b></div>' +
@@ -3854,7 +3854,7 @@ async function tkRenderESignGov() {
   const pinTable = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div style="padding:14px 18px;font-size:13px;font-weight:800;color:var(--navy);border-bottom:1px solid var(--line)">Signing-PIN enrollment</div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--text-light);font-size:11px"><th style="padding:8px 18px">Employee</th><th style="padding:8px">PIN status</th><th style="padding:8px">PIN set</th><th></th></tr></thead><tbody>' + prows + '</tbody></table></div></div>';
   const auditRows = sig.slice(0, 300).map(_esignGovRow).join('');
   const auditCard = '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)"><span style="font-size:13px;font-weight:800;color:var(--navy)">Electronic-signature audit trail</span><input id="esigngov-search" placeholder="Filter signer / action / record…" oninput="_esignGovFilter(this.value)" style="border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px;font-family:inherit;min-width:200px"></div><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--text-light);font-size:11px"><th style="padding:8px 18px">When (UTC)</th><th style="padding:8px">Signer</th><th style="padding:8px">Action</th><th style="padding:8px">Record</th><th style="padding:8px">Detail</th></tr></thead><tbody id="esigngov-audit-body">' + (auditRows || '<tr><td colspan="5" style="padding:14px 18px;color:var(--text-light)">No electronic-signature events recorded yet.</td></tr>') + '</tbody></table></div></div>';
-  root.innerHTML = kpis + pinTable + auditCard;
+  root.innerHTML = _finTabBar('esigngov') + kpis + pinTable + auditCard;
 }
 
 let _userRole = null;   // 'manager' | 'staff'
@@ -6249,22 +6249,51 @@ function _brandPaginate(doc, canvas, opts) {
 }
 /* Notify the requester of an approval decision. Microsoft Graph if connected; otherwise the
    approver's own mail client opens pre-addressed to the requester, so the approver sends it. */
-async function tkMailRequester(to, name, subject, body) {
+async function tkMailRequester(to, name, subject, body, cc) {
   if (!to) { toast('No email on file for ' + (name || 'the requester') + ' — not notified', 'warn', 4000); return false; }
+  // cc: string ("a@x;b@y" or "a@x,b@y") or array; deduped, self/to removed
+  const ccList = [...new Set((Array.isArray(cc) ? cc : String(cc || '').split(/[;,]/)).map(s => (s || '').trim().toLowerCase()).filter(Boolean))]
+    .filter(a => a !== (to || '').toLowerCase());
   const hook = window._TK_TEAMS_WEBHOOK || (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook);
   if (hook) { try { fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: subject, text: body }) }).catch(() => {}); } catch (e) {} }
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true }) });
-      if (resp.ok) { toast('Emailed ' + (name || to)); return true; }
+      const msg = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] };
+      if (ccList.length) msg.ccRecipients = ccList.map(a => ({ emailAddress: { address: a } }));
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      if (resp.ok) { toast('Emailed ' + (name || to) + (ccList.length ? ' (cc ' + ccList.length + ')' : '')); return true; }
     } catch (e) {}
   }
   try {
-    _openAsOutlook(to, subject, body);
+    _openAsOutlook(to, subject, body, null, null, ccList.join(';'));
     toast('Opening Outlook — message to ' + (name || to) + ' ready. Review & Send.', 'info', 5000);
   } catch (e) { toast('Could not open mail client', 'warn'); }
   return true;
+}
+/* Central finance-workflow notifications: right recipients per stage, always CC finance@humiley.com. */
+const FINANCE_CC = 'finance@humiley.com';
+function _sigEmails(item) { return [...new Set(((item && item.signatures) || []).map(s => (s.email || '')).filter(Boolean))]; }
+async function tkFinFlowMail(item, kindLabel, ref, amountLabel, newStatus, requesterEmail, requesterName) {
+  const st = String(newStatus || '').toLowerCase();
+  const who = requesterName || 'colleague';
+  const actor = (TK.user || {}).name || 'the approver';
+  const line = kindLabel + (ref ? ' "' + ref + '"' : '') + (amountLabel ? ' (' + amountLabel + ')' : '');
+  const foot = '\n\nBest regards,\nHumiley Group Inc. — Finance';
+  if (st === 'reviewed') {
+    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was reviewed', 'Dear ' + who + ',\n\nYour ' + line + ' has been REVIEWED by ' + actor + ' and is now awaiting Director approval.' + foot, FINANCE_CC);
+  }
+  if (st === 'approved') {
+    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was approved', 'Dear ' + who + ',\n\nYour ' + line + ' has been APPROVED by ' + actor + '.' + foot, FINANCE_CC);
+  }
+  if (st === 'rejected') {
+    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was returned', 'Dear ' + who + ',\n\nYour ' + line + ' has been REJECTED / returned by ' + actor + '. Please follow up with your manager.' + foot, FINANCE_CC);
+  }
+  if (st === 'paid') {
+    const cc = [FINANCE_CC].concat(_sigEmails(item)).join(';');   // reviewer + approver (from signatures) + finance
+    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' has been paid', 'Dear ' + who + ',\n\nYour ' + line + ' has been PAID by ' + actor + '. Reviewer and approver are copied.' + foot, cc);
+  }
+  return false;
 }
 
 /* Build an A4 PDF payslip on the Humiley letterhead (jsPDF). Returns the doc or null. */
@@ -6426,13 +6455,14 @@ function tkPayslip(empId) {
    PDF already ATTACHED. We build an RFC-822 .eml with `X-Unsent: 1` — Outlook opens it as a new,
    editable draft (To / Subject / Body / attachment all set) so the user just reviews and clicks Send.
    This works without Microsoft 365 keys, which plain mailto: links cannot (they can't carry attachments). */
-function _openAsOutlook(to, subject, body, attName, attB64) {
+function _openAsOutlook(to, subject, body, attName, attB64, cc) {
   const CRLF = '\r\n';
   const b = 'HMLMIME_' + Math.abs(((subject || '') + (to || '')).length * 1009 + ((attB64 || '').length % 100000));
   const _aExt = ((attName || '').split('.').pop() || '').toLowerCase();
   const _attMime = ({ pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }[_aExt] || 'application/octet-stream');
   let eml = '';
   eml += 'To: ' + (to || '') + CRLF;
+  if (cc) eml += 'Cc: ' + cc + CRLF;
   eml += 'Subject: ' + (subject || '') + CRLF;
   eml += 'X-Unsent: 1' + CRLF;                 // ← tells Outlook to open this as a NEW unsent draft
   eml += 'MIME-Version: 1.0' + CRLF;
@@ -7039,7 +7069,7 @@ function tkInboxClaim(id, status) {
     meaning: status + ' — Claim ' + (c.title || c.type || '') + ' · ' + _PAY_FMT(_claimTotal(c)),
     onDone: (item) => {
       if (item) { const i = (_HR.claims || []).findIndex(x => x.id === id); if (i >= 0) _HR.claims[i] = item; }
-      const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Your expense claim was ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour expense claim "' + (c.title || c.type || '') + '" (' + _PAY_FMT(_claimTotal(c)) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      const emp = _hrEmp(c.empId) || {}; tkFinFlowMail(item || c, 'expense claim', (c.title || c.type || ''), _PAY_FMT(_claimTotal(c)), status, emp.email, emp.name || c.name);
       try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
   });
@@ -7141,7 +7171,7 @@ async function tkRenderTravelClaims() {
   const act = (coll, id, status) => _aprBtns(status, (coll === 'travel' ? 'tkTravelDecision' : 'tkTCDecision'), id, { small: true });
   const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
-  root.innerHTML = periodSel + '<div id="tc-export">' + kpis + deptDash +
+  root.innerHTML = _finTabBar('travelclaims') + periodSel + '<div id="tc-export">' + kpis + deptDash +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Expense &amp; Benefit Claims</div><span style="font-size:11px;color:var(--text-light)">Click a claim to see its items</span></div><div class="table-wrap"><table>' + claimRows + '</table></div></div></div>';
 }
@@ -7184,7 +7214,7 @@ function tkTravelDecision(id, status) {
     meaning: status + ' — Travel ' + (t.dest || '') + ' · ' + _PAY_FMT(t.cost || 0),
     onDone: (item) => {
       if (item) { const i = (_HR.travel || []).findIndex(x => x.id === id); if (i >= 0) _HR.travel[i] = item; }
-      const e = _hrEmp(t.empId) || {}; tkMailRequester(e.email, e.name || t.name, 'Your travel request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour travel request to ' + (t.dest || '') + ' (' + (t.from || '') + (t.to ? ' → ' + t.to : '') + ', est. ' + _PAY_FMT(t.cost || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      const e = _hrEmp(t.empId) || {}; tkFinFlowMail(item || t, 'travel request', (t.dest || ''), _PAY_FMT(t.cost || 0), status, e.email, e.name || t.name);
       tkRenderTravelClaims(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
   });
@@ -7220,10 +7250,11 @@ async function tkRenderPayments() {
   const dash = isMgr ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'pay-cat') + _rptChartCard('Status Breakdown', 'pay-status') + '</div>' : '';
   const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
     _crmFiltSearch('pay-q', 'Search no. / payee / purpose…', 'payFillTable') +
-    _crmFiltSel('pay-status-f', 'All status', ['Submitted', 'Approved', 'Rejected', 'Paid'], 'payFillTable') +
+    _crmFiltSel('pay-status-f', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Rejected', 'Paid'], 'payFillTable') +
+    _crmFiltSel('pay-period-f', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'payFillTable') +
     _crmFiltSel('pay-cat-f', 'All categories', _crmDistinct(all, 'category'), 'payFillTable') +
     _crmFiltSel('pay-dept-f', 'All departments', _crmDistinct(all, 'department'), 'payFillTable') + '</div>';
-  root.innerHTML = '<div id="pay-export">' + kpis + dash +
+  root.innerHTML = _finTabBar('payments') + '<div id="pay-export">' + kpis + dash +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Payment Register</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All requests · Approve / Reject / Mark paid' : 'Mine') + '</span></div>' +
     fbar +
     '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
@@ -7239,10 +7270,10 @@ async function tkRenderPayments() {
 function payFillTable() {
   const tb = document.getElementById('pay-tbody'); if (!tb) return;
   const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
-  const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '';
+  const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '', period = _crmLF['pay-period-f'] || '';
   const list = (_HR.payments || []).filter(p => {
     const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
-    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept);
+    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriod(p.dueDate || p.ts, period);
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
   tb.innerHTML = list.length ? list.map(p => {
     const s = p.status || 'Submitted';
@@ -7297,7 +7328,7 @@ function tkPaymentDecision(id, status) {
     onDone: (item) => {
       if (item) { const i = (_HR.payments || []).findIndex(x => x.id === id); if (i >= 0) _HR.payments[i] = item; }
       const e = _hrEmp(p.empId) || {};
-      tkMailRequester(e.email, e.name || p.name, 'Your payment request was ' + status.toLowerCase(), 'Dear ' + (e.name || '') + ',\n\nYour payment request ' + (p.reqNo || '') + ' (' + (p.payee || '') + ', ' + _PAY_FMT(p.amount || 0) + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      tkFinFlowMail(item || p, 'payment request', (p.reqNo || '') + ' · ' + (p.payee || ''), _PAY_FMT(p.amount || 0), status, e.email, e.name || p.name);
       tkRenderPayments(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
   });
@@ -7321,13 +7352,31 @@ function tkFinShow(coll, id) {
 }
 const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
 const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
+/* One Finance area, many tabs — shown to Management/Director across all finance views. */
+function _finTabBar(active) {
+  if (_lvlRank(_userLevel) < _lvlRank('management')) return '';
+  const tabs = [['finance', 'Overview'], ['payments', 'Payments'], ['travelclaims', 'Claims & Travel'], ['esigngov', 'Signatures']];
+  if (_lvlRank(_userLevel) >= _lvlRank('admin')) tabs.push(['permissions', 'Permissions']);
+  return '<div class="tabs" style="margin:0 0 16px" data-html2canvas-ignore="true">' + tabs.map(t => '<button class="tab' + (t[0] === active ? ' active' : '') + '" onclick="showView(\'' + t[0] + '\',null,\'' + t[1] + '\')">' + _t(t[1]) + '</button>').join('') + '</div>';
+}
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
   const out = [];
   (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.dueDate || '', hasFile: !!p.attachment }));
-  (_HR.claims || []).forEach(c => out.push({ kind: 'Claim', coll: 'claims', id: c.id, ref: c.title || c.type || '', who: c.name || '', dept: c.dept || '', category: c.claimType || 'Claim', amount: _claimTotal(c), status: _claimRollup(c), date: '', hasFile: !!(Array.isArray(c.items) && c.items.some(i => i.attachment)) }));
-  (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || '', hasFile: !!t.attachment }));
+  (_HR.claims || []).forEach(c => out.push({ kind: 'Claim', coll: 'claims', id: c.id, ref: c.title || c.type || '', who: c.name || '', dept: c.dept || '', category: c.claimType || 'Claim', amount: _claimTotal(c), status: _claimRollup(c), date: c.ts || c.date || c.submittedDate || '', hasFile: !!(Array.isArray(c.items) && c.items.some(i => i.attachment)) }));
+  (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || t.ts || '', hasFile: !!t.attachment }));
   return out;
+}
+/* Period filter: match a date string against This month / This quarter / This year. */
+function _inPeriod(dateStr, period) {
+  if (!period) return true;
+  const d = new Date(dateStr); if (!dateStr || isNaN(d.getTime())) return false;
+  const now = new Date();
+  if (period === 'This month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+  if (period === 'This quarter') return d.getFullYear() === now.getFullYear() && (d.getMonth() / 3 | 0) === (now.getMonth() / 3 | 0);
+  if (period === 'This year') return d.getFullYear() === now.getFullYear();
+  if (period === 'Last month') { const m = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth(); }
+  return true;
 }
 function tkFinDecide(kind, id, status) {
   // Each decision opens the e-signature modal; its onDone re-renders Finance.
@@ -7364,9 +7413,10 @@ async function tkRenderFinance() {
     _crmFiltSearch('fin-q', 'Search requester / reference / category…', 'finFillTable') +
     _crmFiltSel('fin-kind', 'All types', ['Payment', 'Claim', 'Travel'], 'finFillTable') +
     _crmFiltSel('fin-status', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
+    _crmFiltSel('fin-period', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'finFillTable') +
     _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
   const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
-  root.innerHTML = '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
+  root.innerHTML = _finTabBar('finance') + '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
   finFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
@@ -7377,10 +7427,10 @@ async function tkRenderFinance() {
 }
 function finFillTable() {
   const tb = document.getElementById('fin-tbody'); if (!tb) return;
-  const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '';
+  const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '', period = _crmLF['fin-period'] || '';
   const list = _finItems().filter(i => {
     const hay = ((i.ref || '') + ' ' + (i.who || '') + ' ' + (i.category || '')).toLowerCase();
-    return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept);
+    return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept) && _inPeriod(i.date, period);
   }).sort((a, b) => b.amount - a.amount);
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
   tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
@@ -7404,7 +7454,7 @@ async function tkPaymentVoucherPDF(id) {
     (p.note ? row('Note', _crmEsc(p.note)) : '') +
     '</table>' +
     '<table style="width:100%;margin-top:34px;border-collapse:collapse"><tr>' + sign('Requested by', p.name) + sign('Approved by', p.approvedBy) + sign('Paid by / Finance', '') + '</tr></table>' +
-    ((p.signatures && p.signatures.length) ? '<div style="margin-top:22px;padding-top:8px;border-top:1px solid #eef1f4;font-size:10.5px;color:#5C6470"><b style="color:#205090">Electronic signatures — 21 CFR Part 11</b>' + p.signatures.map(s => '<div style="margin-top:3px">✓ <b style="color:#1F2937">' + _crmEsc(s.name || '') + '</b> — ' + _crmEsc(s.meaning || '') + ' — ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + ' — ' + _crmEsc(s.method || '') + '</div>').join('') + '</div>' : '') +
+    ((p.signatures && p.signatures.length) ? '<div style="margin-top:22px;padding-top:8px;border-top:1px solid #eef1f4;font-size:10.5px;color:#5C6470"><b style="color:#205090">Electronic signatures</b>' + p.signatures.map(s => '<div style="margin-top:3px">✓ <b style="color:#1F2937">' + _crmEsc(s.name || '') + '</b> — ' + _crmEsc(s.meaning || '') + ' — ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + ' — ' + _crmEsc(s.method || '') + '</div>').join('') + '</div>' : '') +
     '</div>';
   const doc = await _htmlToPdfDoc(html, 720, { title: 'PAYMENT REQUEST VOUCHER', subtitle: p.reqNo || '', docCode: 'HML-FIN-PAY' });
   if (!doc) { toast('PDF engine not loaded', 'warn'); return; }
@@ -7670,7 +7720,7 @@ function tkRenderPermissions() {
     const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
     return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
-  root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
+  root.innerHTML = _finTabBar('permissions') + kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
 }
 /* Live filter for the Assign Access Levels table — matches name, email, position or department. */
 function tkPermFilter(q) {
@@ -10806,6 +10856,12 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Finance hub tabs ──
+  'Overview': 'Tổng quan',
+  'Payments': 'Thanh toán',
+  'Claims & Travel': 'Chi phí & Công tác',
+  'Signatures': 'Chữ ký',
+  'Permissions': 'Phân quyền',
   // ── 3-level approval workflow ──
   'Pending Review': 'Chờ xem xét',
   'Pending Approval': 'Chờ phê duyệt',
