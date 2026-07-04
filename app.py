@@ -47,6 +47,7 @@ CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8", ".png": "image/png",
     ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon",
+    ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8",
 }
 
 
@@ -154,6 +155,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
+        if path == "/sw.js":   # service worker must be served from the origin root for full scope
+            return self._serve_file(os.path.join(STATIC_DIR, "sw.js"))
+        if path in ("/manifest.webmanifest", "/favicon.ico"):
+            return self._serve_file(os.path.join(STATIC_DIR, path.lstrip("/") if path != "/favicon.ico" else "icons/favicon-32.png"))
         if path.startswith("/static/"):
             safe = os.path.normpath(os.path.join(STATIC_DIR, path[len("/static/"):]))
             if not safe.startswith(STATIC_DIR):
