@@ -7471,11 +7471,17 @@ function _finTabBar(active) {
     const tabs = [['finance', 'Overview'], ['payments', 'Payments'], ['travelclaims', 'Claims & Travel'], ['esigngov', 'Signatures']];
     return mk(tabs.map(t => ({ label: t[1], active: t[0] === active, onclick: "showView('" + t[0] + "',null,'" + t[1] + "')" })));
   }
-  if (active !== 'payments') return '';   // regular users only get the minimal bar on the Payment view
-  return mk([
+  // Regular users get a minimal Overview + Request bar on the Payment and Travel/Claims views only.
+  if (active === 'payments') return mk([
     { label: 'Overview', active: true, onclick: "showView('payments',null,'Payment Requests')" },
     { label: 'Request', active: false, onclick: 'tkNewPayment()' }
   ]);
+  if (active === 'travelclaims') return mk([
+    { label: 'Overview', active: true, onclick: "showView('travelclaims',null,'Travel Expense')" },
+    { label: 'New Travel', active: false, onclick: 'tkNewTravel()' },
+    { label: 'New Claim', active: false, onclick: 'tkSubmitClaim()' }
+  ]);
+  return '';
 }
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
@@ -10980,6 +10986,8 @@ const _VI = {
   'Claims & Travel': 'Chi phí & Công tác',
   'Signatures': 'Chữ ký',
   'Permissions': 'Phân quyền',
+  'Request': 'Đề nghị',
+  'New Travel': 'Công tác mới',
   'Request': 'Đề nghị',
   // ── 3-level approval workflow ──
   'Pending Review': 'Chờ xem xét',
