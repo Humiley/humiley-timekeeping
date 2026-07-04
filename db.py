@@ -7,10 +7,14 @@ zones, and app settings.
 """
 
 import os
+import re
+import hmac
 import json
+import hashlib
+import secrets
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import seed_data
 
@@ -121,6 +125,28 @@ def init_db():
             id   TEXT,
             data TEXT,
             PRIMARY KEY (coll, id)
+        );
+
+        -- 21 CFR Part 11 signature PIN (second signing component). Salted PBKDF2 hash only;
+        -- kept in its own table so it can never leak through a `SELECT * FROM employees` read path.
+        CREATE TABLE IF NOT EXISTS esign_pin (
+            emp_id       TEXT PRIMARY KEY,
+            algo         TEXT    NOT NULL DEFAULT 'pbkdf2_sha256',
+            iterations   INTEGER NOT NULL,
+            salt         TEXT    NOT NULL,               -- hex, 16 random bytes, unique per set
+            hash         TEXT    NOT NULL,               -- hex PBKDF2-HMAC-SHA256 derived key
+            prev_hash    TEXT,                           -- hex of previous hash, blocks immediate reuse
+            status       TEXT    NOT NULL DEFAULT 'active',  -- 'active' | 'revoked'
+            created_ts   TEXT,
+            updated_ts   TEXT,
+            set_ts       TEXT,                           -- last time the PIN value was set (expiry clock)
+            fail_count   INTEGER NOT NULL DEFAULT 0,
+            last_fail_ts TEXT,
+            locked_until TEXT,                           -- ISO-8601 UTC; NULL = not locked
+            must_change  INTEGER NOT NULL DEFAULT 0,     -- 1 after admin reset -> owner must re-enroll
+            enrolled_via TEXT,
+            enrolled_oid TEXT,
+            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
         );
 
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
@@ -819,6 +845,229 @@ def append_leave_signature(leave_id, sig, new_status=None):
     if new_status is not None:
         out["status"] = new_status
     return out
+
+
+# ---------------------------------------------------------------------------
+# 21 CFR Part 11 — signature PIN (second signing component)
+#   Stored ONLY as a salted PBKDF2-HMAC-SHA256 hash. The plaintext PIN is never
+#   written, logged or returned. Verification is constant-time; repeated failures
+#   lock the credential; PINs age out and cannot be immediately reused.
+# ---------------------------------------------------------------------------
+
+_HAS_SCRYPT        = hasattr(hashlib, "scrypt")   # scrypt needs OpenSSL (present on the prod Ubuntu box)
+SCRYPT_N           = 16384             # scrypt cost — ~16 MiB working set per derive
+SCRYPT_R           = 8
+SCRYPT_P           = 1
+PIN_ITERATIONS     = 600_000           # PBKDF2 rounds (fallback when scrypt is unavailable)
+PIN_ALGO           = "scrypt" if _HAS_SCRYPT else "pbkdf2_sha256"   # current KDF for new/changed PINs
+PIN_COST           = SCRYPT_N if _HAS_SCRYPT else PIN_ITERATIONS    # cost stored alongside each hash
+PIN_SALT_BYTES     = 16
+PIN_DKLEN          = 32
+PIN_MIN, PIN_MAX   = 6, 12
+PIN_LOCK_THRESHOLD = 5
+PIN_LOCK_SECONDS   = 15 * 60
+PIN_MAX_AGE_DAYS   = 180
+# Optional server-side pepper — kept OUTSIDE the database (env var). When set, a leak of the
+# SQLite file alone cannot be brute-forced offline. Set TK_ESIGN_PEPPER to a long random string
+# in production (e.g. `openssl rand -hex 32`). Empty = no pepper (still salted + slow KDF).
+PIN_PEPPER         = os.environ.get("TK_ESIGN_PEPPER", "").encode("utf-8")
+
+
+def _pin_pre(pin):
+    """Fold in the server-side pepper (if configured) before the KDF."""
+    pw = (pin or "").encode("utf-8")
+    return hmac.new(PIN_PEPPER, pw, hashlib.sha256).digest() if PIN_PEPPER else pw
+
+
+def _pin_derive(pin, salt_hex, algo=PIN_ALGO, cost=None):
+    """Derive the hex key for a PIN + hex salt. Supports scrypt (memory-hard, current) and
+    pbkdf2_sha256 (fallback + legacy rows)."""
+    salt = bytes.fromhex(salt_hex)
+    pw = _pin_pre(pin)
+    if algo == "scrypt":
+        n = int(cost or SCRYPT_N)
+        return hashlib.scrypt(pw, salt=salt, n=n, r=SCRYPT_R, p=SCRYPT_P, maxmem=132 * 1024 * 1024, dklen=PIN_DKLEN).hex()
+    return hashlib.pbkdf2_hmac("sha256", pw, salt, int(cost or PIN_ITERATIONS), dklen=PIN_DKLEN).hex()
+
+
+def _pin_parse_iso(s):
+    """Parse an ISO timestamp to an aware UTC datetime, or None if unparseable."""
+    try:
+        d = datetime.fromisoformat(s)
+        return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+    except Exception:
+        return None
+
+
+def _pin_norm(s):
+    return re.sub(r"[^0-9a-z]", "", (s or "").lower())
+
+
+def validate_pin_policy(emp, pin):
+    """Return a machine reason string if the PIN violates policy, else None."""
+    if not isinstance(pin, str) or not re.fullmatch(r"[0-9A-Za-z]{%d,%d}" % (PIN_MIN, PIN_MAX), pin or ""):
+        return "length"
+    if len(set(pin)) == 1:
+        return "all_same"
+    low = pin.lower()
+
+    def _seq(s, step):
+        return len(s) > 1 and all(ord(s[i + 1]) - ord(s[i]) == step for i in range(len(s) - 1))
+    if _seq(low, 1) or _seq(low, -1):
+        return "sequential"
+    if pin in ("1234", "0000", "1111", "2580", "123456", "654321", "111111", "000000", "121212", "abcdef"):
+        return "trivial"
+    np = _pin_norm(pin)
+    if emp and len(np) >= 4:
+        for f in ("id", "phone", "email", "dob", "taxId", "personalId"):
+            v = emp.get(f) if isinstance(emp, dict) else None
+            if not v:
+                continue
+            nv = _pin_norm(str(v).split("@")[0] if f == "email" else str(v))
+            if nv and len(nv) >= 4 and (np == nv or np in nv):
+                return "personal_info"
+    return None
+
+
+def get_pin_status(emp_id):
+    """Public status for the owner's PIN. NEVER returns hash/salt material."""
+    row = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if not row or not row.get("hash"):
+        return {"enrolled": False}
+    now = datetime.now(timezone.utc)
+    locked = False
+    lu = row.get("locked_until")
+    if lu:
+        d = _pin_parse_iso(lu)
+        locked = (d is None) or (d > now)   # unparseable -> treat as locked (fail closed)
+    age_days = None
+    expired = False
+    st = row.get("set_ts")
+    if st:
+        d = _pin_parse_iso(st)
+        if d is None:
+            expired = True                  # unparseable -> treat as expired (fail closed)
+        else:
+            age_days = (now - d).days
+            expired = age_days > PIN_MAX_AGE_DAYS
+    return {"enrolled": True, "status": row.get("status"),
+            "revoked": row.get("status") == "revoked",
+            "mustChange": bool(row.get("must_change")),
+            "locked": locked, "lockedUntil": lu if locked else None,
+            "expired": expired, "ageDays": age_days, "setAt": st}
+
+
+def set_pin(emp_id, new_pin, enrolled_via="M365 session", enrolled_oid=None):
+    """Enroll or change the PIN (upsert). Blocks immediate reuse of the previous PIN.
+    Returns (ok, reason)."""
+    prev = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if prev and prev.get("hash") and prev.get("salt"):
+        if hmac.compare_digest(_pin_derive(new_pin, prev["salt"], prev.get("algo") or "pbkdf2_sha256", prev.get("iterations")), prev["hash"]):
+            return (False, "reuse")   # cannot re-set the identical current PIN
+    salt_hex = secrets.token_bytes(PIN_SALT_BYTES).hex()
+    h = _pin_derive(new_pin, salt_hex, PIN_ALGO, PIN_COST)
+    ts = now_iso()
+    conn = get_conn()
+    if prev:
+        conn.execute(
+            "UPDATE esign_pin SET algo=?, iterations=?, salt=?, hash=?, prev_hash=?, status='active', "
+            "updated_ts=?, set_ts=?, fail_count=0, last_fail_ts=NULL, locked_until=NULL, must_change=0, "
+            "enrolled_via=?, enrolled_oid=? WHERE emp_id=?",
+            (PIN_ALGO, PIN_COST, salt_hex, h, prev.get("hash"), ts, ts, enrolled_via, enrolled_oid, emp_id))
+    else:
+        conn.execute(
+            "INSERT INTO esign_pin (emp_id, algo, iterations, salt, hash, status, created_ts, updated_ts, "
+            "set_ts, fail_count, must_change, enrolled_via, enrolled_oid) "
+            "VALUES (?,?,?,?,?, 'active', ?,?,?, 0, 0, ?, ?)",
+            (emp_id, PIN_ALGO, PIN_COST, salt_hex, h, ts, ts, ts, enrolled_via, enrolled_oid))
+    conn.commit()
+    conn.close()
+    return (True, None)
+
+
+def verify_pin(emp_id, pin):
+    """Constant-time PIN verification with lockout / expiry / revoke gates.
+    Returns (ok, reason). reason in {None, no_pin, revoked, must_change, locked, expired, bad_pin}."""
+    row = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if not row or not row.get("hash"):
+        _pin_derive(pin or "", secrets.token_bytes(PIN_SALT_BYTES).hex())  # burn a derive (timing parity)
+        return (False, "no_pin")
+    if row.get("status") == "revoked":
+        return (False, "revoked")
+    if row.get("must_change"):
+        return (False, "must_change")
+    now = datetime.now(timezone.utc)
+    lu = row.get("locked_until")
+    if lu:
+        d = _pin_parse_iso(lu)
+        if d is None or d > now:        # unparseable -> treat as locked (fail closed)
+            return (False, "locked")
+    st = row.get("set_ts")
+    if st:
+        d = _pin_parse_iso(st)
+        if d is None or (now - d).days > PIN_MAX_AGE_DAYS:   # unparseable -> treat as expired (fail closed)
+            return (False, "expired")
+    got = _pin_derive(pin or "", row["salt"], row.get("algo") or "pbkdf2_sha256", row.get("iterations"))
+    ok = hmac.compare_digest(got, row["hash"])
+    conn = get_conn()
+    if ok:
+        if row.get("algo") != PIN_ALGO or (row.get("iterations") or 0) != PIN_COST:
+            ns = secrets.token_bytes(PIN_SALT_BYTES).hex()      # transparently upgrade the stored hash to the current KDF
+            nh = _pin_derive(pin, ns, PIN_ALGO, PIN_COST)
+            conn.execute("UPDATE esign_pin SET salt=?, hash=?, iterations=?, algo=?, fail_count=0, locked_until=NULL WHERE emp_id=?",
+                         (ns, nh, PIN_COST, PIN_ALGO, emp_id))
+        else:
+            conn.execute("UPDATE esign_pin SET fail_count=0, locked_until=NULL WHERE emp_id=?", (emp_id,))
+        conn.commit()
+        conn.close()
+        return (True, None)
+    fc = (row.get("fail_count") or 0) + 1
+    locked = fc >= PIN_LOCK_THRESHOLD
+    if locked:
+        lock_iso = (now + timedelta(seconds=PIN_LOCK_SECONDS)).replace(microsecond=0).isoformat()
+        conn.execute("UPDATE esign_pin SET fail_count=0, last_fail_ts=?, locked_until=? WHERE emp_id=?",
+                     (now_iso(), lock_iso, emp_id))
+    else:
+        conn.execute("UPDATE esign_pin SET fail_count=?, last_fail_ts=? WHERE emp_id=?",
+                     (fc, now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+    # Audit the unauthorized-use attempt (Part 11 §11.300(d) / §11.10(e)) — never records the PIN.
+    try:
+        emp = get_employee(emp_id) or {}
+        put_collection_item("audit", {"actor": emp.get("name") or "System", "actorId": emp_id,
+            "action": "E-signature PIN — " + ("locked" if locked else "failed attempt"),
+            "target": "esign_pin/" + str(emp_id),
+            "detail": ("locked for %d min after %d consecutive failures" % (PIN_LOCK_SECONDS // 60, PIN_LOCK_THRESHOLD)) if locked else ("consecutive failures=" + str(fc)),
+            "ts": now_iso()})
+    except Exception:
+        pass
+    return (False, "locked" if locked else "bad_pin")
+
+
+def admin_reset_pin(emp_id):
+    """Admin de-authorize: wipe the hash and force the owner to re-enroll. Cannot set a PIN value."""
+    conn = get_conn()
+    conn.execute("UPDATE esign_pin SET hash='', prev_hash=NULL, must_change=1, status='active', "
+                 "fail_count=0, locked_until=NULL, updated_ts=? WHERE emp_id=?", (now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+
+
+def revoke_pin(emp_id):
+    """Admin revoke: mark the credential revoked (owner must re-enroll to sign again)."""
+    conn = get_conn()
+    conn.execute("UPDATE esign_pin SET status='revoked', updated_ts=? WHERE emp_id=?", (now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+
+
+def remove_pin(emp_id):
+    """Owner removes their own PIN entirely."""
+    conn = get_conn()
+    conn.execute("DELETE FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    conn.commit()
+    conn.close()
 
 
 # ---------------------------------------------------------------------------

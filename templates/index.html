@@ -3541,39 +3541,108 @@ let _msalApp = null, _account = null;
    with Microsoft 365 (fresh sign-in), the server verifies the sign-in is recent, then
    stamps an immutable signature (signer · UTC time · meaning) on the record + audit trail. */
 let _esignPending = null;
+/* Small string translator for dynamically-built UI (mirrors _pmT): returns the VN string when the
+   language is Vietnamese and a mapping exists, else the English source. */
+function _t(x) { try { return (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && _VI[x] && _VI[x] !== x) ? _VI[x] : x; } catch (e) { return x; } }
+/* Signature-PIN status cache + refresh (populated on first sign / profile view / after set-remove). */
+let _esignPinState = null;
+async function tkPinRefresh() {
+  try { const r = await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'status' } }); _esignPinState = r || { enrolled: false }; }
+  catch (e) { _esignPinState = { enrolled: false }; }
+  return _esignPinState;
+}
 async function _esignReauth() {
   if ((typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp || !_account) return { demo: true };
   const res = await _msalApp.acquireTokenPopup({ scopes: ['User.Read'], prompt: 'login' });
   return { idToken: (res && res.idToken) || '' };
 }
+let _esignMethod = 'm365';   // 'pin' | 'm365'
+let _esignReopen = false;    // true when re-rendering to switch method (keeps _esignMethod)
+function _esignHasPin() { return !!(_esignPinState && _esignPinState.enrolled && !_esignPinState.revoked && !_esignPinState.mustChange); }
+function _esignSignLabel() {
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  return tkIcon('check') + _t('Sign') + ((_esignMethod === 'm365' && !demo) ? ' ' + _t('with Microsoft 365') : '');
+}
+function _esignSetMethod(m) { _esignMethod = m; _esignReopen = true; if (_esignPending) tkESign(_esignPending); }
+function _esignTogglePin() { const el = document.getElementById('esign-pin'); if (el) { el.type = (el.type === 'password' ? 'text' : 'password'); el.focus(); } }
 function tkESign(opts) {
   document.getElementById('esignOverlay')?.remove();
   _esignPending = opts || {};
   const who = (TK.user || {}).name || 'You', email = (TK.user || {}).email || '';
   const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  const hasPin = _esignHasPin();
+  if (!_esignReopen) { _esignMethod = (hasPin && !demo) ? 'pin' : 'm365'; }
+  _esignReopen = false;
+  // Method section — PIN entry, or the Microsoft 365 re-auth note, with a link to switch.
+  let methodHtml;
+  if (demo) {
+    methodHtml = '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('Demo mode — recorded without Microsoft 365 re-authentication.') + '</div>';
+  } else if (_esignMethod === 'pin') {
+    methodHtml =
+      '<div style="margin:10px 2px 4px">' +
+        '<label style="font-size:12px;font-weight:600;color:var(--text-dark)">' + _t('Enter your signing PIN') + '</label>' +
+        '<div style="position:relative;margin-top:5px">' +
+          '<input id="esign-pin" type="password" inputmode="text" autocomplete="off" maxlength="12" placeholder="' + _t('Enter your signing PIN') + '" ' +
+            'style="width:100%;padding:10px 48px 10px 12px;border:1px solid var(--line);border-radius:8px;font-size:15px;letter-spacing:3px;font-family:inherit;box-sizing:border-box" ' +
+            'oninput="var e=document.getElementById(\'esign-pin-err\');if(e)e.style.display=\'none\'" ' +
+            'onkeydown="if(event.key===\'Enter\'){event.preventDefault();_esignGo();}">' +
+          '<button type="button" onclick="_esignTogglePin()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-light);font-size:11px;cursor:pointer;font-weight:600">' + _t('Show') + '</button>' +
+        '</div>' +
+        '<div id="esign-pin-err" style="display:none;color:var(--danger);font-size:11.5px;margin-top:5px"></div>' +
+        (_msalApp ? '<a onclick="_esignSetMethod(\'m365\')" style="display:inline-block;margin-top:7px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use Microsoft 365 instead') + ' →</a>' : '') +
+      '</div>';
+  } else {
+    methodHtml =
+      '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('You will re-authenticate with Microsoft 365 to complete this signature.') + '</div>' +
+      (hasPin ? '<a onclick="_esignSetMethod(\'pin\')" style="display:inline-block;margin:0 2px 4px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use PIN instead') + ' →</a>'
+              : '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('Tip: set up a signing PIN in My Profile to sign faster.') + ' <a onclick="document.getElementById(\'esignOverlay\').remove();showView(\'myprofile\',null,\'My Profile\')" style="color:var(--navy);cursor:pointer;font-weight:600">' + _t('My Profile') + '</a></div>');
+  }
   const el = document.createElement('div'); el.id = 'esignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">Electronic Signature</div><button class="modal-close" onclick="document.getElementById(\'esignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">' + _t('Electronic Signature') + '</div><button class="modal-close" onclick="document.getElementById(\'esignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Electronic record &middot; 21 CFR Part 11</div>' +
     '<div class="card" style="padding:12px 14px;background:var(--light-tint);font-size:13px;line-height:1.8">' +
-    '<div><span style="color:var(--text-light)">Signer</span> — <b>' + _crmEsc(who) + '</b>' + (email ? ' <span style="color:var(--text-light)">(' + _crmEsc(email) + ')</span>' : '') + '</div>' +
-    '<div><span style="color:var(--text-light)">Date &amp; time (UTC)</span> — <b id="esign-clock">—</b></div>' +
-    '<div><span style="color:var(--text-light)">Meaning</span> — <b>' + _crmEsc(opts.meaning || '') + '</b></div>' +
+    '<div><span style="color:var(--text-light)">' + _t('Signer') + '</span> — <b>' + _crmEsc(who) + '</b>' + (email ? ' <span style="color:var(--text-light)">(' + _crmEsc(email) + ')</span>' : '') + '</div>' +
+    '<div><span style="color:var(--text-light)">' + _t('Date & time (UTC)') + '</span> — <b id="esign-clock">—</b></div>' +
+    '<div><span style="color:var(--text-light)">' + _t('Meaning') + '</span> — <b>' + _crmEsc(opts.meaning || '') + '</b></div>' +
     '</div>' +
-    '<label style="display:flex;gap:8px;align-items:flex-start;margin:12px 2px;font-size:12px"><input type="checkbox" id="esign-cert" style="margin-top:2px"><span>I certify that this electronic signature is the legally binding equivalent of my handwritten signature.</span></label>' +
-    '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + (demo ? 'Demo mode — recorded without Microsoft 365 re-authentication.' : 'You will re-authenticate with Microsoft 365 to complete this signature.') + '</div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'esignOverlay\').remove()">Cancel</button><button class="btn btn-primary" id="esign-go" onclick="_esignGo()">' + tkIcon('check') + 'Sign' + (demo ? '' : ' with Microsoft 365') + '</button></div></div>';
+    '<label style="display:flex;gap:8px;align-items:flex-start;margin:12px 2px;font-size:12px"><input type="checkbox" id="esign-cert" style="margin-top:2px"><span>' + _t('I certify that this electronic signature is the legally binding equivalent of my handwritten signature.') + '</span></label>' +
+    methodHtml +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'esignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" id="esign-go" onclick="_esignGo()">' + _esignSignLabel() + '</button></div></div>';
   document.body.appendChild(el);
+  if (_esignMethod === 'pin') { setTimeout(() => { const p = document.getElementById('esign-pin'); if (p) p.focus(); }, 40); }
   const tick = () => { const ov = document.getElementById('esignOverlay'); if (!ov) { clearInterval(el._clk); return; } const c = document.getElementById('esign-clock'); if (c) c.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; };
   tick(); el._clk = setInterval(tick, 1000);
+  // First time we ever sign, learn whether the user has a PIN and prefer it.
+  if (_esignPinState === null && !demo) {
+    tkPinRefresh().then(st => { if (st && st.enrolled && !st.revoked && !st.mustChange && document.getElementById('esignOverlay') && _esignMethod !== 'pin') { _esignSetMethod('pin'); } });
+  }
 }
 async function _esignGo() {
-  if (!(document.getElementById('esign-cert') || {}).checked) { toast('Please tick the certification box to sign.', 'warn'); return; }
+  if (!(document.getElementById('esign-cert') || {}).checked) { toast(_t('Please tick the certification box to sign.'), 'warn'); return; }
   const opts = _esignPending; if (!opts) return;
-  const btn = document.getElementById('esign-go'); if (btn) { btn.disabled = true; btn.textContent = 'Signing…'; }
-  let reauth;
-  try { reauth = await _esignReauth(); }
-  catch (e) { toast('Microsoft 365 sign-in was cancelled — nothing was signed.', 'warn', 5000); if (btn) { btn.disabled = false; btn.textContent = 'Sign'; } return; }
+  const btn = document.getElementById('esign-go');
+  const resetBtn = () => { if (btn) { btn.disabled = false; btn.innerHTML = _esignSignLabel(); } };
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  // Acquire the second signing component: the PIN (if chosen) or a fresh Microsoft 365 re-auth.
+  let signAuth;
+  if (!demo && _esignMethod === 'pin') {
+    const pin = ((document.getElementById('esign-pin') || {}).value || '').trim();
+    if (!/^[0-9A-Za-z]{6,12}$/.test(pin)) { const e = document.getElementById('esign-pin-err'); if (e) { e.textContent = _t('Enter your 6–12 character signing PIN.'); e.style.display = 'block'; } return; }
+    signAuth = { method: 'pin', pin: pin };
+  } else {
+    if (btn) { btn.disabled = true; btn.textContent = _t('Signing…'); }
+    let reauth;
+    try { reauth = await _esignReauth(); }
+    catch (e) { toast(_t('Microsoft 365 sign-in was cancelled — nothing was signed.'), 'warn', 5000); resetBtn(); return; }
+    signAuth = { idToken: (reauth && reauth.idToken) || '' };
+  }
+  if (btn) { btn.disabled = true; btn.textContent = _t('Signing…'); }
   try {
+    // For PIN signings that CREATE or mutate a record first, verify the PIN up-front so a wrong
+    // PIN can never leave an orphaned/duplicate record behind.
+    if (signAuth.method === 'pin' && (opts.createColl || opts.createFn || opts.updateFn)) {
+      await tkApi('/api/esign/pin', { method: 'POST', body: { action: 'verify', pin: signAuth.pin } });
+    }
     let coll = opts.coll, id = opts.id, created = null;
     if (opts.createColl) {
       const cr = await tkApi('/api/coll/' + opts.createColl, { method: 'POST', body: opts.createBody });
@@ -3586,20 +3655,123 @@ async function _esignGo() {
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
-    const res = await tkApi('/api/esign', { method: 'POST', body: { coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', idToken: (reauth && reauth.idToken) || '' } });
+    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '' }, signAuth) });
+    const pe = document.getElementById('esign-pin'); if (pe) pe.value = '';   // never leave the PIN in the DOM
     document.getElementById('esignOverlay')?.remove();
     toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
     if (opts.onDone) { try { opts.onDone((res && res.item) || null, created); } catch (e) {} }
   } catch (e) {
-    toast('Could not sign: ' + e.message, 'error', 6000);
-    if (btn) { btn.disabled = false; btn.textContent = 'Sign'; }
+    const msg = e.message || 'Could not sign';
+    if (!demo && _esignMethod === 'pin') {
+      const errEl = document.getElementById('esign-pin-err'); if (errEl) { errEl.textContent = _t(msg); errEl.style.display = 'block'; }
+      const pe = document.getElementById('esign-pin'); if (pe) { pe.value = ''; pe.focus(); }
+      if (/lock|expired|de-authorized|was reset/i.test(msg) && _msalApp) { _esignSetMethod('m365'); toast(msg, 'warn', 6000); }
+    } else {
+      toast('Could not sign: ' + msg, 'error', 6000);
+    }
+    resetBtn();
   }
 }
 /* Signature manifestation — list of who signed, when (UTC) and the meaning, for record detail + PDFs. */
 function _esignManifest(rec, opts) {
   const sigs = (rec && rec.signatures) || []; if (!sigs.length) return '';
   const small = opts && opts.small;
-  return '<div style="margin-top:8px">' + sigs.map(s => '<div style="font-size:' + (small ? '10.5' : '11.5') + 'px;color:var(--text-light);display:flex;align-items:center;gap:5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg><b style="color:var(--text-dark)">' + _crmEsc(s.name || '') + '</b> · ' + _crmEsc(s.meaning || '') + ' · ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + '</div>').join('') + '</div>';
+  return '<div style="margin-top:8px">' + sigs.map(s => '<div style="font-size:' + (small ? '10.5' : '11.5') + 'px;color:var(--text-light);display:flex;align-items:center;gap:5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg><b style="color:var(--text-dark)">' + _crmEsc(s.name || '') + '</b> · ' + _crmEsc(s.meaning || '') + ' · ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + (s.method ? ' · <span>' + _crmEsc(s.method) + '</span>' : '') + '</div>').join('') + '</div>';
+}
+
+/* ── Self-service signature PIN (21 CFR Part 11 second component) ────────────
+   Each employee sets and manages their own PIN. Stored server-side only as a
+   salted PBKDF2 hash; used in the sign modal as an alternative to M365 re-auth. */
+let _pinMode = 'setup';   // 'setup' | 'change'
+function _pinValidate(newPin, confirm, mode, currentPin) {
+  if (mode === 'change' && !(currentPin || '').trim()) return _t('Enter your current PIN.');
+  if (!/^[0-9A-Za-z]{6,12}$/.test(newPin || '')) return _t('PIN must be 6 to 12 letters or digits.');
+  if (new Set(newPin).size === 1) return _t('Choose a less predictable PIN — avoid repeated characters.');
+  const seq = (s, step) => { for (let i = 0; i < s.length - 1; i++) { if (s.charCodeAt(i + 1) - s.charCodeAt(i) !== step) return false; } return s.length > 1; };
+  const low = newPin.toLowerCase();
+  if (seq(low, 1) || seq(low, -1)) return _t('Avoid sequential characters.');
+  if (['1234', '0000', '1111', '2580', '123456', '654321', '111111', '000000', '121212', 'abcdef'].indexOf(newPin) >= 0) return _t('That PIN is too common — please choose another.');
+  if (newPin !== confirm) return _t("The two PINs don't match.");
+  return null;
+}
+function _pinTogVis(id) { const el = document.getElementById(id); if (el) { el.type = (el.type === 'password' ? 'text' : 'password'); el.focus(); } }
+function tkPinSetup(mode) {
+  _pinMode = (mode === 'change') ? 'change' : 'setup';
+  document.getElementById('pinOverlay')?.remove();
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  const fld = (id, ph) => '<div style="position:relative;margin-top:5px"><input id="' + id + '" type="password" inputmode="text" autocomplete="off" maxlength="12" placeholder="' + ph + '" style="width:100%;padding:10px 48px 10px 12px;border:1px solid var(--line);border-radius:8px;font-size:15px;letter-spacing:2px;font-family:inherit;box-sizing:border-box" oninput="var e=document.getElementById(\'pin-err\');if(e)e.style.display=\'none\'"><button type="button" onclick="_pinTogVis(\'' + id + '\')" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-light);font-size:11px;cursor:pointer;font-weight:600">' + _t('Show') + '</button></div>';
+  const lbl = t => '<label style="font-size:12px;font-weight:600;color:var(--text-dark)">' + t + '</label>';
+  const el = document.createElement('div'); el.id = 'pinOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">' + _t(_pinMode === 'change' ? 'Change PIN' : 'Set up signature PIN') + '</div><button class="modal-close" onclick="document.getElementById(\'pinOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' + _t('Your PIN is a private signing code. Combined with your signed-in identity it forms a two-part electronic signature.') + '</div>' +
+    (_pinMode === 'change' ? '<div style="margin-bottom:10px">' + lbl(_t('Current PIN')) + fld('pin-current', '') + '</div>' : '') +
+    '<div style="margin-bottom:10px">' + lbl(_t('New PIN')) + fld('pin-new', _t('6–12 letters or digits')) + '</div>' +
+    '<div style="margin-bottom:6px">' + lbl(_t('Confirm new PIN')) + fld('pin-confirm', '') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin:2px 2px 0">' + _t('6 to 12 letters or digits. Avoid your phone, ID, birth date or obvious sequences.') + '</div>' +
+    (_pinMode === 'setup' && !demo ? '<div style="font-size:11px;color:var(--text-light);margin:6px 2px 0">' + _t('You will confirm with Microsoft 365 to set up your PIN.') + '</div>' : '') +
+    '<div id="pin-err" style="display:none;color:var(--danger);font-size:12px;margin:8px 2px 0"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pinOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" id="pin-save" onclick="tkPinSave()">' + tkIcon('check') + _t('Save PIN') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const f = document.getElementById(_pinMode === 'change' ? 'pin-current' : 'pin-new'); if (f) f.focus(); }, 40);
+}
+async function tkPinSave() {
+  const cur = (document.getElementById('pin-current') || {}).value || '';
+  const np = (document.getElementById('pin-new') || {}).value || '';
+  const cf = (document.getElementById('pin-confirm') || {}).value || '';
+  const err = _pinValidate(np, cf, _pinMode, cur);
+  const errEl = document.getElementById('pin-err');
+  if (err) { if (errEl) { errEl.textContent = err; errEl.style.display = 'block'; } return; }
+  const btn = document.getElementById('pin-save'); if (btn) { btn.disabled = true; btn.textContent = _t('Saving…'); }
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  const body = { action: _pinMode === 'change' ? 'change' : 'enroll', newPin: np };
+  try {
+    if (_pinMode === 'change' && cur) {
+      body.currentPin = cur;   // proving the current PIN avoids an M365 popup
+    } else if (!demo) {
+      const r = await _esignReauth(); body.idToken = (r && r.idToken) || '';   // enroll / M365-based change
+    }
+    await tkApi('/api/esign/pin', { method: 'POST', body: body });
+    await tkPinRefresh();
+    document.getElementById('pinOverlay')?.remove();
+    toast(_t('Signing PIN saved') + ' ✓');
+    try { if (document.getElementById('myprofile-root') && document.getElementById('myprofile-root').offsetParent !== null) tkRenderMyProfile(); } catch (e) {}
+  } catch (e) {
+    if (errEl) { errEl.textContent = _t(e.message) || _t('Could not save the PIN.'); errEl.style.display = 'block'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = tkIcon('check') + _t('Save PIN'); }
+  }
+}
+async function tkPinRemove() {
+  const demo = (typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp;
+  const cur = demo ? '' : prompt(_t('Enter your current PIN to remove it:'));
+  if (!demo && !cur) return;
+  try {
+    const body = { action: 'remove' };
+    if (cur) body.currentPin = cur;
+    else if (!demo) { const r = await _esignReauth(); body.idToken = (r && r.idToken) || ''; }
+    await tkApi('/api/esign/pin', { method: 'POST', body: body });
+    await tkPinRefresh();
+    toast(_t('Signing PIN removed'));
+    try { if (document.getElementById('myprofile-root')) tkRenderMyProfile(); } catch (e) {}
+  } catch (e) { toast(e.message || 'Could not remove PIN', 'error', 5000); }
+}
+function _pinStatusInner() {
+  const s = _esignPinState || {};
+  const pill = (txt, bg, fg) => '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;background:' + bg + ';color:' + fg + '">' + txt + '</span>';
+  let head, sub, btns;
+  if (!s.enrolled || s.mustChange || s.revoked) {
+    head = pill(_t('No signing PIN set'), '#eef1f5', '#5C6470');
+    sub = _t('Set up a PIN to sign records without Microsoft 365 re-authentication each time.');
+    btns = '<button class="btn btn-primary btn-sm" onclick="tkPinSetup(\'setup\')">' + _t('Set up signature PIN') + '</button>';
+  } else if (s.locked) {
+    head = pill(_t('Temporarily locked'), '#fdecec', '#c0392b');
+    sub = _t('Too many attempts — try again shortly, or sign with Microsoft 365.');
+    btns = '<button class="btn btn-outline btn-sm" onclick="tkPinSetup(\'change\')">' + _t('Change PIN') + '</button>';
+  } else {
+    head = pill('✓ ' + _t('PIN active'), '#e7f7ef', '#0a7a45') + (s.setAt ? ' <span style="font-size:11px;color:var(--text-light)">' + _t('since') + ' ' + tkFmtDate(s.setAt) + '</span>' : '') + (s.expired ? ' ' + pill(_t('Expired'), '#fdecec', '#c0392b') : '');
+    sub = _t('Your PIN is a private signing code. Combined with your signed-in identity it forms a two-part electronic signature.');
+    btns = '<button class="btn btn-outline btn-sm" onclick="tkPinSetup(\'change\')">' + _t('Change PIN') + '</button> <button class="btn btn-ghost btn-sm" onclick="tkPinRemove()" style="margin-left:6px">' + _t('Remove PIN') + '</button>';
+  }
+  return '<div style="margin-bottom:8px">' + head + '</div><div style="font-size:12.5px;color:var(--text-light);line-height:1.55;margin-bottom:12px">' + sub + '</div>' + btns;
 }
 
 let _userRole = null;   // 'manager' | 'staff'
@@ -7923,9 +8095,10 @@ function tkRenderMyProfile() {
     emergency: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
     benefits: '<polyline points="20 12 20 22 4 22 4 12"/><rect x="2" y="7" width="20" height="5"/><line x1="12" y1="22" x2="12" y2="7"/><path d="M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
     documents: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
-    reporting: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>'
+    reporting: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    security: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>'
   };
-  const _secIcon = (t) => { t = (t || '').toLowerCase(); const k = t.includes('job') ? 'job' : t.includes('personal') ? 'personal' : t.includes('contact') ? 'contact' : t.includes('education') ? 'education' : t.includes('leave') ? 'leave' : t.includes('emergency') ? 'emergency' : t.includes('benefit') || t.includes('allowance') ? 'benefits' : t.includes('document') || t.includes('polic') ? 'documents' : t.includes('reporting') ? 'reporting' : 'documents'; return _SEC_ICONS[k]; };
+  const _secIcon = (t) => { t = (t || '').toLowerCase(); const k = t.includes('signature') || t.includes('security') ? 'security' : t.includes('job') ? 'job' : t.includes('personal') ? 'personal' : t.includes('contact') ? 'contact' : t.includes('education') ? 'education' : t.includes('leave') ? 'leave' : t.includes('emergency') ? 'emergency' : t.includes('benefit') || t.includes('allowance') ? 'benefits' : t.includes('document') || t.includes('polic') ? 'documents' : t.includes('reporting') ? 'reporting' : 'documents'; return _SEC_ICONS[k]; };
   const sec = (title, rows) => '<div class="card" style="padding:18px 20px;overflow:hidden">' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)">' +
     '<div style="width:32px;height:32px;border-radius:9px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _secIcon(title) + '</svg></div>' +
@@ -7961,6 +8134,7 @@ function tkRenderMyProfile() {
     sec('Job &amp; Employment', row('Position', D(e.title)) + row('Department', D(e.dept)) + row('Job Level', D(e.jobLevel)) + row('Employment Type', D(e.employmentType)) + row('System Access', D((_LEVEL_LABEL && _LEVEL_LABEL[_deriveLevel(e)]) || (e.role === 'manager' ? 'Manager' : 'Staff'))) + row('Onboard Date', tkFmtDate(e.startDate)) + (e.endDate ? row('End Date', tkFmtDate(e.endDate)) : '') + row('Length of Service', svc) + row('Direct Manager', mgr ? D(mgr.name) : D(e.managerEmail))) +
     sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('Shirt / Uniform', D(e.shirtSize)) + row('ID / Passport', D(e.personalId))) +
     sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
+    sec('Signature &amp; Security', '<div id="pin-status-body">' + _pinStatusInner() + '</div>') +
     sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
     sec('Leave &amp; Benefits', bar('Annual Leave', aU, aT, 'prog-navy') + bar('Sick Leave', sU, sT, 'prog-emerald')) +
     sec('Emergency Contact', e.emergency ? '<div style="font-size:13px;line-height:1.6">' + D(e.emergency) + '</div>' : '<div style="font-size:13px;color:var(--text-light)">No emergency contact on file</div>') +
@@ -8010,6 +8184,8 @@ function tkRenderMyProfile() {
       '<div style="flex:1;min-width:220px"><div style="font-size:11px;color:var(--text-light);margin-bottom:7px">' + (reports.length ? ('Direct reports (' + reports.length + ')') : ('Team · ' + D(e.dept))) + '</div><div style="display:flex;flex-wrap:wrap;gap:10px">' + ((reports.length ? reports : peers).map(p => '<div style="display:flex;align-items:center;gap:8px;background:var(--soft-bg);border-radius:20px;padding:5px 13px 5px 5px">' + av(p) + '<span style="font-size:12px;font-weight:600">' + p.name + '</span></div>').join('') || '<div style="font-size:12px;color:var(--text-light)">No team members listed</div>') + '</div></div>' +
     '</div>' +
   '</div>';
+  // Refresh the live signature-PIN status into its card.
+  tkPinRefresh().then(() => { const b = document.getElementById('pin-status-body'); if (b) { b.innerHTML = _pinStatusInner(); if (_LANG.cur === 'vi' && typeof _viWalk === 'function') try { _viWalk(b); } catch (e) {} } });
 }
 
 function _initStaffLeaveChart() {
@@ -10474,6 +10650,59 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Signature PIN / e-signature ──
+  'Electronic Signature': 'Chữ ký điện tử',
+  'Signer': 'Người ký',
+  'Date & time (UTC)': 'Ngày & giờ (UTC)',
+  'Meaning': 'Ý nghĩa',
+  'I certify that this electronic signature is the legally binding equivalent of my handwritten signature.': 'Tôi xác nhận chữ ký điện tử này có giá trị pháp lý tương đương chữ ký tay của tôi.',
+  'Sign': 'Ký',
+  'with Microsoft 365': 'bằng Microsoft 365',
+  'Signing…': 'Đang ký…',
+  'Cancel': 'Hủy',
+  'Please tick the certification box to sign.': 'Vui lòng tích vào ô xác nhận để ký.',
+  'Demo mode — recorded without Microsoft 365 re-authentication.': 'Chế độ demo — ghi nhận mà không cần xác thực lại Microsoft 365.',
+  'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hoàn tất chữ ký này.',
+  'Enter your signing PIN': 'Nhập mã PIN chữ ký của bạn',
+  'Enter your 6–12 character signing PIN.': 'Nhập mã PIN chữ ký 6–12 ký tự của bạn.',
+  'Use Microsoft 365 instead': 'Dùng Microsoft 365 thay thế',
+  'Use PIN instead': 'Dùng mã PIN thay thế',
+  'Microsoft 365 sign-in was cancelled — nothing was signed.': 'Đã hủy đăng nhập Microsoft 365 — không có gì được ký.',
+  'Tip: set up a signing PIN in My Profile to sign faster.': 'Mẹo: thiết lập mã PIN chữ ký trong Hồ sơ của tôi để ký nhanh hơn.',
+  'Signature & Security': 'Chữ ký & Bảo mật',
+  'Signing PIN': 'Mã PIN chữ ký',
+  'Set up signature PIN': 'Thiết lập mã PIN chữ ký',
+  'Change PIN': 'Đổi mã PIN',
+  'Remove PIN': 'Gỡ mã PIN',
+  'Current PIN': 'Mã PIN hiện tại',
+  'New PIN': 'Mã PIN mới',
+  'Confirm new PIN': 'Xác nhận mã PIN mới',
+  'Save PIN': 'Lưu mã PIN',
+  'Saving…': 'Đang lưu…',
+  'Show': 'Hiện',
+  'No signing PIN set': 'Chưa đặt mã PIN chữ ký',
+  'PIN active': 'PIN đang hoạt động',
+  'since': 'từ',
+  'Expired': 'Đã hết hạn',
+  'Temporarily locked': 'Tạm khóa',
+  'Signing PIN saved': 'Đã lưu mã PIN chữ ký',
+  'Signing PIN removed': 'Đã gỡ mã PIN chữ ký',
+  'Could not save the PIN.': 'Không thể lưu mã PIN.',
+  '6 to 12 letters or digits. Avoid your phone, ID, birth date or obvious sequences.': '6 đến 12 chữ cái hoặc chữ số. Tránh số điện thoại, CCCD, ngày sinh hoặc các dãy dễ đoán.',
+  '6–12 letters or digits': '6–12 chữ cái hoặc chữ số',
+  'You will confirm with Microsoft 365 to set up your PIN.': 'Bạn sẽ xác nhận bằng Microsoft 365 để thiết lập mã PIN.',
+  'Your PIN is a private signing code. Combined with your signed-in identity it forms a two-part electronic signature.': 'Mã PIN là mã ký riêng của bạn. Kết hợp với danh tính đã đăng nhập, nó tạo thành chữ ký điện tử gồm hai thành phần.',
+  'Set up a PIN to sign records without Microsoft 365 re-authentication each time.': 'Đặt mã PIN để ký hồ sơ mà không cần xác thực lại Microsoft 365 mỗi lần.',
+  'Too many attempts — try again shortly, or sign with Microsoft 365.': 'Quá nhiều lần thử — hãy thử lại sau, hoặc ký bằng Microsoft 365.',
+  'Enter your current PIN.': 'Nhập mã PIN hiện tại của bạn.',
+  'Enter your current PIN to remove it:': 'Nhập mã PIN hiện tại để gỡ bỏ:',
+  'PIN must be 6 to 12 letters or digits.': 'Mã PIN phải gồm 6 đến 12 chữ cái hoặc chữ số.',
+  'Choose a less predictable PIN — avoid repeated characters.': 'Chọn mã PIN khó đoán hơn — tránh các ký tự lặp lại.',
+  'Avoid sequential characters.': 'Tránh các ký tự liên tiếp.',
+  'That PIN is too common — please choose another.': 'Mã PIN quá phổ biến — vui lòng chọn mã khác.',
+  "The two PINs don't match.": 'Hai mã PIN không khớp.',
+  'Current PIN is incorrect.': 'Mã PIN hiện tại không đúng.',
+  'Incorrect PIN.': 'Mã PIN không đúng.',
   'Edit —': 'Sửa —',
   'Payment Requests': 'Đề nghị thanh toán',
   'My Payment Requests': 'Đề nghị thanh toán của tôi',

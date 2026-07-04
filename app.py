@@ -194,6 +194,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_m365(body)
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
+        if path == "/api/esign/pin":
+            return self._guard(lambda u: self._pin_dispatch(u, body))
         if path == "/api/attendance/checkin":
             return self._guard(lambda u: self._checkin(u, body))
         if path == "/api/attendance/checkout":
@@ -354,9 +356,24 @@ class Handler(BaseHTTPRequestHandler):
         set_status = body.get("setStatus")
         if not coll or not iid or not meaning:
             return self._err("coll, id and meaning are required.", 400)
-        # Identify + re-authenticate the signer.
+        # Identify + re-authenticate the signer. Two components (Part 11 §11.200): the authenticated
+        # session identity (something you have) + either a fresh M365 sign-in or the secret PIN.
         if DEMO_MODE:
             method = "Demo mode (no re-authentication)"; auth_time = None
+            signer_name = u.get("name") or "User"; signer_email = (u.get("email") or "").lower()
+        elif body.get("method") == "pin" or body.get("pin"):
+            ok, reason = db.verify_pin(u.get("id"), body.get("pin") or "")
+            if not ok:
+                if reason == "locked":
+                    return self._err("Signing PIN locked for 15 minutes after too many attempts. Sign with Microsoft 365, or try again later.", 423)
+                if reason == "must_change":
+                    return self._err("Your signing PIN was reset — please set a new one in My Profile.", 409)
+                if reason == "revoked":
+                    return self._err("Your signing PIN was de-authorized — please set a new one in My Profile.", 409)
+                if reason == "expired":
+                    return self._err("Your signing PIN has expired — please set a new one in My Profile.", 409)
+                return self._err("Incorrect PIN.", 401)  # no_pin / bad_pin collapse (no enumeration)
+            method = "Signature PIN"; auth_time = None
             signer_name = u.get("name") or "User"; signer_email = (u.get("email") or "").lower()
         else:
             ok, info = self._esign_fresh(body.get("idToken") or "")
@@ -415,6 +432,103 @@ class Handler(BaseHTTPRequestHandler):
             "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
+
+    PIN_POLICY_MSG = {
+        "length": "PIN must be 6 to 12 letters or digits.",
+        "charset": "PIN may contain only letters and digits.",
+        "all_same": "Choose a less predictable PIN — avoid repeated characters.",
+        "sequential": "Avoid sequential characters like 123456.",
+        "trivial": "That PIN is too common — please choose another.",
+        "personal_info": "Don't use your phone, ID or birth date as your PIN.",
+        "reuse": "Please choose a PIN different from your previous one.",
+    }
+
+    def _pin_audit(self, u, event, target_id, detail):
+        db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+            "action": "E-signature PIN — " + event, "target": "esign_pin/" + str(target_id),
+            "detail": detail, "ts": self._utc_now()})
+
+    def _pin_dispatch(self, u, body):
+        """Self-service signature-PIN lifecycle (Part 11 §11.300). One consolidated endpoint keyed by
+        `action`; every path operates on the server-derived session id (never a client-supplied id),
+        except `revoke` which is a manager act on a named employee."""
+        action = (body.get("action") or "status").strip().lower()
+        uid = u.get("id")
+
+        if action == "status":
+            return self._json(dict({"ok": True}, **db.get_pin_status(uid)))
+
+        if action == "verify":   # pre-flight check so a wrong PIN never orphans a just-created record
+            ok, reason = db.verify_pin(uid, body.get("pin") or "")
+            if ok:
+                return self._json({"ok": True})
+            if reason == "locked":
+                return self._err("Signing PIN locked for 15 minutes after too many attempts. Sign with Microsoft 365, or try again later.", 423)
+            if reason == "must_change":
+                return self._err("Your signing PIN was reset — please set a new one in My Profile.", 409)
+            if reason == "revoked":
+                return self._err("Your signing PIN was de-authorized — please set a new one in My Profile.", 409)
+            if reason == "expired":
+                return self._err("Your signing PIN has expired — please set a new one in My Profile.", 409)
+            return self._err("Incorrect PIN.", 401)
+
+        if action == "revoke":   # manager de-authorizes another employee's PIN (cannot read/set it)
+            if u.get("role") != "manager":
+                return self._err("Manager access required.", 403)
+            emp_id = body.get("empId")
+            if not emp_id or not db.get_employee(emp_id):
+                return self._err("Employee not found.", 404)
+            db.revoke_pin(emp_id)
+            self._pin_audit(u, "revoke", emp_id, "de-authorized by manager")
+            return self._json({"ok": True})
+
+        if action == "remove":   # owner removes their own PIN — must prove identity
+            if body.get("currentPin"):
+                ok, r = db.verify_pin(uid, body.get("currentPin"))
+                if not ok:
+                    if r == "locked":
+                        return self._err("Too many attempts — the PIN is locked. Try again later.", 423)
+                    return self._err("Current PIN is incorrect.", 401)
+            elif not DEMO_MODE:
+                ok, info = self._esign_fresh(body.get("idToken") or "")
+                if not ok:
+                    return self._err(info, 401)
+            db.remove_pin(uid)
+            self._pin_audit(u, "remove", uid, "removed by owner")
+            return self._json({"ok": True, "enrolled": False})
+
+        if action in ("enroll", "change", "reset"):
+            emp = db.get_employee(uid) or dict(u)
+            new_pin = body.get("newPin") or ""
+            reason = db.validate_pin_policy(emp, new_pin)
+            if reason:
+                return self._err(self.PIN_POLICY_MSG.get(reason, "That PIN isn't allowed."), 400)
+            # Authorization to set: `change` may prove the current PIN; otherwise a FRESH M365 re-auth
+            # is required (§11.100(b) identity binding), except in demo mode.
+            if action == "change" and body.get("currentPin"):
+                ok, r = db.verify_pin(uid, body.get("currentPin"))
+                if not ok:
+                    if r == "locked":
+                        return self._err("Too many attempts — the PIN is locked. Try again later or use Microsoft 365.", 423)
+                    return self._err("Current PIN is incorrect.", 401)
+                enrolled_via = "current PIN"; oid = None
+            elif DEMO_MODE:
+                enrolled_via = "demo"; oid = None
+            else:
+                ok, info = self._esign_fresh(body.get("idToken") or "")
+                if not ok:
+                    return self._err(info, 401)
+                sess_email = (u.get("email") or "").lower(); tok_email = (info.get("email") or "").lower()
+                if tok_email and sess_email and tok_email != sess_email:
+                    return self._err("The Microsoft 365 account does not match your session.", 403)
+                enrolled_via = "M365 re-authentication"; oid = info.get("oid")
+            ok, r = db.set_pin(uid, new_pin, enrolled_via, oid)
+            if not ok:
+                return self._err(self.PIN_POLICY_MSG.get(r, "Could not set the PIN."), 400)
+            self._pin_audit(u, action, uid, "via " + enrolled_via)
+            return self._json(dict({"ok": True}, **db.get_pin_status(uid)))
+
+        return self._err("Unknown PIN action.", 400)
 
     # -- attendance ---------------------------------------------------------
     def _attendance_list(self, u, qs):
