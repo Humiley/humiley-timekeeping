@@ -6820,6 +6820,95 @@ function tkReadAttach(input, hid) {
 const _ATTACH_FIELD = (hid, label) => '<div class="form-group"><label class="form-label">' + label + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'' + hid + '\')" style="font-size:12px"><span id="' + hid + 'lbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="' + hid + '"><input type="hidden" id="' + hid + 'name"></div>';
 const _attachLink = rec => (rec && rec.attachment) ? ' <a href="' + rec.attachment + '" target="_blank" rel="noopener" title="' + (rec.attachmentName || 'attachment') + '" style="color:var(--navy)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>' : '';
 
+/* ── Multi-file attach → ONE combined PDF (page 1 = the request form, pages 2..n = the bills / photos) ── */
+const _multiAttachStore = {};    // hid -> [{ name, url(dataURL), type }]
+async function tkReadAttachMulti(input, hid) {
+  const files = [...(input.files || [])];
+  _multiAttachStore[hid] = _multiAttachStore[hid] || [];
+  for (const f of files) {
+    if (f.size > 8 * 1024 * 1024) { toast(f.name + ' — over 8 MB, skipped', 'warn', 4000); continue; }
+    const url = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = () => res(''); r.readAsDataURL(f); });
+    if (url) _multiAttachStore[hid].push({ name: f.name, url: url, type: f.type || '' });
+  }
+  input.value = '';
+  _renderMultiAttach(hid);
+}
+function _renderMultiAttach(hid) {
+  const box = document.getElementById(hid + 'list'); if (!box) return;
+  const arr = _multiAttachStore[hid] || [];
+  box.innerHTML = arr.length
+    ? arr.map((f, i) => '<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line)"><span style="color:var(--emerald)">✓</span><span style="color:var(--text-light)">Page ' + (i + 2) + '</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crmEsc(f.name) + '</span><button type="button" onclick="_removeMultiAttach(\'' + hid + '\',' + i + ')" title="Remove" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:15px;line-height:1">×</button></div>').join('') + '<div style="font-size:10.5px;color:var(--text-light);margin-top:4px">' + arr.length + ' file(s) → combined PDF: page 1 form + ' + arr.length + ' attachment page(s).</div>'
+    : '<div style="font-size:11px;color:var(--text-light)">No files chosen yet.</div>';
+}
+function _removeMultiAttach(hid, i) { (_multiAttachStore[hid] || []).splice(i, 1); _renderMultiAttach(hid); }
+function _resetMultiAttach(hid) { _multiAttachStore[hid] = []; _renderMultiAttach(hid); }
+const _ATTACH_MULTI = (hid, label) => '<div class="form-group"><label class="form-label">' + label + '</label>' +
+  '<input type="file" accept="image/*,.pdf" multiple onchange="tkReadAttachMulti(this,\'' + hid + '\')" style="font-size:12px">' +
+  '<div style="font-size:10.5px;color:var(--text-light);margin:3px 0">Choose one or more bills / photos — they are combined into a single PDF (the form is page 1).</div>' +
+  '<div id="' + hid + 'list" style="margin-top:2px"></div></div>';
+
+/* Add one image (dataURL) fitted onto a fresh A4 page. */
+async function _addImagePageToPdf(doc, dataUrl) {
+  const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = dataUrl; });
+  if (!img) return;
+  const W = 210, H = 297, M = 10, maxW = W - 2 * M, maxH = H - 2 * M;
+  const w = img.naturalWidth || img.width || 1, h = img.naturalHeight || img.height || 1, ar = w / h;
+  let dw, dh; if (ar > maxW / maxH) { dw = maxW; dh = maxW / ar; } else { dh = maxH; dw = maxH * ar; }
+  const fmt = /^data:image\/png/i.test(dataUrl) ? 'PNG' : 'JPEG';
+  try { doc.addImage(dataUrl, fmt, (W - dw) / 2, (H - dh) / 2, dw, dh, undefined, 'FAST'); } catch (e) {}
+}
+/* Render every page of an attached PDF (dataURL) into the combined doc, via pdf.js. */
+async function _addPdfPagesToPdf(doc, dataUrl) {
+  if (!window.pdfjsLib) return;
+  try {
+    const raw = atob(dataUrl.split(',')[1]); const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const vp = page.getViewport({ scale: 2 });
+      const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      doc.addPage();
+      await _addImagePageToPdf(doc, cv.toDataURL('image/jpeg', 0.82));
+    }
+  } catch (e) {}
+}
+/* Build the combined PDF: drawPage1(doc) draws the form, then each file becomes following page(s). */
+async function _combineToPdf(drawPage1, files) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!J) return null;
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  try { drawPage1(doc); } catch (e) {}
+  for (const f of (files || [])) {
+    const isPdf = (f.type || '').includes('pdf') || /\.pdf$/i.test(f.name || '') || /^data:application\/pdf/i.test(f.url || '');
+    if (isPdf) await _addPdfPagesToPdf(doc, f.url);
+    else { doc.addPage(); await _addImagePageToPdf(doc, f.url); }
+  }
+  return doc.output('datauristring');
+}
+/* Reusable request-form page 1 on the Humiley letterhead (jsPDF text — reliable, no html2canvas). */
+function _reqFormPage1(doc, title, rows, meta) {
+  const W = 210, M = 16; let y = 20;
+  const NAVY = [32, 80, 144], GREY = [92, 100, 112], DARK = [31, 41, 55];
+  try { doc.addImage(_LH.logo, 'PNG', M, y - 6, 38, 13); } catch (e) {}
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
+  doc.text(_LH.name || 'Humiley Group Inc.', W - M, y - 2, { align: 'right' });
+  y += 14; doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.8); doc.line(M, y, W - M, y); y += 9;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+  doc.text(title, M, y); y += 7;
+  if (meta) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(GREY[0], GREY[1], GREY[2]); doc.text(String(meta), M, y); y += 6; }
+  y += 4;
+  (rows || []).forEach(([l, v]) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(GREY[0], GREY[1], GREY[2]); doc.text(String(l), M, y);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+    doc.text(doc.splitTextToSize(String(v == null || v === '' ? '—' : v), W - M - (M + 58)), M + 58, y);
+    y += 7;
+  });
+  y += 4; doc.setDrawColor(220, 225, 232); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 6;
+  doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
+  doc.text('Supporting bills / photos follow on the next page(s).', M, y);
+}
+
 /* ── Multi-line claims (A8) — one claim (a trip/event) can hold many items: meal, hotel, transport… ── */
 const _CLAIM_CATS = ['Meal', 'Hotel / Accommodation', 'Transport', 'Fuel', 'Taxi / Grab', 'Flight', 'Per diem', 'Medical / Health', 'Wedding', 'Bereavement', 'Newborn', 'Birthday', 'Training', 'Other'];
 /* Normalise to items[] — synthesise a single line for legacy single-amount claims. */
@@ -6905,6 +6994,13 @@ async function tkClaimSave() {
   const claimKind = (document.getElementById('claim-type') || {}).value || 'Other';
   const travelId = claimKind === 'Travel' ? ((document.getElementById('claim-travelId') || {}).value || '') : '';
   const body = { empId: e ? e.id : '', name: (TK.user || {}).name || '', dept: e ? e.dept : '', title: title, type: items.length > 1 ? 'Multi-item' : items[0].category, claimType: claimKind, travelId: travelId, items: items, amount: total, status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const _billFiles = items.filter(it => it.attachment).map(it => ({ name: (it.category || 'bill') + (it.attachmentName ? ' — ' + it.attachmentName : ''), url: it.attachment, type: '' }));
+  if (_billFiles.length) {
+    toast('Combining the claim + ' + _billFiles.length + ' bill(s) into one PDF…', 'info', 2500);
+    const rows = [['Claim', title], ['Requested by', body.name], ['Department', body.dept], ['Type', claimKind], ['Items', String(items.length)], ['Total', _PAY_FMT(total)]].concat(items.map((it, i) => ['Item ' + (i + 1), (it.category || '') + ' — ' + _PAY_FMT(it.amount) + (it.note ? ' (' + it.note + ')' : '')]));
+    const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Expense Claim', rows, title + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _billFiles);
+    if (pdf) { body.attachment = pdf; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
+  }
   tkESign({
     createColl: 'claims', createBody: body,
     meaning: 'Submission — Claim ' + title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total),
@@ -7184,7 +7280,7 @@ function tkNewTravel() {
     '<div class="grid-2"><div class="form-group"><label class="form-label">From</label><input type="date" class="form-control" id="tr-from"></div><div class="form-group"><label class="form-label">To</label><input type="date" class="form-control" id="tr-to"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" class="form-control" id="tr-cost"></div></div>' +
     '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" class="form-control" id="tr-advance"></div>' +
-    _ATTACH_FIELD('tr-attach', 'Attach ticket / quote (image or PDF)') +
+    _ATTACH_MULTI('tr-attach', 'Tickets / quotes / photos — combined into one PDF') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'travelOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkTravelSave()">Submit</button></div></div>';
   document.body.appendChild(el);
 }
@@ -7192,7 +7288,14 @@ async function tkTravelSave() {
   const g = id => (document.getElementById(id) || {}).value || '';
   const me = _tkMe ? _tkMe() : null;
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
-  const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: g('tr-attach'), attachmentName: g('tr-attachname'), status: 'Submitted' };
+  const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: '', attachmentName: '', status: 'Submitted' };
+  const _files = _multiAttachStore['tr-attach'] || [];
+  if (_files.length) {
+    toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
+    const rows = [['Requested by', body.name], ['Department', body.dept], ['Destination', body.dest], ['Purpose', body.purpose], ['Dates', (body.from || '') + ' → ' + (body.to || '')], ['Transport', body.transport], ['Est. cost', _PAY_FMT(body.cost)], ['Advance', _PAY_FMT(body.advance)]];
+    const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Travel Request', rows, (body.dest || '') + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
+    if (pdf) { body.attachment = pdf; body.attachmentName = 'Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf'; }
+  }
   tkESign({
     createColl: 'travel', createBody: body,
     meaning: 'Submission — Travel ' + (body.dest || '') + ' · ' + _PAY_FMT(body.cost),
@@ -7203,7 +7306,7 @@ async function tkTravelSave() {
         '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
         (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
         (created && created.token));
-      const tov = document.getElementById('travelOverlay'); if (tov) tov.remove(); toast('Travel request submitted & signed'); tkRenderTravelClaims();
+      const tov = document.getElementById('travelOverlay'); if (tov) tov.remove(); _resetMultiAttach('tr-attach'); toast('Travel request submitted & signed'); tkRenderTravelClaims();
     }
   });
 }
@@ -7292,7 +7395,7 @@ function tkNewPayment() {
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
-    _ATTACH_FIELD('pay-attach', 'Attach invoice / quote (image or PDF)') +
+    _ATTACH_MULTI('pay-attach', 'Bills / invoices / photos — combined into one PDF') +
     '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
@@ -7304,7 +7407,14 @@ async function tkPaymentSave() {
   const amount = +g('pay-amount') || 0;
   if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
-  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: g('pay-attach'), attachmentName: g('pay-attachname'), note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const _files = _multiAttachStore['pay-attach'] || [];
+  if (_files.length) {
+    toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
+    const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
+    const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
+    if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
+  }
   tkESign({
     createColl: 'payments', createBody: body,
     meaning: 'Submission — Payment ' + body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount),
@@ -7316,6 +7426,7 @@ async function tkPaymentSave() {
         (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
         (created && created.token));
       const po = document.getElementById('paymentOverlay'); if (po) po.remove();
+      _resetMultiAttach('pay-attach');
       toast('Payment request submitted & signed'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
     }
   });
