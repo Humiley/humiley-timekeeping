@@ -2843,7 +2843,7 @@ function tkRenderApprovals() {
   const host = pending.querySelector('div') || pending;
   host.querySelectorAll('.approval-card, .tk-empty').forEach(c => c.remove());
   const _me = TK.user && TK.user.id;
-  const items = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.id && l.emp_id !== _me);
+  const items = (_DEMO_LEAVE || []).filter(l => l.id && l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
   if (!items.length) {
     const e = document.createElement('div');
     e.className = 'card tk-empty';
@@ -2860,14 +2860,14 @@ function tkRenderApprovals() {
       card.innerHTML =
         '<div class="approval-card-hdr"><div class="ava-md" style="background:' + tkAvatarColor(name) + '">' + ini + '</div>' +
         '<div style="flex:1"><div style="font-size:14px;font-weight:700">' + name + '</div>' +
-        '<div style="font-size:12px;color:var(--text-light)">' + (l.emp_dept || '') + ' · Pending</div></div>' +
-        '<span class="badge b-warn">Pending Manager</span></div>' +
+        '<div style="font-size:12px;color:var(--text-light)">' + (l.emp_dept || '') + ' · ' + _aprLabel(l.status) + '</div></div>' +
+        '<span class="badge ' + _aprCls(l.status) + '">' + _aprLabel(l.status) + '</span></div>' +
         '<div class="approval-meta"><div class="approval-meta-item">Leave Type<span>' + (l.type || '') + '</span></div>' +
         '<div class="approval-meta-item">Duration<span>' + l.days + ' Day' + (l.days !== 1 ? 's' : '') + '</span></div>' +
         '<div class="approval-meta-item">Dates<span>' + l.startDate + ' – ' + l.endDate + '</span></div></div>' +
         '<div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px"><strong>Reason:</strong> ' + (l.reason || '') + '</div>' +
         '<div class="approval-actions"><button class="btn-reject" onclick="tkReject(' + l.id + ',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>' +
-        '<button class="btn-approve" onclick="tkApprove(' + l.id + ',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button></div>';
+        '<button class="btn-approve" onclick="tkApprove(' + l.id + ',this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>' + ((_aprActionLeave(l.status) || {}).label || 'Approve') + '</button></div>';
       host.appendChild(card);
     });
   }
@@ -3227,7 +3227,7 @@ function tkRenderDashboard() {
   const onLeave = lv.filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= today && l.endDate >= today).length;
   const total = emps.length;
   const _me = TK.user && TK.user.id;
-  const pend = lv.filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== _me);
+  const pend = lv.filter(l => l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
   _tkSet('kpi-present', present); _tkSet('kpi-ontime', onTime); _tkSet('kpi-late', late); _tkSet('kpi-onleave', onLeave);
   _tkSet('kpi-present-delta', total ? ('of ' + total + ' employees') : '—');
   _tkSet('kpi-ontime-delta', present ? (Math.round(onTime / Math.max(present, 1) * 100) + '% on-time') : '—');
@@ -3323,7 +3323,7 @@ function tkUpdateNotifications() {
     return;
   }
   const _me = TK.user && TK.user.id;
-  const pend = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== _me);
+  const pend = (_DEMO_LEAVE || []).filter(l => l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
   const bp = document.getElementById('badge-pending');
   if (bp) { bp.textContent = pend.length; bp.style.display = pend.length ? '' : 'none'; }
   const ba = document.getElementById('badge-anomaly');
@@ -3346,18 +3346,24 @@ function tkMarkAllRead() {
 }
 
 function tkApprove(id, btn) {
-  if (_userRole !== 'manager') { toast('Only managers can approve leave.', 'warn'); return; }
+  if (_userRole !== 'manager') { toast('Only managers can act on leave.', 'warn'); return; }
   const _l = (_DEMO_LEAVE || []).find(x => x.id == id) || {}; const _e = _hrEmp(_l.emp_id) || {};
+  const a = _aprActionLeave(_l.status);   // reviewed (direct manager) or approved (Director)
+  if (!a) { toast('No action available at this stage.', 'warn'); return; }
+  const isReview = a.to === 'reviewed';
   tkESign({
-    coll: 'leave', id: id, setStatus: 'approved',
-    meaning: 'Approve — Leave ' + (_l.type || '') + ' · ' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : ''),
+    coll: 'leave', id: id, setStatus: a.to,
+    meaning: (isReview ? 'Review' : 'Approve') + ' — Leave ' + (_l.type || '') + ' · ' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : ''),
     onDone: async () => {
       const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
-      tkAudit('Leave approved', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
-      tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was approved', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been APPROVED by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      tkAudit('Leave ' + a.to, _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
+      const subj = isReview ? 'Your leave request was reviewed' : 'Your leave request was approved';
+      const msg = isReview ? ('has been REVIEWED by ' + ((TK.user || {}).name || 'your manager') + ' and is now awaiting Director approval')
+        : ('has been APPROVED by ' + ((TK.user || {}).name || 'the Director'));
+      tkMailRequester(_e.email, _e.name || _l.emp_name, subj, 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') ' + msg + '.\n\nBest regards,\nHumiley Group Inc. — People & Workplace');
       try { await tkBootstrap(); } catch (e) {}
-      tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
-      if (typeof toast === 'function') toast('<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Leave approved & signed');
+      tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); tkRenderInbox(); } catch (e) {}
+      toast('Leave ' + a.to + ' & signed');
     }
   });
 }
@@ -6794,12 +6800,16 @@ function _claimItems(c) {
 const _claimTotal = c => _claimItems(c).reduce((s, it) => s + (+it.amount || 0), 0);
 function _claimRollup(c) {
   const its = _claimItems(c);
-  if (its.some(it => (it.status || 'Submitted') === 'Submitted')) return its.some(it => it.status === 'Approved' || it.status === 'Rejected') ? 'Partially approved' : 'Submitted';
-  if (its.every(it => it.status === 'Approved')) return 'Approved';
-  if (its.every(it => it.status === 'Rejected')) return 'Rejected';
+  if (!its.length) return c.status || 'Submitted';
+  const st = it => it.status || 'Submitted';
+  if (its.some(it => st(it) === 'Submitted')) return its.some(it => st(it) === 'Approved' || st(it) === 'Rejected' || st(it) === 'Reviewed') ? 'Partially approved' : 'Submitted';
+  if (its.every(it => st(it) === 'Reviewed')) return 'Reviewed';
+  if (its.every(it => st(it) === 'Approved')) return 'Approved';
+  if (its.every(it => st(it) === 'Rejected')) return 'Rejected';
+  if (its.some(it => st(it) === 'Reviewed')) return 'Reviewed';   // reviewed + some decided → still awaiting approval
   return 'Partially approved';
 }
-const _claimOpen = c => _claimItems(c).some(it => (it.status || 'Submitted') === 'Submitted');
+const _claimOpen = c => { const s = _claimRollup(c); return s === 'Submitted' || s === 'Reviewed' || s === 'Partially approved'; };
 let _claimRowSeq = 0;
 function _claimLineHtml() {
   const i = _claimRowSeq++;
@@ -6893,12 +6903,12 @@ async function tkRenderInbox() {
   const seeAll = _lvlRank(_userLevel) >= _lvlRank('management');
   const _empOf = (id, name) => (_DEMO_EMPLOYEES || []).find(e => e.id === id) || (_DEMO_EMPLOYEES || []).find(e => e.name === name);
   const _mine = (id, name) => { if (seeAll) return true; const e = _empOf(id, name); if (!e) return true; return (e.managerEmail || '').toLowerCase() === meEmail; };
-  const leave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending' && l.emp_id !== me && _mine(l.emp_id, l.emp_name));
-  const claims = (_HR.claims || []).filter(c => _claimOpen(c) && _mine(c.empId, c.name));
+  const leave = (_DEMO_LEAVE || []).filter(l => l.emp_id !== me && _aprCanSee(l.status, l.emp_id, l.emp_name));
+  const claims = (_HR.claims || []).filter(c => _aprCanSee(_claimRollup(c), c.empId, c.name));
   const reqs = (_HR.jobs || []).filter(j => (j.status || '').startsWith('Pending') || j.status === 'Draft');
   const padr = (_HR.padr || []).filter(p => p.status === 'Self-assessment' && _mine(p.empId, p.name));
-  const travel = (_HR.travel || []).filter(t => t.status === 'Submitted' && _mine(t.empId, t.name));
-  const payments = (_HR.payments || []).filter(p => (p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name));
+  const travel = (_HR.travel || []).filter(t => _aprCanSee(t.status, t.empId, t.name));
+  const payments = (_HR.payments || []).filter(p => _aprCanSee(p.status, p.empId, p.name));
   const total = leave.length + claims.length + reqs.length + padr.length + travel.length + payments.length;
   const kpis = _hrKpiRow([
     _hrKpi('Pending total', total, total ? '#F59E0B' : 'var(--emerald)'),
@@ -6906,7 +6916,7 @@ async function tkRenderInbox() {
     _hrKpi('Claims', claims.length, '#8B5CF6'), _hrKpi('Payments', payments.length, '#00B060'), _hrKpi('Requisitions', reqs.length, '#205090')
   ]);
   const sec = (title, count, rowsHtml) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + title + ' <span style="color:var(--text-light);font-weight:500">(' + count + ')</span></div></div>' + (count ? '<div class="table-wrap"><table>' + rowsHtml + '</table></div>' : '<div style="padding:18px;text-align:center;color:var(--text-light);font-size:13px">Nothing pending</div>') + '</div>';
-  const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkInboxLeave(' + l.id + ',\'rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
+  const leaveRows = '<thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th></th></tr></thead><tbody>' + leave.map(l => { const e = _hrEmp(l.emp_id) || { name: l.emp_name || 'Employee', ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (e.name || l.emp_name || '') + '</span></div></td><td>' + (l.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(l.startDate) + ' – ' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td><span class="badge ' + _aprCls(l.status) + '" style="font-size:10px">' + _aprLabel(l.status) + '</span></td><td style="white-space:nowrap">' + _aprBtns(l.status, 'tkInboxLeave', l.id, { leave: true, small: true }) + '</td></tr>'; }).join('') + '</tbody>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, true) + '</tbody>';
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
@@ -6939,8 +6949,69 @@ function tkInboxLeave(id, status) {
     }
   });
 }
+/* ── 3-level approval flow: Perform (requester) → Review (direct manager) → Approve (Management/Director) ──
+   Statuses: Submitted → Reviewed → Approved (→ Paid) ; Rejected at any pending stage. Leave uses lowercase. */
+function _aprState(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (s === 'reviewed' || s === 'pending approval') return 'review';
+  if (s === 'approved') return 'approved';
+  if (s === 'paid') return 'paid';
+  if (s === 'rejected') return 'rejected';
+  if (s === 'partially approved') return 'submit';
+  return 'submit';
+}
+/* Action available to the CURRENT user on a record in this state, or null. */
+function _aprAction(status) {
+  const st = _aprState(status);
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const isMgmt = _lvlRank(_userLevel) >= _lvlRank('management');
+  if (st === 'submit' && isMgr) return { to: 'Reviewed', label: 'Review', hex: '#205090' };
+  if (st === 'review' && isMgmt) return { to: 'Approved', label: 'Approve', hex: '#00B060' };
+  return null;
+}
+/* Leave uses lowercase statuses (pending/reviewed/approved/rejected). */
+function _aprActionLeave(status) {
+  const a = _aprAction(status);
+  return a ? { to: a.to.toLowerCase(), label: a.label, hex: a.hex } : null;
+}
+/* Should this pending record appear in the current user's inbox / action lists? */
+function _aprCanSee(status, empId, name) {
+  const a = _aprAction(status);
+  if (!a) return false;
+  if (a.to === 'Approved') return true;                        // review stage → any Director sees it
+  if (_lvlRank(_userLevel) >= _lvlRank('management')) return true;  // a Director also sees submit-stage items
+  const meEmail = ((TK.user || {}).email || '').toLowerCase();  // else only the direct manager reviews
+  const e = (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || (_DEMO_EMPLOYEES || []).find(x => x.name === name);
+  if (!e) return true;
+  return (e.managerEmail || '').toLowerCase() === meEmail;
+}
+/* Display label + badge class for a workflow status. */
+function _aprLabel(status) {
+  const M = { submit: 'Pending Review', review: 'Pending Approval', approved: 'Approved', paid: 'Paid', rejected: 'Rejected' };
+  const raw = String(status || '');
+  if (raw === 'Partially approved') return 'Partially approved';
+  return M[_aprState(status)] || raw || 'Pending Review';
+}
+function _aprCls(status) {
+  const M = { submit: 'b-warn', review: 'b-info', approved: 'b-ok', paid: 'b-navy', rejected: 'b-danger' };
+  if (String(status) === 'Partially approved') return 'b-info';
+  return M[_aprState(status)] || 'b-warn';
+}
+/* Build the Review/Approve + Reject buttons for a record; decideFn(id, targetStatus). */
+function _aprBtns(status, decideFn, id, opts) {
+  opts = opts || {};
+  const a = _aprAction(status);
+  if (!a) return '';
+  const sz = (opts.small ? 'font-size:10px;padding:3px 9px' : 'font-size:11px;padding:4px 11px');
+  const idq = "'" + String(id).replace(/'/g, "\\'") + "'";
+  const stop = opts.stop ? 'event.stopPropagation();' : '';
+  const to = opts.leave ? a.to.toLowerCase() : a.to;
+  const rej = opts.leave ? 'rejected' : 'Rejected';
+  return '<button class="btn-approve" style="' + sz + '" onclick="' + stop + decideFn + '(' + idq + ',\'' + to + '\')">' + tkIcon('check', 12) + a.label + '</button> ' +
+    '<button class="btn-reject" style="' + sz + '" onclick="' + stop + decideFn + '(' + idq + ',\'' + rej + '\')">' + tkIcon('x', 12) + 'Reject</button>';
+}
 /* Expandable multi-line claim table — used by both the Inbox and Travel & Claims. */
-const _claimBadgeCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Partially approved' ? 'b-info' : 'b-warn';
+const _claimBadgeCls = s => _aprCls(s);
 function tkClaimToggle(id) { const d = document.getElementById('claim-det-' + id); if (d) d.style.display = (d.style.display === 'none' ? 'table-row' : 'none'); }
 function _claimRowsHtml(claims, isMgr) {
   if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
@@ -6948,11 +7019,10 @@ function _claimRowsHtml(claims, isMgr) {
     const its = _claimItems(c), tot = _claimTotal(c), st = _claimRollup(c);
     const trip = c.travelId ? (_HR.travel || []).find(t => t.id === c.travelId) : null;
     const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
-    const allBtns = (isMgr && _claimOpen(c)) ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve all</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkInboxClaim(\'' + c.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject all</button>' : '';
-    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + st + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
-    const lineBtns = it => (isMgr && (it.status || 'Submitted') === 'Submitted' && it.id !== 'legacy') ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Approved\')">' + tkIcon('check', 11) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkInboxClaimItem(\'' + c.id + '\',\'' + it.id + '\',\'Rejected\')">' + tkIcon('x', 11) + 'Reject</button>' : '';
-    const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th>' + (isMgr ? '<th></th>' : '') + '</tr></thead><tbody>' +
-      its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + (it.status || 'Submitted') + '</span></td>' + (isMgr ? '<td style="white-space:nowrap">' + lineBtns(it) + '</td>' : '') + '</tr>').join('') +
+    const allBtns = _aprBtns(st, 'tkInboxClaim', c.id, { small: true, stop: true });
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + (c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + (c.dept || '') + '</div></td><td>' + (c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
+    const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th></tr></thead><tbody>' +
+      its.map(it => '<tr><td>' + (it.category || '') + '</td><td style="color:var(--text-light)">' + (it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + _aprLabel(it.status || 'Submitted') + '</span></td></tr>').join('') +
       '</tbody></table>' + _esignManifest(c) + '</td></tr>';
     return summary + detail;
   }).join('');
@@ -6997,12 +7067,12 @@ function _inboxPendingIds() {
   const _empOf = (id, name) => (_DEMO_EMPLOYEES || []).find(e => e.id === id) || (_DEMO_EMPLOYEES || []).find(e => e.name === name);
   const _mine = (id, name) => { if (seeAll) return true; const e = _empOf(id, name); if (!e) return true; return (e.managerEmail || '').toLowerCase() === meEmail; };
   const ids = [];
-  (_DEMO_LEAVE || []).forEach(l => { if ((l.status || '').toLowerCase() === 'pending' && l.emp_id !== me && _mine(l.emp_id, l.emp_name)) ids.push('lv:' + l.id); });
-  (_HR.claims || []).forEach(c => { if (_claimOpen(c) && _mine(c.empId, c.name)) ids.push('cl:' + c.id); });
+  (_DEMO_LEAVE || []).forEach(l => { if (l.emp_id !== me && _aprCanSee(l.status, l.emp_id, l.emp_name)) ids.push('lv:' + l.id); });
+  (_HR.claims || []).forEach(c => { if (_aprCanSee(_claimRollup(c), c.empId, c.name)) ids.push('cl:' + c.id); });
   (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') ids.push('jb:' + j.id); });
   (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment' && _mine(p.empId, p.name)) ids.push('pa:' + p.id); });
-  (_HR.travel || []).forEach(t => { if (t.status === 'Submitted' && _mine(t.empId, t.name)) ids.push('tv:' + t.id); });
-  (_HR.payments || []).forEach(p => { if ((p.status || 'Submitted') === 'Submitted' && _mine(p.empId, p.name)) ids.push('pay:' + p.id); });
+  (_HR.travel || []).forEach(t => { if (_aprCanSee(t.status, t.empId, t.name)) ids.push('tv:' + t.id); });
+  (_HR.payments || []).forEach(p => { if (_aprCanSee(p.status, p.empId, p.name)) ids.push('pay:' + p.id); });
   return ids;
 }
 function tkUpdateInboxBadge(pending) {
@@ -7056,12 +7126,12 @@ async function tkRenderTravelClaims() {
   }
   const kpis = _hrKpiRow([
     _kpiTile('Travel Requests', travel.length, '#205090', '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>'),
-    _kpiTile('Pending', travel.filter(t => t.status === 'Submitted').length + claims.filter(c => _claimOpen(c)).length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Pending', travel.filter(t => ['submit', 'review'].includes(_aprState(t.status))).length + claims.filter(c => _claimOpen(c)).length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
     _kpiTile('Advances', _PAY_FMT(tAdv), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('Claims value', _PAY_FMT(cTot), '#00B060', '<path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>')
   ]);
-  const act = (coll, id, status) => isMgr && status === 'Submitted' ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tk' + (coll === 'travel' ? 'Travel' : 'TC') + 'Decision(\'' + id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>' : '';
-  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _ts(t.status) + '" style="font-size:10px">' + (t.status || '') + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
+  const act = (coll, id, status) => _aprBtns(status, (coll === 'travel' ? 'tkTravelDecision' : 'tkTCDecision'), id, { small: true });
+  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + (t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (t.dept || '') + '</div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + (t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
   root.innerHTML = periodSel + '<div id="tc-export">' + kpis + deptDash +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
@@ -7168,10 +7238,10 @@ function payFillTable() {
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
   tb.innerHTML = list.length ? list.map(p => {
     const s = p.status || 'Submitted';
-    const act = !isMgr ? '' : (s === 'Submitted'
-      ? '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>'
-      : s === 'Approved' ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
-    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + s + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
+    const canPay = _lvlRank(_userLevel) >= _lvlRank('management');
+    const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
+      ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
+    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
 }
 function tkNewPayment() {
@@ -7243,7 +7313,7 @@ function tkFinShow(coll, id) {
 }
 const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
 const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
-const _finPending = s => s === 'Submitted' || s === 'Partially approved';
+const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
   const out = [];
   (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.dueDate || '', hasFile: !!p.attachment }));
@@ -7277,7 +7347,7 @@ async function tkRenderFinance() {
   done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
   const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'fin-cat') + _rptChartCard('Spend by Department', 'fin-dept-c') + _rptChartCard('By Type', 'fin-kind-c') + '</div>';
   // Pending approvals — act on everything from one place
-  const act = i => { const a = "tkFinDecide('" + i.kind + "','" + i.id + "','Approved')", r = "tkFinDecide('" + i.kind + "','" + i.id + "','Rejected')"; return '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="' + a + '">' + tkIcon('check', 12) + 'Approve</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="' + r + '">' + tkIcon('x', 12) + 'Reject</button>'; };
+  const act = i => { const a = _aprAction(i.status); if (!a) return '<span style="font-size:11px;color:var(--text-light)">' + _aprLabel(i.status) + '</span>'; return '<button class="btn-approve" style="font-size:10px;padding:3px 9px" onclick="tkFinDecide(\'' + i.kind + '\',\'' + i.id + '\',\'' + a.to + '\')">' + tkIcon('check', 12) + a.label + '</button> <button class="btn-reject" style="font-size:10px;padding:3px 9px" onclick="tkFinDecide(\'' + i.kind + '\',\'' + i.id + '\',\'Rejected\')">' + tkIcon('x', 12) + 'Reject</button>'; };
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
   const pendRows = pend.length ? pend.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(i.dept) + '</div></td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td>' + fileCell(i) + '</td><td style="white-space:nowrap">' + act(i) + '</td></tr>').join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:16px">No pending finance approvals — all clear.</td></tr>';
   const pendCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pending Approvals</div><span style="font-size:11px;color:var(--text-light)">Payments · Claims · Travel — ' + pend.length + ' waiting</span></div><div class="table-wrap"><table><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th style="text-align:right">Amount</th><th>File</th><th></th></tr></thead><tbody>' + pendRows + '</tbody></table></div></div>';
@@ -7285,7 +7355,7 @@ async function tkRenderFinance() {
   const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
     _crmFiltSearch('fin-q', 'Search requester / reference / category…', 'finFillTable') +
     _crmFiltSel('fin-kind', 'All types', ['Payment', 'Claim', 'Travel'], 'finFillTable') +
-    _crmFiltSel('fin-status', 'All status', ['Submitted', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
+    _crmFiltSel('fin-status', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
     _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
   const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
   root.innerHTML = '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
@@ -7305,7 +7375,7 @@ function finFillTable() {
     return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept);
   }).sort((a, b) => b.amount - a.amount);
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
-  tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + i.status + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
+  tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
 }
 /* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
 async function tkPaymentVoucherPDF(id) {
@@ -10728,6 +10798,12 @@ function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── 3-level approval workflow ──
+  'Pending Review': 'Chờ xem xét',
+  'Pending Approval': 'Chờ phê duyệt',
+  'Review': 'Xem xét',
+  'Reviewed': 'Đã xem xét',
+  'Partially approved': 'Duyệt một phần',
   // ── Signature PIN / e-signature ──
   'Electronic Signature': 'Chữ ký điện tử',
   'Signer': 'Người ký',

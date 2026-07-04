@@ -350,6 +350,76 @@ class Handler(BaseHTTPRequestHandler):
         email = claims.get("preferred_username") or claims.get("upn") or claims.get("email") or ""
         return True, {"name": claims.get("name") or email, "email": email, "auth_time": int(float(at)), "oid": claims.get("oid")}
 
+    # -- 3-level approval workflow: Perform (requester) -> Review (direct manager) -> Approve (Management/Director) --
+    _LEVEL_RANK = {"staff": 1, "manager": 2, "management": 3, "editor": 4, "admin": 5}
+    THREE_LEVEL_COLLS = ("claims", "travel", "payments", "leave")
+
+    def _lvl_rank(self, lvl):
+        return self._LEVEL_RANK.get((lvl or "staff"), 1)
+
+    def _is_mgmt(self, u):
+        return self._lvl_rank(u.get("level")) >= self._LEVEL_RANK["management"]
+
+    @staticmethod
+    def _appr_state(status):
+        s = str(status or "").strip().lower()
+        if s in ("reviewed", "pending approval"):
+            return "review"
+        if s == "approved":
+            return "approved"
+        if s == "paid":
+            return "paid"
+        if s == "rejected":
+            return "rejected"
+        return "submit"   # submitted / pending / partially approved / empty
+
+    def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id):
+        """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
+        Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage."""
+        t = str(set_status or "").strip().lower()
+        if coll not in self.THREE_LEVEL_COLLS:
+            if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
+                return "Manager access required to approve, reject or mark paid."
+            return None
+        if not t:
+            return None   # requester's own submit signing (no status change)
+        cur = self._appr_state(cur_status)
+        same_person = owner_id and owner_id == u.get("id")
+        if t == "reviewed":
+            if u.get("role") != "manager":
+                return "Manager access required to review this request."
+            if cur != "submit":
+                return "This request has already been reviewed."
+            if same_person:
+                return "You cannot review your own request."
+            return None
+        if t == "approved":
+            if not self._is_mgmt(u):
+                return "Director / Management access is required for final approval."
+            if cur != "review":
+                return "This request must be reviewed by the direct manager before it can be approved."
+            if same_person:
+                return "You cannot approve your own request."
+            reviewer_ids = [s.get("userId") for s in (sigs or []) if "review" in str(s.get("meaning", "")).lower()]
+            if u.get("id") in reviewer_ids:
+                return "A different person must give final approval than the one who reviewed."
+            return None
+        if t == "rejected":
+            if u.get("role") != "manager":
+                return "Manager access required to reject this request."
+            if cur not in ("submit", "review"):
+                return "This request is no longer pending."
+            if same_person:
+                return "You cannot reject your own request."
+            return None
+        if t == "paid":
+            if not self._is_mgmt(u):
+                return "Director / Management access is required to mark a request paid."
+            if cur != "approved":
+                return "Only an approved request can be marked paid."
+            return None
+        return None
+
     def _esign(self, u, body):
         """Apply an electronic signature to a record (Part 11): re-authenticate the signer via a
         fresh M365 sign-in, stamp an immutable signature manifestation (signer, UTC time, meaning,
@@ -387,11 +457,6 @@ class Handler(BaseHTTPRequestHandler):
             sess_email = (u.get("email") or "").lower()
             if signer_email and sess_email and signer_email != sess_email:
                 return self._err("The Microsoft 365 account you signed with does not match your session.", 403)
-        # Authorization: an APPROVAL decision (approve / reject / mark-paid) is a manager act;
-        # submitting / self-service status changes are the record owner's own.
-        is_approval = bool(set_status) and str(set_status).strip().lower() in ("approved", "rejected", "paid")
-        if is_approval and u.get("role") != "manager":
-            return self._err("Manager access required to approve, reject or mark paid.", 403)
         sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
                "ts": self._utc_now(), "meaning": meaning, "method": method}
         if auth_time:
@@ -403,6 +468,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("Leave record not found.", 404)
             if u.get("role") != "manager" and lv.get("emp_id") and lv.get("emp_id") != u.get("id"):
                 return self._err("You can only sign your own record.", 403)
+            try:
+                _lsigs = json.loads(lv.get("signatures") or "[]")
+            except Exception:
+                _lsigs = []
+            _err = self._appr_check(u, "leave", lv.get("status"), set_status, _lsigs, lv.get("emp_id"))
+            if _err:
+                return self._err(_err, 403)
             row = db.append_leave_signature(int(iid), sig, new_status=(set_status or None))
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
                 "action": "E-signature — " + meaning, "target": "leave/" + str(iid),
@@ -416,13 +488,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Record not found.", 404)
         if u.get("role") != "manager" and item.get("empId") and item.get("empId") != u.get("id"):
             return self._err("You can only sign your own record.", 403)
+        _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
+        if _err:
+            return self._err(_err, 403)
         item.setdefault("signatures", []).append(sig)
         if set_status:
             item["status"] = set_status
             if coll == "claims" and isinstance(item.get("items"), list):
                 for it in item["items"]:
-                    if (it.get("status") or "Submitted") == "Submitted":
+                    if (it.get("status") or "Submitted") in ("Submitted", "Reviewed"):
                         it["status"] = set_status
+            if set_status == "Reviewed":
+                item["reviewedBy"] = signer_name
             if set_status == "Approved":
                 item["approvedBy"] = signer_name
             if set_status == "Paid":
@@ -654,33 +731,39 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             who = item.get("name") or "the employee"
             cur = item.get("status") or "Submitted"
+            state = self._appr_state(cur)
             detail = item.get("reqNo") or item.get("title") or item.get("dest") or ""
+            # Email links do the manager's REVIEW step (and Reject). Final Director approval and
+            # mark-paid happen in the portal, where the session enforces Management level + segregation.
             if action == "paid" and coll == "payments":
-                if cur != "Approved":
-                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — it must be approved before it can be marked paid." % (who, cur), "#205090")
+                if state != "approved":
+                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — a Director must approve it in the portal before it can be marked paid." % (who, cur), "#205090")
                 new_status = "Paid"
             elif action in ("reject", "decline", "deny"):
-                if cur != "Submitted":
-                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                if state not in ("submit", "review"):
+                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
                 new_status = "Rejected"
-            else:
-                if cur != "Submitted":
-                    return self._html("Already " + cur, "This %s from %s was already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
-                new_status = "Approved"
+            else:   # approve / review link from the direct manager
+                if state != "submit":
+                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b> — final approval happens in the portal." % (LABEL[coll], who, cur), "#205090")
+                new_status = "Reviewed"
             item["status"] = new_status
             if new_status == "Paid":
                 item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
             if coll == "claims" and isinstance(item.get("items"), list):
                 for it in item["items"]:
-                    if (it.get("status") or "Submitted") == "Submitted":
+                    if (it.get("status") or "Submitted") in ("Submitted", "Reviewed"):
                         it["status"] = new_status
-            if new_status == "Approved":
-                item["approvedBy"] = item.get("approvedBy") or "Email approval"
+            if new_status == "Reviewed":
+                item["reviewedBy"] = item.get("reviewedBy") or "Email review"
             db.put_collection_item(coll, item)
-            color = "#00B060" if new_status in ("Approved", "Paid") else "#C00000"
-            return self._html(LABEL[coll].capitalize() + " " + new_status.lower(),
-                              "%s's %s%s has been <b>%s</b>. You can close this tab." % (
-                                  who, LABEL[coll], (" (" + detail + ")" if detail else ""), new_status.lower()),
+            color = "#00B060" if new_status in ("Paid",) else ("#C00000" if new_status == "Rejected" else "#205090")
+            msg = {"Reviewed": "has been <b>reviewed</b> and is now awaiting Director approval in the portal",
+                   "Rejected": "has been <b>rejected</b>",
+                   "Paid": "has been <b>marked paid</b>"}.get(new_status, "has been updated")
+            return self._html(LABEL[coll].capitalize() + " " + ("reviewed" if new_status == "Reviewed" else new_status.lower()),
+                              "%s's %s%s %s. You can close this tab." % (
+                                  who, LABEL[coll], (" (" + detail + ")" if detail else ""), msg),
                               color)
         return self._html("Invalid or expired link",
                           "This approval link is not valid — the item may have been removed. Please review it in the app.", "#C00000")
