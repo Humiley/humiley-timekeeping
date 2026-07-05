@@ -1,3 +1,6 @@
-# Humiley People & Workplace Portal — runs on the Python standard library only.
-# No third-party packages required. This file exists so PaaS builders (Render, etc.)
-# detect a Python project and complete the build step cleanly.
+# Humiley People & Workplace Portal — the core runs on the Python standard library only.
+# One optional dependency powers Web Push OS notifications (VAPID signing + payload
+# encryption). It ships manylinux wheels (pulls in cryptography, http-ece, py-vapid),
+# so no compiler is needed. If it is ever unavailable the app still runs — push just
+# turns off and email notifications continue as before.
+pywebpush>=1.14.0

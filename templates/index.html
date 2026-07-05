@@ -3124,6 +3124,71 @@ function tkExportEmployees() {
   if (typeof toast === 'function') toast('Employee list exported to CSV');
 }
 
+/* ══════════════════ Web Push — OS notifications (PWA + web) ══════════════════
+   Alerts land in the phone/desktop notification centre for every request, approval,
+   decision, send and update — even when the app is closed (installed PWA / open tab
+   or a browser the OS keeps alive). Free, no external account: the backend signs with
+   self-generated VAPID keys and relays via /api/push. Degrades silently if the browser
+   or the server has push disabled. */
+let _VAPID_PUB = '';
+function _urlB64ToUint8(b64) {
+  const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+  const s = (b64 + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(s); const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+function _b64urlFromBuf(buf) {
+  const b = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+/* Ask permission (once) and register this device's push subscription with the backend. */
+async function _pushEnroll(interactive) {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window) || !window.Notification) return false;
+    if (!_VAPID_PUB) return false;                       // server-side push not configured
+    if (Notification.permission === 'denied') return false;
+    if (Notification.permission !== 'granted') {
+      if (!interactive) return false;                    // only prompt on an explicit opt-in / first login
+      const p = await Notification.requestPermission();
+      if (p !== 'granted') return false;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      // If the server's VAPID key changed (e.g. fresh deploy / data reset), the old
+      // subscription can no longer be signed for — drop it and re-subscribe.
+      try {
+        const k = sub.options && sub.options.applicationServerKey;
+        if (k && _b64urlFromBuf(k) !== _VAPID_PUB) { await sub.unsubscribe(); sub = null; }
+      } catch (e) {}
+    }
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(_VAPID_PUB) });
+    }
+    await tkApi('/api/push/subscribe', { method: 'POST', body: { subscription: sub.toJSON ? sub.toJSON() : sub } });
+    return true;
+  } catch (e) { return false; }
+}
+/* Fan out an OS notification to one or more people (by email) via the backend relay. */
+async function _pushNotify(to, title, body, url) {
+  try {
+    if (!to || !_VAPID_PUB) return;
+    const arr = (Array.isArray(to) ? to : [to]).filter(Boolean);
+    if (!arr.length) return;
+    await tkApi('/api/push/send', { method: 'POST', body: { to: arr, title: title || 'Humiley Portal', body: body || '', url: url || '/' } });
+  } catch (e) { /* non-fatal — email/in-app notifications still fire */ }
+}
+/* Send myself a test push so users can confirm notifications work on their device. */
+async function tkTestPush() {
+  const ok = await _pushEnroll(true);
+  if (!ok) { toast(_t2('Enable notifications for this site first (check browser/OS settings).', 'Hãy bật thông báo cho trang này trước (kiểm tra cài đặt trình duyệt/thiết bị).'), 'warn', 6000); return; }
+  const me = (TK.user && TK.user.email) || '';
+  if (me) await _pushNotify(me, 'Humiley Portal', _t2('Notifications are on — you will be alerted here.', 'Đã bật thông báo — bạn sẽ nhận cảnh báo tại đây.'), '/');
+  toast(_t2('Test notification sent to this device.', 'Đã gửi thông báo thử tới thiết bị này.'), 'success', 5000);
+}
+
 /* Email the direct manager an approval request with one-click Approve/Reject
    links. Auto-sends via Microsoft Graph if Mail.Send is available; otherwise
    opens the user's mail client pre-filled. */
@@ -3133,6 +3198,7 @@ async function tkEmailLeaveApproval(res, lv) {
   const reject  = base + '/approve?t=' + encodeURIComponent(res.token) + '&action=reject';
   const mgrName = res.managerName || 'Manager';
   const subject = 'Leave approval needed — ' + (res.requester || 'Employee');
+  try { _pushNotify(res.managerEmail, subject, lv.type + ' · ' + lv.start + '→' + lv.end + ' (' + lv.days + 'd)', '/'); } catch (e) {}   // OS push to the approver
   const text = 'Hi ' + mgrName + ',\n\n' + (res.requester || 'An employee') +
     ' has requested leave and needs your approval:\n\n' +
     '- Type: ' + lv.type + '\n- Dates: ' + lv.start + ' to ' + lv.end + ' (' + lv.days + ' day(s))\n' +
@@ -3167,6 +3233,7 @@ async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml
   const base = window.location.origin;
   const portal = base + '/';
   mgrName = mgrName || 'Manager';
+  try { _pushNotify(to, subject, (detailsText || heading || '').split('\n')[0], '/'); } catch (e) {}   // OS push to the approver
   // One-click Approve / Reject (no login) when a token is supplied — mirrors the leave flow.
   const approve = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=approve' : '';
   const reject = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=reject' : '';
@@ -3920,8 +3987,9 @@ async function doLogin(role, opts = {}) {
   toast(role === 'manager'
     ? 'Welcome, Manager — full access enabled'
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
-  try { _resetIdleTimer(); } catch (e) {}   // arm the 45-minute inactivity auto-logout
+  try { _resetIdleTimer(); } catch (e) {}   // arm the inactivity auto-logout
   try { _armManagerPoll(); } catch (e) {}   // managers: live auto-refresh of admin views
+  try { _pushEnroll(false); } catch (e) {}  // silently re-register this device for OS push (if already allowed)
 }
 
 /* ── Microsoft 365 SSO login (live mode) ── */
@@ -3934,27 +4002,29 @@ function msalLogin() {
     return;
   }
   if (!_msalApp) { toast('Microsoft 365 not configured.', 'warn'); return; }
-  /* prompt:'login' forces a fresh sign-in every time (no silent SSO) — so the browser can't
-     "keep the pass", and Microsoft re-challenges 2-step verification on each login. */
-  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'], prompt: 'login', onRedirectNavigate: _onRedirect() });
+  /* No prompt:'login' — let Microsoft SSO keep the session so the team signs in ONCE and stays
+     signed in (token cached in localStorage), until they Sign Out or clear the browser cache. */
+  _msalApp.loginRedirect({ scopes: ['User.Read', 'Sites.ReadWrite.All', 'Mail.Send'], onRedirectNavigate: _onRedirect() });
 }
 
 /* ── Logout ── */
 function doLogout() {
   _userRole = null; TK.token = null; TK.user = null;
-  /* clear ALL session state — this also wipes the MSAL token cache (stored in
-     sessionStorage), so reloading lands on a clean login screen with no
-     auto-relogin. Reliable in both demo and live Microsoft 365 modes. */
+  /* Explicit sign-out is the ONE place we wipe everything. The MSAL token cache now lives in
+     localStorage (so sign-in persists across restarts), so clearing both storages drops the
+     account and the next launch shows a clean login screen. Reliable in demo + live M365. */
+  try { if (_msalApp && _msalApp.clearCache) _msalApp.clearCache(); } catch (e) {}
+  try { const _lang = localStorage.getItem('tkLang'); localStorage.clear(); if (_lang) localStorage.setItem('tkLang', _lang); } catch (e) {}
   try { sessionStorage.clear(); } catch (e) {}
   if (typeof toast === 'function') toast('Signed out');
   window.location.replace(window.location.origin + '/');
 }
 
-/* ── Auto sign-out after 45 minutes of inactivity ──────────────────────────────
-   When the session is cleared the next sign-in goes through a full Microsoft login
-   (prompt:'login'), which re-challenges 2-step verification. */
+/* ── Auto sign-out after a long idle window ─────────────────────────────────────
+   Set to 12 hours so a normal workday never forces a re-login — the team signs in
+   once and stays signed in. A left-open device still signs out overnight. */
 let _idleTimer = null;
-const _IDLE_MS = 45 * 60 * 1000;
+const _IDLE_MS = 12 * 60 * 60 * 1000;   // 12 hours
 function _resetIdleTimer() {
   if (!TK.token) return;                 // only while signed in
   clearTimeout(_idleTimer);
@@ -3962,7 +4032,7 @@ function _resetIdleTimer() {
 }
 function _idleLogout() {
   if (!TK.token) return;
-  try { toast('Signed out after 45 minutes of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
+  try { toast('Signed out after a long period of inactivity — please sign in again.', 'warn', 6000); } catch (e) {}
   setTimeout(doLogout, 1200);
 }
 ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'].forEach(function (ev) {
@@ -6331,6 +6401,7 @@ function _brandPaginate(doc, canvas, opts) {
    approver's own mail client opens pre-addressed to the requester, so the approver sends it. */
 async function tkMailRequester(to, name, subject, body, cc) {
   if (!to) { toast('No email on file for ' + (name || 'the requester') + ' — not notified', 'warn', 4000); return false; }
+  try { _pushNotify(to, subject, String(body || '').replace(/^Dear[^,]*,\s*/i, '').split('\n').filter(Boolean)[0] || '', '/'); } catch (e) {}   // OS push: decisions / status updates to the requester
   // cc: string ("a@x;b@y" or "a@x,b@y") or array; deduped, self/to removed
   const ccList = [...new Set((Array.isArray(cc) ? cc : String(cc || '').split(/[;,]/)).map(s => (s || '').trim().toLowerCase()).filter(Boolean))]
     .filter(a => a !== (to || '').toLowerCase());
@@ -9016,6 +9087,7 @@ async function initAuth() {
   /* Pull live config from the backend. If Microsoft 365 is configured there,
      mirror it into SP_CONFIG so MSAL initialises with the real values. */
   const cfg = await tkConfig();
+  _VAPID_PUB = cfg.vapidPublicKey || '';   // Web Push key (empty ⇒ push disabled server-side)
   if (!cfg.demo) {
     SP_CONFIG.clientId = cfg.clientId;
     SP_CONFIG.tenantId = cfg.tenantId;
@@ -9032,7 +9104,7 @@ async function initAuth() {
   /* LIVE Microsoft 365 mode */
   _msalApp = new msal.PublicClientApplication({
     auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: _isNative() ? _NATIVE_REDIRECT : window.location.origin },
-    cache: { cacheLocation: _isNative() ? 'localStorage' : 'sessionStorage' }
+    cache: { cacheLocation: 'localStorage' }   /* persist sign-in across app/tab restarts (web + native) — one login lasts until sign-out or cache clear */
   });
   _wireNativeAuth();
   let _pendingNative = null;
@@ -12687,6 +12759,7 @@ const _VI = {
   'Marital Status': 'Tình trạng hôn nhân',
   'Mark Legitimate': 'Đánh dấu hợp lệ',
   'Mark all read': 'Đánh dấu tất cả đã đọc',
+  'Turn on device alerts': 'Bật thông báo thiết bị',
   'Marriage Leave': 'Nghỉ cưới',
   'Marriage Leave (days)': 'Nghỉ cưới (ngày)',
   'Married': 'Đã kết hôn',
@@ -15689,8 +15762,9 @@ function saveEmployeeProfile() {
     <button class="btn btn-ghost btn-sm" onclick="tkMarkAllRead()">Mark all read</button>
   </div>
   <div id="notif-list"></div>
-  <div style="padding:10px 16px;text-align:center">
-    <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="toggleNotifications()">Close</button>
+  <div style="padding:10px 16px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap">
+    <button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tkTestPush()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span data-i18n>Turn on device alerts</span></button>
+    <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="toggleNotifications()" data-i18n>Close</button>
   </div>
 </div>
 

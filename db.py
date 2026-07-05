@@ -149,9 +149,18 @@ def init_db():
             FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
         );
 
+        -- Web Push subscriptions (one row per browser/device per user) for OS notifications.
+        CREATE TABLE IF NOT EXISTS push_subs (
+            endpoint TEXT PRIMARY KEY,
+            email    TEXT NOT NULL,
+            sub      TEXT NOT NULL,   -- full PushSubscription JSON (endpoint + p256dh/auth keys)
+            created  TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
+        CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
         """
     )
     # migration: add newer columns to older databases
@@ -1136,6 +1145,48 @@ def set_setting(key, value):
     conn.execute("INSERT INTO settings (key,value) VALUES (?,?) "
                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                  (key, json.dumps(value)))
+    conn.commit()
+    conn.close()
+
+
+# ── Web Push subscriptions (OS notifications) ──
+def push_sub_add(email, sub):
+    """Store/refresh a browser's PushSubscription for a user (keyed by its endpoint)."""
+    endpoint = (sub or {}).get("endpoint")
+    if not endpoint:
+        return
+    conn = get_conn()
+    # On conflict only refresh a row that already belongs to this user — a client cannot
+    # re-point another person's (opaque) endpoint to itself.
+    conn.execute("INSERT INTO push_subs (endpoint,email,sub,created) VALUES (?,?,?,?) "
+                 "ON CONFLICT(endpoint) DO UPDATE SET sub = excluded.sub "
+                 "WHERE push_subs.email = excluded.email",
+                 (endpoint, (email or "").lower(), json.dumps(sub), now_iso()))
+    conn.commit()
+    conn.close()
+
+
+def push_subs_for(emails):
+    """Return [(endpoint, sub_dict), …] for the given list of user emails."""
+    emails = [(e or "").lower() for e in (emails or []) if e]
+    if not emails:
+        return []
+    ph = ",".join("?" * len(emails))
+    rows = _rows("SELECT endpoint, sub FROM push_subs WHERE email IN (%s)" % ph, tuple(emails))
+    out = []
+    for r in rows:
+        try:
+            out.append((r["endpoint"], json.loads(r["sub"])))
+        except (ValueError, TypeError):
+            pass
+    return out
+
+
+def push_sub_remove(endpoint):
+    if not endpoint:
+        return
+    conn = get_conn()
+    conn.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,))
     conn.commit()
     conn.close()
 

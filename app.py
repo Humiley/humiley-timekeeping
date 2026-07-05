@@ -101,6 +101,90 @@ def graph_me(access_token):
         return None
 
 
+# ── Web Push (OS notifications for PWA + web) ──────────────────────────────────
+# Free, no external account: self-signed VAPID keys (generated once, kept in the DB
+# settings table on the data volume) + the standard Web Push protocol via pywebpush.
+# Degrades gracefully: if pywebpush/cryptography aren't installed the app still runs
+# and simply skips push (email notifications still go out).
+try:
+    from pywebpush import webpush, WebPushException
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    _PUSH_OK = True
+except Exception:                       # pragma: no cover - optional dependency
+    _PUSH_OK = False
+
+import base64
+
+VAPID_SUBJECT = os.environ.get("TK_VAPID_SUBJECT", "mailto:portal@humiley.com")
+_VAPID = {"priv": None, "pub": None}
+
+
+def _b64url(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def _ensure_vapid():
+    """Return {'priv': <raw 32-byte EC scalar, base64url>, 'pub': <applicationServerKey base64url>}.
+    Prefers env secrets TK_VAPID_PRIVATE / TK_VAPID_PUBLIC (kept OUT of the DB, like the e-sign
+    pepper — set both to harden against a DB-file leak); otherwise generates a keypair once and
+    persists it in the DB settings table so push works out-of-the-box."""
+    if _VAPID["pub"]:
+        return _VAPID
+    if not _PUSH_OK:
+        return _VAPID
+    env_priv = os.environ.get("TK_VAPID_PRIVATE", "").strip()
+    env_pub = os.environ.get("TK_VAPID_PUBLIC", "").strip()
+    if env_priv and env_pub:
+        _VAPID.update({"priv": env_priv, "pub": env_pub})
+        return _VAPID
+    saved = None
+    try:
+        saved = db.get_setting("_vapid")
+    except Exception:
+        saved = None
+    if isinstance(saved, dict) and saved.get("priv") and saved.get("pub"):
+        _VAPID.update(saved)
+        return _VAPID
+    try:
+        priv = ec.generate_private_key(ec.SECP256R1())
+        # Private key as the raw 32-byte scalar, base64url — the format pywebpush accepts
+        # directly and the conventional Web Push "private key" encoding.
+        raw = priv.private_numbers().private_value.to_bytes(32, "big")
+        point = priv.public_key().public_bytes(
+            serialization.Encoding.X962,
+            serialization.PublicFormat.UncompressedPoint)   # 65 bytes: 0x04 || X || Y (applicationServerKey)
+        _VAPID.update({"priv": _b64url(raw), "pub": _b64url(point)})
+        db.set_setting("_vapid", _VAPID)
+    except Exception as e:               # pragma: no cover
+        print("VAPID keygen failed:", e)
+    return _VAPID
+
+
+def _web_push(endpoint, sub, payload):
+    """Send one Web Push message; drop the subscription if the browser reports it gone."""
+    if not _PUSH_OK:
+        return False
+    v = _ensure_vapid()
+    if not v.get("priv"):
+        return False
+    try:
+        webpush(subscription_info=sub, data=json.dumps(payload),
+                vapid_private_key=v["priv"],
+                vapid_claims={"sub": VAPID_SUBJECT}, ttl=86400, timeout=10)
+        return True
+    except WebPushException as e:        # pragma: no cover - network dependent
+        code = getattr(getattr(e, "response", None), "status_code", None)
+        if code in (404, 410):           # subscription expired / unsubscribed
+            try:
+                db.push_sub_remove(endpoint)
+            except Exception:
+                pass
+        return False
+    except Exception:
+        return False
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "HumileyTimekeeping/2.0"
     MAX_BODY = 30 * 1024 * 1024   # reject request bodies larger than 30 MB (memory-safety)
@@ -175,7 +259,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._coll_approve_via_link(qs)
         if path == "/api/config":
             return self._json({"demo": DEMO_MODE, "clientId": M365["clientId"],
-                               "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"]})
+                               "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"],
+                               "vapidPublicKey": _ensure_vapid().get("pub") or ""})
         if path == "/api/me":
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)
@@ -213,6 +298,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._checkout(u, body))
         if path == "/api/leave":
             return self._guard(lambda u: self._leave_create(u, body))
+        if path == "/api/push/subscribe":
+            return self._guard(lambda u: self._push_subscribe(u, body))
+        if path == "/api/push/unsubscribe":
+            return self._guard(lambda u: self._push_unsub(u, body))
+        if path == "/api/push/send":
+            return self._guard(lambda u: self._push_send(u, body))
         if path == "/api/employees":
             return self._guard(lambda u: self._emp_create(u, body), manager=True)
         if path == "/api/zones":
@@ -265,6 +356,62 @@ class Handler(BaseHTTPRequestHandler):
         if manager and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         return fn(u)
+
+    # -- web push -----------------------------------------------------------
+    def _push_subscribe(self, u, body):
+        sub = body.get("subscription") or body
+        if not (isinstance(sub, dict) and sub.get("endpoint")):
+            return self._err("Bad subscription.", 400)
+        try:
+            db.push_sub_add(u.get("email"), sub)
+        except Exception:
+            return self._err("Could not save subscription.", 500)
+        return self._json({"ok": True})
+
+    def _push_unsub(self, u, body):
+        try:
+            db.push_sub_remove(body.get("endpoint"))
+        except Exception:
+            pass
+        return self._json({"ok": True})
+
+    def _push_send(self, u, body):
+        """Relay an OS notification to users' devices. To stop the relay being abused as an
+        internal phishing/spam channel: (1) the click URL is forced to a SAME-ORIGIN path,
+        (2) a non-manager may only notify THEMSELVES or their direct manager (which is all the
+        legitimate 'I submitted a request' flow needs); managers may fan out (that is how
+        approval/update alerts reach requesters), (3) recipients are capped."""
+        if not _PUSH_OK:
+            return self._json({"ok": False, "disabled": True})
+        to = body.get("to") or []
+        if isinstance(to, str):
+            to = [to]
+        to = [str(e).lower() for e in to if e][:200]
+        me = (u.get("email") or "").lower()
+        if u.get("role") != "manager":
+            allowed = {me}
+            mgr = (u.get("managerEmail") or "").lower()
+            if mgr:
+                allowed.add(mgr)
+            to = [e for e in to if e in allowed]
+        # Click target must be a site-relative path (never a scheme or protocol-relative URL).
+        url = str(body.get("url") or "/")
+        if (not url.startswith("/")) or url.startswith("//"):
+            url = "/"
+        payload = {
+            "title": (str(body.get("title") or "Humiley Portal"))[:120],
+            "body": (str(body.get("body") or ""))[:400],
+            "url": url[:300],
+            "tag": (str(body.get("tag") or ""))[:80],
+        }
+        sent = 0
+        try:
+            for endpoint, sub in db.push_subs_for(to):
+                if _web_push(endpoint, sub, payload):
+                    sent += 1
+        except Exception:
+            pass
+        return self._json({"ok": True, "sent": sent})
 
     # -- auth ---------------------------------------------------------------
     def _auth_demo(self, body):
