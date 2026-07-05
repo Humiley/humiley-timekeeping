@@ -16,7 +16,8 @@ Nothing to build. After the next deploy (`git pull && ./update.sh`), anyone can 
 2. Tap the **Share** button → **Add to Home Screen** → **Add**.
 3. A **Humiley** icon appears on the home screen. Tapping it opens the portal **full-screen** (no browser bars), with a splash screen — it looks and feels like an app.
 
-**Android (Chrome):** menu → **Install app** / **Add to Home screen**.
+**Android (Chrome):** menu → **Install app** / **Add to Home screen**. For the Google Play (native)
+build, see **`ANDROID-APP.md`**.
 **Windows / Mac (Edge/Chrome):** the install icon in the address bar.
 
 What you get: home-screen icon, full-screen launch, faster repeat loads, and it **updates itself** every time you deploy the website — no app store, no re-install. Microsoft 365 sign-in works exactly as on the website (it runs in real Safari).
