@@ -8,7 +8,7 @@
 <meta name="theme-color" content="#205090">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Humiley">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
@@ -450,7 +450,7 @@ body{
 
 /* ── Airy main area, transparent topbar ── */
 #main{padding:0 !important;}
-#topbar{background:transparent !important;border:none !important;box-shadow:none !important;height:auto !important;padding:20px 28px 4px !important;gap:12px;}
+#topbar{background:transparent !important;border:none !important;box-shadow:none !important;height:auto !important;padding:calc(20px + env(safe-area-inset-top)) calc(28px + env(safe-area-inset-right)) 4px calc(28px + env(safe-area-inset-left)) !important;gap:12px;}
 .topbar-search{background:#fff !important;border:none !important;border-radius:14px !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
 .notif-btn, .topbar-toggle{background:#fff !important;border:none !important;border-radius:14px !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
 #content{padding:8px 28px 30px !important;}
@@ -509,8 +509,12 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   .staff-hero{padding:22px 24px}
 }
 @media (max-width:820px){
-  /* ── sidebar becomes an off-canvas drawer ── */
-  #sidebar{position:fixed !important;top:0;left:0;height:100vh;width:250px !important;min-width:250px !important;z-index:1200;margin-left:-270px;transition:margin-left .25s ease;box-shadow:0 0 40px rgba(0,0,0,.35);transform:none !important}
+  /* ── sidebar becomes an off-canvas drawer ──
+     NOTE: the global "Floating card" theme above uses !important, so every mobile
+     override that must beat it also uses !important. Vertical margins are reset (the
+     floating theme sets margin:14px…; a fixed full-height drawer must start at 0), and
+     the drawer/topbar/content clear the iOS status bar + home indicator via env(safe-area-*). */
+  #sidebar{position:fixed !important;top:0 !important;left:0;height:100vh !important;width:250px !important;min-width:250px !important;z-index:1200;margin:0 0 0 -270px !important;transition:margin-left .25s ease;box-shadow:0 0 40px rgba(0,0,0,.35);transform:none !important;border-radius:0 !important;box-sizing:border-box;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
   body.sb-open #sidebar{margin-left:0 !important}
   /* never apply the desktop "collapse to 60px" on mobile — drawer is full width */
   #sidebar.collapsed{width:250px;min-width:250px}
@@ -519,15 +523,37 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   #sidebar.collapsed .nav-badge{display:inline-block}
   #sbOverlay{position:fixed;inset:0;background:rgba(15,31,58,.5);z-index:1100}
   body.sb-open #sbOverlay{display:block}
-  #main,#main.expanded{width:100%;min-width:0;margin-left:0}
-  #content{padding:12px}
-  #topbar{padding:0 12px;gap:8px}
+  #main,#main.expanded{width:100%;min-width:0;margin:0 !important}
+  /* padding overrides beat the global floating theme (!important) and add safe-area insets */
+  #content{padding:12px calc(12px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left)) !important}
+  #topbar{padding:calc(8px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left)) !important;gap:8px}
+  /* easier-to-tap header controls on touch screens */
+  .topbar-toggle,.notif-btn{width:40px !important;height:40px !important}
   .topbar-search{display:none}
   .topbar-title{min-width:0}
+  /* wide data tables already sit in .table-wrap; make it scroll smoothly and never stretch the page */
+  .table-wrap{overflow-x:auto !important;-webkit-overflow-scrolling:touch;max-width:100%}
+  /* tab bars (hub sub-tabs) can hold up to 9 tabs — let the row scroll instead of overflowing/clipping */
+  .tabs{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs>*{flex:0 0 auto}
   /* stack every multi-column grid (class-based + inline) into one column */
   .kpi-grid,.staff-kpi-grid{grid-template-columns:repeat(2,1fr)}
   .staff-2col,.staff-portal-row{grid-template-columns:1fr !important}
+  /* class-based grids the inline flattener below never matches (paired form fields,
+     asymmetric two-pane dashboard rows) — stack them so inputs/panes aren't crushed */
+  .grid-2,.grid-3,.grid-7-5,.grid-6-4,.grid-75{grid-template-columns:1fr !important;gap:12px !important}
   body [style*="grid-template-columns"]{grid-template-columns:1fr !important}
+  /* iOS zooms the page when a focused field is <16px — bump inputs on phones only.
+     A stylesheet !important beats the inline 12/13/15px set on some fields in the markup. */
+  input,select,textarea,.form-control,.sel-filter{font-size:16px !important}
+  /* larger, easier touch targets */
+  .tab{min-height:40px;display:flex;align-items:center}
+  .lang-btn{padding:9px 11px !important}
+  .btn,.btn-sm,.btn-approve,.btn-reject{min-height:38px}
+  .modal-close{width:40px !important;height:40px !important}
+  /* guard: content never scrolls sideways itself — wide children scroll in their own box */
+  #content{overflow-x:hidden}
   /* hero & headers stack cleanly */
   .staff-hero{flex-direction:column;align-items:flex-start;gap:14px;padding:18px 20px}
   .page-header,.view-header{flex-wrap:wrap;gap:10px}
@@ -5490,7 +5516,7 @@ async function tkRenderDevices() {
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
     '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + '</div>' +
-    '<div class="table-wrap"><table><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
+    '<div class="table-wrap"><table style="min-width:960px"><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
   devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
@@ -9668,7 +9694,7 @@ async function crmRenderLeads() {
     _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
   ]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(allLeads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(allLeads, 'owner'), 'crmFillLeads') + _crmFiltSel('crm-leads-period', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'crmRenderLeads'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
   crmFillLeads();
 }
 function crmFillLeads() {
@@ -9710,7 +9736,7 @@ async function crmRenderCompanies() {
   const cos = _crmMine(_HR.crm_companies); const deals = _crmMine(_HR.crm_deals);
   const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-co-q', 'Search company…', 'crmFillCompanies') + _crmFiltSel('crm-co-ind', 'All industries', _crmDistinct(cos, 'industry'), 'crmFillCompanies') + _crmFiltSel('crm-co-owner', 'All owners', _crmDistinct(cos, 'owner'), 'crmFillCompanies'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
   crmFillCompanies();
 }
 function crmFillCompanies() {
@@ -9735,7 +9761,7 @@ async function crmRenderContacts() {
   const cts = _crmMine(_HR.crm_contacts);
   const kpis = _hrKpiRow([_hrKpi('Contacts', cts.length), _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-ct-q', 'Search name / email / company…', 'crmFillContactsTbl') + _crmFiltSel('crm-ct-co', 'All companies', _crmDistinct(cts, 'company'), 'crmFillContactsTbl') + _crmFiltSel('crm-ct-owner', 'All owners', _crmDistinct(cts, 'owner'), 'crmFillContactsTbl'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div>' + fbar + '<div class="table-wrap"><table><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody id="crm-ct-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Contacts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_contacts') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_contacts\')">' + _PLUS_SVG + ' Add Contact</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Name</th><th>Title</th><th>Company</th><th>Email</th><th>Phone</th><th>Owner</th><th></th></tr></thead><tbody id="crm-ct-tbody"></tbody></table></div></div>';
   crmFillContactsTbl();
 }
 function crmFillContactsTbl() {
@@ -10591,7 +10617,7 @@ function _pmTable(coll, cols, rows, opts) {
   const so = _pmSort[coll] || {};
   const head = '<tr>' + cols.map((c, i) => { const key = c.sk || c.k || ('col' + i); const sortable = !opts.noSort; const active = sortable && so.key === key; const arrow = active ? (so.dir > 0 ? ' \u25B2' : ' \u25BC') : (sortable ? '<span style="opacity:.3;font-weight:400"> \u21C5</span>' : ''); return '<th' + (sortable ? ' onclick="pmTableSort(\'' + coll + '\',\'' + key + '\')" title="' + (c.tip ? _tkEscA(c.tip) : 'Sort') + '"' : '') + ' style="' + (c.align ? 'text-align:' + c.align + ';' : '') + (sortable ? 'cursor:pointer;user-select:none;' : '') + (active ? 'color:var(--navy)' : '') + '">' + c.label + arrow + '</th>'; }).join('') + (opts.noActions ? '' : '<th></th>') + '</tr>';
   const body = rows.length ? rows.map(r => '<tr>' + cols.map(c => '<td' + (c.align ? ' style="text-align:' + c.align + '"' : '') + '>' + (c.render ? c.render(r) : _pmEsc(r[c.k] || '—')) + '</td>').join('') + (opts.noActions ? '' : '<td style="white-space:nowrap">' + (_pmRowEditable(coll) ? _hrEditDel(coll, r.id, coll) : '') + '</td>') + '</tr>').join('') : '<tr><td colspan="' + (cols.length + (opts.noActions ? 0 : 1)) + '" style="text-align:center;color:var(--text-light);padding:16px">' + (opts.empty || 'No records yet.') + '</td></tr>';
-  return '<div class="table-wrap"><table>' + (opts.minw ? '' : '') + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+  return '<div class="table-wrap"><table' + (opts.minw ? ' style="min-width:' + opts.minw + 'px"' : ' style="min-width:820px"') + '>' + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
 }
 
 function _pmReload() { const A = id => { const v = document.getElementById('view-' + id); return v && v.classList.contains('active'); }; if (A('pm-project')) pmTab(_pmTabK); else if (A('pm-projects')) pmRenderProjects(); else if (A('pm-dashboard')) pmRenderPortfolio(); }
