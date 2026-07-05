@@ -598,8 +598,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   </div>
 
   <div class="sidebar-scroll">
-  <div class="sidebar-section-label" data-roles="manager">Overview</div>
-  <div class="nav-item active" data-roles="manager" id="nav-company-dash" onclick="showView('dashboard',this,'Company Dashboard')">
+  <div class="sidebar-section-label" data-roles="manager" data-level="management">Overview</div>
+  <div class="nav-item active" data-roles="manager" data-level="management" id="nav-company-dash" onclick="showView('dashboard',this,'Company Dashboard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
     <span class="nav-label">Company Dashboard</span>
   </div>
@@ -4063,8 +4063,8 @@ function _applyRole(role) {
   const reqBtn = document.querySelector('#topbar .btn-emerald');
   if (reqBtn) reqBtn.style.display = '';  // always show
 
-  /* navigate to correct home */
-  if (isManager) {
+  /* navigate to correct home — Company Dashboard is Management (Approver) level and above only */
+  if (isManager && _lvlRank(_userLevel) >= _lvlRank('management')) {
     showView('dashboard', document.getElementById('nav-company-dash'), 'Company Dashboard');
   } else {
     showView('staff-dashboard', document.getElementById('nav-my-dash'), 'My Dashboard');
@@ -7828,8 +7828,12 @@ async function tkRenderMySpaceOverview() {
 
   const intro = '<div class="card" style="padding:14px 18px;margin-bottom:20px;border-left:4px solid var(--navy)"><div style="font-size:13px;color:var(--text)">' + _t2('My Space is your personal home base — check in, book leave, file expenses, and track your goals, training and devices, all in one place.', 'My Space là trang cá nhân của bạn — chấm công, xin nghỉ phép, gửi đề nghị chi phí, và theo dõi mục tiêu, đào tạo cùng thiết bị, tất cả ở một nơi.') + '</div></div>';
 
-  root.innerHTML = intro + kpis + qa +
+  // Signature PIN — settable right here in the workspace (reuses the My Profile pin-status-body id
+  // so tkPinSetup's after-save refresh updates this card too).
+  const pinCard = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:4px">' + _t2('Signature & Security', 'Chữ ký & Bảo mật') + '</div><div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + _t2('Set a personal signing PIN so you can e-sign your submissions and approvals quickly.', 'Đặt mã PIN ký cá nhân để bạn ký điện tử nhanh khi gửi và phê duyệt.') + '</div><div id="pin-status-body">' + _pinStatusInner() + '</div></div>';
+  root.innerHTML = intro + kpis + qa + pinCard +
     '<div style="font-size:14px;font-weight:800;color:var(--navy);margin:4px 0 12px">' + _t('My Tools') + '</div>' + cards;
+  try { tkPinRefresh().then(() => { const b = document.getElementById('pin-status-body'); if (b) { b.innerHTML = _pinStatusInner(); if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') { try { _viWalk(b); } catch (e) {} } } }); } catch (e) {}
 }
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
@@ -10182,7 +10186,7 @@ async function crmImportFile(coll, file) {
 
 
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
-const _LEVEL_VIEWS = { payroll: 'management', reports: 'management', finance: 'management', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
+const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
 const _HR_HUB_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin']);
