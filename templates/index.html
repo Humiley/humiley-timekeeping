@@ -167,7 +167,7 @@ select.form-control{cursor:pointer}
 /* ── TABS ── */
 .tabs{display:flex;gap:4px;background:var(--soft-bg);padding:4px;border-radius:10px;margin-bottom:18px;width:fit-content}
 .tab{padding:6px 15px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-light);transition:all .15s;border:none;background:none;font-family:inherit}
-.tab.active{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.tab.active{background:#fff;color:var(--emerald);box-shadow:0 1px 4px rgba(0,0,0,.1)}
 
 /* ── FILTER BAR ── */
 .filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -660,6 +660,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
     <span class="nav-label">Devices &amp; Assets</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="management" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
+    <span class="nav-label">Reports</span>
+  </div>
 
   <div class="sidebar-section-label" data-roles="manager">Finance</div>
   <div class="nav-item" data-roles="manager" data-level="management" data-app="finance" onclick="showView('finance',this,'Finance Control')">
@@ -669,10 +673,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div class="nav-item" data-roles="manager" data-level="management" data-app="finance" onclick="showView('payroll',this,'Payroll')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span>
     <span class="nav-label">Payroll</span>
-  </div>
-  <div class="nav-item" data-roles="manager" data-level="management" data-app="hr" id="nav-label-analytics" onclick="showView('reports',this,'Reports & Analytics')">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
-    <span class="nav-label">Reports</span>
   </div>
 
   <div class="sidebar-section-label" data-roles="manager">System Setting</div>
@@ -1763,12 +1763,6 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="exportHRReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Report</button>
     </div>
-  </div>
-
-  <!-- HRMS module shortcuts -->
-  <div class="card" style="padding:16px 18px;margin-bottom:18px">
-    <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">HR Modules</div>
-    <div id="dash-hr-modules" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px"></div>
   </div>
 
   <div class="tabs">
