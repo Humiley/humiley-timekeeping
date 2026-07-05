@@ -541,9 +541,16 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   .kpi-grid,.staff-kpi-grid{grid-template-columns:repeat(2,1fr)}
   .staff-2col,.staff-portal-row{grid-template-columns:1fr !important}
   /* class-based grids the inline flattener below never matches (paired form fields,
-     asymmetric two-pane dashboard rows) — stack them so inputs/panes aren't crushed */
-  .grid-2,.grid-3,.grid-7-5,.grid-6-4,.grid-75{grid-template-columns:1fr !important;gap:12px !important}
-  body [style*="grid-template-columns"]{grid-template-columns:1fr !important}
+     asymmetric two-pane dashboard rows) — stack them so inputs/panes aren't crushed.
+     minmax(0,1fr) (not 1fr) lets the single column shrink to the container instead of
+     blowing out to a grid item's min-content width (which overflowed Check-In / Team pages). */
+  .grid-2,.grid-3,.grid-7-5,.grid-6-4,.grid-75{grid-template-columns:minmax(0,1fr) !important;gap:12px !important}
+  body [style*="grid-template-columns"]{grid-template-columns:minmax(0,1fr) !important}
+  /* allow grid/flex items to shrink below their content's intrinsic min-content width */
+  [style*="grid-template-columns"] > *, .grid-2 > *, .grid-3 > *, .grid-7-5 > *, .grid-6-4 > *, .grid-75 > *, .kpi-grid > *, .staff-kpi-grid > *{min-width:0}
+  /* form controls in a flex row (e.g. the check-in location select + Re-check button) must
+     shrink instead of forcing their widest-option width and crushing the sibling button */
+  #content select, #content input, #content textarea{min-width:0}
   /* iOS zooms the page when a focused field is <16px — bump inputs on phones only.
      A stylesheet !important beats the inline 12/13/15px set on some fields in the markup. */
   input,select,textarea,.form-control,.sel-filter{font-size:16px !important}
