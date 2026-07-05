@@ -827,10 +827,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("An employee with that email already exists.")
         body = dict(body or {})
         # Only admins may set access level / role on create (prevents privilege escalation).
-        if ("level" in body or "role" in body or "appsDenied" in body) and self._caller_level(u) != "admin":
+        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
+            body.pop("appsAllowed", None)
         return self._json({"ok": True, "id": db.create_employee(body)})
 
     def _emp_list_for(self, u):
@@ -882,10 +883,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Employee not found.", 404)
         body = dict(body or {})
         # Only admins may change access level or role (prevents privilege escalation).
-        if ("level" in body or "role" in body or "appsDenied" in body) and self._caller_level(u) != "admin":
+        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
+            body.pop("appsAllowed", None)
         # Protected super-admins can never be demoted — drop any level/role/app change on them.
         if (ex.get("email") or "").lower() in self.ADMIN_EMAILS:
             body.pop("level", None)
@@ -929,9 +931,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_portfolioSnapshots", "pm_execNotes"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_portfolioSnapshots", "pm_execNotes"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
+    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in

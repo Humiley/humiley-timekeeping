@@ -158,7 +158,7 @@ def init_db():
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
                 "englishCert TEXT", "note TEXT", "photo TEXT", "salary REAL",
-                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT"):
+                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT", "appsAllowed TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -583,7 +583,7 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
               "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
-              "role", "level", "salary", "grade", "dependents", "appsDenied",
+              "role", "level", "salary", "grade", "dependents", "appsDenied", "appsAllowed",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
