@@ -96,6 +96,15 @@ def session_user(token):
     return emp
 
 
+def _app_version():
+    """Version marker for auto-update: the mtime of the served HTML, which changes on every
+    deploy (git pull rewrites the file). The client reloads the PWA when this changes."""
+    try:
+        return str(int(os.path.getmtime(os.path.join(TEMPLATE_DIR, "index.html"))))
+    except OSError:
+        return "0"
+
+
 def graph_me(access_token):
     """Verify a Microsoft 365 access token by calling Graph /me. Returns the
     user's email (mail or userPrincipalName) or None."""
@@ -272,7 +281,11 @@ class Handler(BaseHTTPRequestHandler):
                                "vapidPublicKey": _ensure_vapid().get("pub") or "",
                                # Finance SharePoint folder for payment/claim/travel attachments (request #4).
                                # Public in config so every requester (incl. staff) can upload on submit.
-                               "financeSpUrl": db.get_setting("portal_financeSpUrl", "") or ""})
+                               "financeSpUrl": db.get_setting("portal_financeSpUrl", "") or "",
+                               # App version = mtime of the served HTML (changes on every deploy). The
+                               # client polls this and reloads the PWA when it changes, so an installed
+                               # app never keeps running stale code after an update.
+                               "appVersion": _app_version()})
         if path == "/api/me":
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)

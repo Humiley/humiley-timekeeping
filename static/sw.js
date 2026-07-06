@@ -1,7 +1,7 @@
 /* Humiley Portal service worker — installability + fast repeat loads + offline shell.
    Strategy: never cache /api/ (live data); HTML is network-first (deploys show immediately,
    last shell served offline); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v3';
+const CACHE = 'hml-pwa-v4';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
