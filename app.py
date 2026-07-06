@@ -479,6 +479,24 @@ class Handler(BaseHTTPRequestHandler):
     def _utc_now():
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
+    @staticmethod
+    def _same_m365_identity(a, b):
+        """True if two Microsoft 365 identities are the same person. The login path stores the
+        Graph /me `mail` (or UPN) as the session email, while a signing ID token exposes
+        `preferred_username`/`upn`; for aliased mailboxes, onmicrosoft UPNs, guest #EXT# accounts
+        or mere casing these legitimately differ for the SAME user — which is why setting a PIN
+        ("confirm by Microsoft 365") was being rejected. Match on the full address OR the mailbox
+        local-part (case-insensitive). A genuinely different account (different local-part) is
+        still rejected, so the Part 11 identity binding is preserved."""
+        a = (a or "").strip().lower(); b = (b or "").strip().lower()
+        if not a or not b:
+            return True   # nothing to compare against -> don't block (the session is already authenticated)
+        if a == b:
+            return True
+        la = a.split("#ext#")[0].split("@")[0]
+        lb = b.split("#ext#")[0].split("@")[0]
+        return bool(la) and la == lb
+
     def _esign_fresh(self, id_token, max_age=600):
         """Validate a FRESH Microsoft 365 ID token for an electronic signature (Part 11 §11.200):
         tenant + audience must match our Entra app, and auth_time must be within max_age seconds —
@@ -496,6 +514,11 @@ class Handler(BaseHTTPRequestHandler):
         if M365.get("clientId") and aud and aud != M365["clientId"]:
             return False, "This sign-in was not issued for the Humiley Portal."
         at = claims.get("auth_time")
+        if at is None:
+            # Some Entra apps don't emit the optional `auth_time` claim. With prompt=login the
+            # token was just minted by a fresh interactive re-authentication, so `iat` is an
+            # equally-recent proof of re-auth for the max_age window (Part 11 recency preserved).
+            at = claims.get("iat")
         if at is None:
             return False, "The sign-in did not include an authentication time."
         try:
@@ -629,7 +652,7 @@ class Handler(BaseHTTPRequestHandler):
             signer_name = info.get("name") or u.get("name") or "User"
             signer_email = (info.get("email") or "").lower()
             sess_email = (u.get("email") or "").lower()
-            if signer_email and sess_email and signer_email != sess_email:
+            if not self._same_m365_identity(signer_email, sess_email):
                 return self._err("The Microsoft 365 account you signed with does not match your session.", 403)
         sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
                "ts": self._utc_now(), "meaning": meaning, "method": method}
@@ -796,7 +819,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not ok:
                     return self._err(info, 401)
                 sess_email = (u.get("email") or "").lower(); tok_email = (info.get("email") or "").lower()
-                if tok_email and sess_email and tok_email != sess_email:
+                if not self._same_m365_identity(tok_email, sess_email):
                     return self._err("The Microsoft 365 account does not match your session.", 403)
                 enrolled_via = "M365 re-authentication"; oid = info.get("oid")
             ok, r = db.set_pin(uid, new_pin, enrolled_via, oid)

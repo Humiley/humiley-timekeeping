@@ -1026,7 +1026,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="hr-employees">
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="_renderEmployeeTable()"></div>
-      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
+      <select class="sel-filter" data-dept-select="All Departments" onchange="_renderEmployeeTable()"><option value="">All Departments</option></select>
       <select class="sel-filter" onchange="_renderEmployeeTable()"><option>Active</option><option>All</option><option>Inactive</option></select>
       <span style="font-size:12px;color:var(--text-light);white-space:nowrap" id="emp-count-label">15 employees</span>
     </div>
@@ -1201,8 +1201,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="sub" id="dash-date-label">Loading…</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <select class="sel-filter" id="dash-dept-filter" onchange="filterDashboard()">
-        <option value="">All Departments</option><option value="Human Resource &amp; Operation (HRO)">Human Resource &amp; Operation (HRO)</option><option value="Project Management Consultant (PMC)">Project Management Consultant (PMC)</option><option value="Engineering Consultant (ENG)">Engineering Consultant (ENG)</option><option value="Solution Sales (SAL)">Solution Sales (SAL)</option><option value="Customer Service &amp; Maintenance (CSM)">Customer Service &amp; Maintenance (CSM)</option><option value="Factory (FAC)">Factory (FAC)</option><option value="Finance Accountant (FA)">Finance Accountant (FA)</option><option value="Board Management (BM)">Board Management (BM)</option>
+      <select class="sel-filter" id="dash-dept-filter" data-dept-select="All Departments" onchange="filterDashboard()">
+        <option value="">All Departments</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('view-dashboard','Humiley_Dashboard.pdf',{title:'HR DASHBOARD',docCode:'HML-HR-DSH'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
       <button class="btn btn-outline btn-sm" onclick="refreshDashboard()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
@@ -1376,8 +1376,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" id="att-search" placeholder="Search name or department…" oninput="filterTable()">
     </div>
-    <select class="sel-filter" id="att-dept" onchange="filterTable()">
-      <option value="">All Departments</option><option value="Human Resource &amp; Operation (HRO)">Human Resource &amp; Operation (HRO)</option><option value="Project Management Consultant (PMC)">Project Management Consultant (PMC)</option><option value="Engineering Consultant (ENG)">Engineering Consultant (ENG)</option><option value="Solution Sales (SAL)">Solution Sales (SAL)</option><option value="Customer Service &amp; Maintenance (CSM)">Customer Service &amp; Maintenance (CSM)</option><option value="Factory (FAC)">Factory (FAC)</option><option value="Finance Accountant (FA)">Finance Accountant (FA)</option><option value="Board Management (BM)">Board Management (BM)</option>
+    <select class="sel-filter" id="att-dept" data-dept-select="All Departments" onchange="filterTable()">
+      <option value="">All Departments</option>
     </select>
     <select class="sel-filter" id="att-status" onchange="filterTable()">
       <option value="">All Statuses</option>
@@ -1824,7 +1824,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="hr-balances">
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…"></div>
-      <select class="sel-filter"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
+      <select class="sel-filter" data-dept-select="All Departments"><option value="">All Departments</option></select>
       <select class="sel-filter"><option>2026</option><option>2025</option></select>
     </div>
     <div class="card">
@@ -1844,7 +1844,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="hr-payroll" style="display:none">
     <div class="filter-bar">
       <select class="sel-filter"><option>May 2026</option><option>April 2026</option></select>
-      <select class="sel-filter"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
+      <select class="sel-filter" data-dept-select="All Departments"><option value="">All Departments</option></select>
     </div>
     <div class="grid-2">
       <div class="card">
@@ -2055,7 +2055,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   <div id="rpt-inout" style="display:none">
     <div class="filter-bar" style="margin-bottom:14px">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…" oninput="renderInOutReport()"></div>
-      <select class="sel-filter" onchange="renderInOutReport()"><option>All Departments</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
+      <select class="sel-filter" data-dept-select="All Departments" onchange="renderInOutReport()"><option value="">All Departments</option></select>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
       <input type="date" class="sel-filter" onchange="renderInOutReport()" style="font-size:12px">
     </div>
@@ -2696,7 +2696,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Radius (metres)</label><input type="number" class="form-control" id="loc-radius" value="200" oninput="tkUpdateLocRadius()"></div>
-      <div class="form-group"><label class="form-label">Department</label><select class="form-control" id="loc-dept"><option>All</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select></div>
+      <div class="form-group"><label class="form-label">Department</label><select class="form-control" id="loc-dept" data-dept-select="All"><option value="">All</option></select></div>
     </div>
     <div class="form-group"><label class="form-label">Notes</label><input type="text" class="form-control" id="loc-notes" placeholder="Optional notes about this location"></div>
     <div class="form-group">
@@ -2820,6 +2820,32 @@ async function tkLoginM365(accessToken) {
 
 /* Load all persisted data from the backend into the existing arrays so every
    screen renders real, persistent data with no changes to render code. */
+/* Canonical department list for every dropdown/filter — the real departments present on the
+   employee roster, so options always reflect ALL actual departments and filters match employee
+   .dept values. Dynamic, so a newly-added department appears everywhere with no markup edits. */
+function tkAllDepts() {
+  try {
+    const seen = {};
+    (_DEMO_EMPLOYEES || []).forEach(e => { const d = ((e && e.dept) || '').trim(); if (d) seen[d] = 1; });
+    const mine = ((TK.user && (TK.user.dept || TK.user.department)) || '').trim();
+    if (mine) seen[mine] = 1;   // ensure my own department is always selectable, even pre-load
+    return Object.keys(seen).sort((a, b) => a.localeCompare(b));
+  } catch (e) { return []; }
+}
+/* Fill every [data-dept-select] dropdown from tkAllDepts(), keeping each control's sentinel
+   ("All Departments"/"All", value="") and any current selection. Called after the roster loads. */
+function tkFillDeptSelects(root) {
+  const depts = tkAllDepts();
+  (root || document).querySelectorAll('select[data-dept-select]').forEach(sel => {
+    const sentinel = sel.getAttribute('data-dept-select') || 'All';
+    const prev = sel.value;
+    sel.innerHTML = '';
+    const o0 = document.createElement('option'); o0.value = ''; o0.textContent = sentinel; sel.appendChild(o0);
+    depts.forEach(d => { const o = document.createElement('option'); o.value = d; o.textContent = d; sel.appendChild(o); });
+    if (prev) { sel.value = prev; if (sel.value !== prev) sel.value = ''; }   // restore selection if still valid
+  });
+}
+
 async function tkBootstrap() {
   const [emps, att, lv, zn] = await Promise.all([
     tkApi('/api/employees'), tkApi('/api/attendance'),
@@ -2829,6 +2855,7 @@ async function tkBootstrap() {
   _DEMO_ATTENDANCE = att.attendance.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
   _DEMO_LEAVE      = lv.leave;
   _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius }));
+  try { tkFillDeptSelects(); } catch (e) {}   // populate all department dropdowns from the real roster
 }
 
 /* Fire a write to the backend; never let a backend hiccup break the UI. */
@@ -4762,7 +4789,7 @@ async function tkCollDelete(coll, id, reload) {
     toast('Deleted');
   } catch (e) { toast('Could not delete: ' + e.message, 'error', 5000); }
 }
-async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; } catch (e) {} }
+async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; try { tkFillDeptSelects(); } catch (e) {} } catch (e) {} }
 function _slugEmail(name) {
   const s = (name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, '.');
   return (s || 'employee') + '@humiley.com';
@@ -5726,7 +5753,7 @@ async function tkAssetReturn(empId, exitId) {
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + (e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Tick each asset returned and record its condition. The employee signs below to confirm hand-back before their last day (FRM-014 Exit Clearance).</div>' +
     '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Return?</th><th>Condition</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><div class="form-group" style="margin:0"><label class="form-label">Employee signature (type full name)</label><input class="form-control" id="ar-sign" placeholder="' + _tkEscA(e.name || '') + '"></div><div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-control" id="ar-date" type="date" value="' + today + '"></div></div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><div class="form-group" style="margin:0"><label class="form-label">Employee signature (type full name)</label><input class="form-control" id="ar-sign" value="' + _tkEscA(e.name || '') + '" placeholder="' + _tkEscA(e.name || '') + '"></div><div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-control" id="ar-date" type="date" value="' + today + '"></div></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'assetReturnOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkAssetReturnSave(\'' + empId + '\',\'' + (exitId || '') + '\')">' + tkIcon('check') + 'Confirm Return &amp; Sign off</button></div></div>';
   document.body.appendChild(el);
 }
