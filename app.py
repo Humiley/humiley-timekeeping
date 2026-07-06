@@ -260,7 +260,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/config":
             return self._json({"demo": DEMO_MODE, "clientId": M365["clientId"],
                                "tenantId": M365["tenantId"], "mapsKey": M365["mapsKey"],
-                               "vapidPublicKey": _ensure_vapid().get("pub") or ""})
+                               "vapidPublicKey": _ensure_vapid().get("pub") or "",
+                               # Finance SharePoint folder for payment/claim/travel attachments (request #4).
+                               # Public in config so every requester (incl. staff) can upload on submit.
+                               "financeSpUrl": db.get_setting("portal_financeSpUrl", "") or ""})
         if path == "/api/me":
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)
@@ -539,6 +542,11 @@ class Handler(BaseHTTPRequestHandler):
     def _is_mgmt(self, u):
         return self._lvl_rank(u.get("level")) >= self._LEVEL_RANK["management"]
 
+    def _is_approver(self, u):
+        # Final approval is reserved for Editor + Admin (request #6). A direct manager who is an
+        # Editor/Admin approves in ONE step (request #5) — see the "approved" branch below.
+        return self._lvl_rank(u.get("level")) >= self._LEVEL_RANK["editor"]
+
     @staticmethod
     def _appr_state(status):
         s = str(status or "").strip().lower()
@@ -571,12 +579,21 @@ class Handler(BaseHTTPRequestHandler):
                 return "This request has already been reviewed."
             if same_person:
                 return "You cannot review your own request."
+            # Review must come from the requester's DIRECT manager (request #6) when one is on
+            # record. Editors/Admins skip this — they approve directly (one step).
+            if not self._is_approver(u):
+                owner = db.get_employee(owner_id) if owner_id else None
+                mgr_email = ((owner or {}).get("managerEmail") or "").lower()
+                if mgr_email and mgr_email != (u.get("email") or "").lower():
+                    return "Only the requester's direct manager can review this request."
             return None
         if t == "approved":
-            if not self._is_mgmt(u):
-                return "Director / Management access is required for final approval."
-            if cur != "review":
-                return "This request must be reviewed by the direct manager before it can be approved."
+            if not self._is_approver(u):
+                return "Editor or Admin access is required for final approval."
+            # One-step collapse (request #5): an Editor/Admin can approve straight from the
+            # submitted state, so a direct manager who is Editor/Admin reviews+approves in one go.
+            if cur not in ("submit", "review"):
+                return "This request is no longer pending approval."
             if same_person:
                 return "You cannot approve your own request."
             reviewer_ids = [s.get("userId") for s in (sigs or []) if "review" in str(s.get("meaning", "")).lower()]
@@ -1103,6 +1120,7 @@ class Handler(BaseHTTPRequestHandler):
     def _portal_get(self, u):
         out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
         out["teamsWebhook"] = db.get_setting("portal_teamsWebhook")
+        out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
         return self._json(out)
 
     def _portal_update(self, u, body):
@@ -1111,6 +1129,8 @@ class Handler(BaseHTTPRequestHandler):
                 db.set_setting("portal_" + k, body[k])
         if isinstance(body.get("teamsWebhook"), str):
             db.set_setting("portal_teamsWebhook", body["teamsWebhook"])
+        if isinstance(body.get("financeSpUrl"), str):
+            db.set_setting("portal_financeSpUrl", body["financeSpUrl"].strip())
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --

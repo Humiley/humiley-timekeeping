@@ -1928,6 +1928,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
     </div>
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
+      <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
@@ -3254,12 +3255,10 @@ async function tkEmailLeaveApproval(res, lv) {
     ' has requested leave and needs your approval:\n\n' +
     '- Type: ' + lv.type + '\n- Dates: ' + lv.start + ' to ' + lv.end + ' (' + lv.days + ' day(s))\n' +
     '- Reason: ' + (lv.reason || '-') + '\n\nApprove: ' + approve + '\nReject:  ' + reject + '\n\nHumiley Timekeeping';
-  const html = '<p>Hi ' + mgrName + ',</p><p><b>' + (res.requester || 'An employee') +
-    '</b> has requested leave and needs your approval:</p><ul><li>Type: ' + lv.type +
-    '</li><li>Dates: ' + lv.start + ' &ndash; ' + lv.end + ' (' + lv.days + ' day(s))</li><li>Reason: ' + (lv.reason || '-') +
-    '</li></ul><p><a href="' + approve + '" style="background:#00B060;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Approve</a>&nbsp;&nbsp;' +
-    '<a href="' + reject + '" style="background:#C00000;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Reject</a></p>' +
-    '<p style="color:#888;font-size:12px">Humiley Timekeeping</p>';
+  const heading = '<b>' + _crmEsc(res.requester || 'An employee') + '</b> has requested leave and needs your approval.';
+  const detailsHtml = '<ul style="margin:0;padding-left:18px"><li>Type: ' + _crmEsc(lv.type || '') +
+    '</li><li>Dates: ' + _crmEsc(lv.start || '') + ' &ndash; ' + _crmEsc(lv.end || '') + ' (' + lv.days + ' day(s))</li><li>Reason: ' + _crmEsc(lv.reason || '-') + '</li></ul>';
+  const html = _tkApprovalEmailHtml({ mgrName: mgrName, heading: heading, detailsHtml: detailsHtml, approve: approve, reject: reject, portal: base + '/' });
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
@@ -3280,35 +3279,87 @@ async function tkEmailLeaveApproval(res, lv) {
 /* Generic HTML approval-request email for claims / travel — carries a prominent
    "Review & Approve in Portal" button that opens the app (Approval Inbox, where the
    Approve / Reject / Review buttons live). Falls back to the plain notify (Teams/webhook). */
-async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText, token) {
+/* Branded, bilingual EN/VN approval-request email (one look for leave/claims/travel/payments).
+   Table + inline-CSS for broad email-client support (Outlook/OWA/Apple Mail). */
+function _tkApprovalEmailHtml(o) {
+  o = o || {};
+  const navy = '#205090', emerald = '#00B060', red = '#C00000', ink = '#1F2937', grey = '#5C6470', line = '#E5E9F0', panel = '#F7F9FC';
+  const esc = (typeof _crmEsc === 'function') ? _crmEsc : (s => String(s == null ? '' : s));
+  const logo = (typeof _LH !== 'undefined' && _LH && _LH.logo) ? _LH.logo : '';
+  const logoImg = logo ? ('<img src="' + logo + '" alt="Humiley" height="30" style="height:30px;display:inline-block;border:0;vertical-align:middle">')
+    : ('<span style="font:800 20px Segoe UI,Arial,sans-serif;color:#fff">Humiley</span>');
+  const btn = (href, bg, label) => href ? ('<a href="' + href + '" style="display:inline-block;background:' + bg + ';color:#fff;font:700 15px Segoe UI,Arial,sans-serif;text-decoration:none;padding:12px 26px;border-radius:8px">' + label + '</a>') : '';
+  const oneClick = (o.approve || o.reject) ? (
+    '<table role="presentation" cellpadding="0" cellspacing="0"><tr>' +
+    (o.approve ? '<td style="padding-right:10px">' + btn(o.approve, emerald, '&#10003;&nbsp; Approve · Duyệt') + '</td>' : '') +
+    (o.reject ? '<td>' + btn(o.reject, red, '&#10007;&nbsp; Reject · Từ chối') + '</td>' : '') +
+    '</tr></table>') : '';
+  const spLink = o.spUrl ? ('<div style="margin-top:10px;font:600 13px Segoe UI,Arial,sans-serif"><a href="' + esc(o.spUrl) + '" style="color:' + navy + '">&#128193; Open file in SharePoint · Mở tệp trên SharePoint</a></div>') : '';
+  const attNote = o.attName ? ('<div style="margin-top:10px;font:13px Segoe UI,Arial,sans-serif;color:' + ink + '"><span style="color:' + navy + ';font-weight:700">&#128206; Attached · Đính kèm:</span> ' + esc(o.attName) + '</div>') : '';
+  return '' +
+  '<div style="background:' + panel + ';padding:22px 0;font-family:Segoe UI,Arial,sans-serif">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+      '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + line + ';border-radius:14px;overflow:hidden">' +
+        '<tr><td style="background:' + navy + ';padding:16px 26px">' + logoImg +
+          '<div style="font:600 12px Segoe UI,Arial,sans-serif;color:#B5C8E5;margin-top:5px">People &amp; Workplace · Approval Request · Yêu cầu phê duyệt</div></td></tr>' +
+        '<tr><td style="height:4px;background:' + emerald + '"></td></tr>' +
+        '<tr><td style="padding:24px 26px 6px">' +
+          '<p style="font:15px Segoe UI,Arial,sans-serif;color:' + ink + ';margin:0 0 10px">Hi <b>' + esc(o.mgrName || 'Manager') + '</b>,</p>' +
+          '<p style="font:15px Segoe UI,Arial,sans-serif;color:' + ink + ';margin:0 0 16px">' + (o.heading || '') + '</p>' +
+          '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + panel + ';border:1px solid ' + line + ';border-radius:10px"><tr><td style="padding:14px 18px;font:14px Segoe UI,Arial,sans-serif;color:' + ink + '">' +
+            (o.detailsHtml || '') + spLink + attNote +
+          '</td></tr></table>' +
+        '</td></tr>' +
+        '<tr><td style="padding:18px 26px 6px">' + oneClick +
+          '<p style="margin:14px 0 0">' + btn(o.portal, navy, 'Open in Portal to Review · Mở cổng') + '</p>' +
+          '<p style="font:12px Segoe UI,Arial,sans-serif;color:' + grey + ';margin:16px 0 0">Use <b>Approve</b> / <b>Reject</b> for one-click, or open the portal <b>Approval Inbox</b> to review full details first.<br>' +
+            '<span style="color:#9aa3ad">Dùng Duyệt / Từ chối để xử lý nhanh, hoặc mở Hộp phê duyệt trong cổng để xem chi tiết.</span></p>' +
+        '</td></tr>' +
+        '<tr><td style="border-top:1px solid ' + line + ';padding:16px 26px">' +
+          '<div style="font:700 13px Segoe UI,Arial,sans-serif;color:' + navy + '">Humiley Group Inc.</div>' +
+          '<div style="font:11px Segoe UI,Arial,sans-serif;color:' + grey + ';margin-top:2px">Engineering &amp; Solutions That Move Air, Smartly. · People &amp; Workplace Portal</div>' +
+        '</td></tr>' +
+      '</table>' +
+    '</td></tr></table>' +
+  '</div>';
+}
+
+async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml, detailsText, token, attB64, attName, spUrl) {
   const base = window.location.origin;
   const portal = base + '/';
   mgrName = mgrName || 'Manager';
-  try { _pushNotify(to, subject, (detailsText || heading || '').split('\n')[0], '/'); } catch (e) {}   // OS push to the approver
+  try { _pushNotify(to, subject, (detailsText || heading || '').replace(/<[^>]+>/g, '').split('\n')[0], '/'); } catch (e) {}   // OS push to the approver
   // One-click Approve / Reject (no login) when a token is supplied — mirrors the leave flow.
   const approve = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=approve' : '';
   const reject = token ? base + '/capprove?t=' + encodeURIComponent(token) + '&action=reject' : '';
-  const oneClick = token ? ('<p style="margin:16px 0">' +
-    '<a href="' + approve + '" style="background:#00B060;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Approve</a>&nbsp;&nbsp;' +
-    '<a href="' + reject + '" style="background:#C00000;color:#fff;padding:11px 20px;border-radius:8px;text-decoration:none;font-weight:700">Reject</a></p>') : '';
-  const html = '<p>Hi ' + mgrName + ',</p><p>' + heading + '</p>' + (detailsHtml || '') + oneClick +
-    '<p style="margin:14px 0"><a href="' + portal + '" style="background:#205090;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Open in Portal to Review</a></p>' +
-    '<p style="color:#666;font-size:12px">Tip: use <b>Approve</b> / <b>Reject</b> above for one-click, or open the portal <b>Approval Inbox</b> to review full details first.</p>' +
-    '<p style="color:#999;font-size:12px">Humiley People &amp; Workplace</p>';
-  const text = 'Hi ' + mgrName + ',\n\n' + heading + '\n\n' + (detailsText || '') +
+  // Graph caps an inline (contentBytes) attachment at ~3.5 MB; skip inlining a larger file
+  // (the SharePoint link / portal still carry it) so sendMail never 400s.
+  const attach = (attB64 && attB64.length < 4600000) ? attB64 : '';
+  const html = _tkApprovalEmailHtml({ mgrName: mgrName, heading: heading, detailsHtml: detailsHtml, approve: approve, reject: reject, portal: portal, attName: (attach ? attName : ''), spUrl: spUrl || '' });
+  const text = 'Hi ' + mgrName + ',\n\n' + String(heading || '').replace(/<[^>]+>/g, '') + '\n\n' + (detailsText || '') +
+    (spUrl ? ('\n\nFile (SharePoint): ' + spUrl) : '') +
     (token ? ('\n\nApprove: ' + approve + '\nReject:  ' + reject) : '') +
     '\n\nOr review in the portal: ' + portal + '\n\nHumiley People & Workplace';
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
+      const message = { subject, body: { contentType: 'HTML', content: html }, toRecipients: [{ emailAddress: { address: to } }] };
+      if (attach) {
+        const ctype = /\.pdf$/i.test(attName || '') ? 'application/pdf' : 'application/octet-stream';
+        message.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: (attName || 'attachment.pdf'), contentType: ctype, contentBytes: attach }];
+      }
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true })
+        body: JSON.stringify({ message: message, saveToSentItems: true })
       });
       if (resp.ok) return true;
     } catch (e) { /* fall through to plain notify */ }
   }
+  // Offline / no-Graph fallback: an Outlook .eml draft keeps the attachment when possible.
+  try {
+    if (attach && typeof _openAsOutlook === 'function') { _openAsOutlook(to, subject, text, attName, attach); return false; }
+  } catch (e) {}
   try { tkNotifyGraph(to, subject, text); } catch (e) {}
   return false;
 }
@@ -4423,7 +4474,8 @@ async function tkLoadPortal() {
       holidays: Array.isArray(j.holidays) ? j.holidays : null,
       learning: Array.isArray(j.learning) ? j.learning : null,
       resources: Array.isArray(j.resources) ? j.resources : null,
-      teamsWebhook: j.teamsWebhook || ''
+      teamsWebhook: j.teamsWebhook || '',
+      financeSpUrl: j.financeSpUrl || ''
     };
   } catch (e) {}
 }
@@ -4438,6 +4490,7 @@ function tkRenderPortalEditor() {
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
   _tkPortalRenderRows();
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
+  const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
 }
 
 function _tkPortalRenderRows() {
@@ -4488,13 +4541,15 @@ async function tkSavePortal() {
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
-    teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim()
+    teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
+    financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook };
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl };
+    if (TK.cfg) TK.cfg.financeSpUrl = payload.financeSpUrl;   // so the current session uploads to the new folder without a reload
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
 }
@@ -7045,7 +7100,52 @@ function tkReadAttach(input, hid) {
   r.readAsDataURL(f);
 }
 const _ATTACH_FIELD = (hid, label) => '<div class="form-group"><label class="form-label">' + label + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'' + hid + '\')" style="font-size:12px"><span id="' + hid + 'lbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="' + hid + '"><input type="hidden" id="' + hid + 'name"></div>';
-const _attachLink = rec => (rec && rec.attachment) ? ' <a href="' + rec.attachment + '" target="_blank" rel="noopener" title="' + (rec.attachmentName || 'attachment') + '" style="color:var(--navy)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg></a>' : '';
+/* Attachment link shown to requester AND approver (request #3). Prefers a SharePoint link
+   (request #4); otherwise opens the stored file via a Blob preview (reliable in the iOS/Android
+   webview where a raw data: href silently failed). A small registry keeps the base64 OUT of the
+   onclick attribute (no DOM bloat / quote collisions). Works for top-level records AND sub-items. */
+const _PAPERCLIP_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+const _attReg = {}; let _attSeq = 0;
+function tkOpenAtt(k) { const r = _attReg[k]; if (r) _tkPreviewUrl(r.att, r.name); else toast('No file attached', 'warn'); }
+const _attachLink = rec => {
+  if (!rec) return '';
+  const name = rec.attachmentName || 'attachment';
+  if (rec.spUrl) return ' <a href="' + _tkEscA(rec.spUrl) + '" target="_blank" rel="noopener" title="Open in SharePoint — ' + _tkEscA(name) + '" style="color:var(--navy)">' + _PAPERCLIP_SVG + '</a>';
+  if (!rec.attachment) return '';
+  const k = 'att' + (++_attSeq); _attReg[k] = { att: rec.attachment, name: name };
+  return ' <a href="javascript:void(0)" onclick="tkOpenAtt(\'' + k + '\')" title="' + _tkEscA(name) + '" style="color:var(--navy)">' + _PAPERCLIP_SVG + '</a>';
+};
+
+/* ── Finance SharePoint (request #4): upload payment/claim/travel attachments into the configured
+   Finance SharePoint folder, mirroring the PM project-folder pattern (reuses _graphUploadFile).
+   Base folder URL is set in Settings → delivered via TK.cfg.financeSpUrl (public config, so staff
+   requesters can upload on submit). Best-effort — on any failure the inline PDF stays as fallback. */
+function _finSpUrl() { return (TK.cfg && TK.cfg.financeSpUrl) || (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || ''; }
+function _finSpProj() { return { sharepointUrl: _finSpUrl() }; }
+function _dataUriToFile(dataUri, name) {
+  const m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || ''); if (!m) return null;
+  const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  try { return new File([a], name || 'file', { type: m[1] }); }
+  catch (e) { const b = new Blob([a], { type: m[1] }); try { b.name = name || 'file'; } catch (e2) {} return b; }
+}
+function _finSpSubPath(body, kind) {
+  const now = new Date(); const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const label = kind === 'claim' ? 'Claims' : kind === 'travel' ? 'Travel' : 'Payments';
+  const ref = String(body.reqNo || body.name || 'request').replace(/[^\w.\-]+/g, '_').slice(0, 60);
+  return label + '/' + ym + '/' + ref;
+}
+async function _finSpUploadAttachment(body, kind) {
+  try {
+    if (!_finSpUrl() || !_msalApp || !_account) return;
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) return;
+    if (!body.attachment) return;
+    const file = _dataUriToFile(body.attachment, body.attachmentName || (String(body.reqNo || kind) + '.pdf'));
+    if (!file) return;
+    toast('Saving file to Finance SharePoint…', 'info', 2500);
+    const res = await _graphUploadFile(file, _finSpProj(), _finSpSubPath(body, kind));
+    if (res && res.webUrl) { body.spUrl = res.webUrl; body.spName = file.name; }
+  } catch (e) { /* keep the inline PDF as the fallback */ }
+}
 
 /* ── Multi-file attach → ONE combined PDF (page 1 = the request form, pages 2..n = the bills / photos) ── */
 const _multiAttachStore = {};    // hid -> [{ name, url(dataURL), type }]
@@ -7228,6 +7328,7 @@ async function tkClaimSave() {
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Expense Claim', rows, title + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _billFiles);
     if (pdf) { body.attachment = pdf; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
   }
+  await _finSpUploadAttachment(body, 'claim');
   tkESign({
     createColl: 'claims', createBody: body,
     meaning: 'Submission — Claim ' + title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total),
@@ -7237,7 +7338,7 @@ async function tkClaimSave() {
         '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
         '<ul><li>Claim: ' + _crmEsc(title || '') + '</li><li>Items: ' + items.length + '</li><li>Total: ' + _PAY_FMT(total) + '</li></ul>',
         (body.name || '') + ' submitted "' + title + '" (' + items.length + ' items, total ' + _PAY_FMT(total) + '). CC: Finance / HR.',
-        (created && created.token));
+        (created && created.token), (body.attachment ? body.attachment.split(',')[1] : ''), body.attachmentName, (body.spUrl || ''));
       const co = document.getElementById('claimOverlay'); if (co) co.remove(); toast('Claim submitted & signed'); try { tkRenderTravelClaims(); } catch (x) {} try { tkRenderInbox(); } catch (x) {}
     }
   });
@@ -7317,9 +7418,13 @@ function _aprState(status) {
 function _aprAction(status) {
   const st = _aprState(status);
   const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
-  const isMgmt = _lvlRank(_userLevel) >= _lvlRank('management');
-  if (st === 'submit' && isMgr) return { to: 'Reviewed', label: 'Review', hex: '#205090' };
-  if (st === 'review' && isMgmt) return { to: 'Approved', label: 'Approve', hex: '#00B060' };
+  const isApprover = _lvlRank(_userLevel) >= _lvlRank('editor');   // Editor + Admin give final approval (#6)
+  if (st === 'submit') {
+    // One step (#5): a direct manager who is Editor/Admin approves directly; a plain manager reviews.
+    if (isApprover) return { to: 'Approved', label: 'Approve', hex: '#00B060' };
+    if (isMgr) return { to: 'Reviewed', label: 'Review', hex: '#205090' };
+  }
+  if (st === 'review' && isApprover) return { to: 'Approved', label: 'Approve', hex: '#00B060' };
   return null;
 }
 /* Leave uses lowercase statuses (pending/reviewed/approved/rejected). */
@@ -7334,8 +7439,7 @@ function _aprCanSee(status, empId, name) {
   if (_lvlRank(_userLevel) < _lvlRank('manager')) return false;
   const a = _aprAction(status);
   if (!a) return false;
-  if (a.to === 'Approved') return true;                        // review stage → any Director sees it
-  if (_lvlRank(_userLevel) >= _lvlRank('management')) return true;  // a Director also sees submit-stage items
+  if (_lvlRank(_userLevel) >= _lvlRank('editor')) return true;  // Editor/Admin approvers see every pending request
   const meEmail = ((TK.user || {}).email || '').toLowerCase();  // else only the direct manager reviews
   const e = (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || (_DEMO_EMPLOYEES || []).find(x => x.name === name);
   if (!e) return true;
@@ -7526,6 +7630,7 @@ async function tkTravelSave() {
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Travel Request', rows, (body.dest || '') + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = 'Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf'; }
   }
+  await _finSpUploadAttachment(body, 'travel');
   tkESign({
     createColl: 'travel', createBody: body,
     meaning: 'Submission — Travel ' + (body.dest || '') + ' · ' + _PAY_FMT(body.cost),
@@ -7535,7 +7640,7 @@ async function tkTravelSave() {
         '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
         '<ul><li>Destination: ' + _crmEsc(body.dest || '') + '</li><li>Dates: ' + _crmEsc((body.from || '') + ' → ' + (body.to || '')) + '</li><li>Est. cost: ' + _PAY_FMT(body.cost) + '</li></ul>',
         (body.name || '') + ' requested travel to ' + body.dest + ' (' + body.from + '→' + body.to + '), est. ' + _PAY_FMT(body.cost) + '.',
-        (created && created.token));
+        (created && created.token), (body.attachment ? body.attachment.split(',')[1] : ''), body.attachmentName, (body.spUrl || ''));
       const tov = document.getElementById('travelOverlay'); if (tov) tov.remove(); _resetMultiAttach('tr-attach'); toast('Travel request submitted & signed'); tkRenderTravelClaims();
     }
   });
@@ -7645,6 +7750,7 @@ async function tkPaymentSave() {
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
   }
+  await _finSpUploadAttachment(body, 'payment');
   tkESign({
     createColl: 'payments', createBody: body,
     meaning: 'Submission — Payment ' + body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount),
@@ -7654,7 +7760,7 @@ async function tkPaymentSave() {
         '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
         '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
         (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
-        (created && created.token));
+        (created && created.token), (body.attachment ? body.attachment.split(',')[1] : ''), body.attachmentName, (body.spUrl || ''));
       const po = document.getElementById('paymentOverlay'); if (po) po.remove();
       _resetMultiAttach('pay-attach');
       toast('Payment request submitted & signed'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
