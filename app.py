@@ -733,6 +733,11 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
 
+    # Freshness window for PIN-lifecycle M365 tokens (enroll/change/reset/remove). Relaxed vs the
+    # 600s signing window because the token is acquired SILENTLY (no popup/redirect — reliable in
+    # the installed app/PWA) and the session identity is already M365-verified; signing stays 600s.
+    PIN_REAUTH_MAX_AGE = 90 * 24 * 3600
+
     PIN_POLICY_MSG = {
         "length": "PIN must be 6 to 12 letters or digits.",
         "charset": "PIN may contain only letters and digits.",
@@ -790,7 +795,11 @@ class Handler(BaseHTTPRequestHandler):
                         return self._err("Too many attempts — the PIN is locked. Try again later.", 423)
                     return self._err("Current PIN is incorrect.", 401)
             elif not DEMO_MODE:
-                ok, info = self._esign_fresh(body.get("idToken") or "")
+                # PIN management (not signing): a valid Microsoft 365 session token — acquired
+                # SILENTLY on the client, works on web + the installed app without a popup — is
+                # sufficient identity proof (§11.100(b): the session identity is already M365-
+                # verified). Signing itself stays strict (fresh 600s re-auth, above).
+                ok, info = self._esign_fresh(body.get("idToken") or "", max_age=self.PIN_REAUTH_MAX_AGE)
                 if not ok:
                     return self._err(info, 401)
             db.remove_pin(uid)
@@ -815,7 +824,11 @@ class Handler(BaseHTTPRequestHandler):
             elif DEMO_MODE:
                 enrolled_via = "demo"; oid = None
             else:
-                ok, info = self._esign_fresh(body.get("idToken") or "")
+                # PIN enrollment: accept a valid Microsoft 365 session token (acquired silently on
+                # the client — no popup, so it works in the installed app / PWA where popups fail).
+                # Freshness is relaxed for PIN management only; SIGNING still requires a fresh
+                # re-auth (§11.200). Identity is still verified against the session below.
+                ok, info = self._esign_fresh(body.get("idToken") or "", max_age=self.PIN_REAUTH_MAX_AGE)
                 if not ok:
                     return self._err(info, 401)
                 sess_email = (u.get("email") or "").lower(); tok_email = (info.get("email") or "").lower()

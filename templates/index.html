@@ -3698,6 +3698,19 @@ async function _esignReauth() {
   const res = await _msalApp.acquireTokenPopup({ scopes: ['User.Read'], prompt: 'login' });
   return { idToken: (res && res.idToken) || '' };
 }
+/* PIN lifecycle (enroll / change / reset / remove) — get an ID token SILENTLY from the current
+   Microsoft 365 session. No popup or redirect, so it works in the installed app / PWA where the
+   popup fails and used to leave the user stuck on the login screen. The backend accepts a valid
+   session token for PIN management (identity is already M365-verified); SIGNING still forces a
+   fresh popup re-auth via _esignReauth(). Falls back to interactive only if the silent call fails. */
+async function _esignSilentIdToken() {
+  if ((typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp || !_account) return { demo: true };
+  try {
+    const r = await _msalApp.acquireTokenSilent({ scopes: ['User.Read'], account: _account });
+    if (r && r.idToken) return { idToken: r.idToken };
+  } catch (e) { /* interaction may be required — fall through */ }
+  try { return await _esignReauth(); } catch (e) { return { idToken: '' }; }
+}
 let _esignMethod = 'm365';   // 'pin' | 'm365'
 let _esignReopen = false;    // true when re-rendering to switch method (keeps _esignMethod)
 function _esignHasPin() { return !!(_esignPinState && _esignPinState.enrolled && !_esignPinState.revoked && !_esignPinState.mustChange); }
@@ -3850,7 +3863,7 @@ function tkPinSetup(mode) {
     '<div style="margin-bottom:10px">' + lbl(_t('New PIN')) + fld('pin-new', _t('6–12 letters or digits')) + '</div>' +
     '<div style="margin-bottom:6px">' + lbl(_t('Confirm new PIN')) + fld('pin-confirm', '') + '</div>' +
     '<div style="font-size:11px;color:var(--text-light);margin:2px 2px 0">' + _t('6 to 12 letters or digits. Avoid your phone, ID, birth date or obvious sequences.') + '</div>' +
-    (_pinMode === 'setup' && !demo ? '<div style="font-size:11px;color:var(--text-light);margin:6px 2px 0">' + _t('You will confirm with Microsoft 365 to set up your PIN.') + '</div>' : '') +
+    (_pinMode === 'setup' && !demo ? '<div style="font-size:11px;color:var(--text-light);margin:6px 2px 0">' + _t('Your Microsoft 365 sign-in authorizes this — no extra sign-in needed.') + '</div>' : '') +
     '<div id="pin-err" style="display:none;color:var(--danger);font-size:12px;margin:8px 2px 0"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pinOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" id="pin-save" onclick="tkPinSave()">' + tkIcon('check') + _t('Save PIN') + '</button></div></div>';
   document.body.appendChild(el);
@@ -3870,7 +3883,7 @@ async function tkPinSave() {
     if (_pinMode === 'change' && cur) {
       body.currentPin = cur;   // proving the current PIN avoids an M365 popup
     } else if (!demo) {
-      const r = await _esignReauth(); body.idToken = (r && r.idToken) || '';   // enroll / M365-based change
+      const r = await _esignSilentIdToken(); body.idToken = (r && r.idToken) || '';   // enroll / M365-based change (silent — no popup)
     }
     await tkApi('/api/esign/pin', { method: 'POST', body: body });
     await tkPinRefresh();
@@ -3889,7 +3902,7 @@ async function tkPinRemove() {
   try {
     const body = { action: 'remove' };
     if (cur) body.currentPin = cur;
-    else if (!demo) { const r = await _esignReauth(); body.idToken = (r && r.idToken) || ''; }
+    else if (!demo) { const r = await _esignSilentIdToken(); body.idToken = (r && r.idToken) || ''; }
     await tkApi('/api/esign/pin', { method: 'POST', body: body });
     await tkPinRefresh();
     toast(_t('Signing PIN removed'));
@@ -11835,7 +11848,7 @@ const _VI = {
   'Could not save the PIN.': 'Không thể lưu mã PIN.',
   '6 to 12 letters or digits. Avoid your phone, ID, birth date or obvious sequences.': '6 đến 12 chữ cái hoặc chữ số. Tránh số điện thoại, CCCD, ngày sinh hoặc các dãy dễ đoán.',
   '6–12 letters or digits': '6–12 chữ cái hoặc chữ số',
-  'You will confirm with Microsoft 365 to set up your PIN.': 'Bạn sẽ xác nhận bằng Microsoft 365 để thiết lập mã PIN.',
+  'Your Microsoft 365 sign-in authorizes this — no extra sign-in needed.': 'Đăng nhập Microsoft 365 của bạn dùng để xác thực — không cần đăng nhập lại.',
   'Your PIN is a private signing code. Combined with your signed-in identity it forms a two-part electronic signature.': 'Mã PIN là mã ký riêng của bạn. Kết hợp với danh tính đã đăng nhập, nó tạo thành chữ ký điện tử gồm hai thành phần.',
   'Set up a PIN to sign records without Microsoft 365 re-authentication each time.': 'Đặt mã PIN để ký hồ sơ mà không cần xác thực lại Microsoft 365 mỗi lần.',
   'Too many attempts — try again shortly, or sign with Microsoft 365.': 'Quá nhiều lần thử — hãy thử lại sau, hoặc ký bằng Microsoft 365.',
