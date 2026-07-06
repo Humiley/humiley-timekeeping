@@ -347,15 +347,16 @@ select.form-control{cursor:pointer}
 .detail-cell span { font-size:14px;font-weight:700;color:var(--navy); }
 
 /* ── LOGIN OVERLAY ── */
-#login-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;overflow:hidden;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:radial-gradient(1100px 620px at 82% -12%,rgba(0,176,96,.30),transparent 58%),radial-gradient(900px 520px at 8% 112%,rgba(49,104,168,.42),transparent 55%),linear-gradient(135deg,#0d1c39 0%,#16305c 44%,#1e4a90 100%)}
-/* subtle flowing "airflow" curves — Humiley moves air, smartly */
-#login-overlay::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.6;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.055' stroke-width='2'%3E%3Cpath d='M-60 200 C 320 70 720 330 1520 150'/%3E%3Cpath d='M-60 350 C 360 230 740 450 1520 300'/%3E%3Cpath d='M-60 540 C 330 410 780 640 1520 480'/%3E%3C/g%3E%3Cg fill='none' stroke='%2300B060' stroke-opacity='0.11' stroke-width='2'%3E%3Cpath d='M-60 275 C 350 150 730 390 1520 235'/%3E%3Cpath d='M-60 620 C 380 490 800 720 1520 570'/%3E%3C/g%3E%3C/svg%3E") center/cover no-repeat}
+#login-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;overflow:hidden;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:#0d1c39 center/cover no-repeat}
+/* readability scrim so the sign-in panel stays legible over any photo */
+#login-overlay::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,rgba(6,15,34,.14) 0%,rgba(6,15,34,0) 32%,rgba(6,15,34,.30) 100%)}
 #login-overlay.fade-out{opacity:0;pointer-events:none}
-.login-card{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;width:100%;max-width:420px;padding:38px 32px 28px;text-align:center;background:rgba(255,255,255,.98);border-radius:22px;box-shadow:0 30px 80px rgba(6,16,38,.5),0 4px 14px rgba(6,16,38,.25)}
+#login-main-logo{display:none !important}   /* the background photo already carries the Humiley logo + tagline */
+.login-card{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px;padding:26px 30px 22px;text-align:center;background:rgba(255,255,255,.14);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25);border:1px solid rgba(255,255,255,.32);border-radius:20px;box-shadow:0 24px 70px rgba(4,12,30,.5)}
 .login-logo{height:56px;width:auto;max-width:200px;margin:0 auto 20px;display:block}
-.login-title{font-size:clamp(20px,4.6vw,25px);font-weight:800;color:var(--navy-deep);margin-bottom:8px;white-space:nowrap;letter-spacing:-.2px}
-.login-sub{font-size:13px;color:var(--text-light);margin-bottom:30px;line-height:1.55}
-.login-sub span{font-size:12px;color:#9CA3AF}
+.login-title{font-size:clamp(19px,4.6vw,23px);font-weight:800;color:#fff;margin-bottom:8px;white-space:normal;letter-spacing:-.2px;text-shadow:0 1px 10px rgba(0,0,0,.4)}
+.login-sub{font-size:13px;color:rgba(255,255,255,.92);margin-bottom:26px;line-height:1.55;text-shadow:0 1px 6px rgba(0,0,0,.35)}
+.login-sub span{font-size:12px;color:rgba(255,255,255,.75) !important}
 .login-perm-note{font-size:12px;color:#9CA3AF;margin-top:16px;line-height:1.5}
 /* ── APP FOOTER ── */
 /* ── LOGIN ROLE-STEP (demo / post-auth role picker) ── */
@@ -631,7 +632,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       </svg>
       Sign in with Microsoft 365
     </button>
-    <div style="margin-top:18px;font-size:12px;color:var(--text-light)"><a href="/privacy" target="_blank" rel="noopener" style="color:var(--text-light);text-decoration:underline">Privacy Policy</a></div>
+    <div style="margin-top:18px;font-size:12px;color:rgba(255,255,255,.8)"><a href="/privacy" target="_blank" rel="noopener" style="color:rgba(255,255,255,.85);text-decoration:underline">Privacy Policy</a></div>
 
 
     <!-- ── Role-step panel (shown after simulated MS365 auth in demo) ── -->
@@ -640,6 +641,22 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 
 
 </div>
+<script>
+/* Login background: alternate by DAY OF MONTH (odd 1,3,5… = image A · even 2,4,6… = image B) and
+   pick the right orientation (portrait phones get the 9:16 image, landscape gets 16:9). Runs inline
+   so the photo paints as early as possible; re-runs on rotate/resize. */
+function _setLoginBg() {
+  try {
+    var ov = document.getElementById('login-overlay'); if (!ov) return;
+    var set = (new Date().getDate() % 2 === 1) ? 'a' : 'b';
+    var orient = (window.innerHeight > window.innerWidth) ? 'mobile' : 'desktop';
+    ov.style.backgroundImage = "url('/static/brand/login/login-" + set + "-" + orient + ".jpg')";
+  } catch (e) {}
+}
+_setLoginBg();
+window.addEventListener('resize', _setLoginBg);
+window.addEventListener('orientationchange', _setLoginBg);
+</script>
 
 <!-- ═══ SIDEBAR ═══ -->
 <nav id="sidebar">
