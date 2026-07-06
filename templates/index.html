@@ -347,12 +347,12 @@ select.form-control{cursor:pointer}
 .detail-cell span { font-size:14px;font-weight:700;color:var(--navy); }
 
 /* ── LOGIN OVERLAY ── */
-#login-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;overflow:hidden;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:#0d1c39 center/cover no-repeat}
+#login-overlay{position:fixed;inset:0;display:flex;z-index:9999;transition:opacity .45s ease;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:#0d1c39 center/cover no-repeat}
 /* readability scrim so the sign-in panel stays legible over any photo */
 #login-overlay::after{content:'';position:absolute;inset:0;pointer-events:none;background:linear-gradient(to bottom,rgba(6,15,34,.14) 0%,rgba(6,15,34,0) 32%,rgba(6,15,34,.30) 100%)}
 #login-overlay.fade-out{opacity:0;pointer-events:none}
 #login-main-logo{display:none !important}   /* the background photo already carries the Humiley logo + tagline */
-.login-card{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px;padding:26px 30px 22px;text-align:center;background:rgba(255,255,255,.14);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25);border:1px solid rgba(255,255,255,.32);border-radius:20px;box-shadow:0 24px 70px rgba(4,12,30,.5)}
+.login-card{position:relative;z-index:2;margin:auto;flex:0 0 auto;display:flex;flex-direction:column;align-items:center;width:100%;max-width:380px;padding:26px 30px 22px;text-align:center;background:rgba(255,255,255,.14);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25);border:1px solid rgba(255,255,255,.32);border-radius:20px;box-shadow:0 24px 70px rgba(4,12,30,.5)}
 .login-logo{height:56px;width:auto;max-width:200px;margin:0 auto 20px;display:block}
 .login-title{font-size:clamp(19px,4.6vw,23px);font-weight:800;color:var(--navy);margin-bottom:8px;white-space:normal;letter-spacing:-.2px;text-shadow:0 1px 8px rgba(255,255,255,.7),0 0 1px rgba(255,255,255,.6)}
 .login-sub{font-size:13px;color:rgba(255,255,255,.92);margin-bottom:26px;line-height:1.55;text-shadow:0 1px 6px rgba(0,0,0,.35)}
@@ -4209,14 +4209,21 @@ function doLogout() {
 }
 
 /* ── Auto sign-out after a long idle window ─────────────────────────────────────
-   Set to 12 hours so a normal workday never forces a re-login — the team signs in
-   once and stays signed in. A left-open device still signs out overnight. */
-let _idleTimer = null;
+   Set to 30 days so the team signs in once and stays signed in — a normal workday
+   never forces a re-login; only a genuinely abandoned device eventually clears. */
+let _idleTimer = null, _idleDeadline = 0;
 const _IDLE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — a signed-in user is not forced to log in again (only an abandoned device eventually clears)
+const _TIMER_MAX = 2147483647;               // setTimeout keeps its delay in a signed 32-bit int (~24.8 days). A larger delay (30 days = 2,592,000,000) overflows to a NEGATIVE value, so the browser fires it IMMEDIATELY — which auto-logged the user out ~1s after every sign-in ("log in then straight back out"). Re-arm in bounded chunks so the 30-day window is honoured without overflowing.
 function _resetIdleTimer() {
   if (!TK.token) return;                 // only while signed in
+  _idleDeadline = Date.now() + _IDLE_MS;
+  _armIdleChunk();
+}
+function _armIdleChunk() {
   clearTimeout(_idleTimer);
-  _idleTimer = setTimeout(_idleLogout, _IDLE_MS);
+  const remaining = _idleDeadline - Date.now();
+  if (remaining <= 0) { _idleLogout(); return; }   // real 30-day deadline reached
+  _idleTimer = setTimeout(_armIdleChunk, Math.min(remaining, _TIMER_MAX));   // never exceed the 32-bit ceiling
 }
 function _idleLogout() {
   if (!TK.token) return;
