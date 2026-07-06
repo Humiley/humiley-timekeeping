@@ -2058,7 +2058,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…" oninput="renderInOutReport()"></div>
       <select class="sel-filter" data-dept-select="All Departments" onchange="renderInOutReport()"><option value="">All Departments</option></select>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
-      <input type="date" class="sel-filter" onchange="renderInOutReport()" style="font-size:12px">
+      <input type="month" class="sel-filter" id="io-month" onchange="renderInOutReport()" style="font-size:12px" title="Filter by month">
+      <input type="date" class="sel-filter" id="io-date" onchange="renderInOutReport()" style="font-size:12px" title="Filter by exact date">
+      <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="var m=document.getElementById('io-month');var d=document.getElementById('io-date');if(m)m.value='';if(d)d.value='';renderInOutReport()" title="Clear date filters">Clear dates</button>
     </div>
     <!-- Summary -->
     <div class="stat-boxes" style="margin-bottom:16px">
@@ -3039,15 +3041,53 @@ function tkCheckIn() {
   try { tkRenderCheckin(); } catch (e) {}
 }
 
+const _OT_STD_MIN = 480;   // standard working day = 8h
 function tkCheckOut() {
   if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
-  const now = new Date(), t = now.toTimeString().slice(0, 5);
+  const t = new Date().toTimeString().slice(0, 5);
+  const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
+  let workedMin = null;
+  if (rec && rec.in) { const a = rec.in.split(':').map(Number), b = t.split(':').map(Number); workedMin = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (workedMin < 0) workedMin += 1440; }
+  // Worked beyond the standard day → offer an OT request (added to the system only if approved).
+  if (workedMin != null && workedMin > _OT_STD_MIN + 15) {
+    _tkOtRequestModal(t, Math.round((workedMin - _OT_STD_MIN) / 60 * 10) / 10);
+  } else {
+    _tkDoCheckout(t, 0, '');
+  }
+}
+function _tkOtCheckoutTime() { const el = document.getElementById('otReqOverlay'); return (el && el.getAttribute('data-t')) || new Date().toTimeString().slice(0, 5); }
+function _tkOtSkip() { const t = _tkOtCheckoutTime(); document.getElementById('otReqOverlay')?.remove(); _tkDoCheckout(t, 0, ''); }
+function _tkOtSubmit() {
+  const t = _tkOtCheckoutTime();
+  const h = parseFloat((document.getElementById('ot-hours') || {}).value || '0') || 0;
+  const reason = ((document.getElementById('ot-reason') || {}).value || '').trim();
+  document.getElementById('otReqOverlay')?.remove();
+  _tkDoCheckout(t, h, reason);
+}
+function _tkOtRequestModal(t, suggestedHours) {
+  document.getElementById('otReqOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'otReqOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.setAttribute('data-t', t);
+  el.innerHTML = '<div class="modal" style="max-width:420px"><div class="modal-header"><div class="modal-title">' + _t('Overtime request') + '</div><button class="modal-close" onclick="_tkOtSkip()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:13px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' + _t('You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.') + '</div>' +
+    '<div style="margin-bottom:10px"><label style="font-size:12px;font-weight:700;color:var(--text-dark)">' + _t('Overtime hours') + '</label><input id="ot-hours" type="number" min="0" step="0.5" value="' + suggestedHours + '" class="form-control" style="margin-top:4px"></div>' +
+    '<div style="margin-bottom:6px"><label style="font-size:12px;font-weight:700;color:var(--text-dark)">' + _t('Reason') + '</label><input id="ot-reason" type="text" placeholder="' + _t('e.g. urgent site work') + '" class="form-control" style="margin-top:4px"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="_tkOtSkip()">' + _t('No overtime') + '</button><button class="btn btn-primary" onclick="_tkOtSubmit()">' + tkIcon('check') + _t('Request overtime') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const f = document.getElementById('ot-hours'); if (f) { f.focus(); f.select(); } }, 40);
+}
+function _tkDoCheckout(t, otHours, otReason) {
   _checkedIn = false;
-  tkPersist('/api/attendance/checkout', { date: now.toISOString().slice(0, 10), time: t })
+  const body = { date: new Date().toISOString().slice(0, 10), time: t };
+  if (otHours && otHours > 0) { body.otHours = otHours; body.otReason = otReason || ''; }
+  tkPersist('/api/attendance/checkout', body)
     .then(() => tkBootstrap().catch(() => {}))
     .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
-  if (rec) { rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); const tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm'; }
+  if (rec) {
+    rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); let tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (tot < 0) tot += 1440; rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm';
+    if (otHours && otHours > 0) { rec.ot_status = 'pending'; rec.ot_hours = otHours; rec.ot_reason = otReason || ''; }
+  }
   try { filterTable(); } catch (e) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('rec-checkout', t);
@@ -3056,7 +3096,10 @@ function tkCheckOut() {
   const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = false;
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
-  if (typeof toast === 'function') toast('Checked out at ' + t);
+  if (typeof toast === 'function') {
+    if (otHours && otHours > 0) toast('Checked out at ' + t + ' · overtime ' + otHours + 'h requested (pending approval)', undefined, 5500);
+    else toast('Checked out at ' + t);
+  }
   try { tkRenderCheckin(); } catch (e) {}
 }
 
@@ -14166,32 +14209,56 @@ function _renderRptAttendance() {
   }
 }
 
+/* Manager approves / rejects a pending overtime request (request #2). Only approved OT counts. */
+async function tkOtDecide(attId, decision) {
+  try {
+    await tkApi('/api/attendance/' + attId + '/ot', { method: 'POST', body: { decision: decision } });
+    toast('Overtime ' + (decision === 'approve' ? 'approved ✓' : 'rejected'), decision === 'approve' ? 'success' : undefined, 4000);
+    try { await tkBootstrap(); } catch (e) {}
+    renderInOutReport();
+  } catch (e) { toast(e.message || 'Could not update overtime', 'error', 5000); }
+}
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
   const search = document.querySelector('#rpt-inout .search-box input')?.value?.toLowerCase()||'';
   const deptF  = document.querySelectorAll('#rpt-inout .sel-filter')[0]?.value||'All Departments';
   const statF  = document.querySelectorAll('#rpt-inout .sel-filter')[1]?.value||'All Status';
+  const dateF  = (document.getElementById('io-date')||{}).value || '';    // exact day (YYYY-MM-DD)
+  const monthF = (document.getElementById('io-month')||{}).value || '';   // month (YYYY-MM)
   const statusMap = { 'on-time':'On Time','late':'Late','absent':'Absent','early':'Early Leave','on_leave':'On Leave' };
   const badgeMap  = { 'on-time':'b-ok','late':'b-warn','absent':'b-danger','early':'b-info','on_leave':'b-navy' };
+  const canOt = (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('manager');
   let rows = _DEMO_ATTENDANCE.filter(r => {
-    const matchS = !search || r.name.toLowerCase().includes(search);
+    const matchS = !search || (r.name||'').toLowerCase().includes(search);
     const matchD = deptF === 'All Departments' || r.dept === deptF;
     const stat   = statusMap[r.status]||r.status||'';
     const matchT = statF === 'All Status' || stat === statF;
-    return matchS && matchD && matchT;
-  }).slice(0,40);
+    const matchDate  = !dateF  || r.date === dateF;                        // exact date filter
+    const matchMonth = !monthF || (r.date||'').slice(0,7) === monthF;      // month filter
+    return matchS && matchD && matchT && matchDate && matchMonth;
+  }).slice(0,60);
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
+  const _mins = r => { if (!r.in || !r.out) return null; const [ih,im]=r.in.split(':').map(Number); const [oh,om]=r.out.split(':').map(Number); let m=(oh*60+om)-(ih*60+im); if (m<0) m+=1440; return m; };  // overnight-safe
   tbody.innerHTML = rows.map(r => {
     const emp = empMap[r.name];
     const clr = emp?.clr || tkAvatarColor(r.name);
     const ini = r.name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w=>w[0].toUpperCase()).join('');
     const stat = statusMap[r.status]||r.status||'—';
     const bcls = badgeMap[r.status]||'b-grey';
-    const totalMin = r.in && r.out ? (() => { const [ih,im]=r.in.split(':').map(Number);const [oh,om]=(r.out||'17:00').split(':').map(Number);return (oh*60+om)-(ih*60+im); })() : null;
+    const totalMin = _mins(r);
     const hoursStr = totalMin!=null ? Math.floor(totalMin/60)+'h '+('0'+totalMin%60).slice(-2)+'m' : (r.out?r.hrs:'In Progress');
-    const isOT = totalMin!=null && totalMin > 480;
+    // OT ONLY counts once a manager APPROVES the request (request #2) — never auto-added.
+    const otSt = (r.ot_status||'none'), otH = (+r.ot_hours||0);
+    let otCell;
+    if (otSt === 'approved') otCell = '<span style="color:var(--warning);font-weight:700;font-size:11px">+' + otH + 'h OT</span>';
+    else if (otSt === 'pending') {
+      otCell = '<div style="font-size:10px;color:var(--text-light)">OT ' + otH + 'h · pending</div>';
+      if (canOt && r.id) otCell += '<div style="display:flex;gap:4px;margin-top:3px"><button class="btn-approve" style="font-size:9px;padding:2px 7px" onclick="tkOtDecide(' + r.id + ",'approve')\">Approve</button><button class=\"btn-reject\" style=\"font-size:9px;padding:2px 7px\" onclick=\"tkOtDecide(" + r.id + ",'reject')\">Reject</button></div>";
+    }
+    else if (otSt === 'rejected') otCell = '<span style="color:var(--danger);font-size:10px">OT rejected</span>';
+    else otCell = '<span style="color:var(--text-light)">—</span>';
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${r.name}</span></div></td>
       <td><span class="badge b-navy" style="font-size:10px">${r.dept}</span></td>
@@ -14200,7 +14267,7 @@ function renderInOutReport() {
       <td style="font-weight:600;font-size:13px">${hoursStr}</td>
       <td><span class="badge b-info" style="font-size:10px">${r.loc||'HQ'}</span></td>
       <td><span class="badge ${bcls}" style="font-size:10px">${stat}</span></td>
-      <td style="font-size:11px;color:${isOT?'var(--warning)':'var(--text-light)'};font-weight:${isOT?'700':'400'}">${isOT?'+'+Math.round((totalMin-480)/60*10)/10+'h OT':'—'}</td>
+      <td>${otCell}</td>
     </tr>`;
   }).join('');
   if (!rows.length) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-light)">No records match your filters.</td></tr>';
@@ -14208,7 +14275,7 @@ function renderInOutReport() {
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;
   document.getElementById('io-absent').textContent = rows.filter(r=>r.status==='absent').length;
-  const validMins = rows.filter(r=>r.in&&r.out).map(r=>{const[ih,im]=r.in.split(':').map(Number);const[oh,om]=r.out.split(':').map(Number);return(oh*60+om)-(ih*60+im);});
+  const validMins = rows.map(_mins).filter(m => m != null);
   document.getElementById('io-avghrs').textContent = validMins.length ? (() => { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); return Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; })() : '—';
 }
 

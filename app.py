@@ -299,6 +299,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._checkin(u, body))
         if path == "/api/attendance/checkout":
             return self._guard(lambda u: self._checkout(u, body))
+        if path.startswith("/api/attendance/") and path.endswith("/ot"):
+            aid = path[len("/api/attendance/"):-len("/ot")]
+            return self._guard(lambda u: self._attendance_ot(u, aid, body), manager=True)
         if path == "/api/leave":
             return self._guard(lambda u: self._leave_create(u, body))
         if path == "/api/push/subscribe":
@@ -885,8 +888,22 @@ class Handler(BaseHTTPRequestHandler):
         rec = db.open_attendance(u["id"], date)
         if not rec:
             return self._err("No open check-in to close.")
-        hrs = db.clock_out(rec["id"], t)
-        return self._json({"ok": True, "hrs": hrs})
+        # Optional overtime REQUEST at checkout — pending manager approval; only approved OT counts.
+        ot_hours = body.get("otHours") or 0
+        hrs = db.clock_out(rec["id"], t, ot_hours=ot_hours, ot_reason=body.get("otReason") or "")
+        return self._json({"ok": True, "hrs": hrs, "id": rec["id"],
+                           "otStatus": ("pending" if ot_hours else "none")})
+
+    def _attendance_ot(self, u, aid, body):
+        """Manager approves / rejects a pending overtime request (request #2). Only approved OT
+        is added to the system; a rejected request never counts."""
+        rec = db.get_attendance(int(aid)) if str(aid).isdigit() else None
+        if not rec:
+            return self._err("Attendance record not found.", 404)
+        if rec.get("emp_id") == u.get("id"):
+            return self._err("You cannot approve your own overtime.", 403)
+        st = db.decide_attendance_ot(int(aid), body.get("decision") or "approve")
+        return self._json({"ok": True, "otStatus": st, "id": rec.get("id")})
 
     # -- leave --------------------------------------------------------------
     def _leave_list(self, u, qs):

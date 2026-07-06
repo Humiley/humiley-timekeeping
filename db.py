@@ -180,6 +180,12 @@ def init_db():
         conn.execute("ALTER TABLE leave ADD COLUMN signatures TEXT")  # 21 CFR Part 11 e-signatures (JSON)
     except sqlite3.OperationalError:
         pass
+    # Overtime request/approval on an attendance record: OT only counts once a manager approves it.
+    for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT"):
+        try:
+            conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -700,16 +706,39 @@ def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-tim
     return rid
 
 
-def clock_out(att_id, time_hm):
+def clock_out(att_id, time_hm, ot_hours=0, ot_reason=""):
     rec = _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
     if not rec:
         return None
     hrs = _hrs_between(rec["clock_in"], time_hm)
+    try:
+        oth = float(ot_hours or 0)
+    except (TypeError, ValueError):
+        oth = 0
     conn = get_conn()
-    conn.execute("UPDATE attendance SET clock_out = ?, hrs = ? WHERE id = ?", (time_hm, hrs, att_id))
+    if oth > 0:
+        # An overtime REQUEST — pending until a manager approves. Until then it does not count.
+        conn.execute("UPDATE attendance SET clock_out = ?, hrs = ?, ot_status = 'pending', ot_hours = ?, ot_reason = ? WHERE id = ?",
+                     (time_hm, hrs, oth, (ot_reason or ""), att_id))
+    else:
+        conn.execute("UPDATE attendance SET clock_out = ?, hrs = ? WHERE id = ?", (time_hm, hrs, att_id))
     conn.commit()
     conn.close()
     return hrs
+
+
+def get_attendance(att_id):
+    return _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
+
+
+def decide_attendance_ot(att_id, decision):
+    """Approve or reject a pending overtime request. Only approved OT counts in the system."""
+    st = "approved" if str(decision or "").lower() in ("approve", "approved", "yes") else "rejected"
+    conn = get_conn()
+    conn.execute("UPDATE attendance SET ot_status = ? WHERE id = ?", (st, att_id))
+    conn.commit()
+    conn.close()
+    return st
 
 
 def generate_attendance(weeks=6, force=False, anchor=None):
