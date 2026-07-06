@@ -39,9 +39,11 @@ M365 = {
 }
 DEMO_MODE = not (M365["clientId"] and M365["tenantId"])
 
-# In-memory sessions: token -> {emp_id, role, expires}
+# In-memory sessions: token -> {emp_id, role, expires}. Long-lived + sliding so a signed-in user
+# never sees the login screen again (until they sign out): the token is stored in localStorage on
+# the client and its expiry is pushed forward on every use.
 SESSIONS = {}
-SESSION_TTL = 8 * 60 * 60
+SESSION_TTL = 30 * 24 * 60 * 60   # 30 days
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -78,9 +80,16 @@ def new_session(emp_id, role):
 
 def session_user(token):
     s = SESSIONS.get(token or "")
-    if not s or s["expires"] < time.time():
+    now = time.time()
+    if not s or s["expires"] < now:
         SESSIONS.pop(token, None)
         return None
+    # Sliding expiration: extend on use so an active user's session never lapses. Persist only when
+    # it moves by more than an hour to avoid a DB write on every request.
+    new_exp = now + SESSION_TTL
+    if new_exp - s.get("expires", 0) > 3600:
+        s["expires"] = new_exp
+        _persist_sessions()
     emp = db.get_employee(s["emp_id"]) if s["emp_id"] else None
     if emp:
         emp["role"] = s["role"]

@@ -347,9 +347,11 @@ select.form-control{cursor:pointer}
 .detail-cell span { font-size:14px;font-weight:700;color:var(--navy); }
 
 /* ── LOGIN OVERLAY ── */
-#login-overlay{position:fixed;inset:0;background:#fff;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;border-top:4px solid var(--navy)}
+#login-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9999;transition:opacity .45s ease;overflow:hidden;padding:24px;padding-top:calc(24px + env(safe-area-inset-top));padding-bottom:calc(24px + env(safe-area-inset-bottom));background:radial-gradient(1100px 620px at 82% -12%,rgba(0,176,96,.30),transparent 58%),radial-gradient(900px 520px at 8% 112%,rgba(49,104,168,.42),transparent 55%),linear-gradient(135deg,#0d1c39 0%,#16305c 44%,#1e4a90 100%)}
+/* subtle flowing "airflow" curves — Humiley moves air, smartly */
+#login-overlay::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.6;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1440' height='900' viewBox='0 0 1440 900'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.055' stroke-width='2'%3E%3Cpath d='M-60 200 C 320 70 720 330 1520 150'/%3E%3Cpath d='M-60 350 C 360 230 740 450 1520 300'/%3E%3Cpath d='M-60 540 C 330 410 780 640 1520 480'/%3E%3C/g%3E%3Cg fill='none' stroke='%2300B060' stroke-opacity='0.11' stroke-width='2'%3E%3Cpath d='M-60 275 C 350 150 730 390 1520 235'/%3E%3Cpath d='M-60 620 C 380 490 800 720 1520 570'/%3E%3C/g%3E%3C/svg%3E") center/cover no-repeat}
 #login-overlay.fade-out{opacity:0;pointer-events:none}
-.login-card{display:flex;flex-direction:column;align-items:center;width:100%;max-width:480px;padding:0 28px;text-align:center}
+.login-card{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;width:100%;max-width:420px;padding:38px 32px 28px;text-align:center;background:rgba(255,255,255,.98);border-radius:22px;box-shadow:0 30px 80px rgba(6,16,38,.5),0 4px 14px rgba(6,16,38,.25)}
 .login-logo{height:56px;width:auto;max-width:200px;margin:0 auto 20px;display:block}
 .login-title{font-size:clamp(20px,4.6vw,25px);font-weight:800;color:var(--navy-deep);margin-bottom:8px;white-space:nowrap;letter-spacing:-.2px}
 .login-sub{font-size:13px;color:var(--text-light);margin-bottom:30px;line-height:1.55}
@@ -479,7 +481,10 @@ body{
 }
 .kpi-card::before{display:none !important;}
 .kpi-label{font-size:12px !important;color:var(--text-light) !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;}
-.kpi-value{font-size:38px !important;font-weight:600 !important;color:var(--navy) !important;}
+.kpi-value{font-size:clamp(24px,7vw,34px) !important;font-weight:600 !important;color:var(--navy) !important;overflow-wrap:anywhere;}
+/* Finance / icon KPI tiles: stack full-width on phones so long money values (₫33,415,966) never spill outside the card */
+.kpi-tile{min-width:100% !important;flex-basis:100% !important;padding:14px 16px !important;}
+.kpi-tile-val{font-size:clamp(19px,6vw,26px) !important;white-space:normal !important;line-height:1.14 !important;}
 /* Icons: no background box — just the icon in its function colour */
 .kpi-icon{width:30px !important;height:30px !important;border-radius:0 !important;opacity:1 !important;top:22px !important;transform:none !important;background:transparent !important;}
 .kpi-icon svg{width:26px !important;height:26px !important;}
@@ -2774,13 +2779,14 @@ const DEMO_MODE = () => SP_CONFIG.clientId === 'YOUR_CLIENT_ID';
    Replaces the SharePoint/Graph backend. The UI flows above are
    kept intact; these helpers persist & load data via /api/*.
 ────────────────────────────────────────────────────────── */
-const TK = { token: sessionStorage.getItem('tk_token') || null, user: null, cfg: null };
+const TK = { token: (localStorage.getItem('tk_token') || sessionStorage.getItem('tk_token')) || null, user: null, cfg: null };
 
 let _tkSessExpShown = false;
 function _tkSessionExpired() {
   if (_tkSessExpShown) return; _tkSessExpShown = true;
   try { toast('Your session has expired — please sign in again to continue.', 'warn', 8000); } catch (e) {}
   TK.token = null; TK.user = null;
+  try { localStorage.removeItem('tk_token'); sessionStorage.removeItem('tk_token'); } catch (e) {}
   try { const ov = document.getElementById('login-overlay'); if (ov) { ov.style.display = ''; ov.classList.remove('fade-out'); } } catch (e) {}
   setTimeout(() => { _tkSessExpShown = false; }, 12000);
 }
@@ -2809,7 +2815,7 @@ async function tkConfig() {
 async function tkLoginDemo(role) {
   const d = await tkApi('/api/auth/demo', { method: 'POST', body: { role } });
   TK.token = d.token; TK.user = d.user;
-  sessionStorage.setItem('tk_token', TK.token);
+  localStorage.setItem('tk_token', TK.token); try { sessionStorage.removeItem('tk_token'); } catch (e) {}
   return d;
 }
 
@@ -2817,7 +2823,7 @@ async function tkLoginDemo(role) {
 async function tkLoginM365(accessToken) {
   const d = await tkApi('/api/auth/m365', { method: 'POST', body: { accessToken } });
   TK.token = d.token; TK.user = d.user;
-  sessionStorage.setItem('tk_token', TK.token);
+  localStorage.setItem('tk_token', TK.token); try { sessionStorage.removeItem('tk_token'); } catch (e) {}
   return d;
 }
 
@@ -4182,7 +4188,7 @@ function doLogout() {
    Set to 12 hours so a normal workday never forces a re-login — the team signs in
    once and stays signed in. A left-open device still signs out overnight. */
 let _idleTimer = null;
-const _IDLE_MS = 12 * 60 * 60 * 1000;   // 12 hours
+const _IDLE_MS = 30 * 24 * 60 * 60 * 1000;   // 30 days — a signed-in user is not forced to log in again (only an abandoned device eventually clears)
 function _resetIdleTimer() {
   if (!TK.token) return;                 // only while signed in
   clearTimeout(_idleTimer);
@@ -4852,9 +4858,9 @@ function _kpiIcon(label) {
 }
 const _hrKpi = (label, val, color) => _kpiTile(label, val, _KPI_HEX[color] || color || '#205090', _kpiIcon(label));
 /* Icon KPI tile (icon-left + value + label) — the consistent professional KPI used across pages. */
-const _kpiTile = (label, val, color, icon) => '<div class="card" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
+const _kpiTile = (label, val, color, icon) => '<div class="card kpi-tile" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
   '<div style="width:42px;height:42px;border-radius:11px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
-  '<div style="min-width:0"><div style="font-size:21px;font-weight:700;color:var(--navy);line-height:1.1;white-space:nowrap">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _t(label) + '</div></div></div>';
+  '<div style="min-width:0;flex:1"><div class="kpi-tile-val" style="font-size:21px;font-weight:700;color:var(--navy);line-height:1.1;white-space:nowrap;overflow-wrap:anywhere">' + val + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _t(label) + '</div></div></div>';
 const _hrKpiRow = cards => '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px">' + cards.join('') + '</div>';
 const _hrStars = n => { n = Math.max(0, Math.min(5, +n || 0)); return '<span style="color:#F59E0B">' + '★'.repeat(n) + '</span><span style="color:#d4d8de">' + '★'.repeat(5 - n) + '</span>'; };
 const _TRASH = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -9327,14 +9333,32 @@ async function initAuth() {
     if (cfg.mapsKey) SP_CONFIG.mapsKey = cfg.mapsKey;
   }
 
+  /* ── FAST RESTORE ─────────────────────────────────────────────────────────────
+     Once signed in, the user should NEVER see the login screen again (until they
+     sign out). The backend session token lives in localStorage (30-day sliding
+     session); if it's still valid we restore straight into the app — no login
+     overlay, no Microsoft 365 prompt. Hide the overlay optimistically to avoid a
+     flash, and only reveal it again if the token turns out to be invalid. */
+  const ov0 = document.getElementById('login-overlay');
+  let restored = false;
+  if (TK.token) {
+    if (ov0) ov0.classList.add('fade-out');
+    try {
+      const r = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + TK.token } });
+      if (r.ok) { TK.user = await r.json(); await doLogin(TK.user.role || 'staff', { restored: true }); restored = true; }
+      else { TK.token = null; try { localStorage.removeItem('tk_token'); } catch (e) {} if (ov0) ov0.classList.remove('fade-out'); }
+    } catch (e) { if (ov0) ov0.classList.remove('fade-out'); }
+  }
+
   /* DEMO mode: remember the role across reloads (no Microsoft account). */
-  const savedRole = sessionStorage.getItem('hum_role');
   if (cfg.demo) {
-    if (savedRole) { doLogin(savedRole); }
+    if (!restored) { const savedRole = sessionStorage.getItem('hum_role'); if (savedRole) doLogin(savedRole); }
     return;  /* overlay stays — user clicks "Sign in with Microsoft 365" (demo) */
   }
 
-  /* LIVE Microsoft 365 mode */
+  /* LIVE Microsoft 365 mode — always init MSAL (needed for e-signing / mail / SharePoint even
+     when the session was restored above). Only exchange for a NEW backend session if we did NOT
+     already restore one — so a returning user is never prompted. */
   _msalApp = new msal.PublicClientApplication({
     auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: _isNative() ? _NATIVE_REDIRECT : window.location.origin },
     cache: { cacheLocation: 'localStorage' }   /* persist sign-in across app/tab restarts (web + native) — one login lasts until sign-out or cache clear */
@@ -9348,7 +9372,7 @@ async function initAuth() {
       const accts = _msalApp.getAllAccounts();
       if (accts.length) _account = accts[0];
     }
-    if (_account) {
+    if (_account && !restored) {
       /* Exchange the Microsoft 365 token for a backend session. The backend
          verifies it via Microsoft Graph and maps the email to an employee
          record (which carries the manager/staff role). */
