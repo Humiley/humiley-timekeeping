@@ -12,6 +12,7 @@ Microsoft 365 login is used when TK_M365_CLIENT_ID / TK_M365_TENANT_ID are set;
 otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 """
 
+import gzip
 import json
 import os
 import re
@@ -215,13 +216,34 @@ class Handler(BaseHTTPRequestHandler):
     MAX_BODY = 30 * 1024 * 1024   # reject request bodies larger than 30 MB (memory-safety)
 
     # -- io helpers ---------------------------------------------------------
-    def _json(self, obj, status=200):
-        body = json.dumps(obj).encode("utf-8")
+    # gzip text responses: the single-file app HTML is ~1.6 MB raw — uncompressed it took
+    # seconds per open on 4G (the "app feels flat/slow on mobile" complaint). ~5x smaller gzipped.
+    GZIP_TYPES = ("text/", "application/json", "application/javascript", "application/manifest+json", "image/svg+xml")
+
+    def _accepts_gzip(self):
+        return "gzip" in (self.headers.get("Accept-Encoding") or "")
+
+    def _send(self, body, ctype, status=200, cache=None):
+        gz = (
+            len(body) > 1024
+            and self._accepts_gzip()
+            and any(ctype.startswith(t) for t in self.GZIP_TYPES)
+        )
+        if gz:
+            body = gzip.compress(body, 6)
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", ctype)
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+        self.send_header("Vary", "Accept-Encoding")
+        if cache:
+            self.send_header("Cache-Control", cache)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _json(self, obj, status=200):
+        self._send(json.dumps(obj).encode("utf-8"), "application/json; charset=utf-8", status)
 
     def _err(self, msg, status=400):
         self._json({"error": msg}, status)
@@ -242,14 +264,61 @@ class Handler(BaseHTTPRequestHandler):
         token = auth[7:].strip() if auth.startswith("Bearer ") else ""
         return session_user(token)
 
+    # Pre-gzipped file cache keyed by (path, mtime) — the index.html is served on every
+    # navigation, so compress it once per deploy instead of per request.
+    _GZ_CACHE = {}
+
     def _serve_file(self, path):
         if not os.path.isfile(path):
             return self._err("Not found.", 404)
         ext = os.path.splitext(path)[1]
+        ctype = CONTENT_TYPES.get(ext, "application/octet-stream")
+        # HTML + sw.js must always revalidate (deploys show immediately); other static files are
+        # fingerprint-stable enough for a day (the SW is cache-first for them anyway).
+        cache = "no-cache" if ext in (".html", "") or path.endswith("sw.js") else "public, max-age=86400"
+        mtime = os.path.getmtime(path)
+        # Cheap revalidation: If-Modified-Since -> 304 (an unchanged 1.6 MB shell revalidates in
+        # ~200 bytes instead of a full re-download on every open).
+        from email.utils import formatdate, parsedate_to_datetime
+        last_mod = formatdate(mtime, usegmt=True)
+        ims = self.headers.get("If-Modified-Since")
+        if ims:
+            try:
+                if int(mtime) <= int(parsedate_to_datetime(ims).timestamp()):
+                    self.send_response(304)
+                    self.send_header("Cache-Control", cache)
+                    self.send_header("Last-Modified", last_mod)
+                    self.end_headers()
+                    return
+            except Exception:
+                pass
+        gzippable = any(ctype.startswith(t) for t in self.GZIP_TYPES)
+        if gzippable and self._accepts_gzip():
+            key = (path, mtime)
+            gz = self._GZ_CACHE.get(key)
+            if gz is None:
+                with open(path, "rb") as f:
+                    gz = gzip.compress(f.read(), 6)
+                if len(self._GZ_CACHE) > 16:   # bound memory; stale (path, old-mtime) keys get evicted here
+                    self._GZ_CACHE.clear()
+                self._GZ_CACHE[key] = gz
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+            self.send_header("Cache-Control", cache)
+            self.send_header("Last-Modified", last_mod)
+            self.send_header("Content-Length", str(len(gz)))
+            self.end_headers()
+            self.wfile.write(gz)
+            return
         with open(path, "rb") as f:
             body = f.read()
         self.send_response(200)
-        self.send_header("Content-Type", CONTENT_TYPES.get(ext, "application/octet-stream"))
+        self.send_header("Content-Type", ctype)
+        self.send_header("Vary", "Accept-Encoding")
+        self.send_header("Cache-Control", cache)
+        self.send_header("Last-Modified", last_mod)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

@@ -1,7 +1,9 @@
 /* Humiley Portal service worker — installability + fast repeat loads + offline shell.
-   Strategy: never cache /api/ (live data); HTML is network-first (deploys show immediately,
-   last shell served offline); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v5';
+   Strategy: never cache /api/ (live data); HTML is STALE-WHILE-REVALIDATE (the cached shell
+   paints instantly — the single biggest "app feels slow to open on 4G" fix — while the network
+   copy refreshes the cache in the background; the in-app appVersion check reloads to a new
+   deploy within seconds of focus); static assets + CDN libs are cache-first. */
+const CACHE = 'hml-pwa-v6';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -27,16 +29,17 @@ self.addEventListener('fetch', e => {
   const url = new URL(req.url);
   if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;   // never cache live data
 
-  if (req.mode === 'navigate') {                          // HTML: network-first, fall back to cached shell
+  if (req.mode === 'navigate') {                          // HTML: stale-while-revalidate
     e.respondWith(
-      fetch(req)
-        .then(r => {
+      caches.match('/').then(cached => {
+        const net = fetch(req).then(r => {
           // Only cache a HEALTHY same-origin shell — a deploy-window 502 or a captive-portal page
           // must never become the offline fallback ("blank/stuck app when coming back on mobile").
           if (r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); }
           return r;
-        })
-        .catch(() => caches.match('/').then(m => m || caches.match(req)))
+        }).catch(() => cached);
+        return cached || net;                             // cached shell paints instantly; network refreshes for next open
+      })
     );
     return;
   }
