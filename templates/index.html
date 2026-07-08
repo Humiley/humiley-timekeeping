@@ -483,9 +483,10 @@ body{
 .kpi-card::before{display:none !important;}
 .kpi-label{font-size:12px !important;color:var(--text-light) !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;}
 .kpi-value{font-size:clamp(24px,7vw,34px) !important;font-weight:600 !important;color:var(--navy) !important;overflow-wrap:anywhere;}
-/* Finance / icon KPI tiles: stack full-width on phones so long money values (₫33,415,966) never spill outside the card */
-.kpi-tile{min-width:100% !important;flex-basis:100% !important;padding:14px 16px !important;}
-.kpi-tile-val{font-size:clamp(19px,6vw,26px) !important;white-space:normal !important;line-height:1.14 !important;}
+/* Finance / icon KPI tiles: ONE row of 4 on desktop (each tile's inline flex:1/min-width:160px lays
+   them out). The full-width phone stacking (so ₫33,415,966 never spills) lives in the @media blocks below. */
+.kpi-tile{padding:14px 16px !important;}
+.kpi-tile-val{font-size:clamp(16px,1.6vw,22px) !important;white-space:normal !important;line-height:1.14 !important;overflow-wrap:anywhere;}  /* sized so ₫1,620,516,500 fits a 4-across tile; phones re-enlarge below */
 /* Icons: no background box — just the icon in its function colour */
 .kpi-icon{width:30px !important;height:30px !important;border-radius:0 !important;opacity:1 !important;top:22px !important;transform:none !important;background:transparent !important;}
 .kpi-icon svg{width:26px !important;height:26px !important;}
@@ -511,10 +512,14 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 @media (max-width:1024px){
   #content{padding:16px}
   .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .kpi-tile{min-width:calc(50% - 8px) !important;flex-basis:calc(50% - 8px) !important}  /* icon KPI tiles: 2×2 on tablets */
   .staff-kpi-grid{grid-template-columns:repeat(2,1fr)}
   .staff-hero{padding:22px 24px}
 }
 @media (max-width:820px){
+  /* icon KPI tiles: stack full-width on phones so long money values (₫33,415,966) never spill outside the card */
+  .kpi-tile{min-width:100% !important;flex-basis:100% !important}
+  .kpi-tile-val{font-size:clamp(19px,6vw,26px) !important}   /* full-width tile → the value can be big again */
   /* ── sidebar becomes an off-canvas drawer ──
      NOTE: the global "Floating card" theme above uses !important, so every mobile
      override that must beat it also uses !important. Vertical margins are reset (the
@@ -6557,10 +6562,25 @@ const _LH = {
 };
 const _LH_NAVY = [32, 86, 168], _LH_GREEN = [34, 178, 76], _LH_GREY = [110, 120, 130], _LH_DARK = [33, 37, 41];
 function _lhDateStr() { return 'Ho Chi Minh City, ' + tkFmtDateObj(new Date()); }
+/* The master logo PNG is 820×287 but is drawn at only ~40-46mm, and jsPDF re-decodes the full-size
+   image for EVERY new PDF — a big share of the "slow PDF" wait. Downscale it ONCE to ~2.6× display
+   size and hand every PDF the small copy (with a stable alias so jsPDF reuses the decode per doc). */
+let _lhLogoSmall = null;
+function _lhLogoWarm() {
+  if (_lhLogoSmall !== null) return;
+  _lhLogoSmall = '';                              // in-flight / failed ⇒ fall back to the full-size logo
+  try {
+    const im = new Image();
+    im.onload = () => { try { const w = 460, h = Math.max(1, Math.round(w * im.height / im.width)); const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, 0, 0, w, h); _lhLogoSmall = c.toDataURL('image/png'); } catch (e) {} };
+    im.src = HUMILEY_LOGO_B64;
+  } catch (e) {}
+}
+function _lhLogo() { return _lhLogoSmall || _LH.logo; }
+setTimeout(_lhLogoWarm, 1800);                    // warm shortly after boot so even the FIRST click is fast
 /* Draw the letterhead header on the current page (native jsPDF). Deterministic height. */
 function _brandHeader(doc, opts) {
   opts = opts || {}; const W = 210, M = 15; const y0 = 12;
-  try { doc.addImage(_LH.logo, 'PNG', M, y0, 46, 16.1); } catch (e) {}
+  try { doc.addImage(_lhLogo(), 'PNG', M, y0, 46, 16.1, 'HMLLOGO', 'FAST'); } catch (e) {}
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor.apply(doc, _LH_NAVY);
   doc.text(_LH.name, W - M, y0 + 3.2, { align: 'right' });
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, _LH_GREY);
@@ -6667,7 +6687,7 @@ function _payslipPDF(e, c, period) {
   const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK, GREEN = [0, 150, 80];
   const fmt = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
   // ── Letterhead (official Humiley brand) ──
-  try { doc.addImage(_LH.logo, 'PNG', M, y - 5, 40, 14); } catch (x) {}
+  try { doc.addImage(_lhLogo(), 'PNG', M, y - 5, 40, 14, 'HMLLOGO', 'FAST'); } catch (x) {}
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, GREY);
   doc.text(_LH.name, W - M, y - 2, { align: 'right' });
   doc.text(_LH.addr, W - M, y + 2, { align: 'right' });
@@ -6719,7 +6739,7 @@ async function _htmlToPdfDoc(html, width, opts) {
   wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:#fff;padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
-  let canvas; try { canvas = await h2c(wrap, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }
+  let canvas; try { canvas = await h2c(wrap, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }   // 1.5× is crisp on A4 and ~40% faster than 2×
   return _brandPaginate(new J({ unit: 'mm', format: 'a4' }), canvas, opts || {});
 }
 /* Export an on-page element to a branded A4 PDF (dashboards / reports). Charts render because we
@@ -6729,7 +6749,7 @@ async function tkExportElementPDF(elId, filename, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) { toast('PDF engine not loaded', 'warn'); return; }
   toast('Building branded PDF…', 'info', 2000);
-  let canvas; try { canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false }); } catch (e) { toast('Export failed: ' + e.message, 'error', 5000); return; }
+  let canvas; try { canvas = await h2c(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } catch (e) { toast('Export failed: ' + e.message, 'error', 5000); return; }   // 1.5× is crisp on A4 and ~40% faster than 2×
   _brandPaginate(new J({ unit: 'mm', format: 'a4' }), canvas, opts || {}).save(filename || 'Humiley_export.pdf');
   toast('PDF downloaded');
 }
@@ -6885,7 +6905,7 @@ function _assetHandoverPDF(e, devs, mgr) {
   const D = v => (v && String(v).trim()) ? String(v) : '—';
   const today = tkFmtDateObj(new Date());
   // ── Humiley letterhead ──
-  try { doc.addImage(_LH.logo, 'PNG', M, y - 5, 40, 14); } catch (x) {}
+  try { doc.addImage(_lhLogo(), 'PNG', M, y - 5, 40, 14, 'HMLLOGO', 'FAST'); } catch (x) {}
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, GREY);
   doc.text(_LH.name, W - M, y - 2, { align: 'right' });
   doc.text(_LH.addr, W - M, y + 2, { align: 'right' });
@@ -7203,16 +7223,19 @@ const _attachLink = rec => {
 function _finSpUrl() { return (TK.cfg && TK.cfg.financeSpUrl) || (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || ''; }
 function _finSpProj() { return { sharepointUrl: _finSpUrl() }; }
 function _dataUriToFile(dataUri, name) {
-  const m = /^data:([^;]+);base64,(.*)$/.exec(dataUri || ''); if (!m) return null;
+  /* tolerate jsPDF's datauristring, which inserts ";filename=generated.pdf" before ";base64," */
+  const m = /^data:([^;,]+);(?:[^,]*;)?base64,(.*)$/.exec(dataUri || ''); if (!m) return null;
   const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
   try { return new File([a], name || 'file', { type: m[1] }); }
   catch (e) { const b = new Blob([a], { type: m[1] }); try { b.name = name || 'file'; } catch (e2) {} return b; }
 }
+/* Finance SharePoint folder tree: <kind>/<YEAR>/<MONTH>/<request no> — the year and month folders
+   auto-create (folder by folder) via _pmSpEnsureDir, so every request files into its month. */
 function _finSpSubPath(body, kind) {
-  const now = new Date(); const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const now = new Date();
   const label = kind === 'claim' ? 'Claims' : kind === 'travel' ? 'Travel' : 'Payments';
   const ref = String(body.reqNo || body.name || 'request').replace(/[^\w.\-]+/g, '_').slice(0, 60);
-  return label + '/' + ym + '/' + ref;
+  return label + '/' + now.getFullYear() + '/' + String(now.getMonth() + 1).padStart(2, '0') + '/' + ref;
 }
 async function _finSpUploadAttachment(body, kind) {
   try {
@@ -7225,6 +7248,42 @@ async function _finSpUploadAttachment(body, kind) {
     const res = await _graphUploadFile(file, _finSpProj(), _finSpSubPath(body, kind));
     if (res && res.webUrl) { body.spUrl = res.webUrl; body.spName = file.name; }
   } catch (e) { /* keep the inline PDF as the fallback */ }
+}
+/* On APPROVAL: archive the payment to Finance SharePoint — <lib>/Payments/<YEAR>/<MONTH>/<reqNo>/
+   holding the APPROVED voucher PDF (decision + e-signatures) and the invoice/bill PDF together.
+   Folders auto-create; failures surface as a toast so Finance knows the copy did not land. */
+async function _finSpArchiveApproved(item) {
+  try {
+    if (!item) return;
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) return;
+    if (!_finSpUrl()) { toast('Set the Finance SharePoint folder URL in Settings → Company Portal to auto-save approved payments', 'warn', 7000); return; }
+    if (!_msalApp || !_account) return;
+    const sub = _finSpSubPath(item, 'payment');
+    toast('Saving approved payment + invoice to Finance SharePoint…', 'info', 3500);
+    let ok = false, folderUrl = '';
+    try {   // 1) the approved voucher (native jsPDF — includes status, approver, e-signatures)
+      const doc = _payVoucherDoc(item);
+      const vf = doc && _dataUriToFile(doc.output('datauristring'), (item.reqNo || 'payment') + '-Approved-Voucher.pdf');
+      const r1 = vf && await _graphUploadFile(vf, _finSpProj(), sub);
+      if (r1 && r1.webUrl) { ok = true; folderUrl = r1.webUrl; }
+    } catch (e) {}
+    try {   // 2) the invoice/bill (the submit-time PDF: request form + all bills)
+      if (item.attachment) {
+        const bf = _dataUriToFile(item.attachment, item.attachmentName || ((item.reqNo || 'payment') + '-Invoice.pdf'));
+        const r2 = bf && await _graphUploadFile(bf, _finSpProj(), sub);
+        if (r2 && r2.webUrl) { ok = true; if (!item.spUrl) { item.spUrl = r2.webUrl; item.spName = item.attachmentName || ''; } }
+      }
+    } catch (e) {}
+    if (ok) {
+      try {   // persist the SharePoint link on the record (PATCH replaces the whole item — send it complete)
+        const saved = await tkApi('/api/coll/payments/' + encodeURIComponent(item.id), { method: 'PATCH', body: item });
+        const i = (_HR.payments || []).findIndex(x => x.id === item.id); if (i >= 0 && saved) _HR.payments[i] = saved;
+      } catch (e) {}
+      toast('Approved payment + invoice saved to SharePoint (' + sub + ')');
+    } else {
+      toast('Could not save to Finance SharePoint — the documents stay attached in the portal', 'warn', 7000);
+    }
+  } catch (e) { toast('SharePoint save failed: ' + ((e && e.message) || e), 'warn', 7000); }
 }
 
 /* ── Multi-file attach → ONE combined PDF (page 1 = the request form, pages 2..n = the bills / photos) ── */
@@ -7300,7 +7359,7 @@ function _pdfSafe(s) { return String(s == null || s === '' ? '' : s).replace(/�
 function _reqFormPage1(doc, title, rows, meta) {
   const W = 210, M = 16; let y = 20;
   const NAVY = [32, 80, 144], GREY = [92, 100, 112], DARK = [31, 41, 55];
-  try { doc.addImage(_LH.logo, 'PNG', M, y - 6, 38, 13); } catch (e) {}
+  try { doc.addImage(_lhLogo(), 'PNG', M, y - 6, 38, 13, 'HMLLOGO', 'FAST'); } catch (e) {}
   doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
   doc.text(_LH.name || 'Humiley Group Inc.', W - M, y - 2, { align: 'right' });
   y += 14; doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.8); doc.line(M, y, W - M, y); y += 9;
@@ -7760,14 +7819,8 @@ async function tkRenderPayments() {
   const _title = isMgr ? 'Payment Requests' : 'My Payment Requests';
   { const h = document.getElementById('pay-page-title'); if (h) h.textContent = _title; const nl = document.getElementById('nav-pay-label'); if (nl) nl.textContent = _title; const tt = document.getElementById('topbarTitle'); if (tt && _currentView === 'payments') tt.textContent = _title; const eb = document.getElementById('pay-export-btn'); if (eb) eb.style.display = isMgr ? '' : 'none'; }
   const all = (_HR.payments || []).slice();
-  const sum = arr => arr.reduce((s, p) => s + (+p.amount || 0), 0);
-  const pending = all.filter(p => (p.status || 'Submitted') === 'Submitted');
-  const kpis = _hrKpiRow([
-    _kpiTile('Requests', all.length, '#205090', '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
-    _kpiTile('Pending', pending.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
-    _kpiTile('Approved value', _PAY_FMT(sum(all.filter(p => p.status === 'Approved'))), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
-    _kpiTile('Paid value', _PAY_FMT(sum(all.filter(p => p.status === 'Paid'))), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>')
-  ]);
+  /* KPI row lives in an id'd wrapper so payFillTable() can recompute it from the FILTERED rows */
+  const kpis = '<div id="pay-kpis">' + _payKpisHtml(all) + '</div>';
   const dash = isMgr ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'pay-cat') + _rptChartCard('Status Breakdown', 'pay-status') + '</div>' : '';
   const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
     _crmFiltSearch('pay-q', 'Search no. / payee / purpose…', 'payFillTable') +
@@ -7780,13 +7833,28 @@ async function tkRenderPayments() {
     fbar +
     '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
   payFillTable();
-  if (isMgr && typeof Chart !== 'undefined') {
-    const byCat = {}, byStatus = {};
-    all.forEach(p => { byCat[p.category || 'Other'] = (byCat[p.category || 'Other'] || 0) + (+p.amount || 0); byStatus[p.status || 'Submitted'] = (byStatus[p.status || 'Submitted'] || 0) + 1; });
-    const ck = Object.keys(byCat), sk = Object.keys(byStatus);
-    if (ck.length) _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
-    if (sk.length) _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#F59E0B', '#00B060', '#EF4444', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
-  }
+}
+/* ── Payments view: KPI tiles + donuts computed from a (filtered) row list ──
+   payFillTable() feeds these the SAME filtered array as the register table, so changing any
+   filter (search / status / period / category / department) updates cards, charts and table. */
+function _payKpisHtml(list) {
+  const sum = arr => arr.reduce((s, p) => s + (+p.amount || 0), 0);
+  return _hrKpiRow([
+    _kpiTile('Requests', list.length, '#205090', '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>'),
+    _kpiTile('Pending', list.filter(p => (p.status || 'Submitted') === 'Submitted').length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Approved value', _PAY_FMT(sum(list.filter(p => p.status === 'Approved'))), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    _kpiTile('Paid value', _PAY_FMT(sum(list.filter(p => p.status === 'Paid'))), '#8B5CF6', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>')
+  ]);
+}
+const _PAY_ST_CLR = { Submitted: '#F59E0B', Reviewed: '#3168A8', Approved: '#00B060', Rejected: '#EF4444', Paid: '#8B5CF6' };  // fixed colour per status (never shifts when a filter removes a slice)
+function _payCharts(list) {
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  if (!isMgr || typeof Chart === 'undefined' || !document.getElementById('pay-cat')) return;   // donuts are manager-only
+  const byCat = {}, byStatus = {};
+  list.forEach(p => { byCat[p.category || 'Other'] = (byCat[p.category || 'Other'] || 0) + (+p.amount || 0); byStatus[p.status || 'Submitted'] = (byStatus[p.status || 'Submitted'] || 0) + 1; });
+  const ck = Object.keys(byCat), sk = Object.keys(byStatus);
+  _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
+  _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: sk.map(k => _PAY_ST_CLR[k] || '#9CA3AF'), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
 }
 function payFillTable() {
   const tb = document.getElementById('pay-tbody'); if (!tb) return;
@@ -7796,6 +7864,9 @@ function payFillTable() {
     const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
     return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriod(p.dueDate || p.ts, period);
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
+  /* the same filtered list drives the KPI cards + both donuts, so every filter updates everything */
+  const kp = document.getElementById('pay-kpis'); if (kp) kp.innerHTML = _payKpisHtml(list);
+  try { _payCharts(list); } catch (e) {}
   tb.innerHTML = list.length ? list.map(p => {
     const s = p.status || 'Submitted';
     const canPay = _lvlRank(_userLevel) >= _lvlRank('management');
@@ -7813,7 +7884,7 @@ function tkNewPayment() {
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
-    _ATTACH_MULTI('pay-attach', 'Bills / invoices / photos — combined into one PDF') +
+    _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF') +
     '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
@@ -7825,13 +7896,15 @@ async function tkPaymentSave() {
   const amount = +g('pay-amount') || 0;
   if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
-  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   const _files = _multiAttachStore['pay-attach'] || [];
-  if (_files.length) {
+  if (!_files.length) { toast('Please attach the invoice / bill — a payment request must carry its supporting document', 'warn', 6000); return; }
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
     const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
+    else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }   // combiner unavailable → keep the raw invoice so the request is never submitted without its bill
   }
   await _finSpUploadAttachment(body, 'payment');
   tkESign({
@@ -7859,6 +7932,7 @@ function tkPaymentDecision(id, status) {
       if (item) { const i = (_HR.payments || []).findIndex(x => x.id === id); if (i >= 0) _HR.payments[i] = item; }
       const e = _hrEmp(p.empId) || {};
       tkFinFlowMail(item || p, 'payment request', (p.reqNo || '') + ' · ' + (p.payee || ''), _PAY_FMT(p.amount || 0), status, e.email, e.name || p.name);
+      if (status === 'Approved') { try { _finSpArchiveApproved(item || p); } catch (x) {} }   // auto-file voucher + invoice to SharePoint Year/Month
       tkRenderPayments(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
   });
@@ -8270,27 +8344,65 @@ function finFillTable() {
   tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
 }
 /* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
-async function tkPaymentVoucherPDF(id) {
+/* Payment voucher — drawn NATIVELY with jsPDF text on the Humiley letterhead (no html2canvas
+   rasterization), so it downloads instantly instead of waiting for a DOM screenshot. Returns the
+   doc; shared by the register PDF button and the SharePoint approval archive. */
+function _payVoucherDoc(p) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) return null;
+  _lhLogoWarm();
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const W = 210, M = 15;
+  const fmt = n => 'VND ' + Math.round(n || 0).toLocaleString('en-US');   // built-in helvetica has no ₫ glyph
+  let y = _brandHeader(doc, { title: 'PAYMENT REQUEST VOUCHER', subtitle: p.reqNo || '', docCode: 'HML-FIN-PAY' });
+  y += 4;
+  const row = (l, v, big) => {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, _LH_GREY);
+    doc.text(_pdfSafe(l), M + 2, y);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(big ? 13 : 10);
+    if (big) doc.setTextColor.apply(doc, _LH_NAVY); else doc.setTextColor.apply(doc, _LH_DARK);
+    const tx = doc.splitTextToSize(_pdfSafe(v == null || v === '' ? '—' : v), W - M - 80);
+    doc.text(tx, M + 62, y);
+    const lh = (big ? 7.4 : 5.6) + (tx.length - 1) * 4.4;
+    doc.setDrawColor(238, 241, 244); doc.setLineWidth(0.25); doc.line(M, y + lh - 3.4, W - M, y + lh - 3.4);
+    y += lh + 1.8;
+  };
+  row('Requested on', tkFmtDate(p.ts)); row('Requested by', p.name); row('Department', p.department);
+  row('Payee / Vendor', p.payee); row('Category', p.category);
+  row('Payment method', p.method); row('Invoice / PO No.', p.invoiceNo);
+  if (p.purpose) row('Purpose', p.purpose);
+  row('Amount', fmt(p.amount), true);
+  row('Due date', tkFmtDate(p.dueDate)); row('Status', _aprLabel(p.status || 'Submitted'));
+  if (p.approvedBy) row('Approved by', p.approvedBy);
+  if (p.paidOn) row('Paid on', tkFmtDate(p.paidOn));
+  if (p.note) row('Note', p.note);
+  /* signature boxes */
+  y = Math.min(Math.max(y + 20, 176), 236);
+  const cw = (W - 2 * M) / 3;
+  [['Requested by', p.name || ''], ['Approved by', p.approvedBy || ''], ['Paid by / Finance', '']].forEach((r, i) => {
+    const cx = M + cw * i + cw / 2;
+    doc.setDrawColor(154, 164, 178); doc.setLineWidth(0.3); doc.line(M + cw * i + 8, y, M + cw * (i + 1) - 8, y);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK); doc.text(r[0], cx, y + 4.6, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+    if (r[1]) doc.text(_pdfSafe(r[1]), cx, y + 9, { align: 'center' });
+  });
+  y += 15;
+  /* electronic signatures (Part 11 audit trail) */
+  if (p.signatures && p.signatures.length) {
+    doc.setDrawColor(238, 241, 244); doc.setLineWidth(0.25); doc.line(M, y, W - M, y); y += 5;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_NAVY); doc.text('Electronic signatures', M, y); y += 4.4;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor.apply(doc, _LH_GREY);
+    p.signatures.forEach(s => {
+      const line = '· ' + (s.name || '') + ' — ' + (s.meaning || '') + ' — ' + String(s.ts || '').replace('T', ' ').replace('Z', ' UTC') + (s.method ? ' — ' + s.method : '');
+      doc.splitTextToSize(_pdfSafe(line), W - 2 * M - 2).forEach(tl => { if (y < 283) { doc.text(tl, M + 2, y); y += 3.8; } });
+    });
+  }
+  _brandFooter(doc, 1, 1, 'HML-FIN-PAY');
+  return doc;
+}
+function tkPaymentVoucherPDF(id) {
   const p = (_HR.payments || []).find(x => x.id === id); if (!p) { toast('Payment not found', 'warn'); return; }
-  toast('Building voucher…', 'info', 2000);
-  const row = (l, v) => '<tr><td style="padding:6px 10px;color:#5C6470;width:180px;border-bottom:1px solid #eef1f4">' + l + '</td><td style="padding:6px 10px;font-weight:600;border-bottom:1px solid #eef1f4">' + (v || '—') + '</td></tr>';
-  const sign = (role, name) => '<td style="width:33%;padding:0 10px;text-align:center;vertical-align:bottom"><div style="height:46px"></div><div style="border-top:1px solid #9aa4b2;padding-top:6px;font-size:12px"><b>' + role + '</b><br><span style="color:#5C6470">' + (name || '&nbsp;') + '</span></div></td>';
-  const html = '<div style="font-size:13px">' +
-    '<h2 style="color:#205090;margin:0 0 2px">Payment Request Voucher</h2>' +
-    '<div style="color:#5C6470;font-size:12px;margin-bottom:12px">' + _crmEsc(p.reqNo || '') + ' &middot; ' + tkFmtDate(p.ts) + '</div>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
-    row('Requested by', _crmEsc(p.name || '')) + row('Department', _crmEsc(p.department || '')) +
-    row('Payee / Vendor', _crmEsc(p.payee || '')) + row('Category', _crmEsc(p.category || '')) +
-    row('Payment method', _crmEsc(p.method || '')) + row('Invoice / PO No.', _crmEsc(p.invoiceNo || '')) +
-    row('Amount', '<span style="color:#205090;font-size:16px">' + _PAY_FMT(p.amount || 0) + '</span>') +
-    row('Due date', tkFmtDate(p.dueDate)) + row('Status', p.status || 'Submitted') +
-    (p.approvedBy ? row('Approved by', _crmEsc(p.approvedBy)) : '') + (p.paidOn ? row('Paid on', tkFmtDate(p.paidOn)) : '') +
-    (p.note ? row('Note', _crmEsc(p.note)) : '') +
-    '</table>' +
-    '<table style="width:100%;margin-top:34px;border-collapse:collapse"><tr>' + sign('Requested by', p.name) + sign('Approved by', p.approvedBy) + sign('Paid by / Finance', '') + '</tr></table>' +
-    ((p.signatures && p.signatures.length) ? '<div style="margin-top:22px;padding-top:8px;border-top:1px solid #eef1f4;font-size:10.5px;color:#5C6470"><b style="color:#205090">Electronic signatures</b>' + p.signatures.map(s => '<div style="margin-top:3px">✓ <b style="color:#1F2937">' + _crmEsc(s.name || '') + '</b> — ' + _crmEsc(s.meaning || '') + ' — ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + ' — ' + _crmEsc(s.method || '') + '</div>').join('') + '</div>' : '') +
-    '</div>';
-  const doc = await _htmlToPdfDoc(html, 720, { title: 'PAYMENT REQUEST VOUCHER', subtitle: p.reqNo || '', docCode: 'HML-FIN-PAY' });
+  const doc = _payVoucherDoc(p);
   if (!doc) { toast('PDF engine not loaded', 'warn'); return; }
   doc.save('Humiley_Payment_' + (p.reqNo || 'voucher') + '.pdf');
   toast('Voucher PDF downloaded');

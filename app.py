@@ -1250,6 +1250,9 @@ class Handler(BaseHTTPRequestHandler):
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         item = dict(body or {})
+        # A payment request must carry its supporting invoice/bill (inline PDF or a SharePoint copy).
+        if name == "payments" and not (item.get("attachment") or item.get("spUrl")):
+            return self._err("An invoice / bill attachment is required for a payment request.", 400)
         # For staff self-service records, stamp identity from the session (no impersonation).
         if name in ("claims", "travel", "payments", "acks"):
             item["empId"] = u.get("id")
