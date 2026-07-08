@@ -1,7 +1,7 @@
 /* Humiley Portal service worker — installability + fast repeat loads + offline shell.
    Strategy: never cache /api/ (live data); HTML is network-first (deploys show immediately,
    last shell served offline); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v4';
+const CACHE = 'hml-pwa-v5';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -30,16 +30,20 @@ self.addEventListener('fetch', e => {
   if (req.mode === 'navigate') {                          // HTML: network-first, fall back to cached shell
     e.respondWith(
       fetch(req)
-        .then(r => { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)); return r; })
-        .catch(() => caches.match('/') || caches.match(req))
+        .then(r => {
+          // Only cache a HEALTHY same-origin shell — a deploy-window 502 or a captive-portal page
+          // must never become the offline fallback ("blank/stuck app when coming back on mobile").
+          if (r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); }
+          return r;
+        })
+        .catch(() => caches.match('/').then(m => m || caches.match(req)))
     );
     return;
   }
 
   e.respondWith(                                          // assets + CDN libs: cache-first, then network
     caches.match(req).then(hit => hit || fetch(req).then(r => {
-      const rc = r.clone();
-      caches.open(CACHE).then(c => c.put(req, rc)).catch(() => {});
+      if (r.ok || r.type === 'opaque') { const rc = r.clone(); caches.open(CACHE).then(c => c.put(req, rc)).catch(() => {}); }   // opaque = no-cors CDN libs
       return r;
     }).catch(() => hit))
   );

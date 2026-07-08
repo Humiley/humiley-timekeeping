@@ -82,6 +82,7 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:all .15s}
+button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile taps (check-in/out) */
 .btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-deep)}
 .btn-emerald{background:var(--emerald);color:#fff}.btn-emerald:hover{background:var(--emerald-deep)}
 .btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
@@ -2807,14 +2808,60 @@ const DEMO_MODE = () => SP_CONFIG.clientId === 'YOUR_CLIENT_ID';
 ────────────────────────────────────────────────────────── */
 const TK = { token: (localStorage.getItem('tk_token') || sessionStorage.getItem('tk_token')) || null, user: null, cfg: null };
 
-let _tkSessExpShown = false;
+let _tkSessExpShown = false, _tkHealBusy = false;
+/* Silent recovery when the backend session died (server restart / redeploy overnight) while the
+   user still LOOKS signed in: mint a fresh backend session from the cached MSAL account (or the
+   remembered demo role) with NO login screen. Fixes "signed in but must re-login every morning". */
+async function _tkTrySilentRelogin() {
+  if (_tkHealBusy) return false; _tkHealBusy = true;
+  try {
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) {
+      const role = sessionStorage.getItem('hum_role') || _userRole;
+      if (!role) return false;
+      await tkLoginDemo(role);
+      return true;
+    }
+    if (!_msalApp) return false;
+    const accts = _msalApp.getAllAccounts(); if (!accts.length) return false;
+    _account = accts[0];
+    const r = await _msalApp.acquireTokenSilent({ scopes: ['https://graph.microsoft.com/User.Read'], account: _account });
+    if (!r || !r.accessToken) return false;
+    await tkLoginM365(r.accessToken);          // new backend session token + fresh TK.user
+    return true;
+  } catch (e) { return false; }
+  finally { _tkHealBusy = false; }
+}
 function _tkSessionExpired() {
-  if (_tkSessExpShown) return; _tkSessExpShown = true;
-  try { toast('Your session has expired — please sign in again to continue.', 'warn', 8000); } catch (e) {}
-  TK.token = null; TK.user = null;
-  try { localStorage.removeItem('tk_token'); sessionStorage.removeItem('tk_token'); } catch (e) {}
-  try { const ov = document.getElementById('login-overlay'); if (ov) { ov.style.display = ''; ov.classList.remove('fade-out'); } } catch (e) {}
-  setTimeout(() => { _tkSessExpShown = false; }, 12000);
+  /* First try to heal silently; only fall back to the login screen if that fails. */
+  _tkTrySilentRelogin().then(healed => {
+    if (healed) { _tkSessExpShown = false; try { toast('Session refreshed — please try that again.', 'info', 4000); } catch (e) {} return; }
+    if (_tkSessExpShown) return; _tkSessExpShown = true;
+    try { toast('Your session has expired — please sign in again to continue.', 'warn', 8000); } catch (e) {}
+    TK.token = null; TK.user = null;
+    try { localStorage.removeItem('tk_token'); sessionStorage.removeItem('tk_token'); } catch (e) {}
+    try { const ov = document.getElementById('login-overlay'); if (ov) { ov.style.display = ''; ov.classList.remove('fade-out'); } } catch (e) {}
+    setTimeout(() => { _tkSessExpShown = false; }, 12000);
+  }).catch(() => {});
+}
+/* Re-validate the stored session whenever the app comes back to the foreground (PWA resume) —
+   the shell can be restored from memory without a reload, so yesterday's dead token would
+   otherwise sit there silently failing every write (the "check-in needs re-login" bug). */
+let _tkLastReval = 0;
+async function _revalidateSession(force) {
+  if (!TK.token) return false;
+  if (!force && Date.now() - _tkLastReval < 60000) return true;   // throttle: once a minute max
+  _tkLastReval = Date.now();
+  try {
+    const r = await fetch('/api/me', { headers: { 'Authorization': 'Bearer ' + TK.token } });
+    if (r.ok) {
+      const u = await r.json();
+      // don't clobber the demo "View as Staff" identity swap (admin browsing a staff workspace)
+      if (typeof _adminUserBackup === 'undefined' || !_adminUserBackup) TK.user = u;
+      return true;
+    }
+    if (r.status === 401) return await _tkTrySilentRelogin();
+    return false;
+  } catch (e) { return false; }   // offline — leave the app as-is, retried on the next resume/online
 }
 async function tkApi(path, opts = {}) {
   const headers = opts.headers || {};
@@ -2826,7 +2873,7 @@ async function tkApi(path, opts = {}) {
   const res = await fetch(path, { ...opts, headers });
   if (!res.ok) {
     let e; try { e = await res.json(); } catch (_) {}
-    if (res.status === 401) { try { _tkSessionExpired(); } catch (_) {} }
+    if (res.status === 401 && !opts._no401) { try { _tkSessionExpired(); } catch (_) {} }   // _no401: caller handles the heal/retry itself
     throw new Error((e && e.error) || ('HTTP ' + res.status));
   }
   return res.json();
@@ -2999,10 +3046,18 @@ function tkPopulateZoneSelect() {
   if (cur && _DEMO_ZONES[parseInt(cur)]) sel.value = cur;
 }
 
-function _tkSetCheckinAllowed(ok) {
+/* GPS is ADVISORY, not a blocker (mobile GPS is often slow/denied/±100s of metres — hiding the
+   button made phone check-in unusable). States: 'in' (confirmed at the zone), 'unverified' (no
+   usable fix — allowed, recorded as GPS-unverified), 'out' (a confident fix says you are far
+   from the zone — blocked). */
+let _tkGpsState = 'unverified';
+function _tkSetCheckinAllowed(state) {
+  if (state === true) state = 'in'; if (state === false) state = 'out';
+  _tkGpsState = state;
   const btn = document.getElementById('btn-checkin');
   if (!btn) return;
-  if (ok && !_checkedIn) { btn.style.display = 'flex'; btn.disabled = false; }
+  const allow = (state === 'in' || state === 'unverified') && !_checkedIn && _tkSelectedZone;
+  if (allow) { btn.style.display = 'flex'; btn.disabled = false; btn.style.opacity = state === 'unverified' ? '.93' : '1'; }
   else { btn.style.display = 'none'; btn.disabled = true; }
 }
 
@@ -3023,50 +3078,86 @@ function tkVerifySelectedZone(force) {
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
   const z = _tkSelectedZone;
   const status = document.getElementById('ci-verify-status');
-  const evaluate = (lat, lon, accNote) => {
+  const evaluate = (lat, lon, acc) => {
     _tkLastLat = lat; _tkLastLon = lon;
+    acc = Math.round(+acc || 0);
     const dist = Math.round(_haversineMetres(lat, lon, Number(z.lat), Number(z.lon)));
     const radius = Number(z.radius) || 200;
-    const inside = dist <= radius;
+    /* accuracy-aware: a ±300 m fix from inside the office must not read as "outside" */
+    const inside = dist - acc <= radius;
+    const confidentlyOut = acc > 0 && acc <= radius && dist - acc > radius;
     _tkInsideSelected = inside;
     const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
-    if (status) status.innerHTML = inside
-      ? '<span style="color:var(--emerald);font-weight:700">You are at ' + z.name + '</span> (' + distStr + ' from centre' + accNote + '). You can check in now.'
-      : '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>You are not at ' + z.name + '</span> — ' + distStr + ' away (must be within ' + radius + 'm). Check-in is not allowed here.';
-    _tkSetCheckinAllowed(inside);
+    const accNote = acc ? ', ±' + acc + 'm' : ' (recent)';
+    if (inside) {
+      if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">You are at ' + z.name + '</span> (' + distStr + ' from centre' + accNote + '). You can check in now.';
+      _tkSetCheckinAllowed('in');
+    } else if (confidentlyOut) {
+      if (status) status.innerHTML = '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>You are not at ' + z.name + '</span> — ' + distStr + ' away (must be within ' + radius + 'm). Check-in is not allowed here.';
+      _tkSetCheckinAllowed('out');
+    } else {
+      /* fix too coarse to decide — allow, record as GPS-unverified, and try to sharpen it */
+      if (status) status.innerHTML = '<span style="color:#F59E0B;font-weight:700">Location not precise enough to confirm ' + z.name + '</span> (' + distStr + accNote + '). You can still check in — it will be recorded as GPS-unverified.';
+      _tkSetCheckinAllowed('unverified');
+      if (typeof _sharpen === 'function') _sharpen();
+    }
+    return _tkGpsState;
   };
+  let _sharpen = null;   // set below once the high-accuracy path exists (evaluate may run earlier from cache)
   if (status) status.textContent = 'Checking your location…';
-  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — cannot verify your location.'; _tkSetCheckinAllowed(false); return; }
+  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.'; _tkSetCheckinAllowed('unverified'); return; }
   // Instant: reuse a recent fix from the app-wide GPS watch (the common case -> no wait)
   const _cacheFresh = (typeof _lastGpsLat !== 'undefined' && _lastGpsLat !== null && _lastGpsLon !== null && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000);
-  if (!force && _cacheFresh) { evaluate(_lastGpsLat, _lastGpsLon, ' (recent)'); return; }
+  if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0) === 'in') return; }   // confirmed in-zone from cache → done; otherwise take a fresh fix
   let _geoDone = false;
   const _alert = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ';
-  const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, ', ±' + Math.round(acc) + 'm'); };
-  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked.</strong> Click the lock icon in the address bar → Location → Allow → reload, then press “Re-check”.'; _tkSetCheckinAllowed(false); };
-  const _giveup = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + 'Could not get your GPS location yet. Move near a window / open area and press “Re-check”.'; _tkSetCheckinAllowed(false); };
-  // Escalate to GPS-grade accuracy only if the quick network fix fails (and not when permission is denied)
+  const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, acc); };
+  /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
+  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked</strong> — you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.'; _tkSetCheckinAllowed('unverified'); };
+  const _giveup = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + 'Could not get a GPS fix — you can still check in (recorded as GPS-unverified), or move near a window and press “Re-check”.'; _tkSetCheckinAllowed('unverified'); };
+  // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied)
   const _slow = () => { if (_geoDone) return; try { navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _giveup(); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }); } catch (e) { _giveup(); } };
+  let _sharpened = false;
+  _sharpen = () => { if (_sharpened) return; _sharpened = true; _geoDone = false; setTimeout(_slow, 50); };   // one high-accuracy retry after a too-coarse fix
   // Fast network / Wi-Fi fix first — usually ~1s, and well within an office geofence radius
   navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 });
   setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating…'; }, 3000);
   setTimeout(_giveup, 12000);
 }
 
-function tkCheckIn() {
+/* Persist with a self-heal retry: if the backend session died overnight, silently re-login via
+   the cached MSAL account and retry ONCE — so the first tap of the morning just works. */
+async function _tkPersistSure(path, body) {
+  try { return await tkApi(path, { method: 'POST', body: body, _no401: true }); }
+  catch (e) {
+    if (await _tkTrySilentRelogin()) {
+      try { return await tkApi(path, { method: 'POST', body: body }); } catch (e2) {}
+    }
+    return null;
+  }
+}
+async function tkCheckIn() {
   if (_checkedIn) { if (typeof toast === 'function') toast('You are already checked in', 'warn'); return; }
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Please select your location first', 'warn'); return; }
-  if (!_tkInsideSelected) { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
+  if (_tkGpsState === 'out') { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
   const now = new Date(), t = now.toTimeString().slice(0, 5);
+  const btn = document.getElementById('btn-checkin'); if (btn) btn.disabled = true;
+  /* TRUTHFUL check-in: save first, then show success — no more "Checked in" toasts for a
+     check-in that silently never reached the server on a flaky mobile connection. */
+  const locLabel = _tkSelectedZone.name + (_tkGpsState === 'in' ? '' : ' (GPS unverified)');
+  const saved = await _tkPersistSure('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon });
+  if (!saved) {
+    if (btn) btn.disabled = false;
+    if (typeof toast === 'function') toast('Could not record your check-in — check your connection and tap again.', 'error', 7000);
+    return;
+  }
   _checkedIn = true;
-  _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: _tkSelectedZone.name });
-  tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: _tkSelectedZone.name, lat: _tkLastLat, lon: _tkLastLon })
-    .then(() => tkBootstrap().catch(() => {}))
-    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
+  _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: locLabel });
+  tkBootstrap().catch(() => {}).then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   try { filterTable(); } catch (e) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set('rec-checkin', t); set('rec-zone', 'In Zone'); set('dur-val', '0h 0m');
-  _tkSetCheckinAllowed(false);
+  set('rec-checkin', t); set('rec-zone', _tkGpsState === 'in' ? 'In Zone' : 'Unverified'); set('dur-val', '0h 0m');
+  _tkSetCheckinAllowed('out');
   const btnOut = document.getElementById('btn-checkout');
   if (btnOut) { btnOut.disabled = false; btnOut.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; btnOut.style.color = '#fff'; btnOut.style.cursor = 'pointer'; }
   const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = true;
@@ -3111,13 +3202,14 @@ function _tkOtRequestModal(t, suggestedHours) {
   document.body.appendChild(el);
   setTimeout(() => { const f = document.getElementById('ot-hours'); if (f) { f.focus(); f.select(); } }, 40);
 }
-function _tkDoCheckout(t, otHours, otReason) {
-  _checkedIn = false;
+async function _tkDoCheckout(t, otHours, otReason) {
   const body = { date: new Date().toISOString().slice(0, 10), time: t };
   if (otHours && otHours > 0) { body.otHours = otHours; body.otReason = otReason || ''; }
-  tkPersist('/api/attendance/checkout', body)
-    .then(() => tkBootstrap().catch(() => {}))
-    .then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
+  /* TRUTHFUL checkout: save first (with silent session heal + one retry), then update the UI. */
+  const saved = await _tkPersistSure('/api/attendance/checkout', body);
+  if (!saved) { if (typeof toast === 'function') toast('Could not record your check-out — check your connection and tap again.', 'error', 7000); return; }
+  _checkedIn = false;
+  tkBootstrap().catch(() => {}).then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
   if (rec) {
     rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); let tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (tot < 0) tot += 1440; rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm';
@@ -3144,7 +3236,7 @@ function tkCiSetPeriod(v) { _ciPeriod = v; tkRenderCheckin(); }
 function tkRenderCheckin() {
   try { tkPopulateZoneSelect(); } catch (e) {}
   // warm up GPS so the zone check resolves instantly when the user picks a location
-  try { if (navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try { _lastGpsLat = p.coords.latitude; _lastGpsLon = p.coords.longitude; _gpsTimestamp = Date.now(); } catch (e) {} }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }); } catch (e) {}
+  try { const _fresh = (typeof _gpsTimestamp !== 'undefined' && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000); if (!_fresh && navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try { _lastGpsLat = p.coords.latitude; _lastGpsLon = p.coords.longitude; _gpsTimestamp = Date.now(); } catch (e) {} }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }); } catch (e) {}   // skip the warm-up when a recent fix exists (no repeated GPS prompts on every render)
   const today = new Date().toISOString().slice(0, 10);
   const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const todayRow = mine.find(r => r.date === today);
@@ -3542,6 +3634,21 @@ function tkRenderLeaveView() {
     bEl.innerHTML = '<div class="grid-2"><div class="card"><div class="card-hdr"><div class="card-title">My Leave Balance — 2026</div><span style="font-size:12px;color:var(--text-light)">' + _pmEsc(meName || '') + '</span></div><div class="bal-row"><div class="bal-type">Annual</div><div class="bal-bar-wrap">' + bar(au, at, 'prog-navy') + '</div></div><div class="bal-row"><div class="bal-type">Sick</div><div class="bal-bar-wrap">' + bar(su, st, 'prog-emerald') + '</div></div>' + (co ? '<div class="bal-row"><div class="bal-type">Comp-off</div><div class="bal-bar-wrap"><div class="bal-nums"><span class="bal-rem">' + co + ' day(s) available</span></div></div></div>' : '') + '</div></div>';
   }
 }
+/* The bell aggregates the SAME pending sources as the Approvals-Inbox badge (leave, claims,
+   travel, payments, requisitions, PADR) — anything that lights a sub-badge now lights the bell.
+   Unread state is shared with the inbox seen-set, so the two can never disagree. */
+function _tkBellItems() {
+  const out = [];
+  const push = (key, title, sub, view) => out.push({ key: key, title: title, sub: sub, view: view || 'inbox' });
+  const _me = TK.user && TK.user.id;
+  (_DEMO_LEAVE || []).forEach(l => { if (l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name)) push('lv:' + l.id, (l.type || 'Leave') + ' — ' + (l.emp_name || 'Employee'), (l.startDate || '') + ' – ' + (l.endDate || '') + ' · awaiting approval', 'manager'); });
+  (_HR.claims || []).forEach(c => { if (_aprCanSee(_claimRollup(c), c.empId, c.name)) push('cl:' + c.id, 'Claim — ' + (c.name || ''), (c.title || c.type || '') + ' · ' + _PAY_FMT(_claimTotal(c))); });
+  (_HR.travel || []).forEach(t2 => { if (_aprCanSee(t2.status, t2.empId, t2.name)) push('tv:' + t2.id, 'Travel — ' + (t2.name || ''), (t2.dest || '') + ' · ' + _PAY_FMT(t2.cost || 0)); });
+  (_HR.payments || []).forEach(p => { if (_aprCanSee(p.status, p.empId, p.name)) push('pay:' + p.id, 'Payment — ' + (p.name || ''), (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0)); });
+  (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') push('jb:' + j.id, 'Requisition — ' + (j.title || ''), 'awaiting approval', 'recruitment'); });
+  (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment') push('pa:' + p.id, 'PADR — ' + (p.name || ''), 'self-assessment submitted'); });
+  return out;
+}
 function tkUpdateNotifications() {
   // The bell is a manager approval feed — staff have nothing to approve, so keep it clear for them.
   if (_userRole !== 'manager') {
@@ -3550,25 +3657,30 @@ function tkUpdateNotifications() {
     return;
   }
   const _me = TK.user && TK.user.id;
-  const pend = (_DEMO_LEAVE || []).filter(l => l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
+  const pendLeave = (_DEMO_LEAVE || []).filter(l => l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
   const bp = document.getElementById('badge-pending');
-  if (bp) { bp.textContent = pend.length; bp.style.display = pend.length ? '' : 'none'; }
+  if (bp) { bp.textContent = pendLeave.length; bp.style.display = pendLeave.length ? '' : 'none'; }
   const ba = document.getElementById('badge-anomaly');
   if (ba) ba.style.display = 'none';
+  const items = _tkBellItems();
+  const seen = (typeof _inboxSeenSet === 'function') ? _inboxSeenSet() : new Set();
+  const fresh = items.filter(x => !seen.has(x.key));
   const dot = document.getElementById('notif-dot');
-  if (dot) dot.style.display = pend.length ? 'block' : 'none';
+  if (dot) dot.style.display = fresh.length ? 'block' : 'none';
   const list = document.getElementById('notif-list');
   if (list) {
-    list.innerHTML = pend.length ? pend.map(l => {
-      const name = l.emp_name || 'Employee';
-      return '<div class="notif-item" onclick="showView(\'manager\',null,\'Manager Approval\');toggleNotifications()"><div class="notif-icon" style="background:#FEF3C7;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="notif-body"><strong>' + (l.type || 'Leave') + ' — ' + name + '</strong><span>' + l.startDate + ' – ' + l.endDate + ' · awaiting approval</span></div></div>';
+    list.innerHTML = items.length ? items.map(x => {
+      const isNew = !seen.has(x.key);
+      return '<div class="notif-item" onclick="showView(\'' + x.view + '\');toggleNotifications()" style="' + (isNew ? '' : 'opacity:.62') + '"><div class="notif-icon" style="background:#FEF3C7;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="notif-body"><strong>' + _crmEsc(x.title) + (isNew ? ' <span style="display:inline-block;background:var(--emerald);color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:1px 5px;vertical-align:1px">NEW</span>' : '') + '</strong><span>' + _crmEsc(x.sub) + '</span></div></div>';
     }).join('') : '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>All caught up — no new notifications.</div>';
   }
 }
 
 function tkMarkAllRead() {
+  /* Persist the seen-state through the SAME store as the Approvals-Inbox badge. */
+  try { if (typeof _inboxMarkSeen === 'function' && typeof _inboxPendingIds === 'function') { _inboxMarkSeen(_inboxPendingIds()); tkUpdateInboxBadge(); } } catch (e) {}
   const dot = document.getElementById('notif-dot'); if (dot) dot.style.display = 'none';
-  const list = document.getElementById('notif-list'); if (list) list.innerHTML = '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>All caught up — no new notifications.</div>';
+  try { tkUpdateNotifications(); } catch (e) {}
   const p = document.getElementById('notif-panel'); if (p) p.classList.remove('open');
 }
 
@@ -4146,7 +4258,10 @@ async function doLogin(role, opts = {}) {
      data if the backend is unreachable. When opts.m365 is set, the session
      was already established via Microsoft 365 (tkLoginM365). */
   try {
-    if (!opts.m365) { await tkLoginDemo(role); }
+    /* A RESTORED session already carries the real signed-in user from /api/me — never re-run the
+       demo login there (it used to REPLACE the real user with the seeded first manager, which is
+       why the welcome greeting appeared stuck on one name for everybody). */
+    if (!opts.m365 && !opts.restored) { await tkLoginDemo(role); }
     if (TK.user) {
       _staffName = TK.user.name || _staffName;
       _staffInitials = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
@@ -4253,21 +4368,29 @@ function _armManagerPoll() {
     if (!TK.token || _userRole !== 'manager') { clearInterval(_mgrPollTimer); _mgrPollTimer = null; return; }
     if (document.hidden) return;                 // skip a backgrounded tab
     try { await tkBootstrap(); } catch (e) { return; }
+    /* Also refresh the approval sources so NEW claims/travel/payments/requisitions light the
+       bell + inbox badge live (they used to refresh only at login / when opening the inbox). */
+    try { await Promise.all(['claims', 'travel', 'payments', 'jobs', 'padr'].map(c => tkLoadColl(c).catch(() => {}))); } catch (e) {}
     /* Skip the expensive re-render (which destroys + rebuilds up to 13 Chart.js canvases) when
        nothing relevant changed since the last tick — this was the main 30s "stutter" on mobile. */
     const att = _DEMO_ATTENDANCE || [], lv = _DEMO_LEAVE || [];
+    const _cnt = c => ((_HR[c] || []).length + '|' + (_HR[c] || []).reduce((s, r) => s + String(r.status || ''), ''));
     const sig = _currentView + '|' + att.length + '|' + lv.length + '|' +
       att.reduce((s, r) => s + (r.id || '') + (r.status || '') + (r.in || r.clock_in || '') + (r.out || r.clock_out || ''), '') + '|' +
-      lv.reduce((s, r) => s + (r.id || '') + (r.status || ''), '');
+      lv.reduce((s, r) => s + (r.id || '') + (r.status || ''), '') + '|' +
+      _cnt('claims') + '|' + _cnt('travel') + '|' + _cnt('payments') + '|' + _cnt('jobs') + '|' + _cnt('padr');
     if (sig === _mgrPollSig) return;             // no change → don't repaint or rebuild charts
     _mgrPollSig = sig;
     requestAnimationFrame(() => {                // mutate at a frame boundary, never mid-scroll
+      try { tkUpdateNotifications(); } catch (e) {}       // bell + nav badges follow every change
+      try { tkUpdateInboxBadge(); } catch (e) {}
       try {
         const v = _currentView;
         if (v === 'dashboard') { tkRenderDashboard(); tkRenderHrMetrics(); }
         else if (v === 'attendance') { filterTable(); }
         else if (v === 'reports') { _renderRptAttendance(); renderInOutReport(); renderLeaveReport(); }
         else if (v === 'manager' && typeof loadManagerView === 'function') { loadManagerView(); }
+        else if (v === 'inbox') { tkRenderInbox(); }
       } catch (e) {}
     });
   }, 30000);
@@ -4932,7 +5055,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload() };
 async function tkCollDelete(coll, id, reload) {
   if (!confirm('Delete this item? This cannot be undone.')) return;
   try {
@@ -4941,6 +5064,19 @@ async function tkCollDelete(coll, id, reload) {
     if (_HR_RELOAD[reload]) _HR_RELOAD[reload]();
     toast('Deleted');
   } catch (e) { toast('Could not delete: ' + e.message, 'error', 5000); }
+}
+/* One-click close for same-day QA/QC work (ITP items etc.): status → Closed, closed date = today,
+   result defaults to Pass when still open — no manual date entry needed. */
+async function pmCloseToday(coll, id) {
+  const ex = (_HR[coll] || []).find(x => x.id === id); if (!ex) return;
+  const body = { ...ex, status: 'Closed', closedDate: _pmToday() };
+  if (!body.result || body.result === 'Open') body.result = 'Pass';
+  try {
+    const res = await tkApi('/api/coll/' + coll + '/' + id, { method: 'PATCH', body: body });
+    const i = (_HR[coll] || []).findIndex(x => x.id === id); if (i >= 0) _HR[coll][i] = res.item || body;
+    if (_HR_RELOAD[coll]) _HR_RELOAD[coll]();
+    toast('Closed today — completion date set automatically');
+  } catch (e) { toast('Could not close: ' + e.message, 'error', 5000); }
 }
 async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; try { tkFillDeptSelects(); } catch (e) {} } catch (e) {} }
 function _slugEmail(name) {
@@ -9053,7 +9189,7 @@ const _QA_SPECS = {
     { k: 'result', label: 'Result', type: 'select', options: ['', 'Pass', 'Fail', 'Open', 'Closed'] }, { k: 'severity', label: 'Severity', type: 'select', options: ['', 'Minor', 'Major', 'Critical'] },
     { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'assignedTo', label: 'Assigned to', type: 'select', options: 'employees' },
     { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'due', label: 'Due', type: 'date' },
-    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] }, { k: 'closedDate', label: 'Closed on', type: 'date' },
     { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
     { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' }, { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
@@ -9113,7 +9249,12 @@ const _QA_SPECS = {
     { k: 'reportDate', label: 'Report date', type: 'date' }, { k: 'area', label: 'Area / zone' },
     { k: 'weatherAm', label: 'Weather AM' }, { k: 'weatherPm', label: 'Weather PM' }, { k: 'manpower', label: 'Manpower (count)', type: 'number' },
     { k: 'equipment', label: 'Equipment on site' }, { k: 'workPerformed', label: 'Work performed', type: 'textarea' },
-    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
+    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachments', label: 'Attachments — one file per contractor OK (images / PDF)', type: 'files' }] },
+  pm_weekreports: { title: 'Site Weekly Report', coll: 'pm_weekreports', reload: 'pm_weekreports', fields: [
+    { k: 'weekEnding', label: 'Week ending', type: 'date' }, { k: 'contractor', label: 'Contractor', type: 'combo', dyn: 'pm_contractors' },
+    { k: 'area', label: 'Area / zone' }, { k: 'manpower', label: 'Avg daily manpower', type: 'number' },
+    { k: 'workPerformed', label: 'Work performed this week', type: 'textarea' }, { k: 'nextWeekPlan', label: 'Plan for next week', type: 'textarea' },
+    { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachments', label: 'Attachments — contractor reports / photos (images / PDF)', type: 'files' }] },
 };
 let _qaType = null, _qaEditId = null;
 function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
@@ -9122,6 +9263,15 @@ function tkQuickAdd(type, id) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
   const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
+  /* seed the multi-file store for type:'files' fields — keep existing files on edit
+     (accepts the legacy single attachment/attachmentName shape too) */
+  _qaFilesStore = {};
+  spec.fields.forEach(f => {
+    if (f.type !== 'files') return;
+    const legacy = f.k.replace(/s$/, '');
+    _qaFilesStore[f.k] = ex && Array.isArray(ex[f.k]) && ex[f.k].length ? ex[f.k].slice()
+      : (ex && ex[legacy] ? [{ name: ex[legacy + 'Name'] || 'attachment', url: ex[legacy] }] : []);
+  });
   const _titleEl = document.getElementById('qa-modal-title');
   if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
   else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
@@ -9130,6 +9280,11 @@ function tkQuickAdd(type, id) {
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
     if (f.type === 'money') return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" inputmode="numeric" autocomplete="off" oninput="_qaMoney(this)" value="' + _tkEscA(_qaMoneyFmt(val)) + '"></div>';
+    if (f.type === 'files') {
+      return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
+        '<input type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,image/*" onchange="_qaReadFiles(this,\'' + f.k + '\')" style="font-size:12px;width:100%">' +
+        '<div id="' + fid + '-list" style="font-size:11px;color:var(--text-light);margin-top:4px"></div></div>';
+    }
     if (f.type === 'file') {
       const nm = ex ? (ex[f.k + 'Name'] || '') : '';
       return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
@@ -9141,6 +9296,7 @@ function tkQuickAdd(type, id) {
     return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" type="' + (f.type || 'text') + '" value="' + _tkEscA(val) + '"' + (f.type === 'url' ? ' placeholder="https://…"' : '') + '></div>';
   }).join('');
   openModal('quickAddModal');
+  try { spec.fields.forEach(f => { if (f.type === 'files') _qaRenderFiles(f.k); }); } catch (e) {}   // show existing files on edit
   // Belt-and-suspenders: translate the modal now if in VN (don't depend on observer timing).
   try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(document.getElementById('quickAddModal')); } catch (e) {}
 }
@@ -9155,7 +9311,8 @@ const _PM_UPLOAD_DIR = {
   pm_risks: '11_Risk_Issue_Register_Live',
   pm_rfis: '05_Construction_Installation/03_Site_Instructions_RFI',
   pm_procurement: '04_Procurement_Subcontracts',
-  pm_sitereports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports'
+  pm_sitereports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports',
+  pm_weekreports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports'
 };
 /* Read an attachment for a file-type quick-add field. For PMC document attachments the file is
    uploaded to the project's SharePoint folder (only the link is kept in the DB — keeps SQLite lean);
@@ -9187,10 +9344,59 @@ async function _qaReadFile(input, k) {
   r.onload = e => { if (v) v.value = e.target.result; if (n) n.value = f.name; if (info) info.textContent = 'Attached: ' + f.name; };
   r.readAsDataURL(f);
 }
+/* ── Multi-file quick-add fields (type:'files') — e.g. Site Daily/Weekly Reports where each
+   contractor submits their own file. Each file uploads to the project SharePoint folder when
+   linked (link kept in DB); otherwise stored as an in-DB data URL. Persisted as attachments[]. */
+let _qaFilesStore = {};
+function _qaRenderFiles(k) {
+  const box = document.getElementById('qa-' + k + '-list'); if (!box) return;
+  const arr = _qaFilesStore[k] || [];
+  box.innerHTML = arr.length ? arr.map((a, i) =>
+    '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">' +
+    '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ' + _pmEsc(a.name || ('File ' + (i + 1))) +
+    (/^https?:/i.test(a.url || '') ? ' <span style="color:var(--emerald);font-size:10px">· SharePoint</span>' : '') + '</span>' +
+    '<button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 7px;color:#C00000" onclick="_qaRemoveFile(\'' + k + '\',' + i + ')">✕</button></div>').join('') : '';
+}
+function _qaRemoveFile(k, i) { (_qaFilesStore[k] || []).splice(i, 1); _qaRenderFiles(k); }
+async function _qaReadFiles(input, k) {
+  const files = Array.prototype.slice.call(input.files || []); if (!files.length) return;
+  const coll = (_QA_SPECS[_qaType] || {}).coll || '';
+  const p = coll.indexOf('pm_') === 0 ? _pmProj() : null;
+  const canSP = p && _pmSpBase(p) && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
+  for (const f of files) {
+    if (canSP) {
+      if (f.size > 100 * 1024 * 1024) { toast('File too large (max 100 MB): ' + f.name, 'warn'); continue; }
+      try {
+        toast('Uploading ' + f.name + ' to SharePoint…', 'info', 2500);
+        const res = await _graphUploadFile(f, p, _PM_UPLOAD_DIR[coll] || '');
+        (_qaFilesStore[k] = _qaFilesStore[k] || []).push({ name: f.name, url: res.webUrl });
+        _qaRenderFiles(k);
+        continue;
+      } catch (e) { toast('SharePoint upload failed (' + (e.message || e) + ') — storing in app instead.', 'warn', 6000); }
+    }
+    if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB): ' + f.name, 'warn'); continue; }
+    await new Promise(done => {
+      const r = new FileReader();
+      r.onload = e => { (_qaFilesStore[k] = _qaFilesStore[k] || []).push({ name: f.name, url: e.target.result }); done(); };
+      r.onerror = () => done();
+      r.readAsDataURL(f);
+    });
+    _qaRenderFiles(k);
+  }
+  input.value = '';
+}
 async function tkQuickAddSave() {
   const spec = _QA_SPECS[_qaType]; if (!spec) return;
   const data = {};
   spec.fields.forEach(f => {
+    if (f.type === 'files') {   // multi-file: persist the list + mirror the first file into the legacy single-attachment fields
+      const arr = (_qaFilesStore[f.k] || []).slice();
+      const legacy = f.k.replace(/s$/, '');
+      data[f.k] = arr;
+      data[legacy] = arr.length ? (arr[0].url || '') : '';
+      data[legacy + 'Name'] = arr.length ? (arr[0].name || '') : '';
+      return;
+    }
     if (f.type === 'file') { data[f.k] = (document.getElementById('qa-' + f.k) || {}).value || ''; data[f.k + 'Name'] = (document.getElementById('qa-' + f.k + '-name') || {}).value || ''; return; }
     const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
@@ -10809,7 +11015,7 @@ function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || 
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
 async function _pmLoadAll() {
-  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports'].map(c => tkLoadColl(c).catch(() => { })));
+  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'].map(c => tkLoadColl(c).catch(() => { })));
 }
 
 /* ---- Earned Value Management ---- */
@@ -10850,6 +11056,11 @@ function _pmDerive(coll, data) {
     const done = String(data.status) === 'Completed' || _pmPct(data.pctComplete) === 100;
     if (done) { if (!data.actualFinish) data.actualFinish = _pmToday(); }
     else { data.actualFinish = ''; }
+  }
+  if (coll === 'pm_quality') {
+    /* Same-day QA/QC: closing a record stamps its completion date automatically (editable). */
+    if (String(data.status) === 'Closed') { if (!data.closedDate) data.closedDate = _pmToday(); }
+    else { data.closedDate = ''; }
   }
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
@@ -10928,21 +11139,32 @@ function tkFilePreview(url, name, mime) {
     '<div class="modal-footer"><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-ghost">Open in new tab</a><button class="btn btn-primary" onclick="document.getElementById(\'filePreviewOverlay\').remove()">Close</button></div></div>';
   document.body.appendChild(el);
 }
-function _pmOpenFile(coll, id) {
-  const r = (_HR[coll] || []).find(x => x.id === id); if (!r || !r.attachment) { toast('No file attached', 'warn'); return; }
+function _pmOpenFile(coll, id, idx) {
+  const r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('No file attached', 'warn'); return; }
+  const att = (typeof idx === 'number' && Array.isArray(r.attachments)) ? (r.attachments[idx] || {}) : null;
+  const url = att ? (att.url || '') : (r.attachment || '');
+  const name = att ? (att.name || 'attachment') : (r.attachmentName || 'attachment');
+  if (!url) { toast('No file attached', 'warn'); return; }
   try {
-    const m = /^data:([^;]+);base64,(.*)$/.exec(r.attachment);
+    const m = /^data:([^;]+);base64,(.*)$/.exec(url);
     if (m) {
       const bin = atob(m[2]); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
       const blob = new Blob([a], { type: m[1] }); const u = URL.createObjectURL(blob);
-      tkFilePreview(u, r.attachmentName || 'attachment', m[1]);
+      tkFilePreview(u, name, m[1]);
       setTimeout(() => { try { URL.revokeObjectURL(u); } catch (e) {} }, 300000);
-    } else { tkFilePreview(r.attachment, r.attachmentName || 'attachment', ''); }
-  } catch (e) { try { window.open(r.attachment, '_blank'); } catch (e2) { toast('Could not open the file', 'warn'); } }
+    } else { tkFilePreview(url, name, ''); }
+  } catch (e) { try { window.open(url, '_blank'); } catch (e2) { toast('Could not open the file', 'warn'); } }
 }
+const _PM_EYE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
 function _pmFileCell(coll, r) {
-  if (!r || !r.attachment) return '<span style="color:var(--text-light)">—</span>';
-  return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\')" title="' + _tkEscA(r.attachmentName || 'Show file') + '" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>';
+  /* multi-file records (attachments[]) show one numbered link per file — e.g. one per contractor */
+  if (r && Array.isArray(r.attachments) && r.attachments.length > 1) {
+    return '<span style="display:inline-flex;align-items:center;gap:6px;white-space:nowrap">' + r.attachments.map((a, i) =>
+      '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\',' + i + ')" title="' + _tkEscA(a.name || ('File ' + (i + 1))) + '" style="color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">📎' + (i + 1) + '</a>').join('') + '</span>';
+  }
+  const one = r && Array.isArray(r.attachments) && r.attachments.length === 1;
+  if (!r || (!r.attachment && !one)) return '<span style="color:var(--text-light)">—</span>';
+  return '<a href="javascript:void(0)" onclick="_pmOpenFile(\'' + coll + '\',\'' + r.id + '\'' + (one ? ',0' : '') + ')" title="' + _tkEscA((one ? r.attachments[0].name : r.attachmentName) || 'Show file') + '" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">' + _PM_EYE_SVG + 'Show</a>';
 }
 /* ---------- Import tasks from MS Project XML / Excel / CSV ---------- */
 function pmImportBtn() { return '<button class="btn btn-ghost btn-sm" onclick="pmImportTasks()" title="Import schedule from MS Project XML or Excel/CSV"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:3px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import</button>'; }
@@ -11120,7 +11342,7 @@ function _pmSortRows(coll, cols, rows) {
   const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
   return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
 }
-function _pmRowEditable(coll) { const sw = ['pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
+function _pmRowEditable(coll) { const sw = ['pm_tasks', 'pm_deliverables', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports']; if (coll.indexOf('pm_') === 0 && sw.indexOf(coll) < 0) return (typeof _pmSeeAll === 'function') ? _pmSeeAll() : true; return true; }
 function _pmTable(coll, cols, rows, opts) {
   opts = opts || {};
   rows = _pmSortRows(coll, cols, rows);
@@ -11491,8 +11713,9 @@ function pmRenderQuality(pid) {
     { label: 'Raised', sk: 'raisedDate', render: r => _pmFmt(r.raisedDate) },
     { label: 'Result', sk: 'result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
     { label: 'Severity', sk: 'severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
-    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
-    { label: 'File', render: r => _pmFileCell('pm_quality', r) }
+    { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') + (r.status === 'Closed' && r.closedDate ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _pmFmt(r.closedDate) + '</div>' : '') },
+    { label: 'File', render: r => _pmFileCell('pm_quality', r) },
+    { label: '', render: r => r.status === 'Closed' ? '' : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>' }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
@@ -11921,16 +12144,60 @@ function pmRenderRfis(pid) {
   const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
   const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
     { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
-    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }, { label: 'File', render: r => _pmFileCell('pm_sitereports', r) }
+    { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }, { label: 'Files', render: r => _pmFileCell('pm_sitereports', r) }
   ], sdr));
-  _pmSet(kpis + tbl + sdrTbl);
+  const wkr = _pmScope(_HR.pm_weekreports).sort((a, b) => (b.weekEnding || '').localeCompare(a.weekEnding || ''));
+  const wkrTbl = _pmCard('Site Weekly Reports', 'pm_weekreports', 'Add weekly report', _pmTable('pm_weekreports', [
+    { label: 'Week ending', render: r => _pmFmt(r.weekEnding) }, { label: 'Contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '<span style="color:var(--text-light)">—</span>' },
+    { label: 'Area', k: 'area' }, { label: 'Avg manpower', align: 'right', k: 'manpower' },
+    { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Next week', render: r => _pmEsc((r.nextWeekPlan || '').slice(0, 40)) },
+    { label: 'Prepared by', k: 'preparedBy' }, { label: 'Files', render: r => _pmFileCell('pm_weekreports', r) }
+  ], wkr));
+  _pmSet(kpis + tbl + sdrTbl + wkrTbl);
+}
+/* Document Control file register — every attachment on any project register (daily/weekly site
+   reports, RFIs, quality/ITP, changes, minutes, risks…) is listed here automatically. */
+const _PM_FILE_SRC = [
+  ['pm_sitereports', 'Daily report', r => r.reportDate, r => r.area || (r.workPerformed || '').slice(0, 50)],
+  ['pm_weekreports', 'Weekly report', r => r.weekEnding, r => (r.contractor ? r.contractor + ' · ' : '') + (r.workPerformed || '').slice(0, 40)],
+  ['pm_rfis', 'RFI / Submittal', r => r.raisedDate, r => (r.number ? r.number + ' · ' : '') + (r.subject || '')],
+  ['pm_quality', 'Quality / ITP item', r => r.raisedDate, r => (r.refNo ? r.refNo + ' · ' : '') + (r.title || '')],
+  ['pm_quality_itp', 'ITP plan', r => r.plannedStart, r => (r.itpNo ? r.itpNo + ' · ' : '') + (r.title || '')],
+  ['pm_changes', 'Change / ECN', r => r.date || r.raisedDate, r => r.title || ''],
+  ['pm_comms', 'Minutes / correspondence', r => r.date, r => r.subject || r.title || ''],
+  ['pm_issues', 'Issue', r => r.raisedDate || r.date, r => r.title || ''],
+  ['pm_risks', 'Risk', r => r.date || r.raisedDate, r => r.title || ''],
+  ['pm_lessons', 'Lesson learned', r => r.date, r => r.title || ''],
+  ['pm_procurement', 'Procurement', r => r.date, r => r.title || r.package || '']
+];
+function _pmFileRegisterRows() {
+  const rows = [];
+  _PM_FILE_SRC.forEach(src => {
+    const coll = src[0], label = src[1], dateFn = src[2], refFn = src[3];
+    _pmScope(_HR[coll]).forEach(r => {
+      const files = Array.isArray(r.attachments) && r.attachments.length
+        ? r.attachments.map((a, i) => ({ name: a.name || ('File ' + (i + 1)), i: i }))
+        : (r.attachment ? [{ name: r.attachmentName || 'attachment', i: null }] : []);
+      files.forEach(f => rows.push({ coll: coll, label: label, id: r.id, date: dateFn(r) || '', ref: refFn(r) || '', name: f.name, i: f.i }));
+    });
+  });
+  return rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+}
+function _pmFilesRegisterCard(rows) {
+  const body = rows.length ? rows.map(x =>
+    '<tr><td style="white-space:nowrap;font-size:12px">' + _pmFmt(x.date) + '</td><td>' + _pmBadge(x.label, '#3168A8') + '</td><td style="font-size:12px">' + _pmEsc(String(x.ref).slice(0, 70)) + '</td>' +
+    '<td><a href="javascript:void(0)" onclick="_pmOpenFile(\'' + x.coll + '\',\'' + x.id + '\'' + (x.i == null ? '' : ',' + x.i) + ')" style="color:var(--navy);font-weight:600;font-size:12px;text-decoration:none">📎 ' + _pmEsc(String(x.name).slice(0, 46)) + '</a></td></tr>').join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--text-light);padding:14px">No files yet — attachments added on any register (daily / weekly reports, RFIs, quality, …) appear here automatically.</td></tr>';
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">Document Control — File Register</div><span style="font-size:11px;color:var(--text-light)">' + rows.length + ' file(s) across all project registers</span></div>' +
+    '<div class="table-wrap"><table style="min-width:640px"><thead><tr><th>Date</th><th>Register</th><th>Reference</th><th>File</th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
 function pmRenderDocuments(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const linked = !!_pmSpBase(p);
   const sections = _PM_SP_TPL.filter(function (r) { return r[0] === 1; }).length;
-  const kpis = _hrKpiRow([_hrKpi('Folders', _PM_SP_TPL.length, 'var(--navy)'), _hrKpi('Top-level sections', sections, '#8B5CF6'), _hrKpi('SharePoint', linked ? 'Linked' : 'Not linked', linked ? 'var(--emerald)' : '#F59E0B')]);
-  _pmSet(kpis + _pmFoldersCard(p));
+  const files = _pmFileRegisterRows();
+  const kpis = _hrKpiRow([_hrKpi('Files on record', files.length, '#3168A8'), _hrKpi('Folders', _PM_SP_TPL.length, 'var(--navy)'), _hrKpi('Top-level sections', sections, '#8B5CF6'), _hrKpi('SharePoint', linked ? 'Linked' : 'Not linked', linked ? 'var(--emerald)' : '#F59E0B')]);
+  _pmSet(kpis + _pmFilesRegisterCard(files) + _pmFoldersCard(p));
 }
 /* ============================================================================
    PM PORTFOLIO — executive cross-project dashboard (the PMC landing screen)
@@ -13601,6 +13868,94 @@ const _VI = {
   '● Active (Browser GPS)': '● Hoạt động (GPS trình duyệt)',
   '● Browser Native': '● GPS gốc trình duyệt',
   '● Ready to check in': '● Sẵn sàng chấm vào',
+  /* ── Documents & Policies (titles, buttons, resources, policy bodies) ── */
+  'Employee Handbook': 'Sổ tay nhân viên',
+  'Code of Conduct & Anti-Harassment': 'Quy tắc ứng xử & Chống quấy rối',
+  'IT Acceptable Use Policy': 'Chính sách sử dụng CNTT',
+  'Confidentiality, IP & Data': 'Bảo mật, Sở hữu trí tuệ & Dữ liệu',
+  'HSE / Site Safety': 'HSE / An toàn công trường',
+  'C&B Policy (HML-CB-001)': 'Chính sách lương thưởng (HML-CB-001)',
+  'Read & acknowledge': 'Đọc & xác nhận',
+  'Acknowledged': 'Đã xác nhận',
+  'Company Policies': 'Chính sách công ty',
+  'Payroll & Payslips': 'Bảng lương & Phiếu lương',
+  'Benefits & Wellness': 'Phúc lợi & Sức khỏe',
+  'IT Help Desk': 'Hỗ trợ CNTT',
+  'Company Directory': 'Danh bạ công ty',
+  'Protecting company and client information is everyone\'s duty.': 'Bảo vệ thông tin của công ty và khách hàng là trách nhiệm của mọi người.',
+  'Standard hours 08:00–17:00, Mon–Fri; flexible/site schedules by arrangement.': 'Giờ làm việc chuẩn 08:00–17:00, Thứ 2–Thứ 6; lịch linh hoạt/công trường theo thỏa thuận.',
+  'Annual leave accrues per your grade; apply via Leave Management for manager approval.': 'Phép năm tích lũy theo cấp bậc; đăng ký qua mục Quản lý nghỉ phép để quản lý phê duyệt.',
+  'Treat colleagues, clients and partners with respect and professionalism.': 'Đối xử với đồng nghiệp, khách hàng và đối tác bằng sự tôn trọng và chuyên nghiệp.',
+  'Harassment, discrimination, bullying or retaliation of any kind is prohibited.': 'Nghiêm cấm mọi hành vi quấy rối, phân biệt đối xử, bắt nạt hoặc trả đũa.',
+  'Avoid conflicts of interest; disclose any that arise to HR.': 'Tránh xung đột lợi ích; khai báo với Nhân sự khi phát sinh.',
+  'Report concerns to your manager or HR; reports are handled confidentially.': 'Báo cáo lo ngại cho quản lý hoặc Nhân sự; mọi báo cáo được xử lý bảo mật.',
+  'Keep credentials private; enable MFA; never share passwords.': 'Giữ kín thông tin đăng nhập; bật MFA; không bao giờ chia sẻ mật khẩu.',
+  'Handle personal data lawfully and only for legitimate business purposes.': 'Xử lý dữ liệu cá nhân đúng luật và chỉ cho mục đích kinh doanh hợp pháp.',
+  'Wear required PPE; follow LOTO, working-at-height and confined-space rules.': 'Mang đầy đủ PPE; tuân thủ quy định LOTO, làm việc trên cao và không gian hạn chế.',
+  'basic (65%) + position allowance (from G5).': 'lương cơ bản (65%) + phụ cấp chức vụ (từ G5).',
+  'responsibility (10%) + skill/seniority (0–5%).': 'trách nhiệm (10%) + kỹ năng/thâm niên (0–5%).',
+  'KPI bonus (10% × 0.5–1.5× by PADR rating).': 'thưởng KPI (10% × 0.5–1.5× theo xếp hạng PADR).',
+  'Welfare: lunch ₫730,000 / phone ₫300,000 / transport ₫500,000 per month (non-SI).': 'Phúc lợi: ăn trưa ₫730.000 / điện thoại ₫300.000 / đi lại ₫500.000 mỗi tháng (không tính BHXH).',
+  'Statutory SI/HI/UI 10.5% (employee) and PIT are withheld per law.': 'BHXH/BHYT/BHTN 10,5% (người lao động) và thuế TNCN được khấu trừ theo luật.',
+  /* ── QA sweep 2026-07: prominent labels found untranslated in VN mode ── */
+  'Performance Reviews (Mid-Year & Annual)': 'Đánh giá hiệu suất (Giữa năm & Cả năm)',
+  'Benefit & Welfare Claims': 'Đề nghị phúc lợi & trợ cấp',
+  'Recruitment Requisitions': 'Yêu cầu tuyển dụng',
+  'PADR Self-Assessments': 'Tự đánh giá PADR',
+  "Today's Activity": 'Hoạt động hôm nay',
+  "Today's Record": 'Bản ghi hôm nay',
+  'Resources & Quick Links': 'Tài nguyên & liên kết nhanh',
+  'Top Insights': 'Thông tin nổi bật',
+  'Leave by Type': 'Nghỉ phép theo loại',
+  'Top Leave Users': 'Nghỉ phép nhiều nhất',
+  'Employee In/Out Log': 'Nhật ký Vào/Ra của nhân viên',
+  'Leave & HR Alerts': 'Cảnh báo Nghỉ phép & Nhân sự',
+  'Check for updates': 'Kiểm tra cập nhật',
+  'Download form': 'Tải biểu mẫu',
+  'Upload signed': 'Tải lên bản đã ký',
+  'Assign goals to employee': 'Giao mục tiêu cho nhân viên',
+  'Create Pay Run': 'Tạo kỳ lương',
+  'Clear dates': 'Xóa ngày',
+  'C&B Outcome': 'Kết quả lương thưởng',
+  'Approved value': 'Giá trị đã duyệt',
+  'Paid value': 'Giá trị đã chi',
+  'Present (this week)': 'Có mặt (tuần này)',
+  'Late (this week)': 'Đi trễ (tuần này)',
+  'Hours (this week)': 'Số giờ (tuần này)',
+  'Total records': 'Tổng số bản ghi',
+  'Active Zones': 'Khu vực hoạt động',
+  'In-Zone Rate': 'Tỷ lệ trong khu vực',
+  'Anomalies Today': 'Bất thường hôm nay',
+  'Employees Tracked': 'Nhân viên được theo dõi',
+  'First aid': 'Sơ cứu',
+  'Working at height': 'Làm việc trên cao',
+  'Confined space': 'Không gian hạn chế',
+  'Hot work / welding': 'Công việc nhiệt / hàn',
+  'Site commissioning & TAB': 'Nghiệm thu công trường & TAB',
+  'Customer communication': 'Giao tiếp khách hàng',
+  'FAT witness': 'Chứng kiến FAT',
+  'Finance SharePoint folder (URL)': 'Thư mục SharePoint Tài chính (URL)',
+  /* ── New features 2026-07: weekly reports, file register, ITP close, GPS advisory ── */
+  'Site Weekly Reports': 'Báo cáo tuần công trường',
+  'Add weekly report': 'Thêm báo cáo tuần',
+  'Site Weekly Report': 'Báo cáo tuần công trường',
+  'Week ending': 'Tuần kết thúc',
+  'Contractor': 'Nhà thầu',
+  'Avg daily manpower': 'Nhân lực trung bình/ngày',
+  'Avg manpower': 'Nhân lực TB',
+  'Work performed this week': 'Công việc thực hiện tuần này',
+  'Plan for next week': 'Kế hoạch tuần sau',
+  'Next week': 'Tuần sau',
+  'Attachments — contractor reports / photos (images / PDF)': 'Tệp đính kèm — báo cáo / ảnh của nhà thầu (ảnh / PDF)',
+  'Attachments — one file per contractor OK (images / PDF)': 'Tệp đính kèm — mỗi nhà thầu một tệp (ảnh / PDF)',
+  'Document Control — File Register': 'Kiểm soát tài liệu — Sổ đăng ký tệp',
+  'Files on record': 'Tệp đã lưu',
+  'Register': 'Sổ đăng ký',
+  'Reference': 'Tham chiếu',
+  '✓ Close today': '✓ Đóng hôm nay',
+  'Closed on': 'Ngày đóng',
+  'Closed today — completion date set automatically': 'Đã đóng hôm nay — ngày hoàn thành được ghi tự động',
+  'Files': 'Tệp',
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -16477,9 +16832,27 @@ async function _checkForUpdate() {
     }
   } catch (e) { /* offline — try again next focus */ }
 }
-document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') _checkForUpdate(); });
-window.addEventListener('focus', _checkForUpdate);
-window.addEventListener('online', _checkForUpdate);
+/* App resume (PWA foreground / focus / back online / bfcache restore): check for a new version
+   AND re-validate the session (self-heals a dead token via MSAL — no login screen), then refresh
+   the data behind the current view so the clock / check-in status are never stale from yesterday. */
+async function _onAppResume() {
+  _checkForUpdate();
+  try {
+    const ok = await _revalidateSession();
+    if (ok && TK.token && typeof _userRole !== 'undefined' && _userRole) {
+      try { await tkBootstrap(); } catch (e) {}
+      try {
+        if (_currentView === 'checkin') tkRenderCheckin();
+        else if (_currentView === 'dashboard') { tkRenderDashboard(); }
+      } catch (e) {}
+      try { tkUpdateNotifications(); } catch (e) {}
+    }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') _onAppResume(); });
+window.addEventListener('focus', _onAppResume);
+window.addEventListener('online', _onAppResume);
+window.addEventListener('pageshow', function (e) { if (e && e.persisted) _onAppResume(); });   // iOS bfcache restore
 setInterval(_checkForUpdate, 4 * 60 * 1000);   // also while the app stays open
 /* Manual one-tap: window.tkForceUpdate() clears caches + reloads (wired to a button below). */
 async function tkForceUpdate() {
