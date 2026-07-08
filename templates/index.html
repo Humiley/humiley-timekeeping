@@ -1069,6 +1069,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="clearTimeout(window._hrSrchT);window._hrSrchT=setTimeout(_renderEmployeeTable,180)"></div>
       <select class="sel-filter" data-dept-select="All Departments" onchange="_renderEmployeeTable()"><option value="">All Departments</option></select>
       <select class="sel-filter" onchange="_renderEmployeeTable()"><option>Active</option><option>All</option><option>Inactive</option></select>
+      <span id="hr-period-slot" style="display:contents"></span>
       <span style="font-size:12px;color:var(--text-light);white-space:nowrap" id="emp-count-label">15 employees</span>
     </div>
     <div class="card" style="padding:0;overflow:hidden">
@@ -1426,7 +1427,8 @@ window.addEventListener('orientationchange', _setLoginBg);
       <option value="late">Late</option>
       <option value="absent">Absent</option>
     </select>
-    <input type="date" class="sel-filter" id="att-date" onchange="loadAttendance()">
+    <input type="date" class="sel-filter" id="att-date" onchange="loadAttendance()" title="Exact day">
+    <span id="att-period-slot" style="display:contents"></span>
   </div>
   <!-- Staff-only info bar (hidden for managers) -->
   <div id="att-staff-bar" style="display:none;background:rgba(0,176,96,.07);border:1px solid rgba(0,176,96,.2);border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;color:var(--emerald-deep)">
@@ -2102,6 +2104,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <input type="month" class="sel-filter" id="io-month" onchange="renderInOutReport()" style="font-size:12px" title="Filter by month">
       <input type="date" class="sel-filter" id="io-date" onchange="renderInOutReport()" style="font-size:12px" title="Filter by exact date">
       <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="var m=document.getElementById('io-month');var d=document.getElementById('io-date');if(m)m.value='';if(d)d.value='';renderInOutReport()" title="Clear date filters">Clear dates</button>
+      <span id="io-period-slot" style="display:contents"></span>
     </div>
     <!-- Summary -->
     <div class="stat-boxes" style="margin-bottom:16px">
@@ -5978,7 +5981,7 @@ async function tkRenderDevices() {
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
-    '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + '</div>' +
+    '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + _crmFiltPeriod('dev-period-f', 'devFillTable') + '</div>' +
     '<div class="table-wrap"><table style="min-width:960px"><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
   devFillTable();
   if (typeof Chart !== 'undefined') {
@@ -5995,7 +5998,7 @@ function devFillTable() {
   const cat = _crmLF['dev-cat'] || '', st = _crmLF['dev-status'] || '', dept = _crmLF['dev-dept'] || '';
   const list = (_HR.devices || []).filter(x => {
     const hay = ((x.name || '') + ' ' + (x.serial || '') + ' ' + (x.assignedTo || '') + ' ' + (x.department || '')).toLowerCase();
-    return (!q || hay.includes(q)) && (!cat || (x.category || '') === cat) && (!st || (x.status || '') === st) && (!dept || (x.department || '') === dept);
+    return (!q || hay.includes(q)) && (!cat || (x.category || '') === cat) && (!st || (x.status || '') === st) && (!dept || (x.department || '') === dept) && _inPeriodLF(x.purchaseDate || x.ts, 'dev-period-f');
   }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
   tb.innerHTML = list.length ? list.map(x => {
     const tot = (+x.qty || 1) * (+x.unitPrice || 0);
@@ -6583,9 +6586,18 @@ function _payRenderReg() {
 }
 async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
-  const runs = (_HR.payruns || []).slice().sort((a, b) => (a.period < b.period ? 1 : -1));
-  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Runs</div><span style="font-size:11px;color:var(--text-light)">Monthly (company) &amp; individual runs</span></div><div class="table-wrap"><table><thead><tr><th>Period</th><th>Scope</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody>' +
-    (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">No pay runs yet — use Create Pay Run or Individual Pay Run.</td></tr>') + '</tbody></table></div></div>';
+  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Runs</div><span style="font-size:11px;color:var(--text-light)">Monthly (company) &amp; individual runs</span></div>' +
+    _crmFiltBar(_crmFiltSearch('payrun-q', 'Search period / employee…', 'payRunsFillTable') + _crmFiltPeriod('payrun-period-f', 'payRunsFillTable')) +
+    '<div class="table-wrap"><table><thead><tr><th>Period</th><th>Scope</th><th style="text-align:right">Gross</th><th style="text-align:right">Net</th><th style="text-align:right">Employer Cost</th><th>Status</th><th>Created</th><th></th></tr></thead><tbody id="payrun-tbody"></tbody></table></div></div>';
+  payRunsFillTable();
+}
+function payRunsFillTable() {
+  const tb = document.getElementById('payrun-tbody'); if (!tb) return;
+  const q = (_crmLF['payrun-q'] || '').toLowerCase();
+  const runs = (_HR.payruns || []).filter(r =>
+    (!q || ((r.period || '') + ' ' + (r.empName || '')).toLowerCase().includes(q)) && _inPeriodLF(r.created, 'payrun-period-f')
+  ).sort((a, b) => (a.period < b.period ? 1 : -1));
+  tb.innerHTML = (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">' + ((_HR.payruns || []).length ? 'No pay runs match your filters.' : 'No pay runs yet — use Create Pay Run or Individual Pay Run.') + '</td></tr>');
 }
 /* Individual monthly pay run for one employee (A15). */
 function tkIndivPayRun() {
@@ -7902,17 +7914,19 @@ async function tkRenderTravelClaims() {
   const me = _tkMe ? _tkMe() : null; const myId = me && me.id;
   let travel = _HR.travel || [], claims = _HR.claims || [];
   if (!isMgr) { travel = travel.filter(t => t.empId === myId); claims = claims.filter(c => c.empId === myId); }
-  // period filter (view monthly / yearly together with the dashboard)
-  const _now = new Date(), _cy = String(_now.getFullYear()), _cm = String(_now.getMonth() + 1).padStart(2, '0');
-  const _travYM = t => { const p = _tkDateParts(t.from || t.to || t.created); return p ? { y: String(p.y), m: String(p.m).padStart(2, '0') } : null; };
-  const _claimYM = c => { if (c.ts && c.ts.indexOf('/') > 0) { const pr = c.ts.split('/'); return { y: pr[2], m: (pr[1] || '').padStart(2, '0') }; } const p = _tkDateParts(c.ts); return p ? { y: String(p.y), m: String(p.m).padStart(2, '0') } : null; };
-  const _inP = ym => { if (_tcPeriod === 'all') return true; if (!ym) return false; return _tcPeriod === 'year' ? ym.y === _cy : (ym.y === _cy && ym.m === _cm); };
-  travel = travel.filter(t => _inP(_travYM(t)));
-  claims = claims.filter(c => _inP(_claimYM(c)));
+  // standard toolbar filters: search + period (This month/quarter/year + custom day range)
+  const _tcQ = (_crmLF['tc-q'] || '').toLowerCase();
+  travel = travel.filter(t => _inPeriodLF(t.from || t.to || t.created || t.ts, 'tc-period-f') &&
+    (!_tcQ || ((t.dest || '') + ' ' + (t.name || '') + ' ' + (t.purpose || '')).toLowerCase().includes(_tcQ)));
+  claims = claims.filter(c => _inPeriodLF(c.ts || c.date || c.submittedDate, 'tc-period-f') &&
+    (!_tcQ || ((c.title || '') + ' ' + (c.name || '') + ' ' + (c.type || '') + ' ' + (c.claimType || '')).toLowerCase().includes(_tcQ)));
   const _ts = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : 'b-warn';
   const tAdv = travel.reduce((s, t) => s + (+t.advance || 0), 0);
   const cTot = claims.reduce((s, c) => s + _claimTotal(c), 0);
-  const periodSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px">' + (isMgr ? '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'tc-export\',\'Humiley_Travel_Claims.pdf\',{title:\'TRAVEL & EXPENSE CLAIMS\',docCode:\'HML-FIN-TC\'})">' + tkIcon('download') + 'Export PDF</button>' : '') + '<span style="font-size:12px;color:var(--text-light)">View</span><select class="sel-filter" onchange="tkTcSetPeriod(this.value)" style="font-size:12px"><option value="all"' + (_tcPeriod === 'all' ? ' selected' : '') + '>All time</option><option value="month"' + (_tcPeriod === 'month' ? ' selected' : '') + '>This month</option><option value="year"' + (_tcPeriod === 'year' ? ' selected' : '') + '>This year</option></select></div>';
+  const periodSel = '<div data-html2canvas-ignore="true" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">' +
+    _crmFiltSearch('tc-q', 'Search destination / title / requester…', 'tkRenderTravelClaims') +
+    _crmFiltPeriod('tc-period-f', 'tkRenderTravelClaims') +
+    '<span style="flex:1"></span>' + (isMgr ? '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'tc-export\',\'Humiley_Travel_Claims.pdf\',{title:\'TRAVEL & EXPENSE CLAIMS\',docCode:\'HML-FIN-TC\'})">' + tkIcon('download') + 'Export PDF</button>' : '') + '</div>';
   // spend by department + company total (manager dashboard)
   let deptDash = '';
   if (isMgr) {
@@ -8016,7 +8030,7 @@ async function tkRenderPayments() {
   const fbar = '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
     _crmFiltSearch('pay-q', 'Search no. / payee / purpose…', 'payFillTable') +
     _crmFiltSel('pay-status-f', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Rejected', 'Paid'], 'payFillTable') +
-    _crmFiltSel('pay-period-f', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'payFillTable') +
+    _crmFiltPeriod('pay-period-f', 'payFillTable') +
     _crmFiltSel('pay-cat-f', 'All categories', _crmDistinct(all, 'category'), 'payFillTable') +
     _crmFiltSel('pay-dept-f', 'All departments', _crmDistinct(all, 'department'), 'payFillTable') + '</div>';
   root.innerHTML = (document.querySelector('#view-payments > .myspace-tabbar') ? '' : _finTabBar('payments')) + '<div id="pay-export">' + kpis + dash +
@@ -8053,7 +8067,7 @@ function payFillTable() {
   const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '', period = _crmLF['pay-period-f'] || '';
   const list = (_HR.payments || []).filter(p => {
     const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
-    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriod(p.dueDate || p.ts, period);
+    return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriodLF(p.dueDate || p.ts, 'pay-period-f');
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
   /* the same filtered list drives the KPI cards + both donuts, so every filter updates everything */
   const kp = document.getElementById('pay-kpis'); if (kp) kp.innerHTML = _payKpisHtml(list);
@@ -8467,16 +8481,40 @@ function _finItems() {
   return out;
 }
 /* Period filter: match a date string against This month / This quarter / This year. */
-function _inPeriod(dateStr, period) {
+/* Normalize any row date (ISO 'YYYY-MM-DD', timestamps, or the app's display format 'Jul-04-26')
+   to an ISO day string — the shared period predicate must never silently drop a row because it
+   was handed a formatted string. */
+const _MON3 = { jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06', jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12' };
+function _isoDay(v) {
+  if (!v) return '';
+  const s = String(v);
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+  m = s.match(/^([A-Za-z]{3})-(\d{1,2})-(\d{2})$/);                      // tkFmtDate output e.g. Jul-04-26
+  if (m && _MON3[m[1].toLowerCase()]) return '20' + m[3] + '-' + _MON3[m[1].toLowerCase()] + '-' + String(m[2]).padStart(2, '0');
+  const d = new Date(s); if (isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+/* ONE period predicate for every toolbar: presets (Today / This week / This month / Last month /
+   This quarter / This year) + a custom day-to-day range. from/to are optional ISO bounds. */
+function _inPeriod(dateStr, period, from, to) {
   if (!period) return true;
-  const d = new Date(dateStr); if (!dateStr || isNaN(d.getTime())) return false;
+  const iso = _isoDay(dateStr); if (!iso) return false;
+  const d = new Date(iso + 'T00:00:00');
   const now = new Date();
+  if (period === 'Custom range…' || period === 'Custom') {
+    if (!from && !to) return true;                    // range not picked yet — don't blank the table
+    return (!from || iso >= from) && (!to || iso <= to);
+  }
+  if (period === 'Today') { return iso === now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0'); }
+  if (period === 'This week') { const day = (now.getDay() + 6) % 7; const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day); const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6); return d >= mon && d <= new Date(sun.getFullYear(), sun.getMonth(), sun.getDate(), 23, 59, 59); }
   if (period === 'This month') return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
   if (period === 'This quarter') return d.getFullYear() === now.getFullYear() && (d.getMonth() / 3 | 0) === (now.getMonth() / 3 | 0);
   if (period === 'This year') return d.getFullYear() === now.getFullYear();
   if (period === 'Last month') { const m = new Date(now.getFullYear(), now.getMonth() - 1, 1); return d.getFullYear() === m.getFullYear() && d.getMonth() === m.getMonth(); }
   return true;
 }
+/* Convenience: read period + custom range for a toolbar control id straight from _crmLF. */
+function _inPeriodLF(dateStr, id) { return _inPeriod(dateStr, _crmLF[id] || '', _crmLF[id + '-from'] || '', _crmLF[id + '-to'] || ''); }
 function tkFinDecide(kind, id, status) {
   // Each decision opens the e-signature modal; its onDone re-renders Finance.
   if (kind === 'Payment') tkPaymentDecision(id, status);
@@ -8512,7 +8550,7 @@ async function tkRenderFinance() {
     _crmFiltSearch('fin-q', 'Search requester / reference / category…', 'finFillTable') +
     _crmFiltSel('fin-kind', 'All types', ['Payment', 'Claim', 'Travel'], 'finFillTable') +
     _crmFiltSel('fin-status', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
-    _crmFiltSel('fin-period', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'finFillTable') +
+    _crmFiltPeriod('fin-period', 'finFillTable') +
     _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
   const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
   root.innerHTML = _finTabBar('finance') + '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
@@ -8529,7 +8567,7 @@ function finFillTable() {
   const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '', period = _crmLF['fin-period'] || '';
   const list = _finItems().filter(i => {
     const hay = ((i.ref || '') + ' ' + (i.who || '') + ' ' + (i.category || '')).toLowerCase();
-    return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept) && _inPeriod(i.date, period);
+    return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept) && _inPeriodLF(i.date, 'fin-period');
   }).sort((a, b) => b.amount - a.amount);
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
   tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
@@ -10118,7 +10156,24 @@ let _crmLF = {};
 function _crmDistinct(arr, key) { return [...new Set((arr || []).map(x => (x[key] || '').toString().trim()).filter(Boolean))].sort(); }
 function _crmFiltSearch(id, ph, fn) { return '<input id="' + id + '" type="text" placeholder="' + ph + '" value="' + _tkEscA(_crmLF[id] || '') + '" class="form-control" style="flex:1;min-width:170px;max-width:300px;font-size:12px" oninput="_crmLF[\'' + id + '\']=this.value;' + fn + '()">'; }
 function _crmFiltSel(id, label, options, fn) { const cur = _crmLF[id] || ''; return '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="_crmLF[\'' + id + '\']=this.value;' + fn + '()"><option value=""' + (cur === '' ? ' selected' : '') + '>' + _t(label) + '</option>' + (options || []).map(o => '<option value="' + _crmEsc(o) + '"' + (cur === o ? ' selected' : '') + '>' + _t(o) + '</option>').join('') + '</select>'; }
-function _crmFiltBar(html) { return '<div style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + html + '</div>'; }
+function _crmFiltBar(html) { return '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + html + '</div>'; }
+/* THE standard period control (used by every toolbar): All time / Today / This week / This month /
+   Last month / This quarter / This year / Custom range… — 'Custom range…' reveals from→to day
+   pickers. State lives in _crmLF under id, id+'-from', id+'-to'; rows filter via _inPeriodLF. */
+const _TK_PERIODS = ['Today', 'This week', 'This month', 'Last month', 'This quarter', 'This year', 'Custom range…'];
+function _crmFiltPeriod(id, fn) {
+  const cur = _crmLF[id] || '';
+  const show = cur === 'Custom range…';
+  const sel = '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="_crmLF[\'' + id + '\']=this.value;_tkPeriodTog(\'' + id + '\');' + fn + '()">' +
+    '<option value=""' + (cur === '' ? ' selected' : '') + '>' + _t('All time') + '</option>' +
+    _TK_PERIODS.map(o => '<option value="' + o + '"' + (cur === o ? ' selected' : '') + '>' + _t(o) + '</option>').join('') + '</select>';
+  const day = k => '<input type="date" id="' + id + k + '" data-range="' + id + '" value="' + _tkEscA(_crmLF[id + k] || '') + '" onchange="_crmLF[\'' + id + k + '\']=this.value;' + fn + '()" class="form-control" style="width:auto;font-size:12px;padding:6px 8px' + (show ? '' : ';display:none') + '">';
+  return sel + day('-from') + '<span data-range="' + id + '" style="font-size:11px;color:var(--text-light)' + (show ? '' : ';display:none') + '">→</span>' + day('-to');
+}
+function _tkPeriodTog(id) {
+  const show = (_crmLF[id] || '') === 'Custom range…';
+  document.querySelectorAll('[data-range="' + id + '"]').forEach(el => { el.style.display = show ? '' : 'none'; });
+}
 
 /* Sales targets: each member has a quota; a healthy pipeline carries 4× the quota. */
 const _CRM_DEFAULT_TARGET = 300000000;   // ₫ default per-member quota (editable per person)
@@ -10307,7 +10362,7 @@ async function crmRenderPipeline() {
   await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products'), tkLoadColl('crm_aop')]);
   const period = _crmLF['crm-pipe-period'] || '';
   const allMine = _crmMine(_HR.crm_deals);
-  const deals = period ? allMine.filter(d => _inPeriod(_crmDealDate(d), period)) : allMine;
+  const deals = period ? allMine.filter(d => _inPeriodLF(_crmDealDate(d), 'crm-pipe-period')) : allMine;
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
@@ -10360,7 +10415,7 @@ async function crmRenderPipeline() {
   const scopeLbl = _crmSeeAll() ? _t2('Company-wide pipeline', 'Pipeline toàn công ty') : (_userLevel === 'staff' ? _t2('Your own pipeline', 'Pipeline của riêng bạn') : _t2('Your team', 'Nhóm của bạn'));
   const subTabs = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px">' +
     '<div style="display:inline-flex;background:var(--soft-bg);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px">' + subBtn('dashboard', _t('Dashboard')) + subBtn('board', _t('Sales Pipeline')) + '</div>' +
-    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--text-light)">' + _t('Period') + '</span>' + _crmFiltSel('crm-pipe-period', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'crmRenderPipeline') + '</div></div>';
+    '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:12px;color:var(--text-light)">' + _t('Period') + '</span>' + _crmFiltPeriod('crm-pipe-period', 'crmRenderPipeline') + '</div></div>';
   if (tab === 'board') {
     root.innerHTML = subTabs + '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Sales Pipeline</div>' + addBtn + '</div>' + fbar + '</div><div id="crm-pipe-cols" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px"></div>';
     crmFillPipe();
@@ -10386,7 +10441,7 @@ function crmFillPipe() {
   const ty = document.getElementById('crm-pipe-type') ? document.getElementById('crm-pipe-type').value : '';
   const period = _crmLF['crm-pipe-period'] || '';
   let deals = _crmMine(_HR.crm_deals).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
-  if (period) deals = deals.filter(d => _inPeriod(_crmDealDate(d), period));
+  if (period) deals = deals.filter(d => _inPeriodLF(_crmDealDate(d), 'crm-pipe-period'));
   host.innerHTML = _CRM_STAGES.map(st => {
     const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
@@ -10443,14 +10498,14 @@ async function crmRenderLeads() {
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
   const period = _crmLF['crm-leads-period'] || '';
   const allLeads = _crmMine(_HR.crm_leads);
-  const leads = period ? allLeads.filter(l => _inPeriod(_crmLeadDate(l), period)) : allLeads;
+  const leads = period ? allLeads.filter(l => _inPeriodLF(_crmLeadDate(l), 'crm-leads-period')) : allLeads;
   const kpis = _hrKpiRow([
     _hrKpi('Total leads', leads.length),
     _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
     _hrKpi('Qualified', leads.filter(l => l.status === 'Qualified').length, 'var(--emerald)'),
     _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
   ]);
-  const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(allLeads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(allLeads, 'owner'), 'crmFillLeads') + _crmFiltSel('crm-leads-period', 'All time', ['This month', 'Last month', 'This quarter', 'This year'], 'crmRenderLeads'));
+  const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(allLeads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(allLeads, 'owner'), 'crmFillLeads') + _crmFiltPeriod('crm-leads-period', 'crmRenderLeads'));
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
   crmFillLeads();
 }
@@ -10462,7 +10517,7 @@ function crmFillLeads() {
   const ow = document.getElementById('crm-leads-owner') ? document.getElementById('crm-leads-owner').value : '';
   const period = _crmLF['crm-leads-period'] || '';
   const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
-  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _inPeriod(_crmLeadDate(l), period)));
+  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _inPeriodLF(_crmLeadDate(l), 'crm-leads-period')));
   tb.innerHTML = rows.length ? rows.map(l => {
     const done = l.converted || l.status === 'Qualified';
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
@@ -11410,7 +11465,7 @@ async function pmRenderProjects() {
     _hrKpi('Open high risks', all.reduce((s, p) => s + _pmRiskRollup(p.id).high, 0), '#EF4444')
   ]);
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
-  const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects'));
+  const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects') + _crmFiltPeriod('pm-pperiod-f', 'pmFillProjects'));
   const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
   root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
@@ -11418,7 +11473,7 @@ async function pmRenderProjects() {
 function pmFillProjects() {
   const tb = document.getElementById('pm-proj-tbody'); if (!tb) return;
   const q = (_crmLF['pm-pq'] || '').toLowerCase(), st = _crmLF['pm-pstatus'] || '', dp = _crmLF['pm-pdept'] || '';
-  const rows = _pmMine(_HR.pm_projects || []).filter(p => (!q || ((p.code || '') + ' ' + (p.name || '') + ' ' + (p.account || p.client || '') + ' ' + (p.manager || '')).toLowerCase().indexOf(q) >= 0) && (!st || (p.status || '') === st) && (!dp || (p.dept || '') === dp));
+  const rows = _pmMine(_HR.pm_projects || []).filter(p => (!q || ((p.code || '') + ' ' + (p.name || '') + ' ' + (p.account || p.client || '') + ' ' + (p.manager || '')).toLowerCase().indexOf(q) >= 0) && (!st || (p.status || '') === st) && (!dp || (p.dept || '') === dp) && _inPeriodLF(p.startPlanned || p.startBaseline || p.created, 'pm-pperiod-f'));
   tb.innerHTML = rows.length ? rows.map(p => {
     const rag = _pmEffectiveRag(p), sr = pmScopeRollup(p.id);
     const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
@@ -11698,7 +11753,8 @@ function pmRenderCosts(pid) {
 /* ---------- 5. Quality (NCR / ITP) ---------- */
 let _pmQF = { contractor: '', period: '' };
 function pmQSet(k, v) { _pmQF[k] = v; pmTab('quality'); }
-function pmQClear() { _pmQF = { contractor: '', period: '' }; pmTab('quality'); }
+function pmQClear() { _pmQF = { contractor: '', period: '' }; _crmLF['pmq-period-f'] = ''; _crmLF['pmq-period-f-from'] = ''; _crmLF['pmq-period-f-to'] = ''; pmTab('quality'); }
+function pmQRefresh() { pmTab('quality'); }
 let _pmItpRange = '';
 function pmItpRange() { const f = (document.getElementById('pm-itp-from') || {}).value || ''; const t = (document.getElementById('pm-itp-to') || {}).value || ''; _pmItpRange = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('quality'); }
 function pmItpRangeClear() { _pmItpRange = ''; pmTab('quality'); }
@@ -11737,11 +11793,11 @@ function pmRenderQuality(pid) {
   const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
   const _qpers = [...new Set(all.map(x => (x.raisedDate || '').slice(0, 7)).filter(Boolean))].sort().reverse();
   const _mmYY = ym => { const a = String(ym).split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + ' ' + (a[0] || '').slice(-2); };
-  const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && (!_pmQF.period || (x.raisedDate || '').slice(0, 7) === _pmQF.period));
+  const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && _inPeriodLF(x.raisedDate, 'pmq-period-f'));
   const filterBar = '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' +
     '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
-    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'period\',this.value)"><option value="">All months</option>' + _qpers.map(pp => '<option value="' + pp + '"' + (_pmQF.period === pp ? ' selected' : '') + '>' + _mmYY(pp) + '</option>').join('') + '</select>' +
-    ((_pmQF.contractor || _pmQF.period) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
+    _crmFiltPeriod('pmq-period-f', 'pmQRefresh') +
+    ((_pmQF.contractor || _crmLF['pmq-period-f']) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
   const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
@@ -13816,6 +13872,10 @@ const _VI = {
   'Testing': 'Đang kiểm tra',
   'This month': 'Tháng này',
   'This week': 'Tuần này',
+  'All categories': 'Tất cả danh mục',
+  'Custom range…': 'Khoảng ngày tùy chọn…',
+  'Search destination / title / requester…': 'Tìm điểm đến / tiêu đề / người yêu cầu…',
+  'Search period / employee…': 'Tìm kỳ lương / nhân viên…',
   'This year': 'Năm nay',
   'Tick the activities that apply to this employee.': 'Đánh dấu các hoạt động áp dụng cho nhân viên này.',
   'Title': 'Chức danh',
@@ -14855,6 +14915,7 @@ async function tkOtDecide(attId, decision) {
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
+  { const slot = document.getElementById('io-period-slot'); if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod('io-period-f', 'renderInOutReport'); }
   const search = document.querySelector('#rpt-inout .search-box input')?.value?.toLowerCase()||'';
   const deptF  = document.querySelectorAll('#rpt-inout .sel-filter')[0]?.value||'All Departments';
   const statF  = document.querySelectorAll('#rpt-inout .sel-filter')[1]?.value||'All Status';
@@ -14870,7 +14931,7 @@ function renderInOutReport() {
     const matchT = statF === 'All Status' || stat === statF;
     const matchDate  = !dateF  || r.date === dateF;                        // exact date filter
     const matchMonth = !monthF || (r.date||'').slice(0,7) === monthF;      // month filter
-    return matchS && matchD && matchT && matchDate && matchMonth;
+    return matchS && matchD && matchT && matchDate && matchMonth && _inPeriodLF(r.date, 'io-period-f');
   }).slice(0,60);
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
@@ -15172,6 +15233,7 @@ function tkFmtDate(v) {
 function tkFmtDateObj(dt) { dt = dt || new Date(); return tkFmtDate(dt.getFullYear() + '-' + (dt.getMonth() + 1) + '-' + dt.getDate()); }
 
 function _renderEmployeeTable(filter) {
+  { const slot = document.getElementById('hr-period-slot'); if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod('hr-period-f', '_renderEmployeeTable'); }
   const search = (document.querySelector('#hr-employees .search-box input')?.value||'').toLowerCase();
   const deptFilter = document.querySelector('#hr-employees .sel-filter')?.value||'All Departments';
   const statusFilter = document.querySelectorAll('#hr-employees .sel-filter')[1]?.value||'Active';
@@ -15180,7 +15242,8 @@ function _renderEmployeeTable(filter) {
     const matchSearch = !search || e.name.toLowerCase().includes(search) || e.id.toLowerCase().includes(search) || e.email.toLowerCase().includes(search);
     const matchDept = deptFilter === 'All Departments' || e.dept === deptFilter;
     const matchStatus = statusFilter === 'All' || e.status === statusFilter;
-    return matchSearch && matchDept && matchStatus;
+    const matchPeriod = _inPeriodLF(e.startDate, 'hr-period-f');   // period = Onboard Date
+    return matchSearch && matchDept && matchStatus && matchPeriod;
   });
   const tbody = document.getElementById('emp-table-body');
   if (!tbody) return;
@@ -15427,6 +15490,7 @@ async function loadAttendance() { try { await tkBootstrap(); } catch (e) {} filt
 async function tkRefreshInOut() { try { await tkBootstrap(); } catch (e) {} renderInOutReport(); }
 
 function filterTable() {
+  { const slot = document.getElementById('att-period-slot'); if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod('att-period-f', 'filterTable'); }
   const isStaff = _userRole === 'staff';
   const search = isStaff ? '' : (document.getElementById('att-search')?.value || '').toLowerCase();
   const dept   = isStaff ? '' : (document.getElementById('att-dept')?.value || '');
@@ -15444,7 +15508,8 @@ function filterTable() {
     (!search || r.name.toLowerCase().includes(search) || r.dept.toLowerCase().includes(search)) &&
     (!dept   || r.dept.toLowerCase().includes(dept.toLowerCase())) &&
     (!status || r.status === status.toLowerCase().replace(' ','-')) &&
-    (!dateF  || r.date === dateF)
+    (!dateF  || r.date === dateF) &&
+    (isStaff || _inPeriodLF(r.date, 'att-period-f'))
   );
   const startIdx = (_attPage - 1) * _attPageSize;
   const pageRows = rows.slice(startIdx, startIdx + _attPageSize);
