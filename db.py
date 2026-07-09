@@ -158,6 +158,7 @@ def init_db():
         );
 
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL;
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
         CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
@@ -167,7 +168,8 @@ def init_db():
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
                 "englishCert TEXT", "note TEXT", "photo TEXT", "salary REAL",
-                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT", "appsAllowed TEXT"):
+                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT", "appsAllowed TEXT",
+                "schedule TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -598,7 +600,7 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
               "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
-              "role", "level", "salary", "grade", "dependents", "appsDenied", "appsAllowed",
+              "role", "level", "salary", "grade", "dependents", "appsDenied", "appsAllowed", "schedule",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
@@ -683,34 +685,50 @@ def open_attendance(emp_id, date):
                 "ORDER BY id DESC LIMIT 1", (emp_id, date))
 
 
-def _hrs_between(cin, cout):
+def _hrs_between(cin, cout, overnight=False):
     try:
         ih, im = map(int, cin.split(":")); oh, om = map(int, cout.split(":"))
         mins = (oh * 60 + om) - (ih * 60 + im)
+        if overnight and mins < 0:
+            mins += 1440          # 18:00 → 00:30 next day = 6h30, not -18h30
+        if mins < 0:
+            return ""             # same-day out<in is rejected upstream; never store negatives
         return "%dh %02dm" % (mins // 60, mins % 60)
     except (ValueError, AttributeError):
         return ""
 
 
+def open_attendance_any(emp_id, dates):
+    """Latest open record on any of the given dates (today + yesterday: overnight checkout)."""
+    marks = ",".join(["?"] * len(dates))
+    return _row("SELECT * FROM attendance WHERE emp_id = ? AND date IN (%s) AND clock_out IS NULL "
+                "ORDER BY date DESC, id DESC LIMIT 1" % marks, [emp_id] + list(dates))
+
+
 def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time"):
     emp = get_employee(emp_id)
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
-         date, time_hm, status, loc, lat, lon))
-    conn.commit()
+    try:
+        cur = conn.execute(
+            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
+             date, time_hm, status, loc, lat, lon))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # uq_att_open: a concurrent request already opened today's record — atomic double-tap guard
+        conn.close()
+        return None
     rid = cur.lastrowid
     conn.close()
     return rid
 
 
-def clock_out(att_id, time_hm, ot_hours=0, ot_reason=""):
+def clock_out(att_id, time_hm, ot_hours=0, ot_reason="", overnight=False):
     rec = _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
     if not rec:
         return None
-    hrs = _hrs_between(rec["clock_in"], time_hm)
+    hrs = _hrs_between(rec["clock_in"], time_hm, overnight=overnight)
     try:
         oth = float(ot_hours or 0)
     except (TypeError, ValueError):

@@ -1519,7 +1519,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 ═══════════════════════════════════════════════════════ -->
 <div id="view-schedules" class="view">
   <div class="page-header">
-    <div><h1>Work Schedules</h1><p>Define shift patterns · Grace periods · Check-in windows</p></div>
+    <div><h1>Work Schedules</h1><p>Define shift patterns · Grace periods · Check-in windows</p><p data-i18n style="margin-top:4px;font-size:12px;color:var(--emerald);font-weight:600">Schedules set lateness expectations only (shift start + grace) — they never block check-in or check-out.</p></div>
     <button class="btn btn-emerald" onclick="openModal('addScheduleModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Schedule</button>
   </div>
   <div class="card mb16">
@@ -2995,7 +2995,7 @@ async function tkPersist(path, body, method = 'POST') {
   catch (e) { console.warn('Persist failed (' + path + '):', e.message); return null; }
 }
 
-const _today = () => new Date().toISOString().slice(0, 10);
+const _today = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };   // LOCAL day — toISOString() is UTC and shifts +07 mornings to yesterday
 
 /* Render the Manager Approval "pending" list from the database so approvals
    are real and persistent (replaces the static demo cards). */
@@ -3063,7 +3063,7 @@ function tkRenderZones() {
   }).join('');
   const kp = document.getElementById('loc-kpis');
   if (kp && typeof _kpiTile === 'function') {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = _today();
     const todayAtt = (_DEMO_ATTENDANCE || []).filter(r => r.date === today);
     const anomalies = todayAtt.filter(r => r.loc === 'Out of Zone').length;
     const inZone = todayAtt.filter(r => r.loc && r.loc !== 'Out of Zone').length;
@@ -3097,6 +3097,30 @@ function tkPopulateZoneSelect() {
    usable fix — allowed, recorded as GPS-unverified), 'out' (a confident fix says you are far
    from the zone — blocked). */
 let _tkGpsState = 'unverified';
+/* Work schedules are ADVISORY: shift start + 15 min grace sets the lateness
+   expectation — they NEVER block check-in/out. Flexible/WFH staff are never late. */
+function _tkYesterday() { const d = new Date(); d.setDate(d.getDate() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+/* my rows: match by emp_id when the server row carries it — display names are not identities */
+function _tkIsMine(r) { const uid = TK.user && TK.user.id; return (r.emp_id && uid) ? r.emp_id === uid : r.name === _staffName; }
+/* my open session: today's, or yesterday's for overnight/OT shifts checking out after 00:00 */
+function _tkMyOpenRow() { const t = _today(), y = _tkYesterday(); return (_DEMO_ATTENDANCE || []).find(r => _tkIsMine(r) && !(r.out || r.clock_out) && (r.date === t || r.date === y)); }
+
+function _tkLateThreshold(schedule) {
+  const sch = String(schedule || (TK.user && TK.user.schedule) || '');
+  if (!sch) return '08:15';
+  if (/flex|wfh/i.test(sch)) return null;
+  const m = sch.match(/(\d{1,2}):(\d{2})/);
+  let hh = m ? parseInt(m[1], 10) : 8, mm = (m ? parseInt(m[2], 10) : 0) + 15;
+  if (mm >= 60) { hh += 1; mm -= 60; }
+  return String(hh % 24).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+}
+function _tkIsLate(t) {
+  if (new Date().getDay() === 0) return false;                                   // Sunday
+  const hol = ((window._TK_PORTAL && window._TK_PORTAL.holidays) || []).some(h => h && h.date === _today());
+  if (hol) return false;                                                          // company holiday
+  const thr = _tkLateThreshold(); return thr !== null && t > thr;
+}
+
 function _tkSetCheckinAllowed(state) {
   if (state === true) state = 'in'; if (state === false) state = 'out';
   _tkGpsState = state;
@@ -3174,10 +3198,15 @@ function tkVerifySelectedZone(force) {
 /* Persist with a self-heal retry: if the backend session died overnight, silently re-login via
    the cached MSAL account and retry ONCE — so the first tap of the morning just works. */
 async function _tkPersistSure(path, body) {
+  /* returns the server response, or null on NETWORK failure, or {__biz: msg} when the server
+     said no (400) — a business refusal must never be reported as a connection problem. */
+  const isBiz = (e) => e && e.message && !/network|fetch|load failed|abort/i.test(e.message);
   try { return await tkApi(path, { method: 'POST', body: body, _no401: true }); }
   catch (e) {
+    if (isBiz(e)) return { __biz: e.message };
     if (await _tkTrySilentRelogin()) {
-      try { return await tkApi(path, { method: 'POST', body: body }); } catch (e2) {}
+      try { return await tkApi(path, { method: 'POST', body: body }); }
+      catch (e2) { if (isBiz(e2)) return { __biz: e2.message }; }
     }
     return null;
   }
@@ -3191,14 +3220,15 @@ async function tkCheckIn() {
   /* TRUTHFUL check-in: save first, then show success — no more "Checked in" toasts for a
      check-in that silently never reached the server on a flaky mobile connection. */
   const locLabel = _tkSelectedZone.name + (_tkGpsState === 'in' ? '' : ' (GPS unverified)');
-  const saved = await _tkPersistSure('/api/attendance/checkin', { date: now.toISOString().slice(0, 10), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon });
-  if (!saved) {
+  const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon });
+  if (!saved || saved.__biz) {
     if (btn) btn.disabled = false;
-    if (typeof toast === 'function') toast('Could not record your check-in — check your connection and tap again.', 'error', 7000);
+    if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-in — check your connection and tap again.', 'error', 7000);
+    if (saved && saved.__biz) { try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {} }
     return;
   }
   _checkedIn = true;
-  _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: now.toISOString().slice(0, 10), in: t, out: null, status: (t > '08:15' ? 'late' : 'on-time'), hrs: 'In progress', loc: locLabel });
+  _DEMO_ATTENDANCE.unshift({ name: _staffName, dept: (TK.user && TK.user.dept) || '', date: _today(), in: t, out: null, status: (_tkIsLate(t) ? 'late' : 'on-time'), hrs: 'In progress', loc: locLabel });
   tkBootstrap().catch(() => {}).then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   try { filterTable(); } catch (e) {}
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
@@ -3213,16 +3243,27 @@ async function tkCheckIn() {
   try { tkRenderCheckin(); } catch (e) {}
 }
 
-const _OT_STD_MIN = 480;   // standard working day = 8h
+const _OT_STD_MIN = 480;   // fallback: standard working day = 8h
+/* Standard 08:00–17:00 spans 9h incl. 1h lunch → OT prompt from 8h worked; a 06:00–14:00
+   shift spans 8h straight → 8h. Derived from the assigned schedule, advisory only. */
+function _tkOtStdMin() {
+  const sch = String((TK.user && TK.user.schedule) || '');
+  const m = sch.match(/(\d{1,2}):(\d{2})\s*[–-]\s*(\d{1,2}):(\d{2})/);
+  if (!m) return _OT_STD_MIN;
+  let span = (parseInt(m[3], 10) * 60 + parseInt(m[4], 10)) - (parseInt(m[1], 10) * 60 + parseInt(m[2], 10));
+  if (span <= 0) span += 1440;
+  return span >= 540 ? span - 60 : span;
+}
 function tkCheckOut() {
   if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
   const t = new Date().toTimeString().slice(0, 5);
-  const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
+  const rec = _tkMyOpenRow();
   let workedMin = null;
   if (rec && rec.in) { const a = rec.in.split(':').map(Number), b = t.split(':').map(Number); workedMin = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (workedMin < 0) workedMin += 1440; }
   // Worked beyond the standard day → offer an OT request (added to the system only if approved).
-  if (workedMin != null && workedMin > _OT_STD_MIN + 15) {
-    _tkOtRequestModal(t, Math.round((workedMin - _OT_STD_MIN) / 60 * 10) / 10);
+  const stdMin = _tkOtStdMin();
+  if (workedMin != null && workedMin > stdMin + 15) {
+    _tkOtRequestModal(t, Math.round((workedMin - stdMin) / 60 * 10) / 10);
   } else {
     _tkDoCheckout(t, 0, '');
   }
@@ -3249,14 +3290,18 @@ function _tkOtRequestModal(t, suggestedHours) {
   setTimeout(() => { const f = document.getElementById('ot-hours'); if (f) { f.focus(); f.select(); } }, 40);
 }
 async function _tkDoCheckout(t, otHours, otReason) {
-  const body = { date: new Date().toISOString().slice(0, 10), time: t };
+  const body = { date: _today(), time: t };
   if (otHours && otHours > 0) { body.otHours = otHours; body.otReason = otReason || ''; }
   /* TRUTHFUL checkout: save first (with silent session heal + one retry), then update the UI. */
   const saved = await _tkPersistSure('/api/attendance/checkout', body);
-  if (!saved) { if (typeof toast === 'function') toast('Could not record your check-out — check your connection and tap again.', 'error', 7000); return; }
+  if (!saved || saved.__biz) {
+    if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-out — check your connection and tap again.', 'error', 7000);
+    if (saved && saved.__biz) { try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {} }
+    return;
+  }
   _checkedIn = false;
   tkBootstrap().catch(() => {}).then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
-  const rec = (_DEMO_ATTENDANCE || []).find(r => !r.out);
+  const rec = _tkMyOpenRow();
   if (rec) {
     rec.out = t; const a = (rec.in || '08:00').split(':').map(Number), b = t.split(':').map(Number); let tot = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (tot < 0) tot += 1440; rec.hrs = Math.floor(tot / 60) + 'h ' + (tot % 60) + 'm';
     if (otHours && otHours > 0) { rec.ot_status = 'pending'; rec.ot_hours = otHours; rec.ot_reason = otReason || ''; }
@@ -3273,8 +3318,26 @@ async function _tkDoCheckout(t, otHours, otReason) {
     if (otHours && otHours > 0) toast('Checked out at ' + t + ' · overtime ' + otHours + 'h requested (pending approval)', undefined, 5500);
     else toast('Checked out at ' + t);
   }
+  const zsel = document.getElementById('ci-zone-select'); if (zsel) zsel.disabled = false;
+  if (_tkSelectedZone) { try { tkVerifySelectedZone(); } catch (e) {} }
   try { tkRenderCheckin(); } catch (e) {}
 }
+
+/* Live duration ticker — the working-time tile ticks every 30s while checked in
+   (was only ever set once at check-in; froze at 0h 0m and died on reload). */
+setInterval(function () {
+  try {
+    if (!_checkedIn) return;
+    const el = document.getElementById('dur-val'); if (!el) return;
+    const row = _tkMyOpenRow(); if (!row || !(row.in || row.clock_in)) return;
+    const [ih, im] = String(row.in || row.clock_in).split(':').map(Number);
+    const now = new Date();
+    let mins = (now.getHours() * 60 + now.getMinutes()) - (ih * 60 + im);
+    if (row.date !== _today()) mins += 1440;      // overnight session
+    if (mins < 0) mins += 1440;
+    el.textContent = Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
+  } catch (e) {}
+}, 30000);
 
 /* Render the Check In/Out page from real attendance for the current user (A6). */
 let _ciPeriod = 'week';
@@ -3283,15 +3346,15 @@ function tkRenderCheckin() {
   try { tkPopulateZoneSelect(); } catch (e) {}
   // warm up GPS so the zone check resolves instantly when the user picks a location
   try { const _fresh = (typeof _gpsTimestamp !== 'undefined' && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000); if (!_fresh && navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try { _lastGpsLat = p.coords.latitude; _lastGpsLon = p.coords.longitude; _gpsTimestamp = Date.now(); } catch (e) {} }, () => {}, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }); } catch (e) {}   // skip the warm-up when a recent fix exists (no repeated GPS prompts on every render)
-  const today = new Date().toISOString().slice(0, 10);
-  const mine = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const today = _today();
+  const mine = (_DEMO_ATTENDANCE || []).filter(_tkIsMine).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const todayRow = mine.find(r => r.date === today);
   // Restore check-in/out state on EVERY render (survives reload / navigate-away / deploy refresh):
   // an open check-in = today has a check-in time and no check-out yet → we are checked in and
   // Check Out must ALWAYS be available (never locked by schedule/time — for outside jobs).
-  const _cinToday = todayRow && (todayRow.in || todayRow.clock_in);
-  const _coutToday = todayRow && (todayRow.out || todayRow.clock_out);
-  const _openToday = !!(_cinToday && !_coutToday);
+  const openRow = _tkMyOpenRow();               // today's open session, or yesterday's overnight one
+  const _cinToday = openRow && (openRow.in || openRow.clock_in);
+  const _openToday = !!openRow;
   _checkedIn = _openToday;
   (function () {
     const bo = document.getElementById('btn-checkout');
@@ -3325,7 +3388,7 @@ function tkRenderCheckin() {
     else hero.textContent = 'Not checked in';
   }
   // KPI strip — week / month / year (selectable)
-  const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const weekAgo = (function () { const d = new Date(); d.setDate(d.getDate() - 7); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); })();
   const cym = today.slice(0, 7), cy = today.slice(0, 4);
   const inP = d => _ciPeriod === 'week' ? d >= weekAgo : _ciPeriod === 'month' ? d.slice(0, 7) === cym : d.slice(0, 4) === cy;
   const lbl = _ciPeriod === 'year' ? 'this year' : _ciPeriod === 'month' ? 'this month' : 'this week';
@@ -3583,7 +3646,7 @@ async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml
 /* Render the manager Dashboard from REAL data (KPIs, activity, approvals, dept). */
 function tkRenderDashboard() {
   const emps = _DEMO_EMPLOYEES || [], att = _DEMO_ATTENDANCE || [], lv = _DEMO_LEAVE || [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _today();
   const todayAtt = att.filter(r => r.date === today);
   const checkedIn = todayAtt.filter(r => (r.in || r.clock_in));
   const present = checkedIn.filter(r => r.status !== 'absent').length;
@@ -6092,7 +6155,7 @@ async function tkAssetReturn(empId, exitId) {
   const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || { id: empId, name: '' };
   const mine = (_HR.devices || []).filter(x => ((x.empId && x.empId === empId) || (x.assignedTo && x.assignedTo === e.name)) && x.status !== 'Available');
   document.getElementById('assetReturnOverlay')?.remove();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _today();
   const rows = mine.length ? mine.map(x => '<tr><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + ' · ' + (x.category || '') + '</div></div></label></td><td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>').join('') : '<tr><td colspan="2" style="text-align:center;color:var(--text-light);padding:14px">No assigned devices to return.</td></tr>';
   const el = document.createElement('div'); el.id = 'assetReturnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + (e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
@@ -9057,7 +9120,7 @@ async function tkRenderHrMetrics() {
   wrap.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
   await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent'), tkLoadColl('exits')]);
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
-  const today = new Date().toISOString().slice(0, 10);
+  const today = _today();
   const present = (_DEMO_ATTENDANCE || []).filter(r => r.date === today && (r.in || r.clock_in)).length;
   const onLeave = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved' && l.startDate <= today && l.endDate >= today).length;
   const openReq = (_HR.jobs || []).filter(j => j.status !== 'Closed').reduce((s, j) => s + (parseInt(j.openings, 10) || 0), 0);
@@ -10126,6 +10189,7 @@ function _checkGeofence(userLat, userLon, zones) {
 
 function _getAttendanceStatus(checkInTime, graceMins = 15) {
   if (!checkInTime) return 'absent';
+  if (typeof _tkIsLate === 'function') return _tkIsLate(checkInTime) ? 'late' : 'on-time';   // schedule-aware
   const [h, m] = checkInTime.split(':').map(Number);
   const mins = h * 60 + m;
   const cutoff = 8 * 60 + graceMins;
@@ -13371,6 +13435,7 @@ const _VI = {
   'Deductions — statutory': 'Khoản khấu trừ — theo luật định',
   'Default Geofence Radius (metres)': 'Bán kính vùng định vị mặc định (mét)',
   'Define shift patterns · Grace periods · Check-in windows': 'Xác định mẫu ca làm · Thời gian ân hạn · Khung giờ chấm vào',
+  'Schedules set lateness expectations only (shift start + grace) — they never block check-in or check-out.': 'Ca làm việc chỉ dùng để tính đi trễ (giờ vào ca + ân hạn) — không bao giờ khóa chấm công vào/ra.',
   'Definition': 'Định nghĩa',
   'Demo Mode': 'Chế độ dùng thử',
   'Demo mode — no sync': 'Chế độ dùng thử — không đồng bộ',
@@ -14403,7 +14468,7 @@ function _commitCheckin(lat, lon, zoneName) {
   const now = new Date(), timeStr = now.toTimeString().slice(0,5);
   const locLabel = zoneName || (lat ? lat.toFixed(4) + '°, ' + lon.toFixed(4) + '°' : 'Unknown');
   _updateCheckinUI(timeStr, '' + locLabel, true);
-  _DEMO_ATTENDANCE.unshift({ name: _staffName || 'Huy Nguyen Duc', dept: 'Engineering', date: now.toISOString().slice(0,10), in: timeStr, out: null, status: _getAttendanceStatus(timeStr), hrs: 'In progress', loc: locLabel });
+  _DEMO_ATTENDANCE.unshift({ name: _staffName || 'Huy Nguyen Duc', dept: 'Engineering', date: _today(), in: timeStr, out: null, status: _getAttendanceStatus(timeStr), hrs: 'In progress', loc: locLabel });
   /* persist to backend */
   tkPersist('/api/attendance/checkin', { date: now.toISOString().slice(0,10), time: timeStr, loc: locLabel, lat: lat || null, lon: lon || null });
   try { filterTable(); } catch(e) {}
@@ -16729,7 +16794,7 @@ async function saveEmployee() {
     if (checked('prov-card')) want.push({ name: 'Company Access Card', category: 'Access Card', unitPrice: 50000 });
     if (checked('prov-shirt')) want.push({ name: 'Company Uniform / Shirt' + (sz ? ' (' + sz + ')' : ''), category: 'Uniform / Shirt', unitPrice: 250000, note: sz ? ('Size ' + sz) : '' });
     const newEmp = (res && (res.item || res.employee || res)) || {};
-    const empId = newEmp.id || ''; const today = new Date().toISOString().slice(0, 10);
+    const empId = newEmp.id || ''; const today = _today();
     for (const w of want) {
       try { await tkApi('/api/coll/devices', { method: 'POST', body: { name: w.name, category: w.category, serial: '', assignedTo: name, empId: empId, department: dept, qty: 1, unitPrice: w.unitPrice, purchaseDate: today, status: 'Assigned', note: w.note || '' } }); provN++; } catch (e) {}
     }
@@ -16758,6 +16823,7 @@ function editEmployeeProfile(btn) {
   document.getElementById('ee-id').value    = emp.id;
   document.getElementById('ee-title').value = emp.title || '';
   document.getElementById('ee-email').value = emp.email || '';
+  const schedSel = document.getElementById('ee-schedule'); if (schedSel) schedSel.value = emp.schedule || 'Standard 08:00 – 17:00';
   tkPopulateManagerSelect(emp.managerEmail, emp.id);
   openModal('editEmpModal');
 }
@@ -16768,8 +16834,9 @@ function saveEmployeeProfile() {
   const title = document.getElementById('ee-title')?.value?.trim() || '';
   const email = document.getElementById('ee-email')?.value?.trim() || '';
   const managerEmail = document.getElementById('ee-manager')?.value || '';
+  const schedule = document.getElementById('ee-schedule')?.value || '';
   if (id) {
-    tkPersist('/api/employees/' + id, { name, title, email, managerEmail }, 'PATCH')
+    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule }, 'PATCH')
       .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
   }
   closeModal('editEmpModal');

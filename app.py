@@ -14,6 +14,7 @@ otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 
 import gzip
 import json
+from datetime import datetime, timedelta
 import os
 import re
 import secrets
@@ -100,7 +101,9 @@ def session_user(token):
         _persist_sessions()
     emp = db.get_employee(s["emp_id"]) if s["emp_id"] else None
     if emp:
-        emp["role"] = s["role"]
+        # The DB row is authoritative — a demoted manager must not keep manager rights
+        # for the remainder of a 30-day sliding session. Session role is only a fallback.
+        emp["role"] = emp.get("role") or s["role"]
     return emp
 
 
@@ -972,26 +975,99 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"attendance": db.list_attendance(
             emp_id=emp_id, start=qs.get("start", [None])[0], end=qs.get("end", [None])[0])})
 
+    _RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    _RE_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+    @staticmethod
+    def _vn_day(offset_days=0):
+        """The company's calendar day (UTC+7) — never trust the server's own timezone."""
+        return (datetime.utcnow() + timedelta(hours=7, days=offset_days)).strftime("%Y-%m-%d")
+
+    def _is_workday(self, date):
+        """Sundays and company holidays never count as late (advisory lateness only)."""
+        try:
+            wd = datetime.strptime(date, "%Y-%m-%d").weekday()
+            if wd == 6:
+                return False
+            hol = db.get_setting("portal_holidays") or []
+            return date not in {h.get("date") for h in hol if isinstance(h, dict)}
+        except Exception:
+            return True
+
+    @staticmethod
+    def _late_threshold(schedule):
+        """Work schedules are ADVISORY: they set the lateness expectation (shift start
+        + 15 min grace) and NEVER block a check-in. Flexible/WFH staff are never late;
+        employees without an assigned schedule fall back to the standard 08:00 + grace."""
+        s = (schedule or "").strip()
+        if not s:
+            return "08:15"
+        if "flex" in s.lower() or "wfh" in s.lower():
+            return None
+        m = re.search(r"(\d{1,2}):(\d{2})", s)
+        if not m:
+            return "08:15"
+        hh, mm = int(m.group(1)), int(m.group(2)) + 15
+        if mm >= 60:
+            hh, mm = hh + 1, mm - 60
+        return "%02d:%02d" % (hh % 24, mm)
+
     def _checkin(self, u, body):
         emp_id = u["id"]
         date = body.get("date"); t = body.get("time")
-        if not date or not t:
-            return self._err("date and time required.")
+        if not isinstance(date, str) or not self._RE_DATE.match(date or ""):
+            return self._err("Invalid date.")
+        if not isinstance(t, str) or not self._RE_TIME.match(t or ""):
+            return self._err("Invalid time.")
+        # attendance is recorded for the company's TODAY only — no back/future-dating
+        if date != self._vn_day():
+            return self._err("Check-in must be for today.")
+        try:
+            lat = float(body.get("lat")) if body.get("lat") is not None else None
+            lon = float(body.get("lon")) if body.get("lon") is not None else None
+            if lat is not None and not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                lat = lon = None
+        except (TypeError, ValueError):
+            lat = lon = None
         if db.open_attendance(emp_id, date):
             return self._err("Already checked in today.")
-        status = "late" if t > "08:15" else "on-time"
-        rid = db.clock_in(emp_id, date, t, loc=body.get("loc"),
-                          lat=body.get("lat"), lon=body.get("lon"), status=status)
+        thr = self._late_threshold(u.get("schedule"))
+        status = "on-time" if (thr is None or t <= thr or not self._is_workday(date)) else "late"
+        rid = db.clock_in(emp_id, date, t, loc=str(body.get("loc") or "")[:120],
+                          lat=lat, lon=lon, status=status)
+        if rid is None:
+            return self._err("Already checked in today.")   # atomic double-tap guard (unique index)
+        db.put_collection_item("audit", {"actor": u.get("name"), "actorId": emp_id,
+            "action": "Check-in", "target": "attendance/" + str(rid),
+            "detail": date + " " + t + " · " + status, "ts": self._utc_now()})
         return self._json({"ok": True, "id": rid, "status": status})
 
     def _checkout(self, u, body):
         date = body.get("date"); t = body.get("time")
-        rec = db.open_attendance(u["id"], date)
+        if not isinstance(t, str) or not self._RE_TIME.match(t or ""):
+            return self._err("Invalid time.")
+        if not isinstance(date, str) or not self._RE_DATE.match(date or ""):
+            date = self._vn_day()
+        # today's open record first; else yesterday's (overnight/OT shifts checking out after 00:00)
+        rec = db.open_attendance_any(u["id"], [self._vn_day(), self._vn_day(-1)])
         if not rec:
             return self._err("No open check-in to close.")
+        overnight = rec["date"] != self._vn_day()
+        if not overnight and rec.get("clock_in") and t < rec["clock_in"]:
+            return self._err("Check-out time is before today's check-in.")
         # Optional overtime REQUEST at checkout — pending manager approval; only approved OT counts.
-        ot_hours = body.get("otHours") or 0
-        hrs = db.clock_out(rec["id"], t, ot_hours=ot_hours, ot_reason=body.get("otReason") or "")
+        try:
+            ot_hours = float(body.get("otHours") or 0)
+        except (TypeError, ValueError):
+            return self._err("Invalid overtime hours.")
+        if not (0 <= ot_hours <= 16):
+            return self._err("Overtime hours must be between 0 and 16.")
+        hrs = db.clock_out(rec["id"], t, ot_hours=ot_hours,
+                           ot_reason=str(body.get("otReason") or "")[:500], overnight=overnight)
+        db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Check-out", "target": "attendance/" + str(rec["id"]),
+            "detail": rec["date"] + " → " + t + (" · overnight" if overnight else "") + (" · OT %.1fh requested" % ot_hours if ot_hours else ""),
+            "ts": self._utc_now()})
         return self._json({"ok": True, "hrs": hrs, "id": rec["id"],
                            "otStatus": ("pending" if ot_hours else "none")})
 
@@ -1003,7 +1079,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Attendance record not found.", 404)
         if rec.get("emp_id") == u.get("id"):
             return self._err("You cannot approve your own overtime.", 403)
-        st = db.decide_attendance_ot(int(aid), body.get("decision") or "approve")
+        decision = (body.get("decision") or "approve").lower()
+        if decision not in ("approve", "reject"):
+            return self._err("Invalid decision.")
+        if (rec.get("ot_status") or "") != "pending":
+            return self._err("No pending overtime request on this record.")
+        # only the employee's direct manager or management/admin may decide (not any manager)
+        emp = db.get_employee(rec.get("emp_id")) if rec.get("emp_id") else None
+        is_direct_mgr = emp and (emp.get("managerEmail") or "").lower() == (u.get("email") or "").lower()
+        if not (is_direct_mgr or self._is_mgmt(u)):
+            return self._err("Only the employee's direct manager (or Management) can decide overtime.", 403)
+        st = db.decide_attendance_ot(int(aid), decision)
+        db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Overtime " + ("approved" if decision == "approve" else "rejected"),
+            "target": "attendance/" + str(aid),
+            "detail": (rec.get("name") or "") + " · %.1fh" % float(rec.get("ot_hours") or 0),
+            "ts": self._utc_now()})
         return self._json({"ok": True, "otStatus": st, "id": rec.get("id")})
 
     # -- leave --------------------------------------------------------------
