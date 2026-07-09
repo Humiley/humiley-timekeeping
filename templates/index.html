@@ -759,6 +759,13 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Payroll</span>
   </div>
 
+  <div class="sidebar-section-label" data-app="procurement">Procurement</div>
+  <div class="nav-item" data-app="procurement" onclick="tkOpenProcurement()" title="Opens the Humiley Procurement Portal in a new tab">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg></span>
+    <span class="nav-label">Procurement Portal</span>
+    <span style="margin-left:auto;display:inline-flex;opacity:.5"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
+  </div>
+
   <div class="sidebar-section-label" data-roles="manager">System Setting</div>
   <div class="nav-item" data-roles="manager" data-level="management" onclick="showView('esigngov',this,'Signature Governance')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
@@ -1972,6 +1979,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
+      <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://procurement.humiley.com"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is deployed. The sidebar entry opens this address in a new tab for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (procurement.humiley.com; localhost:3000 in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
@@ -4743,6 +4751,7 @@ function tkRenderPortalEditor() {
   _tkPortalRenderRows();
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
+  const pu = document.getElementById('portal-procurl'); if (pu) pu.value = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
 }
 
 function _tkPortalRenderRows() {
@@ -4794,14 +4803,15 @@ async function tkSavePortal() {
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
     teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
-    financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim()
+    financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim(),
+    procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl };
-    if (TK.cfg) TK.cfg.financeSpUrl = payload.financeSpUrl;   // so the current session uploads to the new folder without a reload
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl };
+    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
 }
@@ -8876,9 +8886,9 @@ async function tkRenderBenefitsAdmin() {
 /* Access & Permissions — admin grants each employee a level. */
 function _appDeniedCurrent(app) {
   const denied = String((TK.user && TK.user.appsDenied) || '').split(',').map(x => x.trim()).filter(Boolean);
-  // Finance and HR are OPT-IN apps: hidden for everyone (even managers) until an admin grants
-  // them per-user via appsAllowed. Admins always have them.
-  if (app === 'finance' || app === 'hr') {
+  // Finance, HR and Procurement are OPT-IN apps: hidden for everyone (even managers) until an
+  // admin grants them per-user via appsAllowed. Admins always have them.
+  if (app === 'finance' || app === 'hr' || app === 'procurement') {
     if (typeof _userLevel !== 'undefined' && _lvlRank(_userLevel) >= _lvlRank('admin')) return false;
     const allowed = String((TK.user && TK.user.appsAllowed) || '').split(',').map(x => x.trim()).filter(Boolean);
     return allowed.indexOf(app) < 0;
@@ -8910,6 +8920,7 @@ function tkRenderPermissions() {
     ['Projects (PMC) — update registers (tasks · risk · issue · RFI · quality)', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Projects (PMC) — create projects, edit charter / cost / procurement &amp; see all projects', ['manager', 'management', 'editor', 'admin']],
     ['Finance &amp; Payroll — Finance Control, payments &amp; payroll (Approver+; Finance app can be toggled per user below)', ['management', 'editor', 'admin']],
+    ['Procurement — separate procure-to-pay &amp; inventory portal (opt-in per user below; roles inside are managed in the Procurement app itself)', ['staff', 'manager', 'management', 'editor', 'admin']],
     ['Reports &amp; Analytics — view dashboards &amp; export (read-only, no editing)', ['management', 'editor', 'admin']],
     ['Run / edit Payroll — pay runs, adjustments, roll-out', ['editor', 'admin']],
     ['Access &amp; Permissions — assign access levels', ['admin']]
@@ -8927,8 +8938,9 @@ function tkRenderPermissions() {
     const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
     const hrOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('hr') >= 0;
     const financeOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('finance') >= 0;
+    const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
     const _appChk = (on, app, label) => '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
-    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR') + _appChk(financeOn, 'finance', 'Finance');
+    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR') + _appChk(financeOn, 'finance', 'Finance') + _appChk(procOn, 'procurement', 'Procurement');
     const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
     return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
@@ -8955,10 +8967,30 @@ async function tkSetLevel(id, level) {
     try { tkRenderPermissions(); } catch (x) {}
   } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
 }
+/* Procurement is a SEPARATE portal app (procure-to-pay + inventory) — an app of this portal
+   like HR/Finance. Opt-in per user (Access & Permissions); opens in a new tab with the signed-in
+   email prefilled on its login screen. URL is set by an admin in HR Admin -> Company Portal. */
+function tkOpenProcurement() {
+  var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
+  if (!url) url = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000' : 'https://procurement.humiley.com';
+  try {
+    var u = new URL(url);
+    if (TK.user && TK.user.email) {
+      // land on /login with the account prefilled — already-signed-in users are bounced
+      // straight to their procurement dashboard by the app itself
+      u.pathname = '/login';
+      u.searchParams.set('email', TK.user.email);
+    }
+    url = u.toString();
+  } catch (e) { /* keep raw url */ }
+  try { tkAudit('Opened Procurement', (TK.user && TK.user.name) || '', url.split('?')[0]); } catch (e) {}
+  window.open(url, '_blank', 'noopener');
+}
+
 async function tkSetApp(id, app, allowed) {
   if (!_requireLevel('admin')) return;
   const e = _hrEmp(id); if (!e) return;
-  if (app === 'finance' || app === 'hr') {   // Finance & HR are opt-in: grant via appsAllowed (checked = enabled)
+  if (app === 'finance' || app === 'hr' || app === 'procurement') {   // opt-in apps: grant via appsAllowed (checked = enabled)
     let al = String(e.appsAllowed || '').split(',').map(x => x.trim()).filter(Boolean).filter(x => x !== app);
     if (allowed) al.push(app);
     const aval = al.join(',');
@@ -12621,6 +12653,9 @@ const _VI = {
   'Company card': 'Thẻ công ty',
   'Cheque': 'Séc',
   'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
+  'Procurement Portal': 'Cổng Mua hàng',
+  'Procurement app (URL)': 'Ứng dụng Mua hàng (URL)',
+  'Procurement — separate procure-to-pay & inventory portal (opt-in per user below; roles inside are managed in the Procurement app itself)': 'Mua hàng — cổng mua sắm & tồn kho riêng (bật theo từng nhân viên bên dưới; vai trò bên trong quản lý tại chính ứng dụng Mua hàng)',
   'Finance Control': 'Kiểm soát tài chính',
   'Company-wide control of all payments, claims & travel — approve, track and view every submission': 'Kiểm soát toàn công ty tất cả thanh toán, chi phí & công tác — duyệt, theo dõi và xem mọi hồ sơ',
   'Approved outflow': 'Chi đã duyệt',

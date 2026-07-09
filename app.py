@@ -358,6 +358,9 @@ class Handler(BaseHTTPRequestHandler):
                                # Finance SharePoint folder for payment/claim/travel attachments (request #4).
                                # Public in config so every requester (incl. staff) can upload on submit.
                                "financeSpUrl": db.get_setting("portal_financeSpUrl", "") or "",
+                               # Procurement app URL (the separate procurement portal — an app of
+                               # this portal, opened from the sidebar for granted users).
+                               "procurementUrl": db.get_setting("portal_procurementUrl", "") or "",
                                # App version = mtime of the served HTML (changes on every deploy). The
                                # client polls this and reloads the PWA when it changes, so an installed
                                # app never keeps running stale code after an update.
@@ -1236,6 +1239,7 @@ class Handler(BaseHTTPRequestHandler):
         out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
         out["teamsWebhook"] = db.get_setting("portal_teamsWebhook")
         out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
+        out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
         return self._json(out)
 
     def _portal_update(self, u, body):
@@ -1246,6 +1250,8 @@ class Handler(BaseHTTPRequestHandler):
             db.set_setting("portal_teamsWebhook", body["teamsWebhook"])
         if isinstance(body.get("financeSpUrl"), str):
             db.set_setting("portal_financeSpUrl", body["financeSpUrl"].strip())
+        if isinstance(body.get("procurementUrl"), str):
+            db.set_setting("portal_procurementUrl", body["procurementUrl"].strip())
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
