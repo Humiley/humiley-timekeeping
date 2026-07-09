@@ -1246,12 +1246,26 @@ class Handler(BaseHTTPRequestHandler):
         for k in self.PORTAL_KEYS:
             if isinstance(body.get(k), list):
                 db.set_setting("portal_" + k, body[k])
-        if isinstance(body.get("teamsWebhook"), str):
-            db.set_setting("portal_teamsWebhook", body["teamsWebhook"])
-        if isinstance(body.get("financeSpUrl"), str):
-            db.set_setting("portal_financeSpUrl", body["financeSpUrl"].strip())
-        if isinstance(body.get("procurementUrl"), str):
-            db.set_setting("portal_procurementUrl", body["procurementUrl"].strip())
+        # Integration endpoints are admin-only: a manager-level account must not be able to
+        # repoint the Teams webhook, the SharePoint archive, or the Procurement launcher
+        # (redirect / exfiltration vectors). Content lists above stay manager-editable; the
+        # frontend echoes the current URLs back on every save, so an UNCHANGED value passes
+        # through silently and only an actual change requires admin.
+        is_admin = self._caller_level(u) == "admin"
+        for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
+                      ("financeSpUrl", "portal_financeSpUrl"),
+                      ("procurementUrl", "portal_procurementUrl")):
+            v = body.get(k)
+            if not isinstance(v, str):
+                continue
+            if k != "teamsWebhook":
+                v = v.strip()
+            cur = db.get_setting(sk, "") or ""
+            if v == (cur if isinstance(cur, str) else ""):
+                continue
+            if not is_admin:
+                return self._err("Admin access required to change integration URLs.", 403)
+            db.set_setting(sk, v)
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --

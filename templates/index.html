@@ -4752,6 +4752,8 @@ function tkRenderPortalEditor() {
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
+  const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
+  [tw, fs, pu].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change integration URLs.' : ''; } });
 }
 
 function _tkPortalRenderRows() {
@@ -8939,8 +8941,9 @@ function tkRenderPermissions() {
     const hrOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('hr') >= 0;
     const financeOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('finance') >= 0;
     const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
-    const _appChk = (on, app, label) => '<label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-left:8px"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
-    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR') + _appChk(financeOn, 'finance', 'Finance') + _appChk(procOn, 'procurement', 'Procurement');
+    const isAdminRow = _deriveLevel(e) === 'admin';
+    const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
+    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow);
     const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
     return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
@@ -8973,8 +8976,10 @@ async function tkSetLevel(id, level) {
 function tkOpenProcurement() {
   var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
   if (!url) url = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000' : 'https://procurement.humiley.com';
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;   // admin saved "procurement.humiley.com" without a scheme
   try {
     var u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') { toast('The configured Procurement URL must be http(s) — check Settings → Company Portal.', 'error', 6000); return; }
     if (TK.user && TK.user.email) {
       // land on /login with the account prefilled — already-signed-in users are bounced
       // straight to their procurement dashboard by the app itself
@@ -8982,7 +8987,7 @@ function tkOpenProcurement() {
       u.searchParams.set('email', TK.user.email);
     }
     url = u.toString();
-  } catch (e) { /* keep raw url */ }
+  } catch (e) { toast('The configured Procurement URL is not a valid address — check Settings → Company Portal.', 'error', 6000); return; }
   try { tkAudit('Opened Procurement', (TK.user && TK.user.name) || '', url.split('?')[0]); } catch (e) {}
   window.open(url, '_blank', 'noopener');
 }
