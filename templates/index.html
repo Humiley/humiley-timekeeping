@@ -7894,6 +7894,29 @@ function _aprBtns(status, decideFn, id, opts) {
 /* Expandable multi-line claim table — used by both the Inbox and Travel & Claims. */
 const _claimBadgeCls = s => _aprCls(s);
 function tkClaimToggle(id) { const d = document.getElementById('claim-det-' + id); if (d) d.style.display = (d.style.display === 'none' ? 'table-row' : 'none'); }
+function tkFinToggle(id) { const d = document.getElementById('fin-det-' + id); if (d) { const open = d.style.display !== 'none'; d.style.display = open ? 'none' : 'table-row'; const c = document.getElementById('fin-chev-' + id); if (c) c.style.transform = open ? '' : 'rotate(90deg)'; } }
+/* All supporting bills/documents on a finance record — the combined invoice PDF, any SharePoint
+   copy, and (payments) the voucher — shown prominently, not as a single tiny paperclip. */
+function _finBillsHtml(rec, kind) {
+  const items = [];
+  if (rec.spUrl) items.push('<a href="' + _tkEscA(rec.spUrl) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="font-size:11px">' + _PAPERCLIP_SVG + ' ' + _t('Open bill in SharePoint') + '</a>');
+  if (rec.attachment) { const k = 'att' + (++_attSeq); _attReg[k] = { att: rec.attachment, name: rec.attachmentName || 'bill' }; items.push('<a href="javascript:void(0)" onclick="tkOpenAtt(\'' + k + '\')" class="btn btn-outline btn-sm" style="font-size:11px">' + _PAPERCLIP_SVG + ' ' + _t('View invoice / bill') + '</a>'); }
+  if (kind === 'payment') items.push('<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tkPaymentVoucherPDF(\'' + rec.id + '\')">' + tkIcon('download', 13) + _t('Payment voucher') + '</button>');
+  if (!items.length) items.push('<span style="font-size:11.5px;color:var(--text-light)">' + _t('No bill attached') + '</span>');
+  return '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">' + items.join('') + '</div>';
+}
+/* The approval trail: reviewed → approved → paid, with dates + the Part 11 e-signatures. */
+function _finApprovalHtml(rec) {
+  const rows = [];
+  const line = (lbl, who, clr) => '<div style="font-size:12px;margin:2px 0"><span style="color:var(--text-light)">' + lbl + ':</span> <b style="color:' + (clr || 'var(--text-dark)') + '">' + _crmEsc(who) + '</b></div>';
+  if (rec.reviewedBy) rows.push(line(_t('Reviewed by'), rec.reviewedBy, 'var(--navy)'));
+  if (rec.approvedBy) rows.push(line(_t('Approved by'), rec.approvedBy, 'var(--emerald)'));
+  if (rec.paidOn) rows.push(line(_t('Paid on'), tkFmtDate(rec.paidOn), 'var(--emerald)'));
+  const manifest = _esignManifest(rec);
+  if (!rows.length && !manifest) return '<div style="font-size:11.5px;color:var(--text-light)">' + _t('Not yet approved.') + '</div>';
+  return rows.join('') + manifest;
+}
+
 function _claimRowsHtml(claims, isMgr) {
   if (!claims.length) return '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:16px">No claims</td></tr>';
   return claims.map(c => {
@@ -8025,7 +8048,12 @@ async function tkRenderTravelClaims() {
     _kpiTile('Claims value', _PAY_FMT(cTot), '#00B060', '<path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>')
   ]);
   const act = (coll, id, status) => _aprBtns(status, (coll === 'travel' ? 'tkTravelDecision' : 'tkTCDecision'), id, { small: true });
-  const travelRows = travel.length ? travel.map(t => '<tr><td><div style="font-weight:600">' + _crmEsc(t.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(t.dept || '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap">' + act('travel', t.id, t.status) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
+  const travelRows = travel.length ? travel.map(t => {
+    const chev = '<svg id="fin-chev-' + t.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + t.id + '\')"><td><div style="display:flex;align-items:center;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + '<b style="font-weight:600">' + _crmEsc(t.name || '') + '</b></span></div><div style="font-size:11px;color:var(--text-light);padding-left:18px">' + _crmEsc(t.dept || '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + act('travel', t.id, t.status) + '</td></tr>';
+    const detail = '<tr id="fin-det-' + t.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(t, 'travel') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(t) + '</div></div></td></tr>';
+    return summary + detail;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
   const claimRows = '<thead><tr><th>Employee</th><th>Claim</th><th>Items</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>' + _claimRowsHtml(claims, isMgr) + '</tbody>';
   root.innerHTML = (document.querySelector('#view-travelclaims > .myspace-tabbar') ? '' : _finTabBar('travelclaims')) + periodSel + '<div id="tc-export">' + kpis + deptDash +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:20px"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Travel Requests</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All employees' : 'Mine') + '</span></div><div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Employee</th><th>Destination</th><th>Purpose</th><th>Dates</th><th style="text-align:right">Est. cost</th><th style="text-align:right">Advance</th><th>Status</th><th></th></tr></thead><tbody>' + travelRows + '</tbody></table></div></div>' +
@@ -8157,7 +8185,10 @@ function payFillTable() {
     const canPay = _lvlRank(_userLevel) >= _lvlRank('management');
     const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
-    return '<tr><td style="font-family:monospace;font-size:11px;white-space:nowrap">' + _crmEsc(p.reqNo || '') + '</td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
+    const chev = '<svg id="fin-chev-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
+    const detail = '<tr id="fin-det-' + p.id + '" style="display:none"><td colspan="10" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
+    return summary + detail;
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
 }
 function tkNewPayment() {
@@ -8650,7 +8681,20 @@ function finFillTable() {
     return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept) && _inPeriodLF(i.date, 'fin-period');
   }).sort((a, b) => b.amount - a.amount);
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
-  tb.innerHTML = list.length ? list.map(i => '<tr><td>' + _pmBadge(i.kind, _finKindHex(i.kind)) + '</td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td>' + fileCell(i) + '</td></tr>').join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
+  const kindKey = { Payment: 'payment', Claim: 'claim', Travel: 'travel' };
+  tb.innerHTML = list.length ? list.map(i => {
+    const rec = (_HR[i.coll] || []).find(x => x.id === i.id) || {};
+    const chev = '<svg id="fin-chev-' + i.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
+    // claims carry a bill per line item — surface each one, plus the record-level bill helper
+    let bills = _finBillsHtml(rec, kindKey[i.kind] || 'payment');
+    if (i.kind === 'Claim' && Array.isArray(rec.items)) {
+      const lines = rec.items.filter(it => it.attachment || it.spUrl).map((it, n) => '<div style="margin-top:5px;font-size:12px">' + _crmEsc(it.category || ('Item ' + (n + 1))) + ': ' + _finBillsHtml(it, 'claim') + '</div>');
+      if (lines.length) bills = '<div>' + _finBillsHtml(rec, 'claim') + lines.join('') + '</div>';
+    }
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + i.id + '\')"><td><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _pmBadge(i.kind, _finKindHex(i.kind)) + '</span></td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td onclick="event.stopPropagation()">' + fileCell(i) + '</td></tr>';
+    const detail = '<tr id="fin-det-' + i.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + bills + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(rec) + '</div></div></td></tr>';
+    return summary + detail;
+  }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
 }
 /* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
 /* Finance vouchers — drawn NATIVELY with jsPDF text on the Humiley letterhead (no html2canvas
@@ -13454,6 +13498,16 @@ const _VI = {
   'Define shift patterns · Grace periods · Check-in windows': 'Xác định mẫu ca làm · Thời gian ân hạn · Khung giờ chấm vào',
   'Schedules set lateness expectations only (shift start + grace) — they never block check-in or check-out.': 'Ca làm việc chỉ dùng để tính đi trễ (giờ vào ca + ân hạn) — không bao giờ khóa chấm công vào/ra.',
   'The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.': 'Ứng dụng Mua sắm chưa được cấu hình. Quản trị viên có thể đặt địa chỉ trong Cài đặt → Cổng công ty.',
+  'Bill / supporting documents': 'Hóa đơn / chứng từ',
+  'Approval': 'Phê duyệt',
+  'Open bill in SharePoint': 'Mở hóa đơn trên SharePoint',
+  'View invoice / bill': 'Xem hóa đơn',
+  'Payment voucher': 'Phiếu chi',
+  'No bill attached': 'Chưa đính kèm hóa đơn',
+  'Reviewed by': 'Người xem xét',
+  'Approved by': 'Người phê duyệt',
+  'Paid on': 'Đã chi ngày',
+  'Not yet approved.': 'Chưa phê duyệt.',
   'Overtime request': 'Yêu cầu tăng ca',
   'Overtime hours': 'Số giờ tăng ca',
   'Request overtime': 'Gửi yêu cầu tăng ca',
