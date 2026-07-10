@@ -9110,12 +9110,12 @@ async function tkOpenProcurement() {
   try {
     var r = await tkApi('/api/procurement/sso');
     if (r && r.token) {
-      base.pathname = '/sso'; base.search = ''; base.searchParams.set('t', r.token);
+      base.pathname = base.pathname.replace(/\/+$/, '') + '/sso'; base.search = ''; base.searchParams.set('t', r.token);
       if (win) { win.location = base.toString(); } else { window.open(base.toString(), '_blank', 'noopener'); }
       return;
     }
   } catch (e) { /* SSO not configured or failed — fall through to the login page */ }
-  base.pathname = '/login'; base.search = '';
+  base.pathname = base.pathname.replace(/\/+$/, '') + '/login'; base.search = '';
   if (TK.user && TK.user.email) base.searchParams.set('email', TK.user.email);
   if (win) { win.location = base.toString(); } else { window.open(base.toString(), '_blank', 'noopener'); }
 }

@@ -5,15 +5,17 @@
 	# Add `preload` only once you're certain every subdomain is HTTPS-only and you submit to
 	# the preload list; it is hard to undo.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	reverse_proxy app:8000
-}
 
-# Procurement — an app of this portal, running as a SEPARATE compose stack on the same VPS
-# (humiley-procurement). This Caddy reaches it over the shared `humiley_net` network by container
-# name. Harmless until DNS for procurement.humiley.com resolves + the procurement stack is up
-# (Caddy retries the cert on its own; it will 502 until the app answers, without affecting the
-# portal). Point procurement.humiley.com's A record at this VPS to activate it.
-procurement.humiley.com {
-	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-	reverse_proxy humiley_proc_app:3000
+	# Procurement is an app of THIS portal, served under the ONE domain as a PATH —
+	# portal.humiley.com/procurement — so there is NO separate domain, no extra DNS record, and no
+	# separate certificate. It runs as its own compose stack (humiley-procurement) reachable over
+	# the shared humiley_net network by container name. KEEP the /procurement prefix (the Next app
+	# sets basePath to it) — do NOT strip it. Harmless (502) until the procurement stack is up.
+	handle /procurement* {
+		reverse_proxy humiley_proc_app:3000
+	}
+	# Everything else is the timekeeping portal.
+	handle {
+		reverse_proxy app:8000
+	}
 }
