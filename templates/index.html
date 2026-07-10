@@ -9041,29 +9041,35 @@ async function tkSetLevel(id, level) {
 /* Procurement is a SEPARATE portal app (procure-to-pay + inventory) — an app of this portal
    like HR/Finance. Opt-in per user (Access & Permissions); opens in a new tab with the signed-in
    email prefilled on its login screen. URL is set by an admin in HR Admin -> Company Portal. */
-function tkOpenProcurement() {
+async function tkOpenProcurement() {
   var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
-  // Only default to localhost in dev. In production DON'T open a hardcoded host that may not be
-  // deployed yet — require the admin to configure the URL, so users never hit a dead link.
   if (!url && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) url = 'http://localhost:3000';
   if (!url) {
     toast(_t('The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.'), 'warn', 7000);
     return;
   }
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;   // admin saved "procurement.humiley.com" without a scheme
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
+  var base;
   try {
-    var u = new URL(url);
-    if (u.protocol !== 'http:' && u.protocol !== 'https:') { toast('The configured Procurement URL must be http(s) — check Settings → Company Portal.', 'error', 6000); return; }
-    if (TK.user && TK.user.email) {
-      // land on /login with the account prefilled — already-signed-in users are bounced
-      // straight to their procurement dashboard by the app itself
-      u.pathname = '/login';
-      u.searchParams.set('email', TK.user.email);
-    }
-    url = u.toString();
+    base = new URL(url);
+    if (base.protocol !== 'http:' && base.protocol !== 'https:') { toast('The configured Procurement URL must be http(s) — check Settings → Company Portal.', 'error', 6000); return; }
   } catch (e) { toast('The configured Procurement URL is not a valid address — check Settings → Company Portal.', 'error', 6000); return; }
-  try { tkAudit('Opened Procurement', (TK.user && TK.user.name) || '', url.split('?')[0]); } catch (e) {}
-  window.open(url, '_blank', 'noopener');
+  // Procurement is an APP OF THIS PORTAL (like HR/CRM): the signed-in user should NOT log in
+  // again. Fetch a short-lived signed SSO token and open /sso — procurement establishes the
+  // session with no password. If SSO isn't configured, fall back to its own login page.
+  var win = window.open('about:blank', '_blank', 'noopener');   // open synchronously (popup-blocker safe)
+  try { tkAudit('Opened Procurement', (TK.user && TK.user.name) || '', base.origin); } catch (e) {}
+  try {
+    var r = await tkApi('/api/procurement/sso');
+    if (r && r.token) {
+      base.pathname = '/sso'; base.search = ''; base.searchParams.set('t', r.token);
+      if (win) { win.location = base.toString(); } else { window.open(base.toString(), '_blank', 'noopener'); }
+      return;
+    }
+  } catch (e) { /* SSO not configured or failed — fall through to the login page */ }
+  base.pathname = '/login'; base.search = '';
+  if (TK.user && TK.user.email) base.searchParams.set('email', TK.user.email);
+  if (win) { win.location = base.toString(); } else { window.open(base.toString(), '_blank', 'noopener'); }
 }
 
 async function tkSetApp(id, app, allowed) {

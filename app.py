@@ -41,6 +41,9 @@ M365 = {
     "mapsKey": os.environ.get("TK_MAPS_KEY", ""),
 }
 DEMO_MODE = not (M365["clientId"] and M365["tenantId"])
+# Secret shared with the Procurement app (an app OF this portal). The portal mints a short-lived
+# signed token so a signed-in user opens Procurement with NO second login (like HR/CRM).
+PROCUREMENT_SSO_SECRET = os.environ.get("TK_SSO_SECRET", "")
 
 # In-memory sessions: token -> {emp_id, role, expires}. Long-lived + sliding so a signed-in user
 # never sees the login screen again (until they sign out): the token is stored in localStorage on
@@ -376,6 +379,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/me":
             u = self._user()
             return self._json(u) if u else self._err("Not authenticated.", 401)
+        if path == "/api/procurement/sso":
+            # Mint a signed SSO token for the current user to open the Procurement app seamlessly.
+            return self._guard(lambda u: self._procurement_sso_token(u))
         if path == "/api/employees":
             return self._guard(lambda u: self._json({"employees": self._emp_list_for(u)}))
         if path == "/api/attendance":
@@ -1406,6 +1412,27 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- company portal content (announcements / holidays / learning / resources) --
     PORTAL_KEYS = ("announcements", "holidays", "learning", "resources")
+
+    def _procurement_sso_token(self, u):
+        """Short-lived HMAC-signed token {email,name,exp}. Procurement (an app of this portal)
+        verifies it against the SAME TK_SSO_SECRET and opens a session with no password — the
+        user already authenticated to the portal via Microsoft 365. Only granted users get here
+        (the launcher is hidden unless Procurement is in appsAllowed)."""
+        import base64, hmac, hashlib
+        secret = PROCUREMENT_SSO_SECRET
+        if not secret or len(secret) < 16:
+            return self._err("Procurement single sign-on is not configured (set TK_SSO_SECRET).", 503)
+        # Second gate (defence-in-depth on top of the DB-user check procurement does): the user
+        # must actually have Procurement granted — admins always, else it must be in appsAllowed.
+        allowed = set(x.strip().lower() for x in str(u.get("appsAllowed") or "").split(",") if x.strip())
+        if self._caller_level(u) != "admin" and "procurement" not in allowed:
+            return self._err("You do not have access to the Procurement app.", 403)
+        payload = json.dumps({"email": u.get("email") or "", "name": u.get("name") or "",
+                              "exp": int(time.time()) + 120}, separators=(",", ":"))
+        p_b64 = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+        sig = hmac.new(secret.encode("utf-8"), p_b64.encode("ascii"), hashlib.sha256).digest()
+        s_b64 = base64.urlsafe_b64encode(sig).decode("ascii").rstrip("=")
+        return self._json({"token": p_b64 + "." + s_b64})
 
     def _portal_get(self, u):
         out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
