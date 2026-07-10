@@ -1979,7 +1979,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
-      <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://procurement.humiley.com"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is deployed. The sidebar entry opens this address in a new tab for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (procurement.humiley.com; localhost:3000 in development).</div></div>
+      <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
@@ -9090,7 +9090,7 @@ async function tkSetLevel(id, level) {
    email prefilled on its login screen. URL is set by an admin in HR Admin -> Company Portal. */
 async function tkOpenProcurement() {
   var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
-  if (!url && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) url = 'http://localhost:3000';
+  if (!url && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) url = 'http://localhost:3000/procurement';
   if (!url) {
     toast(_t('The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.'), 'warn', 7000);
     return;
