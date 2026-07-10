@@ -57,6 +57,19 @@ else
   echo "    saved to .env — BACK UP this file. Do not change TK_ESIGN_PEPPER or existing PINs stop working."
 fi
 
+# 2.6) Ensure the Procurement SSO secret exists (generated ONCE, then reused). Procurement, when
+#      deployed, MUST use the SAME value as its PORTAL_SSO_SECRET, or the no-second-login handoff
+#      falls back to the login screen.
+if grep -qE '^TK_SSO_SECRET=..' .env; then
+  say "Procurement SSO secret already set (.env) — leaving it unchanged."
+else
+  say "Generating the Procurement SSO secret (first run)…"
+  SSO="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  sed -i.bak '/^TK_SSO_SECRET=/d' .env && rm -f .env.bak
+  printf 'TK_SSO_SECRET=%s\n' "$SSO" >> .env
+  echo "    saved to .env — set procurement's PORTAL_SSO_SECRET to this SAME value."
+fi
+
 # 3) Rebuild + restart — the humiley_data volume (your DB) is left untouched
 say "Rebuilding and restarting…"
 docker compose up -d --build

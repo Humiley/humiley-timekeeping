@@ -11,6 +11,11 @@ services:
       # Signature-PIN pepper — kept out of the DB so a database leak can't crack PINs offline.
       # Generated once into .env by update.sh; never change it or existing PINs stop verifying.
       - TK_ESIGN_PEPPER=${TK_ESIGN_PEPPER:-}
+      # Shared secret for the Procurement single-sign-on handoff (an app of this portal). The
+      # portal mints a signed token; procurement verifies it with the SAME value as its
+      # PORTAL_SSO_SECRET so a signed-in user opens Procurement with no second login.
+      # Generated once into .env by update.sh.
+      - TK_SSO_SECRET=${TK_SSO_SECRET:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:
