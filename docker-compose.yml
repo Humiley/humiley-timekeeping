@@ -37,6 +37,15 @@ services:
     depends_on:
       - app
 
+networks:
+  # Give the default network a STABLE name so the Procurement app (a separate compose stack on
+  # this same VPS) can join it as an external network and be reached by this Caddy via its
+  # container name (humiley_proc_app:3000) — no public port, no host.docker.internal. See the
+  # procurement repo's DEPLOY.md option B. Renaming happens once on the next ./update.sh
+  # (containers recreate; the humiley_data + caddy volumes persist).
+  default:
+    name: humiley_net
+
 volumes:
   humiley_data:
   caddy_data:
