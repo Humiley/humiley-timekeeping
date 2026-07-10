@@ -242,6 +242,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if cache:
             self.send_header("Cache-Control", cache)
+        # Baseline security response headers (Caddy also sets HSTS at the TLS edge).
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1694,6 +1698,18 @@ class Handler(BaseHTTPRequestHandler):
         # them — this closes the "PATCH status=Approved / forge signatures" bypass.
         if name in ("claims", "travel", "payments", "leave"):
             existing = existing if name in ("claims", "travel", "payments", "acks") else next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            # Once a money record is signed/approved/paid its CONTENT is immutable evidence — a
+            # generic PATCH must not alter amount/payee/items after signing, or the Part 11
+            # signature would attest to values changed afterwards. Only ADMIN may correct it.
+            if existing and name in ("claims", "travel", "payments") and self._caller_level(u) != "admin":
+                _st = str(existing.get("status") or "").strip().lower()
+                if _st in ("approved", "paid", "reviewed") or existing.get("signatures"):
+                    return self._err("This request has been signed/approved and can no longer be edited.", 403)
+            # Validate money on the incoming edit too (add-time validation alone was insufficient).
+            if name in ("claims", "travel", "payments"):
+                _merr = self._validate_money_item(name, item)
+                if _merr:
+                    return self._err(_merr, 400)
             if existing:
                 for _k in ("status", "signatures", "reviewedBy", "reviewedById", "reviewedAt",
                            "approvedBy", "approvedById", "approvedAt", "paidOn", "paidBy",
@@ -1778,6 +1794,11 @@ def main():
     print("  Humiley Timekeeping & Leave Management")
     print("=" * 62)
     print("  Mode: %s" % ("DEMO (pick Manager/Staff)" if DEMO_MODE else "Microsoft 365 (live)"))
+    # Part 11 e-sign PIN pepper must be set BEFORE any PIN is enrolled — a PIN hashed without the
+    # pepper cannot be re-derived once one is added, so those signatures would stop validating.
+    if not DEMO_MODE and not os.environ.get("TK_ESIGN_PEPPER"):
+        print("  \033[1;33m⚠  TK_ESIGN_PEPPER is NOT set.\033[0m Set it (openssl rand -hex 32) BEFORE")
+        print("     any user enrolls an e-signature PIN — adding it later invalidates existing PINs.")
     if seeded:
         print("  Database seeded with %d employees." % len(db.list_employees()))
     print("  Open: http://localhost:%d/" % PORT)

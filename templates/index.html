@@ -7166,7 +7166,7 @@ function _assetHandoverPDF(e, devs, mgr) {
   const doc = new J({ unit: 'mm', format: 'a4' });
   const W = 210, M = 16; let y = 18;
   const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK;
-  const D = v => (v && String(v).trim()) ? _crmEsc(String(v)) : '—';
+  const D = v => (v && String(v).trim()) ? String(v) : '—';   // jsPDF text — NOT innerHTML, so no HTML-escaping (would print 'Sales &amp; Tender')
   const today = tkFmtDateObj(new Date());
   // ── Humiley letterhead ──
   try { doc.addImage(_lhLogo(), 'PNG', M, y - 5, 40, 14, 'HMLLOGO', 'FAST'); } catch (x) {}
@@ -9043,7 +9043,13 @@ async function tkSetLevel(id, level) {
    email prefilled on its login screen. URL is set by an admin in HR Admin -> Company Portal. */
 function tkOpenProcurement() {
   var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
-  if (!url) url = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? 'http://localhost:3000' : 'https://procurement.humiley.com';
+  // Only default to localhost in dev. In production DON'T open a hardcoded host that may not be
+  // deployed yet — require the admin to configure the URL, so users never hit a dead link.
+  if (!url && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) url = 'http://localhost:3000';
+  if (!url) {
+    toast(_t('The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.'), 'warn', 7000);
+    return;
+  }
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;   // admin saved "procurement.humiley.com" without a scheme
   try {
     var u = new URL(url);
@@ -13441,6 +13447,13 @@ const _VI = {
   'Default Geofence Radius (metres)': 'Bán kính vùng định vị mặc định (mét)',
   'Define shift patterns · Grace periods · Check-in windows': 'Xác định mẫu ca làm · Thời gian ân hạn · Khung giờ chấm vào',
   'Schedules set lateness expectations only (shift start + grace) — they never block check-in or check-out.': 'Ca làm việc chỉ dùng để tính đi trễ (giờ vào ca + ân hạn) — không bao giờ khóa chấm công vào/ra.',
+  'The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.': 'Ứng dụng Mua sắm chưa được cấu hình. Quản trị viên có thể đặt địa chỉ trong Cài đặt → Cổng công ty.',
+  'Overtime request': 'Yêu cầu tăng ca',
+  'Overtime hours': 'Số giờ tăng ca',
+  'Request overtime': 'Gửi yêu cầu tăng ca',
+  'No overtime': 'Không tăng ca',
+  'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Gửi yêu cầu tăng ca để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
+  'e.g. urgent site work': 'ví dụ: công việc khẩn tại công trường',
   'Definition': 'Định nghĩa',
   'Demo Mode': 'Chế độ dùng thử',
   'Demo mode — no sync': 'Chế độ dùng thử — không đồng bộ',

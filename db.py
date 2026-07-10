@@ -158,7 +158,6 @@ def init_db():
         );
 
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
-        CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL;
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
         CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
@@ -188,6 +187,23 @@ def init_db():
             conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
         except sqlite3.OperationalError:
             pass
+    # One-open-record-per-(emp,date) uniqueness. On an EXISTING production DB there may already be
+    # duplicate open rows (pre-fix double-taps / orphaned overnight rows), which would make a bare
+    # CREATE UNIQUE INDEX abort startup — so we first collapse duplicates (keep the latest open row
+    # per emp+date, close the older ones), THEN create the index, and guard the whole thing.
+    try:
+        dups = conn.execute(
+            "SELECT emp_id, date FROM attendance WHERE clock_out IS NULL "
+            "GROUP BY emp_id, date HAVING COUNT(*) > 1").fetchall()
+        for emp_id, date in dups:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM attendance WHERE emp_id=? AND date=? AND clock_out IS NULL "
+                "ORDER BY id DESC", (emp_id, date)).fetchall()]
+            for old_id in ids[1:]:   # keep the newest open row; close the rest to '—' so no data is lost
+                conn.execute("UPDATE attendance SET clock_out=COALESCE(clock_out,'—') WHERE id=?", (old_id,))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL")
+    except sqlite3.OperationalError:
+        pass   # a residual duplicate must never abort startup — the app-level guard still applies
     conn.commit()
     conn.close()
 
