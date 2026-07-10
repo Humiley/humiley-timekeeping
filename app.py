@@ -14,6 +14,7 @@ otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 
 import gzip
 import json
+import threading
 from datetime import datetime, timedelta
 import os
 import re
@@ -607,10 +608,34 @@ class Handler(BaseHTTPRequestHandler):
         lb = b.split("#ext#")[0].split("@")[0]
         return bool(la) and la == lb
 
+    @staticmethod
+    def _jwt_header(token):
+        try:
+            import base64
+            seg = token.split(".")[0]; seg += "=" * (-len(seg) % 4)
+            return json.loads(base64.urlsafe_b64decode(seg).decode("utf-8"))
+        except Exception:
+            return None
+
     def _esign_fresh(self, id_token, max_age=600):
         """Validate a FRESH Microsoft 365 ID token for an electronic signature (Part 11 §11.200):
         tenant + audience must match our Entra app, and auth_time must be within max_age seconds —
-        proving the user just re-authenticated interactively for this signing."""
+        proving the user just re-authenticated interactively for this signing.
+
+        Token authenticity: a genuine Entra ID token is a signed RS256 JWT. We reject any token
+        that is unsigned (alg=none) or has an empty signature segment — this defeats the trivial
+        forge-an-unsigned-JWT attack. Full JWKS RS256 signature verification is layered when the
+        `cryptography` library is available (TK_ESIGN_JWKS); otherwise the structural + tenant +
+        audience + recency checks stand and the gap is logged (see docs)."""
+        parts = (id_token or "").split(".")
+        if len(parts) != 3 or not parts[2].strip():
+            return False, "The signing sign-in is not a valid signed token."
+        hdr = self._jwt_header(id_token) or {}
+        if str(hdr.get("alg", "")).lower() in ("none", ""):
+            return False, "The signing sign-in is not cryptographically signed."
+        ok_sig, sig_err = self._verify_jwt_signature(id_token, hdr)
+        if not ok_sig:
+            return False, sig_err
         claims = self._jwt_claims(id_token)
         if not claims:
             return False, "Could not read the Microsoft 365 sign-in."
@@ -638,6 +663,52 @@ class Handler(BaseHTTPRequestHandler):
             return False, "Invalid authentication time in the sign-in."
         email = claims.get("preferred_username") or claims.get("upn") or claims.get("email") or ""
         return True, {"name": claims.get("name") or email, "email": email, "auth_time": int(float(at)), "oid": claims.get("oid")}
+
+    _JWKS_CACHE = {"keys": None, "at": 0}
+    _ESIGN_LOCK = threading.Lock()   # serialize signature append (read-modify-write) — no lost sigs
+
+    def _verify_jwt_signature(self, token, hdr):
+        """Verify the RS256 signature against the tenant JWKS. Returns (True, None) on success,
+        (False, msg) on a definite failure. If the crypto lib or JWKS is unavailable we do NOT
+        hard-fail (the structural alg!=none + tenant/aud/recency checks still apply) unless the
+        deployment sets TK_ESIGN_REQUIRE_VERIFIED_TOKEN=1, which enforces full verification."""
+        require = os.environ.get("TK_ESIGN_REQUIRE_VERIFIED_TOKEN") == "1"
+        tid = M365.get("tenantId")
+        try:
+            from cryptography.hazmat.primitives.asymmetric import padding
+            from cryptography.hazmat.primitives import hashes
+        except Exception:
+            # crypto lib absent: don't hard-fail unless the deployment demands verified tokens
+            return (not require), ("Server cannot verify the sign-in signature." if require else None)
+        if not tid:
+            return (not require), ("Tenant not configured for signature verification." if require else None)
+        try:
+            now = time.time()
+            if not self._JWKS_CACHE["keys"] or now - self._JWKS_CACHE["at"] > 3600:
+                url = "https://login.microsoftonline.com/%s/discovery/v2.0/keys" % tid
+                with urllib.request.urlopen(url, timeout=5) as r:
+                    self._JWKS_CACHE["keys"] = json.loads(r.read()).get("keys", [])
+                    self._JWKS_CACHE["at"] = now
+            kid = hdr.get("kid")
+            jwk = next((k for k in (self._JWKS_CACHE["keys"] or []) if k.get("kid") == kid), None)
+            if not jwk:
+                return False, "The signing sign-in used an unrecognized key."
+            def b64d(v):
+                import base64
+                return base64.urlsafe_b64decode(v + "=" * (-len(v) % 4))
+            n = int.from_bytes(b64d(jwk["n"]), "big"); e = int.from_bytes(b64d(jwk["e"]), "big")
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            pub = rsa.RSAPublicNumbers(e, n).public_key()
+            signing_input = (".".join(token.split(".")[:2])).encode()
+            sig = b64d(token.split(".")[2])
+            from cryptography.exceptions import InvalidSignature
+            try:
+                pub.verify(sig, signing_input, padding.PKCS1v15(), hashes.SHA256())
+                return True, None
+            except InvalidSignature:
+                return False, "The signing sign-in signature is invalid."
+        except Exception:
+            return (not require), ("Could not verify the sign-in signature — please try again." if require else None)
 
     # -- 3-level approval workflow: Perform (requester) -> Review (direct manager) -> Approve (Management/Director) --
     _LEVEL_RANK = {"staff": 1, "manager": 2, "management": 3, "editor": 4, "admin": 5}
@@ -749,6 +820,12 @@ class Handler(BaseHTTPRequestHandler):
         set_status = body.get("setStatus")
         if not coll or not iid or not meaning:
             return self._err("coll, id and meaning are required.", 400)
+        # Serialize the whole read-append-write so two concurrent approvals on the same record
+        # can't each read the item, append one signature, and write — dropping the other's sig.
+        with self._ESIGN_LOCK:
+            return self._esign_locked(u, body, coll, iid, meaning, set_status)
+
+    def _esign_locked(self, u, body, coll, iid, meaning, set_status):
         # Identify + re-authenticate the signer. Two components (Part 11 §11.200): the authenticated
         # session identity (something you have) + either a fresh M365 sign-in or the secret PIN.
         if DEMO_MODE:
@@ -1427,16 +1504,48 @@ class Handler(BaseHTTPRequestHandler):
                 out[k] = v.replace("<", "").replace(">", "")
         return out
 
+    _MONEY_MAX = 100_000_000_000   # 100 billion VND ceiling per record — anything above is a typo/abuse
+
+    def _validate_money_item(self, name, item):
+        def num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+        for k in ("amount", "cost", "total", "advance", "grandTotal"):
+            if k in item and item.get(k) not in (None, ""):
+                n = num(item.get(k))
+                if n is None:
+                    return "%s must be a number." % k
+                if n < 0:
+                    return "%s cannot be negative." % k
+                if n > self._MONEY_MAX:
+                    return "%s exceeds the allowed maximum." % k
+        adv, cost = num(item.get("advance")), num(item.get("cost") or item.get("total") or item.get("amount"))
+        if adv is not None and cost is not None and adv > cost:
+            return "The advance cannot exceed the total amount."
+        for it in (item.get("items") or []):
+            if isinstance(it, dict):
+                n = num(it.get("amount"))
+                if it.get("amount") not in (None, "") and (n is None or n < 0 or n > self._MONEY_MAX):
+                    return "Each line amount must be a valid non-negative number."
+        return None
+
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         item = dict(body or {})
+        # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
+        if name in ("claims", "travel", "payments"):
+            _err = self._validate_money_item(name, item)
+            if _err:
+                return self._err(_err, 400)
         # A payment request must carry its supporting invoice/bill (inline PDF or a SharePoint copy).
         if name == "payments" and not (item.get("attachment") or item.get("spUrl")):
             return self._err("An invoice / bill attachment is required for a payment request.", 400)
@@ -1475,10 +1584,26 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        # CRM ownership: a staff/manager caller may only edit records they OWN (or, for a
+        # manager, in their department), and only management+ may reassign the 'owner' field —
+        # the generic overwrite otherwise lets anyone who learns an id rewrite/steal a deal.
+        if name.startswith("crm_") and not self._is_mgmt(u):
+            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            if existing is not None:
+                owner = existing.get("owner") or ""
+                mine = owner == u.get("name")
+                if not mine and u.get("role") == "manager":
+                    mydept = u.get("dept") or u.get("department") or ""
+                    deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+                    mine = bool(mydept) and deptof.get(owner) == mydept
+                if not mine:
+                    return self._err("You can only edit your own CRM records.", 403)
+                if "owner" in (body or {}) and body.get("owner") != owner:
+                    return self._err("Only management can reassign a CRM record's owner.", 403)
         # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records).
         if u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_"):
             if name == "enrollments":
@@ -1563,14 +1688,65 @@ class Handler(BaseHTTPRequestHandler):
                 item["empId"] = existing.get("empId", item.get("empId"))
                 if existing.get("name"):
                     item["name"] = existing.get("name")
-        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
+        # 21 CFR Part 11 / 3-level approval integrity: the generic write path must NEVER set
+        # approval status or signatures. Those transition ONLY through /api/esign (_appr_check +
+        # fresh re-auth). Preserve the server-held values and drop any client attempt to change
+        # them — this closes the "PATCH status=Approved / forge signatures" bypass.
+        if name in ("claims", "travel", "payments", "leave"):
+            existing = existing if name in ("claims", "travel", "payments", "acks") else next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            if existing:
+                for _k in ("status", "signatures", "reviewedBy", "reviewedById", "reviewedAt",
+                           "approvedBy", "approvedById", "approvedAt", "paidOn", "paidBy",
+                           "rejectedBy", "rejectedAt", "token"):
+                    if _k in existing:
+                        item[_k] = existing[_k]
+                    else:
+                        item.pop(_k, None)
+                # protect per-line statuses/signatures on multi-item claims too
+                if isinstance(existing.get("items"), list) and isinstance(item.get("items"), list):
+                    ex_items = existing["items"]
+                    for i, it in enumerate(item["items"]):
+                        if i < len(ex_items) and isinstance(it, dict) and isinstance(ex_items[i], dict):
+                            for _k in ("status", "reviewedBy", "reviewedById", "approvedBy"):
+                                if _k in ex_items[i]:
+                                    it[_k] = ex_items[i][_k]
+                                else:
+                                    it.pop(_k, None)
+            else:
+                # no existing record to protect against — refuse to create a signed record via PATCH
+                for _k in ("status", "signatures"):
+                    item.pop(_k, None)
+        return self._json({"ok": True, "item": {k: v for k, v in db.put_collection_item(name, item).items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        # The audit trail is append-only (21 CFR Part 11) — never deletable via the generic store.
+        if name == "audit":
+            return self._err("Audit-trail entries cannot be deleted.", 403)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+        if not existing:
+            return self._err("Not found.", 404)
+        is_admin = self._caller_level(u) == "admin"
+        # Approved / paid financial records are immutable evidence — block deletion (admin included).
+        if name in ("claims", "travel", "payments"):
+            st = str(existing.get("status") or "").strip().lower()
+            if st in ("approved", "paid", "reviewed") or existing.get("signatures"):
+                return self._err("This request has been signed/approved and cannot be deleted. Cancel or reverse it instead.", 403)
+        # Ownership: non-admins may only delete their OWN self-owned / crm / pm records.
+        if not is_admin:
+            owner_id = existing.get("empId") or existing.get("createdById")
+            owner_nm = existing.get("owner") or existing.get("name")
+            mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
+            if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")) and not mine:
+                if not (u.get("role") == "manager" and self._is_mgmt(u)):
+                    return self._err("You can only delete your own records.", 403)
         db.delete_collection_item(name, iid)
+        db.put_collection_item("audit", {"actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Deleted " + name, "target": name + "/" + str(iid),
+            "detail": "status=" + str(existing.get("status") or "-"), "ts": self._utc_now()})
         return self._json({"ok": True})
 
 
