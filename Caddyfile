@@ -1,5 +1,9 @@
 # Caddy automatically obtains + renews a Let's Encrypt certificate for this domain
 # and reverse-proxies HTTPS traffic to the app container. The domain comes from .env.
 {$PORTAL_DOMAIN} {
+	# HSTS at the TLS edge — force HTTPS for a year (Caddy does NOT set this by default).
+	# Add `preload` only once you're certain every subdomain is HTTPS-only and you submit to
+	# the preload list; it is hard to undo.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 	reverse_proxy app:8000
 }

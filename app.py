@@ -245,7 +245,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if cache:
             self.send_header("Cache-Control", cache)
-        # Baseline security response headers (Caddy also sets HSTS at the TLS edge).
+        # Baseline security response headers. HSTS is set at the TLS edge by Caddy
+        # (Strict-Transport-Security in the Caddyfile) — not here, since it must only be
+        # emitted over HTTPS and the app also serves plain HTTP in demo/local runs.
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
