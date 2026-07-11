@@ -1,6 +1,15 @@
-# Humiley Portal — one-command VPS deploy: app behind Caddy (automatic HTTPS).
-# Usage on the VPS:  cp .env.example .env  (edit it)  →  docker compose up -d --build
+# Humiley — ONE combined stack: Portal (Python) + Procurement (Next.js) + Postgres, behind ONE Caddy.
+# It all runs as a single deployment on one VPS, one domain (portal.humiley.com), one command.
+#   Portal        → portal.humiley.com
+#   Procurement   → portal.humiley.com/procurement   (an app of the portal, no second login)
+#
+# Layout on the VPS (Procurement is cloned INTO this folder so one compose builds both):
+#   /opt/humiley-timekeeping/            ← this repo
+#     humiley-procurement/               ← git clone of the procurement repo (gitignored here)
+#     docker-compose.yml  Caddyfile  .env  update.sh
+# Deploy / update EVERYTHING with one command:  ./update.sh   (see that script)
 services:
+  # ── Portal (the Python timekeeping app) ──────────────────────────────────────────────────────
   app:
     build: .
     container_name: humiley_portal
@@ -8,19 +17,89 @@ services:
     environment:
       - TK_ADMIN_EMAIL=${TK_ADMIN_EMAIL:-tony.nguyen@humiley.com}
       - TK_ADMIN_NAME=${TK_ADMIN_NAME:-Tony Nguyen}
-      # Signature-PIN pepper — kept out of the DB so a database leak can't crack PINs offline.
-      # Generated once into .env by update.sh; never change it or existing PINs stop verifying.
+      # Signature-PIN pepper — kept out of the DB so a DB leak can't crack PINs. Generated once
+      # into .env by update.sh; never change it or existing PINs stop verifying.
       - TK_ESIGN_PEPPER=${TK_ESIGN_PEPPER:-}
-      # Shared secret for the Procurement single-sign-on handoff (an app of this portal). The
-      # portal mints a signed token; procurement verifies it with the SAME value as its
-      # PORTAL_SSO_SECRET so a signed-in user opens Procurement with no second login.
-      # Generated once into .env by update.sh.
+      # The ONE shared SSO secret. Procurement reads the SAME variable (below), so the no-second-
+      # login handoff can never drift out of sync. Generated once into .env by update.sh.
       - TK_SSO_SECRET=${TK_SSO_SECRET:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:
-      - "8000"                      # internal only — not published to the public interface
+      - "8000"
 
+  # ── Procurement (the Next.js app, served under /procurement) ─────────────────────────────────
+  procurement:
+    build:
+      context: ./humiley-procurement
+      args:
+        BASE_PATH: "/procurement"
+    container_name: humiley_proc_app
+    restart: unless-stopped
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+      - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET (update.sh generates it)}
+      - AUTH_TRUST_HOST=true
+      # SAME secret as the portal above — one variable, always in sync.
+      - PORTAL_SSO_SECRET=${TK_SSO_SECRET:-}
+      - APP_URL=${APP_URL:-https://portal.humiley.com/procurement}
+      - DEFAULT_VAT_PCT=${DEFAULT_VAT_PCT:-10}
+    volumes:
+      - proc_storage:/app/storage   # uploaded invoices/bills persist across redeploys
+    expose:
+      - "3000"
+
+  # ── Procurement's database ───────────────────────────────────────────────────────────────────
+  procdb:
+    image: postgres:16-alpine
+    container_name: humiley_proc_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-procurement}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-humiley_procurement}
+    volumes:
+      - proc_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-procurement} -d $${POSTGRES_DB:-humiley_procurement}"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  # ── One-off Procurement DB setup (runs from the builder stage: prisma CLI + tsx) ─────────────
+  #    `docker compose --profile setup run --rm proc-migrate`  (update.sh does this automatically)
+  proc-migrate:
+    build:
+      context: ./humiley-procurement
+      target: builder
+      args:
+        BASE_PATH: "/procurement"
+    profiles: ["setup"]
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+    command: sh -c "npx prisma migrate deploy"
+  proc-bootstrap:
+    build:
+      context: ./humiley-procurement
+      target: builder
+    profiles: ["setup"]
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+      - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-}
+      - BOOTSTRAP_ADMIN_NAME=${BOOTSTRAP_ADMIN_NAME:-System Administrator}
+    command: sh -c "npm run bootstrap"
+
+  # ── One Caddy: HTTPS edge, routes the whole domain ───────────────────────────────────────────
   caddy:
     image: caddy:2
     container_name: humiley_caddy
@@ -32,21 +111,20 @@ services:
       - PORTAL_DOMAIN=${PORTAL_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data            # Let's Encrypt certificates persist here
+      - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - app
+      - procurement
 
+# All services share this one network, so Caddy reaches app:8000 and humiley_proc_app:3000 by name.
 networks:
-  # Give the default network a STABLE name so the Procurement app (a separate compose stack on
-  # this same VPS) can join it as an external network and be reached by this Caddy via its
-  # container name (humiley_proc_app:3000) — no public port, no host.docker.internal. See the
-  # procurement repo's DEPLOY.md option B. Renaming happens once on the next ./update.sh
-  # (containers recreate; the humiley_data + caddy volumes persist).
   default:
     name: humiley_net
 
 volumes:
   humiley_data:
+  proc_db:
+  proc_storage:
   caddy_data:
   caddy_config:
