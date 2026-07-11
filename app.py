@@ -1323,6 +1323,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("name and email required.")
         if db.get_employee_by_email(body["email"]):
             return self._err("An employee with that email already exists.")
+        # Admin-assigned Employee ID must be unique (it is the primary key). Blank → auto-generated.
+        if body.get("id") and db.get_employee(body["id"]):
+            return self._err("Employee ID '%s' is already in use — choose a different one." % body["id"])
         body = dict(body or {})
         # Only admins may set access level / role on create (prevents privilege escalation).
         if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body) and self._caller_level(u) != "admin":

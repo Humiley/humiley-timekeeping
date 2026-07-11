@@ -10086,7 +10086,7 @@ async function tkSyncM365Users() {
   await tkBootstrap();
   const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(e => { byEmail[(e.email || '').toLowerCase()] = e; });
   const known = new Set();
-  const toCreate = [], toUpdate = [];
+  const toCreate = [];   // ADD-ONLY: the sync never updates or deactivates existing employees
   let skipped = 0;
   for (const u of users) {
     const email = (u.mail || u.userPrincipalName || '').toLowerCase();
@@ -10097,15 +10097,9 @@ async function tkSyncM365Users() {
     const licensed = !!(u.assignedLicenses && u.assignedLicenses.length);
     const ex = byEmail[email];
     if (ex) {
-      const patch = {};
-      if (u.displayName && u.displayName !== ex.name) patch.name = u.displayName;
-      const nd = _normDept(u.department);
-      if (u.department && nd !== (ex.dept || '')) patch.dept = nd;
-      if (u.jobTitle && (u.jobTitle || '') !== (ex.title || '')) patch.title = u.jobTitle;
-      if (u.mobilePhone && (u.mobilePhone || '') !== (ex.phone || '')) patch.phone = u.mobilePhone;
-      const st = enabled ? 'Active' : 'Inactive';
-      if (st !== (ex.status || 'Active')) patch.status = st;
-      if (Object.keys(patch).length) toUpdate.push({ id: ex.id, name: ex.name, patch });
+      // ADD-ONLY: already in the system → leave it COMPLETELY untouched. The sync never overwrites
+      // an employee's data (name / department / title / phone / status). Inactive employees keep
+      // exactly what the admin set. We only note the email as "known" so it isn't offered as new.
     } else {
       const isPerson = licensed && enabled && !!(u.givenName && String(u.givenName).trim());
       if (!isPerson) { skipped++; continue; }   // shared / room / role mailbox (no licence, disabled, or no first name)
@@ -10113,17 +10107,10 @@ async function tkSyncM365Users() {
       toCreate.push({ email, name, dept: _normDept(u.department), title: u.jobTitle || '', phone: u.mobilePhone || '' });
     }
   }
-  const toDeactivate = [];
-  for (const e of (_DEMO_EMPLOYEES || [])) {
-    const email = (e.email || '').toLowerCase();
-    if (!email || email === myEmail) continue;
-    if (domain && !email.endsWith('@' + domain)) continue;
-    if (known.has(email)) continue;
-    if ((e.status || 'Active') === 'Inactive') continue;
-    toDeactivate.push({ id: e.id, name: e.name });
-  }
+  // ADD-ONLY: employees NOT present in Microsoft 365 are NOT auto-deactivated. The admin alone
+  // decides who is inactive (manually, on the employee record). The sync only ever ADDS new people.
 
-  _m365Pending = { toCreate, toUpdate, toDeactivate, skipped };
+  _m365Pending = { toCreate, skipped };
   _m365ShowPreview();
 }
 
@@ -10141,10 +10128,9 @@ function _m365ShowPreview() {
     '<td style="font-size:12px">' + (esc(u.dept) || '—') + '</td></tr>'
   ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:18px">No new licensed users to add — everyone in Microsoft 365 is already in the system.</td></tr>';
   const summary = '<div style="font-size:12.5px;color:var(--text-light);margin-bottom:10px">' +
-    '<b style="color:var(--emerald)">' + p.toCreate.length + '</b> new to add · ' +
-    '<b>' + p.toUpdate.length + '</b> existing to update · ' +
-    '<b style="color:var(--danger)">' + p.toDeactivate.length + '</b> leaver(s) to deactivate · ' +
-    p.skipped + ' skipped (guests / shared mailboxes / no licence)</div>';
+    '<b style="color:var(--emerald)">' + p.toCreate.length + '</b> new user(s) to add · ' +
+    p.skipped + ' skipped (already in the system / guests / shared mailboxes / no licence)' +
+    '<br><span style="color:var(--text-light)">Existing employees are never changed — the sync only ADDS new people; the admin assigns their ID and manages inactive status.</span></div>';
   const el = document.createElement('div'); el.id = 'm365SyncOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:720px">' +
     '<div class="modal-header"><div class="modal-title">Sync from Microsoft 365 — review before adding</div>' +
@@ -10165,7 +10151,7 @@ async function tkSyncM365Confirm() {
   const picked = new Set(Array.from(document.querySelectorAll('#m365SyncOverlay [data-m365-i]')).filter(b => b.checked).map(b => +b.getAttribute('data-m365-i')));
   document.getElementById('m365SyncOverlay')?.remove();
   toast('Syncing Microsoft 365…', 'info', 4000);
-  let created = 0, updated = 0, deactivated = 0;
+  let created = 0;   // ADD-ONLY
   for (let i = 0; i < p.toCreate.length; i++) {
     if (!picked.has(i)) continue;
     const u = p.toCreate[i];
@@ -10179,16 +10165,10 @@ async function tkSyncM365Confirm() {
       created++;
     } catch (e) {}
   }
-  for (const it of p.toUpdate) {
-    try { await tkApi('/api/employees/' + it.id, { method: 'PATCH', body: it.patch }); updated++; if (it.patch.status === 'Inactive') deactivated++; } catch (e) {}
-  }
-  for (const it of p.toDeactivate) {
-    try { await tkApi('/api/employees/' + it.id, { method: 'PATCH', body: { status: 'Inactive' } }); deactivated++; } catch (e) {}
-  }
   _m365Pending = null;
-  tkAudit('Synced from Microsoft 365', '', created + ' added, ' + updated + ' updated, ' + deactivated + ' inactive');
+  tkAudit('Synced from Microsoft 365 (add-only)', '', created + ' new user(s) added');
   try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkRenderBalances(); } catch (_) {}
-  toast('Microsoft 365 sync complete — ' + created + ' added, ' + updated + ' updated, ' + deactivated + ' deactivated.', 'info', 9000);
+  toast('Microsoft 365 sync complete — ' + created + ' new user(s) added. Existing employees unchanged.', 'info', 9000);
 }
 
 function _loadDemoUser() {
@@ -15587,6 +15567,7 @@ function _editEmpProfile(id) {
   const m = document.getElementById('addEmpModal');
   if (!m) { toast('Edit modal not available', 'warn'); return; }
   _tkEditEmpId = e.id;
+  const _idEd = document.getElementById('emp-id'); if (_idEd) _idEd.readOnly = true;
   const title = m.querySelector('.modal-title');
   if (title) title.textContent = 'Edit Employee — ' + e.name;
   const _slE = document.getElementById('emp-save-label'); if (_slE) _slE.textContent = 'Save Changes';
@@ -16800,6 +16781,7 @@ function openAddEmpModal() {
 function tkOpenAddEmp() {
   if (!_requireLevel('manager')) return;
   _tkEditEmpId = null;
+  const _idAdd = document.getElementById('emp-id'); if (_idAdd) _idAdd.readOnly = false;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
   const _slA = document.getElementById('emp-save-label'); if (_slA) _slA.textContent = 'Add Employee';
   ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary']
@@ -16857,6 +16839,8 @@ async function saveEmployee() {
     grade: val('emp-grade') || null, salary: parseInt(val('emp-salary')) || null,
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
+  // Admin-assigned Employee ID — only on ADD (the ID is the immutable key; it never changes on edit).
+  if (!_tkEditEmpId) { const eid = val('emp-id'); if (eid) payload.id = eid; }
   let res;
   if (_tkEditEmpId) {
     res = await tkPersist('/api/employees/' + _tkEditEmpId, payload, 'PATCH');
@@ -17025,7 +17009,7 @@ function saveEmployeeProfile() {
         <input type="text" class="form-control" id="emp-name" placeholder="e.g. Nguyen Van An"
                oninput="const e=document.getElementById('emp-email');if(!e.dataset.edited)e.value=this.value.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/đ/g,'d').replace(/[^a-z\s]/g,'').trim().replace(/\s+/g,'.')+'@humiley.com'">
       </div>
-      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" readonly placeholder="Auto-generated (HML-###)" style="background:var(--soft-bg);cursor:default"></div>
+      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" placeholder="Leave blank to auto-generate (HML-###) — or type a custom ID"></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="emp-gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>
