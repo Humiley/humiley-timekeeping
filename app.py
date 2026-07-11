@@ -1483,6 +1483,10 @@ class Handler(BaseHTTPRequestHandler):
                 "competency": "manager", "audit": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
     SELF_OWNED = {"claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
+    # Travel / claim / payment: a staff user sees only their OWN; a LEADER (manager) sees only their
+    # TEAM (direct reports + self); management/editor/admin (Finance-level and above) see the whole
+    # company. Scoped below in _coll_list.
+    TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
     HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
@@ -1500,13 +1504,38 @@ class Handler(BaseHTTPRequestHandler):
         if need and self._level_rank(self._caller_level(u)) < self._level_rank(need):
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
+        lvl = self._caller_level(u)
         # staff see ONLY their own records in self-service collections (no cross-employee read)
-        if self._caller_level(u) == "staff" and name in self.SELF_OWNED:
+        if lvl == "staff" and name in self.SELF_OWNED:
             myid, myname = u.get("id"), u.get("name")
             items = [it for it in items
                      if it.get("empId") == myid
                      or (not it.get("empId") and myname and it.get("name") == myname)
                      or (myname and it.get("assignedTo") == myname)]
+        # Travel / claim / payment: a LEADER (manager level) sees ONLY their TEAM — their own
+        # records plus those of the employees who report DIRECTLY to them (managerEmail == theirs).
+        # Management / editor / admin (Finance-level and above) fall through and see the whole
+        # company; staff were already scoped to their own just above.
+        elif lvl == "manager" and name in self.TEAM_SCOPED:
+            myid, myname = u.get("id"), u.get("name")
+            myemail = (u.get("email") or "").lower()
+            team_ids, team_names = set(), set()
+            for e in db.list_employees():
+                if (e.get("managerEmail") or "").lower() == myemail and myemail:
+                    if e.get("id"):
+                        team_ids.add(e.get("id"))
+                    if e.get("name"):
+                        team_names.add(e.get("name"))
+            if myid:
+                team_ids.add(myid)
+            if myname:
+                team_names.add(myname)
+            def _in_team(it):
+                if it.get("empId"):
+                    return it.get("empId") in team_ids
+                nm = it.get("name") or it.get("assignedTo")
+                return bool(nm) and nm in team_names
+            items = [it for it in items if _in_team(it)]
         # CRM records: salesperson (staff) sees own, manager sees their department,
         # management+ sees all. crm_products is a shared catalogue and is never scoped.
         if name.startswith("crm_") and name != "crm_products":
