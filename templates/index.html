@@ -20,7 +20,7 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --navy:#205090;--navy-deep:#163866;--navy-light:#3168A8;
   --emerald:#00B060;--emerald-deep:#008548;
   --text-dark:#1F2937;--text-light:#5C6470;
-  --line:#dde2ee;--light-tint:#e8edf6;--soft-bg:#f0f2f8;
+  --line:#dde2ee;--border:#dde2ee;--light-tint:#e8edf6;--soft-bg:#f0f2f8;
   --success:#10B981;--warning:#F59E0B;--danger:#C00000;--info:#8B5CF6;
   --white:#FFFFFF;
 }
@@ -467,7 +467,7 @@ body{
 #content{padding:8px 28px 30px !important;}
 
 /* ── Soft rounded cards everywhere ── */
-.card, .tabpane, .stat-box{
+.card, .tabpane, .stat-box, .staff-panel, .staff-kpi, .approval-card, .emp-profile-card, .staff-hero{
   border:none !important;
   border-radius:24px !important;
   box-shadow:0 14px 34px rgba(32,80,144,.09) !important;
@@ -475,7 +475,7 @@ body{
 }
 .card{padding:24px !important;}
 .modal{backdrop-filter:blur(3px);}
-.modal .modal, .modal-card{border-radius:24px !important;}
+.modal, .modal .modal, .modal-card{border-radius:24px !important;}
 
 /* ── Big, light headings ── */
 .page-header h1{font-size:32px !important;font-weight:300 !important;letter-spacing:-.6px;color:var(--navy) !important;}
@@ -503,7 +503,7 @@ body{
 .btn{border-radius:14px !important;}
 .btn-primary{background:var(--navy) !important;}
 .btn-emerald{background:var(--emerald) !important;}
-.sel-filter, select.form-control, input.form-control{border-radius:12px !important;}
+.sel-filter, select.form-control, input.form-control, textarea.form-control, .search-box, .search-box input{border-radius:12px !important;}
 
 /* ── Cleaner tables ── */
 th{background:transparent !important;border-bottom:1px solid var(--line) !important;}
@@ -3212,8 +3212,8 @@ async function _tkPersistSure(path, body) {
   }
 }
 async function tkCheckIn() {
-  if (_checkedIn) { if (typeof toast === 'function') toast('You are already checked in', 'warn'); return; }
-  if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Please select your location first', 'warn'); return; }
+  if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
+  if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Please select your location first', 'Vui lòng chọn địa điểm trước'), 'warn'); return; }
   if (_tkGpsState === 'out') { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   const btn = document.getElementById('btn-checkin'); if (btn) btn.disabled = true;
@@ -3239,7 +3239,7 @@ async function tkCheckIn() {
   const sel = document.getElementById('ci-zone-select'); if (sel) sel.disabled = true;
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Checked in at ' + t + '</span> · ' + _tkSelectedZone.name;
-  if (typeof toast === 'function') toast('Checked in at ' + t + ' · ' + _tkSelectedZone.name);
+  if (typeof toast === 'function') toast(_t2('Checked in at ' + t + ' · ' + _tkSelectedZone.name, 'Đã chấm công vào lúc ' + t + ' · ' + _tkSelectedZone.name));
   try { tkRenderCheckin(); } catch (e) {}
 }
 
@@ -3316,7 +3316,7 @@ async function _tkDoCheckout(t, otHours, otReason) {
   if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
   if (typeof toast === 'function') {
     if (otHours && otHours > 0) toast('Checked out at ' + t + ' · overtime ' + otHours + 'h requested (pending approval)', undefined, 5500);
-    else toast('Checked out at ' + t);
+    else toast(_t2('Checked out at ' + t, 'Đã chấm công ra lúc ' + t));
   }
   const zsel = document.getElementById('ci-zone-select'); if (zsel) zsel.disabled = false;
   if (_tkSelectedZone) { try { tkVerifySelectedZone(); } catch (e) {} }
@@ -10652,7 +10652,7 @@ async function crmRenderLeads() {
     _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
   ]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(allLeads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(allLeads, 'owner'), 'crmFillLeads') + _crmFiltPeriod('crm-leads-period', 'crmRenderLeads'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th>Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th style="text-align:right">Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
   crmFillLeads();
 }
 function crmFillLeads() {
@@ -10694,7 +10694,7 @@ async function crmRenderCompanies() {
   const cos = _crmMine(_HR.crm_companies); const deals = _crmMine(_HR.crm_deals);
   const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-co-q', 'Search company…', 'crmFillCompanies') + _crmFiltSel('crm-co-ind', 'All industries', _crmDistinct(cos, 'industry'), 'crmFillCompanies') + _crmFiltSel('crm-co-owner', 'All owners', _crmDistinct(cos, 'owner'), 'crmFillCompanies'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th>Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Companies / Accounts</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_companies') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_companies\')">' + _PLUS_SVG + ' Add Company</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Company</th><th>Industry</th><th>Website</th><th>Phone</th><th>Owner</th><th style="text-align:right">Deal value</th><th></th></tr></thead><tbody id="crm-co-tbody"></tbody></table></div></div>';
   crmFillCompanies();
 }
 function crmFillCompanies() {
@@ -10760,7 +10760,7 @@ function crmQuoteBuilder(id) {
   el.innerHTML = '<div class="modal" style="max-width:980px;width:96vw">' +
     '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
-    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
+    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px;text-align:right">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
     '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
   document.body.appendChild(el);
@@ -13250,7 +13250,7 @@ const _VI = {
   // Statuses
   'Active': 'Đang làm', 'Inactive': 'Ngừng', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Từ chối',
   'Completed': 'Hoàn thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
-  'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý', 'Lost': 'Mất',
+  'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý',
   'On Time': 'Đúng giờ', 'Late': 'Đi muộn', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
   // KPI / labels
   'Headcount': 'Tổng nhân sự', 'Present Today': 'Có mặt hôm nay', 'Late Arrivals': 'Đi muộn', 'On Leave': 'Nghỉ phép',
@@ -13400,7 +13400,6 @@ const _VI = {
   'Check-ins': 'Lượt chấm vào',
   'Check-out': 'Chấm ra',
   'Check-out reminder': 'Nhắc nhở chấm ra',
-  'Claim': 'Yêu cầu hoàn ứng',
   'Claim title / trip': 'Tiêu đề yêu cầu / chuyến đi',
   'Claims': 'Yêu cầu hoàn ứng',
   'Clearance': 'Thanh toán nghỉ việc',
@@ -13957,7 +13956,6 @@ const _VI = {
   'Resignation · clearance · final settlement': 'Từ chức · thanh toán bàn giao · quyết toán cuối cùng',
   'Rest Advised': 'Khuyến nghị nghỉ ngơi',
   'Return?': 'Trả lại?',
-  'Review': 'Đánh giá',
   'Reviews': 'Đánh giá',
   'Role / position': 'Vai trò / vị trí',
   'Route': 'Tuyến đường',
@@ -14543,7 +14541,7 @@ function _commitCheckin(lat, lon, zoneName) {
 }
 
 async function doCheckin() {
-  if (_checkedIn) { toast('You are already checked in', 'warn'); return; }
+  if (_checkedIn) { toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
   const btn = document.getElementById('btn-checkin');
   const _setBusy = (on) => { if (!btn) return; btn.disabled = on; btn.innerHTML = on ? '<span>Getting GPS…</span>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> Check In'; };
 

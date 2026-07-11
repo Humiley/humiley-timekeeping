@@ -730,12 +730,15 @@ class Handler(BaseHTTPRequestHandler):
         return self._LEVEL_RANK.get((lvl or "staff"), 1)
 
     def _is_mgmt(self, u):
-        return self._lvl_rank(u.get("level")) >= self._LEVEL_RANK["management"]
+        # Use the EFFECTIVE level (_caller_level derives management/manager from role+title when the
+        # stored `level` column is NULL — true for seeded/M365-synced managers), not the raw column,
+        # so a Director with no explicit level is not mis-treated as staff.
+        return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["management"]
 
     def _is_approver(self, u):
         # Final approval is reserved for Editor + Admin (request #6). A direct manager who is an
         # Editor/Admin approves in ONE step (request #5) — see the "approved" branch below.
-        return self._lvl_rank(u.get("level")) >= self._LEVEL_RANK["editor"]
+        return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["editor"]
 
     @staticmethod
     def _appr_state(status):
@@ -1212,6 +1215,11 @@ class Handler(BaseHTTPRequestHandler):
         status = body.get("status")
         if status not in ("approved", "rejected", "pending"):
             return self._err("Invalid status.")
+        # Part 11 + 3-level approval: a leave DECISION (approve/reject) requires an e-signature and
+        # goes ONLY through /api/esign (which runs _appr_check). This unsigned endpoint must never
+        # decide leave — the UI already uses the signed flow; block the bypass.
+        if status in ("approved", "rejected"):
+            return self._err("Leave approval/rejection requires an e-signature — use the approval flow.", 403)
         lv = db.get_leave(int(lid))
         if not lv:
             return self._err("Leave request not found.", 404)
@@ -1483,7 +1491,11 @@ class Handler(BaseHTTPRequestHandler):
     # for staff via the self-owner scoping below.
     READ_MIN = {"payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
-                "competency": "manager", "audit": "manager"}
+                "competency": "manager", "audit": "manager",
+                # Project financials must not be world-readable to every staff account (the PM app is
+                # on by default). Line-item costs + vendor payments need manager+; creation is already
+                # manager-gated, so this makes read match write.
+                "pm_costs": "manager", "pm_procurement_payments": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
     SELF_OWNED = {"claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
     # Travel / claim / payment: a staff user sees only their OWN; a LEADER (manager) sees only their
@@ -1653,6 +1665,25 @@ class Handler(BaseHTTPRequestHandler):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        # Travel/claim/payment write scope: a LEADER (manager) may only edit records they own or that
+        # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
+        # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
+        if name in self.TEAM_SCOPED and u.get("role") == "manager" and not self._is_mgmt(u):
+            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            if existing is not None:
+                myemail = (u.get("email") or "").strip().lower()
+                is_own = (existing.get("empId") and existing.get("empId") == u.get("id")) \
+                    or (not existing.get("empId") and existing.get("name") == u.get("name")) \
+                    or (existing.get("assignedTo") == u.get("name"))
+                owner_emp = None
+                if existing.get("empId"):
+                    owner_emp = db.get_employee(existing.get("empId"))
+                else:
+                    nm = existing.get("name") or existing.get("assignedTo")
+                    owner_emp = next((e for e in db.list_employees() if e.get("name") == nm), None) if nm else None
+                is_report = bool(owner_emp) and (owner_emp.get("managerEmail") or "").strip().lower() == myemail and bool(myemail)
+                if not (is_own or is_report):
+                    return self._err("You can only edit your own or your team's records.", 403)
         # CRM ownership: a staff/manager caller may only edit records they OWN (or, for a
         # manager, in their department), and only management+ may reassign the 'owner' field —
         # the generic overwrite otherwise lets anyone who learns an id rewrite/steal a deal.
