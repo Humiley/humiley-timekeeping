@@ -6,6 +6,11 @@
 	# the preload list; it is hard to undo.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 
+	# Compress every response (gzip/zstd) — the whole site was served uncompressed. Big win for
+	# text-heavy pages like the 5,613-row HS Code Explorer (~2.7 MB → ~0.5 MB). Caddy skips
+	# already-encoded responses, so it never double-compresses the portal's own gzip.
+	encode gzip zstd
+
 	# Procurement is an app of THIS portal, served under the ONE domain as a PATH —
 	# portal.humiley.com/procurement — so there is NO separate domain, no extra DNS record, and no
 	# separate certificate. It runs as its own compose stack (humiley-procurement) reachable over
