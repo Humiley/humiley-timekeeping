@@ -6894,7 +6894,7 @@ function _brandPaginate(doc, canvas, opts) {
 }
 /* Notify the requester of an approval decision. Microsoft Graph if connected; otherwise the
    approver's own mail client opens pre-addressed to the requester, so the approver sends it. */
-async function tkMailRequester(to, name, subject, body, cc) {
+async function tkMailRequester(to, name, subject, body, cc, html) {
   if (!to) { toast('No email on file for ' + (name || 'the requester') + ' — not notified', 'warn', 4000); return false; }
   try { _pushNotify(to, subject, String(body || '').replace(/^Dear[^,]*,\s*/i, '').split('\n').filter(Boolean)[0] || '', '/'); } catch (e) {}   // OS push: decisions / status updates to the requester
   // cc: string ("a@x;b@y" or "a@x,b@y") or array; deduped, self/to removed
@@ -6905,7 +6905,7 @@ async function tkMailRequester(to, name, subject, body, cc) {
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const msg = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] };
+      const msg = { subject: subject, body: html ? { contentType: 'HTML', content: html } : { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] };
       if (ccList.length) msg.ccRecipients = ccList.map(a => ({ emailAddress: { address: a } }));
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
       if (resp.ok) { toast('Emailed ' + (name || to) + (ccList.length ? ' (cc ' + ccList.length + ')' : '')); return true; }
@@ -6924,22 +6924,41 @@ async function tkFinFlowMail(item, kindLabel, ref, amountLabel, newStatus, reque
   const st = String(newStatus || '').toLowerCase();
   const who = requesterName || 'colleague';
   const actor = (TK.user || {}).name || 'the approver';
+  const approver = (TK.user || {}).email || '';
   const line = kindLabel + (ref ? ' "' + ref + '"' : '') + (amountLabel ? ' (' + amountLabel + ')' : '');
-  const foot = '\n\nBest regards,\nHumiley Group Inc. — Finance';
-  if (st === 'reviewed') {
-    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was reviewed', 'Dear ' + who + ',\n\nYour ' + line + ' has been REVIEWED by ' + actor + ' and is now awaiting Director approval.' + foot, FINANCE_CC);
-  }
-  if (st === 'approved') {
-    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was approved', 'Dear ' + who + ',\n\nYour ' + line + ' has been APPROVED by ' + actor + '.' + foot, FINANCE_CC);
-  }
-  if (st === 'rejected') {
-    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' was returned', 'Dear ' + who + ',\n\nYour ' + line + ' has been REJECTED / returned by ' + actor + '. Please follow up with your manager.' + foot, FINANCE_CC);
-  }
-  if (st === 'paid') {
-    const cc = [FINANCE_CC].concat(_sigEmails(item)).join(';');   // reviewer + approver (from signatures) + finance
-    return tkMailRequester(requesterEmail, who, 'Your ' + kindLabel + ' has been paid', 'Dear ' + who + ',\n\nYour ' + line + ' has been PAID by ' + actor + '. Reviewer and approver are copied.' + foot, cc);
-  }
-  return false;
+  const S = {
+    reviewed: { label: 'Reviewed', verb: 'REVIEWED', color: '#F59E0B', glyph: '⏱', subj: 'was reviewed', extra: ' — now awaiting Director approval', note: '' },
+    approved: { label: 'Approved', verb: 'APPROVED', color: '#00B060', glyph: '✓', subj: 'was approved', extra: '', note: '' },
+    rejected: { label: 'Rejected / Returned', verb: 'REJECTED / returned', color: '#E5484D', glyph: '✗', subj: 'was returned', extra: '', note: 'Please review the comments and follow up with your manager.' },
+    paid:     { label: 'Paid', verb: 'PAID', color: '#205090', glyph: '₫', subj: 'has been paid', extra: '', note: 'Reviewer and approver are copied.' }
+  }[st];
+  if (!S) return false;
+  const esc = v => _crmEsc(String(v == null ? '' : v));
+  const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const badge = '<span style="display:inline-block;background:' + S.color + ';color:#fff;font-weight:700;font-size:14px;padding:8px 20px;border-radius:24px;letter-spacing:.02em">' + S.glyph + '&nbsp; ' + S.label.toUpperCase() + '</span>';
+  const row = (k, v, c) => '<tr><td style="color:#5c6470;padding:5px 0;font-size:13px">' + k + '</td><td style="text-align:right;font-weight:600;font-size:13px' + (c ? ';color:' + c : '') + '">' + v + '</td></tr>';
+  const html =
+    '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1c2740;padding:8px">' +
+    '<div style="border-bottom:3px solid #205090;padding-bottom:10px;margin-bottom:16px"><span style="font-weight:800;letter-spacing:.14em;color:#205090;font-size:14px">HUMILEY</span> <span style="color:#5c6470;font-size:12px">&middot; Finance</span></div>' +
+    '<div style="text-align:center;margin:6px 0 18px">' + badge + '</div>' +
+    '<p style="font-size:15px;margin:0 0 6px">Dear ' + esc(who) + ',</p>' +
+    '<p style="font-size:14px;line-height:1.6;margin:0 0 12px">Your <b>' + esc(kindLabel) + '</b>' + (ref ? ' &ldquo;' + esc(ref) + '&rdquo;' : '') + ' has been <b style="color:' + S.color + '">' + S.verb + '</b> by <b>' + esc(actor) + '</b>' + esc(S.extra) + '.' + (S.note ? ' ' + esc(S.note) : '') + '</p>' +
+    '<table style="width:100%;border-collapse:collapse;margin:8px 0 14px">' +
+    row('Reference', esc(ref || '—')) +
+    (amountLabel ? row('Amount', esc(amountLabel)) : '') +
+    row('Status', S.glyph + ' ' + esc(S.label), S.color) +
+    row('Decided by', esc(actor)) +
+    row('Date', esc(dateStr)) +
+    '</table>' +
+    '<p style="font-size:12px;color:#5c6470;margin:0 0 14px">Open the Humiley Portal to view the full request, the bill and the approval trail.</p>' +
+    '<p style="font-size:13px;color:#5c6470;border-top:1px solid #dbe1ee;padding-top:10px;margin:0">Best regards,<br>Humiley Group Inc. &mdash; Finance</p></div>';
+  const text = 'Dear ' + who + ',\n\nYour ' + line + ' has been ' + S.verb + ' by ' + actor + '.' + (S.extra ? ' ' + S.extra.trim() : '') + (S.note ? '\n' + S.note : '') +
+    '\n\nStatus: ' + S.glyph + ' ' + S.label + '\nDecided by: ' + actor + '\nDate: ' + dateStr + '\n\nBest regards,\nHumiley Group Inc. — Finance';
+  // TO the requester; CC finance + the approver (so YOU get a copy of the status) + signers when paid.
+  let cc = [FINANCE_CC, approver];
+  if (st === 'paid') cc = cc.concat(_sigEmails(item));
+  const subject = S.glyph + ' Your ' + kindLabel + ' ' + S.subj + (ref ? ' — ' + ref : '');
+  return tkMailRequester(requesterEmail, who, subject, text, cc, html);
 }
 
 /* Build an A4 PDF payslip on the Humiley letterhead (jsPDF). Returns the doc or null. */
