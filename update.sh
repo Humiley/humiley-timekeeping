@@ -63,9 +63,10 @@ say "Building images (Portal + Procurement)…"; docker compose build
 # 5) Bring up the Procurement database, then apply its migrations
 say "Starting the Procurement database…"; docker compose up -d procdb
 say "Applying Procurement migrations…"; docker compose --profile setup run --rm proc-migrate
-if [ "$DO_BOOTSTRAP" -eq 1 ]; then
-  say "Seeding Procurement reference data + admin…"; docker compose --profile setup run --rm proc-bootstrap
-fi
+# proc-bootstrap is fully idempotent — the approval matrix is left untouched if present, the HS
+# 2022 codes + C/O forms + FX reference data are upserted (so the HS Code Explorer is never empty
+# or stale), and the admin is created only on first run. Safe to run every update.
+say "Seeding Procurement reference data (+ admin on first run)…"; docker compose --profile setup run --rm proc-bootstrap
 
 # 6) Start / restart the whole stack (data volumes persist)
 say "Starting the whole stack…"; docker compose up -d --build
