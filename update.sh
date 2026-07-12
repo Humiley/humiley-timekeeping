@@ -66,7 +66,13 @@ say "Applying Procurement migrations…"; docker compose --profile setup run --r
 # proc-bootstrap is fully idempotent — the approval matrix is left untouched if present, the HS
 # 2022 codes + C/O forms + FX reference data are upserted (so the HS Code Explorer is never empty
 # or stale), and the admin is created only on first run. Safe to run every update.
-say "Seeding Procurement reference data (+ admin on first run)…"; docker compose --profile setup run --rm proc-bootstrap
+# The first Procurement ADMIN defaults to the Portal admin (same person signs in via SSO), so a
+# FRESH install is never left with no admin. bootstrap.ts leaves an existing admin untouched.
+export BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-$(grep -E '^TK_ADMIN_EMAIL=' .env 2>/dev/null | cut -d= -f2- || true)}"
+export BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-tony.nguyen@humiley.com}"
+export BOOTSTRAP_ADMIN_NAME="${BOOTSTRAP_ADMIN_NAME:-$(grep -E '^TK_ADMIN_NAME=' .env 2>/dev/null | cut -d= -f2- || true)}"
+export BOOTSTRAP_ADMIN_NAME="${BOOTSTRAP_ADMIN_NAME:-Tony Nguyen}"
+say "Seeding Procurement reference data (+ admin ${BOOTSTRAP_ADMIN_EMAIL} on first run)…"; docker compose --profile setup run --rm proc-bootstrap
 
 # 6) Start / restart the whole stack (data volumes persist)
 say "Starting the whole stack…"; docker compose up -d --build

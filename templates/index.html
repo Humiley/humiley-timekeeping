@@ -6957,7 +6957,7 @@ async function tkFinFlowMail(item, kindLabel, ref, amountLabel, newStatus, reque
   // TO the requester; CC finance + the approver (so YOU get a copy of the status) + signers when paid.
   let cc = [FINANCE_CC, approver];
   if (st === 'paid') cc = cc.concat(_sigEmails(item));
-  const subject = S.glyph + ' Your ' + kindLabel + ' ' + S.subj + (ref ? ' — ' + ref : '');
+  const subject = (S.glyph + ' Your ' + kindLabel + ' ' + S.subj + (ref ? ' — ' + ref : '')).replace(/[\r\n\t]+/g, ' ').slice(0, 200);  // strip CR/LF → no header injection in the .eml fallback
   return tkMailRequester(requesterEmail, who, subject, text, cc, html);
 }
 
@@ -8351,7 +8351,7 @@ function _crmTabBar(active) {
 /* Small "what is this & how to use it" guideline banner shown under the tab bar on each CRM
    sub-view. The Overview tab has its own richer intro, so it returns nothing here. */
 const _CRM_INTRO = {
-  'crm-pipeline': ['Pipeline', 'Your active deals as a board, one column per stage. Drag a deal forward as it progresses — each stage carries a win-probability that feeds the forecast. Mark it Won to hand off to a PMC project, or Lost to close it out.', 'Các cơ hội đang theo đuổi dạng bảng, mỗi cột là một giai đoạn. Kéo cơ hội tiến lên khi có tiến triển — mỗi giai đoạn có xác suất thắng dùng cho dự báo. Đánh dấu Thắng để chuyển thành dự án PMC, hoặc Thua để đóng lại.'],
+  'crm-pipeline': ['Pipeline', 'Your active deals as a board, one column per stage. Drag a deal forward as it progresses — each stage carries a win-probability that feeds the forecast. Mark it Won to hand off to a PMC project, or Lost to close it out.', 'Các cơ hội đang theo đuổi dạng bảng, mỗi cột là một giai đoạn. Kéo cơ hội tiến lên khi có tiến triển — mỗi giai đoạn có xác suất thắng dùng cho dự báo. Đánh dấu Thắng để chuyển thành dự án PMC, hoặc Mất để đóng lại.'],
   'crm-leads': ['Leads', 'Raw inbound interest that is not yet a real opportunity. Qualify a lead (right fit, budget, need), then convert it into a deal — or mark it unqualified so your pipeline stays clean.', 'Khách hàng tiềm năng thô, chưa phải cơ hội thực sự. Sàng lọc lead (phù hợp, ngân sách, nhu cầu), rồi chuyển thành cơ hội — hoặc đánh dấu không đủ điều kiện để pipeline luôn sạch.'],
   'crm-companies': ['Companies', 'The accounts (organisations) you sell to. Each company groups all of its contacts and deals in one place, so you can see the whole relationship at a glance.', 'Các khách hàng (tổ chức) bạn bán hàng. Mỗi công ty gom tất cả người liên hệ và cơ hội liên quan về một nơi để bạn nắm toàn bộ quan hệ.'],
   'crm-contacts': ['Contacts', 'The individual people at your accounts — decision-makers and influencers. Link each contact to a company and keep their details current so deals route to the right person.', 'Những cá nhân tại các khách hàng — người ra quyết định và người ảnh hưởng. Gắn mỗi người với một công ty và cập nhật thông tin để cơ hội đến đúng người.'],
