@@ -1998,6 +1998,11 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
+    <div id="proc-admin-wrap" style="margin-bottom:18px;display:none">
+      <div class="card-hdr" style="margin-bottom:6px"><div class="card-title">Procurement Administration</div></div>
+      <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Master data &amp; governance for the Procurement app — combined here so all administration lives in one place.</div>
+      <div id="proc-admin-host"></div>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
         <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
@@ -9287,12 +9292,17 @@ function _tkBuildProcNav() {
 function _tkWireProcMessages() {
   if (_procMsgWired) return; _procMsgWired = true;
   window.addEventListener('message', function (e) {
-    var f = document.getElementById('procurement-frame');
-    if (!f || e.source !== f.contentWindow) return;
     var d = e.data;
     if (!d || typeof d !== 'object' || !d.humileyEmbed) return;
-    if (d.humileyEmbed === 'ready') { _procReady = true; _procPostNav(_procPendingPath || '/dashboard'); }
-    else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procSyncRoute(d.path); }
+    var mainF = document.getElementById('procurement-frame');
+    var adminF = document.getElementById('proc-admin-frame');
+    if (mainF && e.source === mainF.contentWindow) {
+      if (d.humileyEmbed === 'ready') { _procReady = true; _procPostNav(_procPendingPath || '/dashboard'); }
+      else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procSyncRoute(d.path); }
+    } else if (adminF && e.source === adminF.contentWindow) {
+      if (d.humileyEmbed === 'ready') { _procAdminReady = true; _procAdminPost(_procAdminPending || '/admin/settings'); }
+      else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procAdminSync(d.path); }
+    }
   });
 }
 
@@ -9369,6 +9379,94 @@ function _procSyncRoute(path) {
     if (box) box.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-proc-path') === found.tab.path); });
   }
 }
+
+/* ── Procurement Administration, combined into the portal's Company Portal settings ──
+   A second, admin-only embed inside HR Admin → Company Portal: its own tab bar drives an
+   admin iframe (also chrome-hidden, also postMessage-driven). Kept separate from the main
+   Procurement section embed so master-data admin lives with the rest of the portal admin. */
+var _procAdminReady = false, _procAdminPending = null, _procAdminBuilt = false;
+const _PROC_ADMIN = [
+  { label: 'Settings', path: '/admin/settings' },
+  { label: 'Users', path: '/admin/users' },
+  { label: 'Approval Matrix', path: '/admin/approval-matrix' },
+  { label: 'Departments', path: '/admin/departments' },
+  { label: 'Items', path: '/admin/items' },
+  { label: 'Categories', path: '/admin/categories' },
+  { label: 'UoM', path: '/admin/uom' },
+  { label: 'Cost Centers', path: '/admin/cost-centers' },
+  { label: 'Audit', path: '/admin/audit' },
+  { label: 'Accounting Export', path: '/admin/accounting-export' },
+];
+
+function _tkBuildProcAdmin() {
+  var host = document.getElementById('proc-admin-host');
+  if (!host || _procAdminBuilt) return;
+  _procAdminBuilt = true;
+  var tabs = _PROC_ADMIN.map(function (a) {
+    return '<button class="tab" data-proc-apath="' + a.path + '" onclick="tkProcAdminTab(\'' + a.path + '\',this)">' + a.label + '</button>';
+  }).join('');
+  host.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">'
+    + '<div id="proc-admin-tabs" class="tabs" style="margin:0;flex-wrap:wrap;height:auto">' + tabs + '</div>'
+    + '<button onclick="_procAdminReload()" title="Reload" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-light,#6b7280);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg><span>Reload</span></button></div>'
+    + '<div id="proc-admin-embed" style="position:relative;height:calc(100vh - 300px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">'
+    + '<div id="proc-admin-msg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--card,#fff)"><div style="font-size:13px;color:var(--text-light,#6b7280)">' + _t('Opening Procurement…') + '</div></div>'
+    + '<iframe id="proc-admin-frame" title="Procurement Administration" style="display:none;width:100%;height:100%;border:0;background:#fff" allow="clipboard-read; clipboard-write"></iframe></div>';
+  _tkWireProcMessages();
+}
+
+async function _tkProcAdminLoad(force) {
+  var frame = document.getElementById('proc-admin-frame'), msg = document.getElementById('proc-admin-msg');
+  if (!frame) return;
+  if (frame.getAttribute('data-loaded') === '1' && !force) return;
+  var base = _procUrl();
+  if (!base) { if (msg) { msg.style.display = 'flex'; msg.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--text-light)">' + _t('The Procurement app is not configured yet. An administrator can set its address in Settings → Company Portal.') + '</div>'; } return; }
+  if (msg) msg.style.display = 'flex';
+  frame.style.display = 'none';
+  var target = '';
+  try { var r = await tkApi('/api/procurement/sso'); if (r && r.token) { base.pathname = base.pathname.replace(/\/+$/, '') + '/sso'; base.search = ''; base.searchParams.set('t', r.token); target = base.toString(); } } catch (e) { }
+  if (!target) { base.pathname = base.pathname.replace(/\/+$/, '') + '/login'; base.search = ''; target = base.toString(); }
+  frame.onload = function () { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; frame.setAttribute('data-loaded', '1'); };
+  _procAdminReady = false;
+  frame.src = target;
+}
+
+function _procAdminPost(path) {
+  if (!path) return;
+  var f = document.getElementById('proc-admin-frame');
+  if (f && f.contentWindow) { try { f.contentWindow.postMessage({ humileyNav: path }, '*'); } catch (e) { } }
+}
+
+function tkProcAdminTab(path, el) {
+  _procAdminPending = path;
+  if (el && el.parentElement) { el.parentElement.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); }); el.classList.add('active'); }
+  _tkProcAdminLoad();
+  if (_procAdminReady) _procAdminPost(path);
+}
+
+function _procAdminReload() { var f = document.getElementById('proc-admin-frame'); if (f) { f.removeAttribute('data-loaded'); f.src = 'about:blank'; } _tkProcAdminLoad(true); }
+
+function _procAdminSync(path) {
+  if (!path) return;
+  if (path.indexOf('/procurement') === 0) path = path.slice('/procurement'.length) || '/';
+  var box = document.getElementById('proc-admin-tabs'); if (!box) return;
+  var best = null, bl = -1;
+  box.querySelectorAll('.tab').forEach(function (t) { var p = t.getAttribute('data-proc-apath'); if (path === p || path.indexOf(p + '/') === 0) { if (p.length > bl) { best = t; bl = p.length; } } });
+  if (best) { box.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); }); best.classList.add('active'); }
+}
+
+/* Called when the Company Portal settings tab opens: reveal + build the admin embed for admins. */
+function _tkProcAdminOpen() {
+  var wrap = document.getElementById('proc-admin-wrap');
+  var isAdmin = (typeof _userLevel !== 'undefined') && (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('admin');
+  if (wrap) wrap.style.display = isAdmin ? '' : 'none';
+  if (!isAdmin) return;
+  var host = document.getElementById('proc-admin-host');
+  if (host && _appDeniedCurrent('procurement')) { host.innerHTML = '<div style="font-size:13px;color:var(--text-light);padding:12px">Procurement is not enabled for your account.</div>'; return; }
+  _tkBuildProcAdmin();
+  var box = document.getElementById('proc-admin-tabs');
+  if (box && !box.querySelector('.tab.active')) { var first = box.querySelector('.tab'); if (first) tkProcAdminTab(first.getAttribute('data-proc-apath'), first); }
+}
+
 
 
 async function tkSetApp(id, app, allowed) {
@@ -14573,7 +14671,7 @@ function switchHRTab(tab, el) {
   if (panel) panel.style.display = 'block';
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
-  if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
+  if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} try { _tkProcAdminOpen(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
     const lbl = document.getElementById('emp-count-label');
