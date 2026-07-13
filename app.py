@@ -1334,13 +1334,18 @@ class Handler(BaseHTTPRequestHandler):
         # Admin-assigned Employee ID must be unique (it is the primary key). Blank → auto-generated.
         if body.get("id") and db.get_employee(body["id"]):
             return self._err("Employee ID '%s' is already in use — choose a different one." % body["id"])
+        # The ID is echoed into inline on* handlers across the app (Access & Permissions); keep it to
+        # a safe charset so a crafted ID can never break out of those attributes (stored-XSS defence).
+        if body.get("id") and not re.match(r'^[A-Za-z0-9._\-]{1,40}$', str(body["id"])):
+            return self._err("Employee ID may only use letters, numbers, '.', '-' and '_'.")
         body = dict(body or {})
-        # Only admins may set access level / role on create (prevents privilege escalation).
-        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body) and self._caller_level(u) != "admin":
+        # Only admins may set access level / role / procurement role on create (privilege escalation).
+        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body or "procRole" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
             body.pop("appsAllowed", None)
+            body.pop("procRole", None)
         return self._json({"ok": True, "id": db.create_employee(body)})
 
     def _emp_list_for(self, u):
@@ -1391,12 +1396,14 @@ class Handler(BaseHTTPRequestHandler):
         if not ex:
             return self._err("Employee not found.", 404)
         body = dict(body or {})
-        # Only admins may change access level or role (prevents privilege escalation).
-        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body) and self._caller_level(u) != "admin":
+        # Only admins may change access level or role, incl. the procurement role that the SSO
+        # token carries (prevents privilege escalation — a non-admin must not set procRole:ADMIN).
+        if ("level" in body or "role" in body or "appsDenied" in body or "appsAllowed" in body or "procRole" in body) and self._caller_level(u) != "admin":
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
             body.pop("appsAllowed", None)
+            body.pop("procRole", None)
         # Protected super-admins can never be demoted — drop any level/role/app change on them.
         if (ex.get("email") or "").lower() in self.ADMIN_EMAILS:
             body.pop("level", None)

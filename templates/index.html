@@ -4602,8 +4602,8 @@ function _applyRole(role) {
     const need = _lvlRank(el.getAttribute('data-level'));
     if (rank < need) el.style.display = 'none';
   });
-  try { _applyAppAccess(); } catch (e) {}
   try { _tkBuildProcNav(); } catch (e) {}
+  try { _applyAppAccess(); } catch (e) {}
   try { _sbInit(); } catch (e) {}
 
   /* update sidebar user card — show the actual signed-in person */
@@ -9321,7 +9321,7 @@ function _procRenderGuide(sec) {
   var g = sec.guide || {}, txt = g[_procLang()] || g.en || '';
   box.innerHTML = '<div style="display:flex;gap:11px;align-items:flex-start;background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:12px;padding:11px 15px;margin-bottom:13px">'
     + '<span style="flex:none;color:var(--navy,#205090);margin-top:1px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>'
-    + '<div><div style="font-weight:700;color:var(--navy,#205090);font-size:13px;margin-bottom:1px">' + _t('How it works') + ' · ' + sec.label + '</div>'
+    + '<div><div style="font-weight:700;color:var(--navy,#205090);font-size:13px;margin-bottom:1px">' + _t('How it works') + ' · ' + _t(sec.label) + '</div>'
     + '<div style="font-size:12.5px;color:var(--text-light,#6b7280);line-height:1.5">' + txt + '</div></div></div>';
 }
 
@@ -9367,6 +9367,7 @@ function _procSyncRoute(path) {
   });
   if (!found) return;
   _procSectionLast[found.sec.key] = found.tab.path;
+  if (typeof _currentView !== 'undefined' && _currentView !== 'procurement') return;   // ignore late route msgs when off the Procurement view
   if (_procSection !== found.sec.key) {
     _procSection = found.sec.key;
     var navEl = document.querySelector('.nav-item[data-proc-section="' + found.sec.key + '"]');
@@ -13143,6 +13144,8 @@ const _VI = {
   'How it works': 'Cách hoạt động',
   'Your deals across every sales stage': 'Cơ hội theo từng giai đoạn bán hàng', 'Inbound and prospected leads to qualify': 'Khách hàng tiềm năng cần thẩm định', 'The accounts you sell to': 'Các khách hàng bạn bán cho', 'People at your accounts': 'Người liên hệ tại khách hàng', 'Your product catalogue and pricing': 'Danh mục sản phẩm và bảng giá', 'Annual Operating Plan (AOP)': 'Kế hoạch hoạt động năm (AOP)', 'Sales targets by company, segment and member': 'Chỉ tiêu bán hàng theo công ty, phân khúc và nhân viên',
   'Procurement role': 'Vai trò Mua sắm', 'Applies when they next open Procurement.': 'Áp dụng khi họ mở Mua sắm lần tới.',
+  '— procurement role —': '— vai trò mua sắm —', 'Requester': 'Người yêu cầu', 'Purchaser': 'Người mua hàng', 'Dept Manager': 'Quản lý phòng ban', 'Accountant': 'Kế toán', 'Warehouse': 'Thủ kho',
+  'Settings': 'Cài đặt', 'Users': 'Người dùng', 'UoM': 'Đơn vị tính', 'Cost Centers': 'Trung tâm chi phí', 'Accounting Export': 'Xuất kế toán',
   'Your personal details, employment and security': 'Thông tin cá nhân, việc làm và bảo mật của bạn',
   'Company assets assigned to you': 'Tài sản công ty được giao cho bạn',
   'Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',

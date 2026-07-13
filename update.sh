@@ -77,6 +77,13 @@ say "Seeding Procurement reference data (+ admin ${BOOTSTRAP_ADMIN_EMAIL} on fir
 # 6) Start / restart the whole stack (data volumes persist)
 say "Starting the whole stack…"; docker compose up -d --build
 
+# The Caddyfile is bind-mounted, so `compose up` does NOT reload it (compose only sees image/config
+# changes). Gracefully reload Caddy so edits (gzip/zstd compression, framing headers) take effect on
+# an update — otherwise they stay dormant until the next full Caddy restart. Falls back to a restart.
+say "Reloading Caddy config…"
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
+  || docker compose restart caddy || true
+
 # 7) Health checks
 say "Containers:"; docker compose ps
 sleep 3

@@ -17,6 +17,10 @@
 	# the shared humiley_net network by container name. KEEP the /procurement prefix (the Next app
 	# sets basePath to it) — do NOT strip it. Harmless (502) until the procurement stack is up.
 	handle /procurement* {
+		# Procurement is only ever framed by THIS portal (same origin), so restrict framing to
+		# same-origin — closes clickjacking without breaking the in-portal embed.
+		header X-Frame-Options SAMEORIGIN
+		header Content-Security-Policy "frame-ancestors 'self'"
 		reverse_proxy humiley_proc_app:3000
 	}
 	# Everything else is the timekeeping portal.
