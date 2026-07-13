@@ -1040,17 +1040,21 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-pm-projects" class="view"><div id="pm-projects-root"></div></div>
 <div id="view-pm-project" class="view"><div id="pm-project-root"></div></div>
 <div id="view-procurement" class="view">
-  <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 8px">
-    <button onclick="_procEmbedReload()" title="Reload" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-light,#6b7280);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-      <span>Reload</span>
-    </button>
-    <button onclick="tkOpenProcurement()" title="Open in new tab" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--navy,#205090);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer">
-      <span>Open in new tab</span>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-    </button>
+  <div id="proc-guide"></div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">
+    <div id="proc-tabs" class="tabs" style="margin:0;flex-wrap:wrap;height:auto"></div>
+    <div style="margin-left:auto;display:flex;gap:8px">
+      <button onclick="_procEmbedReload()" title="Reload" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-light,#6b7280);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        <span>Reload</span>
+      </button>
+      <button onclick="tkOpenProcurement()" title="Open in new tab" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--navy,#205090);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer">
+        <span>Open in new tab</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+      </button>
+    </div>
   </div>
-  <div id="procurement-embed" style="position:relative;height:calc(100vh - 150px);min-height:460px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">
+  <div id="procurement-embed" style="position:relative;height:calc(100vh - 214px);min-height:420px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">
     <div id="procurement-embed-msg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--card,#fff)">
       <div style="font-size:13px;color:var(--text-light,#6b7280)">Opening Procurement…</div>
     </div>
@@ -9206,89 +9210,89 @@ function _procEmbedReload() {
   tkRenderProcurementEmbed(true);
 }
 
-/* ── Procurement as a NATIVE portal section (like PMC / Projects) ───────────────
-   Procurement's modules live in THIS portal's sidebar. Clicking one opens the embedded
-   Procurement app (an app of this portal) and navigates it IN PLACE via postMessage — no
-   reload, no second sidebar. The embedded app hides its own chrome (see its globals.css)
-   and reports its route back so we can highlight the active module. Structure mirrors the
-   Procurement app's own nav so nothing is lost. */
-const _PROC_NAV = [
-  { label: 'Procurement', items: [
-    { label: 'Dashboard', path: '/dashboard', icon: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>' },
-    { label: 'Requisitions', path: '/requisitions', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>' },
-    { label: 'Approvals', path: '/approvals', icon: '<polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>' },
-    { label: 'RFQs', path: '/rfqs', icon: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M10 13a1.5 1.5 0 1 1 2 1.4c-.4.2-.7.5-.7 1"/><line x1="11.3" y1="18" x2="11.31" y2="18"/>' },
-    { label: 'Purchase Orders', path: '/purchase-orders', icon: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>' },
-    { label: 'Goods Receipts', path: '/goods-receipts', icon: '<path d="M16 16l2 2 4-4"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0"/><polyline points="3.29 7 12 12 20.71 7"/>' },
-    { label: 'Invoices', path: '/invoices', icon: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/>' },
-    { label: 'Payment Requests', path: '/payment-requests', icon: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01"/><path d="M18 12h.01"/>' },
-    { label: 'Vendors', path: '/vendors', icon: '<path d="M3 21h18"/><path d="M6 21V7l6-4 6 4v14"/><path d="M9 9h.01M9 12h.01M9 15h.01M15 9h.01M15 12h.01M15 15h.01"/>' },
-    { label: 'Contracts', path: '/contracts', icon: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><polyline points="14 2 14 8 20 8"/><path d="M9 17a2 2 0 0 0 4 0c0-1-2-2-2-3"/>' },
-  ] },
-  { label: 'Inventory', items: [
-    { label: 'Inventory', path: '/inventory', icon: '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12M6 14h12"/>' },
-    { label: 'Goods Issues', path: '/inventory/issues', icon: '<path d="M16 16h6"/><path d="M21 10V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l2-1.14"/><polyline points="3.29 7 12 12 20.71 7"/>' },
-    { label: 'Transfers', path: '/inventory/transfers', icon: '<polyline points="17 11 21 7 17 3"/><line x1="21" y1="7" x2="9" y2="7"/><polyline points="7 21 3 17 7 13"/><line x1="15" y1="17" x2="3" y2="17"/>' },
-    { label: 'Stock Counts', path: '/inventory/counts', icon: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12l1.5 1.5L13 11"/>' },
-    { label: 'Scan Hub', path: '/scan', icon: '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/>' },
-  ] },
-  { label: 'Trade & Reference', items: [
-    { label: 'HS Codes', path: '/reference/hs-codes', icon: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><polyline points="9 2 9 9 11.5 7 14 9 14 2"/>' },
-    { label: 'Incoterms 2020', path: '/reference/incoterms', icon: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>' },
-    { label: 'Landed-Cost Estimator', path: '/trade/estimator', icon: '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10.01"/><line x1="12" y1="10" x2="12" y2="10.01"/><line x1="16" y1="10" x2="16" y2="10.01"/><line x1="8" y1="14" x2="8" y2="14.01"/><line x1="12" y1="14" x2="12" y2="14.01"/><line x1="16" y1="14" x2="16" y2="18"/><line x1="8" y1="18" x2="12" y2="18"/>' },
-  ] },
-  { label: 'Insights', items: [
-    { label: 'Budgets', path: '/budgets', icon: '<path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/>' },
-    { label: 'Reports', path: '/reports', icon: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>' },
-  ] },
-  { label: 'Administration', adminOnly: true, items: [
-    { label: 'Users', path: '/admin/users', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>' },
-    { label: 'Approval Matrix', path: '/admin/approval-matrix', icon: '<line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>' },
-    { label: 'Items', path: '/admin/items', icon: '<path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/>' },
-    { label: 'Categories', path: '/admin/categories', icon: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>' },
-    { label: 'Settings', path: '/admin/settings', icon: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>' },
-  ] },
+/* ── Procurement as 4 native portal sections, each with a PMC-style tab bar ──────
+   The portal sidebar shows 4 items (Procurement / Inventory / Trade & Reference /
+   Insights). Clicking one opens the embedded Procurement app and shows a tab bar of that
+   section's modules (like a PMC project's tabs). Tabs drive the embed IN PLACE via
+   postMessage — no reload, no second sidebar. The embed reports its route back so the
+   right section + tab stay highlighted even when the user follows links inside it. */
+const _PROC_ICON = {
+  procurement: '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+  inventory: '<path d="M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z"/><path d="M6 18h12M6 14h12"/>',
+  trade: '<circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
+  insight: '<path d="M3 3v18h18"/><path d="M18 17V9M13 17V5M8 17v-3"/>',
+};
+const _PROC_SECTIONS = [
+  { key: 'procurement', label: 'Procurement',
+    guide: { en: 'Procure-to-pay. Raise a requisition, get it approved by value band, run an RFQ, issue a purchase order, receive the goods, 3-way-match the invoice and request payment. Vendors and contracts live here too.', vn: 'Quy trình mua sắm đến thanh toán. Tạo yêu cầu mua hàng, phê duyệt theo hạn mức giá trị, chạy yêu cầu báo giá, phát hành đơn đặt hàng, nhập kho, đối chiếu hóa đơn 3 chiều và đề nghị thanh toán. Nhà cung cấp và hợp đồng cũng ở đây.' },
+    tabs: [
+      { label: 'Dashboard', path: '/dashboard' },
+      { label: 'Requisitions', path: '/requisitions' },
+      { label: 'Approvals', path: '/approvals' },
+      { label: 'RFQs', path: '/rfqs' },
+      { label: 'Purchase Orders', path: '/purchase-orders' },
+      { label: 'Goods Receipts', path: '/goods-receipts' },
+      { label: 'Invoices', path: '/invoices' },
+      { label: 'Payment Requests', path: '/payment-requests' },
+      { label: 'Vendors', path: '/vendors' },
+      { label: 'Contracts', path: '/contracts' },
+    ] },
+  { key: 'inventory', label: 'Inventory',
+    guide: { en: 'Track stock across warehouses: on-hand balances, goods issues out of store, transfers between locations, periodic stock counts, and barcode scanning of any document or bin.', vn: 'Theo dõi tồn kho theo từng kho: số dư hiện có, phiếu xuất kho, chuyển kho giữa các địa điểm, kiểm kê định kỳ và quét mã vạch cho mọi chứng từ hoặc vị trí.' },
+    tabs: [
+      { label: 'Overview', path: '/inventory' },
+      { label: 'Goods Issues', path: '/inventory/issues' },
+      { label: 'Transfers', path: '/inventory/transfers' },
+      { label: 'Stock Counts', path: '/inventory/counts' },
+      { label: 'Scan Hub', path: '/scan' },
+    ] },
+  { key: 'trade', label: 'Trade & Reference',
+    guide: { en: 'Import-trade reference: the full HS 2022 code list with import duty & VAT and C/O routes, Incoterms 2020, and a landed-cost estimator for imported goods.', vn: 'Tra cứu thương mại nhập khẩu: danh mục mã HS 2022 đầy đủ với thuế nhập khẩu & VAT và tuyến C/O, Incoterms 2020, và công cụ ước tính chi phí nhập khẩu.' },
+    tabs: [
+      { label: 'HS Codes', path: '/reference/hs-codes' },
+      { label: 'Incoterms 2020', path: '/reference/incoterms' },
+      { label: 'Landed-Cost Estimator', path: '/trade/estimator' },
+    ] },
+  { key: 'insight', label: 'Insights',
+    guide: { en: 'Spend and budget analytics: monitor budgets by department and category against commitments, and run procurement reports.', vn: 'Phân tích chi tiêu và ngân sách: theo dõi ngân sách theo phòng ban và nhóm hàng so với cam kết, và chạy các báo cáo mua sắm.' },
+    tabs: [
+      { label: 'Budgets', path: '/budgets' },
+      { label: 'Reports', path: '/reports' },
+    ] },
 ];
 
-let _procReady = false, _procPendingPath = null, _procMsgWired = false;
+let _procReady = false, _procPendingPath = null, _procMsgWired = false, _procSection = null;
+const _procSectionLast = {};
 
-/* Build the Procurement section into the portal sidebar from _PROC_NAV (once). */
+function _procSecByKey(k) { return _PROC_SECTIONS.find(function (s) { return s.key === k; }); }
+
+/* Sidebar: one "Procurement" heading + the 4 section items (built once, before _sbInit). */
 function _tkBuildProcNav() {
   var root = document.getElementById('proc-nav-root');
   if (!root || root.getAttribute('data-built') === '1') return;
-  var isAdmin = (typeof _userLevel !== 'undefined') && (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('admin');
-  var html = '';
-  _PROC_NAV.forEach(function (g) {
-    if (g.adminOnly && !isAdmin) return;
-    if (g.label) html += '<div class="sidebar-section-label" data-app="procurement">' + g.label + '</div>';
-    g.items.forEach(function (it) {
-      var lbl = (it.label || '').replace(/'/g, "\\'");
-      html += '<div class="nav-item" data-app="procurement" data-proc-path="' + it.path + '" title="' + it.label + '" '
-        + 'onclick="tkProcNav(\'' + it.path + '\',\'' + lbl + '\',this)">'
-        + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + it.icon + '</svg></span>'
-        + '<span class="nav-label">' + it.label + '</span></div>';
-    });
+  var html = '<div class="sidebar-section-label" data-app="procurement">Procurement</div>';
+  _PROC_SECTIONS.forEach(function (sec) {
+    html += '<div class="nav-item" data-app="procurement" data-proc-section="' + sec.key + '" title="' + sec.label + '" '
+      + 'onclick="tkProcSection(\'' + sec.key + '\',this)">'
+      + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_PROC_ICON[sec.key] || '') + '</svg></span>'
+      + '<span class="nav-label">' + sec.label + '</span></div>';
   });
-  root.insertAdjacentHTML('beforebegin', html);   // as siblings so _sbWrap groups each label
+  root.insertAdjacentHTML('beforebegin', html);
   root.setAttribute('data-built', '1');
   _tkWireProcMessages();
 }
 
-/* Listen for the embedded app's messages (must come from OUR iframe): 'ready' → send the pending
-   destination; 'route' → highlight the matching sidebar item. */
+/* Trust only OUR procurement iframe's messages: 'ready' → send the pending path; 'route' →
+   re-sync the section + tab highlight (also catches links followed inside the embed). */
 function _tkWireProcMessages() {
   if (_procMsgWired) return; _procMsgWired = true;
   window.addEventListener('message', function (e) {
     var f = document.getElementById('procurement-frame');
-    if (!f || e.source !== f.contentWindow) return;   // only trust our own procurement iframe
+    if (!f || e.source !== f.contentWindow) return;
     var d = e.data;
     if (!d || typeof d !== 'object' || !d.humileyEmbed) return;
-    if (d.humileyEmbed === 'ready') {
-      _procReady = true;
-      _procPostNav(_procPendingPath || '/dashboard');
-    } else if (d.humileyEmbed === 'route' && typeof d.path === 'string') {
-      _procHighlight(d.path);
-    }
+    if (d.humileyEmbed === 'ready') { _procReady = true; _procPostNav(_procPendingPath || '/dashboard'); }
+    else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procSyncRoute(d.path); }
   });
 }
 
@@ -9298,28 +9302,72 @@ function _procPostNav(path) {
   if (f && f.contentWindow) { try { f.contentWindow.postMessage({ humileyNav: path }, '*'); } catch (e) {} }
 }
 
-/* Highlight the portal sidebar item matching the embedded app's current route (longest prefix). */
-function _procHighlight(path) {
-  if (!path) return;
-  if (path.indexOf('/procurement') === 0) path = path.slice('/procurement'.length) || '/';
-  var best = null, bestLen = -1;
-  document.querySelectorAll('.nav-item[data-proc-path]').forEach(function (it) {
-    var p = it.getAttribute('data-proc-path');
-    if (path === p || path.indexOf(p + '/') === 0) { if (p.length > bestLen) { best = it; bestLen = p.length; } }
-  });
-  if (best) {
-    document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
-    best.classList.add('active');
-    try { _sbRevealActive(); } catch (e) {}
-  }
+function _procLang() { try { return (window._LANG && _LANG.cur) || localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } }
+
+/* The section's "How it works" panel (bilingual). */
+function _procRenderGuide(sec) {
+  var box = document.getElementById('proc-guide'); if (!box) return;
+  var g = sec.guide || {}, txt = g[_procLang()] || g.en || '';
+  box.innerHTML = '<div style="display:flex;gap:11px;align-items:flex-start;background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:12px;padding:11px 15px;margin-bottom:13px">'
+    + '<span style="flex:none;color:var(--navy,#205090);margin-top:1px"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg></span>'
+    + '<div><div style="font-weight:700;color:var(--navy,#205090);font-size:13px;margin-bottom:1px">' + _t('How it works') + ' · ' + sec.label + '</div>'
+    + '<div style="font-size:12.5px;color:var(--text-light,#6b7280);line-height:1.5">' + txt + '</div></div></div>';
 }
 
-/* Open the Procurement section and navigate the embedded app to `path`. */
-function tkProcNav(path, title, el) {
+/* The section's tab bar. */
+function _procRenderTabs(sec, activePath) {
+  var box = document.getElementById('proc-tabs'); if (!box) return;
+  box.innerHTML = sec.tabs.map(function (t) {
+    return '<button class="tab' + (t.path === activePath ? ' active' : '') + '" data-proc-path="' + t.path + '" onclick="tkProcTab(\'' + t.path + '\',this)">' + t.label + '</button>';
+  }).join('');
+}
+
+/* Sidebar item → open a section: activate the view, render its guide + tabs, go to its
+   first (or last-used) tab. */
+function tkProcSection(key, el) {
   if (_appDeniedCurrent('procurement')) { toast('Access restricted — Procurement is not enabled for your account. Ask an admin.', 'warn'); return; }
+  var sec = _procSecByKey(key); if (!sec) return;
+  _procSection = key;
+  showView('procurement', el || document.querySelector('.nav-item[data-proc-section="' + key + '"]'), sec.label);
+  _procRenderGuide(sec);
+  var target = _procSectionLast[key] || sec.tabs[0].path;
+  _procRenderTabs(sec, target);
+  _procPendingPath = target;
+  if (_procReady) _procPostNav(target);
+}
+
+/* Tab click → navigate the embed in place. */
+function tkProcTab(path, el) {
+  _procSectionLast[_procSection] = path;
   _procPendingPath = path;
-  showView('procurement', el, title || 'Procurement');   // activates the section + highlights this item + lazy-loads the iframe
-  if (_procReady) _procPostNav(path);                     // already live → navigate in place immediately
+  if (el && el.parentElement) { el.parentElement.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); }); el.classList.add('active'); }
+  if (_procReady) _procPostNav(path);
+}
+
+/* Reconcile the embed's real route → correct section (sidebar + tabs + title) + tab highlight. */
+function _procSyncRoute(path) {
+  if (!path) return;
+  if (path.indexOf('/procurement') === 0) path = path.slice('/procurement'.length) || '/';
+  var found = null;
+  _PROC_SECTIONS.forEach(function (sec) {
+    sec.tabs.forEach(function (t) {
+      if (path === t.path || path.indexOf(t.path + '/') === 0) { if (!found || t.path.length > found.tab.path.length) found = { sec: sec, tab: t }; }
+    });
+  });
+  if (!found) return;
+  _procSectionLast[found.sec.key] = found.tab.path;
+  if (_procSection !== found.sec.key) {
+    _procSection = found.sec.key;
+    var navEl = document.querySelector('.nav-item[data-proc-section="' + found.sec.key + '"]');
+    document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+    if (navEl) { navEl.classList.add('active'); try { _sbRevealActive(); } catch (e) {} }
+    _procRenderGuide(found.sec);
+    _procRenderTabs(found.sec, found.tab.path);
+    var tt = document.getElementById('topbarTitle'); if (tt) tt.textContent = found.sec.label;
+  } else {
+    var box = document.getElementById('proc-tabs');
+    if (box) box.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-proc-path') === found.tab.path); });
+  }
 }
 
 
@@ -12973,6 +13021,7 @@ const _VI = {
   'Cheque': 'Séc',
   'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
   'Procurement Portal': 'Cổng Mua hàng',
+  'How it works': 'Cách hoạt động',
   'Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
   'Goods Issues': 'Xuất kho', 'Transfers': 'Chuyển kho', 'Stock Counts': 'Kiểm kê', 'Scan Hub': 'Trung tâm quét mã', 'HS Codes': 'Mã HS', 'Landed-Cost Estimator': 'Ước tính chi phí nhập khẩu', 'Budgets': 'Ngân sách', 'Approval Matrix': 'Ma trận phê duyệt', 'Items': 'Vật tư', 'Categories': 'Nhóm hàng',
   'Trade & Reference': 'Thương mại & Tra cứu', 'Insights': 'Phân tích', 'Administration': 'Quản trị', 'Inventory': 'Kho hàng',
