@@ -1441,6 +1441,7 @@ class Handler(BaseHTTPRequestHandler):
         if self._caller_level(u) != "admin" and "procurement" not in allowed:
             return self._err("You do not have access to the Procurement app.", 403)
         payload = json.dumps({"email": u.get("email") or "", "name": u.get("name") or "",
+                              "role": (u.get("procRole") or ""),  # procurement role assigned in Access & Permissions
                               "exp": int(time.time()) + 120}, separators=(",", ":"))
         p_b64 = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
         sig = hmac.new(secret.encode("utf-8"), p_b64.encode("ascii"), hashlib.sha256).digest()

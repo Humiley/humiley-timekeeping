@@ -1014,7 +1014,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <!-- ═══ VIEW: DEVICE & ASSET MANAGEMENT (admin) ═══ -->
 <div id="view-devices" class="view"><div id="devices-root"></div></div>
 <!-- ═══ VIEW: MY DEVICES (staff) ═══ -->
-<div id="view-mydevices" class="view"><div id="mydevices-root"></div></div>
+<div id="view-mydevices" class="view"><div class="page-header"><div><h1>My Devices</h1><p>Company assets assigned to you</p></div></div><div id="mydevices-root"></div></div>
 <!-- ═══ VIEW: MY SPACE (personal self-service hub) ═══ -->
 <div id="view-myspace-overview" class="view">
   <div class="page-header">
@@ -1066,6 +1066,7 @@ window.addEventListener('orientationchange', _setLoginBg);
      VIEW: MY PROFILE
 ═══════════════════════════════════════════════════════ -->
 <div id="view-myprofile" class="view">
+  <div class="page-header"><div><h1>My Profile</h1><p>Your personal details, employment and security</p></div></div>
   <div id="myprofile-root"></div>
 </div>
 
@@ -9100,7 +9101,7 @@ function tkRenderPermissions() {
     const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
     const isAdminRow = _deriveLevel(e) === 'admin';
     const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
-    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow);
+    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
     const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
     return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
   }).join('');
@@ -9468,6 +9469,26 @@ function _tkProcAdminOpen() {
 }
 
 
+
+/* Procurement role dropdown in Access & Permissions — the portal ASSIGNS the role (applied on the
+   user's next Procurement sign-in via the SSO token). Blank = Procurement's own Admin manages it. */
+function _procRoleSelect(e, procOn) {
+  if (!procOn) return '';
+  var roles = [['', '\u2014 procurement role \u2014'], ['REQUESTER', 'Requester'], ['PURCHASER', 'Purchaser'], ['DEPT_MANAGER', 'Dept Manager'], ['DIRECTOR', 'Director'], ['ACCOUNTANT', 'Accountant'], ['WAREHOUSE', 'Warehouse'], ['ADMIN', 'Admin']];
+  var cur = (e.procRole || '');
+  var opts = roles.map(function (r) { return '<option value="' + r[0] + '"' + (r[0] === cur ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('');
+  return '<div style="margin-top:6px"><select onchange="tkSetProcRole(\'' + e.id + '\',this.value)" title="Procurement role \u2014 applied when they next open Procurement" style="font-size:11px;padding:3px 6px;border:1px solid var(--border,#e6e9ef);border-radius:6px;background:#fff;color:var(--text)">' + opts + '</select></div>';
+}
+async function tkSetProcRole(id, role) {
+  if (!_requireLevel('admin')) return;
+  const e = _hrEmp(id); if (!e) return;
+  try {
+    await tkApi('/api/employees/' + id, { method: 'PATCH', body: { procRole: role } });
+    e.procRole = role;
+    tkAudit('Procurement role set', e.name, role || '(cleared)');
+    toast(e.name + ' \u2014 ' + _t('Procurement role') + ': ' + (role || '\u2014') + (role ? '. ' + _t('Applies when they next open Procurement.') : ''), 'info', 5000);
+  } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); }
+}
 
 async function tkSetApp(id, app, allowed) {
   if (!_requireLevel('admin')) return;
@@ -13120,6 +13141,9 @@ const _VI = {
   'Payment request submitted for approval': 'Đã gửi đề nghị thanh toán để phê duyệt',
   'Procurement Portal': 'Cổng Mua hàng',
   'How it works': 'Cách hoạt động',
+  'Procurement role': 'Vai trò Mua sắm', 'Applies when they next open Procurement.': 'Áp dụng khi họ mở Mua sắm lần tới.',
+  'Your personal details, employment and security': 'Thông tin cá nhân, việc làm và bảo mật của bạn',
+  'Company assets assigned to you': 'Tài sản công ty được giao cho bạn',
   'Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
   'Goods Issues': 'Xuất kho', 'Transfers': 'Chuyển kho', 'Stock Counts': 'Kiểm kê', 'Scan Hub': 'Trung tâm quét mã', 'HS Codes': 'Mã HS', 'Landed-Cost Estimator': 'Ước tính chi phí nhập khẩu', 'Budgets': 'Ngân sách', 'Approval Matrix': 'Ma trận phê duyệt', 'Items': 'Vật tư', 'Categories': 'Nhóm hàng',
   'Trade & Reference': 'Thương mại & Tra cứu', 'Insights': 'Phân tích', 'Administration': 'Quản trị', 'Inventory': 'Kho hàng',
