@@ -874,6 +874,12 @@ class Handler(BaseHTTPRequestHandler):
                "ts": self._utc_now(), "meaning": meaning, "method": method}
         if auth_time:
             sig["authTime"] = auth_time
+        # Optional hand-drawn signature (the visual mark) — a small PNG data-URI drawn in the sign
+        # modal. Bounded so a signature can't bloat the record; the PIN/M365 auth above remains the
+        # Part 11 identity component, so a missing/oversized image never weakens the signature.
+        _sig_img = body.get("sigImage") or ""
+        if isinstance(_sig_img, str) and _sig_img.startswith("data:image/png;base64,") and len(_sig_img) <= 260000:
+            sig["image"] = _sig_img
         # Leave lives in its own structured table (not the generic JSON collections).
         if coll == "leave":
             lv = db.get_leave(int(iid)) if str(iid).isdigit() else None

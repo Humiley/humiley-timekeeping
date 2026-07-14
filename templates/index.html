@@ -4093,6 +4093,46 @@ function _esignSignLabel() {
 }
 function _esignSetMethod(m) { _esignMethod = m; _esignReopen = true; if (_esignPending) tkESign(_esignPending); }
 function _esignTogglePin() { const el = document.getElementById('esign-pin'); if (el) { el.type = (el.type === 'password' ? 'text' : 'password'); el.focus(); } }
+/* ── Hand-drawn signature pad for the e-sign modal (draw + Clear + reuse) ──────
+   The drawn signature is the VISUAL mark on the document; the PIN / Microsoft 365
+   re-authentication remains the 21 CFR Part 11 identity component. Captured as a small
+   PNG, stored on the signature record, then shown on the record detail + voucher PDFs. */
+function _esignSigInit() {
+  var c = document.getElementById('esign-sigpad'); if (!c || c._wired) return;
+  var dpr = window.devicePixelRatio || 1;
+  var rect = c.getBoundingClientRect();
+  var cssW = Math.round(rect.width) || 430, cssH = 150;
+  c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+  var ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0b2e63';
+  c._empty = true; c._wired = true;
+  var drawing = false, last = null;
+  function pt(e) { var r = c.getBoundingClientRect(); var t = (e.touches && e.touches[0]) || e; return { x: t.clientX - r.left, y: t.clientY - r.top }; }
+  function down(e) { e.preventDefault(); drawing = true; last = pt(e); }
+  function move(e) { if (!drawing) return; e.preventDefault(); var p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; if (c._empty) { c._empty = false; var h = document.getElementById('esign-sig-hint'); if (h) h.style.display = 'none'; } }
+  function up() { drawing = false; }
+  if (window.PointerEvent) {
+    c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+  } else {
+    c.addEventListener('mousedown', down); c.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
+    c.addEventListener('touchstart', down, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', up);
+  }
+  try { if (localStorage.getItem('tk_sig_' + (((TK.user || {}).email) || ''))) { var a = document.getElementById('esign-sig-saved'); if (a) a.style.display = ''; } } catch (e) {}
+}
+function _esignSigClear() {
+  var c = document.getElementById('esign-sigpad'); if (!c) return;
+  c.getContext('2d').clearRect(0, 0, c.width, c.height); c._empty = true;
+  var h = document.getElementById('esign-sig-hint'); if (h) h.style.display = '';
+}
+function _esignSigUseSaved() {
+  var c = document.getElementById('esign-sigpad'); if (!c) return;
+  var img; try { img = localStorage.getItem('tk_sig_' + (((TK.user || {}).email) || '')); } catch (e) {}
+  if (!img) return;
+  var dpr = window.devicePixelRatio || 1, im = new Image();
+  im.onload = function () { var ctx = c.getContext('2d'); ctx.clearRect(0, 0, c.width, c.height); ctx.drawImage(im, 0, 0, c.width / dpr, c.height / dpr); c._empty = false; var h = document.getElementById('esign-sig-hint'); if (h) h.style.display = 'none'; };
+  im.src = img;
+}
+
 function tkESign(opts) {
   document.getElementById('esignOverlay')?.remove();
   _esignPending = opts || {};
@@ -4133,10 +4173,23 @@ function tkESign(opts) {
     '<div><span style="color:var(--text-light)">' + _t('Date & time (UTC)') + '</span> — <b id="esign-clock">—</b></div>' +
     '<div><span style="color:var(--text-light)">' + _t('Meaning') + '</span> — <b>' + _crmEsc(opts.meaning || '') + '</b></div>' +
     '</div>' +
+    '<div style="margin:12px 2px 6px">' +
+    '<div style="font-size:12px;font-weight:600;color:var(--text-dark);margin-bottom:5px">' + _t('Draw your signature') + '</div>' +
+    '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden">' +
+      '<canvas id="esign-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas>' +
+      '<span id="esign-sig-hint" style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:var(--text-light);font-size:13px;pointer-events:none">' + _t('Sign here') + '</span>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">' +
+      '<a onclick="_esignSigClear()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px">' + _t('Clear') + '</a>' +
+      '<a id="esign-sig-saved" onclick="_esignSigUseSaved()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px;display:none">' + _t('Use my saved signature') + '</a>' +
+    '</div>' +
+    '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:var(--text-light)"><input type="checkbox" id="esign-sig-save"><span>' + _t('Remember my signature on this device') + '</span></label>' +
+  '</div>' +
     '<label style="display:flex;gap:8px;align-items:flex-start;margin:12px 2px;font-size:12px"><input type="checkbox" id="esign-cert" style="margin-top:2px"><span>' + _t('I certify that this electronic signature is the legally binding equivalent of my handwritten signature.') + '</span></label>' +
     methodHtml +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'esignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" id="esign-go" onclick="_esignGo()">' + _esignSignLabel() + '</button></div></div>';
   document.body.appendChild(el);
+  try { _esignSigInit(); } catch (e) {}
   if (_esignMethod === 'pin') { setTimeout(() => { const p = document.getElementById('esign-pin'); if (p) p.focus(); }, 40); }
   const tick = () => { const ov = document.getElementById('esignOverlay'); if (!ov) { clearInterval(el._clk); return; } const c = document.getElementById('esign-clock'); if (c) c.textContent = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; };
   tick(); el._clk = setInterval(tick, 1000);
@@ -4147,6 +4200,14 @@ function tkESign(opts) {
 }
 async function _esignGo() {
   if (!(document.getElementById('esign-cert') || {}).checked) { toast(_t('Please tick the certification box to sign.'), 'warn'); return; }
+  var _sigCanvas = document.getElementById('esign-sigpad');
+  if (_sigCanvas && _sigCanvas._empty) { toast(_t('Please draw your signature to sign.'), 'warn'); return; }
+  var _sigImage = '';
+  if (_sigCanvas && !_sigCanvas._empty) {
+    try { var _stc = document.createElement('canvas'); _stc.width = 440; _stc.height = 150; _stc.getContext('2d').drawImage(_sigCanvas, 0, 0, 440, 150); _sigImage = _stc.toDataURL('image/png'); }
+    catch (e) { _sigImage = _sigCanvas.toDataURL('image/png'); }
+  }
+  try { if (_sigImage && (document.getElementById('esign-sig-save') || {}).checked) localStorage.setItem('tk_sig_' + (((TK.user || {}).email) || ''), _sigImage); } catch (e) {}
   const opts = _esignPending; if (!opts) return;
   const btn = document.getElementById('esign-go');
   const resetBtn = () => { if (btn) { btn.disabled = false; btn.innerHTML = _esignSignLabel(); } };
@@ -4183,7 +4244,7 @@ async function _esignGo() {
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
-    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '' }, signAuth) });
+    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '', sigImage: _sigImage }, signAuth) });
     const pe = document.getElementById('esign-pin'); if (pe) pe.value = '';   // never leave the PIN in the DOM
     document.getElementById('esignOverlay')?.remove();
     toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
@@ -4204,7 +4265,7 @@ async function _esignGo() {
 function _esignManifest(rec, opts) {
   const sigs = (rec && rec.signatures) || []; if (!sigs.length) return '';
   const small = opts && opts.small;
-  return '<div style="margin-top:8px">' + sigs.map(s => '<div style="font-size:' + (small ? '10.5' : '11.5') + 'px;color:var(--text-light);display:flex;align-items:center;gap:5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg><b style="color:var(--text-dark)">' + _crmEsc(s.name || '') + '</b> · ' + _crmEsc(s.meaning || '') + ' · ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + (s.method ? ' · <span>' + _crmEsc(s.method) + '</span>' : '') + '</div>').join('') + '</div>';
+  return '<div style="margin-top:8px">' + sigs.map(s => '<div style="font-size:' + (small ? '10.5' : '11.5') + 'px;color:var(--text-light);display:flex;align-items:center;gap:5px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" style="flex-shrink:0"><path d="M20 6L9 17l-5-5"/></svg><b style="color:var(--text-dark)">' + _crmEsc(s.name || '') + '</b> · ' + _crmEsc(s.meaning || '') + ' · ' + _crmEsc((s.ts || '').replace('T', ' ').replace('Z', ' UTC')) + (s.method ? ' · <span>' + _crmEsc(s.method) + '</span>' : '') + '</div>' + (s.image ? '<img src="' + s.image + '" alt="signature" style="height:' + (small ? '26' : '34') + 'px;max-width:150px;object-fit:contain;display:block;margin:2px 0 6px 17px">' : '')).join('') + '</div>';
 }
 
 /* ── Self-service signature PIN (21 CFR Part 11 second component) ────────────
@@ -8817,6 +8878,7 @@ function _finVoucherDoc(kind, rec) {
     rec.signatures.forEach(s => {
       const line = '· ' + (s.name || '') + ' — ' + (s.meaning || '') + ' — ' + String(s.ts || '').replace('T', ' ').replace('Z', ' UTC') + (s.method ? ' — ' + s.method : '');
       doc.splitTextToSize(_pdfSafe(line), W - 2 * M - 2).forEach(tl => { if (y < 283) { doc.text(tl, M + 2, y); y += 3.8; } });
+      if (s.image && y < 272) { try { doc.addImage(s.image, 'PNG', M + 2, y, 32, 11); y += 12.5; } catch (e) {} }
     });
   }
   _brandFooter(doc, pageNo, pageNo, meta.code);
@@ -13143,6 +13205,7 @@ const _VI = {
   'Procurement Portal': 'Cổng Mua hàng',
   'How it works': 'Cách hoạt động',
   'Your deals across every sales stage': 'Cơ hội theo từng giai đoạn bán hàng', 'Inbound and prospected leads to qualify': 'Khách hàng tiềm năng cần thẩm định', 'The accounts you sell to': 'Các khách hàng bạn bán cho', 'People at your accounts': 'Người liên hệ tại khách hàng', 'Your product catalogue and pricing': 'Danh mục sản phẩm và bảng giá', 'Annual Operating Plan (AOP)': 'Kế hoạch hoạt động năm (AOP)', 'Sales targets by company, segment and member': 'Chỉ tiêu bán hàng theo công ty, phân khúc và nhân viên',
+  'Draw your signature': 'Ký tên của bạn', 'Sign here': 'Ký tại đây', 'Use my saved signature': 'Dùng chữ ký đã lưu', 'Remember my signature on this device': 'Ghi nhớ chữ ký trên thiết bị này', 'Please draw your signature to sign.': 'Vui lòng ký tên để hoàn tất.',
   'Procurement role': 'Vai trò Mua sắm', 'Applies when they next open Procurement.': 'Áp dụng khi họ mở Mua sắm lần tới.',
   '— procurement role —': '— vai trò mua sắm —', 'Requester': 'Người yêu cầu', 'Purchaser': 'Người mua hàng', 'Dept Manager': 'Quản lý phòng ban', 'Accountant': 'Kế toán', 'Warehouse': 'Thủ kho',
   'Settings': 'Cài đặt', 'Users': 'Người dùng', 'UoM': 'Đơn vị tính', 'Cost Centers': 'Trung tâm chi phí', 'Accounting Export': 'Xuất kế toán',
