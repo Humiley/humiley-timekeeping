@@ -827,7 +827,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
     </button>
-    <div style="width:32px;height:32px;border-radius:50%;background:var(--emerald);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0">HN</div>
+    <div id="topbar-ava" title="My account" style="width:32px;height:32px;border-radius:50%;background:var(--emerald);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0;background-size:cover;background-position:center">HN</div>
   </div>
 
   <div id="content">
@@ -2692,6 +2692,7 @@ async function tkBootstrap() {
     tkApi('/api/leave'),     tkApi('/api/zones')
   ]);
   _DEMO_EMPLOYEES  = emps.employees;
+  try { _tkPaintUserAva(); } catch (e) {}
   _DEMO_ATTENDANCE = att.attendance.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
   _DEMO_LEAVE      = lv.leave;
   _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius }));
@@ -3140,6 +3141,28 @@ function tkAvatarColor(seed) {
   if (!t) return _AVA_PALETTE[0];
   let h = 0x811c9dc5; for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
   return _AVA_PALETTE[h % _AVA_PALETTE.length];
+}
+
+/* Header + sidebar avatar reflect the SIGNED-IN user: their uploaded photo when set,
+   otherwise their initials (e.g. Tony Nguyen -> TN). Safe to call anytime. */
+function _tkUserPhoto() {
+  const u = (typeof TK !== 'undefined' && TK.user) || {};
+  if (u.photo) return u.photo;
+  const email = (u.email || '').toLowerCase();
+  const rec = (typeof _DEMO_EMPLOYEES !== 'undefined' ? _DEMO_EMPLOYEES : []).find(e => e && ((e.email || '').toLowerCase() === email && email) || (u.id && e && e.id === u.id));
+  return (rec && rec.photo) || '';
+}
+function _tkPaintUserAva() {
+  const u = (typeof TK !== 'undefined' && TK.user) || {};
+  const nm = (u.name || (typeof _staffName !== 'undefined' ? _staffName : '') || '').trim();
+  const fromName = nm ? nm.split(/\s+/).filter(Boolean).slice(-2).map(w => w[0]).join('') : '';
+  const ini = (u.ini || fromName || (typeof _staffInitials !== 'undefined' && _staffInitials) || '?').toString().toUpperCase();
+  const photo = _tkUserPhoto();
+  ['topbar-ava', 'sidebar-ava'].forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    if (photo) { el.textContent = ''; el.style.backgroundImage = 'url(' + photo + ')'; el.style.backgroundSize = 'cover'; el.style.backgroundPosition = 'center'; }
+    else { el.style.backgroundImage = 'none'; el.textContent = ini || '?'; }
+  });
 }
 
 /* read an uploaded photo into a data URL + live preview */
@@ -4399,6 +4422,7 @@ function _applyRole(role) {
   if (roleText) roleText.firstChild.textContent = titleText;
   if (nameEl && TK.user && TK.user.name) nameEl.textContent = TK.user.name;
   if (avaEl && TK.user) avaEl.textContent = TK.user.ini || (TK.user.name || '').split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase();
+  try { _tkPaintUserAva(); } catch (e) {}
 
   /* leave nav label */
   const leaveLbl = document.getElementById('nav-leave-label');
@@ -5004,7 +5028,7 @@ async function pmCloseToday(coll, id) {
     toast('Closed today — completion date set automatically');
   } catch (e) { toast('Could not close: ' + e.message, 'error', 5000); }
 }
-async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; try { tkFillDeptSelects(); } catch (e) {} } catch (e) {} }
+async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; try { tkFillDeptSelects(); } catch (e) {} try { _tkPaintUserAva(); } catch (e) {} } catch (e) {} }
 function _slugEmail(name) {
   const s = (name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[đĐ]/g, 'd').toLowerCase().replace(/[^a-z\s]/g, '').trim().replace(/\s+/g, '.');
   return (s || 'employee') + '@humiley.com';
@@ -6631,7 +6655,8 @@ const _LH = {
   web: 'www.humiley.com', email: 'contact@humiley.com', tel: '+84 90 9840 714',
   logo: HUMILEY_LOGO_B64
 };
-const _LH_NAVY = [32, 86, 168], _LH_GREEN = [34, 178, 76], _LH_GREY = [110, 120, 130], _LH_DARK = [33, 37, 41];
+const _LH_NAVY = [32, 80, 144], _LH_GREEN = [0, 176, 96], _LH_GREY = [92, 100, 112], _LH_DARK = [31, 41, 55], _LH_HAIR = [207, 214, 226];
+let _lhCur = {};   // remembers the current doc's title/code so _brandFooter can label itself without touching call sites
 function _lhDateStr() { return 'Ho Chi Minh City, ' + tkFmtDateObj(new Date()); }
 /* The master logo PNG is 820×287 but is drawn at only ~40-46mm, and jsPDF re-decodes the full-size
    image for EVERY new PDF — a big share of the "slow PDF" wait. Downscale it ONCE to ~2.6× display
@@ -6650,38 +6675,48 @@ function _lhLogo() { return _lhLogoSmall || _LH.logo; }
 setTimeout(_lhLogoWarm, 1800);                    // warm shortly after boot so even the FIRST click is fast
 /* Draw the letterhead header on the current page (native jsPDF). Deterministic height. */
 function _brandHeader(doc, opts) {
-  opts = opts || {}; const W = 210, M = 15; const y0 = 12;
-  try { doc.addImage(_lhLogo(), 'PNG', M, y0, 46, 16.1, 'HMLLOGO', 'FAST'); } catch (e) {}
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor.apply(doc, _LH_NAVY);
-  doc.text(_LH.name, W - M, y0 + 3.2, { align: 'right' });
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, _LH_GREY);
-  doc.text(_LH.addr, W - M, y0 + 8, { align: 'right' });
-  doc.text(_LH.web + '   ·   ' + _LH.email + '   ·   ' + _LH.tel, W - M, y0 + 11.8, { align: 'right' });
-  let y = y0 + 19;
-  doc.setDrawColor.apply(doc, _LH_NAVY); doc.setLineWidth(0.7); doc.line(M, y, W - M, y);
-  doc.setDrawColor.apply(doc, _LH_GREEN); doc.setLineWidth(0.7); doc.line(M, y, M + 28, y);
-  y += 7;
+  opts = opts || {}; const W = 210, M = 15;
+  _lhCur = { title: opts.title || '', code: opts.docCode || '' };
+  /* Track B letterhead — two-tone brand bar bled to the top-left page edge (emerald + navy) */
+  doc.setFillColor.apply(doc, _LH_GREEN); doc.rect(0, 0, 40, 2.4, 'F');
+  doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(40, 0, 28, 2.4, 'F');
+  /* company block — name / address / contact on the left, full-colour logo on the right */
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, _LH_NAVY);
+  doc.text(_LH.name, M, 15.5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, _LH_GREY);
+  doc.text(_LH.addr, M, 20);
+  doc.text(_LH.web + '   ·   ' + _LH.email, M, 23.6);
+  try { doc.addImage(_lhLogo(), 'PNG', W - M - 46, 9.5, 46, 16.1, 'HMLLOGO', 'FAST'); } catch (e) {}
+  /* centred document title (emerald) with the reference / place-date line beneath it */
+  let y = 30;
   if (opts.title) {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, _LH_DARK);
-    doc.text(_pdfSafe(String(opts.title)), M, y);
+    y = 34;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor.apply(doc, _LH_GREEN);
+    doc.text(_pdfSafe(String(opts.title)), W / 2, y, { align: 'center' });
+    y += 5.6;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
-    doc.text(_pdfSafe([opts.subtitle, _lhDateStr()].filter(Boolean).join('   ·   ')), W - M, y - 0.5, { align: 'right' });
-    if (opts.confidential) { doc.setTextColor(192, 57, 43); doc.setFontSize(7.5); doc.text('CONFIDENTIAL', W - M, y + 4, { align: 'right' }); }
-    y += 6;
+    const sub = _pdfSafe([opts.subtitle, _lhDateStr()].filter(Boolean).join('   ·   '));
+    if (sub) doc.text(sub, W / 2, y, { align: 'center' });
+    if (opts.confidential) { doc.setTextColor(192, 57, 43); doc.setFontSize(7.5); doc.text('CONFIDENTIAL', W / 2, y + 4.2, { align: 'center' }); y += 4.2; }
+    y += 4;
   }
   return y;
 }
-function _brandFooter(doc, pageNo, total, docCode) {
-  const W = 210, M = 15, fy = 287;
-  doc.setDrawColor(220, 224, 230); doc.setLineWidth(0.3); doc.line(M, fy, W - M, fy);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(150, 156, 164);
-  doc.text(_LH.name + '   ·   ' + _LH.web, M, fy + 4);
-  doc.text((docCode || 'HML-DOC') + '  ·  Rev 01.0', W / 2, fy + 4, { align: 'center' });
-  doc.text('Page ' + pageNo + ' / ' + total, W - M, fy + 4, { align: 'right' });
+function _brandFooter(doc, pageNo, total, docCode, footLabel) {
+  const W = 210, M = 15, fy = 285;
+  const label = String(footLabel || _lhCur.title || 'DOCUMENT').toUpperCase();
+  const code = docCode || _lhCur.code || 'HML-DOC';
+  doc.setDrawColor.apply(doc, _LH_HAIR); doc.setLineWidth(0.3); doc.line(M, fy, W - M, fy);
+  try { doc.addImage(_lhLogo(), 'PNG', M, fy + 1.7, 17, 5.95, 'HMLLOGO', 'FAST'); } catch (e) {}
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor.apply(doc, _LH_NAVY);
+  doc.text(label, W / 2, fy + 5, { align: 'center' });
+  doc.text('Page ' + pageNo + ' / ' + total, W - M, fy + 3.6, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); doc.setTextColor.apply(doc, _LH_GREY);
+  doc.text('[ ' + code + '   Rev 01.0 ]', W - M, fy + 7.4, { align: 'right' });
 }
 /* Slice a tall source canvas onto A4 pages, each carrying the Humiley letterhead. */
 function _brandPaginate(doc, canvas, opts) {
-  opts = opts || {}; const W = 210, M = 15, footTop = 283;
+  opts = opts || {}; const W = 210, M = 15, footTop = 281;
   const top = opts.title ? 44 : 38;            // content-start Y (mm); matches _brandHeader output
   const iw = W - 2 * M, pxPerMm = canvas.width / iw;
   const pageContentPx = Math.max(1, Math.floor((footTop - top) * pxPerMm));
@@ -6776,16 +6811,8 @@ function _payslipPDF(e, c, period) {
   const W = 210, M = 16; let y = 18;
   const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK, GREEN = [0, 150, 80];
   const fmt = n => '₫' + Math.round(n || 0).toLocaleString('en-US');
-  // ── Letterhead (official Humiley brand) ──
-  try { doc.addImage(_lhLogo(), 'PNG', M, y - 5, 40, 14, 'HMLLOGO', 'FAST'); } catch (x) {}
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, GREY);
-  doc.text(_LH.name, W - M, y - 2, { align: 'right' });
-  doc.text(_LH.addr, W - M, y + 2, { align: 'right' });
-  doc.text(_LH.web + '  ·  ' + _LH.email + '  ·  ' + _LH.tel, W - M, y + 6, { align: 'right' });
-  y += 11; doc.setDrawColor.apply(doc, NAVY); doc.setLineWidth(0.7); doc.line(M, y, W - M, y);
-  doc.setDrawColor.apply(doc, _LH_GREEN); doc.line(M, y, M + 26, y); y += 7;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, DARK); doc.text('CONFIDENTIAL PAYSLIP', M, y);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, GREY); doc.text(period, W - M, y, { align: 'right' }); y += 8;
+  // ── Letterhead (shared Track B engine — one template for every document) ──
+  y = _brandHeader(doc, { title: 'CONFIDENTIAL PAYSLIP', subtitle: period, docCode: 'HML-CB-FRM-016' });
   // ── Employee ──
   doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, DARK); doc.text(e.name || '', M, y);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, GREY);
@@ -6994,19 +7021,10 @@ function _assetHandoverPDF(e, devs, mgr) {
   const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK;
   const D = v => (v && String(v).trim()) ? String(v) : '—';   // jsPDF text — NOT innerHTML, so no HTML-escaping (would print 'Sales &amp; Tender')
   const today = tkFmtDateObj(new Date());
-  // ── Humiley letterhead ──
-  try { doc.addImage(_lhLogo(), 'PNG', M, y - 5, 40, 14, 'HMLLOGO', 'FAST'); } catch (x) {}
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.6); doc.setTextColor.apply(doc, GREY);
-  doc.text(_LH.name, W - M, y - 2, { align: 'right' });
-  doc.text(_LH.addr, W - M, y + 2, { align: 'right' });
-  doc.text(_LH.web + '  ·  ' + _LH.email + '  ·  ' + _LH.tel, W - M, y + 6, { align: 'right' });
-  y += 11; doc.setDrawColor.apply(doc, NAVY); doc.setLineWidth(0.7); doc.line(M, y, W - M, y);
-  doc.setDrawColor.apply(doc, _LH_GREEN); doc.line(M, y, M + 26, y); y += 7;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, DARK);
-  doc.text('ASSET & EQUIPMENT HANDOVER', M, y);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, GREY);
-  doc.text('BM.HR-02-06  ·  Onboarding Package', W - M, y, { align: 'right' }); y += 4.5;
-  doc.setFontSize(8); doc.text('Asset & Equipment Handover Protocol  ·  Bien ban Ban giao Tai san & Trang bi', M, y); y += 7;
+  // ── Humiley letterhead (shared Track B engine) ──
+  y = _brandHeader(doc, { title: 'ASSET & EQUIPMENT HANDOVER', subtitle: 'BM.HR-02-06  ·  Onboarding Package', docCode: 'BM.HR-02-06' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, GREY);
+  doc.text('Asset & Equipment Handover Protocol  ·  Ban giao Tai san & Trang bi', W / 2, y, { align: 'center' }); y += 6;
   // ── Employee info box ──
   doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
   doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
@@ -8606,9 +8624,9 @@ function _finVoucherDoc(kind, rec) {
   const doc = new J({ unit: 'mm', format: 'a4' });
   const W = 210, M = 15;
   const fmt = n => 'VND ' + Math.round(n || 0).toLocaleString('en-US');   // built-in helvetica has no ₫ glyph
-  const meta = kind === 'claim' ? { title: 'EXPENSE CLAIM VOUCHER', sub: rec.title || rec.type || '', code: 'HML-FIN-CLM' }
-    : kind === 'travel' ? { title: 'TRAVEL REQUEST VOUCHER', sub: rec.dest || '', code: 'HML-FIN-TRV' }
-      : { title: 'PAYMENT REQUEST VOUCHER', sub: rec.reqNo || '', code: 'HML-FIN-PAY' };
+  const meta = kind === 'claim' ? { title: 'EXPENSE CLAIM', sub: rec.title || rec.type || '', code: 'HML-FIN-CLM' }
+    : kind === 'travel' ? { title: 'TRAVEL REQUEST', sub: rec.dest || '', code: 'HML-FIN-TRV' }
+      : { title: 'PAYMENT REQUEST', sub: rec.reqNo || '', code: 'HML-FIN-PAY' };
   let y = _brandHeader(doc, { title: meta.title, subtitle: meta.sub, docCode: meta.code });
   y += 4;
   const row = (l, v, big) => {
@@ -9974,6 +9992,7 @@ async function tkSaveMyProfile() {
     if (!res.ok || !j.ok) { toast((j && j.error) || 'Could not save profile', 'error', 5000); return; }
     const e = _tkMyEmp(); if (e) Object.assign(e, data);
     if (TK.user) Object.assign(TK.user, data);
+    try { _tkPaintUserAva(); } catch (e) {}
     closeModal('myProfileModal');
     toast('Profile updated');
     try { tkRenderMyProfile(); } catch (_) {}
@@ -10433,6 +10452,7 @@ function _loadDemoUser() {
   if (n) n.textContent = _staffName + ' (Demo)';
   const ava = document.getElementById('sidebar-ava');
   if (ava) ava.textContent = _staffInitials;
+  try { _tkPaintUserAva(); } catch (e) {}
 }
 
 /* ──────────────────────────────────────────────────────────
