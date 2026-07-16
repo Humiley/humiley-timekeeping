@@ -105,6 +105,13 @@ def session_user(token):
         _persist_sessions()
     emp = db.get_employee(s["emp_id"]) if s["emp_id"] else None
     if emp:
+        # Deactivated (left/terminated) employees lose access IMMEDIATELY — a live session must not
+        # survive being set Inactive. Protected super-admins are exempt so a mistaken deactivation
+        # can never lock the whole company out.
+        if (emp.get("status") or "Active").strip().lower() == "inactive" and (emp.get("email") or "").lower() not in Handler.ADMIN_EMAILS:
+            SESSIONS.pop(token, None)
+            _persist_sessions()
+            return None
         # The DB row is authoritative — a demoted manager must not keep manager rights
         # for the remainder of a 30-day sliding session. Session role is only a fallback.
         emp["role"] = emp.get("role") or s["role"]
@@ -594,6 +601,9 @@ class Handler(BaseHTTPRequestHandler):
         if email in self.ADMIN_EMAILS and (emp.get("level") != "admin" or emp.get("role") != "manager"):
             db.update_employee(emp["id"], {"level": "admin", "role": "manager"})
             emp["level"] = "admin"; emp["role"] = "manager"
+        # A deactivated employee cannot sign in. Protected super-admins are exempt.
+        if (emp.get("status") or "Active").strip().lower() == "inactive" and email not in self.ADMIN_EMAILS:
+            return self._err("This account has been deactivated. Please contact HR.", 403)
         token = new_session(emp["id"], emp.get("role", "staff"))
         return self._json({"token": token, "user": dict(emp, role=emp.get("role", "staff"))})
 
@@ -1410,11 +1420,19 @@ class Handler(BaseHTTPRequestHandler):
             body.pop("appsDenied", None)
             body.pop("appsAllowed", None)
             body.pop("procRole", None)
-        # Protected super-admins can never be demoted — drop any level/role/app change on them.
+        # `status` is now a HARD access control (session_user/_auth_m365 lock out Inactive users) and
+        # `dept` drives the finance read-scope, so only MANAGEMENT+ may change these org fields on another
+        # employee. Otherwise the lowest manager tier ("Contributor") could lock out — or dept-hijack the
+        # financial records of — a higher-privileged user. (QA #1)
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            for _k in ("status", "dept", "department", "managerEmail", "salary", "grade", "endDate", "email", "title"):
+                body.pop(_k, None)
+        # Protected super-admins can never be demoted OR deactivated — drop any level/role/app/status change.
         if (ex.get("email") or "").lower() in self.ADMIN_EMAILS:
             body.pop("level", None)
             body.pop("role", None)
             body.pop("appsDenied", None)
+            body.pop("status", None)
         if body:
             db.update_employee(eid, body)
         return self._json({"ok": True})
@@ -1546,25 +1564,23 @@ class Handler(BaseHTTPRequestHandler):
         # Management / editor / admin (Finance-level and above) fall through and see the whole
         # company; staff were already scoped to their own just above.
         elif lvl == "manager" and name in self.TEAM_SCOPED:
+            # A department manager sees their WHOLE DEPARTMENT's payments / travel / claims (+ their
+            # own), scoped by the requester's department (resolved from the employee row, with the
+            # record's stored `department` as a fallback). No dept on the manager -> own records only
+            # (deny-by-default, never widen). Issue #19.
             myid, myname = u.get("id"), u.get("name")
-            myemail = (u.get("email") or "").lower()
-            team_ids, team_names = set(), set()
-            for e in db.list_employees():
-                if (e.get("managerEmail") or "").lower() == myemail and myemail:
-                    if e.get("id"):
-                        team_ids.add(e.get("id"))
-                    if e.get("name"):
-                        team_names.add(e.get("name"))
-            if myid:
-                team_ids.add(myid)
-            if myname:
-                team_names.add(myname)
-            def _in_team(it):
-                if it.get("empId"):
-                    return it.get("empId") in team_ids
-                nm = it.get("name") or it.get("assignedTo")
-                return bool(nm) and nm in team_names
-            items = [it for it in items if _in_team(it)]
+            mydept = (u.get("dept") or u.get("department") or "").strip()
+            emps = db.list_employees()
+            dept_by_id = {e.get("id"): (e.get("dept") or "") for e in emps}
+            dept_by_name = {e.get("name"): (e.get("dept") or "") for e in emps}
+            def _in_dept(it):
+                if (it.get("empId") and it.get("empId") == myid) or (myname and (it.get("name") or it.get("assignedTo")) == myname):
+                    return True
+                if not mydept:
+                    return False
+                d = dept_by_id.get(it.get("empId")) or dept_by_name.get(it.get("name") or it.get("assignedTo")) or (it.get("department") or "")
+                return d == mydept
+            items = [it for it in items if _in_dept(it)]
         # CRM records: salesperson (staff) sees own, manager sees their department,
         # management+ sees all. crm_products is a shared catalogue and is never scoped.
         if name.startswith("crm_") and name != "crm_products":

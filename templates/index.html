@@ -785,9 +785,9 @@ window.addEventListener('orientationchange', _setLoginBg);
 
   <div class="sidebar-footer">
     <div class="user-card">
-      <div class="ava" id="sidebar-ava">HN</div>
+      <div class="ava" id="sidebar-ava"></div>
       <div class="user-info">
-        <div class="user-name" id="sidebar-user-name">Huy Nguyen Duc</div>
+        <div class="user-name" id="sidebar-user-name"></div>
         <div class="user-role" id="sidebar-user-role">Managing Director</div>
       </div>
     </div>
@@ -1082,6 +1082,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Employee Database</h1><p>Centralized employee records · single source of truth</p></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-emerald btn-sm" onclick="tkOpenAddEmp()" title="Add an employee manually"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Employee</button>
       <button class="btn btn-outline btn-sm" onclick="tkImportTemplate('employees')" title="Download Excel template"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Template</button>
       <button class="btn btn-outline btn-sm" onclick="tkImport('employees')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>Import Excel</button>
       <button class="btn btn-outline btn-sm" onclick="tkExportEmployees()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
@@ -1315,15 +1316,8 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="chart-wrap" style="height:210px"><canvas id="dashChart"></canvas></div>
     </div>
     <div class="card">
-      <div class="card-hdr"><div class="card-title">Today's Activity</div><span class="badge b-navy" id="activity-count">8 check-ins</span></div>
-      <div class="timeline" id="activity-feed">
-        <div class="tl-item"><div class="tl-dot em"></div><div class="tl-time">08:02</div><div class="tl-text">Huy Nguyen checked in</div><div class="tl-sub">HQ District 10 · On Time</div></div>
-        <div class="tl-item"><div class="tl-dot em"></div><div class="tl-time">08:07</div><div class="tl-text">Lan Tran checked in</div><div class="tl-sub">HQ District 10 · On Time</div></div>
-        <div class="tl-item"><div class="tl-dot em"></div><div class="tl-time">08:18</div><div class="tl-text">Phuc Dang checked in</div><div class="tl-sub">HQ District 10 · On Time</div></div>
-        <div class="tl-item"><div class="tl-dot warn"></div><div class="tl-time">08:45</div><div class="tl-text">Minh Vu checked in</div><div class="tl-sub">HQ District 10 · Late (15 min)</div></div>
-        <div class="tl-item"><div class="tl-dot danger"></div><div class="tl-time">08:58</div><div class="tl-text">Binh Le — GPS Anomaly</div><div class="tl-sub">Outside zone · 1.2km from HQ · Alert sent</div></div>
-        <div class="tl-item"><div class="tl-dot em"></div><div class="tl-time">09:02</div><div class="tl-text">Mai Quynh checked in</div><div class="tl-sub">Factory Long An · On Time</div></div>
-      </div>
+      <div class="card-hdr"><div class="card-title">Today's Activity</div><span class="badge b-navy" id="activity-count">0 check-ins</span></div>
+      <div class="timeline" id="activity-feed"></div>
     </div>
   </div>
 
@@ -1577,118 +1571,18 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- PENDING -->
-  <div id="leave-pending">
-    <div style="display:flex;flex-direction:column;gap:12px">
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#3168A8">TN</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Tuan Nguyen</div><div style="font-size:12px;color:var(--text-light)">Projects · Submitted May 8, 2026</div></div>
-          <span class="badge b-warn">Pending Manager</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Leave Type<span>Annual Leave</span></div>
-          <div class="approval-meta-item">Duration<span>3 Days</span></div>
-          <div class="approval-meta-item">Dates<span>May 12–14</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px">
-          <strong>Reason:</strong> Family event in Da Nang — attending sister's wedding.
-        </div>
-        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Annual leave remaining: <strong style="color:var(--navy)">8 days</strong> → will become 5 days after approval.</div>
-        <div class="approval-actions">
-          <button class="btn btn-ghost btn-sm" onclick="viewLeaveDetail(this)">View Details</button>
-          <button class="btn-reject" onclick="rejectLeaveCard(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="approveLeaveCard(this,'Tuan Nguyen')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
-
-      <div class="approval-card">
-        <div class="approval-card-hdr">
-          <div class="ava-md" style="background:#F59E0B">MV</div>
-          <div style="flex:1"><div style="font-size:14px;font-weight:700">Minh Vu</div><div style="font-size:12px;color:var(--text-light)">Projects · Submitted May 9, 2026</div></div>
-          <span class="badge b-warn">Pending Manager</span>
-        </div>
-        <div class="approval-meta">
-          <div class="approval-meta-item">Leave Type<span>Sick Leave</span></div>
-          <div class="approval-meta-item">Duration<span>1 Day</span></div>
-          <div class="approval-meta-item">Dates<span>May 10</span></div>
-        </div>
-        <div style="font-size:12px;color:var(--text-dark);background:var(--soft-bg);padding:10px;border-radius:6px;margin-bottom:10px">
-          <strong>Reason:</strong> Fever and flu symptoms. Medical certificate uploaded.
-        </div>
-        <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Sick leave remaining: <strong style="color:var(--navy)">14 days</strong> → will become 13 days after approval.</div>
-        <div class="approval-actions">
-          <button class="btn btn-ghost btn-sm" onclick="viewCertificate(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>View Certificate</button>
-          <button class="btn-reject" onclick="rejectLeaveCard(this)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>Reject</button>
-          <button class="btn-approve" onclick="approveLeaveCard(this,'Minh Vu')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Approve</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <div id="leave-pending"></div>
 
   <!-- APPROVED -->
-  <div id="leave-approved" style="display:none">
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Employee</th><th>Leave Type</th><th>From</th><th>To</th><th>Days</th><th>Approved By</th><th>Date</th></tr></thead>
-          <tbody>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#163866">BL</div><span style="font-weight:600">Binh Le</span></div></td><td>Annual Leave</td><td>Apr 28</td><td>Apr 30</td><td>3</td><td>Huy Nguyen</td><td><span class="badge b-ok">Apr 25</span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#8B5CF6">KP</div><span style="font-weight:600">Kim Pham</span></div></td><td>Sick Leave</td><td>Apr 22</td><td>Apr 23</td><td>2</td><td>Lan Tran</td><td><span class="badge b-ok">Apr 21</span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:9px"><div class="ava-sm" style="background:#00B060">MQ</div><span style="font-weight:600">Mai Quynh</span></div></td><td>Comp-off</td><td>May 2</td><td>May 2</td><td>1</td><td>Huy Nguyen</td><td><span class="badge b-ok">Apr 30</span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <div id="leave-approved" style="display:none"></div>
 
   <!-- REJECTED -->
-  <div id="leave-rejected" style="display:none">
-    <div class="card">
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Employee</th><th>Leave Type</th><th>Dates</th><th>Days</th><th>Rejection Reason</th><th>Rejected By</th></tr></thead>
-          <tbody>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">DT</div><span style="font-weight:600">Duc Thanh</span></div></td><td>Annual Leave</td><td>Apr 15–18</td><td>4</td><td style="font-size:12px;color:var(--text-light)">Project delivery deadline conflicts</td><td>Huy Nguyen</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <div id="leave-rejected" style="display:none"></div>
 
   <!-- BALANCE -->
   <div id="leave-balance" style="display:none">
     <div class="grid-2">
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">My Leave Balance — 2026</div><span style="font-size:12px;color:var(--text-light)">Huy Nguyen Duc</span></div>
-        <div class="bal-row">
-          <div class="bal-type">Annual</div>
-          <div class="bal-bar-wrap">
-            <div class="prog-wrap"><div class="prog-fill prog-navy" style="width:33%"></div></div>
-            <div class="bal-nums"><span class="bal-used">4 used</span><span class="bal-rem">8 remaining</span></div>
-          </div>
-        </div>
-        <div class="bal-row">
-          <div class="bal-type">Sick</div>
-          <div class="bal-bar-wrap">
-            <div class="prog-wrap"><div class="prog-fill prog-emerald" style="width:0%"></div></div>
-            <div class="bal-nums"><span class="bal-used">0 used</span><span class="bal-rem">30 remaining</span></div>
-          </div>
-        </div>
-        <div class="bal-row">
-          <div class="bal-type">Comp-off</div>
-          <div class="bal-bar-wrap">
-            <div class="prog-wrap"><div class="prog-fill prog-warn" style="width:50%"></div></div>
-            <div class="bal-nums"><span class="bal-used">1 used</span><span class="bal-rem">1 remaining</span></div>
-          </div>
-        </div>
-        <div class="bal-row">
-          <div class="bal-type">Unpaid</div>
-          <div class="bal-bar-wrap">
-            <div class="prog-wrap"><div class="prog-fill prog-danger" style="width:0%"></div></div>
-            <div class="bal-nums"><span class="bal-used">0 used</span><span class="bal-rem">—</span></div>
-          </div>
-        </div>
-      </div>
+      <div id="leave-bal-card"></div>
       <div class="card">
         <div class="card-hdr"><div class="card-title">Leave Entitlements — Vietnamese Labour Code</div></div>
         <div style="display:flex;flex-direction:column;gap:8px;font-size:12px">
@@ -1704,36 +1598,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- CALENDAR -->
-  <div id="leave-calendar" style="display:none">
-    <div class="card">
-      <div class="card-hdr">
-        <div class="card-title">May 2026 — Leave Calendar</div>
-        <div style="display:flex;gap:8px;align-items:center;font-size:12px">
-          <span style="background:#D1FAE5;padding:3px 8px;border-radius:4px;color:#065F46">■ Approved</span>
-          <span style="background:#FEF3C7;padding:3px 8px;border-radius:4px;color:#92400E">■ Pending</span>
-          <span style="background:#EDE9FE;padding:3px 8px;border-radius:4px;color:#5B21B6">■ Holiday</span>
-        </div>
-      </div>
-      <div class="cal-grid" style="margin-bottom:6px">
-        <div class="cal-day-hdr">Mon</div><div class="cal-day-hdr">Tue</div><div class="cal-day-hdr">Wed</div><div class="cal-day-hdr">Thu</div><div class="cal-day-hdr">Fri</div><div class="cal-day-hdr">Sat</div><div class="cal-day-hdr">Sun</div>
-      </div>
-      <div class="cal-grid">
-        <div class="cal-day empty"></div><div class="cal-day empty"></div><div class="cal-day empty"></div><div class="cal-day">1</div><div class="cal-day">2</div><div class="cal-day" style="opacity:.4">3</div><div class="cal-day" style="opacity:.4">4</div>
-        <div class="cal-day">5</div><div class="cal-day">6</div><div class="cal-day">7</div><div class="cal-day">8</div><div class="cal-day today">9</div><div class="cal-day" style="opacity:.4">10</div><div class="cal-day" style="opacity:.4">11</div>
-        <div class="cal-day has-leave"><div class="day-num">12</div><div class="cal-dot" style="background:#F59E0B"></div></div>
-        <div class="cal-day has-leave"><div class="day-num">13</div><div class="cal-dot" style="background:#F59E0B"></div></div>
-        <div class="cal-day has-leave"><div class="day-num">14</div><div class="cal-dot" style="background:#F59E0B"></div></div>
-        <div class="cal-day">15</div><div class="cal-day">16</div><div class="cal-day" style="opacity:.4">17</div><div class="cal-day" style="opacity:.4">18</div>
-        <div class="cal-day approved"><div class="day-num">19</div><div class="cal-dot" style="background:#00B060"></div></div>
-        <div class="cal-day approved"><div class="day-num">20</div><div class="cal-dot" style="background:#00B060"></div></div>
-        <div class="cal-day approved"><div class="day-num">21</div><div class="cal-dot" style="background:#00B060"></div></div>
-        <div class="cal-day approved"><div class="day-num">22</div><div class="cal-dot" style="background:#00B060"></div></div>
-        <div class="cal-day approved"><div class="day-num">23</div><div class="cal-dot" style="background:#00B060"></div></div>
-        <div class="cal-day" style="opacity:.4">24</div><div class="cal-day" style="opacity:.4">25</div>
-        <div class="cal-day">26</div><div class="cal-day">27</div><div class="cal-day">28</div><div class="cal-day">29</div><div class="cal-day">30</div><div class="cal-day" style="opacity:.4">31</div><div class="cal-day empty"></div>
-      </div>
-    </div>
-  </div>
+  <div id="leave-calendar" style="display:none"></div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -1743,7 +1608,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Team Monitoring</h1><p>Real-time attendance, lateness &amp; GPS oversight (approvals are in the Inbox)</p></div>
     <div style="display:flex;gap:8px">
-      <select class="sel-filter"><option>My Team</option><option>All Teams</option></select>
+      <select class="sel-filter" id="mgr-scope" onchange="loadManagerView()"><option value="team">My Team</option><option value="all">All Teams</option></select>
       <button class="btn btn-primary btn-sm" onclick="loadManagerView()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh</button>
     </div>
   </div>
@@ -1769,9 +1634,9 @@ window.addEventListener('orientationchange', _setLoginBg);
 
   <div class="tabs" id="mgr-tabs">
     <button class="tab active" onclick="switchMgrTab('approvals',this)">Approvals</button>
-    <button class="tab" onclick="switchMgrTab('latealerts',this)">Late Alerts (4)</button>
-    <button class="tab" onclick="switchMgrTab('gpsalerts',this)">GPS Alerts (2)</button>
-    <button class="tab" onclick="switchMgrTab('teamview',this)">Team View</button>
+    <button class="tab" onclick="switchMgrTab('latealerts',this)"><span>Late Alerts</span>&nbsp;(<span id="mgr-late-ct">0</span>)</button>
+    <button class="tab" onclick="switchMgrTab('gpsalerts',this)"><span>GPS Alerts</span>&nbsp;(<span id="mgr-gps-ct">0</span>)</button>
+    <button class="tab" onclick="switchMgrTab('teamview',this)"><span>Team View</span>&nbsp;(<span id="mgr-team-ct">0</span>)</button>
   </div>
 
   <!-- APPROVALS TAB -->
@@ -1784,90 +1649,13 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- LATE ALERTS TAB -->
-  <div id="mgr-latealerts" style="display:none">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">Late Arrivals — Today, May 9</div><span class="badge b-warn">4 employees</span></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Check-In Time</th><th>Late By</th><th>GPS Zone</th><th>Notified</th><th>Action</th></tr></thead>
-          <tbody>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">MV</div><span style="font-weight:600">Minh Vu</span></div></td><td>Projects</td><td style="font-weight:700;color:var(--warning)">09:14</td><td><span class="badge b-warn">44 min</span></td><td><span class="badge b-ok">In Zone</span></td><td><span class="badge b-navy">Teams sent</span></td><td><button class="btn btn-ghost btn-sm" onclick="addManagerNote(this,'Minh Vu')">Note</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#8B5CF6">KP</div><span style="font-weight:600">Kim Pham</span></div></td><td>Engineering</td><td style="font-weight:700;color:var(--warning)">08:52</td><td><span class="badge b-warn">22 min</span></td><td><span class="badge b-warn">Borderline</span></td><td><span class="badge b-navy">Teams sent</span></td><td><button class="btn btn-ghost btn-sm" onclick="addManagerNote(this,'Kim Pham')">Note</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#3168A8">TN</div><span style="font-weight:600">Thanh Nguyen</span></div></td><td>Finance</td><td style="font-weight:700;color:var(--warning)">09:05</td><td><span class="badge b-warn">35 min</span></td><td><span class="badge b-ok">In Zone</span></td><td><span class="badge b-navy">Teams sent</span></td><td><button class="btn btn-ghost btn-sm" onclick="addManagerNote(this,'Thanh Nguyen')">Note</button></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#C00000">DH</div><span style="font-weight:600">Dung Hoang</span></div></td><td>Field Services</td><td style="font-weight:700;color:var(--danger)">09:48</td><td><span class="badge b-danger">78 min</span></td><td><span class="badge b-ok">In Zone</span></td><td><span class="badge b-navy">Teams sent</span></td><td><button class="btn btn-ghost btn-sm" onclick="addManagerNote(this,'Dung Hoang')">Note</button></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <div id="mgr-latealerts" style="display:none"><div id="mgr-latealerts-body"></div></div>
 
   <!-- GPS ALERTS TAB -->
-  <div id="mgr-gpsalerts" style="display:none">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">GPS Anomalies — Today, May 9</div><span class="badge b-danger">2 alerts</span></div>
-      <div style="display:flex;flex-direction:column;gap:12px">
-        <div style="border:1px solid var(--line);border-radius:10px;padding:16px">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-            <div class="ava-md" style="background:#F59E0B">BL</div>
-            <div><div style="font-size:14px;font-weight:700">Binh Le — Out of Zone</div><div style="font-size:12px;color:var(--text-light)">Field Services · Check-in 07:58</div></div>
-            <span class="badge b-danger" style="margin-left:auto">1.2km from HQ</span>
-          </div>
-          <div style="background:var(--soft-bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-              <div><span style="color:var(--text-light)">GPS Coordinates</span><br><strong>10.7641, 106.7023</strong></div>
-              <div><span style="color:var(--text-light)">Distance from HQ</span><br><strong style="color:var(--danger)">1,247m</strong></div>
-              <div><span style="color:var(--text-light)">Alert Sent</span><br><strong>07:59 via Teams</strong></div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="viewAnomalyOnMap(10.7641,106.7023,'Binh Le')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>View on Map</button>
-            <button class="btn btn-outline btn-sm" onclick="toast('Follow-up message sent to Binh Le via Teams','#163866')">Send Follow-up</button>
-            <button class="btn-approve" onclick="toast('Anomaly marked as legitimate client site visit','#065F46')">Mark Legitimate</button>
-          </div>
-        </div>
-
-        <div style="border:1px solid var(--line);border-radius:10px;padding:16px">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-            <div class="ava-md" style="background:#8B5CF6">KP</div>
-            <div><div style="font-size:14px;font-weight:700">Kim Pham — Borderline</div><div style="font-size:12px;color:var(--text-light)">Engineering · Check-in 08:31</div></div>
-            <span class="badge b-warn" style="margin-left:auto">194m from HQ</span>
-          </div>
-          <div style="background:var(--soft-bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px">
-            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-              <div><span style="color:var(--text-light)">GPS Coordinates</span><br><strong>10.7779, 106.6997</strong></div>
-              <div><span style="color:var(--text-light)">Distance from HQ</span><br><strong style="color:var(--warning)">194m</strong></div>
-              <div><span style="color:var(--text-light)">Status</span><br><strong>Check-in allowed (logged)</strong></div>
-            </div>
-          </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-ghost btn-sm" onclick="viewAnomalyOnMap(10.7779,106.6997,'Kim Pham')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>View on Map</button>
-            <button class="btn-approve" onclick="toast('Borderline check-in accepted — GPS accuracy within tolerance','#065F46')">Accept</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <div id="mgr-gpsalerts" style="display:none"><div id="mgr-gpsalerts-body"></div></div>
 
   <!-- TEAM VIEW TAB -->
-  <div id="mgr-teamview" style="display:none">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">Team Attendance Summary — Today</div></div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Employee</th><th>Title</th><th>Check-In</th><th>Status</th><th>Hours</th><th>Leave Balance</th></tr></thead>
-          <tbody>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#205090">HN</div><div><div style="font-weight:700">Huy Nguyen Duc</div><div style="font-size:10px;color:var(--text-light)">Managing Director</div></div></div></td><td>Engineering</td><td>08:02</td><td><span class="badge b-ok">On Time</span></td><td>7h 12m</td><td><span style="font-size:12px">Annual: <strong>8d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#163866">DT</div><div><div style="font-weight:700">Duc Thanh</div><div style="font-size:10px;color:var(--text-light)">Senior Engineer</div></div></div></td><td>Engineering</td><td>08:05</td><td><span class="badge b-ok">On Time</span></td><td>7h 09m</td><td><span style="font-size:12px">Annual: <strong>10d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#8B5CF6">KP</div><div><div style="font-weight:700">Kim Pham</div><div style="font-size:10px;color:var(--text-light)">Engineer</div></div></div></td><td>Engineering</td><td>08:52</td><td><span class="badge b-warn">Late 22m</span></td><td>6h 22m</td><td><span style="font-size:12px">Annual: <strong>7d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">MV</div><div><div style="font-weight:700">Minh Vu</div><div style="font-size:10px;color:var(--text-light)">Project Manager</div></div></div></td><td>Projects</td><td>09:14</td><td><span class="badge b-warn">Late 44m</span></td><td>6h 00m</td><td><span style="font-size:12px">Annual: <strong>6d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#00B060">MQ</div><div><div style="font-weight:700">Mai Quynh</div><div style="font-size:10px;color:var(--text-light)">Project Coord.</div></div></div></td><td>Projects</td><td>08:00</td><td><span class="badge b-ok">On Time</span></td><td>7h 14m</td><td><span style="font-size:12px">Annual: <strong>11d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#C00000">HaN</div><div><div style="font-weight:700">Ha Nguyen</div><div style="font-size:10px;color:var(--text-light)">Sales Executive</div></div></div></td><td>Sales</td><td>—</td><td><span class="badge b-info">On Leave</span></td><td>—</td><td><span style="font-size:12px">Annual: <strong>5d</strong></span></td></tr>
-            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:#F59E0B">BL</div><div><div style="font-weight:700">Binh Le</div><div style="font-size:10px;color:var(--text-light)">Field Engineer</div></div></div></td><td>Field Services</td><td>07:58</td><td><span class="badge b-warn">GPS Anomaly</span></td><td>7h 16m</td><td><span style="font-size:12px">Annual: <strong>9d</strong></span></td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <div id="mgr-teamview" style="display:none"><div id="mgr-teamview-body"></div></div>
 </div>
 <!-- ═══════════════════════════════════════════════════════
      VIEW: HR ADMIN (NEW)
@@ -1909,81 +1697,19 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- PAYROLL HOURS -->
-  <div id="hr-payroll" style="display:none">
-    <div class="filter-bar">
-      <select class="sel-filter"><option>May 2026</option><option>April 2026</option></select>
-      <select class="sel-filter" data-dept-select="All Departments"><option value="">All Departments</option></select>
-    </div>
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Hours Summary — May 2026 MTD</div></div>
-        <div style="display:flex;flex-direction:column;gap:0">
-          <div class="payroll-row">
-            <div class="payroll-emp"><div class="name">Huy Nguyen Duc</div><div class="dept">Engineering · MD</div></div>
-            <div class="payroll-hours"><div class="hrs">164h 12m</div><div class="ot" style="color:var(--emerald)">+8h OT</div></div>
-            <span class="badge b-ok" style="font-size:10px">Complete</span>
-          </div>
-          <div class="payroll-row">
-            <div class="payroll-emp"><div class="name">Lan Tran</div><div class="dept">HR &amp; Admin</div></div>
-            <div class="payroll-hours"><div class="hrs">158h 40m</div><div class="ot">±0 OT</div></div>
-            <span class="badge b-ok" style="font-size:10px">Complete</span>
-          </div>
-          <div class="payroll-row">
-            <div class="payroll-emp"><div class="name">Minh Vu</div><div class="dept">Projects · PM</div></div>
-            <div class="payroll-hours"><div class="hrs">152h 00m</div><div class="ot" style="color:var(--danger)">-8h short</div></div>
-            <span class="badge b-warn" style="font-size:10px">Review</span>
-          </div>
-          <div class="payroll-row">
-            <div class="payroll-emp"><div class="name">Phuc Dang</div><div class="dept">Finance</div></div>
-            <div class="payroll-hours"><div class="hrs">160h 30m</div><div class="ot">±0 OT</div></div>
-            <span class="badge b-ok" style="font-size:10px">Complete</span>
-          </div>
-          <div class="payroll-row">
-            <div class="payroll-emp"><div class="name">Binh Le</div><div class="dept">Field Services</div></div>
-            <div class="payroll-hours"><div class="hrs">171h 20m</div><div class="ot" style="color:var(--warning)">+11h OT</div></div>
-            <span class="badge b-navy" style="font-size:10px">Overtime</span>
-          </div>
-        </div>
-        <div style="margin-top:14px;padding:12px;background:var(--light-tint);border-radius:8px;font-size:12px">
-          <div style="display:flex;justify-content:space-between"><span>Total Regular Hours:</span><span style="font-weight:700;color:var(--navy)">6,840h</span></div>
-          <div style="display:flex;justify-content:space-between;margin-top:4px"><span>Total Overtime Hours:</span><span style="font-weight:700;color:var(--warning)">124h</span></div>
-          <div style="display:flex;justify-content:space-between;margin-top:4px"><span>Employees with shortfall:</span><span style="font-weight:700;color:var(--danger)">3</span></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Monthly Attendance Rate</div></div>
-        <div class="chart-wrap" style="height:200px"><canvas id="payrollChart"></canvas></div>
-      </div>
-    </div>
-  </div>
+  <div id="hr-payroll" style="display:none"></div>
 
   <!-- EMPLOYEE PROFILES — Full management table -->
   <!-- COMPLIANCE -->
   <div id="hr-compliance" style="display:none">
-    <div class="grid-2">
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Compliance Checklist — May 2026</div></div>
-        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Vietnamese Labour Code — leave entitlements configured</span></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Overtime rate 1.5× applied for hours &gt; 8/day</span></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Annual leave balance reset scheduled Jan 1</span></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span><span>3 employees with leave balance under 3 days — notify advised</span></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEE2E2;border-radius:6px"><span style="color:#991B1B"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></span><span>Monthly payroll report not yet generated for April 2026</span></div>
-          <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Attendance records exported and archived (March 2026)</span></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-hdr"><div class="card-title">Power Automate Flow Status</div></div>
-        <div style="display:flex;flex-direction:column;gap:6px;font-size:12px">
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 1 · Late Alert</span><span class="badge b-ok">Running</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 2 · Missed Check-In</span><span class="badge b-ok">Running</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 3 · Leave Approval</span><span class="badge b-ok">4 active</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 4 · Balance Reset</span><span class="badge b-navy">Scheduled Jan 1</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 5 · GPS Anomaly</span><span class="badge b-ok">2 alerts today</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 6 · Monthly Report</span><span class="badge b-warn">Due May 1</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)"><span style="font-weight:600">Flow 7 · Checkout Reminder</span><span class="badge b-ok">Running</span></div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0"><span style="font-weight:600">Flow 8 · Low Balance Alert</span><span class="badge b-ok">Running</span></div>
-        </div>
+    <div class="card">
+      <div class="card-hdr"><div class="card-title">Compliance &amp; Policy Configuration</div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Vietnamese Labour Code &mdash; leave entitlements configured</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Overtime rate 1.5&times; applied for hours &gt; 8/day</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Annual leave balance reset scheduled 1 January</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>21 CFR Part&nbsp;11 e-signatures enforced on every submission &amp; approval</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Attendance &amp; leave records retained in the system database</span></div>
       </div>
     </div>
   </div>
@@ -2279,46 +2005,8 @@ window.addEventListener('orientationchange', _setLoginBg);
 
         <!-- Power Automate -->
         <div class="card">
-          <div class="card-hdr"><div class="card-title">Power Automate Flows</div><span class="badge b-navy">M365 Required</span></div>
-          <div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Configure Power Automate webhook URLs to trigger automated notifications and approvals.</div>
-          <div style="display:flex;flex-direction:column;gap:6px;font-size:12px" id="flow-list">
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)">
-              <span style="font-weight:600">Flow 1 · Late Alert (09:30)</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="badge b-ok" id="flow1-status">Running</span>
-                <button class="btn btn-ghost btn-sm" onclick="testFlow(1)" style="font-size:10px;padding:3px 7px">Test</button>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)">
-              <span style="font-weight:600">Flow 2 · Missed Check-In</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="badge b-ok" id="flow2-status">Running</span>
-                <button class="btn btn-ghost btn-sm" onclick="testFlow(2)" style="font-size:10px;padding:3px 7px">Test</button>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)">
-              <span style="font-weight:600">Flow 3 · Leave Approval</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="badge b-ok" id="flow3-status">Active</span>
-                <button class="btn btn-ghost btn-sm" onclick="testFlow(3)" style="font-size:10px;padding:3px 7px">Test</button>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--soft-bg)">
-              <span style="font-weight:600">Flow 4 · GPS Anomaly Alert</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="badge b-ok" id="flow4-status">Running</span>
-                <button class="btn btn-ghost btn-sm" onclick="testFlow(4)" style="font-size:10px;padding:3px 7px">Test</button>
-              </div>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0">
-              <span style="font-weight:600">Flow 5 · Monthly Report</span>
-              <div style="display:flex;gap:6px;align-items:center">
-                <span class="badge b-warn" id="flow5-status">Due May 1</span>
-                <button class="btn btn-ghost btn-sm" onclick="testFlow(5)" style="font-size:10px;padding:3px 7px">Run Now</button>
-              </div>
-            </div>
-          </div>
-          <button class="btn btn-outline btn-sm" style="width:100%;margin-top:12px;justify-content:center" onclick="window.open('https://make.powerautomate.com','_blank')">↗ Open Power Automate</button>
+          <div class="card-hdr"><div class="card-title">Automated Notifications</div><span class="badge b-ok">Built in</span></div>
+          <div style="font-size:12.5px;color:var(--text-light);line-height:1.6">Notifications and approval routing are built into the portal &mdash; leave, claim and payment requests notify the chosen approver automatically by <strong>web push</strong> and <strong>Microsoft&nbsp;365 email</strong>, and reminders are handled server-side. No external Power&nbsp;Automate flows are required.</div>
         </div>
 
       </div>
@@ -2489,14 +2177,12 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="card">
           <div class="card-hdr"><div class="card-title">System Status</div></div>
           <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Platform Version</span><span style="font-weight:700;color:var(--navy)">v2.0 — May 2026</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Platform</span><span style="font-weight:700;color:var(--navy)">Humiley Portal</span></div>
             <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">M365 Connection</span><span id="sys-m365" class="badge b-warn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Demo Mode</span></div>
-            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">SharePoint Lists</span><span id="sys-sp-lists">6 configured, 0 connected</span></div>
             <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">GPS Service</span><span class="badge b-ok">● Browser Native</span></div>
-            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Active Users (demo)</span><span style="font-weight:700;color:var(--navy)">15 employees</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Employees</span><span style="font-weight:700;color:var(--navy)" id="sys-user-count">—</span></div>
             <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Attendance Records</span><span style="font-weight:700;color:var(--navy)" id="sys-att-count">—</span></div>
-            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Leave Requests</span><span style="font-weight:700;color:var(--navy)">18 total (2026 YTD)</span></div>
-            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Last Data Sync</span><span style="color:var(--text-light)" id="sys-last-sync">Demo mode — no sync</span></div>
+            <div style="display:flex;justify-content:space-between;padding:8px;background:var(--soft-bg);border-radius:6px"><span style="color:var(--text-light)">Last Data Sync</span><span style="color:var(--text-light)" id="sys-last-sync">Live</span></div>
           </div>
         </div>
         <div class="card">
@@ -2937,7 +2623,7 @@ async function tkApi(path, opts = {}) {
   if (!res.ok) {
     let e; try { e = await res.json(); } catch (_) {}
     if (res.status === 401 && !opts._no401) { try { _tkSessionExpired(); } catch (_) {} }   // _no401: caller handles the heal/retry itself
-    throw new Error((e && e.error) || ('HTTP ' + res.status));
+    const _err = new Error((e && e.error) || ('HTTP ' + res.status)); _err.status = res.status; throw _err;
   }
   return res.json();
 }
@@ -3223,7 +2909,7 @@ function tkVerifySelectedZone(force) {
 async function _tkPersistSure(path, body) {
   /* returns the server response, or null on NETWORK failure, or {__biz: msg} when the server
      said no (400) — a business refusal must never be reported as a connection problem. */
-  const isBiz = (e) => e && e.message && !/network|fetch|load failed|abort/i.test(e.message);
+  const isBiz = (e) => e && e.message && e.status !== 401 && !/network|fetch|load failed|abort/i.test(e.message);   // a 401 is auth-expiry, not a refusal → let the silent re-login + retry run (issue #15)
   try { return await tkApi(path, { method: 'POST', body: body, _no401: true }); }
   catch (e) {
     if (isBiz(e)) return { __biz: e.message };
@@ -3234,10 +2920,14 @@ async function _tkPersistSure(path, body) {
     return null;
   }
 }
+let _tkCheckinBusy = false;
 async function tkCheckIn() {
+  if (_tkCheckinBusy) return;   // in-flight guard: a stray button re-enable must never double-submit (issue #17)
   if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Please select your location first', 'Vui lòng chọn địa điểm trước'), 'warn'); return; }
   if (_tkGpsState === 'out') { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
+  _tkCheckinBusy = true;
+  try {
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   const btn = document.getElementById('btn-checkin'); if (btn) btn.disabled = true;
   /* TRUTHFUL check-in: save first, then show success — no more "Checked in" toasts for a
@@ -3264,6 +2954,7 @@ async function tkCheckIn() {
   if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>Checked in at ' + t + '</span> · ' + _tkSelectedZone.name;
   if (typeof toast === 'function') toast(_t2('Checked in at ' + t + ' · ' + _tkSelectedZone.name, 'Đã chấm công vào lúc ' + t + ' · ' + _tkSelectedZone.name));
   try { tkRenderCheckin(); } catch (e) {}
+  } finally { _tkCheckinBusy = false; }
 }
 
 const _OT_STD_MIN = 480;   // fallback: standard working day = 8h
@@ -3726,6 +3417,36 @@ function tkRenderDashboard() {
    Staff: only their OWN requests + balance. Manager: team approvals (Pending) + the leave
    they can see (backend already scopes _DEMO_LEAVE to self + direct reports). */
 function _leaveEmptyCard(msg) { return '<div class="card" style="padding:22px;text-align:center;color:var(--text-light);font-size:13px">' + msg + '</div>'; }
+/* Real leave calendar — current month, dots for the signed-in user's (or, for a manager, the team's)
+   approved/pending leave from the live data. Replaces the old hard-coded demo grid. */
+function _tkLeaveCal() {
+  const el = document.getElementById('leave-calendar'); if (!el) return;
+  const me = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
+  const meId = me.id, meName = me.name || _staffName;
+  const mine = l => (meId && l.emp_id === meId) || l.emp_name === meName;
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const MON = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const marks = {};
+  (_DEMO_LEAVE || []).filter(l => (typeof _userRole !== 'undefined' && _userRole === 'manager') || mine(l)).forEach(l => {
+    const st = (l.status || '').toLowerCase(); if (st !== 'approved' && st !== 'pending') return;
+    const s = (typeof _tkDateParts === 'function') ? _tkDateParts(l.startDate) : null;
+    const e = (typeof _tkDateParts === 'function') ? _tkDateParts(l.endDate || l.startDate) : null;
+    if (!s || !e) return;
+    let d = new Date(s.y, s.m - 1, s.d); const end = new Date(e.y, e.m - 1, e.d);
+    for (; d <= end; d.setDate(d.getDate() + 1)) { if (d.getFullYear() === y && d.getMonth() === m) { const dd = d.getDate(); if (marks[dd] !== 'approved') marks[dd] = st; } }
+  });
+  const offset = (new Date(y, m, 1).getDay() + 6) % 7, daysIn = new Date(y, m + 1, 0).getDate(), today = now.getDate();
+  let cells = '';
+  for (let i = 0; i < offset; i++) cells += '<div class="cal-day empty"></div>';
+  for (let dd = 1; dd <= daysIn; dd++) {
+    const st = marks[dd];
+    const cls = 'cal-day' + (dd === today ? ' today' : '') + (st === 'approved' ? ' approved' : st === 'pending' ? ' has-leave' : '');
+    cells += st
+      ? ('<div class="' + cls + '"><div class="day-num">' + dd + '</div><div class="cal-dot" style="background:' + (st === 'approved' ? '#00B060' : '#F59E0B') + '"></div></div>')
+      : ('<div class="' + cls + '">' + dd + '</div>');
+  }
+  el.innerHTML = '<div class="card"><div class="card-hdr"><div class="card-title">' + MON[m] + ' ' + y + ' \u2014 ' + _t('Leave Calendar') + '</div><div style="display:flex;gap:8px;align-items:center;font-size:12px"><span style="background:#D1FAE5;padding:3px 8px;border-radius:4px;color:#065F46">\u25A0 ' + _t('Approved') + '</span><span style="background:#FEF3C7;padding:3px 8px;border-radius:4px;color:#92400E">\u25A0 ' + _t('Pending') + '</span></div></div><div class="cal-grid" style="margin-bottom:6px"><div class="cal-day-hdr">Mon</div><div class="cal-day-hdr">Tue</div><div class="cal-day-hdr">Wed</div><div class="cal-day-hdr">Thu</div><div class="cal-day-hdr">Fri</div><div class="cal-day-hdr">Sat</div><div class="cal-day-hdr">Sun</div></div><div class="cal-grid">' + cells + '</div></div>';
+}
 function tkRenderLeaveView() {
   const isMgr = _userRole === 'manager';
   const me = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
@@ -3759,12 +3480,13 @@ function tkRenderLeaveView() {
     ? '<div class="card"><div class="table-wrap"><table><thead><tr>' + (isMgr ? '<th>Employee</th>' : '') + '<th>Leave Type</th><th>Dates</th><th>Days</th><th>Reason</th></tr></thead><tbody>' + rj.map(l => '<tr>' + (isMgr ? '<td style="font-weight:600">' + nm(l) + '</td>' : '') + '<td>' + _pmEsc(l.type || '') + '</td><td>' + fmt(l.startDate) + ' – ' + fmt(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:12px;color:var(--text-light)">' + _pmEsc(l.reason || '') + '</td></tr>').join('') + '</tbody></table></div></div>'
     : _leaveEmptyCard('No rejected leave.');
   // ── Balance (the signed-in user's own) ──
-  const bEl = document.getElementById('leave-balance');
+  const bEl = document.getElementById('leave-bal-card');
   if (bEl) {
     const au = +me.annualUsed || 0, at = +me.annualTotal || 12, su = +me.sickUsed || 0, st = +me.sickTotal || 30, co = +me.compoff || 0;
     const bar = (u, t, c) => '<div class="prog-wrap"><div class="prog-fill ' + c + '" style="width:' + (t ? Math.min(100, Math.round(u / t * 100)) : 0) + '%"></div></div><div class="bal-nums"><span class="bal-used">' + u + ' used</span><span class="bal-rem">' + Math.max(0, t - u) + ' remaining</span></div>';
-    bEl.innerHTML = '<div class="grid-2"><div class="card"><div class="card-hdr"><div class="card-title">My Leave Balance — 2026</div><span style="font-size:12px;color:var(--text-light)">' + _pmEsc(meName || '') + '</span></div><div class="bal-row"><div class="bal-type">Annual</div><div class="bal-bar-wrap">' + bar(au, at, 'prog-navy') + '</div></div><div class="bal-row"><div class="bal-type">Sick</div><div class="bal-bar-wrap">' + bar(su, st, 'prog-emerald') + '</div></div>' + (co ? '<div class="bal-row"><div class="bal-type">Comp-off</div><div class="bal-bar-wrap"><div class="bal-nums"><span class="bal-rem">' + co + ' day(s) available</span></div></div></div>' : '') + '</div></div>';
+    bEl.innerHTML = '<div class="card"><div class="card-hdr"><div class="card-title">My Leave Balance — 2026</div><span style="font-size:12px;color:var(--text-light)">' + _pmEsc(meName || '') + '</span></div><div class="bal-row"><div class="bal-type">Annual</div><div class="bal-bar-wrap">' + bar(au, at, 'prog-navy') + '</div></div><div class="bal-row"><div class="bal-type">Sick</div><div class="bal-bar-wrap">' + bar(su, st, 'prog-emerald') + '</div></div>' + (co ? '<div class="bal-row"><div class="bal-type">Comp-off</div><div class="bal-bar-wrap"><div class="bal-nums"><span class="bal-rem">' + co + ' day(s) available</span></div></div></div>' : '') + '</div>';
   }
+  try { _tkLeaveCal(); } catch (e) {}
 }
 /* The bell aggregates the SAME pending sources as the Approvals-Inbox badge (leave, claims,
    travel, payments, requisitions, PADR) — anything that lights a sub-badge now lights the bell.
@@ -7541,9 +7263,9 @@ function tkOpenPolicy(doc) {
   const el = document.createElement('div'); el.id = 'policyOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div><div class="modal-title" style="margin:0">' + doc + '</div>' + (p.rev ? '<div style="font-size:11px;color:var(--text-light)">' + p.rev + '</div>' : '') + '</div><button class="modal-close" onclick="document.getElementById(\'policyOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="overflow:auto;padding:4px 2px;font-size:13.5px;line-height:1.65;color:var(--text-dark)">' + p.body + '</div>' +
-    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' Acknowledged on ' + (acked.ts ? tkFmtDate(acked.ts) : '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Close</button></div>'
-      : '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="pol-ack-chk" onchange="document.getElementById(\'pol-ack-btn\').disabled=!this.checked"> I have read and understood this policy.</label>' +
-        '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">Cancel</button><button class="btn btn-emerald" id="pol-ack-btn" disabled onclick="tkConfirmPolicy(this.getAttribute(\'data-doc\'))" data-doc="' + doc.replace(/"/g, '&quot;') + '">' + tkIcon('check') + 'Acknowledge</button></div>') +
+    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' ' + _t2('Acknowledged on', 'Đã xác nhận ngày') + ' ' + (acked.ts ? tkFmtDate(acked.ts) : '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">' + _t2('Close', 'Đóng') + '</button></div>'
+      : '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="pol-ack-chk" onchange="document.getElementById(\'pol-ack-btn\').disabled=!this.checked"> ' + _t2('I have read and understood this policy.', 'Tôi đã đọc và hiểu chính sách này.') + '</label>' +
+        '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">' + _t2('Cancel', 'Hủy') + '</button><button class="btn btn-emerald" id="pol-ack-btn" disabled onclick="tkConfirmPolicy(this.getAttribute(\'data-doc\'))" data-doc="' + doc.replace(/"/g, '&quot;') + '">' + tkIcon('check') + _t2('Acknowledge', 'Xác nhận') + '</button></div>') +
     '</div>';
   document.body.appendChild(el);
 }
@@ -8031,7 +7753,7 @@ function _claimRowsHtml(claims, isMgr) {
     const trip = c.travelId ? (_HR.travel || []).find(t => t.id === c.travelId) : null;
     const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
     const allBtns = _aprBtns(st, 'tkInboxClaim', c.id, { small: true, stop: true });
-    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + _crmEsc(c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(c.dept || '') + '</div></td><td>' + _crmEsc(c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + allBtns + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + _crmEsc(c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(c.dept || '') + '</div></td><td>' + _crmEsc(c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + (_recHasBill(c) ? _finShowBtn('tkFinShow(\'claims\',\'' + c.id + '\')', _t('Show')) + ' ' : '') + allBtns + '</td></tr>';
     const lineBtns = it => (it.id && it.id !== 'legacy') ? _aprBtns(it.status || 'Submitted', null, it.id, { small: true, itemMode: true, claimId: c.id }) : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><div style="font-size:10.5px;color:var(--text-light);margin-bottom:6px">Review / approve each line, or use “Review all / Approve all” above.</div><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th><th></th></tr></thead><tbody>' +
       its.map(it => '<tr><td>' + _crmEsc(it.category || '') + '</td><td style="color:var(--text-light)">' + _crmEsc(it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + _aprLabel(it.status || 'Submitted') + '</span></td><td style="white-space:nowrap">' + lineBtns(it) + '</td></tr>').join('') +
@@ -8103,6 +7825,7 @@ async function tkLoadInboxBadge() {
   try {
     await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
     tkUpdateInboxBadge();   // recompute (with direct-manager routing) against the per-user seen-set
+    try { tkUpdateNotifications(); } catch (e) {}   // keep the main bell dot in sync with the inbox badge (issue #16)
   } catch (e) {}
 }
 
@@ -8157,7 +7880,7 @@ async function tkRenderTravelClaims() {
   const act = (coll, id, status) => _aprBtns(status, (coll === 'travel' ? 'tkTravelDecision' : 'tkTCDecision'), id, { small: true });
   const travelRows = travel.length ? travel.map(t => {
     const chev = '<svg id="fin-chev-trv-' + t.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'trv-' + t.id + '\')"><td><div style="display:flex;align-items:center;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + '<b style="font-weight:600">' + _crmEsc(t.name || '') + '</b></span></div><div style="font-size:11px;color:var(--text-light);padding-left:18px">' + _crmEsc(t.dept || '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + act('travel', t.id, t.status) + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'trv-' + t.id + '\')"><td><div style="display:flex;align-items:center;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + '<b style="font-weight:600">' + _crmEsc(t.name || '') + '</b></span></div><div style="font-size:11px;color:var(--text-light);padding-left:18px">' + _crmEsc(t.dept || '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(t) ? _finShowBtn('tkFinShow(\'travel\',\'' + t.id + '\')', _t('Show')) + ' ' : '') + act('travel', t.id, t.status) + '</td></tr>';
     const detail = '<tr id="fin-det-trv-' + t.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(t, 'travel') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(t) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No travel requests</td></tr>';
@@ -8231,14 +7954,18 @@ function _payNextNo() {
   const n = (nums.length ? Math.max.apply(null, nums) : 0) + 1;
   return 'PR-' + y + '-' + ('00' + n).slice(-3);
 }
+/* Is this payment the current user's own? (scopes the My Space register to self — issue #20) */
+function _payIsMine(p, me) { if (!p || !me) return false; return (p.empId && me.id) ? p.empId === me.id : (!!p.name && !!me.name && p.name === me.name); }
 async function tkRenderPayments() {
   const root = document.getElementById('payments-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
   await tkLoadColl('payments');
-  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const _payMine = !!document.querySelector('#view-payments > .myspace-tabbar');   // My Space context → self only (issue #20)
+  const _payMe = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
+  const isMgr = !_payMine && (typeof _userRole !== 'undefined' && _userRole === 'manager');
   const _title = isMgr ? 'Payment Requests' : 'My Payment Requests';
   { const h = document.getElementById('pay-page-title'); if (h) h.textContent = _title; const nl = document.getElementById('nav-pay-label'); if (nl) nl.textContent = _title; const tt = document.getElementById('topbarTitle'); if (tt && _currentView === 'payments') tt.textContent = _title; const eb = document.getElementById('pay-export-btn'); if (eb) eb.style.display = isMgr ? '' : 'none'; }
-  const all = (_HR.payments || []).slice();
+  const all = (_HR.payments || []).filter(p => !_payMine || _payIsMine(p, _payMe));
   /* KPI row lives in an id'd wrapper so payFillTable() can recompute it from the FILTERED rows */
   const kpis = '<div id="pay-kpis">' + _payKpisHtml(all) + '</div>';
   const dash = isMgr ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Spend by Category', 'pay-cat') + _rptChartCard('Status Breakdown', 'pay-status') + '</div>' : '';
@@ -8278,9 +8005,12 @@ function _payCharts(list) {
 }
 function payFillTable() {
   const tb = document.getElementById('pay-tbody'); if (!tb) return;
-  const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
+  const _payMine = !!document.querySelector('#view-payments > .myspace-tabbar');   // My Space context → self only (issue #20)
+  const _payMe = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
+  const isMgr = !_payMine && (typeof _userRole !== 'undefined' && _userRole === 'manager');
   const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '', period = _crmLF['pay-period-f'] || '';
   const list = (_HR.payments || []).filter(p => {
+    if (_payMine && !_payIsMine(p, _payMe)) return false;
     const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
     return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriodLF(p.dueDate || p.ts, 'pay-period-f');
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
@@ -8293,10 +8023,25 @@ function payFillTable() {
     const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
     const chev = '<svg id="fin-chev-pay-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPaymentVoucherPDF(\'' + p.id + '\')" title="Payment voucher PDF">PDF</button> ' + act + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + _finShowBtn('tkPaymentVoucherPDF(\'' + p.id + '\')', _t('Show')) + ' ' + act + '</td></tr>';
     const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="10" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
+}
+/* Eligible payment approvers = the requester's direct manager + anyone with management-level
+   access (they can actually approve under _appr_check), so the selector never lists someone who
+   would be rejected on approval. No backend rule is relaxed. Issue #21. */
+function _payEligibleApprovers(me) {
+  const mgrEmail = ((me && me.managerEmail) || '').toLowerCase();
+  // Only people who can ACTUALLY complete an approval under the backend _appr_check: the requester's
+  // direct manager (review step) OR an Editor/Admin (final approval). Listing anyone else would offer an
+  // "approver" the backend then rejects. (QA #2/#4)
+  const _canApprove = e => (typeof _lvlRank === 'function') && _lvlRank(e.level || '') >= _lvlRank('editor');
+  return (_DEMO_EMPLOYEES || []).filter(e => {
+    if (!e || (e.status || 'Active').toLowerCase() === 'inactive') return false;
+    if (me && e.id === me.id) return false;
+    return (e.email || '').toLowerCase() === mgrEmail || _canApprove(e);
+  }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 function tkNewPayment() {
   document.getElementById('paymentOverlay')?.remove();
@@ -8307,11 +8052,19 @@ function tkNewPayment() {
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
+    '<div class="form-group"><label class="form-label">' + _t2('Approver', 'Người phê duyệt') + '</label><select class="form-control" id="pay-approver"></select></div>' +
     _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF') +
     '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
   document.body.appendChild(el);
-  try { const me = _tkMe && _tkMe(); if (me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; } } catch (e) {}
+  try { const me = _tkMe && _tkMe(); if (me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; }
+    const sel = document.getElementById('pay-approver');
+    if (sel) { const elig = _payEligibleApprovers(me); const mEmail = ((me && me.managerEmail) || '').toLowerCase();
+      sel.innerHTML = elig.length
+        ? elig.map(e => '<option value="' + _tkEscA(e.email || '') + '"' + ((e.email || '').toLowerCase() === mEmail ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.title ? ' — ' + _crmEsc(e.title) : '') + '</option>').join('')
+        : '<option value="">' + _t2('No approver available — ask HR to assign one', 'Chưa có người phê duyệt — nhờ HR chỉ định') + '</option>';
+    }
+  } catch (e) {}
 }
 async function tkPaymentSave() {
   const g = id => (document.getElementById(id) || {}).value || '';
@@ -8321,7 +8074,7 @@ async function tkPaymentSave() {
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
   const _files = _multiAttachStore['pay-attach'] || [];
   if (!_files.length) { toast('Please attach the invoice / bill — a payment request must carry its supporting document', 'warn', 6000); return; }
-  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), approverEmail: g('pay-approver'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
     const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
@@ -8334,12 +8087,18 @@ async function tkPaymentSave() {
     createColl: 'payments', createBody: body,
     meaning: 'Submission — Payment ' + body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount),
     onDone: (item, created) => {
+      /* Route to the CHOSEN approver (issue #21); also notify the direct manager if different, so the
+         Review step of the 3-level flow is still covered. */
+      const approver = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (body.approverEmail || '').toLowerCase());
       const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
-      if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Payment request to approve — ' + body.reqNo,
+      const _notifyAppr = (who) => { if (!who || !who.email) return; tkEmailApprovalRequest(who.email, who.name, 'Payment request to approve — ' + body.reqNo,
         '<b>' + _crmEsc(body.name || '') + '</b> submitted a payment request that needs your approval.',
         '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li><li>Due: ' + (body.dueDate || '-') + '</li></ul>',
         (body.name || '') + ' requested payment ' + body.reqNo + ' to ' + body.payee + ' (' + body.category + ') for ' + _PAY_FMT(amount) + '.',
-        (created && created.token), (body.attachment ? body.attachment.split(',')[1] : ''), body.attachmentName, (body.spUrl || ''));
+        (created && created.token), (body.attachment ? body.attachment.split(',')[1] : ''), body.attachmentName, (body.spUrl || '')); };
+      if (approver) _notifyAppr(approver);
+      if (mgr && (!approver || (mgr.email || '').toLowerCase() !== (approver.email || '').toLowerCase())) _notifyAppr(mgr);
+      if (!approver && !mgr) toast(_t2('Submitted — but no approver/manager is set, so it was not routed. Ask HR to assign one.', 'Đã gửi — nhưng chưa có người phê duyệt/quản lý nên chưa được chuyển. Nhờ HR chỉ định.'), 'warn', 6000);
       const po = document.getElementById('paymentOverlay'); if (po) po.remove();
       _resetMultiAttach('pay-attach');
       toast('Payment request submitted & signed'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
@@ -8376,6 +8135,20 @@ function tkFinShow(coll, id) {
   let att = r.attachment, name = r.attachmentName;
   if (!att && Array.isArray(r.items)) { const it = r.items.find(i => i.attachment); if (it) { att = it.attachment; name = it.attachmentName; } }
   _tkPreviewUrl(att, name);
+}
+
+/* Shared "Show" eye-link — the SAME visual the Finance overview uses (tkFinShow),
+   reused across the Payments / Travel / Claims registers so viewing a document
+   looks identical everywhere. `js` is the click action (voucher PDF or attachment). */
+function _finShowBtn(js, label) {
+  return '<a href="javascript:void(0)" onclick="event.stopPropagation();' + js + '" style="display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:2px 6px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>' + (label || _t('Show')) + '</a>';
+}
+/* Does a payment/travel/claim record carry a viewable bill (direct file, SharePoint, or on a claim line)? */
+function _recHasBill(r) {
+  if (!r) return false;
+  if (r.attachment || r.spUrl) return true;
+  if (Array.isArray(r.items)) return r.items.some(i => i && (i.attachment || i.spUrl));
+  return false;
 }
 const _finStCls = s => s === 'Approved' ? 'b-ok' : s === 'Rejected' ? 'b-danger' : s === 'Paid' ? 'b-navy' : s === 'Partially approved' ? 'b-info' : 'b-warn';
 const _finKindHex = k => k === 'Payment' ? '#00B060' : k === 'Claim' ? '#8B5CF6' : '#3168A8';
@@ -8771,14 +8544,31 @@ async function tkRenderFinance() {
     _crmFiltPeriod('fin-period', 'finFillTable') +
     _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
   const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
-  root.innerHTML = _finTabBar('finance') + '<div id="fin-export">' + kpis + charts + pendCard + registerCard + '</div>';
-  finFillTable();
-  if (typeof Chart !== 'undefined') {
-    const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
-    if (ck.length) _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
-    if (dk.length) _mkChart('fin-dept-c', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
-    if (kk.length) _mkChart('fin-kind-c', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
-  }
+  root.innerHTML = _finTabBar('finance') + '<div id="fin-export">' + '<div id="fin-kpis">' + kpis + '</div>' + charts + pendCard + registerCard + '</div>';
+  finFillTable();   // KPIs + all three charts now redraw from the (filtered) list via _finRedrawAggs
+}
+/* Recompute the Finance KPIs + all three charts from a (filtered) item list, so the
+   filter toolbar drives the WHOLE dashboard, not just the register table. */
+function _finRedrawAggs(list) {
+  const done = list.filter(i => i.status === 'Approved' || i.status === 'Paid');
+  const outflow = done.reduce((s, i) => s + i.amount, 0);
+  const pend = list.filter(i => _finPending(i.status));
+  const pendVal = pend.reduce((s, i) => s + i.amount, 0);
+  const paid = list.filter(i => i.status === 'Paid').reduce((s, i) => s + i.amount, 0);
+  const box = document.getElementById('fin-kpis');
+  if (box) box.innerHTML = _hrKpiRow([
+    _kpiTile('Approved outflow', _PAY_FMT(outflow), '#205090', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+    _kpiTile('Pending approvals', pend.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+    _kpiTile('Pending value', _PAY_FMT(pendVal), '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
+    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>')
+  ]);
+  if (typeof Chart === 'undefined') return;
+  const byCat = {}, byDept = {}, byKind = {};
+  done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
+  const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
+  _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+  _mkChart('fin-dept-c', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
+  _mkChart('fin-kind-c', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
 }
 function finFillTable() {
   const tb = document.getElementById('fin-tbody'); if (!tb) return;
@@ -8802,6 +8592,7 @@ function finFillTable() {
     const detail = '<tr id="fin-det-reg-' + i.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + bills + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(rec) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:16px">No finance records match your filters.</td></tr>';
+  _finRedrawAggs(list);
 }
 /* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
 /* Finance vouchers — drawn NATIVELY with jsPDF text on the Humiley letterhead (no html2canvas
@@ -9118,6 +8909,33 @@ function _appDeniedCurrent(app) {
   return denied.indexOf(app) >= 0;
 }
 function _applyAppAccess() { document.querySelectorAll('[data-app]').forEach(el => { const app = el.getAttribute('data-app'); const roleHidden = el.getAttribute('data-roles') === 'manager' && (typeof _userRole !== 'undefined' && _userRole !== 'manager'); el.style.display = (_appDeniedCurrent(app) || roleHidden) ? 'none' : ''; }); }
+/* One access-level row. Extracted so a single edit can re-render JUST that row (keeps search +
+   scroll) and its dependent controls (the procurement-role dropdown appears the moment Procurement
+   is enabled). data-perm-id lets _permRowRefresh find it. */
+function _permRowHtml(e) {
+  const cur = _deriveLevel(e);
+  const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
+  const crmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('crm') < 0;
+  const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
+  const hrOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('hr') >= 0;
+  const financeOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('finance') >= 0;
+  const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
+  const isAdminRow = _deriveLevel(e) === 'admin';
+  const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
+  const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
+  const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
+  return '<tr data-perm-id="' + e.id + '" data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
+}
+/* Re-render one row after a save + flash it green so the change visibly confirms. */
+function _permRowRefresh(id) {
+  const e = _hrEmp(id); const tr = document.querySelector('#permissions-root tr[data-perm-id="' + id + '"]');
+  if (!e || !tr) { try { tkRenderPermissions(); } catch (x) {} return; }
+  const tmp = document.createElement('tbody'); tmp.innerHTML = _permRowHtml(e);
+  const nu = tmp.firstElementChild; if (!nu) return;
+  tr.replaceWith(nu);
+  nu.style.transition = 'background-color 1s ease'; nu.style.backgroundColor = 'rgba(0,176,96,.16)';
+  setTimeout(() => { nu.style.backgroundColor = ''; }, 1000);
+}
 function tkRenderPermissions() {
   const root = document.getElementById('permissions-root'); if (!root) return;
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -9153,20 +8971,7 @@ function tkRenderPermissions() {
     '<div style="width:38px;height:38px;border-radius:10px;background:rgba(32,80,144,.10);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>' +
     '<div><div style="font-weight:800;color:var(--navy);font-size:15px">Permission Levels</div><div style="font-size:12px;color:var(--text-light);margin-top:1px">What each of the five access levels can do across the portal</div></div></div>' +
     '<div style="padding:4px 8px 8px"><table style="width:100%;table-layout:fixed;border-collapse:collapse"><thead>' + mHead + '</thead><tbody>' + mBody + '</tbody></table></div></div>';
-  const rows = emps.map(e => {
-    const cur = _deriveLevel(e);
-    const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
-    const crmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('crm') < 0;
-    const pmOn = String(e.appsDenied || '').split(',').map(x => x.trim()).indexOf('pm') < 0;
-    const hrOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('hr') >= 0;
-    const financeOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('finance') >= 0;
-    const procOn = _deriveLevel(e) === 'admin' || String(e.appsAllowed || '').split(',').map(x => x.trim()).indexOf('procurement') >= 0;
-    const isAdminRow = _deriveLevel(e) === 'admin';
-    const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
-    const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
-    const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
-    return '<tr data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
-  }).join('');
+  const rows = emps.map(_permRowHtml).join('');
   root.innerHTML = kpis + matrix + note + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div style="font-size:11.5px;color:var(--text-light);margin-top:2px">Only active employees are shown here. Changes are saved automatically the moment you edit an access level or an app.</div></div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
 }
 /* Live filter for the Assign Access Levels table — matches name, email, position or department. */
@@ -9187,7 +8992,7 @@ async function tkSetLevel(id, level) {
     tkAudit('Access level changed', e.name, _LEVEL_LABEL[level]);
     tkNotifyGraph(e.email, 'Your Humiley access level was updated', 'Hi ' + (e.name || '') + ', your system access level is now ' + (_LEVEL_LABEL[level] || level) + '. It applies at your next sign-in.\n\nHumiley HR');
     toast(e.name + ' → ' + (_LEVEL_LABEL[level] || level));
-    try { tkRenderPermissions(); } catch (x) {}
+    try { tkRenderPermissions(); } catch (x) {}   // full re-render so the level KPI counts update too
   } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
 }
 /* Procurement is a SEPARATE portal app (procure-to-pay + inventory) — an app of this portal
@@ -9335,6 +9140,16 @@ const _procSectionLast = {};
 function _procSecByKey(k) { return _PROC_SECTIONS.find(function (s) { return s.key === k; }); }
 
 /* Sidebar: one "Procurement" heading + the 4 section items (built once, before _sbInit). */
+/* Jump to the Procurement configuration (master data + governance), which lives in the portal's
+   HR Admin -> Company Portal settings. Surfaced here so admins can find it from the Procurement group. */
+function tkOpenProcAdmin() {
+  try { showView('hradmin', null, 'Office Operation'); } catch (e) {}
+  setTimeout(function () {
+    var tab = Array.prototype.slice.call(document.querySelectorAll('#view-hradmin .tabs .tab')).filter(function (b) { return /portal/.test(b.getAttribute('onclick') || ''); })[0];
+    if (tab) { try { switchHRTab('portal', tab); } catch (e) {} }
+    setTimeout(function () { var w = document.getElementById('proc-admin-wrap'); if (w) { try { w.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {} } }, 350);
+  }, 220);
+}
 function _tkBuildProcNav() {
   var root = document.getElementById('proc-nav-root');
   if (!root || root.getAttribute('data-built') === '1') return;
@@ -9345,6 +9160,12 @@ function _tkBuildProcNav() {
       + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_PROC_ICON[sec.key] || '') + '</svg></span>'
       + '<span class="nav-label">' + sec.label + '</span></div>';
   });
+  var _pIsAdmin = (typeof _userLevel !== 'undefined') && (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('admin');
+  if (_pIsAdmin) {
+    html += '<div class="nav-item" data-app="procurement" title="Procurement configuration (admin)" onclick="tkOpenProcAdmin()">'
+      + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>'
+      + '<span class="nav-label">' + _t('Admin & Settings') + '</span></div>';
+  }
   root.insertAdjacentHTML('beforebegin', html);
   root.setAttribute('data-built', '1');
   _tkWireProcMessages();
@@ -9550,6 +9371,7 @@ async function tkSetProcRole(id, role) {
     e.procRole = role;
     tkAudit('Procurement role set', e.name, role || '(cleared)');
     toast(e.name + ' \u2014 ' + _t('Procurement role') + ': ' + (role || '\u2014') + (role ? '. ' + _t('Applies when they next open Procurement.') : ''), 'info', 5000);
+    _permRowRefresh(id);
   } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); }
 }
 
@@ -9565,6 +9387,7 @@ async function tkSetApp(id, app, allowed) {
       e.appsAllowed = aval;
       tkAudit('App access changed', e.name, app.toUpperCase() + ' ' + (allowed ? 'enabled' : 'disabled'));
       toast(e.name + ' — ' + app.toUpperCase() + (allowed ? ' enabled' : ' disabled'));
+      _permRowRefresh(id);
     } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
     return;
   }
@@ -9576,6 +9399,7 @@ async function tkSetApp(id, app, allowed) {
     e.appsDenied = val;
     tkAudit('App access changed', e.name, app.toUpperCase() + ' ' + (allowed ? 'enabled' : 'disabled'));
     toast(e.name + ' — ' + app.toUpperCase() + (allowed ? ' enabled' : ' disabled'));
+    _permRowRefresh(id);
   } catch (err) { toast('Could not update: ' + err.message, 'error', 5000); tkRenderPermissions(); }
 }
 
@@ -13807,7 +13631,13 @@ const _VI = {
   'Approved zone': 'Vùng đã duyệt',
   'Approver (Management)': 'Người duyệt (Ban quản lý)',
   'Asset Handover': 'Bàn giao tài sản',
-  'Assign Access Levels': 'Gán cấp truy cập',
+  'Assign Access Levels': 'Gán cấp truy cập', 'Admin & Settings': 'Quản trị & Cài đặt',
+  'Compliance & Policy Configuration': 'Cấu hình tuân thủ & chính sách',
+  'Vietnamese Labour Code — leave entitlements configured': 'Bộ luật Lao động Việt Nam — đã cấu hình chế độ nghỉ phép',
+  'Overtime rate 1.5× applied for hours > 8/day': 'Áp dụng hệ số tăng ca 1,5× cho giờ làm trên 8 giờ/ngày',
+  'Annual leave balance reset scheduled 1 January': 'Đặt lại số ngày phép năm vào ngày 1 tháng 1',
+  '21 CFR Part 11 e-signatures enforced on every submission & approval': 'Bắt buộc chữ ký điện tử 21 CFR Part 11 cho mọi lần gửi & phê duyệt',
+  'Attendance & leave records retained in the system database': 'Lưu trữ hồ sơ chấm công & nghỉ phép trong cơ sở dữ liệu hệ thống',
   'Assign Goals to Employee': 'Gán mục tiêu cho nhân viên',
   'Assign a new goal': 'Gán mục tiêu mới',
   'Assigned To': 'Được giao cho',
@@ -14115,6 +13945,7 @@ const _VI = {
   'Improvement (PIP)': 'Cải thiện (PIP)',
   'Improvement actions': 'Hành động cải thiện',
   'In Zone': 'Trong vùng',
+  'Out of Zone': 'Ngoài vùng',
   'In/Out Log': 'Nhật ký vào/ra',
   'Individual': 'Cá nhân',
   'Individual Pay Run': 'Chạy lương cá nhân',
@@ -14132,6 +13963,14 @@ const _VI = {
   'Last day': 'Ngày cuối',
   'Last working day': 'Ngày làm việc cuối',
   'Late Alerts (4)': 'Cảnh báo đi muộn (4)',
+  'Late Alerts': 'Cảnh báo đi muộn', 'GPS Alerts': 'Cảnh báo GPS',
+  'No late arrivals today': 'Không có ai đi muộn hôm nay', 'No GPS anomalies today': 'Không có bất thường GPS hôm nay',
+  'No team members to show': 'Không có nhân viên để hiển thị', 'Nothing to review right now.': 'Hiện không có gì cần xem xét.',
+  'Loading…': 'Đang tải…', 'Nearest zone': 'Khu vực gần nhất', 'Distance': 'Khoảng cách', 'Check-in': 'Chấm công vào',
+  'from': 'từ', 'Not checked in': 'Chưa chấm công', 'GPS Anomaly': 'Bất thường GPS', 'Late': 'Đi muộn',
+  'people': 'người', 'employee': 'nhân viên', 'employees': 'nhân viên', 'alert': 'cảnh báo', 'alerts': 'cảnh báo',
+  'min': 'phút', 'Mark Legitimate': 'Đánh dấu hợp lệ', 'marked as a legitimate site visit': 'đã đánh dấu là chuyến công tác hợp lệ',
+  'Late Arrivals': 'Đi muộn', 'Annual': 'Phép năm',
   'Late Arrivals by Department': 'Đi muộn theo phòng ban',
   'Late By': 'Muộn',
   'Late Grace Period (min)': 'Thời gian cho phép đi muộn (phút)',
@@ -14928,17 +14767,10 @@ function _applyGpsFix(lat, lon, accuracy) {
     }).join('');
   }
 
-  /* Gate buttons: Check In enabled only when inside a zone */
-  const btnIn  = document.getElementById('btn-checkin');
-  const btnOut = document.getElementById('btn-checkout');
-  if (btnIn && !_checkedIn) {
-    /* Always allow check-in — zone status is informational, not a blocker */
-    btnIn.disabled = false;
-    btnIn.style.background = inAny
-      ? 'linear-gradient(135deg,var(--emerald),#00965a)'
-      : 'linear-gradient(135deg,#205090,#162f5a)';
-    btnIn.style.color = '#fff'; btnIn.style.cursor = 'pointer';
-  }
+  /* Check-in / check-out buttons are owned SOLELY by _tkSetCheckinAllowed / tkVerifySelectedZone.
+     The legacy GPS-watch tick must NOT touch btn-checkin here: on mobile it re-enabled the button
+     mid-submit (during the await in tkCheckIn) → a second tap fired a duplicate POST → the backend
+     replied "Already checked in today" as a red error right after a good check-in. (issue #17) */
   /* Gate the panel border color */
   const panel = document.getElementById('gps-zone-panel');
   if (panel) panel.style.borderColor = inAny ? 'var(--emerald)' : 'var(--line)';
@@ -15607,6 +15439,7 @@ async function submitLeave() {
     /* 21 CFR Part 11: submitting a leave request is a signed record — re-authenticate,
        create it, then stamp the submitter's signature onto the new record. */
     tkESign({
+      coll: 'leave',
       meaning: 'Submit — Leave ' + type + ' · ' + start + ' → ' + end + ' (' + days + ' day' + (days !== 1 ? 's' : '') + ')',
       createFn: async () => {
         const res = await tkPersist('/api/leave', { type, startDate: start, endDate: end, days, reason });
@@ -16233,11 +16066,171 @@ function loadDashboard() { initDashChart(); }
 /* ──────────────────────────────────────────────────────────
    17. MANAGER VIEW LOADER
 ────────────────────────────────────────────────────────── */
+/* ── Team Monitoring — live data (replaces the old hard-coded mock) ───────────
+   Every KPI, table and card below is derived from the real roster / attendance
+   (with GPS lat-lon) / leave / geofence zones loaded by tkBootstrap(). No
+   hard-coded names, dates or counts. Empty states are honest ("0 today"). */
+function _mgrIni(name) { const p = String(name || '').trim().split(/\s+/).filter(Boolean); if (!p.length) return '?'; return (p[0][0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase(); }
+const _MGR_AVA = ['#205090', '#00B060', '#f59e0b', '#8b5cf6', '#3168A8', '#C00000', '#0ea5e9', '#14b8a6'];
+function _mgrColor(name) { let h = 0; const s = String(name || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return _MGR_AVA[h % _MGR_AVA.length]; }
+function _mgrAva(name, sz) { const cls = sz === 'md' ? 'ava-md' : 'ava-sm'; return '<div class="' + cls + '" style="background:' + _mgrColor(name) + '">' + _crmEsc(_mgrIni(name)) + '</div>'; }
+function _mgrMins(t) { const m = /(\d{1,2}):(\d{2})/.exec(String(t || '')); return m ? (+m[1] * 60 + +m[2]) : null; }
+function _mgrLateBy(rec, emp) { const thr = (typeof _tkLateThreshold === 'function') ? _tkLateThreshold(emp && emp.schedule) : '08:15'; if (!thr) return null; const ci = _mgrMins(rec.in || rec.clock_in), th = _mgrMins(thr); if (ci == null || th == null) return null; return Math.max(0, ci - th); }
+function _mgrZoneShort(name) { return String(name || '').split(/\s[—-]\s/)[0].trim() || 'zone'; }
+/* Nearest geofence zone to a coordinate → {zone, dist(m)} or null when no coords/zones. */
+function _mgrNearestZone(lat, lon) {
+  if (lat == null || lon == null || !(_DEMO_ZONES || []).length || typeof _haversineMetres !== 'function') return null;
+  let best = null;
+  (_DEMO_ZONES || []).forEach(z => { if (z.lat == null || z.lon == null) return; const d = _haversineMetres(+lat, +lon, +z.lat, +z.lon); if (!best || d < best.dist) best = { zone: z, dist: Math.round(d) }; });
+  return best;
+}
+function _mgrIsAnomaly(rec) {
+  if (/out of zone/i.test(String(rec.loc || ''))) return { near: _mgrNearestZone(rec.lat, rec.lon), bad: true };
+  const nz = _mgrNearestZone(rec.lat, rec.lon); const rad = nz ? Number(nz.zone.radius) || 0 : 0;
+  if (nz && rad > 0 && nz.dist > rad) return { near: nz, bad: true };
+  return { near: nz, bad: false };
+}
+/* On APPROVED leave covering `day` (YYYY-MM-DD)? → the leave row or null. */
+function _mgrLeaveOn(empId, name, day) {
+  return (_DEMO_LEAVE || []).find(l => {
+    if ((l.status || '').toLowerCase() !== 'approved') return false;
+    const mine = (l.emp_id && empId) ? l.emp_id === empId : (l.emp_name === name);
+    if (!mine) return false;
+    const s = l.startDate || l.start, e = l.endDate || l.end || s;
+    return s && e && s <= day && day <= e;
+  }) || null;
+}
+/* Employees in scope: My Team (direct reports + self) or All Teams. */
+function _mgrTeam() {
+  const active = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const scope = ((document.getElementById('mgr-scope') || {}).value) || 'team';
+  if (scope === 'all') return active;
+  const me = (((typeof TK !== 'undefined' && TK.user) || {}).email || '').toLowerCase();
+  const meId = ((typeof TK !== 'undefined' && TK.user) || {}).id;
+  const mine = active.filter(e => (e.managerEmail || '').toLowerCase() === me || (meId && e.id === meId));
+  const isMgmt = (typeof _lvlRank === 'function' && typeof _userLevel !== 'undefined' && _lvlRank(_userLevel) >= _lvlRank('management'));
+  if (mine.length <= 1 && isMgmt) return active;          // exec without directly-assigned reports → whole company
+  return mine.length ? mine : active;
+}
+function _mgrDateLabel(day) { const p = (typeof _tkDateParts === 'function') ? _tkDateParts(day) : null; const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; return p ? (p.d + ' ' + MON[p.m - 1] + ' ' + p.y) : day; }
+function _mgrLoading() { return '<div class="card" style="padding:26px;text-align:center;color:var(--text-light);font-size:13px">' + _t('Loading…') + '</div>'; }
+function _mgrEmpty(msg) { return '<div class="card" style="padding:34px;text-align:center"><div style="width:44px;height:44px;border-radius:50%;background:#00B0601f;display:flex;align-items:center;justify-content:center;margin:0 auto 10px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><div style="font-weight:700;color:var(--navy);font-size:14px;margin-bottom:3px">' + _crmEsc(msg) + '</div><div style="font-size:12px;color:var(--text-light)">' + _t('Nothing to review right now.') + '</div></div>'; }
+
+function _mgrRenderLate(list, dateLbl) {
+  if (!list.length) return _mgrEmpty(_t('No late arrivals today'));
+  const rows = list.sort((a, b) => (b.mins || 0) - (a.mins || 0)).map(x => {
+    const e = x.emp, r = x.rec, mins = x.mins;
+    const lateBadge = (mins == null) ? '<span class="badge b-warn">' + _t('Late') + '</span>' : '<span class="badge ' + (mins >= 60 ? 'b-danger' : 'b-warn') + '">' + mins + ' ' + _t('min') + '</span>';
+    const anom = _mgrIsAnomaly(r);
+    const zoneBadge = anom.bad ? '<span class="badge b-danger">' + _t('Out of Zone') + '</span>' : (anom.near ? '<span class="badge b-ok">' + _t('In Zone') + '</span>' : (r.loc ? '<span class="badge b-navy">' + _crmEsc(r.loc) + '</span>' : '—'));
+    const ci = r.in || r.clock_in || '—';
+    return '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _mgrAva(e.name) + '<span style="font-weight:600">' + _crmEsc(e.name) + '</span></div></td>'
+      + '<td>' + _crmEsc(e.dept || '—') + '</td>'
+      + '<td style="font-weight:700;color:' + ((mins != null && mins >= 60) ? 'var(--danger)' : 'var(--warning)') + '">' + _crmEsc(ci) + '</td>'
+      + '<td>' + lateBadge + '</td><td>' + zoneBadge + '</td>'
+      + '<td><button class="btn btn-ghost btn-sm" data-emp="' + _crmEsc(e.name) + '" onclick="addManagerNote(this, this.dataset.emp)">' + _t('Note') + '</button></td></tr>';
+  }).join('');
+  return '<div class="card"><div class="card-hdr"><div class="card-title">' + _t('Late Arrivals') + ' — ' + _crmEsc(dateLbl) + '</div><span class="badge b-warn">' + list.length + ' ' + _t(list.length === 1 ? 'employee' : 'employees') + '</span></div>'
+    + '<div class="table-wrap"><table><thead><tr><th>' + _t('Employee') + '</th><th>' + _t('Department') + '</th><th>' + _t('Check-In Time') + '</th><th>' + _t('Late By') + '</th><th>' + _t('GPS Zone') + '</th><th>' + _t('Action') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function _mgrRenderGps(list, dateLbl) {
+  if (!list.length) return _mgrEmpty(_t('No GPS anomalies today'));
+  const _mapSvg = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>';
+  const cards = list.map(x => {
+    const e = x.emp, r = x.rec, nz = x.near;
+    const dist = nz ? nz.dist : null;
+    const km = (dist != null && dist >= 1000) ? (dist / 1000).toFixed(1) + 'km' : (dist != null ? dist + 'm' : '—');
+    const zname = nz ? nz.zone.name : (r.loc || '—');
+    const coords = (r.lat != null && r.lon != null) ? (Number(r.lat).toFixed(4) + ', ' + Number(r.lon).toFixed(4)) : '—';
+    const ci = r.in || r.clock_in || '—';
+    const hasGeo = (r.lat != null && r.lon != null);
+    const mapBtn = hasGeo ? '<button class="btn btn-ghost btn-sm" data-emp="' + _crmEsc(e.name) + '" onclick="viewAnomalyOnMap(' + Number(r.lat) + ',' + Number(r.lon) + ',this.dataset.emp)">' + _mapSvg + _t('View on Map') + '</button>' : '';
+    const legit = _crmEsc(e.name + ' — ' + _t('marked as a legitimate site visit'));
+    return '<div style="border:1px solid var(--line);border-radius:10px;padding:16px">'
+      + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">' + _mgrAva(e.name, 'md')
+      + '<div><div style="font-size:14px;font-weight:700">' + _crmEsc(e.name) + ' — ' + _t('Out of Zone') + '</div><div style="font-size:12px;color:var(--text-light)">' + _crmEsc(e.dept || '') + ' · ' + _t('Check-in') + ' ' + _crmEsc(ci) + '</div></div>'
+      + '<span class="badge b-danger" style="margin-left:auto">' + km + ' ' + _t('from') + ' ' + _crmEsc(nz ? _mgrZoneShort(nz.zone.name) : 'zone') + '</span></div>'
+      + '<div style="background:var(--soft-bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+      + '<div><span style="color:var(--text-light)">' + _t('GPS Coordinates') + '</span><br><strong>' + _crmEsc(coords) + '</strong></div>'
+      + '<div><span style="color:var(--text-light)">' + _t('Nearest zone') + '</span><br><strong>' + _crmEsc(zname) + '</strong></div>'
+      + '<div><span style="color:var(--text-light)">' + _t('Distance') + '</span><br><strong style="color:var(--danger)">' + (dist != null ? dist.toLocaleString() + 'm' : '—') + '</strong></div>'
+      + '</div></div>'
+      + '<div style="display:flex;gap:8px">' + mapBtn
+      + '<button class="btn-approve" data-msg="' + legit + '" onclick="toast(this.dataset.msg, \'#065F46\')">' + _t('Mark Legitimate') + '</button></div></div>';
+  }).join('');
+  return '<div class="card"><div class="card-hdr"><div class="card-title">' + _t('GPS Anomalies') + ' — ' + _crmEsc(dateLbl) + '</div><span class="badge b-danger">' + list.length + ' ' + _t(list.length === 1 ? 'alert' : 'alerts') + '</span></div><div style="display:flex;flex-direction:column;gap:12px">' + cards + '</div></div>';
+}
+
+function _mgrRenderTeam(team, attByEmp, onLeaveIds, today) {
+  if (!team.length) return _mgrEmpty(_t('No team members to show'));
+  const rows = team.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(e => {
+    const r = attByEmp[e.id] || attByEmp[e.name];
+    let statusBadge, ci = '—', hrs = '—';
+    if (onLeaveIds.has(e.id)) { statusBadge = '<span class="badge b-info">' + _t('On Leave') + '</span>'; }
+    else if (r) {
+      ci = r.in || r.clock_in || '—';
+      hrs = (r.out || r.clock_out) ? (r.hrs || '—') : _t('In progress');
+      const anom = _mgrIsAnomaly(r).bad;
+      const lb = _mgrLateBy(r, e);
+      if (anom) statusBadge = '<span class="badge b-warn">' + _t('GPS Anomaly') + '</span>';
+      else if (r.status === 'absent') statusBadge = '<span class="badge b-danger">' + _t('Absent') + '</span>';
+      else if (r.status === 'late') statusBadge = '<span class="badge b-warn">' + _t('Late') + (lb != null ? ' ' + lb + 'm' : '') + '</span>';
+      else if (r.in || r.clock_in) statusBadge = '<span class="badge b-ok">' + _t('On Time') + '</span>';
+      else statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>';
+    } else { statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>'; }
+    const bal = (e.annualTotal != null) ? (Number(e.annualTotal) - Number(e.annualUsed || 0)) : null;
+    const balHtml = (bal == null) ? '—' : '<span style="font-size:12px">' + _t('Annual') + ': <strong>' + bal + 'd</strong></span>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _mgrAva(e.name)
+      + '<div><div style="font-weight:700">' + _crmEsc(e.name) + '</div><div style="font-size:10px;color:var(--text-light)">' + _crmEsc(e.title || e.role || '') + '</div></div></div></td>'
+      + '<td>' + _crmEsc(e.dept || '—') + '</td><td>' + _crmEsc(ci) + '</td><td>' + statusBadge + '</td><td>' + _crmEsc(hrs) + '</td><td>' + balHtml + '</td></tr>';
+  }).join('');
+  return '<div class="card"><div class="card-hdr"><div class="card-title">' + _t('Team Attendance Summary — Today') + '</div><span class="badge b-navy">' + team.length + ' ' + _t('people') + '</span></div><div class="table-wrap"><table><thead><tr><th>' + _t('Employee') + '</th><th>' + _t('Department') + '</th><th>' + _t('Check-In') + '</th><th>' + _t('Status') + '</th><th>' + _t('Hours') + '</th><th>' + _t('Leave Balance') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
 async function loadManagerView() {
-  /* refresh pending approvals from the standalone backend */
+  // Loading state first so stale markup never flashes.
+  ['mgr-latealerts-body', 'mgr-gpsalerts-body', 'mgr-teamview-body'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = _mgrLoading(); });
+  ['mgr-pending', 'mgr-late', 'mgr-anomaly', 'mgr-onleave'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '·'; });
   try { await tkBootstrap(); } catch (e) {}
   try { tkRenderApprovals(); } catch (e) {}
-  const pending = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending').length;
+
+  const today = _today();
+  const team = _mgrTeam();
+  const teamIds = new Set(team.map(e => e.id));
+  const teamNames = new Set(team.map(e => e.name));
+  const inTeam = r => (r.emp_id && teamIds.has(r.emp_id)) || (r.name && teamNames.has(r.name));
+
+  // today's attendance for the team, one row per employee (list is date DESC / clock_in DESC → first wins)
+  const attByEmp = {};
+  (_DEMO_ATTENDANCE || []).filter(r => r.date === today && inTeam(r)).forEach(r => { const k = r.emp_id || r.name; if (k && !attByEmp[k]) attByEmp[k] = r; });
+
+  const late = [], gps = [];
+  team.forEach(emp => {
+    const r = attByEmp[emp.id] || attByEmp[emp.name];
+    if (!r) return;
+    if (r.status === 'late') late.push({ emp, rec: r, mins: _mgrLateBy(r, emp) });
+    const anom = _mgrIsAnomaly(r);
+    if (anom.bad) gps.push({ emp, rec: r, near: anom.near });
+  });
+
+  const onLeave = team.filter(emp => _mgrLeaveOn(emp.id, emp.name, today));
+  const onLeaveIds = new Set(onLeave.map(e => e.id));
+
+  let pending = 0;
+  try { pending = _inboxPendingIds().length; }
+  catch (e) { pending = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'pending').length; }
+
+  const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setTxt('mgr-pending', pending); setTxt('mgr-late', late.length); setTxt('mgr-anomaly', gps.length); setTxt('mgr-onleave', onLeave.length);
+  setTxt('mgr-late-ct', late.length); setTxt('mgr-gps-ct', gps.length); setTxt('mgr-team-ct', team.length);
+
+  const dateLbl = _mgrDateLabel(today);
+  const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+  setHtml('mgr-latealerts-body', _mgrRenderLate(late, dateLbl));
+  setHtml('mgr-gpsalerts-body', _mgrRenderGps(gps, dateLbl));
+  setHtml('mgr-teamview-body', _mgrRenderTeam(team, attByEmp, onLeaveIds, today));
+
   const badge = document.querySelector('.nav-item[onclick*="manager"] .nav-badge');
   if (badge) badge.textContent = pending;
 }
@@ -16643,7 +16636,9 @@ function switchCfgTab(tab, el) {
   if (tab === 'system') {
     updateCfgPreview();
     const attCount = document.getElementById('sys-att-count');
-    if (attCount) attCount.textContent = _DEMO_ATTENDANCE.length + ' records (demo)';
+    if (attCount) attCount.textContent = (_DEMO_ATTENDANCE || []).length + ' records';
+    const usrCount = document.getElementById('sys-user-count');
+    if (usrCount) usrCount.textContent = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').length + ' active';
   }
 }
 
