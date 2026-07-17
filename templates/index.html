@@ -9830,7 +9830,19 @@ function _procUrl() {
   if (!url && !_local && /^https?:$/i.test(location.protocol) && location.hostname) url = location.origin + '/procurement';
   if (!url) return null;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
-  try { var b = new URL(url); if (b.protocol !== 'http:' && b.protocol !== 'https:') return null; if (b.host === location.host && (b.pathname === '' || b.pathname === '/')) b.pathname = '/procurement'; return b; } catch (e) { return null; }
+  try {
+    var b = new URL(url);
+    if (b.protocol !== 'http:' && b.protocol !== 'https:') return null;
+    // Procurement is ALWAYS served under /procurement on THIS origin (Caddy routes it there). So if the
+    // configured URL is on the SAME host, force the /procurement base — a stale or rootey setting (e.g.
+    // just "portal.humiley.com" or an old path) must never point the embed back at the PORTAL itself,
+    // which loads the portal-inside-the-portal and trips the "service isn't running" diagnosis.
+    if (b.host === location.host) {
+      var _pp = b.pathname.replace(/\/+$/, '').toLowerCase();
+      if (_pp !== '/procurement' && _pp.indexOf('/procurement/') !== 0) { b.pathname = '/procurement'; b.search = ''; b.hash = ''; }
+    }
+    return b;
+  } catch (e) { return null; }
 }
 /* Turn the embed's black box transparent. Instead of a vague "not reachable", say EXACTLY why it
    failed and give the precise fix: (a) SSO not set up on the server, (b) this account has no
