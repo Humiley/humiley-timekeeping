@@ -695,6 +695,7 @@ def _invtrack_sync(trigger="manual"):
                 ex_item["method"] = "link"; ch = True
             if ch:
                 enriched += 1
+        cur_items = _invtrack_collapse(cur_items)   # fold any blank-notification + filled duplicate rows
         needlook = sum(1 for it in cur_items if it.get("needsLookup"))   # report ALL outstanding, not only newly-added
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),
@@ -707,6 +708,67 @@ def _invtrack_sync(trigger="manual"):
             _invtrack_audit(trigger, added, needlook)
         return {"ok": True, "added": added, "enriched": enriched, "needLookup": needlook, "total": len(cur_items),
                 "lastSync": cur_meta["lastSync"], "attach": att_seen[0], "parsed": att_parsed[0], "pdfEngine": _pdf_engine_ok()}
+
+
+def _invtrack_merge_pair(dst, src):
+    """Fold src into dst: keep amounts > 0, and fill any blank identity/link field."""
+    def num(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+    for f in ("before", "vat", "after"):
+        if not (num(dst.get(f)) > 0) and num(src.get(f)) > 0:
+            dst[f] = num(src.get(f))
+    for f in ("invNo", "serial", "taxCode", "supplier", "attach", "lookup", "msgId", "sender", "desc", "dateISO", "dateRaw"):
+        if not dst.get(f) and src.get(f):
+            dst[f] = src.get(f)
+    if num(dst.get("after")) > 0:
+        dst["needsLookup"] = False
+
+
+def _invtrack_collapse(items):
+    """Merge duplicate rows for the SAME invoice — e.g. a blank notification row (no invoice-no) and
+       the filled import/reference row. Match on invNo+MST, invNo+date, or date+description-prefix;
+       never merge two rows that both carry DIFFERENT invoice numbers."""
+    def keys(x):
+        inv = str(x.get("invNo") or "").strip()
+        tax = str(x.get("taxCode") or "").split("-")[0].strip()
+        d = str(x.get("dateISO") or "").strip()
+        desc = _vn_fold(x.get("desc") or "")[:36]
+        ks = []
+        if inv and tax:
+            ks.append(("it", inv, tax))
+        if inv and d:
+            ks.append(("id", inv, d))
+        if d and len(desc) >= 8:
+            ks.append(("dd", d, desc))
+        return ks
+    def conflict(a, b):
+        ia = str(a.get("invNo") or "").strip(); ib = str(b.get("invNo") or "").strip()
+        ta = str(a.get("taxCode") or "").split("-")[0].strip(); tb = str(b.get("taxCode") or "").split("-")[0].strip()
+        if ia and ib and ia != ib:
+            return True                                # two different invoice numbers = not the same invoice
+        if ta and tb and ta != tb and ta != "0318835868" and tb != "0318835868":
+            return True                                # two different (real) seller MSTs
+        return False
+    canon = {}
+    out = []
+    for x in items:
+        target = None
+        for k in keys(x):
+            c = canon.get(k)
+            if c is not None and not conflict(c, x):
+                target = c; break
+        if target is None:
+            out.append(x)
+            for k in keys(x):
+                canon.setdefault(k, x)
+        else:
+            _invtrack_merge_pair(target, x)
+            for k in keys(target):
+                canon.setdefault(k, target)
+    return out
 
 
 def _invtrack_import(body):
@@ -730,6 +792,9 @@ def _invtrack_import(body):
             ks.append(("it", inv, tax))
         if inv and d:
             ks.append(("id", inv, d))
+        desc = _vn_fold(x.get("desc") or "")[:36]
+        if d and len(desc) >= 8:
+            ks.append(("dd", d, desc))
         return ks
     def _num(v):
         try:
@@ -741,7 +806,7 @@ def _invtrack_import(body):
         docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
         docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
         cur = docs[0] if docs else {"kind": "invtrack-dataset", "meta": {}, "items": []}
-        cur_items = cur.get("items") or []
+        cur_items = _invtrack_collapse(cur.get("items") or [])   # clean any existing blank+filled duplicates first
         index = {}
         for it in cur_items:
             for k in _keys(it):
