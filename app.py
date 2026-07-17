@@ -1662,6 +1662,8 @@ class Handler(BaseHTTPRequestHandler):
             if _err:
                 return self._err(_err, 403)
             row = db.append_leave_signature(int(iid), sig, new_status=(set_status or None))
+            if (set_status or "").lower() == "approved":
+                self._leave_apply_balance(lv)   # actually decrement annual/sick balance on approval
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
                 "action": "E-signature — " + meaning, "target": "leave/" + str(iid),
                 "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
@@ -2029,6 +2031,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _leave_apply_balance(self, lv):
+        """On APPROVAL, actually decrement the requester's annual/sick balance by the leave's day
+        count (previously the balances were display-only). Idempotent by construction: a leave
+        transitions pending → approved exactly once (the email link only fires while 'pending', and
+        _appr_check blocks re-approving in the portal). Unpaid / comp-off types don't touch these."""
+        try:
+            if not lv or not lv.get("emp_id"):
+                return
+            days = float(lv.get("days") or 0)
+            if days <= 0:
+                return
+            emp = db.get_employee(lv.get("emp_id"))
+            if not emp:
+                return
+            lt = str(lv.get("type") or "").strip().lower()
+            if "sick" in lt:
+                db.update_employee(lv["emp_id"], {"sickUsed": (float(emp.get("sickUsed") or 0)) + days})
+            elif "annual" in lt or lt in ("", "leave", "paid", "vacation"):
+                db.update_employee(lv["emp_id"], {"annualUsed": (float(emp.get("annualUsed") or 0)) + days})
+        except Exception:
+            pass
+
     def _approve_via_link(self, qs):
         token = qs.get("t", [""])[0] or qs.get("token", [""])[0]
         action = (qs.get("action", ["approve"])[0]).lower()
@@ -2041,6 +2065,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._html("Already " + lv["status"], "This leave request for %s was already <b>%s</b>." % (_hesc(rname), _hesc(lv["status"])), "#205090")
         new_status = "rejected" if action in ("reject", "decline", "deny") else "approved"
         db.set_leave_status(lv["id"], new_status)
+        if new_status == "approved":
+            self._leave_apply_balance(lv)   # email one-click approval must decrement the balance too
         verb = "approved ✅" if new_status == "approved" else "rejected"
         return self._html("Leave " + new_status,
                           "%s's %s (%s → %s) has been <b>%s</b>." % (_hesc(rname), _hesc(lv.get("type", "leave")),
