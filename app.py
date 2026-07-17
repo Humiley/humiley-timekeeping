@@ -710,8 +710,17 @@ def _invtrack_sync(trigger="manual"):
                 "lastSync": cur_meta["lastSync"], "attach": att_seen[0], "parsed": att_parsed[0], "pdfEngine": _pdf_engine_ok()}
 
 
+def _code_of(x):
+    """The VN e-invoice tra-cứu lookup CODE from a row's desc/lookup — a unique per-invoice id, so a
+       forwarded notification and the real invoice (with amount) share it and can be merged."""
+    blob = _vn_fold((x.get("desc") or "") + " " + (x.get("lookup") or ""))
+    m = re.search(r"(?:ma tra cuu|ma nhan hoa don|ma so bi mat|tra cuu|lookup code|[?&]code=)\s*[:=]?\s*([0-9a-z]{6,24})", blob)
+    return m.group(1) if m else ""
+
+
 def _invtrack_merge_pair(dst, src):
-    """Fold src into dst: keep amounts > 0, and fill any blank identity/link field."""
+    """Fold src into dst: keep amounts > 0; take the REAL invoice's identity (whichever row has the
+       invoice number) for supplier/invNo/serial/desc; fill any other blank field."""
     def num(v):
         try:
             return float(v or 0)
@@ -720,7 +729,11 @@ def _invtrack_merge_pair(dst, src):
     for f in ("before", "vat", "after"):
         if not (num(dst.get(f)) > 0) and num(src.get(f)) > 0:
             dst[f] = num(src.get(f))
-    for f in ("invNo", "serial", "taxCode", "supplier", "attach", "lookup", "msgId", "sender", "desc", "dateISO", "dateRaw"):
+    src_better = bool(src.get("invNo")) and not dst.get("invNo")   # src is the real invoice, dst was a bare forward/notification
+    for f in ("invNo", "serial", "taxCode", "supplier", "desc", "attach"):
+        if (src_better and src.get(f)) or (not dst.get(f) and src.get(f)):
+            dst[f] = src.get(f)
+    for f in ("lookup", "msgId", "sender", "dateISO", "dateRaw"):
         if not dst.get(f) and src.get(f):
             dst[f] = src.get(f)
     if num(dst.get("after")) > 0:
@@ -736,7 +749,10 @@ def _invtrack_collapse(items):
         tax = str(x.get("taxCode") or "").split("-")[0].strip()
         d = str(x.get("dateISO") or "").strip()
         desc = _vn_fold(x.get("desc") or "")[:36]
+        code = _code_of(x)
         ks = []
+        if code:
+            ks.append(("co", code))
         if inv and tax:
             ks.append(("it", inv, tax))
         if inv and d:
@@ -795,6 +811,9 @@ def _invtrack_import(body):
         desc = _vn_fold(x.get("desc") or "")[:36]
         if d and len(desc) >= 8:
             ks.append(("dd", d, desc))
+        code = _code_of(x)
+        if code:
+            ks.append(("co", code))
         return ks
     def _num(v):
         try:
