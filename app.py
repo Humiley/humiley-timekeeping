@@ -689,6 +689,81 @@ def _invtrack_sync(trigger="manual"):
         return {"ok": True, "added": added, "enriched": enriched, "needLookup": needlook, "total": len(cur_items), "lastSync": cur_meta["lastSync"]}
 
 
+def _invtrack_import(body):
+    """MERGE imported invoice rows (from a GDT / accounting / tracker export) into the invtrack doc:
+       fill blank amounts on the matching email-tracked row (by invoice-no + seller-MST, or invoice-no
+       + date), add rows we have never seen, and NEVER overwrite good data or drop mailbox-synced rows.
+       Runs under the same lock + re-read as the sync, so it can't clobber a concurrent sync."""
+    rows = (body or {}).get("items")
+    if not isinstance(rows, list):
+        return {"ok": False, "error": "bad_input", "message": "No rows to import."}
+    def _ck(x):
+        inv = str(x.get("invNo") or "").strip()
+        tax = str(x.get("taxCode") or "").split("-")[0].strip()
+        d = str(x.get("dateISO") or "").strip()
+        if inv and tax:
+            return ("it", inv, tax)
+        if inv and d:
+            return ("id", inv, d)
+        return None
+    def _num(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+    with _INVTRACK_LOCK:
+        docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        cur = docs[0] if docs else {"kind": "invtrack-dataset", "meta": {}, "items": []}
+        cur_items = cur.get("items") or []
+        index = {}
+        for it in cur_items:
+            k = _ck(it)
+            if k:
+                index[k] = it
+        added = updated = 0
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            k = _ck(r)
+            ex = index.get(k) if k else None
+            if ex:
+                ch = False
+                for f in ("before", "vat", "after"):
+                    if not (_num(ex.get(f)) > 0) and _num(r.get(f)) > 0:
+                        ex[f] = _num(r.get(f)); ch = True
+                for f in ("invNo", "serial", "taxCode", "supplier"):
+                    if not ex.get(f) and r.get(f):
+                        ex[f] = r.get(f); ch = True
+                if _num(ex.get("after")) > 0:
+                    ex["needsLookup"] = False
+                if ch:
+                    updated += 1
+            else:
+                item = {"msgId": "", "dateISO": r.get("dateISO") or "", "dateRaw": r.get("dateRaw") or "",
+                        "supplier": r.get("supplier") or "", "invNo": r.get("invNo") or "", "serial": r.get("serial") or "",
+                        "taxCode": r.get("taxCode") or "", "before": _num(r.get("before")), "vat": _num(r.get("vat")),
+                        "after": _num(r.get("after")), "desc": r.get("desc") or "", "attach": r.get("attach") or "",
+                        "type": r.get("type") or "Hoá đơn mua vào (NCC)", "sender": r.get("sender") or "",
+                        "lookup": r.get("lookup") or "", "method": "import",
+                        "needsLookup": not (_num(r.get("after")) > 0), "source": "import"}
+                cur_items.append(item)
+                if k:
+                    index[k] = item
+                added += 1
+        cur_meta = cur.get("meta") or {}
+        cur_meta.update({"lastImport": _now_iso()})
+        cur_meta.setdefault("mailbox", INVTRACK["mailbox"])
+        cur_meta.setdefault("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)")
+        cur["items"] = cur_items
+        cur["meta"] = cur_meta
+        cur["kind"] = "invtrack-dataset"
+        db.put_collection_item("invtrack", cur)
+        if added or updated:
+            _invtrack_audit("import", added, 0)
+        return {"ok": True, "added": added, "updated": updated, "total": len(cur_items)}
+
+
 def _invtrack_scheduler():
     """Background thread: sync every INVTRACK['interval'] minutes (24/7, app-only). Never dies on error."""
     while True:
@@ -978,6 +1053,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_m365(body)
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
+        if path == "/api/invtrack/import":
+            return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -2217,6 +2294,11 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             return self._err("Invoice Tracking is a Finance function \u2014 Approver level or above required.", 403)
         return self._json(_invtrack_sync("manual"))
+
+    def _invtrack_import_ep(self, u, body):
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Invoice Tracking is a Finance function \u2014 Approver level or above required.", 403)
+        return self._json(_invtrack_import(body or {}))
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:

@@ -9302,6 +9302,30 @@ function tkInvExportPDF() {
 
 /* ── IMPORT: parse the export .xlsx / .csv, replace the dataset ── */
 function tkInvImportPick() { const el = document.getElementById('inv-import-file'); if (el) el.click(); }
+/* Map an export's header row to invoice fields by fuzzy (diacritic-folded) name — so a GDT,
+   MISA or the tracker's own export all parse, regardless of column order. */
+function _invColMap(hdr) {
+  var fold = function (s) { return String(s == null ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/\s+/g, ' ').trim(); };
+  var H = (hdr || []).map(fold);
+  var find = function () { for (var a = 0; a < arguments.length; a++) { for (var i = 0; i < H.length; i++) { if (H[i].indexOf(arguments[a]) >= 0) return i; } } return -1; };
+  var mst = -1;
+  for (var i = 0; i < H.length; i++) { if ((H[i].indexOf('mst') >= 0 || H[i].indexOf('ma so thue') >= 0) && H[i].indexOf('ban') >= 0) { mst = i; break; } }
+  if (mst < 0) mst = find('mst', 'ma so thue');
+  var invNo = find('so hoa don', 'so hd', 'so (no', 'so hoadon', 'invoice');
+  if (invNo < 0) { for (var j = 0; j < H.length; j++) { if (H[j] === 'so') { invNo = j; break; } } }
+  var supplier = find('ten nguoi ban', 'ten ncc', 'ten don vi ban', 'ten don vi', 'nha cung cap', 'don vi ban');
+  if (supplier < 0 || supplier === mst) { supplier = -1; for (var k = 0; k < H.length; k++) { if ((H[k].indexOf('nguoi ban') >= 0 || H[k].indexOf('seller') >= 0) && k !== mst && H[k].indexOf('mst') < 0 && H[k].indexOf('ma so thue') < 0) { supplier = k; break; } } }
+  var serial = find('ky hieu hoa don', 'ky hieu hd');
+  if (serial < 0) serial = find('ky hieu', 'serial');
+  return {
+    date: find('ngay'), supplier: supplier,
+    invNo: invNo, serial: serial, taxCode: mst,
+    before: find('chua thue', 'truoc thue', 'tien hang'), vat: find('tien thue', 'thue gtgt'),
+    after: find('thanh toan', 'tong cong tien', 'sau thue', 'tong tien'),
+    desc: find('dien giai', 'tieu de', 'noi dung', 'ghi chu'), type: find('loai'),
+    lookup: find('tra cuu'), sender: find('email', 'nguoi gui')
+  };
+}
 async function _invImportFile(file) {
   if (!file) return;
   if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
@@ -9309,29 +9333,38 @@ async function _invImportFile(file) {
   try {
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array' });
-    const items = []; const meta = { source: file.name, extracted: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) };
+    const items = [];
     wb.SheetNames.forEach(sn => {
       const isOther = /khác|khac|other/i.test(sn);
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
-      let hdr = -1;
-      for (let r = 0; r < rows.length; r++) { if (String(rows[r][0]).trim().toUpperCase() === 'STT') { hdr = r; break; } }
-      if (hdr < 0) return;   // not a register sheet (e.g. Overview)
-      for (let r = hdr + 1; r < rows.length; r++) {
-        const R = rows[r]; const stt = String(R[0]).trim();
-        if (!/^\d+$/.test(stt)) continue;   // skip month-separator / blank rows
-        const dateISO = _invISO(R[1]);
-        items.push({ stt: +stt, dateISO: dateISO, dateRaw: String(R[1] || ''), supplier: String(R[2] || ''), invNo: String(R[3] || ''), serial: String(R[4] || ''), taxCode: String(R[5] || ''), before: _invNum(R[6]), vat: _invNum(R[7]), after: _invNum(R[8]), desc: String(R[9] || ''), attach: String(R[10] || ''), type: String(R[11] || (isOther ? 'Khác / không phải hoá đơn' : 'Hoá đơn mua vào (NCC)')), sender: String(R[12] || ''), lookup: String(R[13] || '') });
+      let cm = null, start = -1;
+      for (let r = 0; r < Math.min(rows.length, 20); r++) {
+        const m = _invColMap(rows[r]);
+        if (m.date >= 0 && (m.invNo >= 0 || m.after >= 0)) { cm = m; start = r + 1; break; }
+      }
+      if (!cm) return;
+      for (let r = start; r < rows.length; r++) {
+        const R = rows[r]; const g = i => (i >= 0 && i < R.length) ? R[i] : '';
+        const invNo = String(g(cm.invNo) || '').trim();
+        const dateISO = _invISO(g(cm.date));
+        const after = _invNum(g(cm.after));
+        if (!invNo && !after && !dateISO) continue;
+        const sup = String(g(cm.supplier) || '').trim();
+        if (/^(tong|cong|subtotal|total)\b/i.test(sup) || /^(tong|cong)/i.test(String(g(cm.invNo) || ''))) continue;
+        items.push({ dateISO: dateISO, dateRaw: String(g(cm.date) || ''), supplier: sup, invNo: invNo,
+          serial: String(g(cm.serial) || '').trim(), taxCode: String(g(cm.taxCode) || '').replace(/\s/g, ''),
+          before: _invNum(g(cm.before)), vat: _invNum(g(cm.vat)), after: after,
+          desc: String(g(cm.desc) || '').trim(), attach: '',
+          type: String(g(cm.type) || (isOther ? 'Khác / không phải hoá đơn' : 'Hoá đơn mua vào (NCC)')),
+          sender: String(g(cm.sender) || '').trim(), lookup: String(g(cm.lookup) || '').trim() });
       }
     });
-    if (!items.length) { toast(_t('No invoice rows found in this file. Use the "Invoice Tracking Register" export.'), 'warn', 8000); return; }
-    const dates = items.map(i => i.dateISO).filter(Boolean).sort();
-    meta.company = _INV.meta.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)';
-    meta.mailbox = 'hd@humiley.com';
-    if (dates.length) meta.period = _invDMY(dates[0]) + '  –  ' + _invDMY(dates[dates.length - 1]);
-    _INV.items = items; _INV.meta = meta;
-    await _invSaveDoc();
-    toast(_t('Imported') + ' ' + items.length + ' ' + _t('rows') + ' · ' + file.name, 'info', 6000);
-    tkRenderInvTrack();
+    if (!items.length) { toast(_t('No invoice rows found. The file needs columns like Ngày, Số hoá đơn, MST người bán, Tổng thanh toán.'), 'warn', 9000); return; }
+    let r = null;
+    try { r = await tkApi('/api/invtrack/import', { method: 'POST', body: { items: items } }); }
+    catch (e) { toast(_t('Import failed') + ': ' + (e.message || ''), 'error', 9000); return; }
+    if (r && r.ok) { await _invLoad(true); tkRenderInvTrack(); toast(_t('Imported') + ' — ' + r.added + ' ' + _t('new') + ' · ' + r.updated + ' ' + _t('amounts filled'), 'info', 9000); }
+    else { toast((r && r.message) || _t('Import failed'), 'warn', 8000); }
   } catch (e) { toast(_t('Could not read the file') + ': ' + e.message, 'error', 8000); }
 }
 
