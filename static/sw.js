@@ -3,7 +3,7 @@
    paints instantly — the single biggest "app feels slow to open on 4G" fix — while the network
    copy refreshes the cache in the background; the in-app appVersion check reloads to a new
    deploy within seconds of focus); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v50';
+const CACHE = 'hml-pwa-v51';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -28,6 +28,13 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;                       // POST/PATCH/DELETE go straight to network
   const url = new URL(req.url);
   if (url.origin === self.location.origin && url.pathname.startsWith('/api/')) return;   // never cache live data
+  // The Procurement app is a SEPARATE app served under /procurement (Next.js, its own routing + assets).
+  // This SW's scope is '/', so WITHOUT this it intercepts every /procurement navigation — INCLUDING the
+  // embed iframe's load — and (via the navigate branch below) serves the PORTAL shell instead of letting
+  // the request reach the Procurement container. That renders the portal-inside-the-portal and trips the
+  // "Procurement service isn't running" message even though the container is perfectly healthy. Never
+  // touch anything under /procurement — let it go straight to the network (Caddy routes it to the app).
+  if (url.origin === self.location.origin && (url.pathname === '/procurement' || url.pathname.startsWith('/procurement/'))) return;
 
   if (req.mode === 'navigate') {                          // HTML: stale-while-revalidate
     e.respondWith(
