@@ -27,6 +27,7 @@ import io
 import zipfile
 import xml.etree.ElementTree as ET
 import unicodedata
+from html import escape as _hesc
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -2020,7 +2021,7 @@ class Handler(BaseHTTPRequestHandler):
                 '<meta name="viewport" content="width=device-width,initial-scale=1">'
                 '<title>Humiley Timekeeping</title><style>' + css + '</style></head>'
                 '<body><div class="card"><div class="ic">' + icon + '</div>'
-                '<h1>' + title + '</h1><p>' + message + '</p></div></body></html>')
+                '<h1>' + _hesc(title) + '</h1><p>' + message + '</p></div></body></html>')
         body = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -2037,13 +2038,13 @@ class Handler(BaseHTTPRequestHandler):
         requester = db.get_employee(lv["emp_id"])
         rname = requester["name"] if requester else "the employee"
         if (lv.get("status") or "").lower() != "pending":
-            return self._html("Already " + lv["status"], "This leave request for %s was already <b>%s</b>." % (rname, lv["status"]), "#205090")
+            return self._html("Already " + lv["status"], "This leave request for %s was already <b>%s</b>." % (_hesc(rname), _hesc(lv["status"])), "#205090")
         new_status = "rejected" if action in ("reject", "decline", "deny") else "approved"
         db.set_leave_status(lv["id"], new_status)
         verb = "approved ✅" if new_status == "approved" else "rejected"
         return self._html("Leave " + new_status,
-                          "%s's %s (%s → %s) has been <b>%s</b>." % (rname, lv.get("type", "leave"),
-                          lv.get("startDate", ""), lv.get("endDate", ""), verb),
+                          "%s's %s (%s → %s) has been <b>%s</b>." % (_hesc(rname), _hesc(lv.get("type", "leave")),
+                          _hesc(lv.get("startDate", "")), _hesc(lv.get("endDate", "")), verb),
                           "#00B060" if new_status == "approved" else "#C00000")
 
     def _coll_approve_via_link(self, qs):
@@ -2066,15 +2067,15 @@ class Handler(BaseHTTPRequestHandler):
             # mark-paid happen in the portal, where the session enforces Management level + segregation.
             if action == "paid" and coll == "payments":
                 if state != "approved":
-                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — a Director must approve it in the portal before it can be marked paid." % (who, cur), "#205090")
+                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — a Director must approve it in the portal before it can be marked paid." % (_hesc(who), _hesc(cur)), "#205090")
                 new_status = "Paid"
             elif action in ("reject", "decline", "deny"):
                 if state not in ("submit", "review"):
-                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b>." % (LABEL[coll], who, cur), "#205090")
+                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b>." % (LABEL[coll], _hesc(who), _hesc(cur)), "#205090")
                 new_status = "Rejected"
             else:   # approve / review link from the direct manager
                 if state != "submit":
-                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b> — final approval happens in the portal." % (LABEL[coll], who, cur), "#205090")
+                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b> — final approval happens in the portal." % (LABEL[coll], _hesc(who), _hesc(cur)), "#205090")
                 new_status = "Reviewed"
             item["status"] = new_status
             if new_status == "Paid":
@@ -2092,7 +2093,7 @@ class Handler(BaseHTTPRequestHandler):
                    "Paid": "has been <b>marked paid</b>"}.get(new_status, "has been updated")
             return self._html(LABEL[coll].capitalize() + " " + ("reviewed" if new_status == "Reviewed" else new_status.lower()),
                               "%s's %s%s %s. You can close this tab." % (
-                                  who, LABEL[coll], (" (" + detail + ")" if detail else ""), msg),
+                                  _hesc(who), LABEL[coll], (" (" + _hesc(detail) + ")" if detail else ""), msg),
                               color)
         return self._html("Invalid or expired link",
                           "This approval link is not valid — the item may have been removed. Please review it in the app.", "#C00000")
@@ -2602,13 +2603,22 @@ class Handler(BaseHTTPRequestHandler):
         # them — this closes the "PATCH status=Approved / forge signatures" bypass.
         if name in ("claims", "travel", "payments", "leave"):
             existing = existing if name in ("claims", "travel", "payments", "acks") else next((x for x in db.list_collection(name) if x.get("id") == iid), None)
-            # Once a money record is signed/approved/paid its CONTENT is immutable evidence — a
-            # generic PATCH must not alter amount/payee/items after signing, or the Part 11
-            # signature would attest to values changed afterwards. Only ADMIN may correct it.
+            _st = str((existing or {}).get("status") or "").strip().lower()
+            # A money record's CONTENT is immutable signed evidence ONCE it is finally DECIDED
+            # (approved / paid / rejected). While still pending (submitted / reviewed) the OWNER may
+            # amend their own request to fix a mistake — the frontend re-signs the change as an
+            # Amendment via /api/esign. Only ADMIN may touch anything beyond that. The owner-scope
+            # check here is now the SOLE gate stopping a non-owner from PATCHing a pending money
+            # record (the previous blanket "has signatures" guard rejected EVERY edit, because the
+            # submission e-signature is always present — which killed the edit feature entirely).
             if existing and name in ("claims", "travel", "payments") and self._caller_level(u) != "admin":
-                _st = str(existing.get("status") or "").strip().lower()
-                if _st in ("approved", "paid", "reviewed") or existing.get("signatures"):
-                    return self._err("This request has been signed/approved and can no longer be edited.", 403)
+                if _st in ("approved", "paid", "rejected"):
+                    return self._err("This request has been decided and can no longer be edited.", 403)
+                _en = str(existing.get("name") or "").strip().lower()
+                _owner = (existing.get("empId") and existing.get("empId") == u.get("id")) or \
+                         ((not existing.get("empId")) and _en and _en == str(u.get("name") or "").strip().lower())
+                if not _owner:
+                    return self._err("You can only edit your own pending request.", 403)
             # Validate money on the incoming edit too (add-time validation alone was insufficient).
             if name in ("claims", "travel", "payments"):
                 _merr = self._validate_money_item(name, item)
@@ -2622,6 +2632,13 @@ class Handler(BaseHTTPRequestHandler):
                         item[_k] = existing[_k]
                     else:
                         item.pop(_k, None)
+                # An owner amending a REVIEWED request changes signed content, so it drops back to
+                # 'Submitted' for re-review and the review fields clear; the amendment is separately
+                # e-signed (append-only), so the Part 11 audit trail stays intact.
+                if name in ("claims", "travel", "payments") and self._caller_level(u) != "admin" and _st == "reviewed":
+                    item["status"] = "Submitted"
+                    for _rk in ("reviewedBy", "reviewedById", "reviewedAt"):
+                        item.pop(_rk, None)
                 # protect per-line statuses/signatures on multi-item claims too
                 if isinstance(existing.get("items"), list) and isinstance(item.get("items"), list):
                     ex_items = existing["items"]
