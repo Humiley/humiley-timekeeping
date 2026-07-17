@@ -9840,6 +9840,7 @@ function _procUrl() {
 function _procDiagPanel(msg, frame, kind, where, extra) {
   if (frame) frame.style.display = 'none';
   if (!msg) return;
+  var _e = function (x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };  // full HTML-text escape (< > & )
   var title, body, fix;
   if (kind === 'sso_noaccess') {
     title = _t('Procurement isn’t enabled for your account');
@@ -9863,7 +9864,7 @@ function _procDiagPanel(msg, frame, kind, where, extra) {
     fix = _t('Check the Procurement container is running on the VPS (docker ps | grep proc), then Retry.');
   } else {   // sso_error / unknown
     title = _t('Couldn’t open Procurement');
-    body = (extra && extra.msg) ? _tkEscA(String(extra.msg)) : _t('An unexpected error occurred while opening Procurement.');
+    body = (extra && extra.msg) ? _e(String(extra.msg)) : _t('An unexpected error occurred while opening Procurement.');
     fix = _t('Please Retry. If it keeps happening, run ./update.sh on the VPS.');
   }
   var diag = ''; try { diag = JSON.stringify(window._procDiag || {}); } catch (e) {}
@@ -9876,7 +9877,7 @@ function _procDiagPanel(msg, frame, kind, where, extra) {
     + '<div><button onclick="_procEmbedReload()" style="' + btnCss + '">' + _t('Retry') + '</button>'
     + '<button onclick="tkOpenProcurement()" style="' + btnCss + '">' + _t('Open in new tab') + '</button></div>'
     + '<details style="margin-top:12px;text-align:left"><summary style="cursor:pointer;font-size:11px">' + _t('Technical details') + '</summary>'
-    + '<code style="display:block;white-space:pre-wrap;word-break:break-all;font-size:11px;margin-top:6px;color:#6b7280">' + _tkEscA(diag) + '</code></details>'
+    + '<code style="display:block;white-space:pre-wrap;word-break:break-all;font-size:11px;margin-top:6px;color:#6b7280">' + _e(diag) + '</code></details>'
     + '</div>';
 }
 /* Back-compat wrapper (the admin embed still calls this): route to the timeout panel. */
@@ -9903,6 +9904,7 @@ async function tkRenderProcurementEmbed(force) {
   var origin = base.origin;
   _procSettled = false; _procReady = false;
   try { clearTimeout(window._procMainTimer); } catch (e) {}
+  try { clearTimeout(window._procPollTimer); } catch (e) {}
   // 1) Mint the SSO token. If it fails, STOP with the precise reason -- no silent /login fallback
   //    (that just showed a bare login page = "nothing"). 503 = secret not set; 403 = no access.
   var target = '', sso = null;
@@ -9915,27 +9917,42 @@ async function tkRenderProcurementEmbed(force) {
   }
   window._procDiag = { at: 'sso', procUrl: origin, sso: sso };
   if (!sso.ok) { _procSettled = true; _procDiagPanel(msg, frame, 'sso_' + sso.kind, origin, sso); return; }
-  // 2) Load /sso and settle by inspecting WHERE the frame lands. In prod the portal frames its OWN
-  //    origin (/procurement) so contentWindow is readable: /login => secret mismatch, portal markers
-  //    => container down, a real app page => reveal. Cross-origin (local dev) => can't inspect, reveal.
-  frame.onload = function () {
+  // 2) Load /sso, then SETTLE by POLLING the frame location. In prod the /sso -> /dashboard (success)
+  //    and /sso -> /login?sso=failed (reject) hops are Next server-action redirects done as CLIENT-SIDE
+  //    soft navigations, so frame.onload fires only for the FIRST /sso document and NEVER for the landing.
+  //    Polling the same-origin frame catches the real landing either way: portal SPA => service down;
+  //    /login or sso=failed => the shared secret differs; a real app page => reveal (success also arrives
+  //    via the 'ready' postMessage). Cross-origin (local dev) can't be inspected => reveal on load/timeout.
+  function _procSettle() { _procSettled = true; try { clearTimeout(window._procPollTimer); } catch (e) {} try { clearTimeout(window._procMainTimer); } catch (e) {} }
+  function _procReveal() { _procSettle(); frame.setAttribute('data-loaded', '1'); if (msg) msg.style.display = 'none'; frame.style.display = 'block'; }
+  var _procTicks = 0, _PROC_MAXTICKS = 25;   // 25 * 400ms ~= 10s of polling
+  function _procPoll() {
+    if (_procSettled) return;
     var path = '', search = '', hasNext = false, isPortal = false, canInspect = true;
     try {
       var w = frame.contentWindow, d = w.document;
       path = w.location.pathname || ''; search = w.location.search || '';
       hasNext = !!(d && d.querySelector('script[src*="/_next/"], link[href*="/_next/"]'));
       isPortal = !!(d && d.getElementById('view-dashboard') && !hasNext);
-    } catch (e) { canInspect = false; }
-    window._procDiag = { at: 'onload', procUrl: origin, landed: (path + search) || '(cross-origin)', hasNext: hasNext, isPortal: isPortal, canInspect: canInspect, sso: sso };
-    if (_procSettled) return;
-    if (!canInspect) { _procSettled = true; frame.setAttribute('data-loaded', '1'); if (msg) msg.style.display = 'none'; frame.style.display = 'block'; return; }
-    if (/\/sso(\/|$)/.test(path)) return;                                   // mid-handshake -- wait for the redirect's onload
-    if (isPortal) { _procSettled = true; _procDiagPanel(msg, frame, 'down', origin); return; }
-    if (/\/login(\/|$)/.test(path) || /[?&]sso=failed/.test(search)) { _procSettled = true; _procDiagPanel(msg, frame, 'ssoreject', origin); return; }
-    _procSettled = true; frame.setAttribute('data-loaded', '1'); if (msg) msg.style.display = 'none'; frame.style.display = 'block';   // real app page
-  };
-  window._procMainTimer = setTimeout(function () { if (!_procSettled) { _procSettled = true; _procDiagPanel(msg, frame, 'timeout', target); } }, 9000);
+    } catch (e) { canInspect = false; }   // cross-origin (local dev) -- can't inspect
+    window._procDiag = { at: 'poll', tick: _procTicks, procUrl: origin, landed: (path + search) || '(cross-origin)', hasNext: hasNext, isPortal: isPortal, canInspect: canInspect, sso: sso };
+    if (canInspect) {
+      if (isPortal) { _procSettle(); _procDiagPanel(msg, frame, 'down', origin); return; }
+      if (/\/login(\/|$)/.test(path) || /[?&]sso=failed/.test(search)) { _procSettle(); _procDiagPanel(msg, frame, 'ssoreject', origin); return; }
+      if (hasNext && !/\/sso(\/|$)/.test(path)) { _procReveal(); return; }   // real app page (/dashboard, /change-password, a module)
+      // else: still on /sso handshaking -- keep polling
+    }
+    if (++_procTicks >= _PROC_MAXTICKS) {
+      if (!canInspect) { _procReveal(); }                                    // local-dev cross-origin: reveal whatever loaded
+      else { _procSettle(); _procDiagPanel(msg, frame, 'timeout', target); }
+      return;
+    }
+    window._procPollTimer = setTimeout(_procPoll, 400);
+  }
+  frame.onload = function () { if (!_procSettled) { try { clearTimeout(window._procPollTimer); } catch (e) {} _procPoll(); } };   // react immediately on a hard load too
+  window._procMainTimer = setTimeout(function () { if (!_procSettled) { _procSettled = true; _procDiagPanel(msg, frame, 'timeout', target); } }, 12000);   // hard backstop
   frame.src = target;
+  window._procPollTimer = setTimeout(_procPoll, 500);
 }
 function _procEmbedReload() {
   var frame = document.getElementById('procurement-frame');
@@ -10037,7 +10054,7 @@ function _tkWireProcMessages() {
     var mainF = document.getElementById('procurement-frame');
     var adminF = document.getElementById('proc-admin-frame');
     if (mainF && e.source === mainF.contentWindow) {
-      if (d.humileyEmbed === 'ready') { _procReady = true; _procSettled = true; try { clearTimeout(window._procMainTimer); } catch (e) {} var _pm = document.getElementById('procurement-embed-msg'), _pf = document.getElementById('procurement-frame'); if (_pm) _pm.style.display = 'none'; if (_pf) _pf.style.display = 'block'; _procPostNav(_procPendingPath || '/dashboard'); }
+      if (d.humileyEmbed === 'ready') { _procReady = true; _procSettled = true; try { clearTimeout(window._procMainTimer); } catch (e) {} try { clearTimeout(window._procPollTimer); } catch (e) {} var _pm = document.getElementById('procurement-embed-msg'), _pf = document.getElementById('procurement-frame'); if (_pm) _pm.style.display = 'none'; if (_pf) { _pf.style.display = 'block'; _pf.setAttribute('data-loaded', '1'); } _procPostNav(_procPendingPath || '/dashboard'); }
       else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procSyncRoute(d.path); }
     } else if (adminF && e.source === adminF.contentWindow) {
       if (d.humileyEmbed === 'ready') { _procAdminReady = true; try { clearTimeout(window._procAdminTimer); } catch (e) {} var _am = document.getElementById('proc-admin-msg'), _af = document.getElementById('proc-admin-frame'); if (_am) _am.style.display = 'none'; if (_af) _af.style.display = 'block'; _procAdminPost(_procAdminPending || '/admin/settings'); }
