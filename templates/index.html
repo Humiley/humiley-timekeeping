@@ -8056,8 +8056,9 @@ function payFillTable() {
     const canPay = _lvlRank(_userLevel) >= _lvlRank('management');
     const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
+    const _peEdit = (typeof _payIsMine === 'function' && _payIsMine(p, _payMe) && (_aprState(s) === 'submit' || _aprState(s) === 'review')) ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkNewPayment(\'' + p.id + '\')">' + tkIcon('edit', 11) + 'Edit</button> ' : '';
     const chev = '<svg id="fin-chev-pay-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + act + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peEdit + act + '</td></tr>';
     const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="10" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
@@ -8077,37 +8078,75 @@ function _payEligibleApprovers(me) {
     return (e.email || '').toLowerCase() === mgrEmail || _canApprove(e);
   }).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
-function tkNewPayment() {
+function tkNewPayment(editId) {
+  const p = editId ? (_HR.payments || []).find(x => x.id === editId) : null;
+  if (editId && !p) { toast('Payment not found', 'warn'); return; }
+  if (p && _aprState(p.status) !== 'submit' && _aprState(p.status) !== 'review') { toast(_t('This request is already decided — it can no longer be edited.'), 'warn', 5000); return; }
   document.getElementById('paymentOverlay')?.remove();
   const el = document.createElement('div'); el.id = 'paymentOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">New Payment Request</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
-    '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies — July"></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + _PAY_CATS.map(c => '<option>' + c + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + _PAY_METHODS.map(m => '<option>' + m + '</option>').join('') + '</select></div></div>' +
-    '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid"></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due"></div></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv"></div></div>' +
+  const V = k => p ? _tkEscA(p[k] == null ? '' : String(p[k])) : '';
+  const catOpts = _PAY_CATS.map(c => '<option' + (p && p.category === c ? ' selected' : '') + '>' + c + '</option>').join('');
+  const methOpts = _PAY_METHODS.map(m => '<option' + (p && p.method === m ? ' selected' : '') + '>' + m + '</option>').join('');
+  const attBlock = p
+    ? '<div class="form-group"><label class="form-label">Invoice / bill</label><div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' + _t('Your current bill is kept. Only add files if you want to replace it.') + '</div>' + _ATTACH_MULTI('pay-attach', 'Replace invoice / bill (optional)') + '</div>'
+    : _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF');
+  const submitCall = 'tkPaymentSave(' + (editId ? "'" + String(editId).replace(/'/g, "\\'") + "'" : '') + ')';
+  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">' + (p ? 'Edit Payment Request' : 'New Payment Request') + '</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies" value="' + V('purpose') + '"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + catOpts + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + methOpts + '</select></div></div>' +
+    '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid" value="' + V('payee') + '"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount" value="' + (p ? (p.amount || '') : '') + '"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due" value="' + V('dueDate') + '"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept" value="' + V('department') + '"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv" value="' + V('invoiceNo') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">' + _t2('Approver', 'Người phê duyệt') + '</label><select class="form-control" id="pay-approver"></select></div>' +
-    _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF') +
-    '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note"></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPaymentSave()">' + tkIcon('send') + 'Submit</button></div></div>';
+    attBlock +
+    '<div class="form-group"><label class="form-label">Note</label><input class="form-control" id="pay-note" value="' + V('note') + '"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'paymentOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="' + submitCall + '">' + tkIcon('send') + (p ? 'Save changes' : 'Submit') + '</button></div></div>';
   document.body.appendChild(el);
-  try { const me = _tkMe && _tkMe(); if (me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; }
+  try { const me = _tkMe && _tkMe(); if (!p && me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; }
     const sel = document.getElementById('pay-approver');
-    if (sel) { const elig = _payEligibleApprovers(me); const mEmail = ((me && me.managerEmail) || '').toLowerCase();
+    if (sel) { const elig = _payEligibleApprovers(me); const preEmail = ((p && p.approverEmail) || (me && me.managerEmail) || '').toLowerCase();
       sel.innerHTML = elig.length
-        ? elig.map(e => '<option value="' + _tkEscA(e.email || '') + '"' + ((e.email || '').toLowerCase() === mEmail ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.title ? ' — ' + _crmEsc(e.title) : '') + '</option>').join('')
+        ? elig.map(e => '<option value="' + _tkEscA(e.email || '') + '"' + ((e.email || '').toLowerCase() === preEmail ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.title ? ' — ' + _crmEsc(e.title) : '') + '</option>').join('')
         : '<option value="">' + _t2('No approver available — ask HR to assign one', 'Chưa có người phê duyệt — nhờ HR chỉ định') + '</option>';
     }
   } catch (e) {}
 }
-async function tkPaymentSave() {
+async function tkPaymentSave(editId) {
   const g = id => (document.getElementById(id) || {}).value || '';
   const me = _tkMe ? _tkMe() : null;
   const amount = +g('pay-amount') || 0;
   if (!g('pay-purpose')) { toast('Please enter the purpose', 'warn'); return; }
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
   const _files = _multiAttachStore['pay-attach'] || [];
-  if (!_files.length) { toast('Please attach the invoice / bill — a payment request must carry its supporting document', 'warn', 6000); return; }
+  if (!editId && !_files.length) { toast('Please attach the invoice / bill — a payment request must carry its supporting document', 'warn', 6000); return; }
+  if (editId) {
+    // EDIT an existing PENDING request (fix a mistake before approval). Keep status + the current bill
+    // unless a new file is attached; re-sign the change as an Amendment (Part 11) and re-notify.
+    const existing = (_HR.payments || []).find(x => x.id === editId);
+    if (!existing) { toast('Payment not found', 'warn'); return; }
+    if (_aprState(existing.status) !== 'submit' && _aprState(existing.status) !== 'review') { toast(_t('This request is already decided — it can no longer be edited.'), 'warn', 5000); return; }
+    const body = Object.assign({}, existing, { department: g('pay-dept'), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), note: g('pay-note'), approverEmail: g('pay-approver') });
+    if (_files.length) {
+      const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
+      const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
+      if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; } else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }
+      try { await _finSpUploadAttachment(body, 'payment'); } catch (e) {}
+    }
+    tkESign({
+      coll: 'payments', id: editId,
+      updateFn: async () => { await tkApi('/api/coll/payments/' + editId, { method: 'PATCH', body: body }); },
+      meaning: 'Amendment — Payment ' + (body.reqNo || '') + ' · ' + (body.payee || '') + ' · ' + _PAY_FMT(amount),
+      onDone: (item) => {
+        if (item) { const i = (_HR.payments || []).findIndex(x => x.id === editId); if (i >= 0) _HR.payments[i] = item; }
+        const po = document.getElementById('paymentOverlay'); if (po) po.remove();
+        _resetMultiAttach('pay-attach');
+        try { const appr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (body.approverEmail || '').toLowerCase());
+          if (appr && appr.email) tkEmailApprovalRequest(appr.email, appr.name, 'Payment request UPDATED — ' + body.reqNo, '<b>' + _crmEsc(body.name || '') + '</b> edited a pending payment request awaiting your approval.', '<ul><li>No.: ' + body.reqNo + '</li><li>Payee: ' + _crmEsc(body.payee || '') + '</li><li>Category: ' + _crmEsc(body.category || '') + '</li><li>Amount: ' + _PAY_FMT(amount) + '</li></ul>', (body.name || '') + ' updated payment ' + body.reqNo + '.', (item && item.token) || '', '', '', (body.spUrl || '')); } catch (e) {}
+        toast('Payment request updated & signed'); tkRenderPayments(); try { tkRenderInbox(); } catch (x) {}
+      }
+    });
+    return;
+  }
   const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), approverEmail: g('pay-approver'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
@@ -15592,12 +15631,32 @@ function closeModal(id) {
   if (m) { m.classList.remove('open'); setTimeout(() => m.style.display = 'none', 250); }
 }
 
-document.addEventListener('click', e => {
-  if (e.target.classList.contains('modal-overlay')) {
-    document.querySelectorAll('.modal-overlay.open').forEach(m => {
-      m.classList.remove('open'); setTimeout(() => m.style.display = 'none', 250);
-    });
+/* True if the modal has ANY field the user has actually typed into / changed — so an accidental
+   click outside never throws away a half-filled form. Empty/unchanged modals still close on
+   outside-click (the old convenience); a dirty one stays open and must be closed with ✕/Cancel. */
+function _modalHasInput(m) {
+  if (!m) return false;
+  var els = m.querySelectorAll('input, textarea, select, [contenteditable="true"]');
+  for (var i = 0; i < els.length; i++) {
+    var el = els[i], tag = el.tagName;
+    if (el.disabled || el.readOnly || el.type === 'hidden') continue;
+    if (el.type === 'file') { if (el.files && el.files.length) return true; continue; }
+    if (el.type === 'checkbox' || el.type === 'radio') { if (el.checked !== el.defaultChecked) return true; continue; }
+    if (tag === 'SELECT') { var _def = 0; for (var j = 0; j < el.options.length; j++) { if (el.options[j].defaultSelected) { _def = j; break; } } if (el.selectedIndex !== _def) return true; continue; }   // dirty only if moved from the default index (a select with no `selected` attr auto-picks index 0 — not "dirty")
+    if (el.isContentEditable) { if ((el.textContent || '').trim()) return true; continue; }
+    var v = (el.value != null ? String(el.value) : '');
+    if (v.trim() && v !== (el.defaultValue || '')) return true;
   }
+  return false;
+}
+document.addEventListener('click', e => {
+  if (!e.target.classList || !e.target.classList.contains('modal-overlay')) return;
+  var m = e.target;   // the overlay whose backdrop was clicked
+  if (_modalHasInput(m)) {   // protect a form in progress — don't discard what was typed
+    try { toast(_t('Your entries are kept — use ✕ or Cancel to close.'), 'info', 2600); } catch (_) {}
+    return;
+  }
+  m.classList.remove('open'); setTimeout(() => m.style.display = 'none', 250);
 });
 
 /* ──────────────────────────────────────────────────────────
