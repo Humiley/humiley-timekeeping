@@ -9830,7 +9830,7 @@ function _procUrl() {
   if (!url && !_local && /^https?:$/i.test(location.protocol) && location.hostname) url = location.origin + '/procurement';
   if (!url) return null;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
-  try { var b = new URL(url); if (b.protocol !== 'http:' && b.protocol !== 'https:') return null; return b; } catch (e) { return null; }
+  try { var b = new URL(url); if (b.protocol !== 'http:' && b.protocol !== 'https:') return null; if (b.host === location.host && (b.pathname === '' || b.pathname === '/')) b.pathname = '/procurement'; return b; } catch (e) { return null; }
 }
 async function tkRenderProcurementEmbed(force) {
   var frame = document.getElementById('procurement-frame');
@@ -9968,7 +9968,7 @@ function _tkWireProcMessages() {
       if (d.humileyEmbed === 'ready') { _procReady = true; _procPostNav(_procPendingPath || '/dashboard'); }
       else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procSyncRoute(d.path); }
     } else if (adminF && e.source === adminF.contentWindow) {
-      if (d.humileyEmbed === 'ready') { _procAdminReady = true; _procAdminPost(_procAdminPending || '/admin/settings'); }
+      if (d.humileyEmbed === 'ready') { _procAdminReady = true; try { clearTimeout(window._procAdminTimer); } catch (e) {} var _am = document.getElementById('proc-admin-msg'), _af = document.getElementById('proc-admin-frame'); if (_am) _am.style.display = 'none'; if (_af) _af.style.display = 'block'; _procAdminPost(_procAdminPending || '/admin/settings'); }
       else if (d.humileyEmbed === 'route' && typeof d.path === 'string') { _procAdminSync(d.path); }
     }
   });
@@ -10094,8 +10094,17 @@ async function _tkProcAdminLoad(force) {
   var target = '';
   try { var r = await tkApi('/api/procurement/sso'); if (r && r.token) { base.pathname = base.pathname.replace(/\/+$/, '') + '/sso'; base.search = ''; base.searchParams.set('t', r.token); target = base.toString(); } } catch (e) { }
   if (!target) { base.pathname = base.pathname.replace(/\/+$/, '') + '/login'; base.search = ''; target = base.toString(); }
-  frame.onload = function () { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; frame.setAttribute('data-loaded', '1'); };
+  // Reveal the embed ONLY after the Procurement app confirms it loaded (its postMessage handshake).
+  // If no handshake arrives, the /procurement request fell back to the portal — show a clear message
+  // instead of a confusing portal-inside-the-portal.
+  frame.onload = function () { frame.setAttribute('data-loaded', '1'); };
   _procAdminReady = false;
+  try { clearTimeout(window._procAdminTimer); } catch (e) {}
+  window._procAdminTimer = setTimeout(function () {
+    if (_procAdminReady) return;
+    if (msg) { msg.style.display = 'flex'; msg.innerHTML = '<div style="padding:24px;text-align:center;max-width:480px;font-size:13px;color:var(--text-light,#6b7280);line-height:1.6"><b style="color:var(--navy,#205090);font-size:14px">' + _t('Procurement app is not reachable') + '</b><br><br>' + _t('It did not load at') + ' <code style="font-size:12px">' + _tkEscA(String(target).replace(/[?].*/, '')) + '</code> — ' + _t('the Procurement service may not be deployed at /procurement, or its address needs setting in Settings → Company Portal.') + '<br><br><button onclick="_procAdminReload()" style="padding:7px 16px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;font-size:12px">' + _t('Retry') + '</button></div>'; }
+    if (frame) frame.style.display = 'none';
+  }, 6500);
   frame.src = target;
 }
 
