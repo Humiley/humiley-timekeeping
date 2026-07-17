@@ -9178,7 +9178,12 @@ async function tkInvGetAllTracks() {
   let r = null;
   try { r = await tkApi('/api/invtrack/sync', { method: 'POST', body: {} }); }
   catch (e) { _invSetSyncStatus(''); toast((e && e.message) ? (_t('Sync failed') + ': ' + e.message) : _t('Sync failed'), 'error', 12000); return; }
-  if (r && r.ok) { _invSetSyncStatus(''); toast(_t('Mailbox sync complete') + ' — ' + r.added + ' ' + _t('new') + (r.enriched ? ' · ' + r.enriched + ' ' + _t('updated') : '') + (r.needLookup ? ' · ' + r.needLookup + ' ' + _t('need a portal lookup') : ''), 'info', 8000); tkRenderInvTrack(); return; }
+  if (r && r.ok) {
+    var _dg = (typeof r.attach !== 'undefined') ? (' · ' + _t('files') + ' ' + (r.parsed || 0) + '/' + (r.attach || 0) + (r.pdfEngine === false ? ' · ⚠ PDF engine OFF' : '')) : '';
+    _invSetSyncStatus(_t('Last sync') + ' ' + new Date().toLocaleString('en-GB') + _dg);
+    toast(_t('Mailbox sync complete') + ' — ' + r.added + ' ' + _t('new') + (r.enriched ? ' · ' + r.enriched + ' ' + _t('updated') : '') + (r.needLookup ? ' · ' + r.needLookup + ' ' + _t('need a portal lookup') : '') + _dg, 'info', 12000);
+    tkRenderInvTrack(); return;
+  }
   if (r && r.error === 'not_configured') {
     const m = _t('Automatic mailbox sync is OFF on the server: it has not loaded the Microsoft secret. On the server, set TK_M365_CLIENT_SECRET in .env and run ./deploy.sh to restart.');
     _invSetSyncStatus(m); toast(m, 'warn', 15000);

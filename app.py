@@ -337,6 +337,15 @@ def _invtrack_ocr_pdf(pdf_bytes):
         return None
 
 
+def _pdf_engine_ok():
+    """True if the server can read PDF text (pypdf installed) — used to diagnose 'amounts not filling'."""
+    try:
+        import pypdf  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _einv_from_pdf(pdf_bytes):
     """Extract a VN e-invoice from a PDF attachment's TEXT layer (no OCR). Most VN e-invoice PDFs are
        generated (not scanned), so pypdf reads the amounts / tax-code / invoice-no directly. Returns
@@ -573,6 +582,7 @@ def _invtrack_sync(trigger="manual"):
         pages = 0
         try:
             link_budget = [20]                         # bound outbound file downloads per sync run
+            att_seen = [0]; att_parsed = [0]
             def _fetch_ex(msg):                        # parse the first parseable attachment; else a DIRECT file link in the body
                 if not msg.get("hasAttachments") and link_budget[0] <= 0:
                     return None
@@ -623,9 +633,18 @@ def _invtrack_sync(trigger="manual"):
                         ex = None                      # attachment to backfill a missing amount (e.g. a PDF invoice);
                         if trigger == "manual" and not (float(stored.get("after") or 0) > 0):
                             ex = _fetch_ex(m)           # the scheduler stays cheap (body-only) to avoid per-message cost
+                        if m.get("hasAttachments"):
+                            att_seen[0] += 1
+                            if ex and ex.get("_attachName"):
+                                att_parsed[0] += 1
                         enrich[mid] = _invtrack_item(m, ex)
                         continue
-                    item = _invtrack_item(m, _fetch_ex(m))
+                    exn = _fetch_ex(m)
+                    if m.get("hasAttachments"):
+                        att_seen[0] += 1
+                        if exn and exn.get("_attachName"):
+                            att_parsed[0] += 1
+                    item = _invtrack_item(m, exn)
                     new_items.append(item)
                     if item.get("needsLookup"):
                         needlook += 1
@@ -686,7 +705,8 @@ def _invtrack_sync(trigger="manual"):
         db.put_collection_item("invtrack", cur)
         if added or enriched:                          # don't spam the audit trail on empty runs
             _invtrack_audit(trigger, added, needlook)
-        return {"ok": True, "added": added, "enriched": enriched, "needLookup": needlook, "total": len(cur_items), "lastSync": cur_meta["lastSync"]}
+        return {"ok": True, "added": added, "enriched": enriched, "needLookup": needlook, "total": len(cur_items),
+                "lastSync": cur_meta["lastSync"], "attach": att_seen[0], "parsed": att_parsed[0], "pdfEngine": _pdf_engine_ok()}
 
 
 def _invtrack_import(body):
@@ -697,20 +717,22 @@ def _invtrack_import(body):
     rows = (body or {}).get("items")
     if not isinstance(rows, list):
         return {"ok": False, "error": "bad_input", "message": "No rows to import."}
-    def _ck(x):
+    def _keys(x):                                  # match on invoice-no + seller-MST OR invoice-no + date
         inv = str(x.get("invNo") or "").strip()
         tax = str(x.get("taxCode") or "").split("-")[0].strip()
         d = str(x.get("dateISO") or "").strip()
+        ks = []
         if inv and tax:
-            return ("it", inv, tax)
+            ks.append(("it", inv, tax))
         if inv and d:
-            return ("id", inv, d)
-        return None
+            ks.append(("id", inv, d))
+        return ks
     def _num(v):
         try:
             return float(v or 0)
         except Exception:
             return 0.0
+    OWN_MST = "0318835868"                          # Humiley's own (buyer) MST — never a supplier's
     with _INVTRACK_LOCK:
         docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
         docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
@@ -718,15 +740,17 @@ def _invtrack_import(body):
         cur_items = cur.get("items") or []
         index = {}
         for it in cur_items:
-            k = _ck(it)
-            if k:
-                index[k] = it
+            for k in _keys(it):
+                index.setdefault(k, it)
         added = updated = 0
         for r in rows:
             if not isinstance(r, dict):
                 continue
-            k = _ck(r)
-            ex = index.get(k) if k else None
+            rk = _keys(r)
+            ex = None
+            for k in rk:
+                if k in index:
+                    ex = index[k]; break
             if ex:
                 ch = False
                 for f in ("before", "vat", "after"):
@@ -735,6 +759,9 @@ def _invtrack_import(body):
                 for f in ("invNo", "serial", "taxCode", "supplier"):
                     if not ex.get(f) and r.get(f):
                         ex[f] = r.get(f); ch = True
+                # correct a wrong seller MST that was actually Humiley's own (buyer) MST
+                if str(ex.get("taxCode") or "").split("-")[0] == OWN_MST and r.get("taxCode") and str(r.get("taxCode")).split("-")[0] != OWN_MST:
+                    ex["taxCode"] = r.get("taxCode"); ch = True
                 if _num(ex.get("after")) > 0:
                     ex["needsLookup"] = False
                 if ch:
@@ -748,8 +775,8 @@ def _invtrack_import(body):
                         "lookup": r.get("lookup") or "", "method": "import",
                         "needsLookup": not (_num(r.get("after")) > 0), "source": "import"}
                 cur_items.append(item)
-                if k:
-                    index[k] = item
+                for k in _keys(item):
+                    index.setdefault(k, item)
                 added += 1
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"lastImport": _now_iso()})
@@ -2288,7 +2315,7 @@ class Handler(BaseHTTPRequestHandler):
     def _invtrack_status(self, u):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             return self._err("Finance access required.", 403)
-        return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"])})
+        return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"]), "pdf": _pdf_engine_ok()})
 
     def _invtrack_sync_ep(self, u):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
