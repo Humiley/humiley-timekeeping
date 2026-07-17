@@ -364,6 +364,57 @@ def _einv_from_pdf(pdf_bytes):
             "supplier": "", "dateISO": "", "dateRaw": "", "lookupCode": bf.get("code", ""), "_method": "pdf"}
 
 
+_INVLINK_HOSTS = ("vnpt-invoice.vn", "meinvoice.vn", "misa.vn", "misa.com.vn", "sinvoice.viettel.vn",
+                  "viettel.vn", "einvoice.fpt.com.vn", "fpt.com.vn", "easyinvoice.vn", "softdreams.vn",
+                  "bkav.com", "ehoadon.vn", "hilo.com.vn", "hoadondientu.gdt.gov.vn", "gdt.gov.vn")
+
+
+def _invtrack_url_safe(url):
+    """SSRF guard for a URL taken from an untrusted email: http(s) only, host must be a known VN
+       e-invoice provider, and it must resolve to a PUBLIC IP (blocks internal/metadata endpoints)."""
+    try:
+        import socket, ipaddress
+        u = urllib.parse.urlparse(url)
+        if u.scheme not in ("http", "https"):
+            return False
+        host = (u.hostname or "").lower()
+        if not host or not any(host == h or host.endswith("." + h) for h in _INVLINK_HOSTS):
+            return False
+        for res in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(res[4][0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _invtrack_fetch_linked(url):
+    """If the email links DIRECTLY to the invoice FILE (xml/zip/pdf) on a known provider, download +
+       parse it — no CAPTCHA. A link to a CAPTCHA lookup PAGE returns None (unreadable by any tool)."""
+    if not url or not re.search(r"\.(xml|zip|pdf)(\?|#|$)|/download|/getfile|/export|/tai", url, re.I):
+        return None
+    if not _invtrack_url_safe(url):
+        return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (HumileyInvoiceBot)"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            ct = (resp.headers.get("Content-Type") or "").lower()
+            data = resp.read(10 * 1024 * 1024 + 1)
+        if len(data) > 10 * 1024 * 1024:
+            return None
+        low = url.lower()
+        if "xml" in ct or low.endswith(".xml"):
+            return _einv_parse_xml(data)
+        if "zip" in ct or low.endswith(".zip") or "compressed" in ct:
+            return _einv_from_zip(data)
+        if "pdf" in ct or ".pdf" in low:
+            return _einv_from_pdf(data)
+        return _einv_from_zip(data) or _einv_parse_xml(data) or _einv_from_pdf(data)
+    except Exception:
+        return None
+
+
 def _graph_app_token():
     if _GRAPH_APP_TOK["tok"] and _GRAPH_APP_TOK["exp"] > time.time() + 60:
         return _GRAPH_APP_TOK["tok"]
@@ -521,9 +572,12 @@ def _invtrack_sync(trigger="manual"):
         newest = stored_since
         pages = 0
         try:
-            def _fetch_ex(msg):                        # fetch + parse the first parseable attachment (XML / ZIP / PDF text-layer)
-                if not msg.get("hasAttachments"):
+            link_budget = [20]                         # bound outbound file downloads per sync run
+            def _fetch_ex(msg):                        # parse the first parseable attachment; else a DIRECT file link in the body
+                if not msg.get("hasAttachments") and link_budget[0] <= 0:
                     return None
+                if not msg.get("hasAttachments"):
+                    return _fetch_linked(msg)
                 try:
                     aj = _graph_get(base + "/messages/" + msg["id"] + "/attachments?$select=name,contentType,contentBytes", token)
                     for a in aj.get("value", []):
@@ -547,7 +601,16 @@ def _invtrack_sync(trigger="manual"):
                             return ex
                 except Exception:
                     pass
-                return None
+                return _fetch_linked(msg)
+            def _fetch_linked(msg):                    # a direct invoice-file link in the body (no CAPTCHA); bounded
+                if link_budget[0] <= 0:
+                    return None
+                body = ((msg.get("body") or {}).get("content") or "") or (msg.get("bodyPreview") or "")
+                lu = _invtrack_body_fields(body).get("url")
+                if not lu:
+                    return None
+                link_budget[0] -= 1
+                return _invtrack_fetch_linked(lu)
             while url and pages < cap:
                 j = _graph_get(url, token)
                 for m in j.get("value", []):
