@@ -52,6 +52,11 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET (update.sh generates it)}
       - AUTH_TRUST_HOST=true
+      # Auth.js base URL MUST include the /procurement base path. Without it, AUTH_TRUST_HOST infers
+      # the base from the Host header (portal.humiley.com, no path), so after SSO login the app
+      # redirects to the PORTAL ROOT — which loads the portal inside the embed iframe ("not reachable").
+      - AUTH_URL=${AUTH_URL:-https://portal.humiley.com/procurement}
+      - NEXTAUTH_URL=${AUTH_URL:-https://portal.humiley.com/procurement}
       # SAME secret as the portal above — one variable, always in sync.
       - PORTAL_SSO_SECRET=${TK_SSO_SECRET:-}
       - APP_URL=${APP_URL:-https://portal.humiley.com/procurement}
