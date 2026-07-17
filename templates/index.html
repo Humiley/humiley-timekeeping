@@ -9832,6 +9832,10 @@ function _procUrl() {
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
   try { var b = new URL(url); if (b.protocol !== 'http:' && b.protocol !== 'https:') return null; if (b.host === location.host && (b.pathname === '' || b.pathname === '/')) b.pathname = '/procurement'; return b; } catch (e) { return null; }
 }
+function _procEmbedUnreachable(msg, frame, target, retry) {
+  if (msg) { msg.style.display = 'flex'; msg.innerHTML = '<div style="padding:24px;text-align:center;max-width:480px;font-size:13px;color:var(--text-light,#6b7280);line-height:1.6"><b style="color:var(--navy,#205090);font-size:14px">' + _t('Procurement app is not reachable') + '</b><br><br>' + _t('It did not load at') + ' <code style="font-size:12px">' + _tkEscA(String(target || '').replace(/[?].*/, '')) + '</code> — ' + _t('the Procurement service may not be deployed at /procurement, or its address needs setting in Settings → Company Portal.') + '<br><br><button onclick="' + retry + '" style="padding:7px 16px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;font-size:12px">' + _t('Retry') + '</button></div>'; }
+  if (frame) frame.style.display = 'none';
+}
 async function tkRenderProcurementEmbed(force) {
   var frame = document.getElementById('procurement-frame');
   var msg = document.getElementById('procurement-embed-msg');
@@ -9861,16 +9865,20 @@ async function tkRenderProcurementEmbed(force) {
     if (TK.user && TK.user.email) base.searchParams.set('email', TK.user.email);
     target = base.toString();
   }
-  // Reveal only after the Procurement app's handshake — otherwise a /procurement fallback to the
-  // portal would render a portal-inside-the-portal. If no handshake arrives, show a clear message.
-  frame.onload = function () { frame.setAttribute('data-loaded', '1'); };
-  _procReady = false;   // embed will re-announce 'ready' once its EmbedBridge mounts
+  // Reveal once loaded — but tell the REAL Procurement app apart from a /procurement fallback to the
+  // (same-origin) portal by the loaded path: the portal SPA stays at "/", the Procurement app is under
+  // /procurement. If it's the portal, show a clear message instead of a portal-inside-the-portal.
+  frame.onload = function () {
+    frame.setAttribute('data-loaded', '1');
+    try { clearTimeout(window._procMainTimer); } catch (e) {}
+    var ok = false;
+    try { ok = !(frame.contentWindow.document && frame.contentWindow.document.getElementById('view-dashboard')); } catch (e) { ok = true; }  // #view-dashboard exists ONLY in the portal SPA => that's the fallback, not Procurement
+    if (ok) { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; }
+    else { _procEmbedUnreachable(msg, frame, target, 'tkRenderProcurementEmbed(true)'); }
+  };
+  _procReady = false;
   try { clearTimeout(window._procMainTimer); } catch (e) {}
-  window._procMainTimer = setTimeout(function () {
-    if (_procReady) return;
-    if (msg) { msg.style.display = 'flex'; msg.innerHTML = '<div style="padding:24px;text-align:center;max-width:480px;font-size:13px;color:var(--text-light,#6b7280);line-height:1.6"><b style="color:var(--navy,#205090);font-size:14px">' + _t('Procurement app is not reachable') + '</b><br><br>' + _t('It did not load at') + ' <code style="font-size:12px">' + _tkEscA(String(target).replace(/[?].*/, '')) + '</code> — ' + _t('the Procurement service may not be deployed at /procurement, or its address needs setting in Settings → Company Portal.') + '<br><br><button onclick="tkRenderProcurementEmbed(true)" style="padding:7px 16px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;font-size:12px">' + _t('Retry') + '</button></div>'; }
-    if (frame) frame.style.display = 'none';
-  }, 6500);
+  window._procMainTimer = setTimeout(function () { if (frame.getAttribute('data-loaded') !== '1') _procEmbedUnreachable(msg, frame, target, 'tkRenderProcurementEmbed(true)'); }, 9000);
   frame.src = target;
 }
 function _procEmbedReload() {
@@ -10102,17 +10110,19 @@ async function _tkProcAdminLoad(force) {
   var target = '';
   try { var r = await tkApi('/api/procurement/sso'); if (r && r.token) { base.pathname = base.pathname.replace(/\/+$/, '') + '/sso'; base.search = ''; base.searchParams.set('t', r.token); target = base.toString(); } } catch (e) { }
   if (!target) { base.pathname = base.pathname.replace(/\/+$/, '') + '/login'; base.search = ''; target = base.toString(); }
-  // Reveal the embed ONLY after the Procurement app confirms it loaded (its postMessage handshake).
-  // If no handshake arrives, the /procurement request fell back to the portal — show a clear message
-  // instead of a confusing portal-inside-the-portal.
-  frame.onload = function () { frame.setAttribute('data-loaded', '1'); };
+  // Reveal once loaded — tell the real Procurement app (path under /procurement) apart from a
+  // fallback to the same-origin portal, and show a clear message rather than a nested portal.
+  frame.onload = function () {
+    frame.setAttribute('data-loaded', '1');
+    try { clearTimeout(window._procAdminTimer); } catch (e) {}
+    var ok = false;
+    try { ok = !(frame.contentWindow.document && frame.contentWindow.document.getElementById('view-dashboard')); } catch (e) { ok = true; }  // #view-dashboard exists ONLY in the portal SPA => that's the fallback, not Procurement
+    if (ok) { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; }
+    else { _procEmbedUnreachable(msg, frame, target, '_procAdminReload()'); }
+  };
   _procAdminReady = false;
   try { clearTimeout(window._procAdminTimer); } catch (e) {}
-  window._procAdminTimer = setTimeout(function () {
-    if (_procAdminReady) return;
-    if (msg) { msg.style.display = 'flex'; msg.innerHTML = '<div style="padding:24px;text-align:center;max-width:480px;font-size:13px;color:var(--text-light,#6b7280);line-height:1.6"><b style="color:var(--navy,#205090);font-size:14px">' + _t('Procurement app is not reachable') + '</b><br><br>' + _t('It did not load at') + ' <code style="font-size:12px">' + _tkEscA(String(target).replace(/[?].*/, '')) + '</code> — ' + _t('the Procurement service may not be deployed at /procurement, or its address needs setting in Settings → Company Portal.') + '<br><br><button onclick="_procAdminReload()" style="padding:7px 16px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;font-size:12px">' + _t('Retry') + '</button></div>'; }
-    if (frame) frame.style.display = 'none';
-  }, 6500);
+  window._procAdminTimer = setTimeout(function () { if (frame.getAttribute('data-loaded') !== '1') _procEmbedUnreachable(msg, frame, target, '_procAdminReload()'); }, 9000);
   frame.src = target;
 }
 
