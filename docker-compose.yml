@@ -23,6 +23,14 @@ services:
       # The ONE shared SSO secret. Procurement reads the SAME variable (below), so the no-second-
       # login handoff can never drift out of sync. Generated once into .env by update.sh.
       - TK_SSO_SECRET=${TK_SSO_SECRET:-}
+      # Invoice Tracking — app-only Microsoft Graph mail read for the 24/7 hd@humiley.com sync.
+      # Put the "Humiley Portal" Entra app's CLIENT SECRET in .env as TK_M365_CLIENT_SECRET AND grant
+      # that app the Graph Mail.Read APPLICATION permission + admin consent. Empty = the 24/7 scheduler
+      # stays OFF (safe) and the portal falls back to the in-browser (delegated Mail.Read.Shared) sync.
+      - TK_M365_CLIENT_SECRET=${TK_M365_CLIENT_SECRET:-}
+      - TK_INVTRACK_MAILBOX=${TK_INVTRACK_MAILBOX:-hd@humiley.com}
+      - TK_INVTRACK_INTERVAL_MIN=${TK_INVTRACK_INTERVAL_MIN:-10}
+      - TK_OCR_ENDPOINT=${TK_OCR_ENDPOINT:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:
