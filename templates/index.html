@@ -25,10 +25,10 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --white:#FFFFFF;
 }
 html,body{margin:0;padding:0}
-body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;overflow:hidden}
+body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;height:100dvh;overflow:hidden}
 
 /* ── SIDEBAR ── */
-#sidebar{width:228px;min-width:228px;background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);display:flex;flex-direction:column;height:100vh;transition:width .25s;overflow:hidden}
+#sidebar{width:228px;min-width:228px;background:linear-gradient(170deg,#0f2040 0%,#162f5a 30%,#1e4a90 70%,#1a5878 100%);display:flex;flex-direction:column;height:100vh;height:100dvh;transition:width .25s;overflow:hidden}
 #sidebar.collapsed{width:60px;min-width:60px}
 .sidebar-logo{padding:18px 14px 10px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;flex-direction:column;align-items:center;text-align:center;flex-shrink:0}
 .sidebar-scroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;min-height:0;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.25) transparent}
@@ -159,7 +159,7 @@ select.form-control{cursor:pointer}
 /* ── MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(22,56,102,.45);z-index:1000;display:none;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;padding:28px;width:520px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)}
+.modal{background:#fff;border-radius:12px;padding:28px;width:520px;max-width:92vw;max-height:90vh;max-height:90dvh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)}
 .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
 .modal-title{font-size:17px;font-weight:700;color:var(--navy)}
 .modal-close{width:30px;height:30px;border:none;background:var(--soft-bg);border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text-light)}
@@ -444,7 +444,7 @@ body{
 #sidebar{
   background:linear-gradient(180deg,#1b417a 0%, #205090 55%, #1d6e6a 130%) !important;
   margin:14px 0 14px 14px;
-  height:calc(100vh - 28px);
+  height:calc(100vh - 28px);height:calc(100dvh - 28px);
   border-radius:26px;
   box-shadow:0 22px 48px rgba(23,58,107,.28);
 }
@@ -535,7 +535,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
      the drawer/topbar/content clear the iOS status bar + home indicator via env(safe-area-*). */
   /* Drawer slides via TRANSFORM (GPU-composited, off the main thread) — animating margin-left
      forced a layout + shadow repaint every frame, a visible hitch on phones. */
-  #sidebar{position:fixed !important;top:0 !important;left:0;height:100vh !important;width:250px !important;min-width:250px !important;z-index:1200;margin:0 !important;transform:translateX(-270px) !important;transition:transform .25s ease;will-change:transform;box-shadow:0 0 24px rgba(0,0,0,.30);border-radius:0 !important;box-sizing:border-box;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
+  #sidebar{position:fixed !important;top:0 !important;left:0;height:100vh !important;height:100dvh !important;width:250px !important;min-width:250px !important;z-index:1200;margin:0 !important;transform:translateX(-270px) !important;transition:transform .25s ease;will-change:transform;box-shadow:0 0 24px rgba(0,0,0,.30);border-radius:0 !important;box-sizing:border-box;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}
   body.sb-open #sidebar{transform:translateX(0) !important}
   /* never apply the desktop "collapse to 60px" on mobile — drawer is full width */
   #sidebar.collapsed{width:250px;min-width:250px}
@@ -1059,7 +1059,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       </button>
     </div>
   </div>
-  <div id="procurement-embed" style="position:relative;height:calc(100vh - 214px);min-height:420px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">
+  <div id="procurement-embed" style="position:relative;height:calc(100vh - 214px);height:calc(100dvh - 214px);min-height:420px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">
     <div id="procurement-embed-msg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--card,#fff)">
       <div style="font-size:13px;color:var(--text-light,#6b7280)">Opening Procurement…</div>
     </div>
@@ -5575,7 +5575,7 @@ function tkPadrManage(id) {
   const goalRows = (p.goals || []).map(g => '<tr><td style="font-size:12px">' + (g.objective || '') + ' ' + _goalSourceBadge(g) + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:42px;text-align:center" data-mgr="' + g.id + '"></td><td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td><td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkPadrDelGoal(\'' + id + '\',\'' + g.id + '\')">' + _TRASH + '</button></td></tr>').join('');
   const totalW = (p.goals || []).reduce((s, g) => s + (+g.weight || 0), 0);
   const el = document.createElement('div'); el.id = 'padrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:680px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:680px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Stage: <b>' + (p.status || '') + '</b>. Assign goals, score 1–5; weighted total drives the rating. Weight total: <b style="color:' + (totalW === 100 ? 'var(--emerald)' : '#F59E0B') + '">' + totalW + '%</b></div>' +
     '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Objective</th><th>Wt</th><th>Self</th><th>Mgr</th><th>Status</th><th></th></tr></thead><tbody id="padr-goal-body">' + goalRows + '</tbody></table></div>' +
     '<div class="card" style="padding:10px 12px;margin-top:10px;background:var(--soft-bg)"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:6px">Assign a new goal</div>' +
@@ -5951,7 +5951,7 @@ function tkDeviceBatchAdd() {
   const emps = (typeof _qaDynOptions === 'function' ? _qaDynOptions('employees') : []) || [];
   const dl = '<datalist id="dev-batch-emps">' + emps.map(n => '<option value="' + _tkEscA(n) + '"></option>').join('') + '</datalist>';
   const el = document.createElement('div'); el.id = 'devBatchOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div class="modal-title">Add several devices / equipment</div><button class="modal-close" onclick="document.getElementById(\'devBatchOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">One card per item, then “Save all”. Same item ×10? put 10 in Quantity.</div>' + dl +
     '<div id="dev-batch-lines"></div>' +
     '<button class="btn btn-outline btn-sm" onclick="_devBatchAddRow()">' + tkIcon('plus') + 'Add device</button>' +
@@ -7557,7 +7557,7 @@ async function tkSubmitClaim() {
   const myTrips = (_HR.travel || []).filter(t => (me && t.empId === me.id) || (t.name && t.name === myName));
   const tripOpts = '<option value="">— select a trip —</option>' + myTrips.map(t => '<option value="' + t.id + '">' + _tkEscA((t.dest || 'Trip') + ' · ' + tkFmtDate(t.from) + '→' + tkFmtDate(t.to) + (t.status ? ' · ' + t.status : '')) + '</option>').join('');
   const el = document.createElement('div'); el.id = 'claimOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div class="modal-title">Submit a Claim</div><button class="modal-close" onclick="document.getElementById(\'claimOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div class="form-group"><label class="form-label">Type</label><select class="form-control" id="claim-type" onchange="tkClaimTypeChange()"><option value="Other">Other</option><option value="Travel">Travel</option></select></div>' +
     '<div class="form-group" id="claim-travel-wrap" style="display:none"><label class="form-label">Related travel trip</label><select class="form-control" id="claim-travelId" onchange="tkClaimTripPick()">' + tripOpts + '</select>' + (myTrips.length ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:4px">No travel requests yet — create one first under Travel Requests.</div>') + '</div>' +
     '<div class="form-group"><label class="form-label">Claim title / trip</label><input class="form-control" id="claim-title" placeholder="e.g. Hanoi site visit 12–14 Jun"></div>' +
@@ -8091,7 +8091,7 @@ function tkNewPayment(editId) {
     ? '<div class="form-group"><label class="form-label">Invoice / bill</label><div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' + _t('Your current bill is kept. Only add files if you want to replace it.') + '</div>' + _ATTACH_MULTI('pay-attach', 'Replace invoice / bill (optional)') + '</div>'
     : _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF');
   const submitCall = 'tkPaymentSave(' + (editId ? "'" + String(editId).replace(/'/g, "\\'") + "'" : '') + ')';
-  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;overflow:auto"><div class="modal-header"><div class="modal-title">' + (p ? 'Edit Payment Request' : 'New Payment Request') + '</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div class="modal-title">' + (p ? 'Edit Payment Request' : 'New Payment Request') + '</div><button class="modal-close" onclick="document.getElementById(\'paymentOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies" value="' + V('purpose') + '"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + catOpts + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + methOpts + '</select></div></div>' +
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid" value="' + V('payee') + '"></div>' +
@@ -9652,7 +9652,7 @@ function tkExitManage(id) {
     '</div>').join('')).join('');
   const fld = (lbl, hid, val, ph) => '<div class="form-group"><label class="form-label">' + lbl + '</label><input type="number" class="form-control" id="' + hid + '" value="' + (val || 0) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></div>';
   const el = document.createElement('div'); el.id = 'exitMgrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;overflow:auto"><div class="modal-header"><div style="display:flex;align-items:center;gap:10px">' + _hrAv(e) + '<div><div class="modal-title" style="margin:0">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.type || '') + ' · last day ' + tkFmtDate(r.lastDay) + ' · ' + _exitYears(r) + ' yrs service</div></div></div><button class="modal-close" onclick="document.getElementById(\'exitMgrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div style="display:flex;align-items:center;gap:10px">' + _hrAv(e) + '<div><div class="modal-title" style="margin:0">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.type || '') + ' · last day ' + tkFmtDate(r.lastDay) + ' · ' + _exitYears(r) + ' yrs service</div></div></div><button class="modal-close" onclick="document.getElementById(\'exitMgrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-m-type">' + _EXIT_TYPES.map(t => '<option' + (t === r.type ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-m-last" value="' + (r.lastDay || '') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">Reason</label><textarea class="form-control" id="ex-m-reason" rows="2">' + (r.reason || '') + '</textarea></div>' +
     '<div class="form-group"><label class="form-label">Resignation / termination letter ' + (r.resignLetter ? _attachLink({ attachment: r.resignLetter, attachmentName: r.resignLetterName }) : '') + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'ex-m-letter\')" style="font-size:12px"><span id="ex-m-letterlbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="ex-m-letter"><input type="hidden" id="ex-m-lettername"></div>' +
@@ -10226,7 +10226,7 @@ function _tkBuildProcAdmin() {
   host.innerHTML = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px">'
     + '<div id="proc-admin-tabs" class="tabs" style="margin:0;flex-wrap:wrap;height:auto">' + tabs + '</div>'
     + '<button onclick="_procAdminReload()" title="Reload" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;font-size:12px;font-weight:600;color:var(--text-light,#6b7280);background:var(--card,#fff);border:1px solid var(--border,#e6e9ef);border-radius:9px;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg><span>Reload</span></button></div>'
-    + '<div id="proc-admin-embed" style="position:relative;height:calc(100vh - 300px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">'
+    + '<div id="proc-admin-embed" style="position:relative;height:calc(100vh - 300px);height:calc(100dvh - 300px);min-height:400px;border-radius:14px;overflow:hidden;border:1px solid var(--border,#e6e9ef);background:var(--card,#fff)">'
     + '<div id="proc-admin-msg" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:var(--card,#fff)"><div style="font-size:13px;color:var(--text-light,#6b7280)">' + _t('Opening Procurement…') + '</div></div>'
     + '<iframe id="proc-admin-frame" title="Procurement Administration" style="display:none;width:100%;height:100%;border:0;background:transparent" allow="clipboard-read; clipboard-write"></iframe></div>';
   _tkWireProcMessages();
@@ -18864,7 +18864,7 @@ function saveEmployeeProfile() {
 
 <!-- ADD EMPLOYEE MODAL -->
 <div class="modal-overlay" id="addEmpModal">
-  <div class="modal" style="max-width:640px;max-height:90vh;overflow-y:auto">
+  <div class="modal" style="max-width:640px;max-height:90vh;max-height:90dvh;overflow-y:auto">
     <div class="modal-header">
       <div class="modal-title">Add New Employee</div>
       <button class="modal-close" onclick="closeModal('addEmpModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
