@@ -770,6 +770,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/></svg></span>
     <span class="nav-label">Access &amp; Permissions</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="admin" onclick="tkOpenProcAdmin()">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg></span>
+    <span class="nav-label">Procurement Admin</span>
+  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
     <span class="nav-label">Work Schedules</span>
@@ -4176,7 +4180,7 @@ const _LEVELS = ['staff', 'manager', 'management', 'editor', 'admin'];
 const _LEVEL_LABEL = { staff: 'User', manager: 'Contributor', management: 'Approver', editor: 'Editor', admin: 'Admin' };
 function _lvlRank(l) { const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
 function _requireLevel(min) { if (_lvlRank(_userLevel) < _lvlRank(min)) { toast('This action requires ' + (_LEVEL_LABEL[min] || min) + ' level.', 'warn', 5000); return false; } return true; }
-const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'giang.nguyen@humiley.com', 'huy.nguyen@humiley.com'];
+const _ADMIN_EMAILS = ['tony.nguyen@humiley.com', 'huy.nguyen@humiley.com'];
 function _deriveLevel(e) {
   if (!e) return 'staff';
   if (e.level && _LEVELS.indexOf(e.level) >= 0) return e.level;
@@ -9057,7 +9061,11 @@ async function tkOpenProcurement() {
    and seamless. The "Open in new tab" button pops it out full-screen. */
 function _procUrl() {
   var url = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
-  if (!url && (location.hostname === 'localhost' || location.hostname === '127.0.0.1')) url = 'http://localhost:3000/procurement';
+  var _local = (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+  if (!url && _local) url = 'http://localhost:3000/procurement';
+  // Production default: the procurement app is served from THIS origin (e.g. portal.humiley.com/procurement),
+  // so when no explicit URL is configured, use same-origin /procurement instead of "not configured yet".
+  if (!url && !_local && /^https?:$/i.test(location.protocol) && location.hostname) url = location.origin + '/procurement';
   if (!url) return null;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = 'https://' + url;
   try { var b = new URL(url); if (b.protocol !== 'http:' && b.protocol !== 'https:') return null; return b; } catch (e) { return null; }
@@ -9178,12 +9186,8 @@ function _tkBuildProcNav() {
       + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (_PROC_ICON[sec.key] || '') + '</svg></span>'
       + '<span class="nav-label">' + sec.label + '</span></div>';
   });
-  var _pIsAdmin = (typeof _userLevel !== 'undefined') && (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('admin');
-  if (_pIsAdmin) {
-    html += '<div class="nav-item" data-app="procurement" title="Procurement configuration (admin)" onclick="tkOpenProcAdmin()">'
-      + '<span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>'
-      + '<span class="nav-label">' + _t('Admin & Settings') + '</span></div>';
-  }
+  // Procurement administration is reached from the System Setting group (admin-gated), NOT from this
+  // operational group — keeps day-to-day operations and admin configuration cleanly separated.
   root.insertAdjacentHTML('beforebegin', html);
   root.setAttribute('data-built', '1');
   _tkWireProcMessages();
@@ -10339,11 +10343,19 @@ async function tkSyncM365Users() {
   try {
     const scopes = ['https://graph.microsoft.com/User.Read.All'];
     let r;
-    try { r = await _msalApp.acquireTokenSilent({ scopes, account: _account }); }
-    catch (e) { r = await _msalApp.acquireTokenPopup({ scopes }); }
+    try {
+      r = await _msalApp.acquireTokenSilent({ scopes, account: _account });
+    } catch (e) {
+      // Directory-read (User.Read.All) isn't consented yet. Popups are blocked in Safari / installed
+      // PWAs, so use REDIRECT — a Microsoft 365 admin can grant it (on behalf of the org) inline; on
+      // return the token is cached and clicking "Sync from Microsoft 365" again runs silently.
+      toast('Microsoft needs to grant directory-read access (User.Read.All). Redirecting to Microsoft — after you approve and return, click "Sync from Microsoft 365" again.', 'info', 10000);
+      try { await _msalApp.acquireTokenRedirect({ scopes }); } catch (e2) {}
+      return;
+    }
     token = r.accessToken;
   } catch (e) {
-    toast('Permission needed to read the directory (User.Read.All) — a Microsoft 365 admin must allow it.', 'error', 9000); return;
+    toast('Could not get Microsoft 365 permission (User.Read.All). A Microsoft 365 admin must grant admin consent for this app in Entra (Azure AD) \u2192 App registrations \u2192 API permissions.', 'error', 12000); return;
   }
   let url = "https://graph.microsoft.com/v1.0/users?$select=displayName,mail,userPrincipalName,department,jobTitle,accountEnabled,mobilePhone,assignedLicenses,givenName,surname&$top=999";
   const users = [];
@@ -10427,7 +10439,7 @@ async function tkSyncM365Confirm() {
   const picked = new Set(Array.from(document.querySelectorAll('#m365SyncOverlay [data-m365-i]')).filter(b => b.checked).map(b => +b.getAttribute('data-m365-i')));
   document.getElementById('m365SyncOverlay')?.remove();
   toast('Syncing Microsoft 365…', 'info', 4000);
-  let created = 0;   // ADD-ONLY
+  let created = 0, failed = 0, firstErr = '';   // ADD-ONLY
   for (let i = 0; i < p.toCreate.length; i++) {
     if (!picked.has(i)) continue;
     const u = p.toCreate[i];
@@ -10439,12 +10451,12 @@ async function tkSyncM365Confirm() {
         role: 'staff', level: 'staff', status: 'Active', zone: 'HQ', annualTotal: 12, sickTotal: 30
       } });
       created++;
-    } catch (e) {}
+    } catch (e) { failed++; if (!firstErr) firstErr = e.message || 'error'; }
   }
   _m365Pending = null;
-  tkAudit('Synced from Microsoft 365 (add-only)', '', created + ' new user(s) added');
+  tkAudit('Synced from Microsoft 365 (add-only)', '', created + ' new user(s) added' + (failed ? ', ' + failed + ' failed' : ''));
   try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkRenderBalances(); } catch (_) {}
-  toast('Microsoft 365 sync complete — ' + created + ' new user(s) added. Existing employees unchanged.', 'info', 9000);
+  toast('Microsoft 365 sync complete \u2014 ' + created + ' new user(s) added' + (failed ? ' \u00b7 ' + failed + ' could not be added (' + firstErr + ')' : '') + '. Existing employees unchanged.', failed ? 'warn' : 'info', 9000);
 }
 
 function _loadDemoUser() {
@@ -13954,6 +13966,7 @@ const _VI = {
   'Hospital': 'Bệnh viện',
   'Hours': 'Giờ',
   'How it works:': 'Cách hoạt động:',
+  'The active schedule for each employee\'s department defines the valid check-in window, grace period and overtime rate used when their attendance is recorded.': 'Lịch làm việc đang áp dụng cho phòng ban của mỗi nhân viên quy định khung giờ chấm công hợp lệ, thời gian ân hạn và hệ số tăng ca được sử dụng khi ghi nhận chấm công của họ.',
   'Humiley Group Inc. — People & Workplace Portal': 'Humiley Group Inc. — Cổng Nhân sự & Nơi làm việc',
   'Humiley Timekeeping': 'Chấm công Humiley',
   'Huy Nguyen checked in': 'Huy Nguyen đã chấm vào',
@@ -14535,7 +14548,7 @@ const _VI = {
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
 function _updateLangButtons() { document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-lang') === _LANG.cur)); }
-function _viTranslateText(tn) { const raw = tn.nodeValue; if (!raw) return; const key = raw.trim(); if (!key || key.length > 140) return; const vi = _VI[key]; if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
+function _viTranslateText(tn) { const raw = tn.nodeValue; if (!raw) return; const key = raw.trim(); if (!key || key.length > 400) return; const vi = _VI[key]; if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
 function _viWalk(root) {
   if (!root) return;
   if (root.nodeType === 3) { _viTranslateText(root); return; }
@@ -14579,9 +14592,12 @@ function tkSetLang(lang) {
   document.documentElement.lang = lang; _updateLangButtons();
   /* Re-render the current view so render-time bilingual content (_t / _t2 inline pairs, which the
      DOM-walking translator can't reach) switches language too. Sub-tab state persists in module vars. */
+  // Switching to EN: undo the DOM-walk translations FIRST so the re-render below reads canonical
+  // English titles/labels — otherwise the current view's already-translated topbar title (and any
+  // other in-place translation) gets frozen back in as the "new" title on language switch.
+  if (lang !== 'vi') { _stopVIObserver(); try { _restoreEN(); } catch (e) {} }
   try { const cv = (typeof _currentView !== 'undefined') ? _currentView : ''; if (cv && typeof showView === 'function') showView(cv, null, (document.getElementById('topbarTitle') || {}).textContent || undefined); } catch (e) {}
   if (lang === 'vi') { try { _viWalk(document.body); } catch (e) {} _startVIObserver(); }
-  else { _stopVIObserver(); _restoreEN(); }
 }
 (function _initLang() { const go = () => { _updateLangButtons(); if (_LANG.cur === 'vi') setTimeout(() => tkSetLang('vi'), 250); }; if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go); else go(); })();
 

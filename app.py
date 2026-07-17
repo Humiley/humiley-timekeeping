@@ -1372,7 +1372,7 @@ class Handler(BaseHTTPRequestHandler):
         me = u.get("id")
         return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in self.EMP_SENSITIVE} for e in rows]
 
-    ADMIN_EMAILS = {"tony.nguyen@humiley.com", "giang.nguyen@humiley.com", "huy.nguyen@humiley.com"}
+    ADMIN_EMAILS = {"tony.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
     def _caller_level(self, u):
         # Protected super-admins are ALWAYS admin — they can never be demoted or locked out,
@@ -1427,12 +1427,19 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             for _k in ("status", "dept", "department", "managerEmail", "salary", "grade", "endDate", "email", "title"):
                 body.pop(_k, None)
-        # Protected super-admins can never be demoted OR deactivated — drop any level/role/app/status change.
+        # Protected super-admins can never be demoted OR deactivated. A DEDICATED level/role/app/status
+        # change (the Access-Levels dropdown sends ONLY those fields) is rejected LOUDLY so the acting
+        # admin sees why — instead of the old silent pop-and-return-ok that looked like a phantom success
+        # reverting on reload. But a full employee-record save (the Edit-Employee form re-sends
+        # level/role/status alongside name/phone/…) must still succeed: preserve the protected fields
+        # and let the benign profile edits through.
         if (ex.get("email") or "").lower() in self.ADMIN_EMAILS:
-            body.pop("level", None)
-            body.pop("role", None)
-            body.pop("appsDenied", None)
-            body.pop("status", None)
+            _priv = [k for k in ("level", "role", "appsDenied", "status") if k in body]
+            if _priv:
+                if not (set(body.keys()) - {"level", "role", "appsDenied", "status"}):
+                    return self._err("This is a protected super-admin account — its access level, apps and status are locked.", 403)
+                for _k in _priv:
+                    body.pop(_k, None)
         if body:
             db.update_employee(eid, body)
         return self._json({"ok": True})
