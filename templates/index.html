@@ -13722,6 +13722,37 @@ function toggleSidebar() {
 }
 function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
+/* Touch gesture (phones/tablets ≤820px): swipe RIGHT from the left edge to open the sidebar drawer,
+   swipe LEFT to close it — no need to tap the menu button. */
+function _tkInitSidebarSwipe() {
+  if (window._sbSwipeInit) return; window._sbSwipeInit = true;
+  var isMobile = function () { return !window.matchMedia || window.matchMedia('(max-width:820px)').matches; };
+  var sx = 0, sy = 0, tracking = false, fromEdge = false;
+  var EDGE = 30, THRESH = 55;
+  document.addEventListener('touchstart', function (e) {
+    if (!isMobile() || !e.touches || e.touches.length !== 1) { tracking = false; return; }
+    var t = e.touches[0]; sx = t.clientX; sy = t.clientY;
+    fromEdge = sx <= EDGE;
+    tracking = document.body.classList.contains('sb-open') || fromEdge;   // open drawer: track anywhere (to close); closed: only from the left edge
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!tracking || !e.touches || e.touches.length !== 1) return;
+    var t = e.touches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) < Math.abs(dy)) { tracking = false; return; }        // vertical scroll — leave it alone
+    var open = document.body.classList.contains('sb-open');
+    if (!open && fromEdge && dx > THRESH) { document.body.classList.add('sb-open'); tracking = false; }
+    else if (open && dx < -THRESH) { document.body.classList.remove('sb-open'); tracking = false; }
+  }, { passive: true });
+  document.addEventListener('touchend', function () { tracking = false; }, { passive: true });
+  // tap the dimmed area outside the open drawer to close it
+  document.addEventListener('click', function (e) {
+    if (!isMobile() || !document.body.classList.contains('sb-open')) return;
+    var sb = document.getElementById('sidebar');
+    if (sb && !sb.contains(e.target) && !(e.target.closest && e.target.closest('.topbar-toggle'))) document.body.classList.remove('sb-open');
+  }, true);
+}
+try { _tkInitSidebarSwipe(); } catch (e) {}
+
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   // ── Finance hub tabs ──
