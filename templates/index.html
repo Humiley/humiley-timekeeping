@@ -9213,7 +9213,7 @@ async function tkInvSyncMailbox(opts) {
 }
 function _invB64ToBytes(b64) { const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a.buffer; }
 function _invB64ToText(b64) { try { return new TextDecoder('utf-8').decode(_invB64ToBytes(b64)); } catch (e) { return atob(b64); } }
-function _invSetSyncStatus(t) { const el = document.getElementById('inv-sync-status'); if (el) el.textContent = t || (_INV.meta && _INV.meta.lastSyncRun ? _t('Last sync') + ' ' + new Date(_INV.meta.lastSyncRun).toLocaleString('en-GB') : ''); }
+function _invSetSyncStatus(t) { const el = document.getElementById('inv-sync-status'); if (el) el.textContent = t || (_INV.meta && _INV.meta.lastSyncRun ? _t('Last sync') + ' ' + new Date(_INV.meta.lastSyncRun).toLocaleString('en-GB') + ((_INV.meta && _INV.meta._diag) || '') : ''); }
 
 /* ── 10-minute auto-sync (silent) while the portal is open ── */
 function _invAutoSyncStart() {
@@ -9233,9 +9233,9 @@ async function tkInvGetAllTracks() {
   try { r = await tkApi('/api/invtrack/sync', { method: 'POST', body: {} }); }
   catch (e) { _invSetSyncStatus(''); toast((e && e.message) ? (_t('Sync failed') + ': ' + e.message) : _t('Sync failed'), 'error', 12000); return; }
   if (r && r.ok) {
-    var _dg = (typeof r.attach !== 'undefined') ? (' · ' + _t('files') + ' ' + (r.parsed || 0) + '/' + (r.attach || 0) + (r.pdfEngine === false ? ' · ⚠ PDF engine OFF' : '')) : '';
-    _invSetSyncStatus(_t('Last sync') + ' ' + new Date().toLocaleString('en-GB') + _dg);
-    toast(_t('Mailbox sync complete') + ' — ' + r.added + ' ' + _t('new') + (r.enriched ? ' · ' + r.enriched + ' ' + _t('updated') : '') + (r.needLookup ? ' · ' + r.needLookup + ' ' + _t('need a portal lookup') : '') + _dg, 'info', 12000);
+    var _dg = (typeof r.pdfEngine !== 'undefined') ? (' · ' + _t('files') + ' ' + (r.parsed || 0) + '/' + (r.attach || 0) + ' · PDF ' + (r.pdfEngine ? 'ON' : 'OFF')) : '';
+    try { _INV.meta = _INV.meta || {}; _INV.meta._diag = _dg; } catch (e) {}   // persist across the re-render below
+    toast(_t('Mailbox sync complete') + ' — ' + r.added + ' ' + _t('new') + (r.enriched ? ' · ' + r.enriched + ' ' + _t('updated') : '') + (r.needLookup ? ' · ' + r.needLookup + ' ' + _t('need a portal lookup') : '') + _dg, 'info', 14000);
     tkRenderInvTrack(); return;
   }
   if (r && r.error === 'not_configured') {
