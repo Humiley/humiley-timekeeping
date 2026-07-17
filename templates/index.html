@@ -759,6 +759,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Payroll</span>
   </div>
 
+  <div class="nav-item" data-roles="manager" data-level="management" data-app="finance" onclick="showView('invtrack',this,'Invoice Tracking')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span>
+    <span class="nav-label">Invoice Tracking</span>
+  </div>
+
   <div id="proc-nav-root" data-app="procurement"></div>
 
   <div class="sidebar-section-label" data-roles="manager">System Setting</div>
@@ -769,10 +774,6 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('permissions',this,'Access &amp; Permissions')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/></svg></span>
     <span class="nav-label">Access &amp; Permissions</span>
-  </div>
-  <div class="nav-item" data-roles="manager" data-level="admin" onclick="tkOpenProcAdmin()">
-    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"/><path d="M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></svg></span>
-    <span class="nav-label">Procurement Admin</span>
   </div>
   <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
@@ -1238,6 +1239,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div><h1>Access &amp; Permissions</h1><p>Grant each employee their access level — User · Contributor · Approver · Editor · Admin</p></div>
   </div>
   <div id="permissions-root"></div>
+  <div id="proc-admin-wrap" style="margin-top:18px;display:none">
+    <div class="card-hdr" style="margin-bottom:6px"><div class="card-title">Procurement Administration</div></div>
+    <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Master data &amp; governance for the Procurement app — administered here, alongside access &amp; permissions.</div>
+    <div id="proc-admin-host"></div>
+  </div>
 </div>
 
 <div id="view-payroll" class="view">
@@ -1247,6 +1253,8 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
   <div id="payroll-root"></div>
 </div>
+
+<div id="view-invtrack" class="view"></div>
 
 <!-- Quick-add modal (recruitment / onboarding / goals / courses) -->
 <div class="modal-overlay" id="quickAddModal">
@@ -1728,11 +1736,6 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
-    </div>
-    <div id="proc-admin-wrap" style="margin-bottom:18px;display:none">
-      <div class="card-hdr" style="margin-bottom:6px"><div class="card-title">Procurement Administration</div></div>
-      <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Master data &amp; governance for the Procurement app — combined here so all administration lives in one place.</div>
-      <div id="proc-admin-host"></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
@@ -8717,6 +8720,566 @@ function tkPayExportXLS() {
   toast('Excel exported');
 }
 /* Export the whole company finance register (respecting current filters) to Excel. */
+/* ══════════════════════════════════════════════════════════════════════════════
+   INVOICE TRACKING (Finance) — every invoice/email captured in the shared mailbox
+   hd@humiley.com. Three tabs: Overview dashboard (PowerBI-style KPIs + charts),
+   Invoice Register (the exact 14-column table, month/quarter/day filters + search),
+   and Other Emails. Excel + PDF export; data is IMPORTED from the "Invoice Tracking
+   Register" export file (HML-Invoice-Tracker-hd-humiley.xlsx / .csv) and stored as a
+   single finance-gated `invtrack` doc — no invoice data is shipped in the repo.
+   ══════════════════════════════════════════════════════════════════════════════ */
+let _INV = { id: null, items: [], meta: {}, loaded: false };
+const _invLF = { tab: 'overview', month: '', quarter: '', from: '', to: '', type: '', q: '' };
+const _INV_CHARTS = {};
+const _INV_TYPE_LABEL = { purchase: 'Purchase invoice', sales: 'Sales invoice', internal: 'Internal package', other: 'Other email' };
+const _INV_TYPE_VN = { purchase: 'Hoá đơn mua vào', sales: 'Hoá đơn bán ra', internal: 'Gói tổng hợp nội bộ', other: 'Email khác' };
+const _INV_TYPE_COLOR = { purchase: '#205090', sales: '#00B060', internal: '#7C3AED', other: '#9AA4B2' };
+
+function _invMoney(n) { n = +n || 0; return n ? '₫' + Math.round(n).toLocaleString('en-US') : '—'; }
+function _invMoneyShort(n) { n = +n || 0; const a = Math.abs(n); return '₫' + (a >= 1e9 ? (n / 1e9).toFixed(2) + 'b' : a >= 1e6 ? (n / 1e6).toFixed(1) + 'm' : a >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(Math.round(n))); }
+function _invNum(x) { if (x == null || x === '') return 0; const s = String(x).replace(/[^\d.-]/g, ''); const v = parseFloat(s); return isNaN(v) ? 0 : v; }
+function _invISO(s) { s = String(s == null ? '' : s).trim(); if (!s) return ''; let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/); if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0'); return (typeof _isoDay === 'function' ? _isoDay(s) : '') || ''; }
+function _invDMY(iso) { if (!iso) return ''; const p = iso.split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+function _invTypeKey(t) { t = String(t || ''); if (/mua vào|purchase/i.test(t)) return 'purchase'; if (/bán ra|sales/i.test(t)) return 'sales'; if (/tổng hợp|nội bộ|internal|package/i.test(t)) return 'internal'; return 'other'; }
+function _invMonthKey(iso) { return iso ? iso.slice(0, 7) : ''; }
+function _invMonthLabel(k) { if (!k) return '—'; const p = k.split('-'); return 'Tháng ' + p[1] + '/' + p[0]; }
+function _invQuarterKey(iso) { if (!iso) return ''; const q = Math.floor((+iso.slice(5, 7) - 1) / 3) + 1; return 'Q' + q + ' ' + iso.slice(0, 4); }
+
+/* ── load / save (single-doc model in the finance-gated `invtrack` collection) ── */
+async function _invLoad(force) {
+  if (_INV.loaded && !force) return;
+  try {
+    const resp = await tkApi('/api/coll/invtrack');
+    const arr = (resp && resp.items) || (Array.isArray(resp) ? resp : []);
+    const docs = arr.filter(x => Array.isArray(x.items)).sort((a, b) => (b.items.length - a.items.length));
+    const doc = docs[0] || arr[0] || null;
+    _INV = doc ? { id: doc.id, items: doc.items || [], meta: doc.meta || {}, loaded: true } : { id: null, items: [], meta: {}, loaded: true };
+  } catch (e) { _INV = { id: null, items: [], meta: {}, loaded: true }; }
+}
+async function _invSaveDoc() {
+  const body = { kind: 'invtrack-dataset', meta: _INV.meta || {}, items: _INV.items || [] };
+  if (_INV.id) { await tkApi('/api/coll/invtrack/' + _INV.id, { method: 'PATCH', body: Object.assign({ id: _INV.id }, body) }); }
+  else { const r = await tkApi('/api/coll/invtrack', { method: 'POST', body: body }); const id = r && (r.id || (r.item && r.item.id)); if (id) _INV.id = id; }
+  /* keep exactly ONE dataset doc — remove stragglers from earlier/failed imports */
+  try { const all = await tkApi('/api/coll/invtrack'); const list = (all && all.items) || (Array.isArray(all) ? all : []); for (const d of list) { if (d && d.id && d.id !== _INV.id) { try { await tkApi('/api/coll/invtrack/' + d.id, { method: 'DELETE' }); } catch (e) {} } } } catch (e) {}
+}
+
+/* ── filtering ── */
+function _invInvoices() { return (_INV.items || []).filter(i => _invTypeKey(i.type) !== 'other'); }
+function _invOthers() { return (_INV.items || []).filter(i => _invTypeKey(i.type) === 'other'); }
+function _invApply(list) {
+  const q = (_invLF.q || '').toLowerCase().trim();
+  return list.filter(i => {
+    if (_invLF.month && _invMonthKey(i.dateISO) !== _invLF.month) return false;
+    if (_invLF.quarter && _invQuarterKey(i.dateISO) !== _invLF.quarter) return false;
+    if (_invLF.from && (!i.dateISO || i.dateISO < _invLF.from)) return false;
+    if (_invLF.to && (!i.dateISO || i.dateISO > _invLF.to)) return false;
+    if (_invLF.type && _invTypeKey(i.type) !== _invLF.type) return false;
+    if (q) { const hay = [i.supplier, i.invNo, i.serial, i.taxCode, i.desc, i.sender, i.lookup].join(' ').toLowerCase(); if (hay.indexOf(q) < 0) return false; }
+    return true;
+  });
+}
+function _invMonthsPresent() { const s = {}; (_INV.items || []).forEach(i => { const k = _invMonthKey(i.dateISO); if (k) s[k] = 1; }); return Object.keys(s).sort().reverse(); }
+function _invQuartersPresent() { const s = {}; (_INV.items || []).forEach(i => { const k = _invQuarterKey(i.dateISO); if (k) s[k] = 1; }); return Object.keys(s).sort().reverse(); }
+
+/* ── main render ── */
+async function tkRenderInvTrack() {
+  const v = document.getElementById('view-invtrack'); if (!v) return;
+  v.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:180px;color:var(--text-light)">' + _t('Loading invoice tracking…') + '</div>';
+  await _invLoad(true);
+  try { _invReconcile(); } catch (e) {}
+  const m = _INV.meta || {};
+  const inv = _invInvoices();
+  const minD = inv.map(i => i.dateISO).filter(Boolean).sort()[0] || '';
+  const maxD = inv.map(i => i.dateISO).filter(Boolean).sort().reverse()[0] || '';
+  const period = m.period || ((minD && maxD) ? (_invDMY(minD) + '  –  ' + _invDMY(maxD)) : '—');
+  const chip = (lbl, val) => '<span style="display:inline-flex;flex-direction:column;gap:1px;padding:6px 12px;background:var(--soft-bg);border:1px solid var(--line);border-radius:8px"><span style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px">' + lbl + '</span><span style="font-size:12.5px;font-weight:600;color:var(--text-dark)">' + _crmEsc(val) + '</span></span>';
+  v.innerHTML =
+    '<div class="tk-hero"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">' +
+      '<div><h1>' + _t('Invoice Tracking') + '</h1><p>' + _t('Every invoice & email captured in the shared mailbox') + ' <strong>hd@humiley.com</strong></p></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-primary btn-sm" onclick="tkInvGetAllTracks()" title="Read hd@humiley.com and auto-extract new supplier invoices"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>' + _t('Get all tracks') + '</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="tkInvImportPick()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' + _t('Import export file') + '</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="tkInvExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Excel</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="tkInvExportPDF()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>' +
+      '</div></div>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + chip(_t('Company'), m.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM') + chip(_t('Mailbox'), 'hd@humiley.com · Inbox') + '</div>' + '<div id="inv-sync-status" style="font-size:11.5px;color:var(--text-light);margin-top:8px"></div>' +
+    '</div>' +
+    '<input type="file" id="inv-import-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="_invImportFile(this.files[0]); this.value=\'\'">' +
+    '<div class="tabs" style="margin-top:14px">' +
+      '<button class="tab" data-invtab="overview" onclick="invTab(\'overview\',this)">' + _t('Overview') + '</button>' +
+      '<button class="tab" data-invtab="register" onclick="invTab(\'register\',this)">' + _t('Invoice Register') + '</button>' +
+    '</div>' +
+    '<div id="inv-pane" style="margin-top:14px"></div>';
+  try { _invAutoSyncStart(); _invSetSyncStatus(); } catch (e) {}
+  if (!_INV.items.length) { document.getElementById('inv-pane').innerHTML = _invEmptyHtml(); v.querySelectorAll('.tab')[0].classList.add('active'); return; }
+  invTab(_invLF.tab || 'overview', v.querySelector('.tab[data-invtab="' + (_invLF.tab || 'overview') + '"]'));
+}
+function _invEmptyHtml() {
+  return '<div class="card" style="text-align:center;padding:48px 24px">' +
+    '<div style="font-size:15px;font-weight:700;margin-bottom:6px">' + _t('No invoice data yet') + '</div>' +
+    '<div style="font-size:13px;color:var(--text-light);max-width:520px;margin:0 auto 16px;line-height:1.6">' + _t('Import the "Invoice Tracking Register" export (HML-Invoice-Tracker-hd-humiley.xlsx or .csv) generated from the hd@humiley.com mailbox. Existing rows are replaced; nothing is sent anywhere.') + '</div>' +
+    '<button class="btn btn-primary btn-sm" onclick="tkInvImportPick()">' + _t('Import export file') + '</button></div>';
+}
+function invTab(tab, el) {
+  _invLF.tab = tab;
+  document.querySelectorAll('#view-invtrack .tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active'); else { const b = document.querySelector('#view-invtrack .tab[data-invtab="' + tab + '"]'); if (b) b.classList.add('active'); }
+  if (tab === 'register') _invRenderRegister();
+  else _invRenderOverview();
+}
+
+/* ── OVERVIEW (dashboard) ── */
+function _invRenderOverview(keepFocus) {
+  const pane = document.getElementById('inv-pane'); if (!pane) return;
+  try { _invReconcile(); } catch (e) {}
+  const items = _invApply(_INV.items || []);
+  const inv = items.filter(i => _invTypeKey(i.type) !== 'other');
+  const _recMatched = inv.filter(i => i._payMatch).length;
+  const _recDup = inv.filter(i => i._dup).length;
+  const byType = { purchase: 0, sales: 0, internal: 0, other: 0 };
+  items.forEach(i => byType[_invTypeKey(i.type)]++);
+  const filled = inv.filter(i => _invNum(i.after) > 0).length;
+  const totBefore = inv.reduce((s, i) => s + _invNum(i.before), 0);
+  const totVat = inv.reduce((s, i) => s + _invNum(i.vat), 0);
+  const totAfter = inv.reduce((s, i) => s + _invNum(i.after), 0);
+  const kpi = (val, lbl, sub, clr) => '<div class="card" style="padding:14px 16px"><div style="font-size:11px;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px;font-weight:600">' + lbl + '</div><div style="font-size:24px;font-weight:800;color:' + (clr || 'var(--navy)') + ';margin-top:3px;line-height:1.1">' + val + '</div>' + (sub ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + sub + '</div>' : '') + '</div>';
+  const chartCard = (id, title) => '<div class="card" style="padding:14px 16px"><div style="font-size:12.5px;font-weight:700;color:var(--text-dark);margin-bottom:8px">' + title + '</div><div style="position:relative;height:220px"><canvas id="' + id + '"></canvas></div></div>';
+  // monthly table
+  const months = _invMonthsPresent();
+  let mrows = '';
+  months.forEach(k => { const mi = inv.filter(x => _invMonthKey(x.dateISO) === k); const wa = mi.filter(x => _invNum(x.after) > 0).length; const amt = mi.reduce((s, x) => s + _invNum(x.after), 0); mrows += '<tr><td style="font-weight:600">' + _invMonthLabel(k) + '</td><td style="text-align:right">' + mi.length + '</td><td style="text-align:right">' + wa + '</td><td style="text-align:right;font-weight:600;color:var(--navy)">' + _invMoney(amt) + '</td></tr>'; });
+  pane.innerHTML =
+    _invFilterBar() +
+    '<div class="grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:12px">' +
+      kpi(items.length, _t('Emails captured'), byType.other + ' ' + _t('other') + ' · ' + inv.length + ' ' + _t('invoices'), 'var(--navy)') +
+      kpi(byType.purchase, _t('Purchase invoices'), _t('from suppliers'), _INV_TYPE_COLOR.purchase) +
+      kpi(byType.sales, _t('Sales invoices'), _t('Humiley issued'), _INV_TYPE_COLOR.sales) +
+      kpi(byType.internal, _t('Internal packages'), '', _INV_TYPE_COLOR.internal) +
+      kpi(filled + '/' + inv.length, _t('Amounts filled'), _t('read from invoice file'), '#F59E0B') +
+      kpi(_invMoneyShort(totAfter), _t('Total value (after tax)'), _t('all invoices'), 'var(--navy)') +
+    '</div>' +
+    '<div class="grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px">' +
+      kpi(_invMoney(totBefore), _t('Amount before tax'), '', 'var(--text-dark)') +
+      kpi(_invMoney(totVat), _t('VAT (GTGT)'), '', 'var(--text-dark)') +
+      kpi(_invMoney(totAfter), _t('Total payment (after tax)'), '', 'var(--navy)') +
+    '</div>' +
+    '<div class="grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px">' +
+      kpi(_recMatched + '/' + inv.length, _t('Matched to a payment'), _t('found in Payments'), '#00B060') +
+      kpi(_recDup, _t('Possible duplicates'), _t('same invoice no + MST'), _recDup ? '#E5484D' : 'var(--text-light)') +
+      kpi(inv.filter(i => !(_invNum(i.after) > 0)).length, _t('Need portal lookup'), _t('amount not in the file'), '#E5A54B') +
+    '</div>' +
+    '<div class="grid" style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px">' +
+      chartCard('invc-month', _t('Invoices by month')) + chartCard('invc-type', _t('By type')) +
+    '</div>' +
+    '<div class="grid" style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px">' +
+      chartCard('invc-amount', _t('Value by month (after tax)')) + chartCard('invc-filled', _t('Amount status')) +
+    '</div>' +
+    '<div class="grid" style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px">' + chartCard('invc-supplier', _t('Top suppliers by value')) + '</div>' +
+    '<div class="card" style="padding:0;margin-top:12px;overflow:hidden"><div style="padding:12px 16px;font-size:12.5px;font-weight:700">' + _t('Invoices by month') + '</div>' +
+      '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12.5px"><thead><tr><th>' + _t('Month') + '</th><th style="text-align:right">' + _t('Invoices') + '</th><th style="text-align:right">' + _t('With amount') + '</th><th style="text-align:right">' + _t('Value (after tax)') + '</th></tr></thead><tbody>' + mrows +
+      '<tr style="border-top:2px solid var(--line);font-weight:800"><td>' + _t('TOTAL') + '</td><td style="text-align:right">' + inv.length + '</td><td style="text-align:right">' + filled + '</td><td style="text-align:right;color:var(--navy)">' + _invMoney(totAfter) + '</td></tr>' +
+      '</tbody></table></div></div>';
+  setTimeout(_invDrawCharts, 30);
+  if (keepFocus) { const s = document.getElementById('inv-search'); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
+}
+function _invChart(id, cfg) { try { if (_INV_CHARTS[id]) { _INV_CHARTS[id].destroy(); } const cx = document.getElementById(id); if (cx && window.Chart) _INV_CHARTS[id] = new Chart(cx.getContext('2d'), cfg); } catch (e) {} }
+function _invDrawCharts() {
+  if (!window.Chart) return;
+  const inv = _invInvoices(); const months = _invMonthsPresent().slice().reverse();
+  const mLabels = months.map(_invMonthLabel);
+  const mCounts = months.map(k => inv.filter(x => _invMonthKey(x.dateISO) === k).length);
+  const mAmts = months.map(k => inv.filter(x => _invMonthKey(x.dateISO) === k).reduce((s, x) => s + _invNum(x.after), 0));
+  const noLeg = { plugins: { legend: { display: false } }, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 9 }, maxRotation: 60, minRotation: 40 } } } };
+  _invChart('invc-month', { type: 'bar', data: { labels: mLabels, datasets: [{ data: mCounts, backgroundColor: '#205090', borderRadius: 4 }] }, options: noLeg });
+  _invChart('invc-amount', { type: 'bar', data: { labels: mLabels, datasets: [{ data: mAmts, backgroundColor: '#00B060', borderRadius: 4 }] }, options: { plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => _invMoney(c.raw) } } }, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { font: { size: 10 }, callback: v => _invMoneyShort(v) } }, x: { ticks: { font: { size: 9 }, maxRotation: 60, minRotation: 40 } } } } });
+  const byType = { purchase: 0, sales: 0, internal: 0, other: 0 }; (_INV.items || []).forEach(i => byType[_invTypeKey(i.type)]++);
+  _invChart('invc-type', { type: 'doughnut', data: { labels: ['purchase', 'sales', 'internal', 'other'].map(k => _INV_TYPE_LABEL[k]), datasets: [{ data: ['purchase', 'sales', 'internal', 'other'].map(k => byType[k]), backgroundColor: ['purchase', 'sales', 'internal', 'other'].map(k => _INV_TYPE_COLOR[k]) }] }, options: { maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } } } });
+  const filled = inv.filter(i => _invNum(i.after) > 0).length; const pending = inv.length - filled;
+  _invChart('invc-filled', { type: 'doughnut', data: { labels: [_t('With amount'), _t('Pending lookup')], datasets: [{ data: [filled, pending], backgroundColor: ['#00B060', '#E5A54B'] }] }, options: { maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 12 } } } } });
+  const bySup = {}; inv.forEach(i => { const s = (i.supplier || '—').slice(0, 34); bySup[s] = (bySup[s] || 0) + _invNum(i.after); });
+  const top = Object.keys(bySup).map(k => [k, bySup[k]]).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  _invChart('invc-supplier', { type: 'bar', data: { labels: top.map(t => t[0]), datasets: [{ data: top.map(t => t[1]), backgroundColor: '#3168A8', borderRadius: 4 }] }, options: { indexAxis: 'y', maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => _invMoney(c.raw) } } }, scales: { x: { beginAtZero: true, ticks: { font: { size: 10 }, callback: v => _invMoneyShort(v) } }, y: { ticks: { font: { size: 9.5 } } } } } });
+}
+
+/* ── REGISTER (the exact 14-column table) ── */
+function _invRerenderTab(kf) { if (_invLF.tab === 'register') _invRenderRegister(kf); else _invRenderOverview(kf); }
+function _invFilterBar() {
+  const monthOpts = _invMonthsPresent().map(k => '<option value="' + k + '"' + (_invLF.month === k ? ' selected' : '') + '>' + _invMonthLabel(k) + '</option>').join('');
+  const qOpts = _invQuartersPresent().map(k => '<option value="' + k + '"' + (_invLF.quarter === k ? ' selected' : '') + '>' + k + '</option>').join('');
+  const typeOpts = ['purchase', 'sales', 'internal'].map(k => '<option value="' + k + '"' + (_invLF.type === k ? ' selected' : '') + '>' + _INV_TYPE_LABEL[k] + '</option>').join('');
+  const inp = 'class="form-control" style="width:auto;font-size:12px;padding:6px 8px"';
+  return '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    '<div style="position:relative;flex:1;min-width:180px"><input id="inv-search" placeholder="' + _t('Search supplier, invoice no, tax code, sender…') + '" value="' + _tkEscA(_invLF.q || '') + '" oninput="_invLF.q=this.value;_invRerenderTab(true)" class="form-control" style="width:100%;font-size:12px;padding:6px 10px"></div>' +
+    '<select ' + inp + ' onchange="_invLF.month=this.value;_invRerenderTab()"><option value="">' + _t('All months') + '</option>' + monthOpts + '</select>' +
+    '<select ' + inp + ' onchange="_invLF.quarter=this.value;_invRerenderTab()"><option value="">' + _t('All quarters') + '</option>' + qOpts + '</select>' +
+    '<select ' + inp + ' onchange="_invLF.type=this.value;_invRerenderTab()"><option value="">' + _t('All types') + '</option>' + typeOpts + '</select>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + _t('From') + '</span><input type="date" value="' + _tkEscA(_invLF.from || '') + '" onchange="_invLF.from=this.value;_invRerenderTab()" ' + inp + '>' +
+    '<span style="font-size:11px;color:var(--text-light)">→</span><input type="date" value="' + _tkEscA(_invLF.to || '') + '" onchange="_invLF.to=this.value;_invRerenderTab()" ' + inp + '>' +
+    '<button class="btn btn-outline btn-sm" onclick="_invLF.month=\'\';_invLF.quarter=\'\';_invLF.from=\'\';_invLF.to=\'\';_invLF.type=\'\';_invLF.q=\'\';_invRerenderTab()">' + _t('Clear') + '</button>' +
+    '</div>';
+}
+function _invRegRows(list) {
+  list = list.slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+  let html = '', curM = ' ';
+  const esc = v => _crmEsc(v == null || v === '' ? '—' : String(v));
+  list.forEach(i => {
+    const mk = _invMonthKey(i.dateISO);
+    if (mk !== curM) { curM = mk; const mi = list.filter(x => _invMonthKey(x.dateISO) === mk); const amt = mi.reduce((s, x) => s + _invNum(x.after), 0); html += '<tr style="background:var(--soft-bg)"><td colspan="10" style="font-weight:700;font-size:11.5px;color:var(--navy);padding:7px 10px">' + _invMonthLabel(mk) + '  ·  ' + mi.length + ' ' + _t('invoices') + '  ·  ' + _invMoney(amt) + '</td></tr>'; }
+    const tk = _invTypeKey(i.type);
+    let badge = '<span class="badge" style="font-size:9.5px;background:' + _INV_TYPE_COLOR[tk] + '22;color:' + _INV_TYPE_COLOR[tk] + '">' + _INV_TYPE_LABEL[tk] + '</span>';
+    if (i._payMatch) badge += ' <span class="badge" style="font-size:9px;background:#00B06022;color:#00B060" title="Matched to a payment request">\u2192 ' + _crmEsc(i._payMatch) + '</span>';
+    if (i._dup) badge += ' <span class="badge" style="font-size:9px;background:#E5484D22;color:#E5484D" title="Same invoice no + tax code appears more than once">DUP</span>';
+    html += '<tr>' +
+      '<td style="white-space:nowrap;font-size:11.5px">' + esc(_invDMY(i.dateISO) || i.dateRaw) + '</td>' +
+      '<td><div style="font-weight:600;font-size:12px">' + esc(i.supplier) + '</div><div style="font-size:10.5px;color:var(--text-light)">' + badge + (i.taxCode ? '  ·  MST ' + esc(i.taxCode) : '') + '</div></td>' +
+      '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.invNo) + '</td>' +
+      '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
+      '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.before) ? _invMoney(i.before) : '—') + '</td>' +
+      '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : '<span style="color:#E5A54B">' + _t('lookup') + '</span>') + '</td>' +
+      '<td style="font-size:11px;max-width:240px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.desc || '') + '">' + esc(i.desc) + '</div></td>' +
+      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>') + '</td>' +
+      '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td>' +
+      '</tr>';
+  });
+  return html;
+}
+function _invRenderRegister(keepFocus) {
+  const pane = document.getElementById('inv-pane'); if (!pane) return;
+  const all = _invInvoices(); const list = _invApply(all);
+  const amt = list.reduce((s, x) => s + _invNum(x.after), 0);
+  const table = '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div style="font-size:13px;font-weight:700">' + _t('Invoice Register') + ' · Sổ hoá đơn theo tháng</div>' +
+    '<div style="font-size:12px;color:var(--text-light)">' + list.length + ' / ' + all.length + ' ' + _t('invoices') + '  ·  ' + _invMoney(amt) + '</div></div>' +
+    _invFilterBar() +
+    '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12px"><thead><tr>' +
+      '<th>' + _t('Date') + '</th><th>' + _t('Supplier / Seller') + '</th><th>' + _t('Invoice no') + '</th><th>' + _t('Serial') + '</th>' +
+      '<th style="text-align:right">' + _t('Before tax') + '</th><th style="text-align:right">' + _t('VAT') + '</th><th style="text-align:right">' + _t('Total (after tax)') + '</th>' +
+      '<th>' + _t('Description') + '</th><th>' + _t('Attachment') + '</th><th>' + _t('Sender') + '</th></tr></thead>' +
+      '<tbody>' + (list.length ? _invRegRows(list) : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:20px">' + _t('No invoices match your filters.') + '</td></tr>') + '</tbody></table></div></div>';
+  pane.innerHTML = table;
+  if (keepFocus) { const s = document.getElementById('inv-search'); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }
+}
+
+/* ── OTHER EMAILS ── */
+function _invRenderOther() {
+  const pane = document.getElementById('inv-pane'); if (!pane) return;
+  const all = _invOthers(); const list = _invApply(all).slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+  const esc = v => _crmEsc(v == null || v === '' ? '—' : String(v));
+  const rows = list.map(i => '<tr><td style="white-space:nowrap;font-size:11.5px">' + esc(_invDMY(i.dateISO) || i.dateRaw) + '</td><td style="font-weight:600;font-size:12px">' + esc(i.supplier) + '</td><td style="font-size:11.5px">' + esc(i.desc) + '</td><td style="font-size:11px;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td></tr>').join('');
+  pane.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><div style="padding:12px 16px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><div style="font-size:13px;font-weight:700">' + _t('Other emails (not invoices)') + ' · Email khác</div><div style="font-size:12px;color:var(--text-light)">' + list.length + ' ' + _t('emails') + '</div></div>' +
+    '<div style="padding:0 14px 10px"><input placeholder="' + _t('Search…') + '" value="' + _tkEscA(_invLF.q || '') + '" oninput="_invLF.q=this.value;_invRenderOther()" class="form-control" style="width:100%;font-size:12px;padding:6px 10px"></div>' +
+    '<div style="overflow-x:auto"><table class="tbl" style="width:100%;font-size:12px"><thead><tr><th>' + _t('Date') + '</th><th>' + _t('Sender / Subject') + '</th><th>' + _t('Description') + '</th><th>' + _t('Sender email') + '</th></tr></thead><tbody>' + (rows || '<tr><td colspan="4" style="text-align:center;color:var(--text-light);padding:20px">' + _t('No emails.') + '</td></tr>') + '</tbody></table></div></div>';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   INVOICE TRACKING — AUTOMATIC MAILBOX SYNC (hd@humiley.com shared inbox)
+   "Get all tracks" reads the shared mailbox via Microsoft Graph (delegated
+   Mail.Read.Shared — the signed-in user must have access to hd@humiley.com), then
+   EXTRACTS each supplier invoice by the most reliable available method:
+     • XML e-invoice (TT78 / hoá đơn điện tử)  → full structured parse  [reliable]
+     • PDF attachment                          → pdf.js text + VN regex  [best-effort]
+     • email body / subject                    → classify + capture the "tra cứu" lookup link/code
+   New messages are de-duplicated by internetMessageId and upserted into `invtrack`.
+   A 10-minute timer re-syncs silently while the portal is open. True 24/7 background
+   sync needs an app-only Graph credential on the server (see _invSyncStatusNote).
+   ══════════════════════════════════════════════════════════════════════════════ */
+const _INV_SHARED_MAILBOX = 'hd@humiley.com';
+let _invAutoTimer = null, _invSyncing = false;
+
+/* ── Reliable core: Vietnamese TT78 e-invoice XML → structured invoice ── */
+function _invParseEInvoiceXML(xmlText) {
+  try {
+    if (!xmlText || xmlText.length > 4 * 1024 * 1024) return null;
+    if (/<!doctype|<!entity/i.test(String(xmlText))) return null;   // scan full (already <=4MB-capped) content
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+    if (!doc || doc.getElementsByTagName('parsererror').length) return null;
+    const first = tag => { const n = doc.getElementsByTagName(tag)[0]; return n ? (n.textContent || '').trim() : ''; };
+    const under = (parentTag, childTag) => { const p = doc.getElementsByTagName(parentTag)[0]; if (!p) return ''; const c = p.getElementsByTagName(childTag)[0]; return c ? (c.textContent || '').trim() : ''; };
+    const serial = first('KHHDon');
+    const invNo = first('SHDon');
+    const dateRaw = first('NLap');
+    const docType = first('THDon');
+    const seller = under('NBan', 'Ten');
+    const sellerMST = under('NBan', 'MST');
+    const buyerMST = under('NMua', 'MST');
+    const before = first('TgTCThue');
+    const vat = first('TgTThue');
+    const after = first('TgTTTBSo');
+    let lookupCode = '';
+    const tts = doc.getElementsByTagName('TTin');
+    for (let i = 0; i < tts.length; i++) {
+      const lab = (tts[i].getElementsByTagName('TTruong')[0] || {}).textContent || '';
+      if (/tra c[ứu]{1,2}u|ma tra c/i.test(lab)) { lookupCode = ((tts[i].getElementsByTagName('DLieu')[0] || {}).textContent || '').trim() || lookupCode; }
+    }
+    if (!serial && !invNo && !seller) return null;
+    return { serial, invNo, dateISO: _invISO(dateRaw), dateRaw, supplier: seller, taxCode: sellerMST, buyerMST, before: _invNum(before), vat: _invNum(vat), after: _invNum(after), lookupCode, docType, _method: 'xml' };
+  } catch (e) { return null; }
+}
+
+/* ── Best-effort: PDF invoice text (pdf.js) + Vietnamese-label regex ── */
+async function _invPdfText(arrayBuffer) {
+  if (!window.pdfjsLib) return '';
+  try {
+    const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+    let out = '';
+    for (let p = 1; p <= Math.min(pdf.numPages, 4); p++) { const pg = await pdf.getPage(p); const tc = await pg.getTextContent(); out += tc.items.map(i => i.str).join(' ') + '\n'; }
+    return out;
+  } catch (e) { return ''; }
+}
+function _invParsePdf(text) {
+  if (!text) return null;
+  const t = text.replace(/ /g, ' ');
+  const num = re => { const m = t.match(re); return m ? _invNum(m[1]) : 0; };
+  const grab = re => { const m = t.match(re); return m ? m[1].trim() : ''; };
+  const invNo = grab(/(?:Số HĐ|Số hóa đơn|Số\s*\(No\.?\)|SHDon|Invoice No\.?)\s*[:.]?\s*([0-9]{1,10})/i);
+  const serial = grab(/(?:Ký hiệu|Mẫu số và ký hiệu|KHHDon|Serial)\s*[:.]?\s*([0-9A-Z]{5,8})/i);
+  const taxCode = grab(/(?:Mã số thuế|MST|Tax code)\s*[:.]?\s*([0-9]{10}(?:-[0-9]{3})?)/i);
+  const after = num(/(?:Tổng tiền thanh toán|Tổng cộng tiền thanh toán|Total payment|Tổng thanh toán)\s*[:.]?\s*([0-9.,]{4,})/i);
+  const vat = num(/(?:Tiền thuế GTGT|Thuế GTGT|VAT amount)\s*[:.]?\s*([0-9.,]{3,})/i);
+  const before = num(/(?:Cộng tiền hàng|Tiền hàng|Thành tiền chưa thuế|Sub[- ]?total)\s*[:.]?\s*([0-9.,]{4,})/i);
+  if (!invNo && !after) return null;
+  return { serial, invNo, taxCode, before, vat, after: after || (before + vat), _method: 'pdf' };
+}
+
+/* ── Classification + supplier + lookup link ── */
+function _invClassifyType(subject, fromAddr, fromName, extracted) {
+  const fold = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+  const s = fold((subject || '') + ' ' + (fromName || '') + ' ' + (fromAddr || ''));
+  const isInvoiceish = !!extracted || /hoa don|hddt|e-?invoice|einvoice|invoice|xuat hoa don|hoadon|gtgt|\bvat\b/.test(s);
+  const fromHumiley = /@humiley\.com/i.test(fromAddr || '');
+  if (fromHumiley && isInvoiceish) return 'sales';
+  if (isInvoiceish) return 'purchase';
+  return 'other';
+}
+function _invLookupFrom(bodyText) {
+  const out = { url: '', code: '' };
+  if (!bodyText) return out;
+  const link = bodyText.match(/https?:\/\/[^\s"'<>]*(?:tra-?cuu|lookup|hoadon|einvoice|xuathoadon)[^\s"'<>]*/i);
+  if (link) out.url = link[0];
+  const code = bodyText.match(/(?:Mã tra cứu|Mã số bí mật|Lookup code|Mã nhận hóa đơn)\s*[:.]?\s*([0-9A-Za-z]{6,20})/i);
+  if (code) out.code = code[1];
+  return out;
+}
+function _invStripHtml(h) { try { const d = document.createElement('div'); d.innerHTML = h || ''; return (d.textContent || '').replace(/\s+/g, ' ').trim(); } catch (e) { return (h || '').replace(/<[^>]+>/g, ' '); } }
+
+/* ── Build one invtrack item from a Graph message + its parsed attachments ── */
+function _invMsgToItem(msg, extracted, lookup) {
+  const fromAddr = ((msg.from && msg.from.emailAddress) || {}).address || '';
+  const fromName = ((msg.from && msg.from.emailAddress) || {}).name || '';
+  const bodyText = _invStripHtml((msg.body && msg.body.content) || msg.bodyPreview || '');
+  const e = extracted || {};
+  const type = _invClassifyType(msg.subject, fromAddr, fromName, (e.invNo || e.serial || e.after > 0));
+  return {
+    msgId: msg.internetMessageId || msg.id || '',
+    dateISO: (e.dateISO) || _invISO(msg.receivedDateTime) || '',
+    dateRaw: e.dateRaw || (msg.receivedDateTime || '').slice(0, 10),
+    supplier: e.supplier || fromName || (fromAddr.split('@')[0] || ''),
+    invNo: e.invNo || '', serial: e.serial || '', taxCode: e.taxCode || '',
+    before: e.before || 0, vat: e.vat || 0, after: e.after || 0,
+    desc: msg.subject || '', attach: (e._attachName || ''),
+    type: type === 'sales' ? 'Hoá đơn bán ra (Humiley phát hành)' : type === 'other' ? 'Khác / không phải hoá đơn' : 'Hoá đơn mua vào (NCC)',
+    sender: fromAddr || fromName,
+    lookup: (lookup && (lookup.code || lookup.url)) ? ((lookup.code || '') + (lookup.url ? '  ' + lookup.url : '')).trim() : (e.lookupCode || ''),
+    method: e._method || (lookup && lookup.url ? 'link' : (msg.hasAttachments ? 'attachment' : 'email')),
+    needsLookup: !(e.after > 0)
+  };
+}
+
+/* ── The sync: read hd@humiley.com/Inbox via Graph, extract, dedupe, upsert ── */
+async function tkInvSyncMailbox(opts) {
+  opts = opts || {};
+  if (_invSyncing) return;
+  if (!_msalApp || !_account) { if (!opts.silent) toast('Sign in with Microsoft 365 first to sync the mailbox.', 'warn', 6000); return; }
+  _invSyncing = true; _invSetSyncStatus(_t('Connecting to hd@humiley.com…'));
+  let token;
+  try {
+    const scopes = ['https://graph.microsoft.com/Mail.Read.Shared'];
+    try { token = (await _msalApp.acquireTokenSilent({ scopes, account: _account })).accessToken; }
+    catch (e) {
+      _invSyncing = false; _invSetSyncStatus('');
+      if (opts.silent) return;
+      toast('Microsoft needs to grant shared-mailbox read (Mail.Read.Shared). Redirecting — approve, return, then click "Get all tracks" again.', 'info', 11000);
+      try { await _msalApp.acquireTokenRedirect({ scopes }); } catch (e2) {}
+      return;
+    }
+  } catch (e) { _invSyncing = false; _invSetSyncStatus(''); if (!opts.silent) toast('A Microsoft 365 admin must grant Mail.Read.Shared consent for this app.', 'error', 11000); return; }
+
+  try {
+    await _invLoad(true);
+    const seen = new Set((_INV.items || []).map(i => i.msgId).filter(Boolean));
+    const key = i => (i.invNo || '') + '|' + (i.serial || '') + '|' + (i.taxCode || '') + '|' + (i.dateISO || '');
+    const seenKey = new Set((_INV.items || []).map(key));
+    const since = _INV.meta && _INV.meta.lastSync ? _INV.meta.lastSync : '';
+    // Newest first; if we have a lastSync watermark, only pull newer mail
+    let url = 'https://graph.microsoft.com/v1.0/users/' + encodeURIComponent(_INV_SHARED_MAILBOX) + "/mailFolders/inbox/messages?$select=subject,from,receivedDateTime,hasAttachments,internetMessageId,bodyPreview,body&$orderby=receivedDateTime desc&$top=40";
+    if (since) url += "&$filter=receivedDateTime ge " + since;
+    const H = { Authorization: 'Bearer ' + token };
+    const msgs = []; let pages = 0;
+    while (url && pages < 8) {
+      const resp = await fetch(url, { headers: H });
+      if (!resp.ok) { const b = await resp.text().catch(() => ''); throw new Error('Graph ' + resp.status + (resp.status === 403 ? ' — no access to hd@humiley.com (grant the user shared-mailbox access + Mail.Read.Shared consent).' : '') + (b ? ' · ' + b.slice(0, 120) : '')); }
+      const j = await resp.json(); (j.value || []).forEach(m => msgs.push(m)); url = j['@odata.nextLink'] || ''; pages++;
+    }
+    let added = 0, updated = 0, needLookup = 0, newest = since;
+    for (const m of msgs) {
+      if (m.receivedDateTime && (!newest || m.receivedDateTime > newest)) newest = m.receivedDateTime;
+      if (m.internetMessageId && seen.has(m.internetMessageId)) continue;
+      _invSetSyncStatus(_t('Reading') + ' ' + (added + 1) + '/' + msgs.length + '…');
+      let extracted = null, lookup = null;
+      if (m.hasAttachments) {
+        try {
+          const ar = await fetch('https://graph.microsoft.com/v1.0/users/' + encodeURIComponent(_INV_SHARED_MAILBOX) + '/messages/' + m.id + '/attachments?$select=name,contentType,contentBytes', { headers: H });
+          const aj = ar.ok ? await ar.json() : { value: [] };
+          const atts = aj.value || [];
+          // 1) XML e-invoice = most reliable
+          const xml = atts.find(a => /\.xml$/i.test(a.name || '') || /xml/i.test(a.contentType || ''));
+          if (xml && xml.contentBytes) { const txt = _invB64ToText(xml.contentBytes); extracted = _invParseEInvoiceXML(txt); if (extracted) extracted._attachName = xml.name; }
+          // 2) PDF fallback
+          if (!extracted) { const pdf = atts.find(a => /\.pdf$/i.test(a.name || '') || /pdf/i.test(a.contentType || '')); if (pdf && pdf.contentBytes) { const buf = _invB64ToBytes(pdf.contentBytes); const txt = await _invPdfText(buf); extracted = _invParsePdf(txt); if (extracted) extracted._attachName = pdf.name; } }
+          if (!extracted && atts[0]) extracted = { _attachName: atts[0].name, _method: 'attachment' };
+        } catch (e) {}
+      }
+      if (!extracted || !(extracted.after > 0)) lookup = _invLookupFrom(_invStripHtml((m.body && m.body.content) || m.bodyPreview || ''));
+      const item = _invMsgToItem(m, extracted, lookup);
+      if (item.msgId && seen.has(item.msgId)) continue;
+      if (!item.msgId && seenKey.has(key(item))) continue;   // dedupe imported rows vs synced
+      _INV.items.push(item); seen.add(item.msgId); seenKey.add(key(item)); added++;
+      if (item.needsLookup) needLookup++;
+    }
+    _INV.meta = Object.assign({}, _INV.meta, { mailbox: _INV_SHARED_MAILBOX, company: (_INV.meta && _INV.meta.company) || 'CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)', lastSync: newest || new Date().toISOString(), lastSyncRun: new Date().toISOString() });
+    if (added || updated) await _invSaveDoc();
+    _invSetSyncStatus('');
+    if (!opts.silent) toast(_t('Mailbox sync complete') + ' — ' + added + ' ' + _t('new') + (needLookup ? ' · ' + needLookup + ' ' + _t('need a portal lookup') : ''), 'info', 8000);
+    if (added || !opts.silent) tkRenderInvTrack();
+  } catch (e) { _invSetSyncStatus(''); if (!opts.silent) toast(_t('Sync failed') + ': ' + e.message, 'error', 10000); }
+  finally { _invSyncing = false; }
+}
+function _invB64ToBytes(b64) { const bin = atob(b64); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a.buffer; }
+function _invB64ToText(b64) { try { return new TextDecoder('utf-8').decode(_invB64ToBytes(b64)); } catch (e) { return atob(b64); } }
+function _invSetSyncStatus(t) { const el = document.getElementById('inv-sync-status'); if (el) el.textContent = t || (_INV.meta && _INV.meta.lastSyncRun ? _t('Last sync') + ' ' + new Date(_INV.meta.lastSyncRun).toLocaleString('en-GB') : ''); }
+
+/* ── 10-minute auto-sync (silent) while the portal is open ── */
+function _invAutoSyncStart() {
+  if (_invAutoTimer) return;
+  if (!_msalApp || !_account) return;   // only when signed in to M365
+  _invAutoTimer = setInterval(function () { try { if (!document.hidden) tkInvSyncMailbox({ silent: true }); } catch (e) {} }, 10 * 60 * 1000);
+}
+function _invAutoSyncStop() { if (_invAutoTimer) { clearInterval(_invAutoTimer); _invAutoTimer = null; } }
+
+/* "Get all tracks": prefer the SERVER-SIDE app-only sync (24/7, works even when the signed-in
+   user has no mailbox access); fall back to the in-browser (delegated) sync if it isn't configured. */
+async function tkInvGetAllTracks() {
+  _invSetSyncStatus(_t('Syncing from') + ' hd@humiley.com\u2026');
+  let r = null;
+  try { r = await tkApi('/api/invtrack/sync', { method: 'POST', body: {} }); }
+  catch (e) { _invSetSyncStatus(''); return tkInvSyncMailbox(); }
+  if (r && r.ok) { _invSetSyncStatus(''); toast(_t('Mailbox sync complete') + ' \u2014 ' + r.added + ' ' + _t('new') + (r.needLookup ? ' \u00b7 ' + r.needLookup + ' ' + _t('need a portal lookup') : ''), 'info', 8000); tkRenderInvTrack(); return; }
+  if (r && r.error === 'not_configured') { _invSetSyncStatus(''); return tkInvSyncMailbox(); }
+  _invSetSyncStatus(''); toast((r && r.message) || _t('Sync failed'), 'warn', 9000);
+}
+/* Reconcile tracked supplier invoices against internal Payments + flag duplicates (rec #5). */
+function _invReconcile() {
+  const inv = _invInvoices();
+  const pays = (typeof _HR !== 'undefined' && _HR.payments) ? _HR.payments : [];
+  const norm = s => String(s == null ? '' : s).toLowerCase()
+    .replace(/c\u00f4ng ty|cong ty|tnhh|c\u1ed5 ph\u1ea7n|co phan|mtv|m\u1ed9t th\u00e0nh vi\u00ean|\bcp\b|\bltd\b|\bjsc\b|\bco\b|\binc\b/g, ' ')
+    .replace(/[^a-z0-9]/g, '');
+  const dupKey = i => (String(i.invNo || '').trim() + '|' + String(i.taxCode || '').trim());
+  const seen = {}, dups = new Set();
+  inv.forEach(i => { if (!i.invNo) return; const k = dupKey(i); if (seen[k]) dups.add(k); else seen[k] = 1; });
+  let matched = 0;
+  inv.forEach(i => {
+    const sup = norm(i.supplier);
+    const p = pays.find(p => {
+      if (p.invoiceNo && i.invNo && String(p.invoiceNo).trim() === String(i.invNo).trim()) return true;
+      const amtOk = (+i.after || 0) > 0 && Math.abs((+p.amount || 0) - (+i.after || 0)) < 1000;
+      if (!amtOk) return false;
+      if (i.taxCode && p.taxCode && String(p.taxCode).replace(/\D/g, '') === String(i.taxCode).replace(/\D/g, '')) return true;
+      const pn = norm(p.payee);
+      return sup.length >= 6 && pn.length >= 6 && (pn.indexOf(sup.slice(0, 12)) >= 0 || sup.indexOf(pn.slice(0, 12)) >= 0);
+    });
+    i._payMatch = p ? (p.reqNo || p.id || 'PR') : ''; i._dup = dups.has(dupKey(i));
+    if (p) matched++;
+  });
+  return { matched: matched, unmatched: inv.length - matched, duplicates: dups.size };
+}
+
+/* ── EXPORT: Excel (mirrors the 3-sheet register) ── */
+function tkInvExportXLS() {
+  if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
+  const inv = _invApply(_invInvoices()), oth = _invApply(_invOthers());
+  const H = ['STT', 'Ngày', 'Nhà cung cấp / Người bán', 'Số hoá đơn', 'Ký hiệu', 'MST người bán', 'Tiền hàng (trước thuế)', 'Thuế GTGT (VAT)', 'Tổng thanh toán (sau thuế)', 'Diễn giải / Tiêu đề', 'File đính kèm', 'Loại', 'Email người gửi', 'Tra cứu'];
+  const row = (i, n) => ({ 'STT': n, 'Ngày': _invDMY(i.dateISO) || i.dateRaw, 'Nhà cung cấp / Người bán': i.supplier, 'Số hoá đơn': i.invNo, 'Ký hiệu': i.serial, 'MST người bán': i.taxCode, 'Tiền hàng (trước thuế)': _invNum(i.before) || '', 'Thuế GTGT (VAT)': _invNum(i.vat) || '', 'Tổng thanh toán (sau thuế)': _invNum(i.after) || '', 'Diễn giải / Tiêu đề': i.desc, 'File đính kèm': i.attach, 'Loại': _INV_TYPE_VN[_invTypeKey(i.type)], 'Email người gửi': i.sender, 'Tra cứu': i.lookup });
+  const wb = XLSX.utils.book_new();
+  const inv2 = inv.slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv2.map((i, n) => row(i, n + 1)), { header: H }), 'So HD theo thang');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(oth.map((i, n) => row(i, n + 1)), { header: H }), 'Email khac');
+  XLSX.writeFile(wb, 'HML-Invoice-Tracker-hd-humiley_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  toast(_t('Excel exported') + ' · ' + inv.length + ' ' + _t('invoices'));
+}
+
+/* ── EXPORT: PDF (register on the Track B letterhead) ── */
+function tkInvExportPDF() {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!J) { toast('PDF engine not loaded', 'warn'); return; }
+  const inv = _invApply(_invInvoices()).slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+  const doc = new J({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  const W = 297, M = 12;
+  let y = (typeof _brandHeader === 'function') ? _brandHeader(doc, { title: 'INVOICE TRACKING REGISTER', subtitle: 'hd@humiley.com', docCode: 'HML-FIN-INV' }) : 30;
+  y += 2;
+  const cols = [['Date', 20], ['Supplier / Seller', 62], ['Inv no', 20], ['Serial', 18], ['Before tax', 26], ['VAT', 22], ['Total (after tax)', 28], ['Type', 26], ['Sender', 40]];
+  const drawHead = () => { let x = M; doc.setFillColor.apply(doc, (typeof _LH_NAVY !== 'undefined' ? _LH_NAVY : [32, 80, 144])); doc.rect(M, y, W - 2 * M, 7, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.4); doc.setTextColor(255, 255, 255); cols.forEach(c => { const right = /tax|VAT|Total/.test(c[0]); doc.text(_pdfSafe(c[0]), right ? x + c[1] - 2 : x + 1.5, y + 4.7, { align: right ? 'right' : 'left' }); x += c[1]; }); y += 7; };
+  drawHead();
+  doc.setFont('helvetica', 'normal');
+  inv.forEach(i => {
+    if (y > 190) { if (typeof _brandFooter === 'function') _brandFooter(doc, doc.getNumberOfPages(), doc.getNumberOfPages(), 'HML-FIN-INV'); doc.addPage(); y = (typeof _brandHeader === 'function') ? _brandHeader(doc, { title: 'INVOICE TRACKING REGISTER', subtitle: 'hd@humiley.com', docCode: 'HML-FIN-INV' }) : 30; y += 2; drawHead(); doc.setFont('helvetica', 'normal'); }
+    const tk = _invTypeKey(i.type);
+    const cells = [_invDMY(i.dateISO), (i.supplier || '').slice(0, 46), i.invNo, i.serial, _invNum(i.before) ? Math.round(_invNum(i.before)).toLocaleString('en-US') : '', _invNum(i.vat) ? Math.round(_invNum(i.vat)).toLocaleString('en-US') : '', _invNum(i.after) ? Math.round(_invNum(i.after)).toLocaleString('en-US') : '—', _INV_TYPE_LABEL[tk], (i.sender || '').slice(0, 30)];
+    let x = M; doc.setFontSize(7); doc.setTextColor(33, 41, 55);
+    cells.forEach((c, ci) => { const right = ci >= 4 && ci <= 6; doc.text(_pdfSafe(String(c == null ? '' : c)), right ? x + cols[ci][1] - 2 : x + 1.5, y + 3.6, { align: right ? 'right' : 'left' }); x += cols[ci][1]; });
+    doc.setDrawColor(238, 241, 244); doc.setLineWidth(0.2); doc.line(M, y + 5, W - M, y + 5); y += 5.4;
+  });
+  if (typeof _brandFooter === 'function') _brandFooter(doc, doc.getNumberOfPages(), doc.getNumberOfPages(), 'HML-FIN-INV');
+  doc.save('HML-Invoice-Register_' + new Date().toISOString().slice(0, 10) + '.pdf');
+  toast(_t('PDF exported'));
+}
+
+/* ── IMPORT: parse the export .xlsx / .csv, replace the dataset ── */
+function tkInvImportPick() { const el = document.getElementById('inv-import-file'); if (el) el.click(); }
+async function _invImportFile(file) {
+  if (!file) return;
+  if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
+  toast(_t('Reading') + ' ' + file.name + '…', 'info', 4000);
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const items = []; const meta = { source: file.name, extracted: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) };
+    wb.SheetNames.forEach(sn => {
+      const isOther = /khác|khac|other/i.test(sn);
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
+      let hdr = -1;
+      for (let r = 0; r < rows.length; r++) { if (String(rows[r][0]).trim().toUpperCase() === 'STT') { hdr = r; break; } }
+      if (hdr < 0) return;   // not a register sheet (e.g. Overview)
+      for (let r = hdr + 1; r < rows.length; r++) {
+        const R = rows[r]; const stt = String(R[0]).trim();
+        if (!/^\d+$/.test(stt)) continue;   // skip month-separator / blank rows
+        const dateISO = _invISO(R[1]);
+        items.push({ stt: +stt, dateISO: dateISO, dateRaw: String(R[1] || ''), supplier: String(R[2] || ''), invNo: String(R[3] || ''), serial: String(R[4] || ''), taxCode: String(R[5] || ''), before: _invNum(R[6]), vat: _invNum(R[7]), after: _invNum(R[8]), desc: String(R[9] || ''), attach: String(R[10] || ''), type: String(R[11] || (isOther ? 'Khác / không phải hoá đơn' : 'Hoá đơn mua vào (NCC)')), sender: String(R[12] || ''), lookup: String(R[13] || '') });
+      }
+    });
+    if (!items.length) { toast(_t('No invoice rows found in this file. Use the "Invoice Tracking Register" export.'), 'warn', 8000); return; }
+    const dates = items.map(i => i.dateISO).filter(Boolean).sort();
+    meta.company = _INV.meta.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)';
+    meta.mailbox = 'hd@humiley.com';
+    if (dates.length) meta.period = _invDMY(dates[0]) + '  –  ' + _invDMY(dates[dates.length - 1]);
+    _INV.items = items; _INV.meta = meta;
+    await _invSaveDoc();
+    toast(_t('Imported') + ' ' + items.length + ' ' + _t('rows') + ' · ' + file.name, 'info', 6000);
+    tkRenderInvTrack();
+  } catch (e) { toast(_t('Could not read the file') + ': ' + e.message, 'error', 8000); }
+}
+
 function tkFinExportXLS() {
   if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
   const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '';
@@ -11452,8 +12015,8 @@ async function crmImportFile(coll, file) {
 }
 
 
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices']);
-const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack']);
+const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'management', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
 const _HR_HUB_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin']);
@@ -12851,7 +13414,7 @@ function showView(id, navEl, title) {
   if (id.indexOf('crm-') === 0 && _appDeniedCurrent('crm')) { toast('Access restricted — CRM is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('pm-') === 0 && _appDeniedCurrent('pm')) { toast('Access restricted — Projects is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (_HR_VIEWS.has(id) && _appDeniedCurrent('hr')) { toast('Access restricted — HR is not enabled for your account. Ask an admin.', 'warn'); return; }
-  if ((id === 'finance' || id === 'payroll') && _appDeniedCurrent('finance')) { toast('Access restricted — Finance is not enabled for your account. Ask an admin.', 'warn'); return; }
+  if ((id === 'finance' || id === 'payroll' || id === 'invtrack') && _appDeniedCurrent('finance')) { toast('Access restricted — Finance is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id === 'procurement' && _appDeniedCurrent('procurement')) { toast('Access restricted — Procurement is not enabled for your account. Ask an admin.', 'warn'); return; }
   /* close the mobile drawer after navigating */
   if (window.matchMedia && window.matchMedia('(max-width:820px)').matches) document.body.classList.remove('sb-open');
@@ -12872,6 +13435,7 @@ function showView(id, navEl, title) {
   const nav = navEl || document.querySelector(`.nav-item[onclick*="'${navId}'"]`);
   if (nav) nav.classList.add('active');
   try { _sbRevealActive(); } catch (e) {}
+  if (typeof _invAutoSyncStop === 'function' && _currentView === 'invtrack' && id !== 'invtrack') { try { _invAutoSyncStop(); } catch (e) {} }
   _currentView = id;
   const pageTitle = title || id;
   const titleEl = document.getElementById('topbarTitle');
@@ -12882,6 +13446,7 @@ function showView(id, navEl, title) {
   if (_CRM_HUB_VIEWS.has(id)) { try { _crmEnsureTabBar(id); } catch (e) {} }
   if (id === 'crm-overview') { try { tkRenderCrmOverview(); } catch (e) { console.warn('crm-overview:', e.message); } }
   if (id === 'myspace-overview') { try { tkRenderMySpaceOverview(); } catch (e) { console.warn('myspace-overview:', e.message); } }
+  if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }
   // Report sub-panels live in #content (not inside the view) — hide them off the Reports page, show the default tab on it.
   ['attendance', 'leave', 'inout', 'recruit', 'payroll'].forEach(t => { const p = document.getElementById('rpt-' + t); if (p) p.style.display = (id === 'reports' && t === 'attendance') ? 'block' : 'none'; });
   if (id === 'reports') { document.querySelectorAll('#rpt-tabs .tab').forEach((b, i) => b.classList.toggle('active', i === 0)); setTimeout(initReportCharts, 100); }
@@ -12922,7 +13487,7 @@ function showView(id, navEl, title) {
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
-  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } }
+  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } try { _tkProcAdminOpen(); } catch (e) {} }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
@@ -14637,7 +15202,7 @@ function switchHRTab(tab, el) {
   if (panel) panel.style.display = 'block';
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
-  if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} try { _tkProcAdminOpen(); } catch (e) {} }
+  if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
     const lbl = document.getElementById('emp-count-label');

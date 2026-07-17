@@ -22,6 +22,11 @@ import secrets
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
+import io
+import zipfile
+import xml.etree.ElementTree as ET
+import unicodedata
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -139,6 +144,359 @@ def graph_me(access_token):
             return (data.get("mail") or data.get("userPrincipalName") or "").lower()
     except (urllib.error.URLError, ValueError, TimeoutError):
         return None
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INVOICE TRACKING — server-side extraction + app-only 24/7 mailbox sync.
+# Reads hd@humiley.com/Inbox via Microsoft Graph (APP-ONLY client-credentials,
+# Mail.Read application) so tracking runs 24/7 with nobody signed in; extracts each
+# supplier invoice from its XML/ZIP e-invoice (Vietnamese TT78) using ONLY the Python
+# stdlib; de-dupes by internetMessageId; MERGES into one `invtrack` dataset doc
+# (re-read before write so a concurrent browser import/sync is never clobbered);
+# audits real changes. Env-gated: no secret => no-op with a clear status.
+# HARDENED against untrusted-attachment DoS (XML entity-expansion + ZIP bombs).
+# ══════════════════════════════════════════════════════════════════════════════
+M365["clientSecret"] = os.environ.get("TK_M365_CLIENT_SECRET", "")
+INVTRACK = {
+    "mailbox": os.environ.get("TK_INVTRACK_MAILBOX", "hd@humiley.com"),
+    "interval": max(2, int(os.environ.get("TK_INVTRACK_INTERVAL_MIN", "10") or "10")),
+    "ocr_url": os.environ.get("TK_OCR_ENDPOINT", ""),
+}
+_INVTRACK_LOCK = threading.Lock()          # serialize backend syncs
+_GRAPH_APP_TOK = {"tok": "", "exp": 0.0}
+_EINV_MAX_BYTES = 4 * 1024 * 1024          # hard cap on any single untrusted attachment we parse
+
+
+def _invtrack_app_ready():
+    return bool(M365["clientId"] and M365["tenantId"] and M365["clientSecret"])
+
+
+def _now_iso():
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")   # `datetime` is the class (from datetime import datetime)
+
+
+def _vn_fold(s):
+    """Fold Vietnamese diacritics for classification (đ->d, drop accents) so 'HĐĐT'/'Hóa đơn' all match."""
+    return "".join(ch for ch in unicodedata.normalize("NFD", str(s or "").lower()) if unicodedata.category(ch) != "Mn").replace("đ", "d")
+
+
+def _iso_minus(iso, minutes):
+    """Subtract minutes from an ISO instant (for a safe overlap window). Best-effort; returns input on failure."""
+    try:
+        return (datetime.strptime((iso or "").split(".")[0].replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
+                - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        return iso
+
+
+def _einv_num(x):
+    """Parse a money value tolerant of VN/EN grouping+decimal conventions. TT78 XML uses plain integers."""
+    s = re.sub(r"[^0-9,.\-]", "", str(x if x is not None else "")).strip()
+    if not s:
+        return 0.0
+    neg = s.startswith("-")
+    s = s.lstrip("-")
+    last = max(s.rfind(","), s.rfind("."))
+    frac = len(s) - last - 1
+    if last != -1 and 1 <= frac <= 2:              # last separator with 1-2 trailing digits = decimal
+        s = s[:last].replace(",", "").replace(".", "") + "." + s[last + 1:]
+    else:                                          # all separators are thousands-grouping
+        s = s.replace(",", "").replace(".", "")
+    try:
+        v = float(s or 0)
+    except ValueError:
+        return 0.0
+    return -v if neg else v
+
+
+def _einv_safe_xml(xml_bytes):
+    """Reject untrusted XML that could be an entity-expansion (billion-laughs) bomb before parsing."""
+    if isinstance(xml_bytes, str):
+        xml_bytes = xml_bytes.encode("utf-8", "ignore")
+    if not xml_bytes or len(xml_bytes) > _EINV_MAX_BYTES:
+        return None
+    low = xml_bytes.lower()   # scan the FULL (already <=4MB-capped) content — a padded prolog comment must not hide a DOCTYPE
+    if b"<!doctype" in low or b"<!entity" in low:   # TT78 e-invoices never carry a DTD/entities
+        return None
+    return xml_bytes
+
+
+def _einv_parse_xml(xml_bytes):
+    """Vietnamese TT78 e-invoice XML -> structured dict, or None. Namespace-agnostic + bomb-guarded."""
+    xml_bytes = _einv_safe_xml(xml_bytes)
+    if xml_bytes is None:
+        return None
+    try:
+        root = ET.fromstring(xml_bytes)
+    except Exception:
+        return None
+
+    def _local(tag):
+        return tag.rsplit("}", 1)[-1]
+
+    def first(name):
+        for el in root.iter():
+            if _local(el.tag) == name:
+                return (el.text or "").strip()
+        return ""
+
+    def under(parent, child):
+        for p in root.iter():
+            if _local(p.tag) == parent:
+                for c in p.iter():
+                    if _local(c.tag) == child:
+                        return (c.text or "").strip()
+        return ""
+
+    serial = first("KHHDon")
+    inv_no = first("SHDon")
+    date_raw = first("NLap")
+    seller = under("NBan", "Ten")
+    seller_mst = under("NBan", "MST")
+    buyer_mst = under("NMua", "MST")
+    lookup = ""
+    for tt in root.iter():
+        if _local(tt.tag) != "TTin":
+            continue
+        lab = val = ""
+        for ch in tt:
+            if _local(ch.tag) == "TTruong":
+                lab = ch.text or ""
+            elif _local(ch.tag) == "DLieu":
+                val = ch.text or ""
+        if "tra c" in lab.lower():
+            lookup = (val or "").strip() or lookup
+    if not (serial or inv_no or seller):
+        return None
+    iso = date_raw[:10] if (len(date_raw) >= 10 and date_raw[4:5] == "-") else ""
+    return {"serial": serial, "invNo": inv_no, "dateISO": iso, "dateRaw": date_raw,
+            "supplier": seller, "taxCode": seller_mst, "buyerMST": buyer_mst,
+            "before": _einv_num(first("TgTCThue")), "vat": _einv_num(first("TgTThue")),
+            "after": _einv_num(first("TgTTTBSo")), "lookupCode": lookup,
+            "docType": first("THDon"), "method": "xml"}
+
+
+def _einv_from_zip(zip_bytes):
+    """Unpack a ZIP e-invoice + parse the XML inside. Guards against zip decompression bombs."""
+    if not zip_bytes or len(zip_bytes) > 8 * 1024 * 1024:
+        return None
+    try:
+        z = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except Exception:
+        return None
+    checked = 0
+    for zi in z.infolist():
+        if not zi.filename.lower().endswith(".xml"):
+            continue
+        if zi.file_size > _EINV_MAX_BYTES:          # skip an over-large (bomb) member
+            continue
+        checked += 1
+        if checked > 20:
+            break
+        try:
+            r = _einv_parse_xml(z.read(zi.filename))
+        except Exception:
+            r = None
+        if r:
+            r["method"] = "zip-xml"
+            return r
+    return None
+
+
+def _einv_parse_text(text):
+    """Best-effort structured fields from OCR/PDF text (Vietnamese invoice labels)."""
+    if not text:
+        return None
+    def grab(rx):
+        m = re.search(rx, text, re.IGNORECASE)
+        return m.group(1).strip() if m else ""
+    def numv(rx):
+        return _einv_num(grab(rx))
+    inv_no = grab(r"(?:Số HĐ|Số hóa đơn|Invoice No\.?)\s*[:.]?\s*([0-9]{1,10})")
+    after = numv(r"(?:Tổng tiền thanh toán|Total payment|Tổng thanh toán)\s*[:.]?\s*([0-9.,]{4,})")
+    if not inv_no and not after:
+        return None
+    return {"invNo": inv_no, "serial": grab(r"(?:Ký hiệu|Serial)\s*[:.]?\s*([0-9A-Z]{5,8})"),
+            "taxCode": grab(r"(?:Mã số thuế|MST)\s*[:.]?\s*([0-9]{10}(?:-[0-9]{3})?)"),
+            "vat": numv(r"(?:Tiền thuế GTGT|Thuế GTGT)\s*[:.]?\s*([0-9.,]{3,})"),
+            "before": numv(r"(?:Cộng tiền hàng|Tiền hàng)\s*[:.]?\s*([0-9.,]{4,})"),
+            "after": after, "method": "ocr"}
+
+
+def _invtrack_ocr_pdf(pdf_bytes):
+    """OCR hook (rec #3): POST the PDF to TK_OCR_ENDPOINT, expect {\"text\": ...}, parse. No-op unless configured."""
+    if not INVTRACK["ocr_url"] or not pdf_bytes or len(pdf_bytes) > 10 * 1024 * 1024:
+        return None
+    try:
+        req = urllib.request.Request(INVTRACK["ocr_url"], data=pdf_bytes, headers={"Content-Type": "application/pdf"})
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            j = json.loads(resp.read().decode("utf-8"))
+        return _einv_parse_text(j.get("text", "") if isinstance(j, dict) else "")
+    except Exception:
+        return None
+
+
+def _graph_app_token():
+    if _GRAPH_APP_TOK["tok"] and _GRAPH_APP_TOK["exp"] > time.time() + 60:
+        return _GRAPH_APP_TOK["tok"]
+    data = urllib.parse.urlencode({
+        "client_id": M365["clientId"], "client_secret": M365["clientSecret"],
+        "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials",
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://login.microsoftonline.com/" + M365["tenantId"] + "/oauth2/v2.0/token",
+        data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        j = json.loads(resp.read().decode("utf-8"))
+    _GRAPH_APP_TOK["tok"] = j["access_token"]
+    _GRAPH_APP_TOK["exp"] = time.time() + int(j.get("expires_in", 3600))
+    return _GRAPH_APP_TOK["tok"]
+
+
+def _graph_get(url, token):
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def _invtrack_item(m, ex):
+    """Build one invtrack item from a Graph message + its parsed e-invoice (ex may be None)."""
+    fa = ((m.get("from") or {}).get("emailAddress") or {})
+    from_addr = (fa.get("address") or "")
+    from_name = fa.get("name") or ""
+    subject = m.get("subject") or ""
+    ex = ex or {}
+    after = ex.get("after", 0)
+    extracted = bool(ex.get("invNo") or ex.get("serial") or after > 0)   # a parsed e-invoice is definitely an invoice
+    s = _vn_fold(subject + " " + from_name + " " + from_addr)
+    invoiceish = extracted or any(k in s for k in ["hoa don", "hddt", "invoice", "einvoice", "e-invoice", "hoadon", "xuat hoa don", "gtgt", "vat"])
+    from_humiley = "@humiley.com" in from_addr.lower()
+    typ = ("Hoá đơn bán ra (Humiley phát hành)" if (from_humiley and invoiceish)
+           else "Hoá đơn mua vào (NCC)" if invoiceish else "Khác / không phải hoá đơn")
+    rd = (m.get("receivedDateTime") or "")[:10]
+    return {"msgId": m.get("internetMessageId") or m.get("id"),
+            "dateISO": ex.get("dateISO") or rd, "dateRaw": ex.get("dateRaw") or rd,
+            "supplier": ex.get("supplier") or from_name or (from_addr.split("@")[0] if from_addr else ""),
+            "invNo": ex.get("invNo", ""), "serial": ex.get("serial", ""), "taxCode": ex.get("taxCode", ""),
+            "before": ex.get("before", 0), "vat": ex.get("vat", 0), "after": after,
+            "desc": subject, "attach": ex.get("_attachName", ""), "type": typ,
+            "sender": from_addr or from_name, "lookup": ex.get("lookupCode", ""),
+            "method": ex.get("method", "email"),
+            "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
+
+
+def _invtrack_audit(trigger, added, needlook, err=""):
+    try:
+        db.put_collection_item("audit", {
+            "ts": _now_iso(), "by": "invtrack-" + trigger, "actor": "invtrack-" + trigger,
+            "action": "Invoice mailbox sync", "target": INVTRACK["mailbox"],
+            "detail": (("ERROR: " + err) if err else (str(added) + " new invoice(s), " + str(needlook) + " need lookup"))})
+    except Exception:
+        pass
+
+
+def _invtrack_sync(trigger="manual"):
+    """Read hd@humiley.com/Inbox app-only, extract, de-dupe, MERGE-upsert. Returns a status dict; never raises."""
+    if not _invtrack_app_ready():
+        return {"ok": False, "error": "not_configured",
+                "message": "App-only Graph is not configured. Set TK_M365_CLIENT_SECRET and grant Mail.Read (application) admin consent, or use the in-browser (delegated) sync."}
+    with _INVTRACK_LOCK:
+        try:
+            token = _graph_app_token()
+        except Exception as e:
+            _invtrack_audit(trigger, 0, 0, err=str(e)[:160])
+            return {"ok": False, "error": "token", "message": str(e)[:200]}
+        mb = INVTRACK["mailbox"]
+        docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        doc0 = docs[0] if docs else {"kind": "invtrack-dataset", "meta": {}, "items": []}
+        seen = set(i.get("msgId") for i in (doc0.get("items") or []) if i.get("msgId"))
+        since = (doc0.get("meta") or {}).get("lastSync", "")
+        base = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(mb)
+        url = base + "/mailFolders/inbox/messages?$select=subject,from,receivedDateTime,hasAttachments,internetMessageId,bodyPreview&$orderby=receivedDateTime%20desc&$top=40"
+        if since:                                     # overlap the watermark so mail-delivery lag isn't skipped (msgId de-dupes)
+            url += "&$filter=receivedDateTime%20ge%20" + _iso_minus(since, 15)
+        cap = 100 if not since else 8                 # first run backfills fully; incremental stays cheap
+        new_items = []
+        needlook = 0
+        newest = since
+        pages = 0
+        try:
+            while url and pages < cap:
+                j = _graph_get(url, token)
+                for m in j.get("value", []):
+                    rd = m.get("receivedDateTime", "")
+                    if rd and (not newest or rd > newest):
+                        newest = rd
+                    mid = m.get("internetMessageId") or m.get("id")
+                    if mid in seen:
+                        continue
+                    seen.add(mid)
+                    ex = None
+                    if m.get("hasAttachments"):
+                        try:
+                            aj = _graph_get(base + "/messages/" + m["id"] + "/attachments?$select=name,contentType,contentBytes", token)
+                            for a in aj.get("value", []):
+                                nm = (a.get("name") or "").lower()
+                                cb = a.get("contentBytes")
+                                if not cb:
+                                    continue
+                                raw = base64.b64decode(cb)
+                                if nm.endswith(".xml"):
+                                    ex = _einv_parse_xml(raw)
+                                elif nm.endswith(".zip"):
+                                    ex = _einv_from_zip(raw)
+                                elif nm.endswith(".pdf") and INVTRACK["ocr_url"]:
+                                    ex = _invtrack_ocr_pdf(raw)
+                                if ex:
+                                    ex["_attachName"] = a.get("name")
+                                    break
+                        except Exception:
+                            pass
+                    item = _invtrack_item(m, ex)
+                    new_items.append(item)
+                    if item.get("needsLookup"):
+                        needlook += 1
+                url = j.get("@odata.nextLink", "")
+                pages += 1
+        except Exception as e:
+            _invtrack_audit(trigger, len(new_items), needlook, err=str(e)[:160])
+            return {"ok": False, "error": "graph", "message": str(e)[:200], "added": len(new_items)}
+        # RE-READ right before write so a concurrent browser import/delegated-sync isn't clobbered (both are additive).
+        fresh = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        fresh.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        cur = fresh[0] if fresh else doc0
+        cur_items = cur.get("items") or []
+        cur_seen = set(i.get("msgId") for i in cur_items if i.get("msgId"))
+        added = 0
+        for it in new_items:
+            if it.get("msgId") and it["msgId"] in cur_seen:
+                continue
+            cur_items.append(it)
+            cur_seen.add(it.get("msgId"))
+            added += 1
+        cur_meta = cur.get("meta") or {}
+        cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),
+                         "lastSync": newest or since, "lastSyncRun": _now_iso(), "lastTrigger": trigger})
+        cur["items"] = cur_items
+        cur["meta"] = cur_meta
+        cur["kind"] = "invtrack-dataset"
+        db.put_collection_item("invtrack", cur)
+        if added:                                      # don't spam the audit trail on empty runs
+            _invtrack_audit(trigger, added, needlook)
+        return {"ok": True, "added": added, "needLookup": needlook, "total": len(cur_items), "lastSync": cur_meta["lastSync"]}
+
+
+def _invtrack_scheduler():
+    """Background thread: sync every INVTRACK['interval'] minutes (24/7, app-only). Never dies on error."""
+    while True:
+        time.sleep(INVTRACK["interval"] * 60)
+        try:
+            if _invtrack_app_ready():
+                _invtrack_sync("scheduler")
+        except Exception:
+            pass
 
 
 # ── Web Push (OS notifications for PWA + web) ──────────────────────────────────
@@ -401,6 +759,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_get(u))
+        if path == "/api/invtrack/status":
+            return self._guard(lambda u: self._invtrack_status(u))
         if path == "/api/esign/pin/all":
             return self._guard(lambda u: self._json({"pins": db.all_pin_statuses()}), manager=True)
         if path.startswith("/api/coll/"):
@@ -415,6 +775,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_demo(body)
         if path == "/api/auth/m365":
             return self._auth_m365(body)
+        if path == "/api/invtrack/sync":
+            return self._guard(lambda u: self._invtrack_sync_ep(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -1520,7 +1882,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots", "pm_execNotes"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots", "pm_execNotes", "invtrack"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -1528,7 +1890,7 @@ class Handler(BaseHTTPRequestHandler):
     # management; recruitment/audit stay manager. Anything not listed AND not in
     # SELF_OWNED / a shared catalog (courses, learningpaths) is open to managers only
     # for staff via the self-owner scoping below.
-    READ_MIN = {"payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
+    READ_MIN = {"invtrack": "management", "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager",
                 # Project financials must not be world-readable to every staff account (the PM app is
@@ -1645,6 +2007,16 @@ class Handler(BaseHTTPRequestHandler):
                     return "Each line amount must be a valid non-negative number."
         return None
 
+    def _invtrack_status(self, u):
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Finance access required.", 403)
+        return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"])})
+
+    def _invtrack_sync_ep(self, u):
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Invoice Tracking is a Finance function \u2014 Approver level or above required.", 403)
+        return self._json(_invtrack_sync("manual"))
+
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -1654,6 +2026,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
         item = dict(body or {})
         # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
         if name in ("claims", "travel", "payments"):
@@ -1702,6 +2076,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
         # Travel/claim/payment write scope: a LEADER (manager) may only edit records they own or that
         # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
         # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
@@ -1871,6 +2247,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Audit-trail entries cannot be deleted.", 403)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
         existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
         if not existing:
             return self._err("Not found.", 404)
@@ -1932,6 +2310,9 @@ def main():
         print("  Database seeded with %d employees." % len(db.list_employees()))
     print("  Open: http://localhost:%d/" % PORT)
     print("=" * 62)
+    if _invtrack_app_ready():
+        threading.Thread(target=_invtrack_scheduler, daemon=True).start()
+        print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
