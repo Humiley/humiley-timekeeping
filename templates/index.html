@@ -8801,6 +8801,7 @@ async function tkRenderInvTrack() {
       '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="btn btn-primary btn-sm" onclick="tkInvGetAllTracks()" title="Read hd@humiley.com and auto-extract new supplier invoices"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>' + _t('Get all tracks') + '</button>' +
         '<button class="btn btn-outline btn-sm" onclick="tkInvImportPick()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>' + _t('Import export file') + '</button>' +
+        '<button class="btn btn-outline btn-sm" onclick="tkInvFillMissing()" title="Fill the amounts of the notification-only invoices in one screen"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' + _t('Fill missing') + '</button>' +
         '<button class="btn btn-outline btn-sm" onclick="tkInvExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Excel</button>' +
         '<button class="btn btn-outline btn-sm" onclick="tkInvExportPDF()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>PDF</button>' +
       '</div></div>' +
@@ -9361,6 +9362,57 @@ function tkInvExportPDF() {
 
 /* ── IMPORT: parse the export .xlsx / .csv, replace the dataset ── */
 function tkInvImportPick() { const el = document.getElementById('inv-import-file'); if (el) el.click(); }
+let _invFillList = [];
+function tkInvFillMissing() {
+  const inv = (typeof _invInvoices === 'function') ? _invInvoices() : (_INV.items || []).filter(i => _invTypeKey(i.type) !== 'other');
+  const blanks = inv.filter(i => !(_invNum(i.after) > 0)).sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+  if (!blanks.length) { toast(_t('Every invoice already has an amount'), 'info', 4000); return; }
+  _invFillList = blanks;
+  const row = (i, n) => {
+    const url = _invLookupUrl(i);
+    return '<tr style="border-top:1px solid var(--border)">' +
+      '<td style="font-size:11px;white-space:nowrap;padding:6px 8px">' + _crmEsc(_invDMY(i.dateISO) || i.dateRaw || '—') + '</td>' +
+      '<td style="padding:6px 8px"><div style="font-weight:600;font-size:11.5px">' + _crmEsc(i.supplier || '—') + '</div><div style="font-size:10px;color:var(--text-light);max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crmEsc((i.invNo ? ('#' + i.invNo + ' · ') : '') + (i.desc || '')) + '</div></td>' +
+      '<td style="padding:6px 8px">' + (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" class="btn btn-outline btn-sm" style="white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light);font-size:10px">' + _t('own / no link') + '</span>') + '</td>' +
+      '<td style="padding:6px 8px"><input id="fillm-before-' + n + '" type="text" placeholder="0" style="width:108px;text-align:right"></td>' +
+      '<td style="padding:6px 8px"><input id="fillm-vat-' + n + '" type="text" placeholder="0" style="width:98px;text-align:right"></td>' +
+      '<td style="padding:6px 8px"><input id="fillm-after-' + n + '" type="text" placeholder="0" style="width:120px;text-align:right;font-weight:700"></td>' +
+      '</tr>';
+  };
+  const wrap = document.createElement('div');
+  wrap.id = 'inv-fill-ov';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,50,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
+  wrap.innerHTML =
+    '<div style="background:#fff;border-radius:14px;max-width:1040px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">' +
+      '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
+        '<div><div style="font-size:16px;font-weight:700;color:var(--navy)">' + _t('Fill missing amounts') + ' · ' + blanks.length + '</div><div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' + _t('Open each portal, read the total, type it here, then Save. Leave a row blank to skip it.') + '</div></div>' +
+        '<button class="btn btn-outline btn-sm" onclick="_invCloseFill()">✕</button>' +
+      '</div>' +
+      '<div style="overflow:auto;flex:1"><table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;font-size:10px;color:var(--text-light);text-transform:uppercase;position:sticky;top:0;background:#fff"><th style="padding:8px">' + _t('Date') + '</th><th style="padding:8px">' + _t('Supplier / invoice') + '</th><th style="padding:8px">' + _t('Portal') + '</th><th style="padding:8px;text-align:right">' + _t('Before tax') + '</th><th style="padding:8px;text-align:right">VAT</th><th style="padding:8px;text-align:right">' + _t('Total') + '</th></tr></thead><tbody>' +
+        blanks.map((i, n) => row(i, n)).join('') +
+      '</tbody></table></div>' +
+      '<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px">' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _t('Tip: the CAPTCHA on each portal has to be passed by you — no tool can. This just makes typing them fast.') + '</div>' +
+        '<div style="display:flex;gap:10px"><button class="btn btn-outline btn-sm" onclick="_invCloseFill()">' + _t('Cancel') + '</button><button class="btn btn-primary btn-sm" onclick="_invSaveAllMissing()">' + _t('Save all filled') + '</button></div>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(wrap);
+}
+function _invCloseFill() { const el = document.getElementById('inv-fill-ov'); if (el) el.parentNode.removeChild(el); }
+async function _invSaveAllMissing() {
+  const gv = id => { const el = document.getElementById(id); return el ? _invNum(el.value) : 0; };
+  const items = [];
+  (_invFillList || []).forEach((i, n) => {
+    const before = gv('fillm-before-' + n), vat = gv('fillm-vat-' + n), after = gv('fillm-after-' + n);
+    if (before || vat || after) items.push({ msgId: i.msgId || '', invNo: i.invNo, taxCode: i.taxCode, dateISO: i.dateISO, serial: i.serial, supplier: i.supplier, desc: i.desc, before: before, vat: vat, after: after });
+  });
+  if (!items.length) { toast(_t('Type at least one amount first'), 'warn', 4000); return; }
+  try {
+    const r = await tkApi('/api/invtrack/import', { method: 'POST', body: { items: items, overwrite: true } });
+    if (r && r.ok) { _invCloseFill(); await _invLoad(true); tkRenderInvTrack(); toast(_t('Saved') + ' · ' + ((r.updated || 0) + (r.added || 0)) + ' ' + _t('invoices'), 'info', 6000); }
+    else toast((r && r.message) || _t('Save failed'), 'warn', 6000);
+  } catch (e) { toast(_t('Save failed') + ': ' + (e.message || ''), 'error', 6000); }
+}
 /* Map an export's header row to invoice fields by fuzzy (diacritic-folded) name — so a GDT,
    MISA or the tracker's own export all parse, regardless of column order. */
 function _invColMap(hdr) {
