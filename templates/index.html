@@ -8741,6 +8741,7 @@ function _invNum(x) { if (x == null || x === '') return 0; const s = String(x).r
 function _invISO(s) { s = String(s == null ? '' : s).trim(); if (!s) return ''; let m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})/); if (m) return m[3] + '-' + m[2].padStart(2, '0') + '-' + m[1].padStart(2, '0'); m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); if (m) return m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0'); return (typeof _isoDay === 'function' ? _isoDay(s) : '') || ''; }
 function _invDMY(iso) { if (!iso) return ''; const p = iso.split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
 function _invTypeKey(t) { t = String(t || ''); if (/mua vào|purchase/i.test(t)) return 'purchase'; if (/bán ra|sales/i.test(t)) return 'sales'; if (/tổng hợp|nội bộ|internal|package/i.test(t)) return 'internal'; return 'other'; }
+function _invLookupUrl(i) { var m = String((i && i.lookup) || '').match(/https?:\/\/[^\s"'<>]+/); return m ? m[0] : ''; }
 function _invMonthKey(iso) { return iso ? iso.slice(0, 7) : ''; }
 function _invMonthLabel(k) { if (!k) return '—'; const p = k.split('-'); return 'Tháng ' + p[1] + '/' + p[0]; }
 function _invQuarterKey(iso) { if (!iso) return ''; const q = Math.floor((+iso.slice(5, 7) - 1) / 3) + 1; return 'Q' + q + ' ' + iso.slice(0, 4); }
@@ -8937,9 +8938,9 @@ function _invRegRows(list) {
       '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.before) ? _invMoney(i.before) : '—') + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
-      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : '<span style="color:#E5A54B">' + _t('lookup') + '</span>') + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' \u2014 ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' \u2197</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:240px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.desc || '') + '">' + esc(i.desc) + '</div></td>' +
-      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>') + '</td>' +
+      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' \u2197</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td>' +
       '</tr>';
   });
@@ -9224,12 +9225,50 @@ function _invReconcile() {
 function tkInvExportXLS() {
   if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
   const inv = _invApply(_invInvoices()), oth = _invApply(_invOthers());
-  const H = ['STT', 'Ngày', 'Nhà cung cấp / Người bán', 'Số hoá đơn', 'Ký hiệu', 'MST người bán', 'Tiền hàng (trước thuế)', 'Thuế GTGT (VAT)', 'Tổng thanh toán (sau thuế)', 'Diễn giải / Tiêu đề', 'File đính kèm', 'Loại', 'Email người gửi', 'Tra cứu'];
-  const row = (i, n) => ({ 'STT': n, 'Ngày': _invDMY(i.dateISO) || i.dateRaw, 'Nhà cung cấp / Người bán': i.supplier, 'Số hoá đơn': i.invNo, 'Ký hiệu': i.serial, 'MST người bán': i.taxCode, 'Tiền hàng (trước thuế)': _invNum(i.before) || '', 'Thuế GTGT (VAT)': _invNum(i.vat) || '', 'Tổng thanh toán (sau thuế)': _invNum(i.after) || '', 'Diễn giải / Tiêu đề': i.desc, 'File đính kèm': i.attach, 'Loại': _INV_TYPE_VN[_invTypeKey(i.type)], 'Email người gửi': i.sender, 'Tra cứu': i.lookup });
+  const meta = (typeof _INV !== 'undefined' && _INV && _INV.meta) || {};
+  const HDR = ['STT', 'Ngày\n(dd/mm/yyyy)', 'Nhà cung cấp / Người bán', 'Số hoá đơn', 'Ký hiệu', 'MST người bán', 'Tiền hàng\n(trước thuế)', 'Thuế GTGT\n(VAT)', 'Tổng thanh toán\n(sau thuế)', 'Diễn giải / Tiêu đề email', 'File đính kèm', 'Loại', 'Email người gửi', 'Tra cứu\n(Cổng · Mã)'];
+  const COLS = [{ wch: 5 }, { wch: 12 }, { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 14 }, { wch: 13 }, { wch: 12 }, { wch: 16 }, { wch: 42 }, { wch: 22 }, { wch: 24 }, { wch: 26 }, { wch: 32 }];
+  const fileCell = i => i.attach ? i.attach : (_invLookupUrl(i) ? _invLookupUrl(i) : 'Không có tệp');
+  const cells = (i, n) => [n, _invDMY(i.dateISO) || i.dateRaw || '', i.supplier || '', i.invNo || '', i.serial || '', i.taxCode || '', _invNum(i.before) || '', _invNum(i.vat) || '', _invNum(i.after) || '', i.desc || '', fileCell(i), _INV_TYPE_VN[_invTypeKey(i.type)], i.sender || '', i.lookup || ''];
+  const buildSheet = (list, title, sub, noun) => {
+    const rows = list.slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
+    const aoa = [[], [], [title], [sub], HDR];
+    let curM = ' ', n = 0;
+    rows.forEach(i => {
+      const mk = _invMonthKey(i.dateISO);
+      if (mk !== curM) {
+        curM = mk;
+        const mi = rows.filter(x => _invMonthKey(x.dateISO) === mk);
+        const amt = mi.reduce((s, x) => s + _invNum(x.after), 0);
+        aoa.push(['  ' + _invMonthLabel(mk) + '    ·    ' + mi.length + ' ' + noun + '    ·    ' + (amt ? '₫' + Math.round(amt).toLocaleString('en-US') : '—')]);
+      }
+      aoa.push(cells(i, ++n));
+    });
+    if (!rows.length) aoa.push(['(không có dữ liệu)']);
+    const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!cols'] = COLS; return ws;
+  };
+  const totAfter = inv.reduce((s, x) => s + _invNum(x.after), 0);
+  const cnt = k => inv.filter(x => _invTypeKey(x.type) === k).length;
+  const needlk = inv.filter(x => !(_invNum(x.after) > 0)).length;
+  const dts = inv.concat(oth).map(x => x.dateISO).filter(Boolean).sort();
+  const period = meta.period || (dts.length ? (_invDMY(dts[0]) + '  –  ' + _invDMY(dts[dts.length - 1])) : '—');
+  const ov = [[], [], ['SỔ THEO DÕI HOÁ ĐƠN'], ['Invoice Tracking Register'], [],
+    ['Đơn vị / Company', meta.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)'],
+    ['Hòm thư / Mailbox', (meta.mailbox || 'hd@humiley.com') + '  —  thư mục Inbox'],
+    ['Kỳ dữ liệu / Period', period],
+    ['Đồng bộ lần cuối / Last sync', meta.lastSyncRun ? new Date(meta.lastSyncRun).toLocaleString('en-GB') : '—'],
+    ['Xuất lúc / Exported', new Date().toLocaleString('en-GB')], [],
+    ['Tổng số hoá đơn / Invoices', inv.length],
+    ['— Hoá đơn mua vào / Purchase', cnt('purchase')],
+    ['— Hoá đơn bán ra / Sales', cnt('sales')],
+    ['Email khác / Other emails', oth.length],
+    ['Tổng thanh toán sau thuế / Total after tax (VND)', totAfter],
+    ['Cần tra cứu cổng / Need portal lookup', needlk]];
+  const wsov = XLSX.utils.aoa_to_sheet(ov); wsov['!cols'] = [{ wch: 44 }, { wch: 46 }];
   const wb = XLSX.utils.book_new();
-  const inv2 = inv.slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inv2.map((i, n) => row(i, n + 1)), { header: H }), 'So HD theo thang');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(oth.map((i, n) => row(i, n + 1)), { header: H }), 'Email khac');
+  XLSX.utils.book_append_sheet(wb, wsov, 'Tổng quan');
+  XLSX.utils.book_append_sheet(wb, buildSheet(inv, 'SỔ HOÁ ĐƠN THEO THÁNG  —  ' + (meta.mailbox || 'hd@humiley.com'), 'Trước thuế · VAT · Sau thuế (VND)', 'hoá đơn'), 'Sổ HĐ theo tháng');
+  XLSX.utils.book_append_sheet(wb, buildSheet(oth, 'EMAIL KHÁC (KHÔNG PHẢI HOÁ ĐƠN)', 'Email khuyến mãi, thông báo, khác', 'email'), 'Email khác');
   XLSX.writeFile(wb, 'HML-Invoice-Tracker-hd-humiley_' + new Date().toISOString().slice(0, 10) + '.xlsx');
   toast(_t('Excel exported') + ' · ' + inv.length + ' ' + _t('invoices'));
 }

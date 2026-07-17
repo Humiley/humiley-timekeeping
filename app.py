@@ -372,29 +372,69 @@ def _graph_get(url, token):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _invtrack_body_fields(html):
+    """Best-effort pull from a VN e-invoice NOTIFICATION email body (no attachment): the tra-cứu
+       lookup URL + code, invoice no / seller MST, and the total when clearly labelled. Identifiers
+       (digits) are read from the diacritic-folded text; the code keeps its original case."""
+    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "after": 0}
+    if not html:
+        return out
+    raw = re.sub(r"<[^>]+>", " ", html)
+    raw = re.sub(r"\s+", " ", raw)
+    low = _vn_fold(raw)
+    mu = re.search(r"https?://[^\s\"'<>]*(?:tra-?cuu|tracuu|lookup|hoadon|einvoice|e-invoice|xuathoadon|minvoice|meinvoice|vnpt-invoice|viettel|misa|fpt|easyinvoice|softdreams)[^\s\"'<>]*", raw, re.I)
+    if mu:
+        out["url"] = mu.group(0).rstrip('.,);:"\'')
+    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
+    if mc:
+        out["code"] = mc.group(1)
+    mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|invoice\s*(?:no|number|#))\s*[:\-]?\s*(\d{1,10})", low)
+    if mi:
+        out["invNo"] = mi.group(1)
+    mt = re.search(r"(?:ma so thue|mst|tax\s*code)\s*[:\-]?\s*(\d{10}(?:-\d{3})?)", low)
+    if mt:
+        out["taxCode"] = mt.group(1)
+    ma = re.search(r"(?:tong (?:tien )?thanh toan|tong cong (?:tien )?thanh toan|total payment|grand total)\s*[:\-]?\s*([0-9][0-9.,]{3,})", low)
+    if ma:
+        n = _einv_num(ma.group(1))
+        if 1000 <= n < 1e12:
+            out["after"] = n
+    return out
+
+
 def _invtrack_item(m, ex):
-    """Build one invtrack item from a Graph message + its parsed e-invoice (ex may be None)."""
+    """Build one invtrack item from a Graph message + its parsed e-invoice (ex may be None).
+       When there is no attachment, fall back to fields parsed from the notification body so the
+       invoice is still reachable (lookup URL/code) and identified (invoice no / MST)."""
     fa = ((m.get("from") or {}).get("emailAddress") or {})
     from_addr = (fa.get("address") or "")
     from_name = fa.get("name") or ""
     subject = m.get("subject") or ""
     ex = ex or {}
-    after = ex.get("after", 0)
-    extracted = bool(ex.get("invNo") or ex.get("serial") or after > 0)   # a parsed e-invoice is definitely an invoice
+    bf = _invtrack_body_fields(((m.get("body") or {}).get("content") or "") or (m.get("bodyPreview") or ""))
+    after = ex.get("after", 0) or bf.get("after", 0)
+    inv_no = ex.get("invNo", "") or bf.get("invNo", "")
+    serial = ex.get("serial", "")
+    tax = ex.get("taxCode", "") or bf.get("taxCode", "")
+    code = ex.get("lookupCode", "") or bf.get("code", "")
+    url = bf.get("url", "")
+    lookup = ((code or "") + ("  " + url if url else "")).strip()
+    extracted = bool(inv_no or serial or after > 0)
     s = _vn_fold(subject + " " + from_name + " " + from_addr)
-    invoiceish = extracted or any(k in s for k in ["hoa don", "hddt", "invoice", "einvoice", "e-invoice", "hoadon", "xuat hoa don", "gtgt", "vat"])
+    invoiceish = extracted or bool(url or code) or any(k in s for k in ["hoa don", "hddt", "invoice", "einvoice", "e-invoice", "hoadon", "xuat hoa don", "gtgt", "vat"])
     from_humiley = "@humiley.com" in from_addr.lower()
     typ = ("Hoá đơn bán ra (Humiley phát hành)" if (from_humiley and invoiceish)
            else "Hoá đơn mua vào (NCC)" if invoiceish else "Khác / không phải hoá đơn")
     rd = (m.get("receivedDateTime") or "")[:10]
+    method = ex.get("method") or ("attachment" if ex.get("_attachName") else ("link" if url else "email"))
     return {"msgId": m.get("internetMessageId") or m.get("id"),
             "dateISO": ex.get("dateISO") or rd, "dateRaw": ex.get("dateRaw") or rd,
             "supplier": ex.get("supplier") or from_name or (from_addr.split("@")[0] if from_addr else ""),
-            "invNo": ex.get("invNo", ""), "serial": ex.get("serial", ""), "taxCode": ex.get("taxCode", ""),
+            "invNo": inv_no, "serial": serial, "taxCode": tax,
             "before": ex.get("before", 0), "vat": ex.get("vat", 0), "after": after,
             "desc": subject, "attach": ex.get("_attachName", ""), "type": typ,
-            "sender": from_addr or from_name, "lookup": ex.get("lookupCode", ""),
-            "method": ex.get("method", "email"),
+            "sender": from_addr or from_name, "lookup": lookup,
+            "method": method,
             "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
 
 
@@ -426,7 +466,7 @@ def _invtrack_sync(trigger="manual"):
         seen = set(i.get("msgId") for i in (doc0.get("items") or []) if i.get("msgId"))
         since = (doc0.get("meta") or {}).get("lastSync", "")
         base = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(mb)
-        url = base + "/mailFolders/inbox/messages?$select=subject,from,receivedDateTime,hasAttachments,internetMessageId,bodyPreview&$orderby=receivedDateTime%20desc&$top=40"
+        url = base + "/mailFolders/inbox/messages?$select=subject,from,receivedDateTime,hasAttachments,internetMessageId,bodyPreview,body&$orderby=receivedDateTime%20desc&$top=40"
         if since:                                     # overlap the watermark so mail-delivery lag isn't skipped (msgId de-dupes)
             url += "&$filter=receivedDateTime%20ge%20" + _iso_minus(since, 15)
         cap = 100 if not since else 8                 # first run backfills fully; incremental stays cheap
