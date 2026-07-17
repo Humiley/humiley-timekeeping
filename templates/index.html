@@ -9171,12 +9171,26 @@ function _invAutoSyncStop() { if (_invAutoTimer) { clearInterval(_invAutoTimer);
 /* "Get all tracks": prefer the SERVER-SIDE app-only sync (24/7, works even when the signed-in
    user has no mailbox access); fall back to the in-browser (delegated) sync if it isn't configured. */
 async function tkInvGetAllTracks() {
-  _invSetSyncStatus(_t('Syncing from') + ' hd@humiley.com\u2026');
+  _invSetSyncStatus(_t('Syncing from') + ' hd@humiley.com…');
   let r = null;
   try { r = await tkApi('/api/invtrack/sync', { method: 'POST', body: {} }); }
-  catch (e) { _invSetSyncStatus(''); return tkInvSyncMailbox(); }
-  if (r && r.ok) { _invSetSyncStatus(''); toast(_t('Mailbox sync complete') + ' \u2014 ' + r.added + ' ' + _t('new') + (r.needLookup ? ' \u00b7 ' + r.needLookup + ' ' + _t('need a portal lookup') : ''), 'info', 8000); tkRenderInvTrack(); return; }
-  if (r && r.error === 'not_configured') { _invSetSyncStatus(''); return tkInvSyncMailbox(); }
+  catch (e) { _invSetSyncStatus(''); toast((e && e.message) ? (_t('Sync failed') + ': ' + e.message) : _t('Sync failed'), 'error', 12000); return; }
+  if (r && r.ok) { _invSetSyncStatus(''); toast(_t('Mailbox sync complete') + ' — ' + r.added + ' ' + _t('new') + (r.needLookup ? ' · ' + r.needLookup + ' ' + _t('need a portal lookup') : ''), 'info', 8000); tkRenderInvTrack(); return; }
+  if (r && r.error === 'not_configured') {
+    const m = _t('Automatic mailbox sync is OFF on the server: it has not loaded the Microsoft secret. On the server, set TK_M365_CLIENT_SECRET in .env and run ./deploy.sh to restart.');
+    _invSetSyncStatus(m); toast(m, 'warn', 15000);
+    if (_msalApp && _account) { toast(_t('Trying in-browser Microsoft sign-in instead…'), 'info', 6000); return tkInvSyncMailbox(); }
+    return;
+  }
+  if (r && (r.error === 'token' || r.error === 'graph')) {
+    const raw = r.message || _t('Microsoft rejected the request.');
+    const hint = /invalid_client|AADSTS700|unauthorized_client|invalid_grant/i.test(raw) ? _t(' → the client SECRET is wrong or expired. Re-copy the secret VALUE (not the Secret ID) into .env and run ./deploy.sh.')
+               : /\b403\b|RequestDenied|Access.?Denied|Forbidden/i.test(raw) ? _t(' → grant the Graph Mail.Read APPLICATION admin consent in Azure, then run ./deploy.sh to refresh the connection.')
+               : '';
+    const m = _t('Microsoft error') + ': ' + raw + hint;
+    _invSetSyncStatus(m); toast(m, 'error', 16000);
+    return;
+  }
   _invSetSyncStatus(''); toast((r && r.message) || _t('Sync failed'), 'warn', 9000);
 }
 /* Reconcile tracked supplier invoices against internal Payments + flag duplicates (rec #5). */
