@@ -2901,15 +2901,24 @@ function tkVerifySelectedZone(force) {
   const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, acc); };
   /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
   const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked</strong> — you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.'; _tkSetCheckinAllowed('unverified'); };
-  const _giveup = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + 'Could not get a GPS fix — you can still check in (recorded as GPS-unverified), or move near a window and press “Re-check”.'; _tkSetCheckinAllowed('unverified'); };
-  // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied)
-  const _slow = () => { if (_geoDone) return; try { navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _giveup(); }, { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }); } catch (e) { _giveup(); } };
+  const _giveup = (e) => { if (_geoDone) return; _geoDone = true;
+    var unavailable = e && e.code === 2;   // POSITION_UNAVAILABLE: the OS/device can\u2019t determine a location at all (usually the OS location setting is OFF, e.g. a desktop with no GPS)
+    if (status) status.innerHTML = _alert + (unavailable
+      ? '<strong>Your device can\u2019t determine its location.</strong> Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).'
+      : 'Could not get a GPS fix in time \u2014 move near a window and press \u201CRe-check\u201D, or check in now (recorded as GPS-unverified).');
+    _tkSetCheckinAllowed('unverified'); };
+  // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied).
+  // Give the high-accuracy pass a real 15s (Wi-Fi/GPS triangulation is slow on first fix) before giving up.
+  const _slow = () => { if (_geoDone) return; try { navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _giveup(e); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); } catch (e) { _giveup(e); } };
   let _sharpened = false;
   _sharpen = () => { if (_sharpened) return; _sharpened = true; _geoDone = false; setTimeout(_slow, 50); };   // one high-accuracy retry after a too-coarse fix
-  // Fast network / Wi-Fi fix first — usually ~1s, and well within an office geofence radius
-  navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 });
-  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating…'; }, 3000);
-  setTimeout(_giveup, 12000);
+  // Never make the user WAIT on a slow/absent fix: allow check-in immediately (GPS-unverified); a
+  // confident fix arriving later upgrades it to verified (or blocks if it proves you are far away).
+  if (_tkGpsState !== 'in' && _tkGpsState !== 'out') _tkSetCheckinAllowed('unverified');
+  // Fast network / Wi-Fi fix first \u2014 usually ~1s, and well within an office geofence radius
+  navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
+  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating\u2026 you can check in now \u2014 it\u2019ll be recorded as GPS-unverified.'; }, 3000);
+  setTimeout(() => _giveup({ code: 3 }), 24000);   // global backstop \u2014 treat as a timeout (fast 8s + slow 15s + margin)
 }
 
 /* Persist with a self-heal retry: if the backend session died overnight, silently re-login via
