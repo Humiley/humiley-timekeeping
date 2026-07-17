@@ -9872,7 +9872,7 @@ async function tkRenderProcurementEmbed(force) {
     frame.setAttribute('data-loaded', '1');
     try { clearTimeout(window._procMainTimer); } catch (e) {}
     var ok = false;
-    try { ok = !(frame.contentWindow.document && frame.contentWindow.document.getElementById('view-dashboard')); } catch (e) { ok = true; }  // #view-dashboard exists ONLY in the portal SPA => that's the fallback, not Procurement
+    try { ok = !!(frame.contentWindow.document && frame.contentWindow.document.getElementById('__next')); } catch (e) { ok = true; }  // #__next = the Procurement Next.js app (present on EVERY proc page); the portal SPA never has it. cross-origin => reveal
     if (ok) { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; }
     else { _procEmbedUnreachable(msg, frame, target, 'tkRenderProcurementEmbed(true)'); }
   };
@@ -10116,7 +10116,7 @@ async function _tkProcAdminLoad(force) {
     frame.setAttribute('data-loaded', '1');
     try { clearTimeout(window._procAdminTimer); } catch (e) {}
     var ok = false;
-    try { ok = !(frame.contentWindow.document && frame.contentWindow.document.getElementById('view-dashboard')); } catch (e) { ok = true; }  // #view-dashboard exists ONLY in the portal SPA => that's the fallback, not Procurement
+    try { ok = !!(frame.contentWindow.document && frame.contentWindow.document.getElementById('__next')); } catch (e) { ok = true; }  // #__next = the Procurement Next.js app (present on EVERY proc page); the portal SPA never has it. cross-origin => reveal
     if (ok) { if (msg) msg.style.display = 'none'; frame.style.display = 'block'; }
     else { _procEmbedUnreachable(msg, frame, target, '_procAdminReload()'); }
   };
