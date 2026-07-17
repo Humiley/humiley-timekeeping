@@ -347,8 +347,20 @@ def _graph_app_token():
     req = urllib.request.Request(
         "https://login.microsoftonline.com/" + M365["tenantId"] + "/oauth2/v2.0/token",
         data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        j = json.loads(resp.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            j = json.loads(resp.read().decode("utf-8"))
+    except Exception as he:                        # surface Azure's real reason (e.g. AADSTS7000215 invalid secret)
+        body = ""
+        try: body = he.read().decode("utf-8", "replace")
+        except Exception: pass
+        if body:
+            try:
+                ej = json.loads(body); det = ej.get("error_description") or ej.get("error") or body[:200]
+            except Exception:
+                det = body[:200]
+            raise Exception("Sign-in to Microsoft failed (%s): %s" % (getattr(he, "code", "?"), str(det).split("\n")[0][:200]))
+        raise
     _GRAPH_APP_TOK["tok"] = j["access_token"]
     _GRAPH_APP_TOK["exp"] = time.time() + int(j.get("expires_in", 3600))
     return _GRAPH_APP_TOK["tok"]
