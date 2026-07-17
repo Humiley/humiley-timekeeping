@@ -337,6 +337,33 @@ def _invtrack_ocr_pdf(pdf_bytes):
         return None
 
 
+def _einv_from_pdf(pdf_bytes):
+    """Extract a VN e-invoice from a PDF attachment's TEXT layer (no OCR). Most VN e-invoice PDFs are
+       generated (not scanned), so pypdf reads the amounts / tax-code / invoice-no directly. Returns
+       the same dict shape as _einv_parse_xml, or None (e.g. an image-only PDF -> caller tries OCR)."""
+    if not pdf_bytes or len(pdf_bytes) > 12 * 1024 * 1024:
+        return None
+    try:
+        import pypdf
+        rd = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        pages = list(rd.pages)[:30]                    # bound work on untrusted input
+        text = "\n".join((p.extract_text() or "") for p in pages)
+    except Exception:
+        return None
+    if not text or len(text) < 20:
+        return None
+    bf = _invtrack_body_fields(text)                   # amounts + invNo + seller MST + lookup (diacritic-folded)
+    serial = ""
+    ms = re.search(r"K[\u00fdy]\s*hi[\u1ec7e]u\s*(?:\([^)]*\))?\s*[:\-]?\s*([0-9A-Z]{3,14})", text, re.I)
+    if ms:
+        serial = ms.group(1).upper()
+    if not (bf.get("after") or bf.get("invNo") or serial):
+        return None
+    return {"invNo": bf.get("invNo", ""), "serial": serial, "taxCode": bf.get("taxCode", ""),
+            "before": bf.get("before", 0), "vat": bf.get("vat", 0), "after": bf.get("after", 0),
+            "supplier": "", "dateISO": "", "dateRaw": "", "lookupCode": bf.get("code", ""), "_method": "pdf"}
+
+
 def _graph_app_token():
     if _GRAPH_APP_TOK["tok"] and _GRAPH_APP_TOK["exp"] > time.time() + 60:
         return _GRAPH_APP_TOK["tok"]
@@ -390,7 +417,7 @@ def _invtrack_body_fields(html):
     mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
     if mc:
         out["code"] = mc.group(1)
-    mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|so hd|invoice\s*(?:no|number|#))\s*[:\-]?\s*(\d{1,10})", low)
+    mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|so hd|so\s*\(no\.?\)?|invoice\s*(?:no|number|#))\s*[:\-]?\s*0*(\d{1,10})", low)
     if mi:
         out["invNo"] = mi.group(1)
     for g in re.findall(r"(?:ma so thue|mst|tax\s*code)[^0-9]{0,15}(\d{10}(?:-\d{3})?)", low):   # skip Humiley's own (buyer) MST
@@ -494,6 +521,33 @@ def _invtrack_sync(trigger="manual"):
         newest = stored_since
         pages = 0
         try:
+            def _fetch_ex(msg):                        # fetch + parse the first parseable attachment (XML / ZIP / PDF text-layer)
+                if not msg.get("hasAttachments"):
+                    return None
+                try:
+                    aj = _graph_get(base + "/messages/" + msg["id"] + "/attachments?$select=name,contentType,contentBytes", token)
+                    for a in aj.get("value", []):
+                        nm = (a.get("name") or "").lower()
+                        ct = (a.get("contentType") or "").lower()
+                        cb = a.get("contentBytes")
+                        if not cb:
+                            continue
+                        raw = base64.b64decode(cb)
+                        ex = None
+                        if nm.endswith(".xml") or "xml" in ct:
+                            ex = _einv_parse_xml(raw)
+                        elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
+                            ex = _einv_from_zip(raw)
+                        elif nm.endswith(".pdf") or "pdf" in ct:
+                            ex = _einv_from_pdf(raw)                        # text-layer PDF (no OCR needed)
+                            if not ex and INVTRACK["ocr_url"]:
+                                ex = _invtrack_ocr_pdf(raw)                 # image-only PDF fallback
+                        if ex:
+                            ex["_attachName"] = a.get("name")
+                            return ex
+                except Exception:
+                    pass
+                return None
             while url and pages < cap:
                 j = _graph_get(url, token)
                 for m in j.get("value", []):
@@ -501,32 +555,14 @@ def _invtrack_sync(trigger="manual"):
                     if rd and (not newest or rd > newest):
                         newest = rd
                     mid = m.get("internetMessageId") or m.get("id")
-                    if mid in cur_by_id0:             # already stored: cheap body re-extract to backfill lookup/amounts (no attachment re-fetch)
-                        enrich[mid] = _invtrack_item(m, None)
+                    stored = cur_by_id0.get(mid)
+                    if stored is not None:             # already stored -> enrich. A MANUAL re-scan also re-parses the
+                        ex = None                      # attachment to backfill a missing amount (e.g. a PDF invoice);
+                        if trigger == "manual" and not (float(stored.get("after") or 0) > 0):
+                            ex = _fetch_ex(m)           # the scheduler stays cheap (body-only) to avoid per-message cost
+                        enrich[mid] = _invtrack_item(m, ex)
                         continue
-                    ex = None
-                    if m.get("hasAttachments"):
-                        try:
-                            aj = _graph_get(base + "/messages/" + m["id"] + "/attachments?$select=name,contentType,contentBytes", token)
-                            for a in aj.get("value", []):
-                                nm = (a.get("name") or "").lower()
-                                ct = (a.get("contentType") or "").lower()
-                                cb = a.get("contentBytes")
-                                if not cb:
-                                    continue
-                                raw = base64.b64decode(cb)
-                                if nm.endswith(".xml") or "xml" in ct:
-                                    ex = _einv_parse_xml(raw)
-                                elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
-                                    ex = _einv_from_zip(raw)
-                                elif (nm.endswith(".pdf") or "pdf" in ct) and INVTRACK["ocr_url"]:
-                                    ex = _invtrack_ocr_pdf(raw)
-                                if ex:
-                                    ex["_attachName"] = a.get("name")
-                                    break
-                        except Exception:
-                            pass
-                    item = _invtrack_item(m, ex)
+                    item = _invtrack_item(m, _fetch_ex(m))
                     new_items.append(item)
                     if item.get("needsLookup"):
                         needlook += 1
@@ -565,7 +601,7 @@ def _invtrack_sync(trigger="manual"):
             ch = False
             if not ex_item.get("lookup") and bfi.get("lookup"):
                 ex_item["lookup"] = bfi["lookup"]; ch = True
-            for f in ("invNo", "serial", "taxCode"):
+            for f in ("invNo", "serial", "taxCode", "attach", "supplier"):
                 if not ex_item.get(f) and bfi.get(f):
                     ex_item[f] = bfi[f]; ch = True
             if not (float(ex_item.get("after") or 0) > 0) and (float(bfi.get("after") or 0) > 0):
