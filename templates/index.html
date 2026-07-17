@@ -8920,31 +8920,85 @@ function _invFilterBar() {
     '<button class="btn btn-outline btn-sm" onclick="_invLF.month=\'\';_invLF.quarter=\'\';_invLF.from=\'\';_invLF.to=\'\';_invLF.type=\'\';_invLF.q=\'\';_invRerenderTab()">' + _t('Clear') + '</button>' +
     '</div>';
 }
+let _invRegList = [];
 function _invRegRows(list) {
   list = list.slice().sort((a, b) => (b.dateISO || '').localeCompare(a.dateISO || ''));
-  let html = '', curM = ' ';
+  _invRegList = list;
+  let html = '', curM = ' ';
   const esc = v => _crmEsc(v == null || v === '' ? '—' : String(v));
-  list.forEach(i => {
+  list.forEach((i, _n) => {
     const mk = _invMonthKey(i.dateISO);
     if (mk !== curM) { curM = mk; const mi = list.filter(x => _invMonthKey(x.dateISO) === mk); const amt = mi.reduce((s, x) => s + _invNum(x.after), 0); html += '<tr style="background:var(--soft-bg)"><td colspan="10" style="font-weight:700;font-size:11.5px;color:var(--navy);padding:7px 10px">' + _invMonthLabel(mk) + '  ·  ' + mi.length + ' ' + _t('invoices') + '  ·  ' + _invMoney(amt) + '</td></tr>'; }
     const tk = _invTypeKey(i.type);
     let badge = '<span class="badge" style="font-size:9.5px;background:' + _INV_TYPE_COLOR[tk] + '22;color:' + _INV_TYPE_COLOR[tk] + '">' + _INV_TYPE_LABEL[tk] + '</span>';
-    if (i._payMatch) badge += ' <span class="badge" style="font-size:9px;background:#00B06022;color:#00B060" title="Matched to a payment request">\u2192 ' + _crmEsc(i._payMatch) + '</span>';
+    if (i._payMatch) badge += ' <span class="badge" style="font-size:9px;background:#00B06022;color:#00B060" title="Matched to a payment request">→ ' + _crmEsc(i._payMatch) + '</span>';
     if (i._dup) badge += ' <span class="badge" style="font-size:9px;background:#E5484D22;color:#E5484D" title="Same invoice no + tax code appears more than once">DUP</span>';
-    html += '<tr>' +
+    html += '<tr onclick="_invToggleDetail(this,' + _n + ',event)" style="cursor:pointer" title="' + _t('Click for full details / fill amount') + '">' +
       '<td style="white-space:nowrap;font-size:11.5px">' + esc(_invDMY(i.dateISO) || i.dateRaw) + '</td>' +
       '<td><div style="font-weight:600;font-size:12px">' + esc(i.supplier) + '</div><div style="font-size:10.5px;color:var(--text-light)">' + badge + (i.taxCode ? '  ·  MST ' + esc(i.taxCode) : '') + '</div></td>' +
       '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.invNo) + '</td>' +
       '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.before) ? _invMoney(i.before) : '—') + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
-      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' \u2014 ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' \u2197</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' — ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' ↗</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:240px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.desc || '') + '">' + esc(i.desc) + '</div></td>' +
-      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' \u2197</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
+      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td>' +
       '</tr>';
   });
   return html;
+}
+function _invToggleDetail(rowEl, idx, ev) {
+  if (ev && ev.target && ev.target.closest && ev.target.closest('a,input,button,select,textarea')) return;
+  const nxt = rowEl.nextElementSibling;
+  const wasOpen = nxt && nxt.classList && nxt.classList.contains('inv-detailrow');
+  document.querySelectorAll('tr.inv-detailrow').forEach(e => e.parentNode.removeChild(e));
+  if (wasOpen) return;
+  const i = _invRegList[idx]; if (!i) return;
+  const tr = document.createElement('tr'); tr.className = 'inv-detailrow';
+  const td = document.createElement('td'); td.colSpan = 10; td.style.padding = '0';
+  td.innerHTML = _invDetailHTML(i, idx); tr.appendChild(td);
+  rowEl.parentNode.insertBefore(tr, rowEl.nextElementSibling);
+}
+function _invDetailHTML(i, idx) {
+  const esc = v => _crmEsc(v == null || v === '' ? '—' : String(v));
+  const tk = _invTypeKey(i.type); const url = _invLookupUrl(i);
+  const fld = (lbl, val) => '<div style="min-width:150px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px">' + lbl + '</div><div style="font-size:12.5px;font-weight:600;word-break:break-word">' + val + '</div></div>';
+  let recon = '';
+  if (i._payMatch) recon += '<span class="badge" style="background:#00B06022;color:#00B060">→ ' + _crmEsc(i._payMatch) + '</span> ';
+  if (i._dup) recon += '<span class="badge" style="background:#E5484D22;color:#E5484D">DUP</span> ';
+  const fileHtml = i.attach ? ('📎 ' + esc(i.attach)) : (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" style="color:#00B060;text-decoration:underline">' + _t('Open supplier portal') + ' ↗</a>' : _t('No file'));
+  const iv = n => (_invNum(n) ? Math.round(_invNum(n)) : '');
+  return '<div style="background:var(--soft-bg);border-left:3px solid ' + _INV_TYPE_COLOR[tk] + ';padding:14px 16px">' +
+    '<div style="display:flex;flex-wrap:wrap;gap:16px 26px;align-items:flex-start">' +
+      fld(_t('Supplier / Seller'), esc(i.supplier)) + fld(_t('Seller tax code (MST)'), esc(i.taxCode)) +
+      fld(_t('Invoice no'), esc(i.invNo)) + fld(_t('Serial'), esc(i.serial)) +
+      fld(_t('Invoice date'), esc(_invDMY(i.dateISO) || i.dateRaw)) + fld(_t('Type'), _INV_TYPE_LABEL[tk]) +
+      fld(_t('Sender email'), esc(i.sender)) + fld(_t('File / lookup'), fileHtml + (i.lookup && !i.attach ? '<div style="font-size:10.5px;color:var(--text-light);word-break:break-all">' + esc(i.lookup) + '</div>' : '')) +
+      (recon ? fld(_t('Reconciliation'), recon) : '') +
+    '</div>' +
+    '<div style="margin-top:12px;font-size:12px"><b>' + _t('Description') + ':</b> ' + esc(i.desc) + '</div>' +
+    '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;border-top:1px solid var(--border);padding-top:12px">' +
+      '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Before tax') + '</div><input id="invedit-before-' + idx + '" type="text" value="' + iv(i.before) + '" placeholder="0" style="width:130px;text-align:right"></div>' +
+      '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('VAT') + '</div><input id="invedit-vat-' + idx + '" type="text" value="' + iv(i.vat) + '" placeholder="0" style="width:120px;text-align:right"></div>' +
+      '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Total (after tax)') + '</div><input id="invedit-after-' + idx + '" type="text" value="' + iv(i.after) + '" placeholder="0" style="width:150px;text-align:right;font-weight:700"></div>' +
+      '<button class="btn btn-primary btn-sm" onclick="_invSaveAmount(' + idx + ')">' + _t('Save amount') + '</button>' +
+      (url ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(url) + '" target="_blank" rel="noopener">' + _t('Open portal to read amount') + ' ↗</a>' : '') +
+    '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:6px">' + _t('Open the portal, read the total, type it here and Save — it sticks and updates every total, chart and export.') + '</div>' +
+  '</div>';
+}
+async function _invSaveAmount(idx) {
+  const i = _invRegList[idx]; if (!i) return;
+  const gv = id => { const el = document.getElementById(id + idx); return el ? _invNum(el.value) : 0; };
+  const before = gv('invedit-before-'), vat = gv('invedit-vat-'), after = gv('invedit-after-');
+  if (!(before || vat || after)) { toast(_t('Enter an amount first'), 'warn', 4000); return; }
+  const item = { msgId: i.msgId || '', invNo: i.invNo, taxCode: i.taxCode, dateISO: i.dateISO, serial: i.serial, supplier: i.supplier, before: before, vat: vat, after: after };
+  try {
+    const r = await tkApi('/api/invtrack/import', { method: 'POST', body: { items: [item], overwrite: true } });
+    if (r && r.ok) { await _invLoad(true); tkRenderInvTrack(); toast(_t('Saved') + ' — ' + (i.invNo || i.supplier || ''), 'info', 4000); }
+    else toast((r && r.message) || _t('Save failed'), 'warn', 6000);
+  } catch (e) { toast(_t('Save failed') + ': ' + (e.message || ''), 'error', 6000); }
 }
 function _invRenderRegister(keepFocus) {
   const pane = document.getElementById('inv-pane'); if (!pane) return;

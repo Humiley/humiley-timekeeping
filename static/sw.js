@@ -3,7 +3,7 @@
    paints instantly — the single biggest "app feels slow to open on 4G" fix — while the network
    copy refreshes the cache in the background; the in-app appVersion check reloads to a new
    deploy within seconds of focus); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v38';
+const CACHE = 'hml-pwa-v39';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

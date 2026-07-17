@@ -715,13 +715,17 @@ def _invtrack_import(body):
        + date), add rows we have never seen, and NEVER overwrite good data or drop mailbox-synced rows.
        Runs under the same lock + re-read as the sync, so it can't clobber a concurrent sync."""
     rows = (body or {}).get("items")
+    ow = bool((body or {}).get("overwrite"))           # manual inline edit = authoritative; bulk import = fill-blank only
     if not isinstance(rows, list):
         return {"ok": False, "error": "bad_input", "message": "No rows to import."}
-    def _keys(x):                                  # match on invoice-no + seller-MST OR invoice-no + date
+    def _keys(x):                                  # match on msgId, else invoice-no + seller-MST OR invoice-no + date
+        ks = []
+        mid = str(x.get("msgId") or "").strip()
+        if mid:
+            ks.append(("m", mid))
         inv = str(x.get("invNo") or "").strip()
         tax = str(x.get("taxCode") or "").split("-")[0].strip()
         d = str(x.get("dateISO") or "").strip()
-        ks = []
         if inv and tax:
             ks.append(("it", inv, tax))
         if inv and d:
@@ -754,8 +758,9 @@ def _invtrack_import(body):
             if ex:
                 ch = False
                 for f in ("before", "vat", "after"):
-                    if not (_num(ex.get(f)) > 0) and _num(r.get(f)) > 0:
-                        ex[f] = _num(r.get(f)); ch = True
+                    rv = _num(r.get(f))
+                    if rv > 0 and (ow or not (_num(ex.get(f)) > 0)):
+                        ex[f] = rv; ch = True
                 for f in ("invNo", "serial", "taxCode", "supplier"):
                     if not ex.get(f) and r.get(f):
                         ex[f] = r.get(f); ch = True
