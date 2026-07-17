@@ -463,16 +463,18 @@ def _invtrack_sync(trigger="manual"):
         docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
         docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
         doc0 = docs[0] if docs else {"kind": "invtrack-dataset", "meta": {}, "items": []}
-        seen = set(i.get("msgId") for i in (doc0.get("items") or []) if i.get("msgId"))
-        since = (doc0.get("meta") or {}).get("lastSync", "")
+        cur_by_id0 = {i.get("msgId"): i for i in (doc0.get("items") or []) if i.get("msgId")}
+        stored_since = (doc0.get("meta") or {}).get("lastSync", "")
+        since = "" if trigger == "manual" else stored_since   # manual "Get all tracks" = full re-scan to backfill existing rows
         base = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(mb)
         url = base + "/mailFolders/inbox/messages?$select=subject,from,receivedDateTime,hasAttachments,internetMessageId,bodyPreview,body&$orderby=receivedDateTime%20desc&$top=40"
         if since:                                     # overlap the watermark so mail-delivery lag isn't skipped (msgId de-dupes)
             url += "&$filter=receivedDateTime%20ge%20" + _iso_minus(since, 15)
-        cap = 100 if not since else 8                 # first run backfills fully; incremental stays cheap
+        cap = 100 if not since else 8                 # first run / manual re-scan backfills fully; scheduler stays cheap
         new_items = []
+        enrich = {}                                   # msgId -> body-extracted item, to backfill already-stored rows
         needlook = 0
-        newest = since
+        newest = stored_since
         pages = 0
         try:
             while url and pages < cap:
@@ -482,9 +484,9 @@ def _invtrack_sync(trigger="manual"):
                     if rd and (not newest or rd > newest):
                         newest = rd
                     mid = m.get("internetMessageId") or m.get("id")
-                    if mid in seen:
+                    if mid in cur_by_id0:             # already stored: cheap body re-extract to backfill lookup/amounts (no attachment re-fetch)
+                        enrich[mid] = _invtrack_item(m, None)
                         continue
-                    seen.add(mid)
                     ex = None
                     if m.get("hasAttachments"):
                         try:
@@ -520,24 +522,41 @@ def _invtrack_sync(trigger="manual"):
         fresh.sort(key=lambda d: len(d.get("items") or []), reverse=True)
         cur = fresh[0] if fresh else doc0
         cur_items = cur.get("items") or []
-        cur_seen = set(i.get("msgId") for i in cur_items if i.get("msgId"))
+        cur_by_id = {i.get("msgId"): i for i in cur_items if i.get("msgId")}
         added = 0
         for it in new_items:
-            if it.get("msgId") and it["msgId"] in cur_seen:
+            if it.get("msgId") and it["msgId"] in cur_by_id:
                 continue
             cur_items.append(it)
-            cur_seen.add(it.get("msgId"))
+            cur_by_id[it.get("msgId")] = it
             added += 1
+        enriched = 0                                   # backfill already-stored rows with newly-extractable fields (never overwrite good data)
+        for mid, bfi in enrich.items():
+            ex_item = cur_by_id.get(mid)
+            if not ex_item:
+                continue
+            ch = False
+            if not ex_item.get("lookup") and bfi.get("lookup"):
+                ex_item["lookup"] = bfi["lookup"]; ch = True
+            for f in ("invNo", "serial", "taxCode"):
+                if not ex_item.get(f) and bfi.get(f):
+                    ex_item[f] = bfi[f]; ch = True
+            if not (float(ex_item.get("after") or 0) > 0) and (float(bfi.get("after") or 0) > 0):
+                ex_item["after"] = bfi["after"]; ex_item["needsLookup"] = False; ch = True
+            if bfi.get("method") == "link" and (ex_item.get("method") in (None, "", "email")):
+                ex_item["method"] = "link"; ch = True
+            if ch:
+                enriched += 1
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),
-                         "lastSync": newest or since, "lastSyncRun": _now_iso(), "lastTrigger": trigger})
+                         "lastSync": newest or stored_since, "lastSyncRun": _now_iso(), "lastTrigger": trigger})
         cur["items"] = cur_items
         cur["meta"] = cur_meta
         cur["kind"] = "invtrack-dataset"
         db.put_collection_item("invtrack", cur)
-        if added:                                      # don't spam the audit trail on empty runs
+        if added or enriched:                          # don't spam the audit trail on empty runs
             _invtrack_audit(trigger, added, needlook)
-        return {"ok": True, "added": added, "needLookup": needlook, "total": len(cur_items), "lastSync": cur_meta["lastSync"]}
+        return {"ok": True, "added": added, "enriched": enriched, "needLookup": needlook, "total": len(cur_items), "lastSync": cur_meta["lastSync"]}
 
 
 def _invtrack_scheduler():
