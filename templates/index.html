@@ -9163,9 +9163,11 @@ function _invSetSyncStatus(t) { const el = document.getElementById('inv-sync-sta
 
 /* ── 10-minute auto-sync (silent) while the portal is open ── */
 function _invAutoSyncStart() {
-  if (_invAutoTimer) return;
-  if (!_msalApp || !_account) return;   // only when signed in to M365
-  _invAutoTimer = setInterval(function () { try { if (!document.hidden) tkInvSyncMailbox({ silent: true }); } catch (e) {} }, 10 * 60 * 1000);
+  // The server-side app-only sync now runs 24/7 (scheduler every TK_INVTRACK_INTERVAL_MIN). The old
+  // in-browser delegated timer did a lock-free whole-doc PATCH, which could clobber a server write
+  // that landed during its attachment/OCR window (lost-update). It's disabled to keep ONE writer.
+  // "Get all tracks" (server-first, delegated fallback) remains the manual path.
+  return;
 }
 function _invAutoSyncStop() { if (_invAutoTimer) { clearInterval(_invAutoTimer); _invAutoTimer = null; } }
 

@@ -265,7 +265,7 @@ def _einv_parse_xml(xml_bytes):
                 lab = ch.text or ""
             elif _local(ch.tag) == "DLieu":
                 val = ch.text or ""
-        if "tra c" in lab.lower():
+        if "tra cuu" in _vn_fold(lab):
             lookup = (val or "").strip() or lookup
     if not (serial or inv_no or seller):
         return None
@@ -374,31 +374,46 @@ def _graph_get(url, token):
 
 def _invtrack_body_fields(html):
     """Best-effort pull from a VN e-invoice NOTIFICATION email body (no attachment): the tra-cứu
-       lookup URL + code, invoice no / seller MST, and the total when clearly labelled. Identifiers
-       (digits) are read from the diacritic-folded text; the code keeps its original case."""
-    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "after": 0}
+       lookup URL + code, invoice no / seller MST, and amounts (before/VAT/after) when clearly
+       labelled. Identifiers (digits) are read from the diacritic-folded text; the code keeps its case."""
+    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "before": 0, "vat": 0, "after": 0}
     if not html:
         return out
+    href_urls = re.findall(r'''(?:href|src)\s*=\s*["']?(https?://[^\s"'<>]+)''', html, re.I)   # links live in the href, not visible text
     raw = re.sub(r"<[^>]+>", " ", html)
     raw = re.sub(r"\s+", " ", raw)
     low = _vn_fold(raw)
-    mu = re.search(r"https?://[^\s\"'<>]*(?:tra-?cuu|tracuu|lookup|hoadon|einvoice|e-invoice|xuathoadon|minvoice|meinvoice|vnpt-invoice|viettel|misa|fpt|easyinvoice|softdreams)[^\s\"'<>]*", raw, re.I)
-    if mu:
-        out["url"] = mu.group(0).rstrip('.,);:"\'')
-    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
+    hosts = r"tra-?cuu|tracuu|lookup|hoadon|einvoice|e-invoice|xuathoadon|minvoice|meinvoice|vnpt-invoice|viettel|misa|fpt|easyinvoice|softdreams|bkav|hilo|wininvoice|ehoadon"
+    for cand in list(href_urls) + re.findall(r"https?://[^\s\"'<>]+", raw):
+        if re.search(hosts, cand, re.I):
+            out["url"] = cand.rstrip('.,);:"\''); break
+    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
     if mc:
         out["code"] = mc.group(1)
-    mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|invoice\s*(?:no|number|#))\s*[:\-]?\s*(\d{1,10})", low)
+    mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|so hd|invoice\s*(?:no|number|#))\s*[:\-]?\s*(\d{1,10})", low)
     if mi:
         out["invNo"] = mi.group(1)
-    mt = re.search(r"(?:ma so thue|mst|tax\s*code)\s*[:\-]?\s*(\d{10}(?:-\d{3})?)", low)
-    if mt:
-        out["taxCode"] = mt.group(1)
-    ma = re.search(r"(?:tong (?:tien )?thanh toan|tong cong (?:tien )?thanh toan|total payment|grand total)\s*[:\-]?\s*([0-9][0-9.,]{3,})", low)
-    if ma:
-        n = _einv_num(ma.group(1))
-        if 1000 <= n < 1e12:
-            out["after"] = n
+    for g in re.findall(r"(?:ma so thue|mst|tax\s*code)[^0-9]{0,15}(\d{10}(?:-\d{3})?)", low):   # skip Humiley's own (buyer) MST
+        if g.split("-")[0] != "0318835868":
+            out["taxCode"] = g
+            break
+
+    def _amt(labels):
+        m = re.search(r"(?:" + labels + r")\s*(?:\([^)]*\))?\s*[:\-]?\s*(?:vnd|vnđ|đ|d)?\s*([0-9][0-9.,]{3,})(?!\s*%)", low)
+        if m:
+            n = _einv_num(m.group(1))
+            if 1000 <= n < 1e12:
+                return n
+        return 0
+    aft = _amt(r"tong (?:tien )?thanh toan|tong cong (?:tien )?thanh toan|tong cong thanh toan|so tien (?:can )?thanh toan|cong tien thanh toan|tong thanh toan|total payment|grand total|amount due|total amount")
+    bef = _amt(r"cong tien hang|tong tien truoc thue|tien hang truoc thue|tien truoc thue|thanh tien truoc thue|tong tien chua thue")
+    vt = _amt(r"tong tien thue gtgt|tien thue gtgt|tong tien thue|tien thue gtgt|thue gtgt")
+    if not aft and bef and vt:
+        aft = bef + vt
+    if aft:                                    # only trust before/VAT when a real total anchors the summary
+        out["after"] = aft
+        out["before"] = bef
+        out["vat"] = vt
     return out
 
 
@@ -416,6 +431,8 @@ def _invtrack_item(m, ex):
     inv_no = ex.get("invNo", "") or bf.get("invNo", "")
     serial = ex.get("serial", "")
     tax = ex.get("taxCode", "") or bf.get("taxCode", "")
+    before = ex.get("before", 0) or bf.get("before", 0)
+    vat = ex.get("vat", 0) or bf.get("vat", 0)
     code = ex.get("lookupCode", "") or bf.get("code", "")
     url = bf.get("url", "")
     lookup = ((code or "") + ("  " + url if url else "")).strip()
@@ -431,7 +448,7 @@ def _invtrack_item(m, ex):
             "dateISO": ex.get("dateISO") or rd, "dateRaw": ex.get("dateRaw") or rd,
             "supplier": ex.get("supplier") or from_name or (from_addr.split("@")[0] if from_addr else ""),
             "invNo": inv_no, "serial": serial, "taxCode": tax,
-            "before": ex.get("before", 0), "vat": ex.get("vat", 0), "after": after,
+            "before": before, "vat": vat, "after": after,
             "desc": subject, "attach": ex.get("_attachName", ""), "type": typ,
             "sender": from_addr or from_name, "lookup": lookup,
             "method": method,
@@ -493,15 +510,16 @@ def _invtrack_sync(trigger="manual"):
                             aj = _graph_get(base + "/messages/" + m["id"] + "/attachments?$select=name,contentType,contentBytes", token)
                             for a in aj.get("value", []):
                                 nm = (a.get("name") or "").lower()
+                                ct = (a.get("contentType") or "").lower()
                                 cb = a.get("contentBytes")
                                 if not cb:
                                     continue
                                 raw = base64.b64decode(cb)
-                                if nm.endswith(".xml"):
+                                if nm.endswith(".xml") or "xml" in ct:
                                     ex = _einv_parse_xml(raw)
-                                elif nm.endswith(".zip"):
+                                elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
                                     ex = _einv_from_zip(raw)
-                                elif nm.endswith(".pdf") and INVTRACK["ocr_url"]:
+                                elif (nm.endswith(".pdf") or "pdf" in ct) and INVTRACK["ocr_url"]:
                                     ex = _invtrack_ocr_pdf(raw)
                                 if ex:
                                     ex["_attachName"] = a.get("name")
@@ -523,12 +541,21 @@ def _invtrack_sync(trigger="manual"):
         cur = fresh[0] if fresh else doc0
         cur_items = cur.get("items") or []
         cur_by_id = {i.get("msgId"): i for i in cur_items if i.get("msgId")}
+        def _ckey(x):                                  # content identity for rows lacking a msgId (e.g. Excel-imported)
+            inv = x.get("invNo") or ""
+            tax = (x.get("taxCode") or "").split("-")[0]
+            return (inv, tax, x.get("dateISO") or "") if (inv and tax) else None   # invNo+seller-MST is unique per seller; avoids false-dedup
+        seen_ckey = set(filter(None, (_ckey(i) for i in cur_items)))
         added = 0
         for it in new_items:
-            if it.get("msgId") and it["msgId"] in cur_by_id:
-                continue
+            ck = _ckey(it)
+            if (it.get("msgId") and it["msgId"] in cur_by_id) or (ck is not None and ck in seen_ckey):
+                continue                               # dedupe by msgId AND by content (prevents import+sync double-count)
             cur_items.append(it)
-            cur_by_id[it.get("msgId")] = it
+            if it.get("msgId"):
+                cur_by_id[it["msgId"]] = it
+            if ck is not None:
+                seen_ckey.add(ck)
             added += 1
         enriched = 0                                   # backfill already-stored rows with newly-extractable fields (never overwrite good data)
         for mid, bfi in enrich.items():
@@ -543,13 +570,17 @@ def _invtrack_sync(trigger="manual"):
                     ex_item[f] = bfi[f]; ch = True
             if not (float(ex_item.get("after") or 0) > 0) and (float(bfi.get("after") or 0) > 0):
                 ex_item["after"] = bfi["after"]; ex_item["needsLookup"] = False; ch = True
+            for f in ("before", "vat"):
+                if not (float(ex_item.get(f) or 0) > 0) and (float(bfi.get(f) or 0) > 0):
+                    ex_item[f] = bfi[f]; ch = True
             if bfi.get("method") == "link" and (ex_item.get("method") in (None, "", "email")):
                 ex_item["method"] = "link"; ch = True
             if ch:
                 enriched += 1
+        needlook = sum(1 for it in cur_items if it.get("needsLookup"))   # report ALL outstanding, not only newly-added
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),
-                         "lastSync": newest or stored_since, "lastSyncRun": _now_iso(), "lastTrigger": trigger})
+                         "lastSync": (newest or stored_since) if not url else stored_since, "lastSyncRun": _now_iso(), "lastTrigger": trigger})
         cur["items"] = cur_items
         cur["meta"] = cur_meta
         cur["kind"] = "invtrack-dataset"
