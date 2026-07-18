@@ -33,6 +33,26 @@ def test_record_error_captures_and_strips_query(monkeypatch):
     assert last["email"] == "u@humiley.com"
 
 
+def test_audit_is_append_only(api, tokens):
+    # a stored audit event must never be editable (21 CFR Part 11 append-only)
+    st, r = api("POST", "/api/coll/audit", tokens["staff"],
+                {"actor": "x", "action": "Test event", "target": "t/1", "detail": "d"})
+    assert st == 200, r
+    aid = r["item"]["id"]
+    st, _ = api("PATCH", "/api/coll/audit/" + aid, tokens["admin"],
+                {"actor": "x", "action": "TAMPERED", "target": "t/1", "detail": "d"})
+    assert st == 403, "audit rows must not be updatable"
+
+
+def test_money_validation_rejects_nan(api, tokens):
+    # NaN/inf must be refused (they bypass the numeric bounds and corrupt the collection JSON)
+    st, _ = api("POST", "/api/coll/payments", tokens["staff"],
+                {"reqNo": "PR-NAN", "payee": "X", "category": "Office",
+                 "amount": float("inf"), "status": "Submitted",
+                 "attachment": "data:application/pdf;base64,JVBERi0="})
+    assert st == 400, "an infinite amount must be rejected"
+
+
 def _boom():
     raise RuntimeError("kaboom")
 

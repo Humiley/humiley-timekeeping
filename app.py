@@ -1820,7 +1820,10 @@ class Handler(BaseHTTPRequestHandler):
             if _err:
                 return self._err(_err, 403)
             row = db.append_leave_signature(int(iid), sig, new_status=(set_status or None))
-            if (set_status or "").lower() == "approved":
+            # Only decrement on a GENUINE transition into 'approved' — `lv` holds the PRE-signature
+            # status, so if it was already approved (e.g. via the one-click email link) skip, else the
+            # balance would be double-counted for one leave.
+            if (set_status or "").lower() == "approved" and (lv.get("status") or "").lower() != "approved":
                 self._leave_apply_balance(lv)   # actually decrement annual/sick balance on approval
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
                 "action": "E-signature — " + meaning, "target": "leave/" + str(iid),
@@ -2729,6 +2732,10 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        # The audit trail is APPEND-ONLY (21 CFR Part 11). _coll_delete already blocks deletion; block
+        # updates here too so a stored audit event can never be edited/rewritten via the generic store.
+        if name == "audit":
+            return self._err("The audit trail is append-only and cannot be modified.", 403)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
