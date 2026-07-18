@@ -31,6 +31,10 @@ services:
       - TK_INVTRACK_MAILBOX=${TK_INVTRACK_MAILBOX:-hd@humiley.com}
       - TK_INVTRACK_INTERVAL_MIN=${TK_INVTRACK_INTERVAL_MIN:-10}
       - TK_OCR_ENDPOINT=${TK_OCR_ENDPOINT:-}
+      # Optional ops alerting: a Teams/Slack incoming-webhook URL. When set, unhandled server errors
+      # fire a one-line alert (fire-and-forget). Empty = errors are still logged + reviewable at
+      # /api/admin/errors (admin only), just no push alert. Uptime monitors should probe /api/health.
+      - TK_ALERT_WEBHOOK=${TK_ALERT_WEBHOOK:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:

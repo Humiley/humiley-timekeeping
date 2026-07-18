@@ -24,6 +24,9 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import io
+import sys
+import collections
+import traceback
 import zipfile
 import xml.etree.ElementTree as ET
 import unicodedata
@@ -131,6 +134,57 @@ def _app_version():
         return str(int(os.path.getmtime(os.path.join(TEMPLATE_DIR, "index.html"))))
     except OSError:
         return "0"
+
+
+# --- lightweight error tracking + alerting (no external service required) --------------------
+# The app previously had no structured error capture: an unhandled exception in a request just
+# printed a stack trace to stderr and reset the connection. This keeps a bounded ring buffer of
+# recent errors (reviewable by an admin at /api/admin/errors), writes one structured JSON line per
+# error to stderr (so `docker logs` / any log shipper can pick them up), and — if TK_ALERT_WEBHOOK
+# is set — fires a Teams/Slack-compatible alert. Health is exposed at /api/health for uptime probes.
+_STARTED_AT = time.time()
+_ERR_LOG = collections.deque(maxlen=200)   # newest last; bounded so it can never grow unboundedly
+
+
+def _alert_webhook(text):
+    """Fire-and-forget alert to a Teams/Slack-style incoming webhook (never blocks the response)."""
+    url = os.environ.get("TK_ALERT_WEBHOOK")
+    if not url:
+        return
+
+    def _post():
+        try:
+            data = json.dumps({"text": text}).encode("utf-8")
+            req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=6).read()
+        except Exception:
+            pass   # alerting must never itself raise
+
+    try:
+        threading.Thread(target=_post, daemon=True).start()
+    except Exception:
+        pass
+
+
+def _record_error(method, path, exc, email=None):
+    """Capture one unhandled request error: ring buffer + structured stderr line + optional alert."""
+    entry = {
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "method": method,
+        "path": (path or "?").split("?")[0],   # drop the query string (may carry tokens/PII)
+        "error": type(exc).__name__,
+        "message": str(exc)[:400],
+        "email": email,
+        "trace": traceback.format_exc()[-4000:],
+    }
+    _ERR_LOG.append(entry)
+    try:
+        line = {k: v for k, v in entry.items() if k != "trace"}
+        sys.stderr.write("PORTAL_ERROR " + json.dumps(line) + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+    _alert_webhook("🚨 Portal error: %s %s → %s: %s" % (entry["method"], entry["path"], entry["error"], entry["message"]))
 
 
 def graph_me(access_token):
@@ -1156,9 +1210,52 @@ class Handler(BaseHTTPRequestHandler):
         print("%s - %s" % (self.address_string(), fmt % args))
 
     # -- routing ------------------------------------------------------------
-    def do_GET(self):
+    # do_* are thin wrappers so ANY unhandled exception in routing is captured (ring buffer +
+    # structured log + optional webhook alert) and turned into a clean 500 instead of a reset
+    # connection. The real routing lives in _do_get/_do_post/_do_patch/_do_delete.
+    def do_GET(self):    self._serve_request("GET", self._do_get)
+    def do_POST(self):   self._serve_request("POST", self._do_post)
+    def do_PATCH(self):  self._serve_request("PATCH", self._do_patch)
+    def do_DELETE(self): self._serve_request("DELETE", self._do_delete)
+
+    def _serve_request(self, method, fn):
+        try:
+            return fn()
+        except (BrokenPipeError, ConnectionResetError):
+            return   # client hung up mid-response — not an application error
+        except Exception as e:
+            email = None
+            try:
+                u = self._user()
+                email = u.get("email") if u else None
+            except Exception:
+                pass
+            try:
+                _record_error(method, getattr(self, "path", "?"), e, email)
+            except Exception:
+                pass
+            try:
+                self._err("Something went wrong. The team has been notified.", 500)
+            except Exception:
+                pass   # headers may already be on the wire; nothing more we can do
+
+    def _do_get(self):
         p = urlparse(self.path)
         path, qs = p.path, parse_qs(p.query)
+
+        # Public health probe for uptime monitors (UptimeRobot/Pingdom/etc.) — no auth, cheap DB ping.
+        if path == "/api/health":
+            db_ok = True
+            try:
+                c = db.get_conn(); c.execute("SELECT 1").fetchone(); c.close()
+            except Exception:
+                db_ok = False
+            return self._json({"status": "ok" if db_ok else "degraded", "db": db_ok,
+                               "version": _app_version(), "uptime_s": int(time.time() - _STARTED_AT),
+                               "time": datetime.utcnow().isoformat() + "Z"},
+                              200 if db_ok else 503)
+        if path == "/api/admin/errors":   # admin-only review of recent unhandled errors
+            return self._guard(lambda u: self._admin_errors(u))
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
@@ -1219,7 +1316,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._coll_list(u, name))
         return self._err("Not found.", 404)
 
-    def do_POST(self):
+    def _do_post(self):
         path = urlparse(self.path).path
         body = self._body()
         if path == "/api/auth/demo":
@@ -1258,7 +1355,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._coll_add(u, name, body), manager=(name not in self.STAFF_WRITE))
         return self._err("Not found.", 404)
 
-    def do_PATCH(self):
+    def _do_patch(self):
         path = urlparse(self.path).path
         body = self._body()
         if path == "/api/me":
@@ -1280,7 +1377,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._zone_update(zid, body), manager=True)
         return self._err("Not found.", 404)
 
-    def do_DELETE(self):
+    def _do_delete(self):
         path = urlparse(self.path).path
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
@@ -2502,6 +2599,18 @@ class Handler(BaseHTTPRequestHandler):
                 if it.get("amount") not in (None, "") and (n is None or n < 0 or n > self._MONEY_MAX):
                     return "Each line amount must be a valid non-negative number."
         return None
+
+    def _admin_errors(self, u):
+        """Recent unhandled server errors — admin only (traces can contain sensitive request detail)."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        return self._json({
+            "count": len(_ERR_LOG),
+            "uptime_s": int(time.time() - _STARTED_AT),
+            "version": _app_version(),
+            "alerting": bool(os.environ.get("TK_ALERT_WEBHOOK")),
+            "errors": list(_ERR_LOG)[-100:],   # newest last
+        })
 
     def _invtrack_status(self, u):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):

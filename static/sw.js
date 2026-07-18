@@ -1,9 +1,11 @@
 /* Humiley Portal service worker — installability + fast repeat loads + offline shell.
-   Strategy: never cache /api/ (live data); HTML is STALE-WHILE-REVALIDATE (the cached shell
-   paints instantly — the single biggest "app feels slow to open on 4G" fix — while the network
-   copy refreshes the cache in the background; the in-app appVersion check reloads to a new
-   deploy within seconds of focus); static assets + CDN libs are cache-first. */
-const CACHE = 'hml-pwa-v62';
+   Strategy: never cache /api/ (live data); HTML is NETWORK-FIRST WITH A TIMEOUT — a fresh deploy is
+   served immediately when the network responds in time (fixes the recurring "stale code after deploy"
+   where the old shell painted first and only the SECOND open was current), and the cached shell is the
+   fallback when the network is offline OR slower than the timeout (keeps the "fast to open on 4G"
+   behaviour + offline use). Every successful load refreshes the cached shell, so the fallback is always
+   the last-known-good version; static assets + CDN libs stay cache-first. */
+const CACHE = 'hml-pwa-v63';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -36,18 +38,27 @@ self.addEventListener('fetch', e => {
   // touch anything under /procurement — let it go straight to the network (Caddy routes it to the app).
   if (url.origin === self.location.origin && (url.pathname === '/procurement' || url.pathname.startsWith('/procurement/'))) return;
 
-  if (req.mode === 'navigate') {                          // HTML: stale-while-revalidate
-    e.respondWith(
-      caches.match('/').then(cached => {
-        const net = fetch(req).then(r => {
-          // Only cache a HEALTHY same-origin shell — a deploy-window 502 or a captive-portal page
-          // must never become the offline fallback ("blank/stuck app when coming back on mobile").
-          if (r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); }
-          return r;
-        }).catch(() => cached);
-        return cached || net;                             // cached shell paints instantly; network refreshes for next open
-      })
-    );
+  if (req.mode === 'navigate') {                          // HTML: network-first with a timeout fallback
+    e.respondWith((async () => {
+      // Always kick off the network fetch AND always let it refresh the cache on success — even if the
+      // race below returns the cached shell first, this keeps the offline fallback current. Only a
+      // HEALTHY same-origin shell is cached: a deploy-window 502 or a captive-portal page must never
+      // become the offline fallback ("blank/stuck app when coming back on mobile").
+      const netP = fetch(req).then(r => {
+        if (r && r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); }
+        return r;
+      });
+      try {
+        // Fresh shell if the network answers within the budget (a 304 revalidation is tiny, so this
+        // wins on any healthy connection); otherwise fall through to the cached shell.
+        return await Promise.race([
+          netP,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('sw-nav-timeout')), 2500)),
+        ]);
+      } catch (_) {
+        return (await caches.match('/')) || netP;         // slow/offline -> last-known-good shell
+      }
+    })());
     return;
   }
 
