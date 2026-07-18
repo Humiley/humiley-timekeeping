@@ -775,6 +775,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3 3-1.5-1.5"/></svg></span>
     <span class="nav-label">Access &amp; Permissions</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="admin" onclick="showView('audit',this,'Audit Log')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 15l2 2 4-4"/></svg></span>
+    <span class="nav-label">Audit Log</span>
+  </div>
   <div class="nav-item" data-roles="manager" onclick="showView('schedules',this,'Work Schedules')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></span>
     <span class="nav-label">Work Schedules</span>
@@ -1255,6 +1259,8 @@ window.addEventListener('orientationchange', _setLoginBg);
 </div>
 
 <div id="view-invtrack" class="view"></div>
+
+<div id="view-audit" class="view"><div id="audit-root"></div></div>
 
 <!-- Quick-add modal (recruitment / onboarding / goals / courses) -->
 <div class="modal-overlay" id="quickAddModal">
@@ -5949,6 +5955,75 @@ function devFillTable() {
     return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
 }
+/* ===== Audit Log (admin) — immutable security & workflow event trail =====
+   Reads the append-only `audit` collection (check-ins/out, OT decisions, e-signatures, deletions,
+   access-level changes, invoice syncs) into a searchable/filterable table with an Excel export.
+   Every rendered value is _crmEsc()'d — audit rows carry user-controlled text (names, details). */
+async function tkRenderAudit() {
+  const root = document.getElementById('audit-root'); if (!root) return;
+  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">' + _t('Loading…') + '</div>';
+  await tkLoadColl('audit');
+  const rows = _HR.audit || [];
+  root.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+      '<div style="font-size:13px;color:var(--text-light);max-width:62ch">' + _t('An immutable record of security & workflow events — check-ins/out, approvals, e-signatures, deletions and access-level changes.') + '</div>' +
+      '<button class="btn btn-outline btn-sm" onclick="tkExportAuditXlsx()">' + tkIcon('download') + _t('Export Excel') + '</button>' +
+    '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">' + _t('Audit Log') + '</div><div id="aud-count" style="font-size:12px;color:var(--text-light)"></div></div>' +
+    '<div style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+      _crmFiltSearch('aud-q', _t('Search actor / action / target / detail…'), 'audFillTable') +
+      _crmFiltSel('aud-action', 'All actions', _crmDistinct(rows, 'action'), 'audFillTable') +
+      _crmFiltSel('aud-actor', 'All actors', _crmDistinct(rows, 'actor'), 'audFillTable') +
+      _crmFiltPeriod('aud-period-f', 'audFillTable') + '</div>' +
+    '<div class="table-wrap"><table style="min-width:820px"><thead><tr><th>' + _t('When') + '</th><th>' + _t('Actor') + '</th><th>' + _t('Action') + '</th><th>' + _t('Target') + '</th><th>' + _t('Details') + '</th></tr></thead><tbody id="aud-tbody"></tbody></table></div>' +
+    '</div>';
+  audFillTable();
+}
+function _audFiltered() {
+  const q = (_crmLF['aud-q'] || '').toLowerCase();
+  const act = _crmLF['aud-action'] || '', who = _crmLF['aud-actor'] || '';
+  return (_HR.audit || []).filter(x => {
+    const hay = ((x.actor || '') + ' ' + (x.action || '') + ' ' + (x.target || '') + ' ' + (x.detail || '')).toLowerCase();
+    return (!q || hay.includes(q)) && (!act || (x.action || '') === act) && (!who || (x.actor || '') === who) && _inPeriodLF(x.ts, 'aud-period-f');
+  }).sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));   // newest first
+}
+function _audTs(ts) {
+  if (!ts) return '—';
+  try { const d = new Date(ts); if (isNaN(d.getTime())) return _crmEsc(ts); return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  catch (e) { return _crmEsc(ts); }
+}
+function _audBadge(a) {
+  const low = (a || '').toLowerCase(); let bg = '#64748b';
+  if (/e-signature|sign/.test(low)) bg = '#205090';
+  else if (/delete|remov/.test(low)) bg = '#C00000';
+  else if (/check-in|check-out|overtime|attendance/.test(low)) bg = '#00B060';
+  else if (/level|access|permission|role/.test(low)) bg = '#E0912A';
+  else if (/sync|invoice|import/.test(low)) bg = '#8B5CF6';
+  return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:' + bg + ';color:#fff;font-size:10px;font-weight:600;white-space:nowrap">' + _crmEsc(a || '—') + '</span>';
+}
+function audFillTable() {
+  const tb = document.getElementById('aud-tbody'); if (!tb) return;
+  const list = _audFiltered(); const all = (_HR.audit || []).length;
+  const cnt = document.getElementById('aud-count'); if (cnt) cnt.textContent = list.length + ' / ' + all + ' ' + _t('events');
+  tb.innerHTML = list.length ? list.map(x =>
+    '<tr><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + _audTs(x.ts) + '</td>' +
+    '<td style="font-weight:600">' + _crmEsc(x.actor || '—') + '</td>' +
+    '<td>' + _audBadge(x.action) + '</td>' +
+    '<td style="font-size:12px;color:var(--text-light);font-family:var(--mono,ui-monospace,monospace)">' + _crmEsc(x.target || '') + '</td>' +
+    '<td style="font-size:12px">' + _crmEsc(x.detail || '') + '</td></tr>'
+  ).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);padding:16px">' + (all ? _t('No events match your filters.') : _t('No audit events recorded yet.')) + '</td></tr>';
+}
+function tkExportAuditXlsx() {
+  if (typeof XLSX === 'undefined') { toast(_t('Export library is still loading — try again in a moment.'), 'warn'); return; }
+  const list = _audFiltered();
+  const aoa = [[_t('When'), _t('Actor'), _t('Action'), _t('Target'), _t('Details')]].concat(
+    list.map(x => [x.ts || '', x.actor || '', x.action || '', x.target || '', x.detail || '']));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Audit Log');
+  XLSX.writeFile(wb, 'Humiley_Audit_Log.xlsx');
+}
+
 /* ── Batch add several devices — one stacked card per item (same UX as the Claim items) ── */
 function _devCats() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'category').options) || ['Other']; } catch (e) { return ['Other']; } }
 function _devStatuses() { try { return (_QA_SPECS.devices.fields.find(f => f.k === 'status').options) || ['Available']; } catch (e) { return ['Available']; } }
@@ -12406,8 +12481,8 @@ async function crmImportFile(coll, file) {
 }
 
 
-const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack']);
-const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
+const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack','audit']);
+const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', esigngov: 'management', permissions: 'admin', audit: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
 const _HR_HUB_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin']);
@@ -13876,6 +13951,7 @@ function showView(id, navEl, title) {
   if (id === 'payments') { try { tkRenderPayments(); } catch (e) { console.warn('payments:', e.message); } }
   if (id === 'finance') { try { tkRenderFinance(); } catch (e) { console.warn('finance:', e.message); } }
   if (id === 'esigngov') { try { tkRenderESignGov(); } catch (e) { console.warn('esigngov:', e.message); } }
+  if (id === 'audit') { try { tkRenderAudit(); } catch (e) { console.warn('audit:', e.message); } }
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
@@ -14516,6 +14592,16 @@ const _VI = {
   'reviews due': 'đánh giá đến hạn', 'in pool': 'trong nhóm', 'courses': 'khóa học', 'active': 'đang xử lý',
   'Leave · payroll · policies': 'Nghỉ phép · lương · chính sách', 'Open': 'Mở', 'Loading…': 'Đang tải…',
   'Reports': 'Báo cáo', 'Access & Permissions': 'Phân quyền',
+  // Audit Log (admin governance)
+  'Audit Log': 'Nhật ký kiểm toán',
+  'An immutable record of security & workflow events — check-ins/out, approvals, e-signatures, deletions and access-level changes.': 'Bản ghi không thể chỉnh sửa về các sự kiện bảo mật & quy trình — chấm công, phê duyệt, chữ ký điện tử, xóa và thay đổi phân quyền.',
+  'Export Excel': 'Xuất Excel',
+  'Search actor / action / target / detail…': 'Tìm người thực hiện / hành động / đối tượng / chi tiết…',
+  'All actions': 'Tất cả hành động', 'All actors': 'Tất cả người thực hiện',
+  'When': 'Thời điểm', 'Actor': 'Người thực hiện', 'Action': 'Hành động', 'Target': 'Đối tượng', 'Details': 'Chi tiết',
+  'events': 'sự kiện', 'No events match your filters.': 'Không có sự kiện nào khớp với bộ lọc.',
+  'No audit events recorded yet.': 'Chưa ghi nhận sự kiện kiểm toán nào.',
+  'Export library is still loading — try again in a moment.': 'Thư viện xuất đang tải — vui lòng thử lại sau giây lát.',
   // Topbar / footer / login
   'Search employees, records…': 'Tìm nhân viên, hồ sơ…', 'Notifications': 'Thông báo',
   'View as Staff': 'Xem như nhân viên', 'Back to Admin view': 'Quay lại quản trị', 'Sign Out': 'Đăng xuất',
