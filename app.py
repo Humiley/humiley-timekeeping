@@ -2566,11 +2566,12 @@ class Handler(BaseHTTPRequestHandler):
         # records plus those of the employees who report DIRECTLY to them (managerEmail == theirs).
         # Management / editor / admin (Finance-level and above) fall through and see the whole
         # company; staff were already scoped to their own just above.
-        elif lvl == "manager" and name in self.TEAM_SCOPED:
-            # A department manager sees their WHOLE DEPARTMENT's payments / travel / claims (+ their
-            # own), scoped by the requester's department (resolved from the employee row, with the
-            # record's stored `department` as a fallback). No dept on the manager -> own records only
-            # (deny-by-default, never widen). Issue #19.
+        elif lvl == "manager" and (name in self.TEAM_SCOPED or name in ("padr", "goals")):
+            # A department manager sees their WHOLE DEPARTMENT's payments / travel / claims — and their
+            # team's PADR / goals (performance data must not be readable across the whole company by a
+            # rank-2 leader; HR / management+ fall through and still see all). Scoped by the requester's
+            # department (resolved from the employee row, with the record's stored `department` as a
+            # fallback). No dept on the manager -> own records only (deny-by-default, never widen).
             myid, myname = u.get("id"), u.get("name")
             mydept = (u.get("dept") or u.get("department") or "").strip()
             emps = db.list_employees()

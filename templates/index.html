@@ -17567,6 +17567,10 @@ function filterTable() {
     (!dateF  || r.date === dateF) &&
     (isStaff || _inPeriodLF(r.date, 'att-period-f'))
   );
+  // Clamp the current page to the (possibly shrunken) result set — otherwise applying a filter while
+  // on a later page leaves _attPage out of range and the table renders empty even though rows match.
+  const _totalPages = Math.max(1, Math.ceil(rows.length / _attPageSize));
+  if (_attPage > _totalPages) _attPage = _totalPages;
   const startIdx = (_attPage - 1) * _attPageSize;
   const pageRows = rows.slice(startIdx, startIdx + _attPageSize);
   tbody.innerHTML = pageRows.map(r => {
