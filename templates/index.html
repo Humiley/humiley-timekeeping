@@ -13403,7 +13403,7 @@ function _pmFoldersCard(p) {
     const nameHtml = canDeep ? '<a href="' + _tkEscA(_pmSpFolderUrl(ctx, rel)) + '" target="_blank" rel="noopener" style="color:var(--navy);text-decoration:none;font-weight:' + (lvl === 1 ? 700 : 600) + '">' + _pmEsc(name) + '</a>' : '<span style="font-weight:' + (lvl === 1 ? 700 : 600) + ';color:var(--text-dark)">' + _pmEsc(name) + '</span>';
     rows += '<tr style="border-bottom:1px solid var(--soft-bg)' + (lvl === 1 ? ';background:rgba(32,80,144,.03)' : '') + '"><td style="padding:6px 8px 6px ' + (12 + ind) + 'px">' + fIcon + nameHtml + (docs ? '<div style="font-size:10.5px;color:var(--text-light);margin-left:18px">' + _pmEsc(docs) + '</div>' : '') + '</td><td style="padding:6px 8px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(owner) + '</td><td style="padding:6px 8px"><span style="font-size:9.5px;font-weight:700;color:#fff;background:' + _pmConfClr(conf) + ';padding:2px 7px;border-radius:10px;white-space:nowrap">' + conf + '</span></td><td style="padding:6px 8px;font-size:11px;color:var(--text-light);white-space:nowrap">' + _pmEsc(ret) + '</td></tr>';
   });
-  const head = '<thead><tr>' + ['Folder', 'Owner', 'Confidentiality', 'Retention'].map(function (h) { return '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('') + '</tr></thead>';
+  const head = '<thead><tr>' + ['Folder', 'Owner', 'Confidentiality', 'Retention period'].map(function (h) { return '<th style="text-align:left;padding:8px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light);border-bottom:1px solid var(--border)">' + h + '</th>'; }).join('') + '</tr></thead>';
   const table = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;min-width:560px">' + head + '<tbody>' + rows + '</tbody></table></div>';
   const tools = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + (linked ? '<a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="font-size:11px">' + tkIcon('external', 12) + ' Open library</a>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpScript(\'' + p.id + '\')" title="Download a PnP PowerShell script that creates every empty folder in SharePoint">' + tkIcon('download', 12) + ' Create folders (script)</button>' + ((_msalApp && _account) ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="pmSpCreateFoldersGraph(\'' + p.id + '\')" title="Create the folders directly in SharePoint via Microsoft 365">' + tkIcon('external', 12) + ' Create in SharePoint</button>' : '') + ((_msalApp && _account && _pmCanEditProject(p)) ? '<button class="btn btn-emerald btn-sm" style="font-size:11px" onclick="pmSpUploadPick(\'' + p.id + '\')" title="Upload a file straight into the project SharePoint folder">' + tkIcon('external', 12) + ' Upload file</button>' : '') + '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSpCopyPaths()" title="Copy the full folder list">Copy folder list</button></div>';
   const banner = canDeep ? '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">Linked to <a href="' + _tkEscA(ctx.open) + '" target="_blank" rel="noopener" style="color:var(--navy);word-break:break-all">' + _pmEsc(base.length > 70 ? base.slice(0, 70) + '…' : base) + '</a> — every folder below opens directly in SharePoint.</div>' : (linked ? '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">This looks like a SharePoint <b>share link</b> — <b>Open library</b> opens it, but for a one-click link into each sub-folder paste the folder\'s <b>address-bar URL</b> (the one containing <code>/Shared Documents/…</code>) into <b>Edit → SharePoint docs folder</b>.</div>' : '<div style="font-size:11.5px;color:#92400E;background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:9px 12px;margin-bottom:10px">Paste your project\'s SharePoint folder link in <b>Edit → SharePoint docs folder</b> and Save — then every folder below becomes a one-click link. Use <b>Create folders (script)</b> to auto-build the empty structure in SharePoint.</div>');
@@ -15920,11 +15920,30 @@ const _VI = {
   "Culture-Fit & Values": "Phù hợp văn hóa & giá trị",
   "Comp / Logistics / Notice": "Lương / Hậu cần / Thời gian báo trước",
   "Retention": "Tiền giữ lại",
+
+  /* count units for the number+unit VN fallback */
+  "items": "mục",
+  "item": "mục",
+  "folders": "thư mục",
+  "rows": "dòng",
+  "activities": "hoạt động",
+  "lines": "dòng",
+  "line": "dòng",
+  "Retention period": "Thời gian lưu",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
 function _updateLangButtons() { document.querySelectorAll('.lang-btn').forEach(b => b.classList.toggle('active', b.getAttribute('data-lang') === _LANG.cur)); }
-function _viTranslateText(tn) { const raw = tn.nodeValue; if (!raw) return; const key = raw.trim(); if (!key || key.length > 400) return; const vi = _VI[key]; if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
+function _viTranslateText(tn) {
+  const raw = tn.nodeValue; if (!raw) return;
+  const key = raw.trim(); if (!key || key.length > 400) return;
+  const vi = _VI[key];
+  if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } return; }
+  // Fallback for dynamic counts the exact-match can't reach ("15 employees", "8 items", "3 folders"):
+  // translate just the trailing UNIT word(s) if they're a _VI key, keeping the number as-is.
+  const m = key.match(/^(\d[\d.,]*)\s+([A-Za-z][A-Za-z ]*)$/);
+  if (m) { const unit = m[2], uvi = _VI[unit]; if (uvi && uvi !== unit) { const nv = raw.replace(unit, uvi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
+}
 function _viWalk(root) {
   if (!root) return;
   if (root.nodeType === 3) { _viTranslateText(root); return; }
