@@ -1740,7 +1740,12 @@ class Handler(BaseHTTPRequestHandler):
             if cur != "approved":
                 return "Only an approved request can be marked paid."
             return None
-        return None
+        # Any other status is NOT a valid approval transition on a three-level record. Deny it — a
+        # requester could otherwise self-sign their OWN record with an intermediate status such as
+        # "Pending Approval" (which _appr_state maps to the 'review' state), advancing it past the
+        # mandatory manager review with no reviewer signature and collapsing the 3-level control. Only
+        # submit (empty t), reviewed, approved, rejected and paid are legitimate here.
+        return "This status change isn't a valid approval step."
 
     @staticmethod
     def _claim_rollup(items):
@@ -2193,6 +2198,26 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"leave": rows})
 
     def _leave_create(self, u, body):
+        # `days` drives the annual/sick balance decrement on approval, and the frontend derives it from
+        # the date range — but a direct API caller could send days=0 (a full leave that consumes no
+        # balance) or an inflated value. Bound it to the inclusive calendar span of the requested dates
+        # (working days are always ≤ calendar days), so the stored count can't corrupt the balance.
+        body = dict(body)
+        _sd, _ed = body.get("startDate"), body.get("endDate")
+        if _sd and _ed:
+            try:
+                d0 = datetime.strptime(str(_sd)[:10], "%Y-%m-%d")
+                d1 = datetime.strptime(str(_ed)[:10], "%Y-%m-%d")
+                span = (d1 - d0).days + 1
+                if span < 1:
+                    return self._err("The leave end date can't be before the start date.", 400)
+                dv = float(body.get("days") or 0)
+                if dv <= 0:
+                    return self._err("Enter the number of leave days.", 400)
+                if dv > span:
+                    return self._err("The number of leave days exceeds the selected date range.", 400)
+            except (TypeError, ValueError):
+                pass
         data = dict(body, emp_id=u["id"], status="pending")
         rid, token = db.create_leave(data)
         # surface the direct manager + approval token so the client can email them
@@ -2698,6 +2723,11 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
+        # CREATE too (POST routes here, not through _coll_update).
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        if _app and _app in self._apps_denied(u):
+            return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
@@ -2752,6 +2782,12 @@ class Handler(BaseHTTPRequestHandler):
         # updates here too so a stored audit event can never be edited/rewritten via the generic store.
         if name == "audit":
             return self._err("The audit trail is append-only and cannot be modified.", 403)
+        # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
+        # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
+        # calling the API directly (the block was read-only before).
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        if _app and _app in self._apps_denied(u):
+            return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
@@ -2928,13 +2964,32 @@ class Handler(BaseHTTPRequestHandler):
                 # protect per-line statuses/signatures on multi-item claims too
                 if isinstance(existing.get("items"), list) and isinstance(item.get("items"), list):
                     ex_items = existing["items"]
+                    _admin_edit = self._caller_level(u) == "admin"
+                    def _amt(d):
+                        try:
+                            return round(float(d.get("amount") or 0), 4)
+                        except (TypeError, ValueError):
+                            return None
                     for i, it in enumerate(item["items"]):
                         if i < len(ex_items) and isinstance(it, dict) and isinstance(ex_items[i], dict):
-                            for _k in ("status", "reviewedBy", "reviewedById", "approvedBy"):
-                                if _k in ex_items[i]:
-                                    it[_k] = ex_items[i][_k]
-                                else:
+                            ex_it = ex_items[i]
+                            _line_st = str(ex_it.get("status") or "").strip().lower()
+                            # A line already reviewed/approved must NOT keep that decision when its signed
+                            # money content (amount) changes — otherwise an owner could inflate an approved
+                            # line while retaining its 'Approved' stamp with no re-signature. Reset it to
+                            # Submitted so it re-enters review/approval (which is SoD-checked + separately
+                            # e-signed, keeping the Part 11 trail). Unchanged lines keep their decision.
+                            if (not _admin_edit) and _line_st in ("reviewed", "approved") and _amt(it) != _amt(ex_it):
+                                it["status"] = "Submitted"
+                                for _k in ("reviewedBy", "reviewedById", "reviewedAt",
+                                           "approvedBy", "approvedById", "approvedAt"):
                                     it.pop(_k, None)
+                            else:
+                                for _k in ("status", "reviewedBy", "reviewedById", "approvedBy"):
+                                    if _k in ex_it:
+                                        it[_k] = ex_it[_k]
+                                    else:
+                                        it.pop(_k, None)
             else:
                 # no existing record to protect against — refuse to create a signed record via PATCH
                 for _k in ("status", "signatures"):
@@ -2947,6 +3002,10 @@ class Handler(BaseHTTPRequestHandler):
         # The audit trail is append-only (21 CFR Part 11) — never deletable via the generic store.
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
+        # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        if _app and _app in self._apps_denied(u):
+            return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):

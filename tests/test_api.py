@@ -138,3 +138,56 @@ def test_attendance_gps_is_scoped(api, tokens):
     st, r = api("GET", "/api/attendance?emp_id=HML-ADM", tokens["admin"])
     assert st == 200
     assert any(row.get("emp_id") == "HML-ADM" for row in r["attendance"])
+
+
+# --------------------------------------------------------------------------- appsDenied on writes (round-3 hunt)
+def test_appsdenied_blocks_hr_writes(api, tokens):
+    """A user whose HR app is disabled by an admin must be blocked from CREATING HR records via the
+    API, not just from reading them — the appsDenied gate was read-only before."""
+    # appsDenied is stored as a comma-separated string (the admin UI joins the list), matching _apps_denied
+    db.update_employee("HML-MGR", {"appsDenied": "hr"})
+    try:
+        st, r = api("POST", "/api/coll/candidates", tokens["mgr"],
+                    {"id": "CAND-DENY", "name": "X Candidate", "stage": "Offer"})
+        assert st == 403, "a disabled HR app must block writes too, not only reads"
+    finally:
+        db.update_employee("HML-MGR", {"appsDenied": ""})
+
+
+# --------------------------------------------------------------------------- leave-days balance integrity
+def test_leave_days_bounded_to_range(api, tokens):
+    """`days` drives the annual/sick balance decrement on approval; a direct API call must not send 0
+    (a full week of leave that consumes no balance) or a value larger than the date span."""
+    base = {"type": "Annual Leave", "startDate": "2026-08-03", "endDate": "2026-08-07"}  # span = 5
+    st, r = api("POST", "/api/leave", tokens["staff"], dict(base, days=0))
+    assert st == 400, "days=0 over a real date range must be rejected"
+    st, r = api("POST", "/api/leave", tokens["staff"], dict(base, days=99))
+    assert st == 400, "days greater than the selected span must be rejected"
+    st, r = api("POST", "/api/leave", tokens["staff"], dict(base, days=5))
+    assert st == 200, r
+
+
+# --------------------------------------------------------------------------- claim per-line re-approval
+def test_claim_line_approval_resets_on_amount_change(api, tokens):
+    """An already-approved claim line must LOSE its approval if its amount is edited — otherwise an
+    owner could inflate an approved line while it keeps the 'Approved' stamp, with no re-signature."""
+    st, r = api("POST", "/api/coll/claims", tokens["staff"],
+                {"id": "CLM-REAP", "name": "Staff One",
+                 "items": [{"id": "L1", "amount": 100000}, {"id": "L2", "amount": 50000}]})
+    assert st == 200, r
+    # simulate L1 already approved by a director + the claim partially approved
+    row = next(x for x in db.list_collection("claims") if x.get("id") == "CLM-REAP")
+    row["items"][0]["status"] = "Approved"; row["items"][0]["approvedBy"] = "Director User"
+    row["status"] = "Partially approved"
+    db.put_collection_item("claims", row)
+    # owner edits L1's amount 50x
+    st, r = api("PATCH", "/api/coll/claims/CLM-REAP", tokens["staff"],
+                {"id": "CLM-REAP", "name": "Staff One",
+                 "items": [{"id": "L1", "amount": 5000000}, {"id": "L2", "amount": 50000}]})
+    assert st == 200, r
+    l1 = next(it for it in r["item"]["items"] if it["id"] == "L1")
+    assert l1.get("status") == "Submitted", "an edited approved line must drop back to Submitted"
+    assert not l1.get("approvedBy"), "the stale approver stamp must be cleared on an amount change"
+    # the untouched line keeps its (unchanged) status
+    l2 = next(it for it in r["item"]["items"] if it["id"] == "L2")
+    assert (l2.get("status") or "Submitted") == "Submitted"
