@@ -1544,13 +1544,13 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-schedules" class="view">
   <div class="page-header">
     <div><h1>Work Schedules</h1><p>Define shift patterns · Grace periods · Check-in windows</p><p data-i18n style="margin-top:4px;font-size:12px;color:var(--emerald);font-weight:600">Schedules set lateness expectations only (shift start + grace) — they never block check-in or check-out.</p></div>
-    <button class="btn btn-emerald" onclick="openModal('addScheduleModal')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Schedule</button>
+    <button class="btn btn-emerald" onclick="tkOpenScheduleModal()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Schedule</button>
   </div>
   <div class="card mb16">
     <div class="table-wrap">
       <table>
         <thead><tr><th>Schedule Name</th><th>Department</th><th>Check-In Window</th><th>Check-Out From</th><th>Work Days</th><th>Grace Period</th><th>Overtime Rate</th><th>Active</th><th></th></tr></thead>
-        <tbody>
+        <tbody id="sched-tbody">
           <tr><td><div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:30px;border-radius:8px;background:var(--light-tint);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span><span style="font-weight:700;color:var(--navy)">Standard 08:00 – 17:00</span></div></td><td>All</td><td>07:30 – 08:30</td><td>17:00</td><td>Mon – Fri</td><td>30 min</td><td>1.5×</td><td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td><td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'Standard 08:00 – 17:00')">Edit</button></td></tr>
           <tr><td><div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:30px;border-radius:8px;background:var(--light-tint);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></span><span style="font-weight:700;color:var(--navy)">Morning Shift 06:00 – 14:00</span></div></td><td>Factory</td><td>05:45 – 06:15</td><td>14:00</td><td>Mon – Sat</td><td>15 min</td><td>1.5×</td><td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td><td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'Morning Shift 06:00 – 14:00')">Edit</button></td></tr>
           <tr><td><div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:30px;border-radius:8px;background:var(--light-tint);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg></span><span style="font-weight:700;color:var(--navy)">Evening Shift 14:00 – 22:00</span></div></td><td>Factory</td><td>13:45 – 14:15</td><td>22:00</td><td>Mon – Sat</td><td>15 min</td><td>1.5×</td><td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td><td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'Evening Shift 14:00 – 22:00')">Edit</button></td></tr>
@@ -2865,7 +2865,7 @@ function tkVerifySelectedZone(force) {
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
   const z = _tkSelectedZone;
   const status = document.getElementById('ci-verify-status');
-  const evaluate = (lat, lon, acc) => {
+  const evaluate = (lat, lon, acc, silent) => {
     _tkLastLat = lat; _tkLastLon = lon;
     acc = Math.round(+acc || 0);
     const dist = Math.round(_haversineMetres(lat, lon, Number(z.lat), Number(z.lon)));
@@ -2873,6 +2873,7 @@ function tkVerifySelectedZone(force) {
     /* accuracy-aware: a ±300 m fix from inside the office must not read as "outside" */
     const inside = dist - acc <= radius;
     const confidentlyOut = acc > 0 && acc <= radius && dist - acc > radius;
+    if (silent) return inside ? 'in' : (confidentlyOut ? 'out' : 'unverified');   // dry-run for the cache short-circuit: NO stale display / button / sharpen
     _tkInsideSelected = inside;
     const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
     const accNote = acc ? ', ±' + acc + 'm' : ' (recent)';
@@ -2895,7 +2896,7 @@ function tkVerifySelectedZone(force) {
   if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.'; _tkSetCheckinAllowed('unverified'); return; }
   // Instant: reuse a recent fix from the app-wide GPS watch (the common case -> no wait)
   const _cacheFresh = (typeof _lastGpsLat !== 'undefined' && _lastGpsLat !== null && _lastGpsLon !== null && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000);
-  if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0) === 'in') return; }   // confirmed in-zone from cache → done; otherwise take a fresh fix
+  if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0, true) === 'in') { evaluate(_lastGpsLat, _lastGpsLon, 0); return; } }   // only a CONFIRMED in-zone cache shows instantly; a far/coarse cached fix is NOT displayed — keep "Checking…" and take a fresh fix
   let _geoDone = false;
   const _alert = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ';
   const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, acc); };
@@ -2937,7 +2938,7 @@ async function _tkPersistSure(path, body) {
     return null;
   }
 }
-let _tkCheckinBusy = false;
+let _tkCheckinBusy = false, _tkCheckoutBusy = false;
 async function tkCheckIn() {
   if (_tkCheckinBusy) return;   // in-flight guard: a stray button re-enable must never double-submit (issue #17)
   if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
@@ -2987,14 +2988,19 @@ function _tkOtStdMin() {
 }
 function tkCheckOut() {
   if (!_checkedIn) { if (typeof toast === 'function') toast('Please check in first', 'warn'); return; }
+  if (_tkCheckoutBusy) return;                        // in-flight guard: a double-tap must not fire a 2nd checkout (which 400s "no open check-in" → red error right after success)
+  _tkCheckoutBusy = true;
+  const _bo = document.getElementById('btn-checkout'); if (_bo) _bo.disabled = true;   // disable synchronously, before any await
   const t = new Date().toTimeString().slice(0, 5);
   const rec = _tkMyOpenRow();
   let workedMin = null;
-  if (rec && rec.in) { const a = rec.in.split(':').map(Number), b = t.split(':').map(Number); workedMin = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (workedMin < 0) workedMin += 1440; }
-  // Worked beyond the standard day → offer an OT request (added to the system only if approved).
+  if (rec && (rec.in || rec.clock_in)) { const inT = rec.in || rec.clock_in; const a = inT.split(':').map(Number), b = t.split(':').map(Number); workedMin = (b[0] * 60 + b[1]) - (a[0] * 60 + a[1]); if (workedMin < 0) workedMin += 1440; }
+  // Deduct the standard lunch break the SAME way _tkOtStdMin does (a >=9h span drops 1h lunch), so a
+  // normal 08:00–17:00 day (540 clock min → 480 worked) no longer falsely fires the OT prompt EVERY day.
+  if (workedMin != null && workedMin >= 540) workedMin -= 60;
   const stdMin = _tkOtStdMin();
   if (workedMin != null && workedMin > stdMin + 15) {
-    _tkOtRequestModal(t, Math.round((workedMin - stdMin) / 60 * 10) / 10);
+    _tkOtRequestModal(t, Math.round((workedMin - stdMin) / 60 * 10) / 10);   // busy stays set; the modal → _tkDoCheckout clears it
   } else {
     _tkDoCheckout(t, 0, '');
   }
@@ -3026,10 +3032,13 @@ async function _tkDoCheckout(t, otHours, otReason) {
   /* TRUTHFUL checkout: save first (with silent session heal + one retry), then update the UI. */
   const saved = await _tkPersistSure('/api/attendance/checkout', body);
   if (!saved || saved.__biz) {
+    _tkCheckoutBusy = false;
+    const _bo = document.getElementById('btn-checkout'); if (_bo) { _bo.disabled = false; _bo.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; _bo.style.color = '#fff'; _bo.style.cursor = 'pointer'; }
     if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-out — check your connection and tap again.', 'error', 7000);
     if (saved && saved.__biz) { try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {} }
     return;
   }
+  _tkCheckoutBusy = false;
   _checkedIn = false;
   tkBootstrap().catch(() => {}).then(() => { try { filterTable(); } catch (e) {} try { tkRenderDashboard(); } catch (e) {} try { tkRenderCheckin(); } catch (e) {} });
   const rec = _tkMyOpenRow();
@@ -4891,7 +4900,7 @@ function tkRenderClocks() {
 }
 
 /* ════════════════════ HRMS MODULES ════════════════════ */
-const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [], crm_deals: [], crm_companies: [], crm_contacts: [], crm_leads: [], crm_products: [], crm_targets: [] };
+const _HR = { jobs: [], candidates: [], onboarding: [], reviews: [], goals: [], courses: [], talent: [], payruns: [], padr: [], competency: [], pip: [], claims: [], acks: [], audit: [], exits: [], benefits: [], learningpaths: [], enrollments: [], payadjust: [], crm_deals: [], crm_companies: [], crm_contacts: [], crm_leads: [], crm_products: [], crm_targets: [], schedules: [] };
 /* Audit log — record who did what, when (persisted to the audit collection). */
 function tkAudit(action, target, detail) {
   const entry = { ts: new Date().toISOString(), tsDisp: new Date().toLocaleString('en-GB'), actor: (TK.user && TK.user.name) || 'System', actorId: (TK.user && TK.user.id) || '', action: action, target: target || '', detail: detail || '' };
@@ -13824,6 +13833,7 @@ function showView(id, navEl, title) {
   if (id === 'myprofile') { Promise.all([tkLoadColl('acks'), tkLoadColl('benefits')]).then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
   if (id === 'devices') { try { tkRenderDevices(); } catch (e) { console.warn('devices:', e.message); } }
+  if (id === 'schedules') { try { tkRenderSchedules(); } catch (e) { console.warn('schedules:', e.message); } }
   if (id === 'mydevices') { try { tkRenderMyDevices(); } catch (e) { console.warn('mydevices:', e.message); } }
   if (id === 'crm-dashboard') { try { crmRenderDashboard(); } catch (e) { console.warn('crm-dash:', e.message); } }
   if (id === 'crm-pipeline') { try { crmRenderPipeline(); } catch (e) { console.warn('crm-pipe:', e.message); } }
@@ -15941,6 +15951,10 @@ const _VI = {
   "Edit": "Sửa",
   "Save changes": "Lưu thay đổi",
   "Edit Payment Request": "Sửa đề nghị thanh toán",
+  "No schedules yet.": "Chưa có lịch làm việc.",
+  "Delete this schedule?": "Xoá lịch làm việc này?",
+  "Edit Work Schedule": "Sửa lịch làm việc",
+  "Delete": "Xoá",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -18375,34 +18389,91 @@ function removeTestZone() {
 /* ══════════════════════════════════════════════════════════
    SCHEDULE EDIT & SAVE
 ══════════════════════════════════════════════════════════ */
-function editScheduleRow(btn, name) {
-  document.getElementById('sch-name').value = name;
+/* Work schedules are now a REAL, PERSISTED collection (manager-managed) — not a DOM-only mockup.
+   They set lateness/OT expectations only; they never block check-in/out. */
+let _schedEditId = null;
+const _SCHED_SEED = [
+  { name: 'Standard 08:00 – 17:00', dept: 'All', inwin: '07:30 – 08:30', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '1.5×', active: true },
+  { name: 'Morning Shift 06:00 – 14:00', dept: 'Factory (FAC)', inwin: '05:45 – 06:15', out: '14:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', active: true },
+  { name: 'Evening Shift 14:00 – 22:00', dept: 'Factory (FAC)', inwin: '13:45 – 14:15', out: '22:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', active: true },
+  { name: 'Flexible (Field Services)', dept: 'Field Services', inwin: '07:00 – 09:00', out: '8h after in', days: 'Mon – Fri', grace: 30, ot: '1.5×', active: true },
+  { name: 'WFH Schedule', dept: 'Approved only', inwin: '08:00 – 09:00', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '—', active: false }
+];
+function _tkRenderSchedRows() {
+  const tb = document.getElementById('sched-tbody'); if (!tb) return;
+  const list = _HR.schedules || [];
+  tb.innerHTML = list.length ? list.map(function (s) {
+    return '<tr>'
+      + '<td><span style="font-weight:700;color:var(--navy)">' + _crmEsc(s.name || '') + '</span></td>'
+      + '<td>' + _crmEsc(s.dept || 'All') + '</td>'
+      + '<td>' + _crmEsc(s.inwin || '') + '</td>'
+      + '<td>' + _crmEsc(s.out || '') + '</td>'
+      + '<td>' + _crmEsc(s.days || '') + '</td>'
+      + '<td>' + _crmEsc(String(s.grace == null ? '' : s.grace)) + ' min</td>'
+      + '<td>' + _crmEsc(s.ot || '') + '</td>'
+      + '<td><button class="toggle ' + (s.active === false ? 'off' : 'on') + '" onclick="tkToggleSchedActive(\'' + s.id + '\',this)"></button></td>'
+      + '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(\'' + s.id + '\')">' + _t('Edit') + '</button> <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="tkDeleteSchedule(\'' + s.id + '\')">' + _t('Delete') + '</button></td>'
+      + '</tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No schedules yet.') + '</td></tr>';
+  try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(tb); } catch (e) {}
+}
+async function tkRenderSchedules() {
+  await tkLoadColl('schedules');
+  if (!(_HR.schedules || []).length) {   // first-ever load: seed the standard patterns ONCE, persisted
+    for (const s of _SCHED_SEED) { try { const r = await tkApi('/api/coll/schedules', { method: 'POST', body: s }); if (r && r.item) (_HR.schedules = _HR.schedules || []).push(r.item); } catch (e) {} }
+  }
+  _tkRenderSchedRows();
+}
+function tkOpenScheduleModal() {
+  _schedEditId = null;
+  const setV = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  setV('sch-name', ''); setV('sch-inwin', ''); setV('sch-grace', '15'); setV('sch-out', '17:00');
+  ['sch-dept', 'sch-days', 'sch-ot'].forEach(id => { const e = document.getElementById(id); if (e) e.selectedIndex = 0; });
+  const t = document.querySelector('#addScheduleModal .modal-title'); if (t) t.textContent = _t('Add Work Schedule');
   openModal('addScheduleModal');
 }
-
-function saveSchedule() {
-  const name  = document.getElementById('sch-name')?.value?.trim();
-  const dept  = document.getElementById('sch-dept')?.value;
-  const days  = document.getElementById('sch-days')?.value;
-  const inWin = document.getElementById('sch-inwin')?.value?.trim();
-  const out   = document.getElementById('sch-out')?.value;
-  const grace = document.getElementById('sch-grace')?.value;
-  const ot    = document.getElementById('sch-ot')?.value;
-  if (!name) { toast('Please enter a schedule name','warn'); return; }
-
-  const tbody = document.querySelector('#view-schedules table tbody');
-  if (tbody) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td style="font-weight:700;color:var(--navy)">${name}</td>
-      <td>${dept}</td><td>${inWin||'08:00 – 09:00'}</td><td>${out||'17:00'}</td>
-      <td>${days}</td><td>${grace} min</td><td>${ot}</td>
-      <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
-      <td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'${name}')">Edit</button></td>`;
-    tbody.appendChild(tr);
-  }
-  closeModal('addScheduleModal');
-  toast('Schedule "' + name + '" saved');
+function editScheduleRow(id) {
+  const s = (_HR.schedules || []).find(x => x.id === id); if (!s) { toast('Schedule not found', 'warn'); return; }
+  _schedEditId = id;
+  const setV = (eid, v) => { const e = document.getElementById(eid); if (e) e.value = (v == null ? '' : v); };
+  const setSel = (eid, v) => { const e = document.getElementById(eid); if (e) { const o = Array.from(e.options).find(op => op.value === v || op.textContent === v); e.value = o ? o.value : e.value; } };
+  setV('sch-name', s.name); setV('sch-inwin', s.inwin); setV('sch-out', s.out); setV('sch-grace', s.grace);
+  setSel('sch-dept', s.dept); setSel('sch-days', s.days); setSel('sch-ot', s.ot);
+  const t = document.querySelector('#addScheduleModal .modal-title'); if (t) t.textContent = _t('Edit Work Schedule');
+  openModal('addScheduleModal');
+}
+async function saveSchedule() {
+  const g = id => (document.getElementById(id) || {}).value;
+  const name = (g('sch-name') || '').trim();
+  if (!name) { toast(_t2('Please enter a schedule name', 'Vui lòng nhập tên lịch làm việc'), 'warn'); return; }
+  const body = { name: name, dept: g('sch-dept'), days: g('sch-days'), inwin: (g('sch-inwin') || '').trim(), out: g('sch-out'), grace: parseInt(g('sch-grace'), 10) || 0, ot: g('sch-ot') };
+  try {
+    if (_schedEditId) {
+      const existing = (_HR.schedules || []).find(x => x.id === _schedEditId) || {};
+      const merged = Object.assign({}, existing, body);
+      const r = await tkApi('/api/coll/schedules/' + _schedEditId, { method: 'PATCH', body: merged });
+      const i = (_HR.schedules || []).findIndex(x => x.id === _schedEditId); if (i >= 0) _HR.schedules[i] = (r && r.item) || merged;
+    } else {
+      body.active = true;
+      const r = await tkApi('/api/coll/schedules', { method: 'POST', body: body });
+      if (r && r.item) (_HR.schedules = _HR.schedules || []).push(r.item);
+    }
+    closeModal('addScheduleModal'); _schedEditId = null;
+    _tkRenderSchedRows();
+    toast(_t2('Schedule saved', 'Đã lưu lịch làm việc'));
+  } catch (e) { toast((e && e.message) || 'Could not save the schedule', 'error', 6000); }
+}
+async function tkToggleSchedActive(id, btn) {
+  const s = (_HR.schedules || []).find(x => x.id === id); if (!s) return;
+  const nv = (s.active === false);
+  s.active = nv; if (btn) { btn.classList.toggle('on', nv); btn.classList.toggle('off', !nv); }
+  try { await tkApi('/api/coll/schedules/' + id, { method: 'PATCH', body: Object.assign({}, s, { active: nv }) }); } catch (e) {}
+}
+async function tkDeleteSchedule(id) {
+  const s = (_HR.schedules || []).find(x => x.id === id); if (!s) return;
+  if (!confirm(_t('Delete this schedule?') + ' - ' + (s.name || ''))) return;
+  try { await tkApi('/api/coll/schedules/' + id, { method: 'DELETE' }); _HR.schedules = (_HR.schedules || []).filter(x => x.id !== id); _tkRenderSchedRows(); toast(_t2('Schedule deleted', 'Đã xoá lịch làm việc')); }
+  catch (e) { toast('Could not delete the schedule', 'error'); }
 }
 
 /* ══════════════════════════════════════════════════════════

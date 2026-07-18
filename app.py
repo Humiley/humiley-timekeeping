@@ -1837,10 +1837,22 @@ class Handler(BaseHTTPRequestHandler):
     # -- attendance ---------------------------------------------------------
     def _attendance_list(self, u, qs):
         emp_id = qs.get("emp_id", [None])[0]
-        if u.get("role") != "manager":
-            emp_id = u["id"]  # staff see only their own
-        return self._json({"attendance": db.list_attendance(
-            emp_id=emp_id, start=qs.get("start", [None])[0], end=qs.get("end", [None])[0])})
+        start = qs.get("start", [None])[0]
+        end = qs.get("end", [None])[0]
+        # Attendance rows carry GPS lat/lon — an out-of-scope read is a privacy leak. Management/Admin
+        # see everyone; a STAFF or DIRECT-MANAGER caller sees only their OWN rows + their direct reports'
+        # (mirrors _leave_list). A specific emp_id outside that scope is clamped back to self.
+        if self._is_mgmt(u):
+            rows = db.list_attendance(emp_id=emp_id, start=start, end=end)
+        else:
+            ids = set([u["id"]] + [r["id"] for r in db.list_reports(u.get("email"))])
+            if emp_id:
+                if emp_id not in ids:
+                    emp_id = u["id"]
+                rows = db.list_attendance(emp_id=emp_id, start=start, end=end)
+            else:
+                rows = [r for r in db.list_attendance(emp_id=None, start=start, end=end) if r.get("emp_id") in ids]
+        return self._json({"attendance": rows})
 
     _RE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
     _RE_TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -2303,7 +2315,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots", "pm_execNotes", "invtrack"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
