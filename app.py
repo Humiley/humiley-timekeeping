@@ -1374,9 +1374,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
         if path.startswith("/api/leave/"):
             lid = path.rsplit("/", 1)[1]
+            if not lid.isdigit():
+                return self._err("Invalid leave id.", 400)
             return self._guard(lambda u: self._leave_status(u, lid, body), manager=True)
         if path.startswith("/api/zones/"):
             zid = path.rsplit("/", 1)[1]
+            if not zid.isdigit():
+                return self._err("Invalid zone id.", 400)
             return self._guard(lambda u: self._zone_update(zid, body), manager=True)
         return self._err("Not found.", 404)
 
@@ -1390,6 +1394,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._emp_delete(u, eid), manager=True)
         if path.startswith("/api/zones/"):
             zid = path.rsplit("/", 1)[1]
+            if not zid.isdigit():
+                return self._err("Invalid zone id.", 400)
             return self._guard(lambda u: (db.delete_zone(int(zid)), self._json({"ok": True}))[1], manager=True)
         return self._err("Not found.", 404)
 
@@ -2107,6 +2113,21 @@ class Handler(BaseHTTPRequestHandler):
         overnight = rec["date"] != self._vn_day()
         if not overnight and rec.get("clock_in") and t < rec["clock_in"]:
             return self._err("Check-out time is before today's check-in.")
+        # Guard against a FORGOTTEN check-out from an earlier day: with the overnight +24h wrap, that
+        # would otherwise be recorded as a ~19-23h shift (a genuine night shift is <16h). Reject it so
+        # HR can correct the record, instead of storing a fabricated overnight.
+        if overnight:
+            try:
+                ih, im = map(int, (rec.get("clock_in") or "0:0").split(":"))
+                oh, om = map(int, t.split(":"))
+                span = (oh * 60 + om) - (ih * 60 + im)
+                if span < 0:
+                    span += 1440
+            except (ValueError, AttributeError):
+                span = 0
+            if span > 16 * 60:
+                return self._err("This looks like a missed check-out from an earlier day (the shift would "
+                                 "exceed 16 hours). Please ask HR to correct your attendance record.", 400)
         # Optional overtime REQUEST at checkout — pending manager approval; only approved OT counts.
         try:
             ot_hours = float(body.get("otHours") or 0)
@@ -2622,7 +2643,12 @@ class Handler(BaseHTTPRequestHandler):
                     return "%s cannot be negative." % k
                 if n > self._MONEY_MAX:
                     return "%s exceeds the allowed maximum." % k
-        adv, cost = num(item.get("advance")), num(item.get("cost") or item.get("total") or item.get("amount"))
+        def _first_num(*keys):   # first PRESENT value (so an explicit cost of 0 isn't skipped by `or`)
+            for k in keys:
+                if item.get(k) not in (None, ""):
+                    return num(item.get(k))
+            return None
+        adv, cost = num(item.get("advance")), _first_num("cost", "total", "amount")
         if adv is not None and cost is not None and adv > cost:
             return "The advance cannot exceed the total amount."
         for it in (item.get("items") or []):

@@ -86,6 +86,18 @@ def test_payment_status_cannot_be_forged(api, tokens):
 
 
 # --------------------------------------------------------------------------- attendance privacy scope
+def test_forgotten_checkout_is_rejected(api, tokens):
+    """A forgotten check-out from an earlier day would wrap to a ~19-23h shift. The checkout must
+    reject that (HR corrects it) rather than record a fabricated overnight."""
+    import app
+    import db
+    yday = app.Handler._vn_day(-1)
+    db.clock_in("HML-STF", yday, "08:00")   # checked in yesterday, never checked out
+    st, r = api("POST", "/api/attendance/checkout", tokens["staff"], {"time": "06:00"})
+    assert st == 400, "an absurd overnight span must be rejected, not stored"
+    assert "missed check-out" in (r.get("error") or "").lower() or "16 hours" in (r.get("error") or "")
+
+
 def test_email_approve_link_does_not_finalize(base_url):
     """The one-click email approval links no longer auto-approve (that bypassed the Part 11
     e-signature and let a requester self-approve via their own leaked token). They deep-link into

@@ -6461,12 +6461,23 @@ function _payPit(t) {
 }
 function _payWD(y, m) { let d = new Date(y, m, 1), n = 0; while (d.getMonth() === m) { const w = d.getDay(); if (w >= 1 && w <= 5) n++; d = new Date(y, m, d.getDate() + 1); } return n; }
 function _payUnpaidDays(empId, y, m) {
-  const first = y + '-' + String(m + 1).padStart(2, '0') + '-01';
-  const last = y + '-' + String(m + 1).padStart(2, '0') + '-31';
+  const mm = String(m + 1).padStart(2, '0');
+  const first = y + '-' + mm + '-01';
+  const last = y + '-' + mm + '-' + String(new Date(y, m + 1, 0).getDate()).padStart(2, '0');  // real last day
+  const DAY = 86400000, d = s => new Date(s + 'T00:00:00Z');
   let n = 0;
   (_DEMO_LEAVE || []).forEach(l => {
-    if ((l.emp_id === empId || l.empId === empId) && /unpaid/i.test(l.type || '') && (l.status || '').toLowerCase() === 'approved'
-      && l.startDate <= last && l.endDate >= first) n += (+l.days || 0);
+    if (!(l.emp_id === empId || l.empId === empId)) return;
+    if (!/unpaid/i.test(l.type || '') || (l.status || '').toLowerCase() !== 'approved') return;
+    const sd = l.startDate, ed = l.endDate || l.startDate;
+    if (!sd || sd > last || ed < first) return;                    // no overlap with this month
+    // Count only THIS month's share — a leave spanning a month boundary must not be charged in full
+    // to both months. Full stored days if the leave sits entirely in-month, else prorated by overlap.
+    const os = sd > first ? sd : first, oe = ed < last ? ed : last;
+    const totalCal = Math.round((d(ed) - d(sd)) / DAY) + 1;
+    const overCal = Math.round((d(oe) - d(os)) / DAY) + 1;
+    const days = +l.days || totalCal;
+    n += (totalCal <= 0 || overCal >= totalCal) ? days : days * (overCal / totalCal);
   });
   return n;
 }
@@ -10153,7 +10164,7 @@ const _PROC_SECTIONS = [
     guide: { en: 'Procure-to-pay. Raise a requisition, get it approved by value band, run an RFQ, issue a purchase order, receive the goods, 3-way-match the invoice and request payment. Vendors and contracts live here too.', vn: 'Quy trình mua sắm đến thanh toán. Tạo yêu cầu mua hàng, phê duyệt theo hạn mức giá trị, chạy yêu cầu báo giá, phát hành đơn đặt hàng, nhập kho, đối chiếu hóa đơn 3 chiều và đề nghị thanh toán. Nhà cung cấp và hợp đồng cũng ở đây.' },
     tabs: [
       { label: 'Dashboard', path: '/dashboard' },
-      { label: 'Requisitions', path: '/requisitions' },
+      { label: 'Purchase Requisitions', path: '/requisitions' },
       { label: 'Approvals', path: '/approvals' },
       { label: 'RFQs', path: '/rfqs' },
       { label: 'Purchase Orders', path: '/purchase-orders' },
@@ -14140,7 +14151,7 @@ const _VI = {
   'Settings': 'Cài đặt', 'Users': 'Người dùng', 'UoM': 'Đơn vị tính', 'Cost Centers': 'Trung tâm chi phí', 'Accounting Export': 'Xuất kế toán',
   'Your personal details, employment and security': 'Thông tin cá nhân, việc làm và bảo mật của bạn',
   'Company assets assigned to you': 'Tài sản công ty được giao cho bạn',
-  'Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
+  'Requisitions': 'Yêu cầu mua hàng', 'Purchase Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
   'Goods Issues': 'Xuất kho', 'Transfers': 'Chuyển kho', 'Stock Counts': 'Kiểm kê', 'Scan Hub': 'Trung tâm quét mã', 'HS Codes': 'Mã HS', 'Landed-Cost Estimator': 'Ước tính chi phí nhập khẩu', 'Budgets': 'Ngân sách', 'Approval Matrix': 'Ma trận phê duyệt', 'Items': 'Vật tư', 'Categories': 'Nhóm hàng',
   'Trade & Reference': 'Thương mại & Tra cứu', 'Insights': 'Phân tích', 'Administration': 'Quản trị', 'Inventory': 'Kho hàng',
   'Opening Procurement…': 'Đang mở Mua hàng…',
@@ -14725,7 +14736,7 @@ const _VI = {
   'All Types': 'Tất cả loại',
   'All caught up — no new notifications.': 'Đã xem hết — không có thông báo mới.',
   'All caught up!': 'Đã xem hết!',
-  'All time': 'Toàn thời gian',
+  'All time': 'Tất cả thời gian',
   'Allowed Domain (API restriction)': 'Tên miền được phép (giới hạn API)',
   'Amount': 'Số tiền',
   'Announcements': 'Thông báo',
