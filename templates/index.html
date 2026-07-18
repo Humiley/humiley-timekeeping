@@ -8119,6 +8119,11 @@ async function tkPaymentSave(editId) {
   if (!(amount > 0)) { toast('Please enter an amount greater than 0', 'warn'); return; }
   const _files = _multiAttachStore['pay-attach'] || [];
   if (!editId && !_files.length) { toast('Please attach the invoice / bill — a payment request must carry its supporting document', 'warn', 6000); return; }
+  // Double-submit guard: a fast double-click (or a second click while the sign modal is open) would
+  // otherwise mint a SECOND payment with the same reqNo. Block re-entry for a short window; it
+  // auto-resets so a genuine retry after cancelling the signature still works.
+  if (Date.now() - (window._tkPaySaveTs || 0) < 2500) { toast(_t('Please wait — still saving…'), 'warn'); return; }
+  window._tkPaySaveTs = Date.now();
   if (editId) {
     // EDIT an existing PENDING request (fix a mistake before approval). Keep status + the current bill
     // unless a new file is attached; re-sign the change as an Amendment (Part 11) and re-notify.
@@ -15930,6 +15935,12 @@ const _VI = {
   "lines": "dòng",
   "line": "dòng",
   "Retention period": "Thời gian lưu",
+  "Please wait — still saving…": "Vui lòng đợi — đang lưu…",
+  "This request is already decided — it can no longer be edited.": "Đề nghị này đã được quyết định — không thể chỉnh sửa nữa.",
+  "Your current bill is kept. Only add files if you want to replace it.": "Hoá đơn hiện tại được giữ lại. Chỉ thêm tệp nếu bạn muốn thay thế.",
+  "Edit": "Sửa",
+  "Save changes": "Lưu thay đổi",
+  "Edit Payment Request": "Sửa đề nghị thanh toán",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
