@@ -5976,7 +5976,7 @@ async function tkRenderAudit() {
       _crmFiltSel('aud-action', 'All actions', _crmDistinct(rows, 'action'), 'audFillTable') +
       _crmFiltSel('aud-actor', 'All actors', _crmDistinct(rows, 'actor'), 'audFillTable') +
       _crmFiltPeriod('aud-period-f', 'audFillTable') + '</div>' +
-    '<div class="table-wrap"><table style="min-width:820px"><thead><tr><th>' + _t('When') + '</th><th>' + _t('Actor') + '</th><th>' + _t('Action') + '</th><th>' + _t('Target') + '</th><th>' + _t('Details') + '</th></tr></thead><tbody id="aud-tbody"></tbody></table></div>' +
+    '<div class="table-wrap"><table style="min-width:820px"><thead><tr><th>' + _t('When') + '</th><th>' + _t('Actor') + '</th><th>' + _t('Action') + '</th><th>' + _t('Record') + '</th><th>' + _t('Details') + '</th></tr></thead><tbody id="aud-tbody"></tbody></table></div>' +
     '</div>';
   audFillTable();
 }
@@ -6017,7 +6017,7 @@ function audFillTable() {
 function tkExportAuditXlsx() {
   if (typeof XLSX === 'undefined') { toast(_t('Export library is still loading — try again in a moment.'), 'warn'); return; }
   const list = _audFiltered();
-  const aoa = [[_t('When'), _t('Actor'), _t('Action'), _t('Target'), _t('Details')]].concat(
+  const aoa = [[_t('When'), _t('Actor'), _t('Action'), _t('Record'), _t('Details')]].concat(
     list.map(x => [x.ts || '', x.actor || '', x.action || '', x.target || '', x.detail || '']));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Audit Log');
@@ -11619,7 +11619,7 @@ function _crmActMeta(d) {
 let _crmLF = {};
 function _crmDistinct(arr, key) { return [...new Set((arr || []).map(x => (x[key] || '').toString().trim()).filter(Boolean))].sort(); }
 function _crmFiltSearch(id, ph, fn) { return '<input id="' + id + '" type="text" placeholder="' + ph + '" value="' + _tkEscA(_crmLF[id] || '') + '" class="form-control" style="flex:1;min-width:170px;max-width:300px;font-size:12px" oninput="_crmLF[\'' + id + '\']=this.value;' + fn + '()">'; }
-function _crmFiltSel(id, label, options, fn) { const cur = _crmLF[id] || ''; return '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="_crmLF[\'' + id + '\']=this.value;' + fn + '()"><option value=""' + (cur === '' ? ' selected' : '') + '>' + _t(label) + '</option>' + (options || []).map(o => '<option value="' + _crmEsc(o) + '"' + (cur === o ? ' selected' : '') + '>' + _t(o) + '</option>').join('') + '</select>'; }
+function _crmFiltSel(id, label, options, fn) { const cur = _crmLF[id] || ''; return '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="_crmLF[\'' + id + '\']=this.value;' + fn + '()"><option value=""' + (cur === '' ? ' selected' : '') + '>' + _crmEsc(_t(label)) + '</option>' + (options || []).map(o => '<option value="' + _crmEsc(o) + '"' + (cur === o ? ' selected' : '') + '>' + _crmEsc(_t(o)) + '</option>').join('') + '</select>'; }
 function _crmFiltBar(html) { return '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + html + '</div>'; }
 /* THE standard period control (used by every toolbar): All time / Today / This week / This month /
    Last month / This quarter / This year / Custom range… — 'Custom range…' reveals from→to day
@@ -14598,7 +14598,9 @@ const _VI = {
   'Export Excel': 'Xuất Excel',
   'Search actor / action / target / detail…': 'Tìm người thực hiện / hành động / đối tượng / chi tiết…',
   'All actions': 'Tất cả hành động', 'All actors': 'Tất cả người thực hiện',
-  'When': 'Thời điểm', 'Actor': 'Người thực hiện', 'Action': 'Hành động', 'Target': 'Đối tượng', 'Details': 'Chi tiết',
+  // 'When'/'Action' reuse the existing generic VN keys (Khi nào / Thao tác); 'Record' is a fresh key
+  // for the audit "affected record" column (the generic 'Target'->'Mục tiêu' means goal, wrong here).
+  'Actor': 'Người thực hiện', 'Details': 'Chi tiết', 'Record': 'Bản ghi',
   'events': 'sự kiện', 'No events match your filters.': 'Không có sự kiện nào khớp với bộ lọc.',
   'No audit events recorded yet.': 'Chưa ghi nhận sự kiện kiểm toán nào.',
   'Export library is still loading — try again in a moment.': 'Thư viện xuất đang tải — vui lòng thử lại sau giây lát.',

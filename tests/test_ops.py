@@ -1,5 +1,6 @@
 """Ops / observability: health probe, admin error-review gate, and unhandled-error capture."""
 import app
+import db
 
 
 def test_health_is_public_and_ok(api):
@@ -34,6 +35,33 @@ def test_record_error_captures_and_strips_query(monkeypatch):
 
 def _boom():
     raise RuntimeError("kaboom")
+
+
+def test_audit_read_is_scoped_for_non_admin(api, tokens):
+    """The full audit trail is admin-only (matching the admin-only Audit Log view). A non-admin
+    reader — e.g. the management-level Signature Governance page — gets ONLY e-signature events,
+    so deletions / access-level changes can't be pulled via the API by a manager+ account."""
+    db.put_collection_item("audit", {"ts": "2026-07-18T01:00:00Z", "actor": "x",
+                                     "action": "E-signature — Approve", "target": "payments/p1", "detail": ""})
+    db.put_collection_item("audit", {"ts": "2026-07-18T02:00:00Z", "actor": "x",
+                                     "action": "Delete payment", "target": "payments/p9", "detail": ""})
+    db.put_collection_item("audit", {"ts": "2026-07-18T03:00:00Z", "actor": "x",
+                                     "action": "Access level changed", "target": "employees/e1", "detail": ""})
+
+    # management (the Signature Governance level) — e-signature events ONLY
+    st, r = api("GET", "/api/coll/audit", tokens["management"])
+    assert st == 200
+    actions = [x.get("action", "") for x in r["items"]]
+    assert actions, "management should still get the e-signature subset (esigngov needs it)"
+    assert all("e-signature" in a.lower() for a in actions), \
+        "a non-admin must NOT see delete / access-change audit rows"
+
+    # admin — the full trail
+    st, r = api("GET", "/api/coll/audit", tokens["admin"])
+    assert st == 200
+    actions = [x.get("action", "") for x in r["items"]]
+    assert any("delete" in a.lower() for a in actions)
+    assert any("access level" in a.lower() for a in actions)
 
 
 def test_serve_request_captures_and_returns_500():

@@ -2514,6 +2514,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
         lvl = self._caller_level(u)
+        # Audit trail: the FULL immutable log (deletions, access-level changes, attendance, invoice
+        # syncs) is ADMIN-only — matching the admin-only Audit Log view. A non-admin reader (the
+        # Signature Governance page is management-level and filters to e-signature events client-side
+        # anyway) gets ONLY the e-signature subset, so the rest of the trail can't be pulled via the
+        # API by a manager/management/editor account whose UI hides the Audit Log.
+        if name == "audit" and lvl != "admin":
+            items = [it for it in items if "e-signature" in str(it.get("action") or "").lower()]
         # staff see ONLY their own records in self-service collections (no cross-employee read)
         if lvl == "staff" and name in self.SELF_OWNED:
             myid, myname = u.get("id"), u.get("name")
@@ -2632,7 +2639,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -2682,7 +2689,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)

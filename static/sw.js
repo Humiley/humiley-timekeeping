@@ -5,7 +5,7 @@
    fallback when the network is offline OR slower than the timeout (keeps the "fast to open on 4G"
    behaviour + offline use). Every successful load refreshes the cached shell, so the fallback is always
    the last-known-good version; static assets + CDN libs stay cache-first. */
-const CACHE = 'hml-pwa-v64';
+const CACHE = 'hml-pwa-v65';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -45,8 +45,10 @@ self.addEventListener('fetch', e => {
       // HEALTHY same-origin shell is cached: a deploy-window 502 or a captive-portal page must never
       // become the offline fallback ("blank/stuck app when coming back on mobile").
       const netP = fetch(req).then(r => {
-        if (r && r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); }
-        return r;
+        if (r && r.ok && r.type === 'basic') { const rc = r.clone(); caches.open(CACHE).then(c => c.put('/', rc)).catch(() => {}); return r; }
+        // A non-ok / non-basic navigation (a deploy-window 502, a captive-portal page) must NOT be
+        // shown — throw so the catch below serves the last-known-good cached shell instead.
+        throw new Error('sw-bad-nav');
       });
       try {
         // Fresh shell if the network answers within the budget (a 304 revalidation is tiny, so this
