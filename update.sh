@@ -55,6 +55,7 @@ else say "Cloning Procurement into ./$PROC_DIR…"; git clone "$PROC_REPO" "$PRO
 gen_secret TK_ESIGN_PEPPER "Do NOT change it or enrolled e-sign PINs stop working."
 gen_secret TK_SSO_SECRET   "Procurement reads this SAME value as PORTAL_SSO_SECRET."
 gen_secret AUTH_SECRET     "Auth.js session secret for Procurement."
+gen_secret ESIGN_SIGNING_SECRET "Procurement e-signature chain HMAC key. Do NOT change it or existing signatures fail verification."
 gen_secret POSTGRES_PASSWORD "Procurement database password."
 
 # 4) Build everything

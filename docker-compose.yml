@@ -56,6 +56,10 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
       - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET (update.sh generates it)}
       - AUTH_TRUST_HOST=true
+      # E-signature chain HMAC key (21 CFR Part 11). Dedicated so it's decoupled from AUTH_SECRET
+      # rotation; if unset the app derives the key from AUTH_SECRET instead. NEVER change it once set —
+      # existing v2 signatures would fail verifyChain. update.sh generates it once.
+      - ESIGN_SIGNING_SECRET=${ESIGN_SIGNING_SECRET:-}
       # SAME secret as the portal above — one variable, always in sync.
       - PORTAL_SSO_SECRET=${TK_SSO_SECRET:-}
       - APP_URL=${APP_URL:-https://portal.humiley.com/procurement}
