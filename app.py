@@ -374,9 +374,11 @@ def _einv_from_pdf(pdf_bytes):
             "supplier": "", "dateISO": "", "dateRaw": "", "lookupCode": bf.get("code", ""), "_method": "pdf"}
 
 
-_INVLINK_HOSTS = ("vnpt-invoice.vn", "meinvoice.vn", "misa.vn", "misa.com.vn", "sinvoice.viettel.vn",
-                  "viettel.vn", "einvoice.fpt.com.vn", "fpt.com.vn", "easyinvoice.vn", "softdreams.vn",
-                  "bkav.com", "ehoadon.vn", "hilo.com.vn", "hoadondientu.gdt.gov.vn", "gdt.gov.vn")
+_INVLINK_HOSTS = ("vnpt-invoice.vn", "vnpt-invoice.com.vn", "vnpt.vn", "meinvoice.vn", "misa.vn", "misa.com.vn",
+                  "sinvoice.viettel.vn", "viettel.vn", "einvoice.fpt.com.vn", "fpt.com.vn", "easyinvoice.vn",
+                  "softdreams.vn", "bkav.com", "ehoadon.vn", "hilo.com.vn", "hoadondientu.gdt.gov.vn", "gdt.gov.vn",
+                  "einvoice.com.vn", "hoadon.vn", "wininvoice.vn", "vininvoice.vn", "cyberbill.vn",
+                  "hoadondientu.vn", "vnpt-invoice.com", "einvoice.vn")
 
 
 def _invtrack_url_safe(url):
@@ -464,7 +466,7 @@ def _invtrack_body_fields(html):
     """Best-effort pull from a VN e-invoice NOTIFICATION email body (no attachment): the tra-cứu
        lookup URL + code, invoice no / seller MST, and amounts (before/VAT/after) when clearly
        labelled. Identifiers (digits) are read from the diacritic-folded text; the code keeps its case."""
-    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "before": 0, "vat": 0, "after": 0}
+    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "before": 0, "vat": 0, "after": 0, "fileUrls": []}
     if not html:
         return out
     href_urls = re.findall(r'''(?:href|src)\s*=\s*["']?(https?://[^\s"'<>]+)''', html, re.I)   # links live in the href, not visible text
@@ -475,6 +477,19 @@ def _invtrack_body_fields(html):
     for cand in list(href_urls) + re.findall(r"https?://[^\s\"'<>]+", raw):
         if re.search(hosts, cand, re.I):
             out["url"] = cand.rstrip('.,);:"\''); break
+    # DIRECT DOWNLOAD links to the REAL invoice file (PDF/XML) — these need NO CAPTCHA, so following
+    # them lets us auto-fetch the invoice + amount instead of a manual lookup. Identify them by the
+    # anchor TEXT ("tải …", "download", "PDF", "XML") — note "tải" (download, ả) is distinct from the
+    # lookup link's "tại đây … xem ngay" (ạ) even before diacritics are folded — or by the href itself
+    # pointing at a file/download endpoint. Only same-provider (SSRF-safe) hosts.
+    for am in re.finditer(r'<a\b[^>]*?href\s*=\s*["\']?(https?://[^"\'\s>]+)["\']?[^>]*>(.*?)</a>', html, re.I | re.S):
+        href = am.group(1).rstrip('.,);:"\'')
+        atext = re.sub(r"<[^>]+>", " ", am.group(2))
+        is_dl = bool(re.search(r'tải|download|\bPDF\b|\bXML\b', atext, re.I)) or \
+                bool(re.search(r'\.(pdf|xml|zip)(\?|#|$)|/download|/getfile|/export|/tai\b|type=(pdf|xml)|action=(download|export)', href, re.I))
+        if is_dl and _invtrack_url_safe(href) and href not in out["fileUrls"]:
+            out["fileUrls"].append(href)
+    out["fileUrls"].sort(key=lambda u: 0 if re.search(r'pdf|type=pdf', u, re.I) else 1)   # try the PDF first (human-readable + carries the total)
     mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
     if mc:
         out["code"] = mc.group(1)
@@ -523,6 +538,7 @@ def _invtrack_item(m, ex):
     vat = ex.get("vat", 0) or bf.get("vat", 0)
     code = ex.get("lookupCode", "") or bf.get("code", "")
     url = bf.get("url", "")
+    file_url = ex.get("_fileUrl", "") or (bf.get("fileUrls") or [""])[0]   # direct PDF/XML download link from the email
     lookup = ((code or "") + ("  " + url if url else "")).strip()
     extracted = bool(inv_no or serial or after > 0)
     s = _vn_fold(subject + " " + from_name + " " + from_addr)
@@ -538,7 +554,7 @@ def _invtrack_item(m, ex):
             "invNo": inv_no, "serial": serial, "taxCode": tax,
             "before": before, "vat": vat, "after": after,
             "desc": subject, "attach": ex.get("_attachName", ""), "type": typ,
-            "sender": from_addr or from_name, "lookup": lookup,
+            "sender": from_addr or from_name, "lookup": lookup, "fileUrl": file_url,
             "method": method,
             "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
 
@@ -613,15 +629,28 @@ def _invtrack_sync(trigger="manual"):
                 except Exception:
                     pass
                 return _fetch_linked(msg)
-            def _fetch_linked(msg):                    # a direct invoice-file link in the body (no CAPTCHA); bounded
+            def _fetch_linked(msg):                    # follow the email's OWN download links (tải PDF/XML) — no CAPTCHA; bounded
                 if link_budget[0] <= 0:
                     return None
                 body = ((msg.get("body") or {}).get("content") or "") or (msg.get("bodyPreview") or "")
-                lu = _invtrack_body_fields(body).get("url")
-                if not lu:
-                    return None
-                link_budget[0] -= 1
-                return _invtrack_fetch_linked(lu)
+                bf = _invtrack_body_fields(body)
+                # 1) the real invoice download links ("tải PDF/XML") — auto-fetch the file + amount, no lookup
+                for fu in (bf.get("fileUrls") or []):
+                    if link_budget[0] <= 0:
+                        break
+                    link_budget[0] -= 1
+                    ex = _invtrack_fetch_linked(fu)
+                    if ex and (ex.get("after") or ex.get("invNo") or ex.get("serial")):
+                        ex["_fileUrl"] = fu                # remember the working download link for the UI
+                        return ex
+                # 2) some providers serve the file straight off the lookup URL — try it as a fallback
+                lu = bf.get("url")
+                if lu and link_budget[0] > 0:
+                    link_budget[0] -= 1
+                    ex = _invtrack_fetch_linked(lu)
+                    if ex:
+                        return ex
+                return None
             while url and pages < cap:
                 j = _graph_get(url, token)
                 for m in j.get("value", []):

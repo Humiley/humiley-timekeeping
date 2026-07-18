@@ -8817,6 +8817,9 @@ function _invISO(s) { s = String(s == null ? '' : s).trim(); if (!s) return ''; 
 function _invDMY(iso) { if (!iso) return ''; const p = iso.split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
 function _invTypeKey(t) { t = String(t || ''); if (/mua vào|purchase/i.test(t)) return 'purchase'; if (/bán ra|sales/i.test(t)) return 'sales'; if (/tổng hợp|nội bộ|internal|package/i.test(t)) return 'internal'; return 'other'; }
 function _invLookupUrl(i) { var m = String((i && i.lookup) || '').match(/https?:\/\/[^\s"'<>]+/); return m ? m[0] : ''; }
+/* Direct DOWNLOAD link to the real invoice file (PDF/XML) harvested from the email — no CAPTCHA lookup. */
+function _invFileUrl(i) { var u = String((i && i.fileUrl) || ''); return /^https?:\/\//i.test(u) ? u : ''; }
+function _invDlLink(i, label, big) { var f = _invFileUrl(i); if (!f) return ''; return '<a href="' + _tkEscA(f) + '" target="_blank" rel="noopener" download title="' + _tkEscA(_t('Download the real invoice file (PDF/XML) — no lookup or CAPTCHA needed')) + '" style="color:#00B060;' + (big ? 'font-weight:600;' : '') + 'text-decoration:underline;white-space:nowrap">' + _t(label) + ' ↓</a>'; }
 function _invMonthKey(iso) { return iso ? iso.slice(0, 7) : ''; }
 function _invMonthLabel(k) { if (!k) return '—'; const p = k.split('-'); return 'Tháng ' + p[1] + '/' + p[0]; }
 function _invQuarterKey(iso) { if (!iso) return ''; const q = Math.floor((+iso.slice(5, 7) - 1) / 3) + 1; return 'Q' + q + ' ' + iso.slice(0, 4); }
@@ -9016,9 +9019,9 @@ function _invRegRows(list) {
       '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.before) ? _invMoney(i.before) : '—') + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
-      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' — ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' ↗</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var _f = _invDlLink(i, 'Download'); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' — ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' ↗</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:240px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.desc || '') + '">' + esc(i.desc) + '</div></td>' +
-      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
+      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var _f = _invDlLink(i, 'Download invoice', true); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td>' +
       '</tr>';
   });
@@ -9043,7 +9046,8 @@ function _invDetailHTML(i, idx) {
   let recon = '';
   if (i._payMatch) recon += '<span class="badge" style="background:#00B06022;color:#00B060">→ ' + _crmEsc(i._payMatch) + '</span> ';
   if (i._dup) recon += '<span class="badge" style="background:#E5484D22;color:#E5484D">DUP</span> ';
-  const fileHtml = i.attach ? ('📎 ' + esc(i.attach)) : (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" style="color:#00B060;text-decoration:underline">' + _t('Open supplier portal') + ' ↗</a>' : _t('No file'));
+  const _fdl = _invFileUrl(i);
+  const fileHtml = i.attach ? ('📎 ' + esc(i.attach)) : (_fdl ? _invDlLink(i, 'Download invoice', true) : (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" style="color:#00B060;text-decoration:underline">' + _t('Open supplier portal') + ' ↗</a>' : _t('No file')));
   const iv = n => (_invNum(n) ? Math.round(_invNum(n)) : '');
   return '<div style="background:var(--soft-bg);border-left:3px solid ' + _INV_TYPE_COLOR[tk] + ';padding:14px 16px">' +
     '<div style="display:flex;flex-wrap:wrap;gap:16px 26px;align-items:flex-start">' +
@@ -9059,6 +9063,7 @@ function _invDetailHTML(i, idx) {
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('VAT') + '</div><input id="invedit-vat-' + idx + '" type="text" value="' + iv(i.vat) + '" placeholder="0" style="width:120px;text-align:right"></div>' +
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Total (after tax)') + '</div><input id="invedit-after-' + idx + '" type="text" value="' + iv(i.after) + '" placeholder="0" style="width:150px;text-align:right;font-weight:700"></div>' +
       '<button class="btn btn-primary btn-sm" onclick="_invSaveAmount(' + idx + ')">' + _t('Save amount') + '</button>' +
+      (_fdl ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(_fdl) + '" target="_blank" rel="noopener" download>' + tkIcon('download', 13) + _t('Download real invoice') + '</a>' : '') +
       (url ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(url) + '" target="_blank" rel="noopener">' + _t('Open portal to read amount') + ' ↗</a>' : '') +
     '</div>' +
     '<div style="font-size:10.5px;color:var(--text-light);margin-top:6px">' + _t('Open the portal, read the total, type it here and Save — it sticks and updates every total, chart and export.') + '</div>' +
@@ -15968,6 +15973,11 @@ const _VI = {
   "Delete this schedule?": "Xoá lịch làm việc này?",
   "Edit Work Schedule": "Sửa lịch làm việc",
   "Delete": "Xoá",
+  "Download invoice": "Tải hoá đơn",
+  "Download": "Tải về",
+  "Download real invoice": "Tải hoá đơn thật",
+  "Download the real invoice file (PDF/XML) — no lookup or CAPTCHA needed": "Tải tệp hoá đơn thật (PDF/XML) — không cần tra cứu hay CAPTCHA",
+  "Download the real invoice to read the amount": "Tải hoá đơn thật để đọc số tiền",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
