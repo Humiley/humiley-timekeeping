@@ -1720,7 +1720,9 @@ class Handler(BaseHTTPRequestHandler):
                 return "This request is no longer pending approval."
             if same_person:
                 return "You cannot approve your own request."
-            reviewer_ids = [s.get("userId") for s in (sigs or []) if "review" in str(s.get("meaning", "")).lower()]
+            reviewer_ids = [s.get("userId") for s in (sigs or [])
+                            if str(s.get("setStatus") or "").lower() == "reviewed"        # server-applied (authoritative)
+                            or "review" in str(s.get("meaning", "")).lower()]             # legacy sigs fallback
             if u.get("id") in reviewer_ids:
                 return "A different person must give final approval than the one who reviewed."
             return None
@@ -1803,6 +1805,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("The Microsoft 365 account you signed with does not match your session.", 403)
         sig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
                "ts": self._utc_now(), "meaning": meaning, "method": method}
+        if set_status:
+            # Record the SERVER-applied status transition on the signature. Segregation-of-duties
+            # (reviewer != approver) keys off this, not the client-controlled free-text `meaning`
+            # (which a signer could word to omit "review" and then approve their own review).
+            sig["setStatus"] = set_status
         if auth_time:
             sig["authTime"] = auth_time
         # Optional hand-drawn signature (the visual mark) — a small PNG data-URI drawn in the sign
