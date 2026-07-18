@@ -2053,6 +2053,24 @@ class Handler(BaseHTTPRequestHandler):
         """The company's calendar day (UTC+7) — never trust the server's own timezone."""
         return (datetime.utcnow() + timedelta(hours=7, days=offset_days)).strftime("%Y-%m-%d")
 
+    _PUNCH_SKEW_MIN = 10   # tolerate a device clock a little ahead of the company clock
+
+    @staticmethod
+    def _vn_now():
+        """Current company (UTC+7) datetime — the server clock, never the device's."""
+        return datetime.utcnow() + timedelta(hours=7)
+
+    def _is_future_punch(self, date, t):
+        """True if a check-in/out time falls AFTER the company clock (beyond a small skew). A punch may
+        be backdated (a late or forgotten punch) but must never be POST-dated — otherwise a future time
+        fabricates hours (e.g. a 21:00 check-out entered at 09:05 = a phantom 15-hour shift, which the
+        16h overnight cap does not catch on a same day)."""
+        try:
+            claimed = datetime.strptime((date or "") + " " + (t or ""), "%Y-%m-%d %H:%M")
+        except (TypeError, ValueError):
+            return False   # malformed — the caller's format/date guards handle it
+        return claimed > self._vn_now() + timedelta(minutes=self._PUNCH_SKEW_MIN)
+
     def _is_workday(self, date):
         """Sundays and company holidays never count as late (advisory lateness only)."""
         try:
@@ -2090,6 +2108,8 @@ class Handler(BaseHTTPRequestHandler):
         t = body.get("time")
         if not isinstance(t, str) or not self._RE_TIME.match(t or ""):
             return self._err("Invalid time.")
+        if self._is_future_punch(date, t):
+            return self._err("Check-in time can't be in the future — enter the actual time you arrived.")
         try:
             lat = float(body.get("lat")) if body.get("lat") is not None else None
             lon = float(body.get("lon")) if body.get("lon") is not None else None
@@ -2116,6 +2136,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid time.")
         if not isinstance(date, str) or not self._RE_DATE.match(date or ""):
             date = self._vn_day()
+        # A check-out happens now: its time can be backdated but never post-dated past the company
+        # clock (a 21:00 check-out entered at 09:05 would otherwise fabricate a ~15h same-day shift).
+        if self._is_future_punch(self._vn_day(), t):
+            return self._err("Check-out time can't be in the future — enter the actual time.")
         # today's open record first; else yesterday's (overnight/OT shifts checking out after 00:00)
         rec = db.open_attendance_any(u["id"], [self._vn_day(), self._vn_day(-1)])
         if not rec:

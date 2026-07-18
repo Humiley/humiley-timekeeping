@@ -191,3 +191,33 @@ def test_claim_line_approval_resets_on_amount_change(api, tokens):
     # the untouched line keeps its (unchanged) status
     l2 = next(it for it in r["item"]["items"] if it["id"] == "L2")
     assert (l2.get("status") or "Submitted") == "Submitted"
+
+
+# --------------------------------------------------------------------------- punch clock integrity (D)
+def _freeze_company_clock(monkeypatch):
+    """Freeze the company (UTC+7) clock at 2026-07-18 09:05 so future/past punch times are
+    deterministic regardless of when the suite runs. The server thread shares app.Handler, so
+    patching the class staticmethods reaches the live handler; monkeypatch reverts afterwards."""
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 9, 5)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day", staticmethod(lambda offset_days=0: (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+
+
+def test_checkin_time_cannot_be_in_the_future(api, tokens, monkeypatch):
+    """A punch may be backdated (a late/forgotten punch) but never post-dated past the company clock —
+    a future time fabricates hours (a 21:00 check-out entered at 09:05 = a phantom ~15h shift)."""
+    _freeze_company_clock(monkeypatch)          # company clock = 09:05
+    st, r = api("POST", "/api/attendance/checkin", tokens["management"], {"time": "21:00"})
+    assert st == 400, "a future check-in time must be rejected"
+    assert "future" in (r.get("error") or "").lower()
+    # a backdated (earlier same-day) punch is still allowed — the arrival was real, just logged late
+    st, r = api("POST", "/api/attendance/checkin", tokens["management"], {"time": "06:00"})
+    assert st == 200, r
+
+
+def test_checkout_time_cannot_be_in_the_future(api, tokens, monkeypatch):
+    _freeze_company_clock(monkeypatch)          # company clock = 09:05
+    st, r = api("POST", "/api/attendance/checkout", tokens["editor"], {"time": "21:00"})
+    assert st == 400, "a future check-out time must be rejected"
+    assert "future" in (r.get("error") or "").lower()
