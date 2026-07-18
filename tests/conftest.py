@@ -43,6 +43,11 @@ def base_url():
         db.create_employee({"id": "HML-OTH", "name": "Other Staff", "email": "other@humiley.com",
                              "role": "staff", "level": "staff", "title": "Engineer",
                              "managerEmail": "admin@humiley.com"})
+        # Finance/Approver (management level) + Editor — for the Invoice Tracking access boundary.
+        db.create_employee({"id": "HML-MGT", "name": "Finance Approver", "email": "fin@humiley.com",
+                             "role": "manager", "level": "management", "title": "Finance Approver"})
+        db.create_employee({"id": "HML-EDT", "name": "Editor User", "email": "editor@humiley.com",
+                             "role": "manager", "level": "editor", "title": "Finance Editor"})
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
@@ -61,6 +66,8 @@ def tokens(base_url):
         "mgr": app.new_session("HML-MGR", "manager"),
         "staff": app.new_session("HML-STF", "staff"),
         "other": app.new_session("HML-OTH", "staff"),
+        "management": app.new_session("HML-MGT", "manager"),  # Finance/Approver level
+        "editor": app.new_session("HML-EDT", "manager"),
     }
 
 

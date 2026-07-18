@@ -759,7 +759,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Payroll</span>
   </div>
 
-  <div class="nav-item" data-roles="manager" data-level="management" data-app="finance" onclick="showView('invtrack',this,'Invoice Tracking')">
+  <div class="nav-item" data-roles="manager" data-level="editor" data-app="finance" onclick="showView('invtrack',this,'Invoice Tracking')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg></span>
     <span class="nav-label">Invoice Tracking</span>
   </div>
@@ -9772,7 +9772,7 @@ function _appDeniedCurrent(app) {
   }
   return denied.indexOf(app) >= 0;
 }
-function _applyAppAccess() { document.querySelectorAll('[data-app]').forEach(el => { const app = el.getAttribute('data-app'); const roleHidden = el.getAttribute('data-roles') === 'manager' && (typeof _userRole !== 'undefined' && _userRole !== 'manager'); el.style.display = (_appDeniedCurrent(app) || roleHidden) ? 'none' : ''; }); }
+function _applyAppAccess() { document.querySelectorAll('[data-app]').forEach(el => { const app = el.getAttribute('data-app'); const roleHidden = el.getAttribute('data-roles') === 'manager' && (typeof _userRole !== 'undefined' && _userRole !== 'manager'); const needLvl = el.getAttribute('data-level'); const levelHidden = !!needLvl && (_lvlRank(_userLevel) < _lvlRank(needLvl)); el.style.display = (_appDeniedCurrent(app) || roleHidden || levelHidden) ? 'none' : ''; }); }
 /* One access-level row. Extracted so a single edit can re-render JUST that row (keeps search +
    scroll) and its dependent controls (the procurement-role dropdown appears the moment Procurement
    is enabled). data-perm-id lets _permRowRefresh find it. */
@@ -12407,7 +12407,7 @@ async function crmImportFile(coll, file) {
 
 
 const _MGR_VIEWS = new Set(['locations','schedules','manager','hradmin','reports','integration','settings','database','recruitment','onboarding','offboarding','performance','talent','training','payroll','inbox','permissions','devices','invtrack']);
-const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'management', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
+const _LEVEL_VIEWS = { dashboard: 'management', payroll: 'management', reports: 'management', finance: 'management', invtrack: 'editor', esigngov: 'management', permissions: 'admin', 'crm-targets': 'management' };
 const _HR_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin', 'reports', 'devices']);
 /* HR views that share the Human Resource hub tab bar (Overview + all modules). */
 const _HR_HUB_VIEWS = new Set(['hr-overview', 'database', 'recruitment', 'onboarding', 'offboarding', 'performance', 'talent', 'training', 'hradmin']);

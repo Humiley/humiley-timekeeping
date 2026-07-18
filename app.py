@@ -2381,7 +2381,12 @@ class Handler(BaseHTTPRequestHandler):
     # management; recruitment/audit stay manager. Anything not listed AND not in
     # SELF_OWNED / a shared catalog (courses, learningpaths) is open to managers only
     # for staff via the self-owner scoping below.
-    READ_MIN = {"invtrack": "management", "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
+    # Invoice Tracking is locked to EDITOR + ADMIN only (company policy). A Finance/Approver
+    # (management) account may run Payroll + Finance Control but must NOT see Invoice Tracking.
+    # Every invtrack gate — read, status/sync/import, and coll add/update/delete — references this
+    # single constant so the enforcement can never drift apart between sites.
+    INVTRACK_MIN = "editor"
+    READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager",
                 # Project financials must not be world-readable to every staff account (the PM app is
@@ -2499,18 +2504,18 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def _invtrack_status(self, u):
-        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Finance access required.", 403)
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"]), "pdf": _pdf_engine_ok()})
 
     def _invtrack_sync_ep(self, u):
-        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Invoice Tracking is a Finance function \u2014 Approver level or above required.", 403)
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json(_invtrack_sync("manual"))
 
     def _invtrack_import_ep(self, u, body):
-        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Invoice Tracking is a Finance function \u2014 Approver level or above required.", 403)
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json(_invtrack_import(body or {}))
 
     def _coll_add(self, u, name, body):
@@ -2522,8 +2527,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
-        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         item = dict(body or {})
         # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
         if name in ("claims", "travel", "payments"):
@@ -2572,8 +2577,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
-        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         # Travel/claim/payment write scope: a LEADER (manager) may only edit records they own or that
         # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
         # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
@@ -2763,8 +2768,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Audit-trail entries cannot be deleted.", 403)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
-        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            return self._err("Invoice Tracking is a Finance function — Approver level or above required.", 403)
+        if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
         existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
         if not existing:
             return self._err("Not found.", 404)
