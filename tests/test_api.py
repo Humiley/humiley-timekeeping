@@ -86,6 +86,21 @@ def test_payment_status_cannot_be_forged(api, tokens):
 
 
 # --------------------------------------------------------------------------- attendance privacy scope
+def test_email_approve_link_does_not_finalize(base_url):
+    """The one-click email approval links no longer auto-approve (that bypassed the Part 11
+    e-signature and let a requester self-approve via their own leaked token). They deep-link into
+    the portal instead — so hitting /approve must NOT change the leave's status."""
+    import urllib.request
+    import db
+    rid, token = db.create_leave({"emp_id": "HML-STF", "type": "Annual Leave",
+                                  "startDate": "2026-08-01", "endDate": "2026-08-03",
+                                  "days": 3, "status": "pending"})
+    with urllib.request.urlopen(base_url + "/approve?t=%s&action=approve" % token, timeout=10) as r:
+        html = r.read().decode()
+    assert "inbox" in html.lower(), "the link should deep-link into the portal inbox"
+    assert db.get_leave(rid)["status"] == "pending", "the one-click link must NOT finalize the approval"
+
+
 def test_attendance_gps_is_scoped(api, tokens):
     # an attendance row for the admin, carrying GPS coordinates
     db.clock_in("HML-ADM", "2026-07-15", "08:00", loc="HQ", lat=10.7769, lon=106.7009)

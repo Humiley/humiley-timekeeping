@@ -4476,6 +4476,15 @@ function _applyRole(role) {
   const reqBtn = document.querySelector('#topbar .btn-emerald');
   if (reqBtn) reqBtn.style.display = '';  // always show
 
+  /* Deep-link: the retired one-click email approval links now open /?inbox=1 — send a manager
+     straight to their Approvals inbox to review & e-sign, instead of the dashboard. */
+  let _wantInbox = false;
+  try { _wantInbox = new URLSearchParams(location.search).get('inbox') === '1' && isManager; } catch (e) {}
+  if (_wantInbox) {
+    showView('inbox', null, 'Approval Inbox');
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}   // drop the param
+    return;
+  }
   /* navigate to correct home — Company Dashboard is Management (Approver) level and above only */
   if (isManager && _lvlRank(_userLevel) >= _lvlRank('management')) {
     showView('dashboard', document.getElementById('nav-company-dash'), 'Company Dashboard');

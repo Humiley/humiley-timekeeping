@@ -2246,20 +2246,28 @@ class Handler(BaseHTTPRequestHandler):
         action = (qs.get("action", ["approve"])[0]).lower()
         lv = db.get_leave_by_token(token)
         if not lv:
-            return self._html("Invalid or expired link", "This approval link is not valid. Please use the app to review the request.", "#C00000")
+            return self._html("Invalid or expired link", "This approval link is not valid. Please review the request in the app.", "#C00000")
         requester = db.get_employee(lv["emp_id"])
         rname = requester["name"] if requester else "the employee"
         if (lv.get("status") or "").lower() != "pending":
             return self._html("Already " + lv["status"], "This leave request for %s was already <b>%s</b>." % (_hesc(rname), _hesc(lv["status"])), "#205090")
-        new_status = "rejected" if action in ("reject", "decline", "deny") else "approved"
-        db.set_leave_status(lv["id"], new_status)
-        if new_status == "approved":
-            self._leave_apply_balance(lv)   # email one-click approval must decrement the balance too
-        verb = "approved ✅" if new_status == "approved" else "rejected"
-        return self._html("Leave " + new_status,
-                          "%s's %s (%s → %s) has been <b>%s</b>." % (_hesc(rname), _hesc(lv.get("type", "leave")),
-                          _hesc(lv.get("startDate", "")), _hesc(lv.get("endDate", "")), verb),
-                          "#00B060" if new_status == "approved" else "#C00000")
+        # The link no longer FINALIZES the decision (that bypassed the Part 11 e-signature and, because
+        # the requester holds the token, allowed self-approval). It deep-links into the portal, where the
+        # authenticated manager approves with a signature.
+        return self._approve_landing(rname, "leave request",
+                                     "%s → %s" % (lv.get("startDate", ""), lv.get("endDate", "")))
+
+    def _approve_landing(self, who, what, detail):
+        """Landing page for the retired one-click email approval links — routes the manager into the
+        portal's Approvals inbox, where every decision is made with an authenticated e-signature."""
+        d = (" (" + _hesc(detail) + ")") if detail else ""
+        msg = ("%s's %s%s needs your review. For security and 21 CFR Part 11 compliance, approvals are now "
+               "made in the Humiley Portal with your e-signature — the one-click email approval has been "
+               "retired.<br><br>"
+               "<a href=\"/?inbox=1\" style=\"display:inline-block;background:#205090;color:#fff;"
+               "padding:11px 22px;border-radius:9px;text-decoration:none;font-weight:600\">"
+               "Open the Approvals inbox →</a>") % (_hesc(who), _hesc(what), d)
+        return self._html("Review in the portal", msg, "#205090")
 
     def _coll_approve_via_link(self, qs):
         """One-click Approve / Reject / Mark-paid from an email link (no login), by token.
@@ -2275,40 +2283,12 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             who = item.get("name") or "the employee"
             cur = item.get("status") or "Submitted"
-            state = self._appr_state(cur)
+            if self._appr_state(cur) not in ("submit", "review", "approved"):
+                return self._html("Already " + cur, "This %s from %s is already <b>%s</b>." % (LABEL[coll], _hesc(who), _hesc(cur)), "#205090")
             detail = item.get("reqNo") or item.get("title") or item.get("dest") or ""
-            # Email links do the manager's REVIEW step (and Reject). Final Director approval and
-            # mark-paid happen in the portal, where the session enforces Management level + segregation.
-            if action == "paid" and coll == "payments":
-                if state != "approved":
-                    return self._html("Not approved yet", "This payment from %s is <b>%s</b> — a Director must approve it in the portal before it can be marked paid." % (_hesc(who), _hesc(cur)), "#205090")
-                new_status = "Paid"
-            elif action in ("reject", "decline", "deny"):
-                if state not in ("submit", "review"):
-                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b>." % (LABEL[coll], _hesc(who), _hesc(cur)), "#205090")
-                new_status = "Rejected"
-            else:   # approve / review link from the direct manager
-                if state != "submit":
-                    return self._html("Already " + cur, "This %s from %s is already <b>%s</b> — final approval happens in the portal." % (LABEL[coll], _hesc(who), _hesc(cur)), "#205090")
-                new_status = "Reviewed"
-            item["status"] = new_status
-            if new_status == "Paid":
-                item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
-            if coll == "claims" and isinstance(item.get("items"), list):
-                for it in item["items"]:
-                    if (it.get("status") or "Submitted") in ("Submitted", "Reviewed"):
-                        it["status"] = new_status
-            if new_status == "Reviewed":
-                item["reviewedBy"] = item.get("reviewedBy") or "Email review"
-            db.put_collection_item(coll, item)
-            color = "#00B060" if new_status in ("Paid",) else ("#C00000" if new_status == "Rejected" else "#205090")
-            msg = {"Reviewed": "has been <b>reviewed</b> and is now awaiting Director approval in the portal",
-                   "Rejected": "has been <b>rejected</b>",
-                   "Paid": "has been <b>marked paid</b>"}.get(new_status, "has been updated")
-            return self._html(LABEL[coll].capitalize() + " " + ("reviewed" if new_status == "Reviewed" else new_status.lower()),
-                              "%s's %s%s %s. You can close this tab." % (
-                                  _hesc(who), LABEL[coll], (" (" + _hesc(detail) + ")" if detail else ""), msg),
-                              color)
+            # The link no longer changes status (that let a requester self-review/approve via a leaked
+            # token, unsigned). It deep-links into the portal for an authenticated, e-signed decision.
+            return self._approve_landing(who, LABEL[coll], detail)
         return self._html("Invalid or expired link",
                           "This approval link is not valid — the item may have been removed. Please review it in the app.", "#C00000")
 
