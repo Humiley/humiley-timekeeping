@@ -2676,6 +2676,18 @@ function tkAllDepts() {
 /* Fill every [data-dept-select] dropdown from tkAllDepts(), keeping each control's sentinel
    ("All Departments"/"All", value="") and any current selection. Called after the roster loads. */
 let _deptFillSig = '';
+/* Fill the employee Work-Schedule dropdown (+ any [data-sched-select]) from the PERSISTED schedule
+   patterns, so a schedule created/edited in Work Schedules becomes assignable — not just 5 built-ins.
+   Falls back to the standard seed names before the collection has loaded. */
+function tkFillSchedSelects(root) {
+  let names = ((typeof _HR !== 'undefined' && _HR.schedules) || []).map(s => s && s.name).filter(Boolean);
+  if (!names.length && typeof _SCHED_SEED !== 'undefined') names = _SCHED_SEED.map(s => s.name);
+  (root || document).querySelectorAll('#ee-schedule, select[data-sched-select]').forEach(sel => {
+    const prev = sel.value;
+    sel.innerHTML = names.map(n => '<option>' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
+    if (prev && names.indexOf(prev) >= 0) sel.value = prev;
+  });
+}
 function tkFillDeptSelects(root) {
   const depts = tkAllDepts();
   /* Runs from every bootstrap (login, 30s poll, resume) — skip the DOM rebuild when the
@@ -2704,6 +2716,7 @@ async function tkBootstrap() {
   _DEMO_LEAVE      = lv.leave;
   _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius }));
   try { tkFillDeptSelects(); } catch (e) {}   // populate all department dropdowns from the real roster
+  try { if (!((typeof _HR !== 'undefined' && _HR.schedules) || []).length) { tkLoadColl('schedules').then(function () { try { tkFillSchedSelects(); } catch (e) {} }); } else { tkFillSchedSelects(); } } catch (e) {}   // schedule dropdowns from persisted patterns
 }
 
 /* Fire a write to the backend; never let a backend hiccup break the UI. */
@@ -18865,7 +18878,8 @@ function editEmployeeProfile(btn) {
   document.getElementById('ee-id').value    = emp.id;
   document.getElementById('ee-title').value = emp.title || '';
   document.getElementById('ee-email').value = emp.email || '';
-  const schedSel = document.getElementById('ee-schedule'); if (schedSel) schedSel.value = emp.schedule || 'Standard 08:00 – 17:00';
+  try { tkFillSchedSelects(); } catch (e) {}   // custom (persisted) schedules become assignable, not just the 5 hardcoded ones
+  const schedSel = document.getElementById('ee-schedule'); if (schedSel) { if (emp.schedule && !Array.from(schedSel.options).some(o => o.value === emp.schedule)) { const o = document.createElement('option'); o.textContent = emp.schedule; schedSel.appendChild(o); } schedSel.value = emp.schedule || 'Standard 08:00 – 17:00'; }
   tkPopulateManagerSelect(emp.managerEmail, emp.id);
   openModal('editEmpModal');
 }
