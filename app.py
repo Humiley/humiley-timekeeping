@@ -2312,6 +2312,11 @@ class Handler(BaseHTTPRequestHandler):
             body.pop("appsDenied", None)
             body.pop("appsAllowed", None)
             body.pop("procRole", None)
+        # Strip angle brackets from free-text identity fields — they're rendered into many <option>/
+        # <td> builders that don't all HTML-escape, and a name/title never legitimately contains them.
+        for _f in ("name", "title", "dept", "department"):
+            if isinstance(body.get(_f), str):
+                body[_f] = body[_f].replace("<", "").replace(">", "")
         return self._json({"ok": True, "id": db.create_employee(body)})
 
     def _emp_list_for(self, u):
@@ -2390,6 +2395,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._err("This is a protected super-admin account — its access level, apps and status are locked.", 403)
                 for _k in _priv:
                     body.pop(_k, None)
+        # Strip angle brackets from free-text identity fields (rendered into <option>/<td> builders
+        # that don't all HTML-escape; a name/title/dept never legitimately contains them).
+        for _f in ("name", "title", "dept", "department"):
+            if isinstance(body.get(_f), str):
+                body[_f] = body[_f].replace("<", "").replace(">", "")
         if body:
             db.update_employee(eid, body)
         return self._json({"ok": True})
@@ -2572,13 +2582,19 @@ class Handler(BaseHTTPRequestHandler):
 
     @staticmethod
     def _crm_sanitize(body):
-        # Defense-in-depth: strip angle brackets from CRM string fields so a stored value
-        # can never inject markup when re-rendered (frontend also HTML-escapes on output).
-        out = dict(body or {})
-        for k, v in list(out.items()):
+        # Defense-in-depth: strip angle brackets from EVERY string in the record — including nested
+        # arrays/objects (claim & travel line-items, PADR goals, onboarding tasks) — so a stored value
+        # can never inject markup when re-rendered. Angle brackets are never legitimate in this app's
+        # HR/finance text, and the frontend also HTML-escapes on output.
+        def _clean(v):
             if isinstance(v, str):
-                out[k] = v.replace("<", "").replace(">", "")
-        return out
+                return v.replace("<", "").replace(">", "")
+            if isinstance(v, list):
+                return [_clean(x) for x in v]
+            if isinstance(v, dict):
+                return {k: _clean(x) for k, x in v.items()}
+            return v
+        return _clean(dict(body or {}))
 
     _MONEY_MAX = 100_000_000_000   # 100 billion VND ceiling per record — anything above is a typo/abuse
 
@@ -2639,7 +2655,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -2689,7 +2705,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)

