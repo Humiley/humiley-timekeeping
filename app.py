@@ -1133,8 +1133,8 @@ class Handler(BaseHTTPRequestHandler):
             n = int(self.headers.get("Content-Length", 0))
         except (TypeError, ValueError):
             return {}   # a malformed Content-Length is treated as an empty body, not a 500
-        if not n:
-            return {}
+        if n <= 0:
+            return {}   # 0 or a negative length -> empty body (a negative n would make rfile.read block)
         if n > self.MAX_BODY:
             return {}   # oversized payload — drop it (a TLS reverse proxy returns a proper 413)
         try:
@@ -1832,8 +1832,17 @@ class Handler(BaseHTTPRequestHandler):
         item = next((x for x in db.list_collection(coll) if x.get("id") == iid), None)
         if not item:
             return self._err("Record not found.", 404)
-        if u.get("role") != "manager" and item.get("empId") and item.get("empId") != u.get("id"):
-            return self._err("You can only sign your own record.", 403)
+        # A non-manager may only sign a record they OWN. The old gate only checked empId, which is
+        # never set on crm_/pm_ records — so `... and item.get("empId") ...` short-circuited to False
+        # and let a plain staff user sign/tamper with ANY CRM or PM record they don't own. Now ownership
+        # is checked across empId / createdById / owner / name, so a missing empId no longer opens it up.
+        if u.get("role") != "manager":
+            _owns = (item.get("empId") and item.get("empId") == u.get("id")) \
+                or (item.get("createdById") and item.get("createdById") == u.get("id")) \
+                or (item.get("owner") and item.get("owner") == u.get("name")) \
+                or ((not item.get("empId")) and item.get("name") and item.get("name") == u.get("name"))
+            if not _owns:
+                return self._err("You can only sign your own record.", 403)
         # Per-line-item signed decision on a claim (itemId present): review / approve / reject one line.
         item_id = body.get("itemId")
         if coll == "claims" and item_id:
@@ -2145,7 +2154,10 @@ class Handler(BaseHTTPRequestHandler):
         reports = db.list_reports(u.get("email"))
         ids += [r["id"] for r in reports]
         ids = list(dict.fromkeys(ids))  # dedupe, preserve order
-        return self._json({"leave": db.list_leave(emp_ids=ids, status=status)})
+        # Strip the one-click approval `token` from every row — it must never be readable on a list
+        # fetch (a requester could otherwise pull their own leave's token and self-approve via /approve).
+        rows = [{k: v for k, v in r.items() if k != "token"} for r in db.list_leave(emp_ids=ids, status=status)]
+        return self._json({"leave": rows})
 
     def _leave_create(self, u, body):
         data = dict(body, emp_id=u["id"], status="pending")
@@ -2386,7 +2398,9 @@ class Handler(BaseHTTPRequestHandler):
         # employee. Otherwise the lowest manager tier ("Contributor") could lock out — or dept-hijack the
         # financial records of — a higher-privileged user. (QA #1)
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
-            for _k in ("status", "dept", "department", "managerEmail", "salary", "grade", "endDate", "email", "title"):
+            for _k in ("status", "dept", "department", "managerEmail", "salary", "grade", "endDate",
+                       "email", "title", "bank", "taxId", "personalId", "dependents",
+                       "annualTotal", "annualUsed", "sickTotal", "sickUsed", "compoff"):
                 body.pop(_k, None)
         # Protected super-admins can never be demoted OR deactivated. A DEDICATED level/role/app/status
         # change (the Access-Levels dropdown sends ONLY those fields) is rejected LOUDLY so the acting
@@ -2607,9 +2621,15 @@ class Handler(BaseHTTPRequestHandler):
     def _validate_money_item(self, name, item):
         def num(v):
             try:
-                return float(v)
+                f = float(v)
             except (TypeError, ValueError):
                 return None
+            # Reject NaN / ±inf: they slip past the < 0 and > MAX comparisons (all NaN comparisons are
+            # False) and, once stored, json.dumps emits non-standard NaN/Infinity that breaks the whole
+            # collection's API response.
+            if f != f or f in (float("inf"), float("-inf")):
+                return None
+            return f
         for k in ("amount", "cost", "total", "advance", "grandTotal"):
             if k in item and item.get(k) not in (None, ""):
                 n = num(item.get(k))
@@ -2661,7 +2681,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -2711,7 +2731,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding"):
+        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
