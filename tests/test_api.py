@@ -86,6 +86,17 @@ def test_payment_status_cannot_be_forged(api, tokens):
 
 
 # --------------------------------------------------------------------------- attendance privacy scope
+def test_overtime_cannot_exceed_worked_span(api, tokens):
+    """Requested OT can't exceed the time actually checked in (a 1h presence can't claim 5h OT)."""
+    import app
+    import db
+    today = app.Handler._vn_day()
+    db.clock_in("HML-OTH", today, "08:00")   # checked in at 08:00; checking out at 09:00 => 1h span
+    st, r = api("POST", "/api/attendance/checkout", tokens["other"], {"time": "09:00", "otHours": 5})
+    assert st == 400
+    assert "overtime" in (r.get("error") or "").lower()
+
+
 def test_forgotten_checkout_is_rejected(api, tokens):
     """A forgotten check-out from an earlier day would wrap to a ~19-23h shift. The checkout must
     reject that (HR corrects it) rather than record a fabricated overnight."""

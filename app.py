@@ -2079,14 +2079,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _checkin(self, u, body):
         emp_id = u["id"]
-        date = body.get("date"); t = body.get("time")
-        if not isinstance(date, str) or not self._RE_DATE.match(date or ""):
-            return self._err("Invalid date.")
+        # Record against the COMPANY's day (UTC+7) — never the device's local date. A traveller west of
+        # VN whose device still reads "yesterday" was otherwise blocked ("Check-in must be for today").
+        date = self._vn_day()
+        t = body.get("time")
         if not isinstance(t, str) or not self._RE_TIME.match(t or ""):
             return self._err("Invalid time.")
-        # attendance is recorded for the company's TODAY only — no back/future-dating
-        if date != self._vn_day():
-            return self._err("Check-in must be for today.")
         try:
             lat = float(body.get("lat")) if body.get("lat") is not None else None
             lon = float(body.get("lon")) if body.get("lon") is not None else None
@@ -2120,21 +2118,21 @@ class Handler(BaseHTTPRequestHandler):
         overnight = rec["date"] != self._vn_day()
         if not overnight and rec.get("clock_in") and t < rec["clock_in"]:
             return self._err("Check-out time is before today's check-in.")
+        # Worked span in minutes (the overnight case wraps +24h, matching db._hrs_between).
+        try:
+            ih, im = map(int, (rec.get("clock_in") or "0:0").split(":"))
+            oh, om = map(int, t.split(":"))
+            span_min = (oh * 60 + om) - (ih * 60 + im)
+            if span_min < 0:
+                span_min += 1440
+        except (ValueError, AttributeError):
+            span_min = 0
         # Guard against a FORGOTTEN check-out from an earlier day: with the overnight +24h wrap, that
         # would otherwise be recorded as a ~19-23h shift (a genuine night shift is <16h). Reject it so
         # HR can correct the record, instead of storing a fabricated overnight.
-        if overnight:
-            try:
-                ih, im = map(int, (rec.get("clock_in") or "0:0").split(":"))
-                oh, om = map(int, t.split(":"))
-                span = (oh * 60 + om) - (ih * 60 + im)
-                if span < 0:
-                    span += 1440
-            except (ValueError, AttributeError):
-                span = 0
-            if span > 16 * 60:
-                return self._err("This looks like a missed check-out from an earlier day (the shift would "
-                                 "exceed 16 hours). Please ask HR to correct your attendance record.", 400)
+        if overnight and span_min > 16 * 60:
+            return self._err("This looks like a missed check-out from an earlier day (the shift would "
+                             "exceed 16 hours). Please ask HR to correct your attendance record.", 400)
         # Optional overtime REQUEST at checkout — pending manager approval; only approved OT counts.
         try:
             ot_hours = float(body.get("otHours") or 0)
@@ -2142,6 +2140,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid overtime hours.")
         if not (0 <= ot_hours <= 16):
             return self._err("Overtime hours must be between 0 and 16.")
+        # OT can't exceed the time actually checked in (small grace for minute rounding).
+        if span_min > 0 and ot_hours * 60 > span_min + 5:
+            return self._err("Overtime (%.1fh) cannot exceed the hours you were checked in (%.1fh)."
+                             % (ot_hours, span_min / 60.0), 400)
         hrs = db.clock_out(rec["id"], t, ot_hours=ot_hours,
                            ot_reason=str(body.get("otReason") or "")[:500], overnight=overnight)
         db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),

@@ -665,12 +665,19 @@ def create_employee(data):
     return emp_id
 
 
+def _scalar(v):
+    """SQLite can only bind str/int/float/bytes/None; a stray dict/list from a malformed request body
+    would raise InterfaceError (a 500 for any authenticated caller). JSON-encode non-scalars so the
+    write degrades gracefully instead of crashing the handler."""
+    return v if isinstance(v, (str, int, float, bool, bytes, type(None))) else json.dumps(v, ensure_ascii=False)
+
+
 def update_employee(emp_id, data):
     sets, params = [], []
     for f in EMP_FIELDS:
         if f in data:
             sets.append("%s = ?" % f)
-            params.append(data[f])
+            params.append(_scalar(data[f]))
     if not sets:
         return
     params.append(emp_id)
@@ -1185,7 +1192,7 @@ def update_zone(zone_id, data):
     sets, params = [], []
     for f in ("name", "lat", "lon", "radius"):
         if f in data:
-            sets.append("%s = ?" % f); params.append(data[f])
+            sets.append("%s = ?" % f); params.append(_scalar(data[f]))
     if not sets:
         return
     params.append(zone_id)
