@@ -1129,7 +1129,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"error": msg}, status)
 
     def _body(self):
-        n = int(self.headers.get("Content-Length", 0))
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            return {}   # a malformed Content-Length is treated as an empty body, not a 500
         if not n:
             return {}
         if n > self.MAX_BODY:
@@ -1923,9 +1926,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("Your signing PIN has expired — please set a new one in My Profile.", 409)
             return self._err("Incorrect PIN.", 401)
 
-        if action == "revoke":   # manager de-authorizes another employee's PIN (cannot read/set it)
-            if u.get("role") != "manager":
-                return self._err("Manager access required.", 403)
+        if action == "revoke":   # de-authorize another employee's signing PIN (cannot read/set it)
+            # Governance action, triggered from the management-level Signature Governance page — require
+            # Management (Approver) level or above, not merely a manager ROLE, so a low-tier "Contributor"
+            # can't disrupt a higher-privileged user's ability to e-sign. Matches the UI's own gate.
+            if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+                return self._err("Signature governance requires Approver level or above.", 403)
             emp_id = body.get("empId")
             if not emp_id or not db.get_employee(emp_id):
                 return self._err("Employee not found.", 404)
