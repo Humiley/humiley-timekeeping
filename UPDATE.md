@@ -118,7 +118,20 @@ docker restart humiley_portal
   `docker restart humiley_caddy`
 - **Free up disk** from old image builds occasionally: `docker image prune -f`
 - **Nightly automatic backups**: see `backup.sh` (Docker-aware online backup → host,
-  gzip, 14-day retention). Add to cron once: `0 2 * * * /opt/humiley-timekeeping/backup.sh >> /var/log/humiley-backup.log 2>&1`
+  gzip, **AES-256 encryption**, 14-day retention). Set it up once:
+  ```bash
+  # 1) create the encryption key ONCE (also store a copy in your password manager — if you lose
+  #    it, the encrypted backups are unrecoverable):
+  mkdir -p /root/humiley-backups
+  openssl rand -base64 48 > /root/humiley-backups/.backup-key && chmod 600 /root/humiley-backups/.backup-key
+  # 2) add to cron:
+  crontab -e   # then add:
+  0 2 * * * /opt/humiley-timekeeping/backup.sh >> /var/log/humiley-backup.log 2>&1
+  ```
+  Without the key file it still runs but writes **plaintext** `.gz` (a warning is logged). Copy the
+  newest `*.db.gz.enc` off-box (OneDrive) so a lost VPS is recoverable. **Restore drill (quarterly):**
+  restore the newest snapshot into a throwaway DB and confirm it opens — the runbook is in `backup.sh`
+  and `restore.sh` auto-decrypts `.enc` + decompresses `.gz`.
 - If `git pull` ever complains about local changes on the server (it shouldn't —
   the server only pulls), reset to match GitHub then pull:
   `git reset --hard origin/main && git pull`

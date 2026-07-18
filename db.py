@@ -22,9 +22,16 @@ DB_PATH = os.environ.get("TK_DB_PATH", os.path.join(os.path.dirname(__file__), "
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # WAL lets readers and a writer work concurrently (the stdlib server is multi-threaded), and
+    # busy_timeout makes a contended write WAIT briefly instead of raising "database is locked".
+    # synchronous=NORMAL is durable under WAL and much faster. These are the biggest cheap wins for
+    # SQLite under real concurrent use.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 

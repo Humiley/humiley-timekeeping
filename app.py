@@ -380,6 +380,20 @@ _INVLINK_HOSTS = ("vnpt-invoice.vn", "vnpt-invoice.com.vn", "vnpt.vn", "meinvoic
                   "einvoice.com.vn", "hoadon.vn", "wininvoice.vn", "vininvoice.vn", "cyberbill.vn",
                   "hoadondientu.vn", "vnpt-invoice.com", "einvoice.vn")
 
+# Content-Security-Policy for the portal HTML — allowlists exactly the CDNs + APIs the app loads.
+_CSP = (
+    "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://unpkg.com "
+    "https://alcdn.msauth.net https://*.msftauth.net https://login.microsoftonline.com https://maps.googleapis.com; "
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
+    "img-src 'self' data: blob: https:; "
+    "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.msftauth.net "
+    "https://nominatim.openstreetmap.org https://*.sharepoint.com https://*.webhook.office.com "
+    "https://maps.googleapis.com https://cdnjs.cloudflare.com; "
+    "worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src 'self'"
+)
+
 
 def _invtrack_url_safe(url):
     """SSRF guard for a URL taken from an untrusted email: http(s) only, host must be a known VN
@@ -1017,6 +1031,23 @@ class Handler(BaseHTTPRequestHandler):
     def _accepts_gzip(self):
         return "gzip" in (self.headers.get("Accept-Encoding") or "")
 
+    def _emit_sec_headers(self, ctype):
+        """Baseline security headers for EVERY response, plus CSP + Permissions-Policy on HTML
+        documents only (both are meaningless on JSON/static assets). The CSP allowlists exactly the
+        CDNs/APIs the app really loads (cdnjs, MSAL, Graph, Google Fonts, unpkg/Leaflet, OSM/Nominatim,
+        SharePoint, Teams webhook) and locks down object-src / base-uri / form-action / frame-ancestors
+        — defence-in-depth on top of the output-escaping. 'unsafe-inline'/'unsafe-eval' stay until the
+        inline scripts move to nonces (a modularisation follow-up). HSTS is added at the TLS edge by
+        Caddy — not here — since it must only be emitted over HTTPS (the app also serves plain HTTP
+        in demo/local runs). Called from _send AND _serve_file so the HTML shell is covered too."""
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        if ctype.startswith("text/html"):
+            self.send_header("Content-Security-Policy", _CSP)
+            self.send_header("Permissions-Policy",
+                             "geolocation=(self), camera=(), microphone=(), payment=(), usb=()")
+
     def _send(self, body, ctype, status=200, cache=None):
         gz = (
             len(body) > 1024
@@ -1032,12 +1063,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Vary", "Accept-Encoding")
         if cache:
             self.send_header("Cache-Control", cache)
-        # Baseline security response headers. HSTS is set at the TLS edge by Caddy
-        # (Strict-Transport-Security in the Caddyfile) — not here, since it must only be
-        # emitted over HTTPS and the app also serves plain HTTP in demo/local runs.
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "SAMEORIGIN")
-        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self._emit_sec_headers(ctype)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1088,6 +1114,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response(304)
                     self.send_header("Cache-Control", cache)
                     self.send_header("Last-Modified", last_mod)
+                    self._emit_sec_headers(ctype)
                     self.end_headers()
                     return
             except Exception:
@@ -1109,6 +1136,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", cache)
             self.send_header("Last-Modified", last_mod)
             self.send_header("Content-Length", str(len(gz)))
+            self._emit_sec_headers(ctype)
             self.end_headers()
             self.wfile.write(gz)
             return
@@ -1120,6 +1148,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache)
         self.send_header("Last-Modified", last_mod)
         self.send_header("Content-Length", str(len(body)))
+        self._emit_sec_headers(ctype)
         self.end_headers()
         self.wfile.write(body)
 
@@ -2580,8 +2609,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self._err("You can only edit your own CRM records.", 403)
                 if "owner" in (body or {}) and body.get("owner") != owner:
                     return self._err("Only management can reassign a CRM record's owner.", 403)
-        # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records).
-        if u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_"):
+        # Non-managers reach this only for 'padr'/'enrollments'/crm_* (own records) — and for their own
+        # pending claims/travel/payments, which fall through to the owner-scoped money block below
+        # (a STAFF requester must be able to amend their own request before it's approved; the owner
+        # check at "You can only edit your own pending request" is the real gate there).
+        if (u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_")
+                and name not in ("claims", "travel", "payments")):
             if name == "enrollments":
                 existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
                 if not existing or existing.get("empId") != u.get("id"):
