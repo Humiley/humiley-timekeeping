@@ -21,7 +21,17 @@
 		# same-origin — closes clickjacking without breaking the in-portal embed.
 		header X-Frame-Options SAMEORIGIN
 		header Content-Security-Policy "frame-ancestors 'self'"
-		reverse_proxy humiley_proc_app:3000
+		reverse_proxy humiley_proc_app:3000 {
+			# Forward the PUBLIC host + scheme so the Next/Auth.js app (trustHost) builds absolute
+			# URLs against portal.humiley.com, NOT its internal bind address. Without this the
+			# container saw host 0.0.0.0:3000, so after the portal SSO Auth.js redirected the embed
+			# iframe to https://0.0.0.0:3000/procurement/dashboard — unreachable → a 404 on the
+			# embedded Dashboard. Host + X-Forwarded-Host/Proto make the SSO + login redirects land
+			# back on the real domain.
+			header_up Host {host}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Proto {scheme}
+		}
 	}
 	# Everything else is the timekeeping portal.
 	handle {
