@@ -27,6 +27,7 @@ import io
 import sys
 import collections
 import traceback
+import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
 import unicodedata
@@ -221,6 +222,42 @@ INVTRACK = {
 _INVTRACK_LOCK = threading.Lock()          # serialize backend syncs
 _GRAPH_APP_TOK = {"tok": "", "exp": 0.0}
 _EINV_MAX_BYTES = 4 * 1024 * 1024          # hard cap on any single untrusted attachment we parse
+
+# Where the real invoice attachments (PDF / XML / ZIP) captured from the mailbox are kept, so the
+# register can SHOW + serve the actual file — even for a provider whose XML the parser can't read yet.
+# Lives beside the DB on the persistent data volume (never committed; the .db dir is gitignored).
+_INVTRACK_FILE_DIR = os.path.join(os.path.dirname(os.path.abspath(db.DB_PATH)), "invtrack_files")
+_INVTRACK_FILE_MAX = 8 * 1024 * 1024       # don't persist an attachment larger than this
+_INVTRACK_FILE_CT = {"pdf": "application/pdf", "xml": "application/xml", "zip": "application/zip"}
+
+
+def _invtrack_kind(name, ct):
+    n = (name or "").lower(); c = (ct or "").lower()
+    if n.endswith(".pdf") or "pdf" in c:
+        return "pdf"
+    if n.endswith(".xml") or "xml" in c:
+        return "xml"
+    if n.endswith(".zip") or "zip" in c or "compressed" in c:
+        return "zip"
+    return ""
+
+
+def _invtrack_store_file(raw, name, ct):
+    """Persist a downloaded invoice attachment (content-addressed) and return {id,name,kind} — or None.
+       Best-effort: any failure returns None and NEVER breaks the sync. Dedupes identical files."""
+    try:
+        kind = _invtrack_kind(name, ct)
+        if not kind or not raw or len(raw) > _INVTRACK_FILE_MAX:
+            return None
+        os.makedirs(_INVTRACK_FILE_DIR, exist_ok=True)
+        fid = hashlib.sha256(raw).hexdigest()[:32]
+        path = os.path.join(_INVTRACK_FILE_DIR, fid + "." + kind)
+        if not os.path.exists(path):
+            with open(path, "wb") as fh:
+                fh.write(raw)
+        return {"id": fid, "name": (name or (fid + "." + kind))[:200], "kind": kind}
+    except Exception:
+        return None
 
 
 def _invtrack_app_ready():
@@ -623,6 +660,7 @@ def _invtrack_item(m, ex):
             "before": before, "vat": vat, "after": after,
             "desc": subject, "attach": ex.get("_attachName", ""), "type": typ,
             "sender": from_addr or from_name, "lookup": lookup, "fileUrl": file_url,
+            "files": ex.get("_files") or [],   # real attached PDF/XML/ZIP, served by /api/invtrack/file/<id>
             "method": method,
             "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
 
@@ -675,6 +713,8 @@ def _invtrack_sync(trigger="manual"):
                     return _fetch_linked(msg)
                 try:
                     aj = _graph_get(base + "/messages/" + msg["id"] + "/attachments?$select=name,contentType,contentBytes", token)
+                    files = []                                          # every stored PDF/XML/ZIP → shown as a real file link
+                    ex = None
                     for a in aj.get("value", []):
                         nm = (a.get("name") or "").lower()
                         ct = (a.get("contentType") or "").lower()
@@ -682,18 +722,31 @@ def _invtrack_sync(trigger="manual"):
                         if not cb:
                             continue
                         raw = base64.b64decode(cb)
-                        ex = None
-                        if nm.endswith(".xml") or "xml" in ct:
-                            ex = _einv_parse_xml(raw)
-                        elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
-                            ex = _einv_from_zip(raw)
-                        elif nm.endswith(".pdf") or "pdf" in ct:
-                            ex = _einv_from_pdf(raw)                        # text-layer PDF (no OCR needed)
-                            if not ex and INVTRACK["ocr_url"]:
-                                ex = _invtrack_ocr_pdf(raw)                 # image-only PDF fallback
-                        if ex:
-                            ex["_attachName"] = a.get("name")
-                            return ex
+                        sf = _invtrack_store_file(raw, a.get("name"), a.get("contentType"))
+                        if sf:
+                            files.append(sf)
+                        if ex is None:                                  # parse the FIRST parseable attachment for the fields
+                            if nm.endswith(".xml") or "xml" in ct:
+                                ex = _einv_parse_xml(raw)
+                            elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
+                                ex = _einv_from_zip(raw)
+                            elif nm.endswith(".pdf") or "pdf" in ct:
+                                ex = _einv_from_pdf(raw)                 # text-layer PDF (no OCR needed)
+                                if not ex and INVTRACK["ocr_url"]:
+                                    ex = _invtrack_ocr_pdf(raw)          # image-only PDF fallback
+                            if ex:
+                                ex["_attachName"] = a.get("name")
+                    if ex:
+                        if files:
+                            ex["_files"] = files
+                        return ex
+                    if files:
+                        # attachments were captured but none parsed cleanly — still surface the files, and
+                        # try the body/link so the amount can come from the notification text.
+                        lk = _fetch_linked(msg) or {}
+                        lk["_files"] = files
+                        lk.setdefault("_attachName", files[0]["name"])
+                        return lk
                 except Exception:
                     pass
                 return _fetch_linked(msg)
@@ -784,6 +837,8 @@ def _invtrack_sync(trigger="manual"):
             for f in ("invNo", "serial", "taxCode", "attach", "supplier"):
                 if not ex_item.get(f) and bfi.get(f):
                     ex_item[f] = bfi[f]; ch = True
+            if bfi.get("files") and not ex_item.get("files"):   # attach the real files to an already-stored row
+                ex_item["files"] = bfi["files"]; ch = True
             if not (float(ex_item.get("after") or 0) > 0) and (float(bfi.get("after") or 0) > 0):
                 ex_item["after"] = bfi["after"]; ex_item["needsLookup"] = False; ch = True
             for f in ("before", "vat"):
@@ -1312,6 +1367,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._portal_get(u))
         if path == "/api/invtrack/status":
             return self._guard(lambda u: self._invtrack_status(u))
+        if path.startswith("/api/invtrack/file/"):
+            seg = path[len("/api/invtrack/file/"):]
+            fid, _dot, ext = seg.partition(".")
+            return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
         if path == "/api/esign/pin/all":
             return self._guard(lambda u: self._json({"pins": db.all_pin_statuses()}), manager=True)
         if path.startswith("/api/coll/"):
@@ -2733,6 +2792,35 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"]), "pdf": _pdf_engine_ok()})
+
+    def _invtrack_file(self, u, fid, ext):
+        """Serve a captured invoice attachment (PDF/XML/ZIP) by its content id. Gated to Invoice
+        Tracking level. The id is a SHA-256 hex prefix — no path component — so no traversal."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
+        if not re.fullmatch(r"[0-9a-f]{1,64}", fid or "") or ext not in _INVTRACK_FILE_CT:
+            return self._err("Not found.", 404)
+        path = os.path.abspath(os.path.join(_INVTRACK_FILE_DIR, fid + "." + ext))
+        if not path.startswith(os.path.abspath(_INVTRACK_FILE_DIR) + os.sep) or not os.path.isfile(path):
+            return self._err("Not found.", 404)
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            return self._err("Not found.", 404)
+        ctype = _INVTRACK_FILE_CT[ext]
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        # inline so a PDF opens in the browser; nosniff stops an XML being MIME-sniffed into script.
+        self.send_header("Content-Disposition", 'inline; filename="invoice-%s.%s"' % (fid[:12], ext))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self._emit_sec_headers(ctype)
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except Exception:
+            pass
 
     def _invtrack_sync_ep(self, u):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):

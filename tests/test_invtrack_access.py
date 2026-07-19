@@ -48,3 +48,38 @@ def test_management_can_still_reach_payroll_and_finance(api, tokens):
     KEEP its Payroll + Finance access — only Invoice Tracking is walled off."""
     st, _ = api("GET", "/api/coll/payruns", tokens["management"])
     assert st == 200, "management must retain Payroll (payruns) read access"
+
+
+# --------------------------------------------------------------------------- captured-file serving
+def test_invtrack_file_stored_served_and_gated(base_url, tokens):
+    """A real invoice attachment captured from the mailbox is stored server-side and served by
+    /api/invtrack/file/<id> — content-type correct, Invoice-Tracking-gated, no path traversal."""
+    import app
+    import urllib.request
+    import urllib.error
+
+    sf = app._invtrack_store_file(b"%PDF-1.4\n%demo invoice\n", "demo.pdf", "application/pdf")
+    assert sf and sf["kind"] == "pdf" and sf["id"], "store helper must persist + return metadata"
+    fid = sf["id"]
+
+    def fetch(path, token):
+        req = urllib.request.Request(base_url + path)
+        if token:
+            req.add_header("Authorization", "Bearer " + token)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, r.headers.get("Content-Type"), r.headers.get("X-Content-Type-Options"), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, None, None, b""
+
+    # editor may open the file — correct content-type + nosniff, real bytes
+    st, ct, nosniff, body = fetch("/api/invtrack/file/" + fid + ".pdf", tokens["editor"])
+    assert st == 200 and ct == "application/pdf" and nosniff == "nosniff" and body.startswith(b"%PDF")
+    # staff (below the Invoice Tracking level) is blocked
+    st, _, _, _ = fetch("/api/invtrack/file/" + fid + ".pdf", tokens["staff"])
+    assert st == 403
+    # a non-existent / malformed id 404s (and can't traverse)
+    st, _, _, _ = fetch("/api/invtrack/file/deadbeef.pdf", tokens["editor"])
+    assert st == 404
+    st, _, _, _ = fetch("/api/invtrack/file/..%2f..%2fapp.pdf", tokens["editor"])
+    assert st in (400, 404)

@@ -8915,6 +8915,31 @@ function _invLookupUrl(i) { var m = String((i && i.lookup) || '').match(/https?:
 /* Direct DOWNLOAD link to the real invoice file (PDF/XML) harvested from the email — no CAPTCHA lookup. */
 function _invFileUrl(i) { var u = String((i && i.fileUrl) || ''); return /^https?:\/\//i.test(u) ? u : ''; }
 function _invDlLink(i, label, big) { var f = _invFileUrl(i); if (!f) return ''; return '<a href="' + _tkEscA(f) + '" target="_blank" rel="noopener" download title="' + _tkEscA(_t('Download the real invoice file (PDF/XML) — no lookup or CAPTCHA needed')) + '" style="color:#00B060;' + (big ? 'font-weight:600;' : '') + 'text-decoration:underline;white-space:nowrap">' + _t(label) + ' ↓</a>'; }
+/* The REAL attachments captured from the mailbox (PDF/XML/ZIP), stored server-side + served by
+   /api/invtrack/file/<id>.<ext>. That endpoint needs the bearer token, which a plain <a href> can't
+   carry — so open the file through a token-authenticated fetch → blob URL. */
+async function _invOpenFile(fid, ext) {
+  if (!/^[0-9a-f]{1,64}$/.test(fid || '') || !/^(pdf|xml|zip)$/.test(ext || '')) return;
+  try {
+    const res = await fetch('/api/invtrack/file/' + fid + '.' + ext, { headers: TK.token ? { Authorization: 'Bearer ' + TK.token } : {} });
+    if (!res.ok) { toast(_t('Could not open the file') + ' (HTTP ' + res.status + ')', 'warn', 5000); return; }
+    const url = URL.createObjectURL(await res.blob());
+    const w = window.open(url, '_blank', 'noopener');
+    if (!w) { const a = document.createElement('a'); a.href = url; a.download = 'invoice-' + fid.slice(0, 10) + '.' + ext; document.body.appendChild(a); a.click(); a.remove(); }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (e) { toast(_t('Could not open the file'), 'error', 5000); }
+}
+/* Clickable PDF/XML/ZIP chips for the real files stored on a register row (id + kind are server-made). */
+function _invFileChips(i, big) {
+  var files = (i && i.files) || []; if (!files.length) return '';
+  var out = [];
+  for (var k = 0; k < files.length; k++) {
+    var f = files[k];
+    if (!f || !/^[0-9a-f]{1,64}$/.test(f.id || '') || !/^(pdf|xml|zip)$/.test(f.kind || '')) continue;
+    out.push('<a href="#" onclick="_invOpenFile(\'' + f.id + '\',\'' + f.kind + '\');return false" title="' + _tkEscA(f.name || '') + '" style="color:#205090;' + (big ? 'font-weight:600;' : '') + 'text-decoration:underline;white-space:nowrap;margin-right:8px">' + tkIcon('file', 12) + ' ' + (f.kind || '').toUpperCase() + '</a>');
+  }
+  return out.join('');
+}
 function _invMonthKey(iso) { return iso ? iso.slice(0, 7) : ''; }
 function _invMonthLabel(k) { if (!k) return '—'; const p = k.split('-'); return 'Tháng ' + p[1] + '/' + p[0]; }
 function _invQuarterKey(iso) { if (!iso) return ''; const q = Math.floor((+iso.slice(5, 7) - 1) / 3) + 1; return 'Q' + q + ' ' + iso.slice(0, 4); }
@@ -9116,7 +9141,7 @@ function _invRegRows(list) {
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var _f = _invDlLink(i, 'Download'); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' — ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' ↗</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
       '<td style="font-size:11px;max-width:240px"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.desc || '') + '">' + esc(i.desc) + '</div></td>' +
-      '<td style="font-size:11px">' + (i.attach ? '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>' : (function(){ var _f = _invDlLink(i, 'Download invoice', true); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })()) + '</td>' +
+      '<td style="font-size:11px">' + (function(){ var ch = _invFileChips(i, true); if (ch) return ch; if (i.attach) return '<span title="' + _tkEscA(i.attach) + '" style="color:var(--navy)">📎 ' + esc((i.attach || '').slice(0, 18)) + '</span>'; var _f = _invDlLink(i, 'Download invoice', true); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA(i.lookup || '') + '" style="color:#00B060;text-decoration:underline;white-space:nowrap">' + _t('Open portal') + ' ↗</a>' : '<span style="color:var(--text-light)">' + _t('No file') + '</span>'; })() + '</td>' +
       '<td style="font-size:11px;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(i.sender || '') + '">' + esc(i.sender) + '</td>' +
       '</tr>';
   });
@@ -9142,7 +9167,8 @@ function _invDetailHTML(i, idx) {
   if (i._payMatch) recon += '<span class="badge" style="background:#00B06022;color:#00B060">→ ' + _crmEsc(i._payMatch) + '</span> ';
   if (i._dup) recon += '<span class="badge" style="background:#E5484D22;color:#E5484D">DUP</span> ';
   const _fdl = _invFileUrl(i);
-  const fileHtml = i.attach ? ('📎 ' + esc(i.attach)) : (_fdl ? _invDlLink(i, 'Download invoice', true) : (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" style="color:#00B060;text-decoration:underline">' + _t('Open supplier portal') + ' ↗</a>' : _t('No file')));
+  const _chips = _invFileChips(i, true);
+  const fileHtml = _chips ? _chips : (i.attach ? ('📎 ' + esc(i.attach)) : (_fdl ? _invDlLink(i, 'Download invoice', true) : (url ? '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener" style="color:#00B060;text-decoration:underline">' + _t('Open supplier portal') + ' ↗</a>' : _t('No file'))));
   const iv = n => (_invNum(n) ? Math.round(_invNum(n)) : '');
   return '<div style="background:var(--soft-bg);border-left:3px solid ' + _INV_TYPE_COLOR[tk] + ';padding:14px 16px">' +
     '<div style="display:flex;flex-wrap:wrap;gap:16px 26px;align-items:flex-start">' +
@@ -15688,6 +15714,7 @@ const _VI = {
   "open the issuer portal to get the amount + invoice file": "mở cổng của đơn vị phát hành để lấy số tiền + tệp hoá đơn",
   "lookup": "tra cứu",
   "Open portal": "Mở cổng",
+  "Could not open the file": "Không mở được tệp",
   "No file": "Không có tệp",
   "Open supplier portal": "Mở cổng nhà cung cấp",
   "Supplier / Seller": "Nhà cung cấp / Người bán",
