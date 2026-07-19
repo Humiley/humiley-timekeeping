@@ -1741,6 +1741,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
+      <div class="form-group"><label class="form-label">Invoice Tracking SharePoint folder (URL)</label><input class="form-control" id="portal-invsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Invoices"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where captured invoice files (PDF/XML) from the <b>hd@humiley.com</b> mailbox are archived — auto-filed into Year/Month sub-folders on every sync. Needs Graph <b>Sites.ReadWrite.All</b> (application) admin consent in addition to Mail.Read. Leave blank to keep the files only inside the portal (always viewable there either way).</div></div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
@@ -4698,6 +4699,7 @@ function tkRenderPortalEditor() {
   _tkPortalRenderRows();
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
+  const iv = document.getElementById('portal-invsp'); if (iv) iv.value = (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || (TK.cfg && TK.cfg.invtrackSpUrl) || '';
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
   [tw, fs, pu].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change integration URLs.' : ''; } });
@@ -4753,14 +4755,15 @@ async function tkSavePortal() {
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
     teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
     financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim(),
+    invtrackSpUrl: ((document.getElementById('portal-invsp') || {}).value || '').trim(),
     procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl };
-    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, invtrackSpUrl: payload.invtrackSpUrl, procurementUrl: payload.procurementUrl };
+    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.invtrackSpUrl = payload.invtrackSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
 }
@@ -8936,7 +8939,14 @@ function _invFileChips(i, big) {
   for (var k = 0; k < files.length; k++) {
     var f = files[k];
     if (!f || !/^[0-9a-f]{1,64}$/.test(f.id || '') || !/^(pdf|xml|zip)$/.test(f.kind || '')) continue;
-    out.push('<a href="#" onclick="_invOpenFile(\'' + f.id + '\',\'' + f.kind + '\');return false" title="' + _tkEscA(f.name || '') + '" style="color:#205090;' + (big ? 'font-weight:600;' : '') + 'text-decoration:underline;white-space:nowrap;margin-right:8px">' + tkIcon('file', 12) + ' ' + (f.kind || '').toUpperCase() + '</a>');
+    var lbl = (f.kind || '').toUpperCase();
+    var style = 'color:#205090;' + (big ? 'font-weight:600;' : '') + 'text-decoration:underline;white-space:nowrap;margin-right:8px';
+    var sp = (f.spUrl && /^https:\/\/[^"'<>\s]+\.sharepoint\.com\//i.test(f.spUrl)) ? f.spUrl : '';
+    if (sp) {   // archived to SharePoint → open there directly (no token needed)
+      out.push('<a href="' + _tkEscA(sp) + '" target="_blank" rel="noopener" title="' + _tkEscA((f.name || '') + ' — SharePoint') + '" style="' + style + '">' + tkIcon('file', 12) + ' ' + lbl + '</a>');
+    } else {    // portal copy → fetch with the bearer token, open as a blob
+      out.push('<a href="#" onclick="_invOpenFile(\'' + f.id + '\',\'' + f.kind + '\');return false" title="' + _tkEscA(f.name || '') + '" style="' + style + '">' + tkIcon('file', 12) + ' ' + lbl + '</a>');
+    }
   }
   return out.join('');
 }

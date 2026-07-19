@@ -567,6 +567,77 @@ def _graph_get(url, token):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _graph_put_bytes(url, token, data, ctype):
+    req = urllib.request.Request(url, data=data, method="PUT",
+                                 headers={"Authorization": "Bearer " + token, "Content-Type": ctype or "application/octet-stream"})
+    with urllib.request.urlopen(req, timeout=45) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+# Resolved (siteId, driveId, folder-relative-path) for the configured Invoice-Tracking SharePoint
+# folder, plus a short negative cache so a missing-consent / bad-URL case doesn't re-resolve per file.
+_INVTRACK_SP = {"url": None, "site": "", "drive": "", "rel": ""}
+_INVTRACK_SP_FAIL = {"url": "", "until": 0.0}
+
+
+def _invtrack_sp_resolve(token):
+    """Resolve the configured SharePoint folder URL → (siteId, driveId, folderRel). Cached per-URL;
+       failures negative-cached ~5 min. Returns the cache dict or None (→ the local copy stays canonical)."""
+    folder = (db.get_setting("portal_invtrackSpUrl", "") or "").strip()
+    if not folder:
+        return None
+    if _INVTRACK_SP["url"] == folder and _INVTRACK_SP["site"] and _INVTRACK_SP["drive"]:
+        return _INVTRACK_SP
+    if _INVTRACK_SP_FAIL["url"] == folder and _INVTRACK_SP_FAIL["until"] > time.time():
+        return None
+    try:
+        pu = urlparse(folder)
+        host = pu.netloc
+        parts = [urllib.parse.unquote(p) for p in pu.path.split("/") if p]
+        if len(parts) < 2 or parts[0].lower() != "sites":
+            raise ValueError("not a /sites/<name>/… SharePoint folder URL")
+        site_path = "/sites/" + parts[1]
+        rest = parts[2:]
+        if rest and rest[0].lower() in ("shared documents", "documents"):   # the default doc library == drive root
+            rest = rest[1:]
+        folder_rel = "/".join(rest)
+        site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+        site_id = site.get("id")
+        drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive", token) if site_id else {}
+        drive_id = drive.get("id")
+        if not (site_id and drive_id):
+            raise ValueError("could not resolve site/drive")
+        _INVTRACK_SP.update({"url": folder, "site": site_id, "drive": drive_id, "rel": folder_rel})
+        return _INVTRACK_SP
+    except Exception:
+        _INVTRACK_SP_FAIL.update({"url": folder, "until": time.time() + 300})
+        return None
+
+
+def _invtrack_sp_upload(raw, filename, ct, iso):
+    """Best-effort upload one captured invoice file to SharePoint under <folder>/<YYYY>/<MM>/. Returns
+       the webUrl or None. NEVER raises — SharePoint is an add-on to the always-present local copy.
+       Needs Graph Sites.ReadWrite.All (application) admin consent on top of Mail.Read."""
+    try:
+        if not raw or len(raw) > 4 * 1024 * 1024:   # small-file PUT only; e-invoice files are tiny
+            return None
+        if not (db.get_setting("portal_invtrackSpUrl", "") or "").strip():
+            return None                              # not configured → zero Graph calls
+        token = _graph_app_token()
+        tgt = _invtrack_sp_resolve(token)
+        if not tgt:
+            return None
+        ym = (iso or "")[:7]
+        y = ym[:4] or "unknown"; mo = ym[5:7] or "00"
+        segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [y, mo, filename or "invoice"]
+        path = "/".join(urllib.parse.quote(s) for s in segs)
+        url = "https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path + ":/content?@microsoft.graph.conflictBehavior=replace"
+        it = _graph_put_bytes(url, token, raw, ct or "application/octet-stream")
+        return it.get("webUrl") or None
+    except Exception:
+        return None
+
+
 def _invtrack_body_fields(html):
     """Best-effort pull from a VN e-invoice NOTIFICATION email body (no attachment): the tra-cứu
        lookup URL + code, invoice no / seller MST, and amounts (before/VAT/after) when clearly
@@ -724,6 +795,9 @@ def _invtrack_sync(trigger="manual"):
                         raw = base64.b64decode(cb)
                         sf = _invtrack_store_file(raw, a.get("name"), a.get("contentType"))
                         if sf:
+                            sp = _invtrack_sp_upload(raw, a.get("name"), a.get("contentType"), (msg.get("receivedDateTime") or ""))
+                            if sp:
+                                sf["spUrl"] = sp   # SharePoint archive link (when configured + consented)
                             files.append(sf)
                         if ex is None:                                  # parse the FIRST parseable attachment for the fields
                             if nm.endswith(".xml") or "xml" in ct:
@@ -782,7 +856,10 @@ def _invtrack_sync(trigger="manual"):
                     stored = cur_by_id0.get(mid)
                     if stored is not None:             # already stored -> enrich. A MANUAL re-scan also re-parses the
                         ex = None                      # attachment to backfill a missing amount (e.g. a PDF invoice);
-                        if trigger == "manual" and not (float(stored.get("after") or 0) > 0):
+                        # …and to backfill the captured FILE (view-file column + SharePoint archive) onto rows that
+                        # predate it — re-fetch once when the amount OR the files are still missing. After the first
+                        # manual pass every row has its files, so later manual syncs only re-touch amount-blank rows.
+                        if trigger == "manual" and (not (float(stored.get("after") or 0) > 0) or not stored.get("files")):
                             ex = _fetch_ex(m)           # the scheduler stays cheap (body-only) to avoid per-message cost
                         if m.get("hasAttachments"):
                             att_seen[0] += 1
@@ -2591,6 +2668,7 @@ class Handler(BaseHTTPRequestHandler):
         out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
         out["teamsWebhook"] = db.get_setting("portal_teamsWebhook")
         out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
+        out["invtrackSpUrl"] = db.get_setting("portal_invtrackSpUrl", "") or ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
         return self._json(out)
 
@@ -2606,6 +2684,7 @@ class Handler(BaseHTTPRequestHandler):
         is_admin = self._caller_level(u) == "admin"
         for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
                       ("financeSpUrl", "portal_financeSpUrl"),
+                      ("invtrackSpUrl", "portal_invtrackSpUrl"),
                       ("procurementUrl", "portal_procurementUrl")):
             v = body.get(k)
             if not isinstance(v, str):
