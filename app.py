@@ -783,7 +783,9 @@ def _invtrack_sync(trigger="manual"):
                 if not msg.get("hasAttachments"):
                     return _fetch_linked(msg)
                 try:
-                    aj = _graph_get(base + "/messages/" + msg["id"] + "/attachments?$select=name,contentType,contentBytes", token)
+                    # NOTE: no $select — Graph returns 400 on the attachments collection when
+                    # contentBytes is $select'ed; the full projection includes contentBytes anyway.
+                    aj = _graph_get(base + "/messages/" + urllib.parse.quote(msg["id"], safe="") + "/attachments", token)
                     files = []                                          # every stored PDF/XML/ZIP → shown as a real file link
                     ex = None
                     for a in aj.get("value", []):
