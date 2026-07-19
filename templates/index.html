@@ -1741,7 +1741,6 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
-      <div class="form-group"><label class="form-label">Invoice Tracking SharePoint folder (URL)</label><input class="form-control" id="portal-invsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Invoices"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where captured invoice files (PDF/XML) from the <b>hd@humiley.com</b> mailbox are archived — auto-filed into Year/Month sub-folders on every sync. Needs Graph <b>Sites.ReadWrite.All</b> (application) admin consent in addition to Mail.Read. Leave blank to keep the files only inside the portal (always viewable there either way).</div></div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
@@ -4699,7 +4698,6 @@ function tkRenderPortalEditor() {
   _tkPortalRenderRows();
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
-  const iv = document.getElementById('portal-invsp'); if (iv) iv.value = (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || (TK.cfg && TK.cfg.invtrackSpUrl) || '';
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
   [tw, fs, pu].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change integration URLs.' : ''; } });
@@ -4755,15 +4753,14 @@ async function tkSavePortal() {
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
     teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
     financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim(),
-    invtrackSpUrl: ((document.getElementById('portal-invsp') || {}).value || '').trim(),
     procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, invtrackSpUrl: payload.invtrackSpUrl, procurementUrl: payload.procurementUrl };
-    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.invtrackSpUrl = payload.invtrackSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
+    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, invtrackSpUrl: (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '', procurementUrl: payload.procurementUrl };   // invtrackSpUrl is owned by the Invoice Tracking → Settings tab; preserve it here
+    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
     toast('Company portal updated — employees will see this on their dashboard.');
   } catch (e) { toast('Network error: ' + e.message, 'error', 5000); }
 }
@@ -5049,7 +5046,10 @@ const TK_ICON = {
   pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   send: '<line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>',
-  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>'
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
+  mail: '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>',
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'
 };
 function tkIcon(name, sz) {
   return '<svg width="' + (sz || 14) + '" height="' + (sz || 14) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (TK_ICON[name] || '') + '</svg>';
@@ -9019,6 +9019,7 @@ async function tkRenderInvTrack() {
     '<div class="tabs" style="margin-top:14px">' +
       '<button class="tab" data-invtab="overview" onclick="invTab(\'overview\',this)">' + _t('Overview') + '</button>' +
       '<button class="tab" data-invtab="register" onclick="invTab(\'register\',this)">' + _t('Invoice Register') + '</button>' +
+      '<button class="tab" data-invtab="settings" onclick="invTab(\'settings\',this)">' + _t('Settings') + '</button>' +
     '</div>' +
     '<div id="inv-pane" style="margin-top:14px"></div>';
   try { _invAutoSyncStart(); _invSetSyncStatus(); } catch (e) {}
@@ -9036,7 +9037,82 @@ function invTab(tab, el) {
   document.querySelectorAll('#view-invtrack .tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active'); else { const b = document.querySelector('#view-invtrack .tab[data-invtab="' + tab + '"]'); if (b) b.classList.add('active'); }
   if (tab === 'register') _invRenderRegister();
+  else if (tab === 'settings') _invRenderSettings();
   else _invRenderOverview();
+}
+
+/* ── SETTINGS (SharePoint archive + mailbox config) ── */
+function _invRow(lbl, val) {
+  return '<div style="display:flex;justify-content:space-between;gap:16px;padding:6px 0;font-size:12.5px;border-bottom:1px solid var(--border)">' +
+    '<span style="color:var(--text-light)">' + lbl + '</span>' +
+    '<span style="font-weight:600;text-align:right;word-break:break-word">' + val + '</span></div>';
+}
+async function _invRenderSettings() {
+  const pane = document.getElementById('inv-pane'); if (!pane) return;
+  pane.innerHTML = '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">' + _t('Loading…') + '</div>';
+  let cfg = {}, st = {};
+  try { cfg = await tkApi('/api/portal'); } catch (e) {}
+  try { st = await tkApi('/api/invtrack/status'); } catch (e) {}
+  const spUrl = (cfg && cfg.invtrackSpUrl) || (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '';
+  const appReady = !!(st && st.appReady);
+  const mailbox = (st && st.mailbox) || 'hd@humiley.com';
+  const isAdmin = _userLevel === 'admin';
+  const meta = _INV.meta || {};
+  const esc = v => _crmEsc(v == null ? '' : String(v));
+  const count = (_INV.items || []).length;
+  const lastSync = meta.lastSyncRun ? new Date(meta.lastSyncRun).toLocaleString('en-GB') : (meta.lastSync ? new Date(meta.lastSync).toLocaleString('en-GB') : '—');
+  pane.innerHTML =
+    '<div style="display:grid;gap:16px;max-width:820px">' +
+      /* ── SharePoint archive ── */
+      '<div class="card" style="padding:20px 22px">' +
+        '<div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:4px;display:flex;align-items:center;gap:7px">' + tkIcon('cloud', 16) + _t('SharePoint archive') + '</div>' +
+        '<div style="font-size:12px;color:var(--text-light);margin-bottom:14px;line-height:1.6">' + _t('Every captured invoice file (PDF / XML) is copied to SharePoint and auto-filed into Year / Month sub-folders on each sync. Leave blank to keep files inside the portal only — either way they stay viewable here.') + '</div>' +
+        '<label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' + _t('SharePoint folder URL') + '</label>' +
+        '<input id="inv-sp-url" class="form-control" style="margin-top:6px;font-size:13px" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Invoices" value="' + _tkEscA(spUrl) + '"' + (isAdmin ? '' : ' disabled title="' + _tkEscA(_t('Only an Admin can change this link.')) + '"') + '>' +
+        '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">' +
+          (isAdmin ? '<button class="btn btn-primary btn-sm" onclick="_invSaveSp()">' + tkIcon('save', 14) + ' ' + _t('Save link') + '</button>' : '') +
+          '<span style="font-size:12px;font-weight:600;' + (spUrl ? 'color:#00B060' : 'color:var(--text-light)') + '">' + (spUrl ? '● ' + _t('Configured') : '○ ' + _t('Not configured — files stored in the portal')) + '</span>' +
+        '</div>' +
+        (isAdmin ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _t('Only an Admin can change this link.') + '</div>') +
+        '<div style="font-size:11.5px;color:var(--text-light);margin-top:14px;line-height:1.65;border-top:1px solid var(--border);padding-top:12px">' +
+          '<b style="color:var(--navy)">' + _t('One-time Azure step (IT admin):') + '</b><br>' +
+          _t('Azure Portal → App registrations → Humiley Portal → API permissions → Add a permission → Microsoft Graph → Application permissions → check Sites.ReadWrite.All → Add, then Grant admin consent. Paste the folder link above and Save.') +
+        '</div>' +
+      '</div>' +
+      /* ── Mailbox & sync ── */
+      '<div class="card" style="padding:20px 22px">' +
+        '<div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:7px">' + tkIcon('mail', 16) + _t('Mailbox & automatic sync') + '</div>' +
+        _invRow(_t('Mailbox'), esc(mailbox) + ' · Inbox') +
+        _invRow(_t('Company'), esc(meta.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM')) +
+        _invRow(_t('Automatic mailbox sync'), appReady
+          ? '<span style="color:#00B060">● ' + _t('Active — server, 24/7') + '</span>'
+          : '<span style="color:#E5A54B">○ ' + _t('Browser only — set TK_M365_CLIENT_SECRET on the server for 24/7 sync') + '</span>') +
+        _invRow(_t('SharePoint file storage'), (st && st.pdf) ? '<span style="color:#00B060">● ' + _t('PDF engine ready') + '</span>' : '<span style="color:var(--text-light)">' + _t('Files stored, previews limited') + '</span>') +
+        _invRow(_t('Last sync'), esc(lastSync)) +
+        _invRow(_t('Invoices tracked'), esc(String(count))) +
+        '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="tkInvGetAllTracks()">' + tkIcon('refresh', 14) + ' ' + _t('Sync now') + '</button>' +
+        '</div>' +
+        '<div style="font-size:11.5px;color:var(--text-light);margin-top:14px;line-height:1.65;border-top:1px solid var(--border);padding-top:12px">' +
+          _t('Attached PDF / XML invoices are read and filed automatically. Notification-only emails that hide the invoice behind a captcha portal (VNPT, MISA…) cannot be read automatically — use "Fill missing" on the Overview tab or import the tax-authority (GDT) export.') +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+async function _invSaveSp() {
+  const el = document.getElementById('inv-sp-url'); if (!el) return;
+  const url = (el.value || '').trim();
+  const btn = el.parentNode.querySelector('button.btn-primary'); if (btn) { btn.disabled = true; }
+  try {
+    await tkApi('/api/portal', { method: 'PATCH', body: { invtrackSpUrl: url } });
+    window._TK_PORTAL = window._TK_PORTAL || {}; window._TK_PORTAL.invtrackSpUrl = url;
+    if (TK.cfg) TK.cfg.invtrackSpUrl = url;
+    toast(url ? _t('SharePoint folder saved — new invoice files will be archived there.') : _t('SharePoint link cleared — files stay in the portal.'), 'info', 6000);
+    _invRenderSettings();
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    toast((e && e.status === 403) ? _t('Only an Admin can change this link.') : (_t('Save failed') + (e && e.message ? ': ' + e.message : '')), 'error', 7000);
+  }
 }
 
 /* ── OVERVIEW (dashboard) ── */
@@ -15474,6 +15550,28 @@ const _VI = {
   'Summary': 'Tóm tắt',
   'Sync from Microsoft 365': 'Đồng bộ từ Microsoft 365',
   'Sync from Microsoft 365 — review before adding': 'Đồng bộ từ Microsoft 365 — xem lại trước khi thêm',
+  // ── Invoice Tracking → Settings tab ── ('Settings' already defined above)
+  'SharePoint archive': 'Lưu trữ SharePoint',
+  'Every captured invoice file (PDF / XML) is copied to SharePoint and auto-filed into Year / Month sub-folders on each sync. Leave blank to keep files inside the portal only — either way they stay viewable here.': 'Mỗi tệp hoá đơn thu được (PDF / XML) sẽ được sao chép lên SharePoint và tự động lưu vào thư mục con theo Năm / Tháng ở mỗi lần đồng bộ. Để trống nếu chỉ muốn giữ tệp trong cổng thông tin — dù chọn cách nào tệp vẫn xem được tại đây.',
+  'SharePoint folder URL': 'Đường dẫn thư mục SharePoint',
+  'Save link': 'Lưu đường dẫn',
+  'Configured': 'Đã cấu hình',
+  'Not configured — files stored in the portal': 'Chưa cấu hình — tệp lưu trong cổng thông tin',
+  'Only an Admin can change this link.': 'Chỉ Quản trị viên mới đổi được đường dẫn này.',
+  'One-time Azure step (IT admin):': 'Thao tác Azure một lần (Quản trị CNTT):',
+  'Azure Portal → App registrations → Humiley Portal → API permissions → Add a permission → Microsoft Graph → Application permissions → check Sites.ReadWrite.All → Add, then Grant admin consent. Paste the folder link above and Save.': 'Azure Portal → App registrations → Humiley Portal → API permissions → Add a permission → Microsoft Graph → Application permissions → chọn Sites.ReadWrite.All → Add, rồi Grant admin consent. Dán đường dẫn thư mục ở trên và Lưu.',
+  'Mailbox & automatic sync': 'Hộp thư & đồng bộ tự động',
+  'Automatic mailbox sync': 'Đồng bộ hộp thư tự động',
+  'Active — server, 24/7': 'Đang chạy — máy chủ, 24/7',
+  'Browser only — set TK_M365_CLIENT_SECRET on the server for 24/7 sync': 'Chỉ trên trình duyệt — đặt TK_M365_CLIENT_SECRET trên máy chủ để đồng bộ 24/7',
+  'SharePoint file storage': 'Lưu tệp SharePoint',
+  'PDF engine ready': 'Bộ xử lý PDF sẵn sàng',
+  'Files stored, previews limited': 'Tệp đã lưu, xem trước hạn chế',
+  'Invoices tracked': 'Số hoá đơn đã theo dõi',
+  'Sync now': 'Đồng bộ ngay',
+  'Attached PDF / XML invoices are read and filed automatically. Notification-only emails that hide the invoice behind a captcha portal (VNPT, MISA…) cannot be read automatically — use "Fill missing" on the Overview tab or import the tax-authority (GDT) export.': 'Hoá đơn đính kèm PDF / XML được đọc và lưu tự động. Email chỉ báo tin, giấu hoá đơn sau cổng captcha (VNPT, MISA…) không thể đọc tự động — hãy dùng "Điền còn thiếu" ở tab Tổng quan hoặc nhập tệp xuất từ cơ quan thuế (Tổng cục Thuế).',
+  'SharePoint folder saved — new invoice files will be archived there.': 'Đã lưu thư mục SharePoint — các tệp hoá đơn mới sẽ được lưu tại đó.',
+  'SharePoint link cleared — files stay in the portal.': 'Đã xoá đường dẫn SharePoint — tệp vẫn lưu trong cổng thông tin.',
   'Confirm & sync': 'Xác nhận & đồng bộ',
   'Select all': 'Chọn tất cả',
   'Clear all': 'Bỏ chọn tất cả',
