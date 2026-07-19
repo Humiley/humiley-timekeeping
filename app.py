@@ -614,10 +614,41 @@ def _invtrack_sp_resolve(token):
         return None
 
 
+_INVTRACK_SP_DIRS = set()   # folder paths already ensured this process (so we don't re-create per file)
+
+
+def _invtrack_sp_ensure_dir(drive_id, rel_path, token):
+    """Create every level of rel_path under the drive root if it doesn't exist yet. Graph's PUT-to-path
+       does not reliably auto-create parent folders, so we make the Year/Month tree explicitly. 409 =
+       already exists (fine). Cached per process."""
+    if not rel_path:
+        return
+    ck = drive_id + "|" + rel_path
+    if ck in _INVTRACK_SP_DIRS:
+        return
+    acc = ""
+    for seg in rel_path.split("/"):
+        if not seg:
+            continue
+        parent = acc
+        acc = (acc + "/" + seg) if acc else seg
+        parent_ref = ("root:/" + "/".join(urllib.parse.quote(p) for p in parent.split("/") if p) + ":") if parent else "root"
+        url = "https://graph.microsoft.com/v1.0/drives/" + drive_id + "/" + parent_ref + "/children"
+        body = json.dumps({"name": seg, "folder": {}, "@microsoft.graph.conflictBehavior": "fail"}).encode("utf-8")
+        req = urllib.request.Request(url, data=body, method="POST",
+                                     headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as e:
+            if e.code != 409:                        # 409 Conflict = the folder is already there
+                raise
+    _INVTRACK_SP_DIRS.add(ck)
+
+
 def _invtrack_sp_upload(raw, filename, ct, iso):
-    """Best-effort upload one captured invoice file to SharePoint under <folder>/<YYYY>/<MM>/. Returns
-       the webUrl or None. NEVER raises — SharePoint is an add-on to the always-present local copy.
-       Needs Graph Sites.ReadWrite.All (application) admin consent on top of Mail.Read."""
+    """Best-effort upload one captured invoice file to SharePoint under <folder>/<YYYY>/<MM>/, creating
+       the Year/Month folders automatically. Returns the webUrl or None. NEVER raises — SharePoint is an
+       add-on to the always-present local copy. Needs Graph Sites.ReadWrite.All (application) consent."""
     try:
         if not raw or len(raw) > 4 * 1024 * 1024:   # small-file PUT only; e-invoice files are tiny
             return None
@@ -629,8 +660,9 @@ def _invtrack_sp_upload(raw, filename, ct, iso):
             return None
         ym = (iso or "")[:7]
         y = ym[:4] or "unknown"; mo = ym[5:7] or "00"
-        segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [y, mo, filename or "invoice"]
-        path = "/".join(urllib.parse.quote(s) for s in segs)
+        base_segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [y, mo]
+        _invtrack_sp_ensure_dir(tgt["drive"], "/".join(base_segs), token)   # AUTO-CREATE the Year/Month folders
+        path = "/".join(urllib.parse.quote(s) for s in (base_segs + [filename or "invoice"]))
         url = "https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path + ":/content?@microsoft.graph.conflictBehavior=replace"
         it = _graph_put_bytes(url, token, raw, ct or "application/octet-stream")
         return it.get("webUrl") or None
