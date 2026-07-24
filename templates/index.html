@@ -13,6 +13,8 @@
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
+<script>/* apply the saved theme before first paint — no flash of the wrong theme */
+try{var _tkT=localStorage.getItem('tk_theme');if(_tkT==='dark'||_tkT==='light')document.documentElement.setAttribute('data-theme',_tkT);}catch(e){}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif}
@@ -22,7 +24,7 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --text-dark:#1F2937;--text-light:#5C6470;
   --line:#dde2ee;--border:#dde2ee;--light-tint:#e8edf6;--soft-bg:#f0f2f8;
   --success:#10B981;--warning:#F59E0B;--danger:#C00000;--info:#8B5CF6;
-  --white:#FFFFFF;
+  --white:#FFFFFF;--card:#FFFFFF;   /* --card = surface (flips in dark; --white stays white for on-colour use) */
   /* Canonical scales — new components use these so radii/shadows stop drifting (17 ad-hoc radii /
      ~20 shadows across the file). Matches the current retheme look (24px cards / 14px buttons). */
   --r-sm:8px;--r-md:12px;--r-btn:14px;--r-lg:24px;--r-pill:999px;
@@ -31,6 +33,31 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --shadow-card:0 14px 34px rgba(32,80,144,.09);   /* the canonical card/panel elevation */
   --shadow-lg:0 22px 48px rgba(23,58,107,.20);
 }
+/* ── Opt-in dark theme (toggle sets data-theme="dark" on <html>; default is untouched light). Text is
+   already token-driven, so redefining the surface/text/line tokens flips the app; a few high-contrast
+   spots that hardcode --navy get targeted overrides below. Brand navy/emerald keep their identity. ── */
+:root[data-theme="dark"]{
+  --soft-bg:#0d1a2e;--card:#16233c;--white:#16233c;
+  --text-dark:#e9eef8;--text-light:#9fb0c8;
+  --line:#26374f;--border:#26374f;--light-tint:#1d2c46;
+  --navy-light:#6b9ce6;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
+  --shadow-md:0 10px 30px rgba(0,0,0,.4);
+  --shadow-card:0 14px 34px rgba(0,0,0,.4);
+  --shadow-lg:0 22px 48px rgba(0,0,0,.5);
+  color-scheme:dark;
+}
+:root[data-theme="dark"] body{background:var(--soft-bg)}
+/* navy text on a dark surface would be too low-contrast — lift it toward navy-light where it appears */
+:root[data-theme="dark"] .kpi-value,:root[data-theme="dark"] .page-header h1,
+:root[data-theme="dark"] .card-title,:root[data-theme="dark"] .kpi-tile-val{color:var(--navy-light) !important}
+:root[data-theme="dark"] .btn-primary{background:var(--navy-light) !important;color:#0d1a2e !important}
+:root[data-theme="dark"] .btn-outline{color:var(--navy-light) !important;border-color:var(--navy-light) !important}
+:root[data-theme="dark"] .form-control,:root[data-theme="dark"] .field,:root[data-theme="dark"] .sel-filter,
+:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{background:var(--card);color:var(--text-dark);border-color:var(--line)}
+:root[data-theme="dark"] .modal{background:var(--card)}
+:root[data-theme="dark"] table thead th{background:var(--light-tint)}
+:root[data-theme="dark"] img[src*="portal-logo-login"],:root[data-theme="dark"] img[src*="portal-logo-navy"]{filter:brightness(0) invert(1) opacity(.92)}
 html,body{margin:0;padding:0}
 body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;height:100dvh;overflow:hidden}
 
@@ -67,13 +94,13 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 
 /* ── MAIN ── */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-#topbar{background:#fff;border-bottom:1px solid var(--line);padding:0 24px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0;position:relative;box-shadow:0 1px 3px rgba(32,80,144,.06)}
+#topbar{background:var(--card);border-bottom:1px solid var(--line);padding:0 24px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0;position:relative;box-shadow:0 1px 3px rgba(32,80,144,.06)}
 .topbar-toggle{width:32px;height:32px;border:none;background:var(--soft-bg);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text-light);flex-shrink:0}
 .topbar-title{font-size:12px;font-weight:600;color:var(--text-light);min-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar-search{display:flex;align-items:center;gap:8px;background:var(--soft-bg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;width:230px}
 .topbar-search input{border:none;background:transparent;font-size:13px;color:var(--text-dark);outline:none;width:100%;font-family:inherit}
 #lang-toggle{display:flex;gap:5px;align-items:center;flex-shrink:0}
-.lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
+.lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:var(--card);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
 .lang-btn svg{border-radius:2px}
 .lang-btn.active{background:var(--navy);color:#fff;border-color:var(--navy)}
 .lang-btn:hover{border-color:var(--navy)}
@@ -120,7 +147,7 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .linklike{background:none;border:none;padding:0;font:inherit;cursor:pointer;line-height:inherit;text-align:inherit}
 .btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-deep)}
 .btn-emerald{background:var(--emerald);color:#fff}.btn-emerald:hover{background:var(--emerald-deep)}
-.btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
+.btn-outline{background:var(--card);color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
 .btn-ghost{background:transparent;color:var(--text-light);border:none}.btn-ghost:hover{background:var(--soft-bg)}
 .btn-danger{background:#FEE2E2;color:#991B1B;border:none}.btn-danger:hover{background:#FECACA}
 .btn-sm{padding:4px 10px;font-size:12px}
@@ -131,7 +158,7 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 
 /* ── KPI CARDS ── */
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:22px}
-.kpi-card{background:#fff;border-radius:10px;border:1px solid var(--line);padding:18px 20px;position:relative;overflow:hidden;box-shadow:0 1px 4px rgba(32,80,144,.08)}
+.kpi-card{background:var(--card);border-radius:10px;border:1px solid var(--line);padding:18px 20px;position:relative;overflow:hidden;box-shadow:0 1px 4px rgba(32,80,144,.08)}
 .kpi-card::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
 .kpi-card.c-navy::before{background:var(--navy)}
 .kpi-card.c-emerald::before{background:var(--emerald)}
@@ -147,7 +174,7 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .kpi-icon.c-warn{background:var(--warning)}.kpi-icon.c-danger{background:var(--danger)}
 
 /* ── CARDS ── */
-.card{background:#fff;border-radius:10px;border:1px solid var(--line);padding:20px;box-shadow:0 1px 4px rgba(32,80,144,.08)}
+.card{background:var(--card);border-radius:10px;border:1px solid var(--line);padding:20px;box-shadow:0 1px 4px rgba(32,80,144,.08)}
 .card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
 .card-title{font-size:17px;font-weight:700;color:var(--navy)}
 .card-sub{font-size:12px;color:var(--text-light)}
@@ -186,7 +213,7 @@ tr:last-child td{border-bottom:none}
 /* ── FORM ── */
 .form-group{margin-bottom:14px}
 .form-label{font-size:12px;font-weight:700;color:var(--text-dark);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:.4px}
-.form-control{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-dark);background:#fff;outline:none;transition:border .15s}
+.form-control{width:100%;padding:9px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-dark);background:var(--card);outline:none;transition:border .15s}
 .form-control:focus{border-color:var(--navy)}
 textarea.form-control{resize:vertical;min-height:80px}
 select.form-control{cursor:pointer}
@@ -194,7 +221,7 @@ select.form-control{cursor:pointer}
 /* ── MODAL ── */
 .modal-overlay{position:fixed;inset:0;background:rgba(22,56,102,.45);z-index:1000;display:none;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
-.modal{background:#fff;border-radius:12px;padding:28px;width:520px;max-width:92vw;max-height:90vh;max-height:90dvh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)}
+.modal{background:var(--card);border-radius:12px;padding:28px;width:520px;max-width:92vw;max-height:90vh;max-height:90dvh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.2)}
 .modal-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
 .modal-title{font-size:17px;font-weight:700;color:var(--navy)}
 .modal-close{width:30px;height:30px;border:none;background:var(--soft-bg);border-radius:6px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;color:var(--text-light)}
@@ -203,13 +230,13 @@ select.form-control{cursor:pointer}
 /* ── TABS ── */
 .tabs{display:flex;gap:4px;background:var(--soft-bg);padding:4px;border-radius:10px;margin-bottom:18px;width:fit-content}
 .tab{padding:6px 15px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-light);transition:all .15s;border:none;background:none;font-family:inherit}
-.tab.active{background:#fff;color:var(--emerald);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.tab.active{background:var(--card);color:var(--emerald);box-shadow:0 1px 4px rgba(0,0,0,.1)}
 
 /* ── FILTER BAR ── */
 .filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
-.search-box{display:flex;align-items:center;gap:8px;background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:7px 12px;flex:1;min-width:200px}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--line);border-radius:8px;padding:7px 12px;flex:1;min-width:200px}
 .search-box input{border:none;background:transparent;font-size:13px;color:var(--text-dark);outline:none;width:100%;font-family:inherit}
-.sel-filter{padding:7px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-dark);background:#fff;cursor:pointer;outline:none}
+.sel-filter{padding:7px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:13px;font-family:inherit;color:var(--text-dark);background:var(--card);cursor:pointer;outline:none}
 .sel-filter:focus{border-color:var(--navy)}
 
 /* ── PROFILE MASONRY ── tidy, gap-free card packing (max 4 cols, scales down) */
@@ -226,7 +253,7 @@ select.form-control{cursor:pointer}
 
 /* ── TOGGLE SWITCH ── */
 .toggle{width:36px;height:20px;border-radius:10px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
-.toggle::after{content:'';position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:#fff;transition:left .2s}
+.toggle::after{content:'';position:absolute;top:3px;width:14px;height:14px;border-radius:50%;background:var(--card);transition:left .2s}
 .toggle.on{background:var(--emerald)}.toggle.on::after{left:18px}
 .toggle.off{background:var(--line)}.toggle.off::after{left:3px}
 
@@ -235,7 +262,7 @@ select.form-control{cursor:pointer}
 
 /* ── STAT BOXES ── */
 .stat-boxes{display:flex;gap:12px;margin-bottom:18px}
-.stat-box{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px;flex:1;text-align:center;box-shadow:0 1px 4px rgba(32,80,144,.06)}
+.stat-box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 18px;flex:1;text-align:center;box-shadow:0 1px 4px rgba(32,80,144,.06)}
 .stat-num{font-size:26px;font-weight:700;color:var(--navy)}
 .stat-lbl{font-size:11px;color:var(--text-light);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
 
@@ -286,7 +313,7 @@ select.form-control{cursor:pointer}
 
 /* ── GPS RING ── */
 .gps-ring-wrap{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px}
-.gps-ring{width:80px;height:80px;border-radius:50%;border:6px solid var(--emerald);display:flex;align-items:center;justify-content:center;flex-direction:column;background:#fff}
+.gps-ring{width:80px;height:80px;border-radius:50%;border:6px solid var(--emerald);display:flex;align-items:center;justify-content:center;flex-direction:column;background:var(--card)}
 .gps-ring.out{border-color:var(--danger)}
 .gps-ring.edge{border-color:var(--warning)}
 .gps-dist{font-size:18px;font-weight:700;color:var(--navy)}
@@ -318,7 +345,7 @@ select.form-control{cursor:pointer}
 .cal-dot{width:5px;height:5px;border-radius:50%;margin:2px auto 0}
 
 /* ── MANAGER CARD ── */
-.approval-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;transition:box-shadow .15s}
+.approval-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;transition:box-shadow .15s}
 .approval-card:hover{box-shadow:0 4px 16px rgba(32,80,144,.1)}
 .approval-card-hdr{display:flex;align-items:center;gap:12px;margin-bottom:12px}
 .approval-meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;background:var(--soft-bg);border-radius:8px;padding:10px}
@@ -327,7 +354,7 @@ select.form-control{cursor:pointer}
 .approval-actions{display:flex;gap:8px;justify-content:flex-end}
 
 /* ── HR ADMIN ── */
-.emp-profile-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px}
+.emp-profile-card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;display:flex;align-items:center;gap:12px}
 .emp-profile-card:hover{box-shadow:0 2px 12px rgba(32,80,144,.08)}
 .emp-profile-info{flex:1}
 .emp-profile-name{font-size:13px;font-weight:700;color:var(--text-dark)}
@@ -364,7 +391,7 @@ select.form-control{cursor:pointer}
 /* ── NOTIFICATION PANEL ── */
 #notif-panel {
   display:none;position:fixed;top:62px;right:16px;width:320px;
-  background:#fff;border-radius:12px;border:1px solid var(--line);
+  background:var(--card);border-radius:12px;border:1px solid var(--line);
   box-shadow:0 8px 32px rgba(32,80,144,.18);z-index:3000;overflow:hidden;
 }
 #notif-panel.open { display:block; }
@@ -400,7 +427,7 @@ select.form-control{cursor:pointer}
 /* ── LOGIN ROLE-STEP (demo / post-auth role picker) ── */
 #login-role-step{display:none;margin-top:4px}
 .login-role-step-title{font-size:13px;font-weight:700;color:var(--navy);margin-bottom:14px}
-.lrs-btn{width:100%;display:flex;align-items:center;gap:14px;padding:13px 16px;border-radius:11px;border:2px solid var(--line);background:#fff;cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--text-dark);transition:all .15s;text-align:left;margin-bottom:10px}
+.lrs-btn{width:100%;display:flex;align-items:center;gap:14px;padding:13px 16px;border-radius:11px;border:2px solid var(--line);background:var(--card);cursor:pointer;font-family:inherit;font-size:13.5px;font-weight:600;color:var(--text-dark);transition:all .15s;text-align:left;margin-bottom:10px}
 .lrs-btn:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.10)}
 .lrs-btn.mgr:hover{border-color:var(--navy);background:#EEF3FB}
 .lrs-btn.staff:hover{border-color:var(--emerald);background:#E8F9F1}
@@ -429,15 +456,15 @@ select.form-control{cursor:pointer}
 .staff-hero-status{font-size:13px;background:rgba(255,255,255,.15);border-radius:20px;padding:6px 16px;display:inline-block;margin-bottom:6px}
 .staff-hero-time{font-size:30px;font-weight:800}
 .staff-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
-.staff-kpi{background:#fff;border-radius:12px;padding:18px 20px;border:1px solid var(--line);display:flex;align-items:center;gap:14px}
+.staff-kpi{background:var(--card);border-radius:12px;padding:18px 20px;border:1px solid var(--line);display:flex;align-items:center;gap:14px}
 .staff-kpi-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
 .staff-kpi-val{font-size:22px;font-weight:800;color:var(--navy);line-height:1}
 .staff-kpi-lbl{font-size:11px;color:var(--text-light);margin-top:3px}
 .staff-2col{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.staff-panel{background:#fff;border-radius:12px;border:1px solid var(--line);padding:20px 22px}
+.staff-panel{background:var(--card);border-radius:12px;border:1px solid var(--line);padding:20px 22px}
 .staff-panel-hdr{font-size:16px;font-weight:700;color:var(--navy);border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 .staff-quick-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px}
-.staff-quick-btn{background:#fff;border:2px solid var(--line);border-radius:12px;padding:16px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:8px}
+.staff-quick-btn{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:16px 12px;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);text-align:center;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:8px}
 .staff-quick-btn:hover{border-color:var(--navy);background:var(--light-tint);transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.08)}
 .staff-quick-btn .qicon{font-size:24px;display:flex;align-items:center;justify-content:center}
 .staff-quick-btn .qicon svg{width:26px;height:26px;stroke:var(--navy)}
@@ -497,8 +524,8 @@ body{
 /* ── Airy main area, transparent topbar ── */
 #main{padding:0 !important;}
 #topbar{background:transparent !important;border:none !important;box-shadow:none !important;height:auto !important;padding:calc(20px + env(safe-area-inset-top)) calc(28px + env(safe-area-inset-right)) 4px calc(28px + env(safe-area-inset-left)) !important;gap:12px;}
-.topbar-search{background:#fff !important;border:none !important;border-radius:var(--r-btn) !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
-.notif-btn, .topbar-toggle{background:#fff !important;border:none !important;border-radius:var(--r-btn) !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
+.topbar-search{background:var(--card) !important;border:none !important;border-radius:var(--r-btn) !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
+.notif-btn, .topbar-toggle{background:var(--card) !important;border:none !important;border-radius:var(--r-btn) !important;box-shadow:0 6px 18px rgba(32,80,144,.08);}
 #content{padding:8px 28px 30px !important;}
 
 /* ── Soft rounded cards everywhere ── */
@@ -506,7 +533,7 @@ body{
   border:none !important;
   border-radius:var(--r-lg) !important;
   box-shadow:var(--shadow-card) !important;
-  background:#fff !important;
+  background:var(--card) !important;
 }
 .card{padding:24px !important;}
 .modal{backdrop-filter:blur(3px);}
@@ -521,7 +548,7 @@ body{
 .kpi-grid{gap:18px !important;}
 .kpi-card{
   border:none !important;border-radius:var(--r-lg) !important;padding:22px 24px !important;
-  box-shadow:var(--shadow-card) !important;background:#fff !important;
+  box-shadow:var(--shadow-card) !important;background:var(--card) !important;
 }
 .kpi-card::before{display:none !important;}
 .kpi-label{font-size:12px !important;color:var(--text-light) !important;text-transform:none !important;letter-spacing:0 !important;font-weight:500 !important;}
@@ -650,7 +677,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 @media print {
   body * { visibility: hidden !important; }
   #payslipOverlay, #payslipOverlay * { visibility: visible !important; }
-  #payslipOverlay { position: absolute !important; inset: 0 !important; background: #fff !important; display: block !important; padding: 0 !important; }
+  #payslipOverlay { position: absolute !important; inset: 0 !important; background:var(--card) !important; display: block !important; padding: 0 !important; }
   #payslipOverlay .modal { box-shadow: none !important; max-width: 100% !important; }
   #payslipOverlay .modal-footer, #payslipOverlay .modal-close { display: none !important; }
 }
@@ -868,6 +895,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="lang-btn" data-lang="en" onclick="tkSetLang('en')" title="English"><svg width="20" height="13" viewBox="0 0 60 40"><clipPath id="usc"><rect width="60" height="40" rx="3"/></clipPath><g clip-path="url(#usc)"><rect width="60" height="40" fill="#B22234"/><g fill="#fff"><rect y="3.08" width="60" height="3.08"/><rect y="9.23" width="60" height="3.08"/><rect y="15.38" width="60" height="3.08"/><rect y="21.54" width="60" height="3.08"/><rect y="27.69" width="60" height="3.08"/><rect y="33.85" width="60" height="3.08"/></g><rect width="24" height="21.54" fill="#3C3B6E"/><g fill="#fff"><circle cx="2" cy="4" r="1.1"/><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="14" cy="4" r="1.1"/><circle cx="18" cy="4" r="1.1"/><circle cx="22" cy="4" r="1.1"/><circle cx="4" cy="9" r="1.1"/><circle cx="8" cy="9" r="1.1"/><circle cx="12" cy="9" r="1.1"/><circle cx="16" cy="9" r="1.1"/><circle cx="20" cy="9" r="1.1"/><circle cx="2" cy="14" r="1.1"/><circle cx="6" cy="14" r="1.1"/><circle cx="10" cy="14" r="1.1"/><circle cx="14" cy="14" r="1.1"/><circle cx="18" cy="14" r="1.1"/><circle cx="22" cy="14" r="1.1"/><circle cx="4" cy="19" r="1.1"/><circle cx="8" cy="19" r="1.1"/><circle cx="12" cy="19" r="1.1"/><circle cx="16" cy="19" r="1.1"/><circle cx="20" cy="19" r="1.1"/></g></g></svg>EN</button>
       <button class="lang-btn" data-lang="vi" onclick="tkSetLang('vi')" title="Tiếng Việt"><svg width="20" height="13" viewBox="0 0 30 20"><rect width="30" height="20" rx="1.5" fill="#da251d"/><path d="M15 4l1.18 3.63h3.82l-3.09 2.24 1.18 3.63L15 11.26l-3.09 2.24 1.18-3.63-3.09-2.24h3.82z" fill="#ff0"/></svg>VN</button>
     </div>
+    <button class="notif-btn" title="Toggle dark mode" aria-label="Toggle dark mode" onclick="tkToggleTheme()" id="theme-toggle"></button>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
@@ -1426,10 +1454,10 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div id="ci-verify-panel" style="border:2px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px">
           <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Where are you checking in from?</label>
           <div style="display:flex;gap:8px">
-            <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff">
+            <select id="ci-zone-select" onchange="tkSelectZone()" style="flex:1;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:var(--card)">
               <option value="">— Select an approved location —</option>
             </select>
-            <button onclick="tkVerifySelectedZone(true)" style="display:inline-flex;align-items:center;gap:6px;padding:11px 14px;border-radius:8px;border:1.5px solid var(--navy);background:#fff;color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
+            <button onclick="tkVerifySelectedZone(true)" style="display:inline-flex;align-items:center;gap:6px;padding:11px 14px;border-radius:8px;border:1.5px solid var(--navy);background:var(--card);color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
           </div>
           <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
@@ -3430,7 +3458,7 @@ function _tkApprovalEmailHtml(o) {
   return '' +
   '<div style="background:' + panel + ';padding:22px 0;font-family:Segoe UI,Arial,sans-serif">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
-      '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid ' + line + ';border-radius:14px;overflow:hidden">' +
+      '<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:var(--card);border:1px solid ' + line + ';border-radius:14px;overflow:hidden">' +
         '<tr><td style="background:' + navy + ';padding:16px 26px">' + logoImg +
           '<div style="font:600 12px Segoe UI,Arial,sans-serif;color:#B5C8E5;margin-top:5px">People &amp; Workplace · Approval Request · Yêu cầu phê duyệt</div></td></tr>' +
         '<tr><td style="height:4px;background:' + emerald + '"></td></tr>' +
@@ -4035,7 +4063,7 @@ function tkESign(opts) {
     '</div>' +
     '<div style="margin:12px 2px 6px">' +
     '<div style="font-size:12px;font-weight:600;color:var(--text-dark);margin-bottom:5px">' + _t('Draw your signature') + '</div>' +
-    '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden">' +
+    '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:var(--card);overflow:hidden">' +
       '<canvas id="esign-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas>' +
       '<span id="esign-sig-hint" style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:var(--text-light);font-size:13px;pointer-events:none">' + _t('Sign here') + '</span>' +
     '</div>' +
@@ -6439,7 +6467,7 @@ async function tkRenderTalent() {
       const cnt = items.length ? '<span style="font-size:10px;font-weight:700;color:' + def.c + ';background:' + def.c + '1f;border-radius:20px;padding:1px 8px;flex-shrink:0">' + items.length + '</span>' : '';
       grid += '<div style="background:linear-gradient(135deg,' + def.c + '12,' + def.c + '05);border:1px solid ' + def.c + '40;border-radius:11px;padding:11px 12px;min-height:106px">' +
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px"><span style="font-size:9.5px;font-weight:800;color:' + def.c + ';text-transform:uppercase;letter-spacing:.4px">' + def.box + '</span>' + cnt + '</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:5px">' + items.map(x => '<span onclick="tkQuickAdd(\'talent\',\'' + x.id + '\')" title="Click to edit" style="font-size:11px;font-weight:600;background:#fff;border:1px solid ' + def.c + '55;color:var(--text-dark);border-radius:20px;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:all .12s" onmouseover="this.style.background=\'' + def.c + '14\'" onmouseout="this.style.background=\'#fff\'">' + (x.name || '') + '</span>').join('') + '</div></div>';
+        '<div style="display:flex;flex-wrap:wrap;gap:5px">' + items.map(x => '<span onclick="tkQuickAdd(\'talent\',\'' + x.id + '\')" title="Click to edit" style="font-size:11px;font-weight:600;background:var(--card);border:1px solid ' + def.c + '55;color:var(--text-dark);border-radius:20px;padding:3px 10px;cursor:pointer;white-space:nowrap;transition:all .12s" onmouseover="this.style.background=\'' + def.c + '14\'" onmouseout="this.style.background=\'#fff\'">' + (x.name || '') + '</span>').join('') + '</div></div>';
     }
     grid += '</div>';
   }
@@ -6473,8 +6501,8 @@ async function tkRenderTraining() {
   const colSet = []; comp.forEach(r => Object.keys(r.cells || {}).forEach(k => { if (!colSet.includes(k)) colSet.push(k); }));
   const glyph = s => { const m = { '✓': 'var(--emerald)', 'T': '#F59E0B', 'X': '#EF4444', '—': '#cbd5e1' }; return '<span style="color:' + (m[s] || '#cbd5e1') + ';font-weight:700">' + (s || '—') + '</span>'; };
   const matrix = '<div id="trn-matrix" style="display:none"><div class="card" style="padding:14px 16px;margin-bottom:14px;display:flex;gap:18px;flex-wrap:wrap;font-size:12px"><span><b>Legend:</b></span><span>' + glyph('✓') + ' Trained &amp; current</span><span>' + glyph('T') + ' In progress</span><span>' + glyph('X') + ' Required, not trained</span><span>' + glyph('—') + ' N/A</span></div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:#fff;text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
-    (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Competency / Skill Matrix</div></div><div class="table-wrap"><table style="font-size:11px"><thead><tr><th style="position:sticky;left:0;background:var(--card);text-align:left">Employee</th>' + colSet.map(cn => '<th style="writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;height:120px;padding:4px 2px;vertical-align:bottom">' + cn + '</th>').join('') + '</tr></thead><tbody>' +
+    (comp.length ? comp.map(r => '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;white-space:nowrap">' + (r.name || '') + '<div style="font-size:9px;color:var(--text-light);font-weight:400">' + (r.dept || '') + '</div></td>' + colSet.map(cn => '<td style="text-align:center">' + glyph((r.cells || {})[cn]) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + (colSet.length + 1) + '" style="text-align:center;color:var(--text-light);padding:16px">No competency data</td></tr>') + '</tbody></table></div></div></div>';
   root.innerHTML = kpis +
     '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkTrnTab(\'catalog\',this)">Course Catalog</button><button class="tab" onclick="tkTrnTab(\'enroll\',this)">Enrolments &amp; Progress</button><button class="tab" onclick="tkTrnTab(\'roadmap\',this)">Development Roadmap</button><button class="tab" onclick="tkTrnTab(\'matrix\',this)">Competency Matrix</button></div>' +
     catalog + '<div id="trn-enroll" style="display:none"></div>' + '<div id="trn-roadmap" style="display:none"></div>' + matrix;
@@ -7099,7 +7127,7 @@ async function _htmlToPdfDoc(html, width, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) return null;
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:#fff;padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:var(--card);padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
   let canvas; try { canvas = await h2c(wrap, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }   // 1.5× is crisp on A4 and ~40% faster than 2×
@@ -7178,7 +7206,7 @@ function _payslipBody(e, c, period) {
 /* One statutory card (Employee or Employer) — consistent design, used twice on the payslip. */
 function _payStatCard(title, sub, rows, total, accent) {
   const r = rows.map(x => '<div style="display:flex;justify-content:space-between;font-size:11.5px;padding:3px 0"><span style="color:var(--text-light)">' + x[0] + ' <span style="color:#9aa3ad">(' + x[1] + ')</span></span><span style="font-weight:600">' + _PAY_FMT(x[2]) + '</span></div>').join('');
-  return '<div style="flex:1;background:#fff;border:1px solid var(--line);border-top:3px solid ' + accent + ';border-radius:8px;padding:10px 12px">' +
+  return '<div style="flex:1;background:var(--card);border:1px solid var(--line);border-top:3px solid ' + accent + ';border-radius:8px;padding:10px 12px">' +
     '<div style="font-size:11px;font-weight:800;color:' + accent + '">' + title + '</div>' +
     '<div style="font-size:9.5px;color:var(--text-light);margin-bottom:6px">' + sub + '</div>' + r +
     '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">Subtotal</span><span style="font-weight:800;color:' + accent + '">' + _PAY_FMT(total) + '</span></div></div>';
@@ -7401,7 +7429,7 @@ function _handoverUploadConfirm(e, f, dataUrl, isPdf, warn) {
     const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.style.display = 'flex'; ov.style.zIndex = '100000';
     const kb = Math.round(f.size / 1024);
     const preview = isPdf
-      ? '<iframe src="' + dataUrl + '" style="width:100%;height:330px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>'
+      ? '<iframe src="' + dataUrl + '" style="width:100%;height:330px;border:1px solid var(--line);border-radius:8px;background:var(--card)"></iframe>'
       : '<img src="' + dataUrl + '" alt="Preview" style="max-width:100%;max-height:330px;display:block;margin:0 auto;border:1px solid var(--line);border-radius:8px">';
     ov.innerHTML = '<div class="modal" style="max-width:580px;max-height:92vh;overflow:auto"><div class="modal-header"><div class="modal-title">Confirm signed handover</div><button class="modal-close" id="hovX">&times;</button></div>' +
       '<div style="font-size:12.5px;color:var(--text-light);margin-bottom:8px">Check the file below is the <b>signed Asset &amp; Equipment Handover</b> for <b style="color:var(--navy)">' + (e.name || '') + '</b> &middot; ' + (e.id || '') + ' &middot; BM.HR-02-06.</div>' +
@@ -9910,12 +9938,12 @@ function tkInvFillMissing() {
   wrap.id = 'inv-fill-ov';
   wrap.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,50,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px';
   wrap.innerHTML =
-    '<div style="background:#fff;border-radius:14px;max-width:1040px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">' +
+    '<div style="background:var(--card);border-radius:14px;max-width:1040px;width:100%;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">' +
       '<div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;gap:12px">' +
         '<div><div style="font-size:16px;font-weight:700;color:var(--navy)">' + _t('Fill missing amounts') + ' · ' + blanks.length + '</div><div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' + _t('Open each portal, read the total, type it here, then Save. Leave a row blank to skip it.') + '</div></div>' +
         '<button class="btn btn-outline btn-sm" onclick="_invCloseFill()">✕</button>' +
       '</div>' +
-      '<div style="overflow:auto;flex:1"><table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;font-size:10px;color:var(--text-light);text-transform:uppercase;position:sticky;top:0;background:#fff"><th style="padding:8px">' + _t('Date') + '</th><th style="padding:8px">' + _t('Supplier / invoice') + '</th><th style="padding:8px">' + _t('Portal') + '</th><th style="padding:8px;text-align:right">' + _t('Before tax') + '</th><th style="padding:8px;text-align:right">VAT</th><th style="padding:8px;text-align:right">' + _t('Total') + '</th></tr></thead><tbody>' +
+      '<div style="overflow:auto;flex:1"><table style="width:100%;border-collapse:collapse"><thead><tr style="text-align:left;font-size:10px;color:var(--text-light);text-transform:uppercase;position:sticky;top:0;background:var(--card)"><th style="padding:8px">' + _t('Date') + '</th><th style="padding:8px">' + _t('Supplier / invoice') + '</th><th style="padding:8px">' + _t('Portal') + '</th><th style="padding:8px;text-align:right">' + _t('Before tax') + '</th><th style="padding:8px;text-align:right">VAT</th><th style="padding:8px;text-align:right">' + _t('Total') + '</th></tr></thead><tbody>' +
         blanks.map((i, n) => row(i, n)).join('') +
       '</tbody></table></div>' +
       '<div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:10px">' +
@@ -10407,7 +10435,7 @@ function _procDiagPanel(msg, frame, kind, where, extra) {
     fix = _t('Please Retry. If it keeps happening, run ./update.sh on the VPS.');
   }
   var diag = ''; try { diag = JSON.stringify(window._procDiag || {}); } catch (e) {}
-  var btnCss = 'padding:7px 16px;margin:4px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;font-size:12px';
+  var btnCss = 'padding:7px 16px;margin:4px;border:1px solid var(--border,#e6e9ef);border-radius:8px;background:var(--card);cursor:pointer;font-weight:600;font-size:12px';
   msg.style.display = 'flex';
   msg.innerHTML = '<div style="text-align:center;max-width:540px;padding:24px;font-size:13px;line-height:1.6;color:var(--text-light,#6b7280)">'
     + '<div style="font-weight:700;font-size:15px;color:var(--navy,#205090);margin-bottom:8px">' + title + '</div>'
@@ -10784,7 +10812,7 @@ function _procRoleSelect(e, procOn) {
   var roles = [['', '\u2014 procurement role \u2014'], ['REQUESTER', 'Requester'], ['PURCHASER', 'Purchaser'], ['DEPT_MANAGER', 'Dept Manager'], ['DIRECTOR', 'Director'], ['ACCOUNTANT', 'Accountant'], ['WAREHOUSE', 'Warehouse'], ['ADMIN', 'Admin']];
   var cur = (e.procRole || '');
   var opts = roles.map(function (r) { return '<option value="' + r[0] + '"' + (r[0] === cur ? ' selected' : '') + '>' + r[1] + '</option>'; }).join('');
-  return '<div style="margin-top:6px"><select onchange="tkSetProcRole(\'' + e.id + '\',this.value)" title="Procurement role \u2014 applied when they next open Procurement" style="font-size:11px;padding:3px 6px;border:1px solid var(--border,#e6e9ef);border-radius:6px;background:#fff;color:var(--text)">' + opts + '</select></div>';
+  return '<div style="margin-top:6px"><select onchange="tkSetProcRole(\'' + e.id + '\',this.value)" title="Procurement role \u2014 applied when they next open Procurement" style="font-size:11px;padding:3px 6px;border:1px solid var(--border,#e6e9ef);border-radius:6px;background:var(--card);color:var(--text)">' + opts + '</select></div>';
 }
 async function tkSetProcRole(id, role) {
   if (!_requireLevel('admin')) return;
@@ -10851,7 +10879,7 @@ function tkRenderHrModules() {
     return '<button onclick="showView(\'' + m.id + '\',null,\'' + m.title + '\')" ' +
       'onmouseover="this.style.borderColor=\'var(--navy)\';this.style.boxShadow=\'0 4px 14px rgba(32,80,144,.12)\';this.style.transform=\'translateY(-1px)\'" ' +
       'onmouseout="this.style.borderColor=\'var(--line)\';this.style.boxShadow=\'0 1px 4px rgba(32,80,144,.06)\';this.style.transform=\'none\'" ' +
-      'style="display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:13px 15px;text-align:left;cursor:pointer;font-family:inherit;transition:all .15s;box-shadow:0 1px 4px rgba(32,80,144,.06);min-width:0">' +
+      'style="display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 15px;text-align:left;cursor:pointer;font-family:inherit;transition:all .15s;box-shadow:0 1px 4px rgba(32,80,144,.06);min-width:0">' +
       '<div style="width:42px;height:42px;border-radius:11px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">' + m.icon + '</svg></div>' +
       '<div style="min-width:0;flex:1"><div style="font-size:13.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + m.label + '</div><div style="font-size:11px;color:var(--text-light);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</div></div></button>';
   }).join('');
@@ -11458,7 +11486,7 @@ function tkRenderMyProfile() {
   const editBtn = '<button class="btn btn-primary btn-sm" onclick="tkOpenMyProfileUpdate()">' + ico(I_EDIT) + 'Update My Profile</button>' +
     (canEdit ? '<button class="btn btn-outline btn-sm" onclick="_editEmpProfile(\'' + e.id + '\')" style="margin-left:8px">HR Edit</button>' : '');
 
-  const hBtn = (label, icon, onclick, filled) => '<button onclick="' + onclick + '" style="' + (filled ? 'background:#fff;color:var(--navy);' : 'background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.55);') + 'border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px">' + ico(icon) + label + '</button>';
+  const hBtn = (label, icon, onclick, filled) => '<button onclick="' + onclick + '" style="' + (filled ? 'background:var(--card);color:var(--navy);' : 'background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.55);') + 'border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px">' + ico(icon) + label + '</button>';
   const cInfo = (icon, v) => '<span style="display:inline-flex;align-items:center;gap:6px">' + ico(icon) + D(v) + '</span>';
   root.innerHTML =
   '<div style="border-radius:14px;overflow:hidden;margin-bottom:20px;box-shadow:0 6px 20px rgba(32,80,144,.15)">' +
@@ -15860,6 +15888,8 @@ const _VI = {
   'No new licensed users to add — everyone in Microsoft 365 is already in the system.': 'Không có người dùng có bản quyền mới để thêm — mọi người trong Microsoft 365 đã có trong hệ thống.',
   // render-cap "show all" control
   'Show all': 'Xem tất cả', 'Showing': 'Đang hiển thị', 'of': 'trong tổng số',
+  // theme toggle
+  'Switch to light mode': 'Chuyển sang giao diện sáng', 'Switch to dark mode': 'Chuyển sang giao diện tối',
   // leave validation (specific)
   'Choose a leave type': 'Hãy chọn loại nghỉ phép',
   'Pick a start date': 'Hãy chọn ngày bắt đầu',
@@ -16810,6 +16840,25 @@ document.addEventListener('click', e => {
 /* ──────────────────────────────────────────────────────────
    8. TOAST
 ────────────────────────────────────────────────────────── */
+/* ── Opt-in dark mode toggle (persisted; default light) ── */
+const _MOON_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const _SUN_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+function _tkPaintThemeIcon() {
+  const b = document.getElementById('theme-toggle'); if (!b) return;
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  b.innerHTML = dark ? _SUN_SVG : _MOON_SVG;
+  b.title = dark ? _t('Switch to light mode') : _t('Switch to dark mode');
+}
+function tkToggleTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const next = dark ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('tk_theme', next); } catch (e) {}
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#0d1a2e' : '#205090');
+  _tkPaintThemeIcon();
+}
+document.addEventListener('DOMContentLoaded', _tkPaintThemeIcon);
+
 function toast(msg, type = 'success', dur = 3500) {
   const t = document.getElementById('toast');
   if (!t) return;
