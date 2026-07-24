@@ -2638,6 +2638,11 @@ async function tkApi(path, opts = {}) {
     if (res.status === 401 && !opts._no401) { try { _tkSessionExpired(); } catch (_) {} }   // _no401: caller handles the heal/retry itself
     const _err = new Error((e && e.error) || ('HTTP ' + res.status)); _err.status = res.status; throw _err;
   }
+  // A successful write invalidates that collection's load cache so the next read re-fetches server truth.
+  const _m = (opts.method || 'GET').toUpperCase();
+  if (_m !== 'GET' && typeof tkCollInvalidate === 'function') {
+    const cm = /^\/api\/coll\/([^\/?#]+)/.exec(path); if (cm) tkCollInvalidate(cm[1]);
+  }
   return res.json();
 }
 
@@ -4996,10 +5001,33 @@ const _PROBATION_MILESTONES = [
 const _onboardMilestones = () => _PROBATION_MILESTONES.map(m => ({ day: m.day, label: m.label, status: 'Pending', reviewedOn: '', remindedAt: '' }));
 const _addDays = (iso, n) => { const p = _tkDateParts(iso); if (!p) return ''; const d = new Date(p.y, p.m - 1, p.d); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const _daysUntil = iso => { const p = _tkDateParts(iso); if (!p) return null; return Math.round((new Date(p.y, p.m - 1, p.d) - new Date(_today())) / 86400000); };
-async function tkLoadColl(name) {
-  try { const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } }); if (r.ok) { const j = await r.json(); _HR[name] = j.items || []; } } catch (e) {}
-  return _HR[name];
+/* Collection load cache. Views (esp. Projects) used to re-fetch every collection on every render —
+   e.g. opening one project fired 18 fetches for the list AND 18 more for the workspace, and each
+   _pmReload re-fetched them all. On mobile (higher latency + a ~6-connection cap) that meant several
+   seconds of "Loading…" on every tap. We now serve a recently-loaded collection from memory and
+   coalesce concurrent loads; a write to a collection (via tkApi) marks it stale so the next read
+   re-fetches server truth. Full page nav on logout clears all of this. */
+const _COLL_TS = {};        // name -> epoch ms of last successful load (0/absent = stale)
+const _COLL_INFLIGHT = {};  // name -> in-flight Promise, so N parallel callers share one request
+const _COLL_TTL = 45000;    // a collection stays "fresh" for 45s
+async function tkLoadColl(name, opts) {
+  opts = opts || {};
+  const fresh = _COLL_TS[name] && (Date.now() - _COLL_TS[name] < _COLL_TTL) && Array.isArray(_HR[name]);
+  if (!opts.force && fresh) return _HR[name];
+  if (_COLL_INFLIGHT[name]) return _COLL_INFLIGHT[name];   // dedupe simultaneous loads of the same collection
+  const pr = (async () => {
+    try {
+      const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } });
+      if (r.ok) { const j = await r.json(); _HR[name] = j.items || []; _COLL_TS[name] = Date.now(); }
+    } catch (e) {}
+    finally { delete _COLL_INFLIGHT[name]; }
+    return _HR[name];
+  })();
+  _COLL_INFLIGHT[name] = pr;
+  return pr;
 }
+/* Mark a collection stale so the next tkLoadColl re-fetches it (called after a write). */
+function tkCollInvalidate(name) { if (name) _COLL_TS[name] = 0; else for (const k in _COLL_TS) _COLL_TS[k] = 0; }
 function _hrEmp(id) { return (_DEMO_EMPLOYEES || []).find(e => e.id === id); }
 function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:#205090">' + ((e && e.ini) || '?') + '</div>'; }
 /* Pick a sensible icon from the KPI label so every page gets a consistent icon+text KPI. */
@@ -12822,8 +12850,17 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'];
+// The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
+// visibility keys off fields on the project record itself. Loading just these makes the list paint
+// after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
+// caches, so nothing is fetched twice within the freshness window.
+const _PM_CORE_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_costs'];
+async function _pmLoadCore() {
+  await Promise.all(_PM_CORE_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+}
 async function _pmLoadAll() {
-  await Promise.all(['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'].map(c => tkLoadColl(c).catch(() => { })));
+  await Promise.all(_PM_ALL_COLLS.map(c => tkLoadColl(c).catch(() => { })));
 }
 
 /* ---- Earned Value Management ---- */
@@ -13165,7 +13202,7 @@ function _pmReload() { const A = id => { const v = document.getElementById('view
 async function pmRenderProjects() {
   const root = document.getElementById('pm-projects-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await _pmLoadAll();
+  await _pmLoadCore();
   const all = _pmMine(_HR.pm_projects || []);
   const active = all.filter(p => PM_ACTIVE_STATUS.indexOf(p.status) >= 0 || !p.status);
   const value = all.reduce((s, p) => s + (+p.contractValue || +p.budget || 0), 0);
@@ -14016,7 +14053,7 @@ function pmSetDash(which, v) { if (which === 'dept') _pmDashDept = v; else _pmDa
 async function pmRenderPortfolio() {
   const root = document.getElementById('pm-dashboard-root'); if (!root) return;
   root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
-  await _pmLoadAll();
+  await _pmLoadCore();
   let projects = _pmMine(_HR.pm_projects || []);
   if (_pmDashDept) projects = projects.filter(p => (p.dept || '') === _pmDashDept);
   if (_pmDashMgr) projects = projects.filter(p => (p.manager || '') === _pmDashMgr);
