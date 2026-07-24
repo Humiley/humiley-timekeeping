@@ -92,6 +92,11 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile taps (check-in/out) */
 /* ── QA polish pass ── visible keyboard focus (WCAG 2.4.7), tactile tap feedback, aligned figures ── */
 :focus-visible{outline:2px solid var(--navy);outline-offset:2px;border-radius:6px}
+.skip-link{position:absolute;left:-9999px;top:0;z-index:3000;background:var(--navy);color:#fff;padding:10px 16px;border-radius:0 0 8px 0;font-weight:700;font-size:13px;text-decoration:none}
+.skip-link:focus{left:0}
+#content:focus{outline:none}
+/* Honour reduced-motion: near-instant transitions/animations for users who ask for it. */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}}
 .btn:focus-visible,.tab:focus-visible,.form-control:focus-visible,.nav-item:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,80,144,.28)}
 .btn:active{transform:translateY(1px) scale(.99)}   /* the .btn transition already pays for transform — now it fires */
 .tab:active,.nav-item:active{transform:translateY(1px)}
@@ -700,6 +705,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 </script>
 
 <!-- ═══ SIDEBAR ═══ -->
+<a href="#content" class="skip-link">Skip to main content</a>
 <nav id="sidebar">
   <div class="sidebar-logo">
     <img src="/static/brand/portal-logo-sidebar.png"
@@ -865,7 +871,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div id="topbar-ava" title="My account" style="width:32px;height:32px;border-radius:50%;background:var(--emerald);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;flex-shrink:0;background-size:cover;background-position:center">HN</div>
   </div>
 
-  <div id="content">
+  <div id="content" tabindex="-1" role="main">
 
 <!-- ═══════════════════════════════════════════════════════
      VIEW: STAFF DASHBOARD (personal portal)
@@ -2541,7 +2547,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 </div>
 
 <!-- Toast Notification -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 <!-- ═══════════════════════════════════════════════════════════
      SCRIPTS
 ════════════════════════════════════════════════════════════ -->
@@ -4835,7 +4841,7 @@ async function tkSavePortal() {
     window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, invtrackSpUrl: (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '', procurementUrl: payload.procurementUrl };   // invtrackSpUrl is owned by the Invoice Tracking → Settings tab; preserve it here
     if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
     toast('Company portal updated — employees will see this on their dashboard.');
-  } catch (e) { toast('Network error: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Render the employee "company portal" widgets on the staff dashboard. */
@@ -5169,7 +5175,7 @@ async function tkCollDelete(coll, id, reload) {
     _HR[coll] = (_HR[coll] || []).filter(x => x.id !== id);
     if (_HR_RELOAD[reload]) _HR_RELOAD[reload]();
     toast('Deleted');
-  } catch (e) { toast('Could not delete: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not delete') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* One-click close for same-day QA/QC work (ITP items etc.): status → Closed, closed date = today,
    result defaults to Pass when still open — no manual date entry needed. */
@@ -5182,7 +5188,7 @@ async function pmCloseToday(coll, id) {
     const i = (_HR[coll] || []).findIndex(x => x.id === id); if (i >= 0) _HR[coll][i] = res.item || body;
     if (_HR_RELOAD[coll]) _HR_RELOAD[coll]();
     toast('Closed today — completion date set automatically');
-  } catch (e) { toast('Could not close: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not close') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkReloadEmployees() { try { const r = await tkApi('/api/employees'); _DEMO_EMPLOYEES = r.employees; try { tkFillDeptSelects(); } catch (e) {} try { _tkPaintUserAva(); } catch (e) {} } catch (e) {} }
 function _slugEmail(name) {
@@ -5211,7 +5217,7 @@ async function tkHireCandidate(id) {
     tkAudit('Candidate hired', c.name, 'as ' + (c.role || '') + ' · ' + emp.id);
     tkRenderRecruitment();
     toast(c.name + ' hired → added to roster (' + emp.id + ') & onboarding started', 'success', 6000);
-  } catch (e) { toast('Hire failed: ' + _errMsg(e), 'error', 6000); }
+  } catch (e) { toast(_t('Hire failed') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
 /* Candidate detail drawer (recruitment). */
@@ -5259,7 +5265,7 @@ async function tkReqApprove(id) {
   j.appStep = step + 1;
   j.status = j.appStep >= _REQ_CHAIN.length ? 'Approved' : 'Pending ' + _REQ_CHAIN[j.appStep];
   try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition approved · ' + _REQ_CHAIN[step], j.title, j.status); toast(_REQ_CHAIN[step] + ' approved'); tkReqRouting(id); tkRenderRecruitment(); }
-  catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkReqReject(id) {
   const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
@@ -5267,7 +5273,7 @@ async function tkReqReject(id) {
   j.approvals = j.approvals || []; j.approvals[step] = { role: _REQ_CHAIN[step], decision: 'Rejected', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
   j.status = 'On Hold';
   try { await tkApi('/api/coll/jobs/' + id, { method: 'PATCH', body: j }); tkAudit('Requisition rejected · ' + _REQ_CHAIN[step], j.title, ''); toast('Requisition rejected at ' + _REQ_CHAIN[step], 'warn'); document.getElementById('reqRouteOverlay')?.remove(); tkRenderRecruitment(); }
-  catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Interview evaluation rubric (BM.HR-01-04: Technical 40 / Behavioral 35 / Culture 15 / Logistics 10). */
@@ -5297,7 +5303,7 @@ async function tkEvalSave(id) {
   ev.score = +tot.toFixed(2);
   c.eval = ev; if (ev.score) c.rating = Math.round(ev.score);
   try { await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c }); tkAudit('Interview evaluated', c.name, ev.score + '/5 · ' + (ev.rec || '')); document.getElementById('evalOverlay').remove(); toast('Evaluation saved (' + ev.score + '/5 · ' + (ev.rec || '') + ')'); tkRenderRecruitment(); }
-  catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Human Resource hub — Overview tab. The HRBP (HR Business Partner) process across the
@@ -5499,7 +5505,7 @@ async function tkAddNewHireGo() {
     if (r && r.item) (_HR.onboarding = _HR.onboarding || []).push(r.item);
     tkAudit('New hire onboarding started', name, tasks.length + ' activities');
     document.getElementById('newHireOverlay').remove(); toast('Onboarding started for ' + name + ' (' + tasks.length + ' activities)'); tkRenderOnboarding();
-  } catch (e) { toast('Could not create: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not create') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkRenderOnboarding() {
   const root = document.getElementById('onboarding-root'); if (!root) return;
@@ -5547,7 +5553,7 @@ async function tkOnboardToggle(id, idx, checked) {
   const o = (_HR.onboarding || []).find(x => x.id === id); if (!o || !o.tasks || !o.tasks[idx]) return;
   o.tasks[idx].done = checked;
   try { await tkApi('/api/coll/onboarding/' + id, { method: 'PATCH', body: o }); tkRenderOnboarding(); }
-  catch (e) { o.tasks[idx].done = !checked; toast('Could not save: ' + _errMsg(e), 'error', 5000); tkRenderOnboarding(); }
+  catch (e) { o.tasks[idx].done = !checked; toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); tkRenderOnboarding(); }
 }
 async function tkOnboardMilestone(id, mi, status) {
   const o = (_HR.onboarding || []).find(x => x.id === id); if (!o || !o.milestones || !o.milestones[mi]) return;
@@ -5559,7 +5565,7 @@ async function tkOnboardMilestone(id, mi, status) {
       const e = _hrEmp(o.empId) || {}; tkNotifyGraph(e.email, 'Probation passed — welcome aboard!', 'Hi ' + (o.name || '') + ', congratulations — your probation review is complete and you are now a confirmed employee. Welcome to the Humiley team!\n\nHumiley HR');
     }
     toast('Milestone: ' + status); tkRenderOnboarding();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Email reminders as 30/60/90-day milestones approach (debounced once per day). */
 function tkOnboardReminders() {
@@ -5704,7 +5710,7 @@ async function tkAssignGoalsGo() {
       const r = await tkApi('/api/coll/padr', { method: 'POST', body: { empId: e.id, name: e.name, dept: e.dept || '', cycle: String(new Date().getFullYear()), status: 'Goal-setting', rating: 0, goals: [] } });
       if (r && r.item) { p = r.item; (_HR.padr = _HR.padr || []).push(p); }
       tkAudit('PADR cycle created', e.name, 'Goal-setting');
-    } catch (err) { toast('Could not create cycle: ' + _errMsg(err), 'error', 5000); return; }
+    } catch (err) { toast(_t('Could not create cycle') + ': ' + _errMsg(err), 'error', 5000); return; }
   }
   if (p) tkPadrManage(p.id);
 }
@@ -5780,7 +5786,7 @@ async function tkPadrSave(id) {
       await persist(); afterSave();
     }
   }
-  catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Staff — My Training: enrolled courses with progress + feedback (item 4). */
 async function tkRenderMyTraining() {
@@ -5843,7 +5849,7 @@ async function tkMyTrainingSave(id) {
     if (status === 'Completed' && was !== 'Completed') { _notifyCourseComplete(x); toast('Course completed — manager & HR notified'); }
     else toast('Saved — ' + x.course + ' ' + prog + '%');
     tkRenderMyTraining();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Employee one-click course completion → marks 100% and emails manager + HR. */
 async function tkMyTrainingComplete(id) {
@@ -5857,7 +5863,7 @@ async function tkMyTrainingComplete(id) {
     tkAudit('Course completed', (TK.user || {}).name, x.course);
     _notifyCourseComplete(x);
     toast('Course completed — manager & HR notified'); tkRenderMyTraining();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Employee ticks an onboarding step — marks it done (irreversible), syncs to HR/Admin, hides it. */
 async function tkMyOnboardingTick(onbId, idx, cb) {
@@ -5874,7 +5880,7 @@ async function tkMyOnboardingTick(onbId, idx, cb) {
       if (to) tkMailRequester(to, 'HR & Manager', 'Onboarding completed — ' + (me.name || ''), 'Dear HR / Manager,\n\n' + (me.name || 'The employee') + ' has completed all onboarding checklist steps.\n\nHumiley Group Inc. — People & Workplace');
     }
     toast('Step completed'); tkRenderMyTraining();
-  } catch (e) { o.tasks[idx].done = false; if (cb) cb.disabled = false; toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { o.tasks[idx].done = false; if (cb) cb.disabled = false; toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Notify the employee's manager + HR that a course was completed. */
 function _notifyCourseComplete(x) {
@@ -6245,7 +6251,7 @@ async function tkAssetReturnSave(empId, exitId) {
     document.getElementById('assetReturnOverlay')?.remove();
     toast(returned.length + ' asset(s) returned & signed off');
     try { tkRenderDevices(); } catch (x) {} try { tkRenderOffboarding(); } catch (x) {}
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 function _notifyAssetReturn(e, items, sign, date) {
   const hr = (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || '') && (x.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || ''));
@@ -6330,7 +6336,7 @@ async function tkMyGoalDel(gid) {
   if (!(await tkConfirm({ body: 'Remove this goal?', danger: true }))) return;
   _myGoalsRead(p); p.goals = (p.goals || []).filter(g => g.id !== gid);
   try { await tkApi('/api/coll/padr/' + p.id, { method: 'PATCH', body: p }); toast('Goal removed'); tkRenderMyGoals(); }
-  catch (e) { toast('Could not remove: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not remove') + ': ' + _errMsg(e), 'error', 5000); }
 }
 let _myGoalsYear = null;
 function tkMyGoalsYear(y) { _myGoalsYear = y; tkRenderMyGoals(); }
@@ -6351,7 +6357,7 @@ async function tkMyGoalsSave(id, submit) {
     tkAudit(submit ? 'PADR self-assessment submitted' : 'My goals updated', p.name || (TK.user || {}).name, p.cycle || '');
     if (submit) { const mgr = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === ((_tkMe() || {}).managerEmail || '').toLowerCase()); if (mgr) tkNotifyGraph(mgr.email, 'PADR self-assessment ready to review', (p.name || '') + ' has submitted their ' + (p.cycle || '') + ' PADR self-assessment for your review.\n\nHumiley HR'); }
     toast(submit ? 'Self-assessment submitted to your manager' : 'Progress saved'); tkRenderMyGoals();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Performance Improvement Plan — create + weekly check-ins (BM.HR-05-03). */
@@ -6366,7 +6372,7 @@ async function tkStartPip(empId, name, dept) {
   const rec = { empId: empId, name: name || (e && e.name), dept: dept || (e && e.dept) || '', duration: 60, startDate: _today(), status: 'Active', outcome: '',
     concern: '', actions: [{ action: 'Improve quality / output to target', measure: 'Meets standard for 3 consecutive weeks' }], checkins: [] };
   try { const res = await tkApi('/api/coll/pip', { method: 'POST', body: rec }); (_HR.pip = _HR.pip || []).push(res.item); toast('PIP started for ' + rec.name); tkRenderPerformance(); setTimeout(() => tkPipManage(res.item.id), 300); }
-  catch (e2) { toast('Could not start PIP: ' + _errMsg(e2), 'error', 5000); }
+  catch (e2) { toast(_t('Could not start PIP') + ': ' + _errMsg(e2), 'error', 5000); }
 }
 function tkPipManage(id) {
   const p = (_HR.pip || []).find(x => x.id === id); if (!p) return;
@@ -6396,7 +6402,7 @@ async function tkPipSave(id) {
   p.outcome = document.getElementById('pip-outcome').value;
   p.status = p.outcome ? p.outcome : 'Active';
   try { await tkApi('/api/coll/pip/' + id, { method: 'PATCH', body: p }); document.getElementById('pipOverlay').remove(); toast('PIP saved'); tkRenderPerformance(); }
-  catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Talent Management */
@@ -6770,7 +6776,7 @@ async function tkIndivPayRunGo() {
     _payYM = { y: y, m: m }; _payCache[empId] = c; _payRenderRuns();
     tkPayslip(empId);
     toast('Pay run generated for ' + e.name + ' — ' + period);
-  } catch (err) { toast('Could not generate: ' + _errMsg(err), 'error', 5000); }
+  } catch (err) { toast(_t('Could not generate') + ': ' + _errMsg(err), 'error', 5000); }
 }
 async function tkCreatePayRun() {
   if (!_requireLevel('editor')) return;
@@ -6842,7 +6848,7 @@ async function tkPayAdjSave(empId) {
     tkAudit('Payroll adjusted', body.name, period + (body.note ? (' · ' + body.note) : ''));
     document.getElementById('payAdjOverlay').remove(); toast('Adjustment saved for ' + body.name);
     _payBuild(); _payRenderReg(); _payRenderDash();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkPayAdjReset(empId) {
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y; const existing = _payAdjFor(empId, period); if (!existing) return;
@@ -7455,7 +7461,7 @@ function tkUploadSignedHandover(empId) {
       else { const rec = Object.assign({ empId: empId, name: e.name || '' }, patch); const rr = await tkApi('/api/coll/handovers', { method: 'POST', body: rec }); rec.id = rr && rr.id; (_HR.handovers = _HR.handovers || []).push(rec); }
       tkAudit('Signed handover stored', e.name || empId, f.name); toast('Signed handover verified & stored on file');
       try { tkRenderMyProfile(); } catch (_) {}
-    } catch (x) { toast('Upload failed: ' + x.message, 'error'); }
+    } catch (x) { toast(_t('Upload failed') + ': ' + x.message, 'error'); }
   };
   inp.click();
 }
@@ -7531,7 +7537,7 @@ async function tkConfirmPolicy(doc) {
     (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc);
     document.getElementById('policyOverlay')?.remove(); toast('Acknowledged: ' + doc); tkRenderMyProfile();
   }
-  catch (err) { toast('Could not save: ' + _errMsg(err), 'error', 5000); }
+  catch (err) { toast(_t('Could not save') + ': ' + _errMsg(err), 'error', 5000); }
 }
 /* Back-compat: any old caller opens the read-and-confirm flow. */
 function tkAckDoc(doc) { return tkOpenPolicy(doc); }
@@ -10162,7 +10168,7 @@ async function tkExitSave(id, complete) {
     document.getElementById('exitMgrOverlay')?.remove();
     if (complete) return tkExitComplete(id);
     toast('Saved'); tkRenderOffboarding();
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkExitComplete(id) {
   const r = (_HR.exits || []).find(x => x.id === id); if (!r) return;
@@ -10182,7 +10188,7 @@ async function tkExitComplete(id) {
     if (e) tkNotifyGraph(e.email, 'Offboarding complete — final settlement', 'Hi ' + (e.name || '') + ', your offboarding is complete. Final settlement: ' + _PAY_FMT(set.net) + ' (annual-leave payout ' + _PAY_FMT(set.leavePayout) + (set.severance ? ' + severance ' + _PAY_FMT(set.severance) : '') + (set.deductions ? ' − deductions ' + _PAY_FMT(set.deductions) : '') + '). Your Social Insurance book will be returned. We wish you all the best.\n\nHumiley HR');
     toast(r.name + ' offboarded — settlement ' + _PAY_FMT(set.net), 'success', 5000);
     tkRenderOffboarding(); try { tkRenderPermissions(); } catch (x) {}
-  } catch (err) { toast('Could not complete: ' + _errMsg(err), 'error', 5000); }
+  } catch (err) { toast(_t('Could not complete') + ': ' + _errMsg(err), 'error', 5000); }
 }
 
 /* HR Admin → Benefits by grade (A5). Managers configure allowances per grade; staff see their own in My Profile. */
@@ -10294,7 +10300,7 @@ async function tkSetLevel(id, level) {
     tkNotifyGraph(e.email, 'Your Humiley access level was updated', 'Hi ' + (e.name || '') + ', your system access level is now ' + (_LEVEL_LABEL[level] || level) + '. It applies at your next sign-in.\n\nHumiley HR');
     toast(e.name + ' → ' + (_LEVEL_LABEL[level] || level));
     try { tkRenderPermissions(); } catch (x) {}   // full re-render so the level KPI counts update too
-  } catch (err) { toast('Could not update: ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
+  } catch (err) { toast(_t('Could not update') + ': ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
 }
 /* Procurement is a SEPARATE portal app (procure-to-pay + inventory) — an app of this portal
    like HR/Finance. Opt-in per user (Access & Permissions); opens in a new tab with the signed-in
@@ -10785,7 +10791,7 @@ async function tkSetProcRole(id, role) {
     tkAudit('Procurement role set', e.name, role || '(cleared)');
     toast(e.name + ' \u2014 ' + _t('Procurement role') + ': ' + (role || '\u2014') + (role ? '. ' + _t('Applies when they next open Procurement.') : ''), 'info', 5000);
     _permRowRefresh(id);
-  } catch (err) { toast('Could not update: ' + _errMsg(err), 'error', 5000); }
+  } catch (err) { toast(_t('Could not update') + ': ' + _errMsg(err), 'error', 5000); }
 }
 
 async function tkSetApp(id, app, allowed) {
@@ -10801,7 +10807,7 @@ async function tkSetApp(id, app, allowed) {
       tkAudit('App access changed', e.name, app.toUpperCase() + ' ' + (allowed ? 'enabled' : 'disabled'));
       toast(e.name + ' — ' + app.toUpperCase() + (allowed ? ' enabled' : ' disabled'));
       _permRowRefresh(id);
-    } catch (err) { toast('Could not update: ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
+    } catch (err) { toast(_t('Could not update') + ': ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
     return;
   }
   let denied = String(e.appsDenied || '').split(',').map(x => x.trim()).filter(Boolean).filter(x => x !== app);
@@ -10813,7 +10819,7 @@ async function tkSetApp(id, app, allowed) {
     tkAudit('App access changed', e.name, app.toUpperCase() + ' ' + (allowed ? 'enabled' : 'disabled'));
     toast(e.name + ' — ' + app.toUpperCase() + (allowed ? ' enabled' : ' disabled'));
     _permRowRefresh(id);
-  } catch (err) { toast('Could not update: ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
+  } catch (err) { toast(_t('Could not update') + ': ' + _errMsg(err), 'error', 5000); tkRenderPermissions(); }
 }
 
 /* Manager dashboard — HR module shortcut grid */
@@ -11342,7 +11348,7 @@ async function tkQuickAddSave() {
       const _emp = (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === (data.assignedTo || '').toLowerCase());
       if (_emp) { try { await tkSendAssetHandover(_emp.id, { auto: true }); } catch (_) {} }
     }
-  } catch (e) { toast('Could not save: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Self-service profile photo upload. */
@@ -11391,7 +11397,7 @@ async function tkSaveMyProfile() {
     closeModal('myProfileModal');
     toast('Profile updated');
     try { tkRenderMyProfile(); } catch (_) {}
-  } catch (err) { toast('Network error: ' + _errMsg(err), 'error', 5000); }
+  } catch (err) { toast(_t('Network error') + ': ' + _errMsg(err), 'error', 5000); }
 }
 
 /* Render the professional "My Profile" page for the signed-in user. */
@@ -12309,7 +12315,7 @@ function crmDealMove(id, stage) {
   if (stage === 'Won') patch.wonDate = new Date().toISOString().slice(0, 10);
   tkApi('/api/coll/crm_deals/' + id, { method: 'PATCH', body: Object.assign({}, d, patch) })
     .then(() => { Object.assign(d, patch); try { tkAudit('Deal ' + stage, d.title || '', _crmMoney(d.value)); } catch (e) {} crmRenderPipeline(); toast((d.title || 'Deal') + ' → ' + stage); })
-    .catch(e => toast('Could not update: ' + _errMsg(e), 'error'));
+    .catch(e => toast(_t('Could not update') + ': ' + _errMsg(e), 'error'));
 }
 function crmSetPriority(id, n) {
   const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) return;
@@ -12483,7 +12489,7 @@ async function crmQBSave(thenExport, fmt) {
   if (!lines.length) { toast('Add at least one line with a description and a unit price before saving.', 'warn', 6000); return; }
   const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 1) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
   try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub }) }); d.lines = lines; d.value = sub; }
-  catch (e) { toast('Save failed: ' + _errMsg(e), 'error'); return; }
+  catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error'); return; }
   toast('Quotation saved (' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ')');
   document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
   if (thenExport) { if (fmt === 'xls') crmDownloadQuoteXLS(d.id); else crmDownloadQuote(d.id); }
@@ -13387,7 +13393,7 @@ async function pmSaveSpLink(pid) {
     toast(url ? 'SharePoint link saved — generating folder-creation script…' : 'SharePoint link cleared', 'success', 5000);
     pmTab('overview');
     if (url) setTimeout(function () { pmSpBuildFolders(pid); }, 300);
-  } catch (e) { toast('Save failed: ' + _errMsg(e), 'error', 6000); }
+  } catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error', 6000); }
 }
 function _pmOverviewSpCard(p) {
   const canEdit = (typeof _pmCanEditProject === 'function') ? _pmCanEditProject(p) : _pmSeeAll();
@@ -14058,7 +14064,7 @@ function pmSpUploadPick(pid) {
     } catch (e) {
       const msg = String((e && e.message) || e);
       if (/signed in|token|401|InteractionRequired|expired/i.test(msg)) toast('Microsoft 365 session expired — refresh the page and sign in again, then retry the upload.', 'warn', 9000);
-      else toast('Upload failed: ' + msg, 'error', 9000);
+      else toast(_t('Upload failed') + ': ' + msg, 'error', 9000);
     }
   };
   inp.click();
@@ -15823,6 +15829,24 @@ const _VI = {
   // empty states
   'No projects yet': 'Chưa có dự án',
   'You are not assigned to any projects yet': 'Bạn chưa được phân công dự án nào',
+  // ── toast long-tail: error prefixes (now routed through _t) ──
+  'Could not save': 'Không lưu được', 'Could not update': 'Không cập nhật được',
+  'Could not delete': 'Không xoá được', 'Could not create': 'Không tạo được',
+  'Could not complete': 'Không hoàn tất được', 'Could not close': 'Không đóng được',
+  'Could not remove': 'Không gỡ được', 'Could not load': 'Không tải được',
+  'Could not send': 'Không gửi được', 'Could not generate': 'Không tạo được',
+  'Network error': 'Lỗi mạng', 'Save failed': 'Lưu thất bại', 'Upload failed': 'Tải lên thất bại',
+  'Hire failed': 'Tuyển dụng thất bại', 'Could not start PIP': 'Không khởi tạo được PIP',
+  'Could not create cycle': 'Không tạo được chu kỳ', 'Could not update overtime': 'Không cập nhật được tăng ca',
+  // ── toast long-tail: common standalone messages ──
+  'Deleted': 'Đã xoá', 'Saved': 'Đã lưu', 'Removed': 'Đã gỡ', 'Updated': 'Đã cập nhật',
+  'No file attached': 'Không có tệp đính kèm', 'Deal not found': 'Không tìm thấy giao dịch',
+  'Payment not found': 'Không tìm thấy khoản thanh toán', 'Not found': 'Không tìm thấy',
+  'Please check in first': 'Vui lòng chấm công vào trước', 'Leave approved': 'Đã duyệt nghỉ phép',
+  'Leave rejected': 'Đã từ chối nghỉ phép', 'Goal removed': 'Đã gỡ mục tiêu',
+  'Excel engine not loaded': 'Chưa tải bộ xuất Excel', 'PDF library not loaded': 'Chưa tải thư viện PDF',
+  'PDF engine not loaded': 'Chưa tải bộ xuất PDF', 'PDF engine not ready': 'Bộ xuất PDF chưa sẵn sàng',
+  'File too large (max 100 MB)': 'Tệp quá lớn (tối đa 100 MB)',
   // leave validation (specific)
   'Choose a leave type': 'Hãy chọn loại nghỉ phép',
   'Pick a start date': 'Hãy chọn ngày bắt đầu',
@@ -16696,8 +16720,51 @@ document.addEventListener('keydown', function (ev) {
     if (el && el.getAttribute && el.getAttribute('role') === 'button' && el.tagName !== 'BUTTON' && el.tagName !== 'A' && typeof el.click === 'function') {
       ev.preventDefault(); el.click();
     }
+  } else if (ev.key === 'Tab') {
+    // Focus-trap: keep Tab inside the top-most open static modal (tkConfirm traps itself).
+    const open = Array.prototype.filter.call(document.querySelectorAll('.modal-overlay[id]'),
+      o => o.classList.contains('open') || o.style.display === 'flex');
+    const top = open[open.length - 1];
+    if (top) {
+      const f = top.querySelectorAll('a[href],button:not([disabled]),input:not([type=hidden]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+      const vis = Array.prototype.filter.call(f, el => el.offsetParent !== null || el === document.activeElement);
+      if (vis.length) {
+        const first = vis[0], last = vis[vis.length - 1];
+        if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+        else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+        else if (!top.contains(document.activeElement)) { ev.preventDefault(); first.focus(); }
+      }
+    }
   }
 }, false);
+
+/* A11y: make MOUSE-clickable rows/cards keyboard-operable everywhere — a <tr>/<div> with onclick is
+   invisible to keyboard + screen readers otherwise. A scoped observer tags newly-rendered clickable
+   rows with role="button" + tabindex=0 (the global Enter/Space handler above then activates them);
+   real <button>/<a>/form controls and rows already handled are skipped. Attribute-only, debounced. */
+(function () {
+  function enhance(root) {
+    if (!root || !root.querySelectorAll) return;
+    const rows = root.querySelectorAll('tr[onclick]:not([data-kbd]), div[onclick]:not([data-kbd])');
+    for (let i = 0; i < rows.length; i++) {
+      const el = rows[i];
+      if (el.closest('button, a')) { el.setAttribute('data-kbd', '1'); continue; }  // already inside a control
+      el.setAttribute('role', el.getAttribute('role') || 'button');   // the row IS the click target
+      el.setAttribute('tabindex', '0');                                // inner buttons stopPropagation + stay tabbable
+      el.setAttribute('data-kbd', '1');
+    }
+  }
+  let _t = null;
+  function schedule(root) { clearTimeout(_t); _t = setTimeout(() => enhance(root), 120); }
+  window.addEventListener('DOMContentLoaded', function () {
+    const content = document.getElementById('content') || document.body;
+    enhance(content);
+    try {
+      const mo = new MutationObserver(function () { schedule(content); });
+      mo.observe(content, { childList: true, subtree: true });
+    } catch (e) {}
+  });
+})();
 
 /* True if the modal has ANY field the user has actually typed into / changed — so an accidental
    click outside never throws away a half-filled form. Empty/unchanged modals still close on
@@ -18980,7 +19047,7 @@ async function tkDeleteZone(id, name) {
     try { const r = await tkApi('/api/zones'); _DEMO_ZONES = r.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius })); } catch (e) {}
     tkAudit('GPS zone deleted', name, '');
     toast('Zone deleted: ' + name); tkRenderZones();
-  } catch (e) { toast('Could not delete: ' + _errMsg(e), 'error', 5000); }
+  } catch (e) { toast(_t('Could not delete') + ': ' + _errMsg(e), 'error', 5000); }
 }
 function editLocationRow(btn, name, lat, lon, radius) {
   openModal('locationModal');
