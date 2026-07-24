@@ -4380,6 +4380,11 @@ function msalLogin() {
 
 /* ── Logout ── */
 function doLogout() {
+  // Revoke the session server-side FIRST (best-effort; keepalive so it completes despite the redirect
+  // below) so a signed-out bearer token can't be replayed. Then wipe all local state.
+  try {
+    if (TK.token) fetch('/api/auth/logout', { method: 'POST', keepalive: true, headers: { 'Authorization': 'Bearer ' + TK.token } }).catch(function () {});
+  } catch (e) {}
   _userRole = null; TK.token = null; TK.user = null;
   /* Explicit sign-out is the ONE place we wipe everything. The MSAL token cache now lives in
      localStorage (so sign-in persists across restarts), so clearing both storages drops the

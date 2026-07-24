@@ -1603,6 +1603,17 @@ class Handler(BaseHTTPRequestHandler):
         token = auth[7:].strip() if auth.startswith("Bearer ") else ""
         return session_user(token)
 
+    def _auth_logout(self):
+        """Revoke the caller's session token server-side. Sign-out was client-only (it just cleared
+        localStorage/MSAL), so a stay-signed-in token stayed valid on the server for up to 30 days and
+        could be replayed if it had been exfiltrated before logout. Idempotent — always returns ok."""
+        auth = self.headers.get("Authorization", "")
+        token = auth[7:].strip() if auth.startswith("Bearer ") else ""
+        if token and token in SESSIONS:
+            SESSIONS.pop(token, None)
+            _persist_sessions()
+        return self._json({"ok": True})
+
     # Pre-gzipped file cache keyed by (path, mtime) — the index.html is served on every
     # navigation, so compress it once per deploy instead of per request.
     _GZ_CACHE = {}
@@ -1826,6 +1837,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_demo(body)
         if path == "/api/auth/m365":
             return self._auth_m365(body)
+        if path == "/api/auth/logout":
+            return self._auth_logout()
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
         if path == "/api/invtrack/sptest":
