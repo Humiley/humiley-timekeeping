@@ -4037,7 +4037,7 @@ function tkESign(opts) {
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">' +
       '<button type="button" class="linklike" onclick="_esignSigClear()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px">' + _t('Clear') + '</button>' +
-      '<a id="esign-sig-saved" onclick="_esignSigUseSaved()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px;display:none">' + _t('Use my saved signature') + '</a>' +
+      '<button type="button" class="linklike" id="esign-sig-saved" onclick="_esignSigUseSaved()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px;display:none">' + _t('Use my saved signature') + '</button>' +
     '</div>' +
     '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:var(--text-light)"><input type="checkbox" id="esign-sig-save"><span>' + _t('Remember my signature on this device') + '</span></label>' +
   '</div>' +
@@ -5933,7 +5933,7 @@ function _devIcon(cat, sz) {
 function _devPhotoCell(x, sz) {
   const s = sz || 38;
   if (!x || !x.photo) return '<span style="color:var(--text-light)">—</span>';
-  if (/^data:image|\.(png|jpe?g|gif|webp|svg)$/i.test(x.photo)) return '<img src="' + x.photo + '" onclick="window.open(this.src,\'_blank\')" title="Click to enlarge" style="width:' + s + 'px;height:' + s + 'px;border-radius:8px;object-fit:cover;border:1px solid var(--line);cursor:pointer">';
+  if (/^data:image|\.(png|jpe?g|gif|webp|svg)$/i.test(x.photo)) return '<img src="' + x.photo + '" alt="Photo" onclick="window.open(this.src,\'_blank\')" title="Click to enlarge" style="width:' + s + 'px;height:' + s + 'px;border-radius:8px;object-fit:cover;border:1px solid var(--line);cursor:pointer">';
   return '<a href="' + x.photo + '" download="' + _tkEscA(x.photoName || 'attachment') + '" title="Download attachment" style="display:inline-flex;width:' + s + 'px;height:' + s + 'px;border-radius:8px;border:1px solid var(--line);align-items:center;justify-content:center;color:var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>';
 }
 /* ════════════════ EXCEL / CSV BULK IMPORT (admin) ════════════════ */
@@ -7137,7 +7137,7 @@ function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM
    so the branded Humiley letterhead provides the header — no duplicate masthead. */
 function _payslipHTML(e, c, period) {
   return '<div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:12px">' +
-    '<img src="' + (_LH.logo || (document.querySelector('.sidebar-logo img') || {}).src || '') + '" onerror="this.style.display=\'none\'" style="height:30px">' +
+    '<img src="' + (_LH.logo || (document.querySelector('.sidebar-logo img') || {}).src || '') + '" alt="Humiley" onerror="this.style.display=\'none\'" style="height:30px">' +
     '<div><div style="font-weight:800;color:var(--navy);font-size:15px">HUMILEY ENGINEERING &amp; SOLUTIONS</div><div style="font-size:10px;color:var(--text-light)">' + _LH.addr + ' · Confidential Payslip</div></div>' +
     '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period + '</div></div>' + _payslipBody(e, c, period);
 }
@@ -7398,7 +7398,7 @@ function _handoverUploadConfirm(e, f, dataUrl, isPdf, warn) {
     const kb = Math.round(f.size / 1024);
     const preview = isPdf
       ? '<iframe src="' + dataUrl + '" style="width:100%;height:330px;border:1px solid var(--line);border-radius:8px;background:#fff"></iframe>'
-      : '<img src="' + dataUrl + '" style="max-width:100%;max-height:330px;display:block;margin:0 auto;border:1px solid var(--line);border-radius:8px">';
+      : '<img src="' + dataUrl + '" alt="Preview" style="max-width:100%;max-height:330px;display:block;margin:0 auto;border:1px solid var(--line);border-radius:8px">';
     ov.innerHTML = '<div class="modal" style="max-width:580px;max-height:92vh;overflow:auto"><div class="modal-header"><div class="modal-title">Confirm signed handover</div><button class="modal-close" id="hovX">&times;</button></div>' +
       '<div style="font-size:12.5px;color:var(--text-light);margin-bottom:8px">Check the file below is the <b>signed Asset &amp; Equipment Handover</b> for <b style="color:var(--navy)">' + (e.name || '') + '</b> &middot; ' + (e.id || '') + ' &middot; BM.HR-02-06.</div>' +
       (warn ? '<div style="font-size:12px;color:#92400E;background:#FEF3C7;border-radius:6px;padding:8px 10px;margin-bottom:8px">&#9888; ' + warn + '</div>' : '') +
@@ -13075,7 +13075,7 @@ function tkFilePreview(url, name, mime) {
   name = name || 'File'; mime = mime || '';
   const isImg = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|svg|bmp)(\?|$)/i.test(name) || /^data:image/i.test(url);
   const isPdf = /pdf/i.test(mime) || /\.pdf(\?|$)/i.test(name) || /^data:application\/pdf/i.test(url);
-  const inner = isImg ? '<img src="' + url + '" style="max-width:100%;max-height:72vh;display:block;margin:0 auto;border-radius:8px">'
+  const inner = isImg ? '<img src="' + url + '" alt="Preview" style="max-width:100%;max-height:72vh;display:block;margin:0 auto;border-radius:8px">'
     : isPdf ? '<iframe src="' + url + '" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>'
     : '<div style="padding:36px;text-align:center;color:var(--text-light)">This file type can’t preview inline.<br><br><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary">Open / Download</a></div>';
   const el = document.createElement('div'); el.id = 'filePreviewOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
