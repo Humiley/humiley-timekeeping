@@ -95,23 +95,25 @@ def test_payment_status_cannot_be_forged(api, tokens):
 
 
 # --------------------------------------------------------------------------- attendance privacy scope
-def test_overtime_cannot_exceed_worked_span(api, tokens):
+def test_overtime_cannot_exceed_worked_span(api, tokens, monkeypatch):
     """Requested OT can't exceed the time actually checked in (a 1h presence can't claim 5h OT)."""
     import app
     import db
-    today = app.Handler._vn_day()
+    _freeze_company_clock(monkeypatch)       # deterministic clock (09:05) — else a 09:00 checkout run
+    today = app.Handler._vn_day()            # in the early hours reads as "in the future" and mis-fails
     db.clock_in("HML-OTH", today, "08:00")   # checked in at 08:00; checking out at 09:00 => 1h span
     st, r = api("POST", "/api/attendance/checkout", tokens["other"], {"time": "09:00", "otHours": 5})
     assert st == 400
     assert "overtime" in (r.get("error") or "").lower()
 
 
-def test_forgotten_checkout_is_rejected(api, tokens):
+def test_forgotten_checkout_is_rejected(api, tokens, monkeypatch):
     """A forgotten check-out from an earlier day would wrap to a ~19-23h shift. The checkout must
     reject that (HR corrects it) rather than record a fabricated overnight."""
     import app
     import db
-    yday = app.Handler._vn_day(-1)
+    _freeze_company_clock(monkeypatch)      # deterministic clock — else a 06:00 checkout run in the
+    yday = app.Handler._vn_day(-1)          # early hours reads as "in the future" and mis-fails
     db.clock_in("HML-STF", yday, "08:00")   # checked in yesterday, never checked out
     st, r = api("POST", "/api/attendance/checkout", tokens["staff"], {"time": "06:00"})
     assert st == 400, "an absurd overnight span must be rejected, not stored"
