@@ -180,18 +180,21 @@ def test_leave_days_bounded_to_range(api, tokens):
 def test_claim_line_approval_resets_on_amount_change(api, tokens):
     """An already-approved claim line must LOSE its approval if its amount is edited — otherwise an
     owner could inflate an approved line while it keeps the 'Approved' stamp, with no re-signature."""
+    # NB: create no longer accepts a client-supplied id (it is stripped for security — see
+    # test_coll_create_guard); capture the server-minted id and drive the edit through it.
     st, r = api("POST", "/api/coll/claims", tokens["staff"],
-                {"id": "CLM-REAP", "name": "Staff One",
+                {"name": "Staff One",
                  "items": [{"id": "L1", "amount": 100000}, {"id": "L2", "amount": 50000}]})
     assert st == 200, r
+    cid = r["item"]["id"]
     # simulate L1 already approved by a director + the claim partially approved
-    row = next(x for x in db.list_collection("claims") if x.get("id") == "CLM-REAP")
+    row = next(x for x in db.list_collection("claims") if x.get("id") == cid)
     row["items"][0]["status"] = "Approved"; row["items"][0]["approvedBy"] = "Director User"
     row["status"] = "Partially approved"
     db.put_collection_item("claims", row)
     # owner edits L1's amount 50x
-    st, r = api("PATCH", "/api/coll/claims/CLM-REAP", tokens["staff"],
-                {"id": "CLM-REAP", "name": "Staff One",
+    st, r = api("PATCH", "/api/coll/claims/" + cid, tokens["staff"],
+                {"id": cid, "name": "Staff One",
                  "items": [{"id": "L1", "amount": 5000000}, {"id": "L2", "amount": 50000}]})
     assert st == 200, r
     l1 = next(it for it in r["item"]["items"] if it["id"] == "L1")

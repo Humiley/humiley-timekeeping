@@ -2734,6 +2734,17 @@ class Handler(BaseHTTPRequestHandler):
         # balance) or an inflated value. Bound it to the inclusive calendar span of the requested dates
         # (working days are always ≤ calendar days), so the stored count can't corrupt the balance.
         body = dict(body)
+        # `days` MUST be a strict positive number, validated OUTSIDE the date try/except below. A
+        # non-numeric value (e.g. "5 days") would otherwise be stored verbatim and later silently skip
+        # the balance decrement on approval (float() raises, gets swallowed) — free paid leave. Normalise
+        # it to a float so create and _leave_apply_balance always agree.
+        try:
+            dv = float(body.get("days") or 0)
+        except (TypeError, ValueError):
+            return self._err("Enter the number of leave days as a number.", 400)
+        if dv <= 0:
+            return self._err("Enter the number of leave days.", 400)
+        body["days"] = dv
         _sd, _ed = body.get("startDate"), body.get("endDate")
         if _sd and _ed:
             try:
@@ -2742,9 +2753,6 @@ class Handler(BaseHTTPRequestHandler):
                 span = (d1 - d0).days + 1
                 if span < 1:
                     return self._err("The leave end date can't be before the start date.", 400)
-                dv = float(body.get("days") or 0)
-                if dv <= 0:
-                    return self._err("Enter the number of leave days.", 400)
                 if dv > span:
                     return self._err("The number of leave days exceeds the selected date range.", 400)
             except (TypeError, ValueError):
@@ -2772,6 +2780,11 @@ class Handler(BaseHTTPRequestHandler):
         lv = db.get_leave(int(lid))
         if not lv:
             return self._err("Leave request not found.", 404)
+        # An APPROVED leave has already decremented the requester's balance in _leave_apply_balance, and
+        # there is no restore path — so flipping it back to 'pending' and re-approving would decrement a
+        # SECOND time (the esign guard keys off status != 'approved'). Block the reset outright.
+        if str(lv.get("status") or "").lower() == "approved":
+            return self._err("An approved leave can't be reset to pending — its balance is already applied.", 409)
         requester = db.get_employee(lv["emp_id"])
         if not requester:
             return self._err("Requester not found.", 404)
@@ -2813,7 +2826,19 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if not lv or not lv.get("emp_id"):
                 return
-            days = float(lv.get("days") or 0)
+            try:
+                days = float(lv.get("days") or 0)
+            except (TypeError, ValueError):
+                days = 0
+            if days <= 0:
+                # Defense-in-depth: never let a malformed `days` skip the decrement silently — fall back
+                # to the calendar span so an approved paid leave always consumes balance.
+                try:
+                    d0 = datetime.strptime(str(lv.get("startDate"))[:10], "%Y-%m-%d")
+                    d1 = datetime.strptime(str(lv.get("endDate"))[:10], "%Y-%m-%d")
+                    days = (d1 - d0).days + 1
+                except (TypeError, ValueError):
+                    days = 0
             if days <= 0:
                 return
             emp = db.get_employee(lv.get("emp_id"))
@@ -3385,6 +3410,12 @@ class Handler(BaseHTTPRequestHandler):
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         item = dict(body or {})
+        # SECURITY: a create must CREATE. put_collection_item is a blind upsert (INSERT ... ON CONFLICT
+        # DO UPDATE), so a client-supplied `id` that already exists would OVERWRITE that row wholesale —
+        # bypassing every owner/status/append-only guard the PATCH/DELETE paths enforce (a staff user
+        # could destroy a signed claim/payment, re-own a CRM deal, or forge an audit entry via a known
+        # id). Strip any incoming id so a fresh one is always minted; genuine edits go through PATCH.
+        item.pop("id", None)
         # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
         if name in ("claims", "travel", "payments"):
             _err = self._validate_money_item(name, item)

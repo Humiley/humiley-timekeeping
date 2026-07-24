@@ -3964,7 +3964,17 @@ async function tkPinRefresh() {
 }
 async function _esignReauth() {
   if ((typeof DEMO_MODE === 'function' && DEMO_MODE()) || !_msalApp || !_account) return { demo: true };
-  const res = await _msalApp.acquireTokenPopup({ scopes: ['User.Read'], prompt: 'login' });
+  // Part 11 §11.200 signing re-auth: force an interactive prompt AND request the `auth_time` claim so
+  // the backend can prove the signer just re-authenticated interactively. A silent MSAL refresh mints a
+  // fresh `iat` but does NOT advance `auth_time`, so with auth_time present the server's recency check
+  // (app.py _esign_fresh, which prefers auth_time over iat) correctly rejects a silently-refreshed token
+  // — closing the "re-auth silently reused" gap. NOTE: Entra only emits auth_time when it's also added
+  // as an optional claim in the app registration's token configuration; until then the server safely
+  // falls back to iat (no regression). Never drop prompt:'login'.
+  const res = await _msalApp.acquireTokenPopup({
+    scopes: ['User.Read'], prompt: 'login',
+    claims: JSON.stringify({ id_token: { auth_time: { essential: true } } }),
+  });
   return { idToken: (res && res.idToken) || '' };
 }
 /* PIN lifecycle (enroll / change / reset / remove) — get an ID token SILENTLY from the current
