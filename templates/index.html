@@ -83,6 +83,13 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 /* ── BUTTONS ── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit;transition:background-color .15s,color .15s,border-color .15s,box-shadow .15s,transform .15s,opacity .15s}
 button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile taps (check-in/out) */
+/* ── QA polish pass ── visible keyboard focus (WCAG 2.4.7), tactile tap feedback, aligned figures ── */
+:focus-visible{outline:2px solid var(--navy);outline-offset:2px;border-radius:6px}
+.btn:focus-visible,.tab:focus-visible,.form-control:focus-visible,.nav-item:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,80,144,.28)}
+.btn:active{transform:translateY(1px) scale(.99)}   /* the .btn transition already pays for transform — now it fires */
+.tab:active,.nav-item:active{transform:translateY(1px)}
+/* Tabular figures so money/IDs don't jitter on update and columns line up. */
+.kpi-value,.kpi-tile-val,.num,td.num,.mono,td[data-num]{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 .btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-deep)}
 .btn-emerald{background:var(--emerald);color:#fff}.btn-emerald:hover{background:var(--emerald-deep)}
 .btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
@@ -820,13 +827,13 @@ window.addEventListener('orientationchange', _setLoginBg);
 <!-- ═══ MAIN ═══ -->
 <div id="main">
   <div id="topbar">
-    <button class="topbar-toggle" onclick="toggleSidebar()">
+    <button class="topbar-toggle" onclick="toggleSidebar()" aria-label="Toggle menu" title="Menu">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="topbar-title" id="topbarTitle">Dashboard</div>
     <div class="topbar-search">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" placeholder="Search employees, records…">
+      <input type="search" aria-label="Search employees and records" placeholder="Search employees, records…">
     </div>
     <div id="lang-toggle">
       <button class="lang-btn" data-lang="en" onclick="tkSetLang('en')" title="English"><svg width="20" height="13" viewBox="0 0 60 40"><clipPath id="usc"><rect width="60" height="40" rx="3"/></clipPath><g clip-path="url(#usc)"><rect width="60" height="40" fill="#B22234"/><g fill="#fff"><rect y="3.08" width="60" height="3.08"/><rect y="9.23" width="60" height="3.08"/><rect y="15.38" width="60" height="3.08"/><rect y="21.54" width="60" height="3.08"/><rect y="27.69" width="60" height="3.08"/><rect y="33.85" width="60" height="3.08"/></g><rect width="24" height="21.54" fill="#3C3B6E"/><g fill="#fff"><circle cx="2" cy="4" r="1.1"/><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="14" cy="4" r="1.1"/><circle cx="18" cy="4" r="1.1"/><circle cx="22" cy="4" r="1.1"/><circle cx="4" cy="9" r="1.1"/><circle cx="8" cy="9" r="1.1"/><circle cx="12" cy="9" r="1.1"/><circle cx="16" cy="9" r="1.1"/><circle cx="20" cy="9" r="1.1"/><circle cx="2" cy="14" r="1.1"/><circle cx="6" cy="14" r="1.1"/><circle cx="10" cy="14" r="1.1"/><circle cx="14" cy="14" r="1.1"/><circle cx="18" cy="14" r="1.1"/><circle cx="22" cy="14" r="1.1"/><circle cx="4" cy="19" r="1.1"/><circle cx="8" cy="19" r="1.1"/><circle cx="12" cy="19" r="1.1"/><circle cx="16" cy="19" r="1.1"/><circle cx="20" cy="19" r="1.1"/></g></g></svg>EN</button>
@@ -1453,7 +1460,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="filter-bar" id="att-filter-bar">
     <div class="search-box">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="text" id="att-search" placeholder="Search name or department…" oninput="filterTable()">
+      <input type="search" id="att-search" aria-label="Search name or department" placeholder="Search name or department…" oninput="clearTimeout(window._attSrchT);window._attSrchT=setTimeout(filterTable,180)">
     </div>
     <select class="sel-filter" id="att-dept" data-dept-select="All Departments" onchange="filterTable()">
       <option value="">All Departments</option>
@@ -1868,7 +1875,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <!-- EMPLOYEE IN/OUT LOG -->
   <div id="rpt-inout" style="display:none">
     <div class="filter-bar" style="margin-bottom:14px">
-      <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…" oninput="renderInOutReport()"></div>
+      <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="search" aria-label="Search employee" placeholder="Search employee…" oninput="clearTimeout(window._ioSrchT);window._ioSrchT=setTimeout(renderInOutReport,180)"></div>
       <select class="sel-filter" data-dept-select="All Departments" onchange="renderInOutReport()"><option value="">All Departments</option></select>
       <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
       <input type="month" class="sel-filter" id="io-month" onchange="renderInOutReport()" style="font-size:12px" title="Filter by month">
@@ -2716,14 +2723,32 @@ function tkFillDeptSelects(root) {
   });
 }
 
+/* Merge freshly-fetched attendance into the local set WITHOUT dropping an optimistic in-progress row
+   a user may have just added (check-in unshifts a client row while its POST is still in flight). */
+function _tkMergeAttendance(fetched) {
+  const map = fetched.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
+  const key = r => (r.emp_id || r.name || '') + '|' + (r.date || '') + '|' + (r.in || r.clock_in || '');
+  const seen = new Set(map.map(key));
+  const localExtra = (_DEMO_ATTENDANCE || []).filter(r => !seen.has(key(r)));   // keep rows the server hasn't returned yet
+  _DEMO_ATTENDANCE = localExtra.concat(map);
+}
 async function tkBootstrap() {
+  // Attendance is the fastest-growing table (headcount × every workday). Loading ALL of it for a
+  // management/admin session blocked login and got slower every month. Boot fetches a recent window
+  // (this month + last, covers the dashboard + check-in state + default In/Out view); the full
+  // history hydrates in the background so older-month reports still work — off the critical path.
+  const _d = new Date(); const _attStart = new Date(_d.getFullYear(), _d.getMonth() - 1, 1).toISOString().slice(0, 10);
   const [emps, att, lv, zn] = await Promise.all([
-    tkApi('/api/employees'), tkApi('/api/attendance'),
+    tkApi('/api/employees'), tkApi('/api/attendance?start=' + _attStart),
     tkApi('/api/leave'),     tkApi('/api/zones')
   ]);
   _DEMO_EMPLOYEES  = emps.employees;
   try { _tkPaintUserAva(); } catch (e) {}
   _DEMO_ATTENDANCE = att.attendance.map(r => ({ ...r, in: r.clock_in, out: r.clock_out }));
+  (function () {   // hydrate full attendance history after first paint, on idle
+    const hydrate = () => tkApi('/api/attendance').then(a => { try { _tkMergeAttendance(a.attendance || []); } catch (e) {} }).catch(() => {});
+    if ('requestIdleCallback' in window) requestIdleCallback(hydrate, { timeout: 6000 }); else setTimeout(hydrate, 3500);
+  })();
   _DEMO_LEAVE      = lv.leave;
   _DEMO_ZONES      = zn.zones.map(z => ({ id: z.id, name: z.name, lat: z.lat, lon: z.lon, radius: z.radius }));
   try { tkFillDeptSelects(); } catch (e) {}   // populate all department dropdowns from the real roster
@@ -7742,6 +7767,18 @@ function tkClaimTripPick() {
   const titleEl = document.getElementById('claim-title');
   if (t && titleEl && !titleEl.value.trim()) titleEl.value = (t.dest || 'Travel') + ' ' + tkFmtDate(t.from) + '–' + tkFmtDate(t.to);
 }
+/* Re-entry guard for async submit handlers. A double-tap of Submit on a slow phone network used to
+   mint duplicate expense-claim / travel records (each opening its own e-sign flow) because the button
+   stayed live through the PDF-combine + SharePoint-upload span. Set AFTER validation, release in the
+   e-sign onDone; a safety timeout auto-releases if the user cancels the modal. */
+function _tkSubmitGuard(key, ms) {
+  if (window['_tkBusy_' + key]) return false;
+  window['_tkBusy_' + key] = true;
+  clearTimeout(window['_tkBusyT_' + key]);
+  window['_tkBusyT_' + key] = setTimeout(function () { window['_tkBusy_' + key] = false; }, ms || 15000);
+  return true;
+}
+function _tkSubmitRelease(key) { window['_tkBusy_' + key] = false; clearTimeout(window['_tkBusyT_' + key]); }
 async function tkClaimSave() {
   const e = _tkMe();
   const items = [];
@@ -7755,6 +7792,7 @@ async function tkClaimSave() {
     if (amt > 0 || att) items.push({ id: 'ci-' + ci + '-' + cat.slice(0, 4), category: cat, amount: amt, note: note, attachment: att, attachmentName: attName, status: 'Submitted' });
   });
   if (!items.length) { toast('Add at least one item with an amount', 'warn'); return; }
+  if (!_tkSubmitGuard('claim')) { toast(_t('Please wait — still submitting…'), 'warn'); return; }
   const total = items.reduce((s, it) => s + it.amount, 0);
   const title = (document.getElementById('claim-title') || {}).value || (items.length > 1 ? items.length + ' items' : items[0].category);
   const claimKind = (document.getElementById('claim-type') || {}).value || 'Other';
@@ -7772,6 +7810,7 @@ async function tkClaimSave() {
     createColl: 'claims', createBody: body,
     meaning: 'Submission — Claim ' + title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total),
     onDone: (item, created) => {
+      _tkSubmitRelease('claim');
       const mgr = e && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (e.managerEmail || '').toLowerCase());
       if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Claim to approve — ' + (body.name || ''),
         '<b>' + _crmEsc(body.name || '') + '</b> submitted an expense claim that needs your approval.',
@@ -8100,6 +8139,7 @@ async function tkTravelSave() {
   const g = id => (document.getElementById(id) || {}).value || '';
   const me = _tkMe ? _tkMe() : null;
   if (!g('tr-dest')) { toast('Please enter a destination', 'warn'); return; }
+  if (!_tkSubmitGuard('travel')) { toast(_t('Please wait — still submitting…'), 'warn'); return; }
   const body = { empId: me ? me.id : '', name: (TK.user || {}).name || '', dept: me ? me.dept : '', dest: g('tr-dest'), purpose: g('tr-purpose'), from: g('tr-from'), to: g('tr-to'), transport: g('tr-transport'), cost: +g('tr-cost') || 0, advance: +g('tr-advance') || 0, attachment: '', attachmentName: '', status: 'Submitted' };
   const _files = _multiAttachStore['tr-attach'] || [];
   if (_files.length) {
@@ -8113,6 +8153,7 @@ async function tkTravelSave() {
     createColl: 'travel', createBody: body,
     meaning: 'Submission — Travel ' + (body.dest || '') + ' · ' + _PAY_FMT(body.cost),
     onDone: (item, created) => {
+      _tkSubmitRelease('travel');
       const mgr = me && (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === (me.managerEmail || '').toLowerCase());
       if (mgr) tkEmailApprovalRequest(mgr.email, mgr.name, 'Travel request to approve — ' + (body.name || ''),
         '<b>' + _crmEsc(body.name || '') + '</b> submitted a travel request that needs your approval.',
@@ -11894,7 +11935,14 @@ function _crmActMeta(d) {
 /* ── shared list filter helpers ── */
 let _crmLF = {};
 function _crmDistinct(arr, key) { return [...new Set((arr || []).map(x => (x[key] || '').toString().trim()).filter(Boolean))].sort(); }
-function _crmFiltSearch(id, ph, fn) { return '<input id="' + id + '" type="text" placeholder="' + ph + '" value="' + _tkEscA(_crmLF[id] || '') + '" class="form-control" style="flex:1;min-width:170px;max-width:300px;font-size:12px" oninput="_crmLF[\'' + id + '\']=this.value;' + fn + '()">'; }
+/* Debounce list search: every standard toolbar used to rebuild the whole table innerHTML on each
+   keystroke, causing input lag / dropped keys on mobile. One shared 170ms debounce fixes every view. */
+function _crmSearchInput(el, id, fn) {
+  _crmLF[id] = el.value;
+  clearTimeout(window._crmSrchT);
+  window._crmSrchT = setTimeout(function () { try { (window[fn] || function () {})(); } catch (e) {} }, 170);
+}
+function _crmFiltSearch(id, ph, fn) { return '<input id="' + id + '" type="search" aria-label="' + _tkEscA(ph) + '" placeholder="' + ph + '" value="' + _tkEscA(_crmLF[id] || '') + '" class="form-control" style="flex:1;min-width:170px;max-width:300px;font-size:12px" oninput="_crmSearchInput(this,\'' + id + '\',\'' + fn + '\')">'; }
 function _crmFiltSel(id, label, options, fn) { const cur = _crmLF[id] || ''; return '<select id="' + id + '" class="form-control" style="width:auto;font-size:12px" onchange="_crmLF[\'' + id + '\']=this.value;' + fn + '()"><option value=""' + (cur === '' ? ' selected' : '') + '>' + _crmEsc(_t(label)) + '</option>' + (options || []).map(o => '<option value="' + _crmEsc(o) + '"' + (cur === o ? ' selected' : '') + '>' + _crmEsc(_t(o)) + '</option>').join('') + '</select>'; }
 function _crmFiltBar(html) { return '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + html + '</div>'; }
 /* THE standard period control (used by every toolbar): All time / Today / This week / This month /
@@ -15703,6 +15751,10 @@ const _VI = {
   'Summary': 'Tóm tắt',
   'Sync from Microsoft 365': 'Đồng bộ từ Microsoft 365',
   'Sync from Microsoft 365 — review before adding': 'Đồng bộ từ Microsoft 365 — xem lại trước khi thêm',
+  // ── QA polish pass: new validation / guard messages ──
+  'Please wait — still submitting…': 'Vui lòng đợi — đang gửi…',
+  'End date cannot be before the start date.': 'Ngày kết thúc không được trước ngày bắt đầu.',
+  'The selected range has no working days — pick different dates.': 'Khoảng thời gian đã chọn không có ngày làm việc — hãy chọn ngày khác.',
   // ── Invoice Tracking → Settings tab ── ('Settings' already defined above)
   'SharePoint archive': 'Lưu trữ SharePoint',
   'Every captured invoice file (PDF / XML) is copied to SharePoint and auto-filed into Year / Month sub-folders on each sync. Leave blank to keep files inside the portal only — either way they stay viewable here.': 'Mỗi tệp hoá đơn thu được (PDF / XML) sẽ được sao chép lên SharePoint và tự động lưu vào thư mục con theo Năm / Tháng ở mỗi lần đồng bộ. Để trống nếu chỉ muốn giữ tệp trong cổng thông tin — dù chọn cách nào tệp vẫn xem được tại đây.',
@@ -17360,7 +17412,9 @@ async function submitLeave() {
   const end   = document.getElementById('leave-end')?.value;
   const reason= document.getElementById('leave-reason')?.value;
   if (!type || !start || !end || !reason) { toast('Please fill all fields', 'warn'); return; }
+  if (new Date(end) < new Date(start)) { toast(_t('End date cannot be before the start date.'), 'warn'); return; }
   const days = _calcWorkingDays(start, end);
+  if (!(days > 0)) { toast(_t('The selected range has no working days — pick different dates.'), 'warn'); return; }
 
   if (true) {  /* always use standalone Python backend (SharePoint removed) */
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
@@ -17691,9 +17745,9 @@ function _viewEmpProfile(id) {
   const _mgr = (_DEMO_EMPLOYEES||[]).find(x => (x.email||'').toLowerCase() === (e.managerEmail||'').toLowerCase());
   const managerName = _mgr ? _mgr.name : (e.managerEmail || '—');
   const dash = v => (v && String(v).trim()) ? v : '—';
-  const yrs = Math.floor((new Date()-new Date(e.startDate))/(365.25*24*3600*1000));
-  const annPct = Math.round(e.annualUsed/e.annualTotal*100);
-  const sickPct = Math.round(e.sickUsed/e.sickTotal*100);
+  const yrs = e.startDate && !isNaN(new Date(e.startDate)) ? Math.max(0, Math.floor((new Date() - new Date(e.startDate)) / (365.25 * 24 * 3600 * 1000))) : 0;
+  const annPct = e.annualTotal ? Math.max(0, Math.min(100, Math.round(e.annualUsed / e.annualTotal * 100))) : 0;
+  const sickPct = e.sickTotal ? Math.max(0, Math.min(100, Math.round(e.sickUsed / e.sickTotal * 100))) : 0;
   const overlay = document.getElementById('empProfileOverlay');
   if (overlay) overlay.remove();
   const el = document.createElement('div'); el.id='empProfileOverlay'; el.className='modal-overlay'; el.style.display='flex';

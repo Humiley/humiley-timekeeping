@@ -3246,6 +3246,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        if not isinstance(body, dict):     # json.loads can return a list/str/number → dict() would 500
+            return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
@@ -3301,6 +3303,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
+        if not isinstance(body, dict):     # a non-object JSON body would 500 in dict(body) below
+            return self._err("Invalid record.", 400)
         # The audit trail is APPEND-ONLY (21 CFR Part 11). _coll_delete already blocks deletion; block
         # updates here too so a stored audit event can never be edited/rewritten via the generic store.
         if name == "audit":

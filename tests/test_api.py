@@ -21,6 +21,15 @@ def test_collection_api_requires_auth(api):
     assert st in (401, 403), "unauthenticated read of a collection must be rejected"
 
 
+# --------------------------------------------------------------------------- malformed body → 400 not 500
+def test_collection_add_rejects_non_object_body(api, tokens):
+    """A JSON array/string/number POSTed to /api/coll/<name> must be a clean 400, not a 500 from
+    dict() coercing a list. (schedules is manager-writable, so this reaches _coll_add.)"""
+    for bad in ([1, 2, 3], "hello", 42):
+        st, _ = api("POST", "/api/coll/schedules", tokens["admin"], bad)
+        assert st == 400, "non-object body %r must be 400, got %s" % (bad, st)
+
+
 # --------------------------------------------------------------------------- schedules CRUD (manager)
 def test_schedules_crud_manager(api, tokens):
     st, r = api("POST", "/api/coll/schedules", tokens["admin"],
