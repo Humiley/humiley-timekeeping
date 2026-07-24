@@ -4692,13 +4692,25 @@ let _tkPortalModel = null;
 const _tkEscA = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 const _tkEscT = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-function tkRenderPortalEditor() {
+async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
   _tkPortalRenderRows();
-  const tw = document.getElementById('portal-teams'); if (tw) tw.value = (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '';
-  const fs = document.getElementById('portal-finsp'); if (fs) fs.value = (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '';
-  const pu = document.getElementById('portal-procurl'); if (pu) pu.value = (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '';
+  // Load the integration URLs FRESH from the server, not from the boot-time cache: the editor echoes
+  // whatever is in these inputs back on save, so a stale value would silently revert a change another
+  // admin made after this browser loaded.
+  let live = null;
+  try { live = await tkApi('/api/portal'); } catch (e) {}
+  const g = (k, fb) => (live && typeof live[k] === 'string') ? live[k] : fb;
+  const tw = document.getElementById('portal-teams'); if (tw) tw.value = g('teamsWebhook', (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '');
+  const fs = document.getElementById('portal-finsp'); if (fs) fs.value = g('financeSpUrl', (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '');
+  const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
+  if (live) {   // keep the caches consistent with what we just showed so the save echo matches the server
+    window._TK_PORTAL = window._TK_PORTAL || {};
+    if (typeof live.teamsWebhook === 'string') window._TK_PORTAL.teamsWebhook = live.teamsWebhook;
+    if (typeof live.financeSpUrl === 'string') { window._TK_PORTAL.financeSpUrl = live.financeSpUrl; if (TK.cfg) TK.cfg.financeSpUrl = live.financeSpUrl; }
+    if (typeof live.procurementUrl === 'string') { window._TK_PORTAL.procurementUrl = live.procurementUrl; if (TK.cfg) TK.cfg.procurementUrl = live.procurementUrl; }
+  }
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
   [tw, fs, pu].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change integration URLs.' : ''; } });
 }
@@ -8926,10 +8938,21 @@ async function _invOpenFile(fid, ext) {
   try {
     const res = await fetch('/api/invtrack/file/' + fid + '.' + ext, { headers: TK.token ? { Authorization: 'Bearer ' + TK.token } : {} });
     if (!res.ok) { toast(_t('Could not open the file') + ' (HTTP ' + res.status + ')', 'warn', 5000); return; }
-    const url = URL.createObjectURL(await res.blob());
-    const w = window.open(url, '_blank', 'noopener');
-    if (!w) { const a = document.createElement('a'); a.href = url; a.download = 'invoice-' + fid.slice(0, 10) + '.' + ext; document.body.appendChild(a); a.click(); a.remove(); }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    // These bytes come from the shared mailbox (untrusted). Only a PDF may open inline; rebuild the
+    // blob with an explicit type (never trust the response type) and force XML/ZIP to DOWNLOAD so a
+    // crafted XML can't execute as script in our origin.
+    const buf = await res.arrayBuffer();
+    if (ext === 'pdf') {
+      const url = URL.createObjectURL(new Blob([buf], { type: 'application/pdf' }));
+      const w = window.open(url, '_blank', 'noopener');
+      if (!w) { const a = document.createElement('a'); a.href = url; a.download = 'invoice-' + fid.slice(0, 10) + '.pdf'; document.body.appendChild(a); a.click(); a.remove(); }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } else {
+      const url = URL.createObjectURL(new Blob([buf], { type: 'application/octet-stream' }));
+      const a = document.createElement('a'); a.href = url; a.download = 'invoice-' + fid.slice(0, 10) + '.' + ext;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
   } catch (e) { toast(_t('Could not open the file'), 'error', 5000); }
 }
 /* Clickable PDF/XML/ZIP chips for the real files stored on a register row (id + kind are server-made). */
@@ -9023,7 +9046,14 @@ async function tkRenderInvTrack() {
     '</div>' +
     '<div id="inv-pane" style="margin-top:14px"></div>';
   try { _invAutoSyncStart(); _invSetSyncStatus(); } catch (e) {}
-  if (!_INV.items.length) { document.getElementById('inv-pane').innerHTML = _invEmptyHtml(); v.querySelectorAll('.tab')[0].classList.add('active'); return; }
+  // With no invoices yet, still honour the Settings tab (an admin configures SharePoint here BEFORE
+  // any invoice exists); only the data tabs fall back to the import empty-state.
+  if (!_INV.items.length && _invLF.tab !== 'settings') {
+    document.getElementById('inv-pane').innerHTML = _invEmptyHtml();
+    (v.querySelector('.tab[data-invtab="overview"]') || v.querySelectorAll('.tab')[0]).classList.add('active');
+    _invLF.tab = 'overview';
+    return;
+  }
   invTab(_invLF.tab || 'overview', v.querySelector('.tab[data-invtab="' + (_invLF.tab || 'overview') + '"]'));
 }
 function _invEmptyHtml() {
@@ -9050,30 +9080,39 @@ function _invRow(lbl, val) {
 async function _invRenderSettings() {
   const pane = document.getElementById('inv-pane'); if (!pane) return;
   pane.innerHTML = '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">' + _t('Loading…') + '</div>';
-  let cfg = {}, st = {};
-  try { cfg = await tkApi('/api/portal'); } catch (e) {}
-  try { st = await tkApi('/api/invtrack/status'); } catch (e) {}
-  const spUrl = (cfg && cfg.invtrackSpUrl) || (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '';
+  let cfg = {}, st = {}, cfgOk = true, stOk = true;
+  try { cfg = await tkApi('/api/portal'); } catch (e) { cfgOk = false; }
+  try { st = await tkApi('/api/invtrack/status'); } catch (e) { stOk = false; }
+  // Stale-render guard: if the user switched tabs (or left the view) while the fetches were in
+  // flight, don't clobber whatever they navigated to.
+  if (_invLF.tab !== 'settings' || document.getElementById('inv-pane') !== pane) return;
+  const spUrl = cfgOk ? ((cfg && cfg.invtrackSpUrl) || '') : ((window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '');
   const appReady = !!(st && st.appReady);
   const mailbox = (st && st.mailbox) || 'hd@humiley.com';
   const isAdmin = _userLevel === 'admin';
   const meta = _INV.meta || {};
   const esc = v => _crmEsc(v == null ? '' : String(v));
-  const count = (_INV.items || []).length;
+  // "Invoices tracked" must count INVOICES, not every captured email (notifications/other mail).
+  const count = (_INV.items || []).filter(i => _invTypeKey(i.type) !== 'other').length;
   const lastSync = meta.lastSyncRun ? new Date(meta.lastSyncRun).toLocaleString('en-GB') : (meta.lastSync ? new Date(meta.lastSync).toLocaleString('en-GB') : '—');
   pane.innerHTML =
+    (!cfgOk ? '<div class="card" style="padding:12px 16px;margin-bottom:14px;background:rgba(200,0,0,.06);border:1px solid rgba(200,0,0,.25);font-size:12.5px;color:#C00000">' + _t('Could not load the current settings — check your connection and reopen this tab. Saving is disabled so the SharePoint link is not overwritten by mistake.') + '</div>' : '') +
     '<div style="display:grid;gap:16px;max-width:820px">' +
       /* ── SharePoint archive ── */
       '<div class="card" style="padding:20px 22px">' +
         '<div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:4px;display:flex;align-items:center;gap:7px">' + tkIcon('cloud', 16) + _t('SharePoint archive') + '</div>' +
         '<div style="font-size:12px;color:var(--text-light);margin-bottom:14px;line-height:1.6">' + _t('Every captured invoice file (PDF / XML) is copied to SharePoint and auto-filed into Year / Month sub-folders on each sync. Leave blank to keep files inside the portal only — either way they stay viewable here.') + '</div>' +
         '<label style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' + _t('SharePoint folder URL') + '</label>' +
-        '<input id="inv-sp-url" class="form-control" style="margin-top:6px;font-size:13px" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Invoices" value="' + _tkEscA(spUrl) + '"' + (isAdmin ? '' : ' disabled title="' + _tkEscA(_t('Only an Admin can change this link.')) + '"') + '>' +
+        '<input id="inv-sp-url" class="form-control" style="margin-top:6px;font-size:13px" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Invoices" value="' + _tkEscA(spUrl) + '"' + ((isAdmin && cfgOk) ? '' : ' disabled title="' + _tkEscA(_t(isAdmin ? 'Settings could not be loaded — reopen this tab.' : 'Only an Admin can change this link.')) + '"') + '>' +
         '<div style="display:flex;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">' +
-          (isAdmin ? '<button class="btn btn-primary btn-sm" onclick="_invSaveSp()">' + tkIcon('save', 14) + ' ' + _t('Save link') + '</button>' : '') +
+          ((isAdmin && cfgOk) ? '<button class="btn btn-primary btn-sm" onclick="_invSaveSp()">' + tkIcon('save', 14) + ' ' + _t('Save link') + '</button>' : '') +
+          ((isAdmin && cfgOk) ? '<button class="btn btn-outline btn-sm" id="inv-sp-testbtn" onclick="_invTestSp()">' + tkIcon('shield', 14) + ' ' + _t('Test connection') + '</button>' : '') +
+          ((isAdmin && cfgOk && spUrl) ? '<button class="btn btn-outline btn-sm" id="inv-sp-backfillbtn" onclick="_invBackfillSp()" title="' + _tkEscA(_t('Upload invoices captured before SharePoint was turned on')) + '">' + tkIcon('cloud', 14) + ' ' + _t('Archive existing files') + '</button>' : '') +
           '<span style="font-size:12px;font-weight:600;' + (spUrl ? 'color:#00B060' : 'color:var(--text-light)') + '">' + (spUrl ? '● ' + _t('Configured') : '○ ' + _t('Not configured — files stored in the portal')) + '</span>' +
         '</div>' +
         (isAdmin ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _t('Only an Admin can change this link.') + '</div>') +
+        '<div id="inv-sp-test" style="margin-top:12px"></div>' +
+        _invSpHealthHtml(st) +
         '<div style="font-size:11.5px;color:var(--text-light);margin-top:14px;line-height:1.65;border-top:1px solid var(--border);padding-top:12px">' +
           '<b style="color:var(--navy)">' + _t('One-time Azure step (IT admin):') + '</b><br>' +
           _t('Azure Portal → App registrations → Humiley Portal → API permissions → Add a permission → Microsoft Graph → Application permissions → check Sites.ReadWrite.All → Add, then Grant admin consent. Paste the folder link above and Save.') +
@@ -9084,10 +9123,14 @@ async function _invRenderSettings() {
         '<div style="font-size:14px;font-weight:800;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:7px">' + tkIcon('mail', 16) + _t('Mailbox & automatic sync') + '</div>' +
         _invRow(_t('Mailbox'), esc(mailbox) + ' · Inbox') +
         _invRow(_t('Company'), esc(meta.company || 'CÔNG TY TNHH HUMILEY VIỆT NAM')) +
-        _invRow(_t('Automatic mailbox sync'), appReady
-          ? '<span style="color:#00B060">● ' + _t('Active — server, 24/7') + '</span>'
-          : '<span style="color:#E5A54B">○ ' + _t('Browser only — set TK_M365_CLIENT_SECRET on the server for 24/7 sync') + '</span>') +
-        _invRow(_t('SharePoint file storage'), (st && st.pdf) ? '<span style="color:#00B060">● ' + _t('PDF engine ready') + '</span>' : '<span style="color:var(--text-light)">' + _t('Files stored, previews limited') + '</span>') +
+        _invRow(_t('Automatic mailbox sync'), !stOk
+          ? '<span style="color:var(--text-light)">' + _t('Status unavailable') + '</span>'
+          : (appReady
+            ? '<span style="color:#00B060">● ' + _t('Active — server, 24/7') + '</span>'
+            : '<span style="color:#E5A54B">○ ' + _t('Browser only — set TK_M365_CLIENT_SECRET on the server for 24/7 sync') + '</span>')) +
+        _invRow(_t('PDF invoice reading'), !stOk
+          ? '<span style="color:var(--text-light)">' + _t('Status unavailable') + '</span>'
+          : ((st && st.pdf) ? '<span style="color:#00B060">● ' + _t('PDF engine ready') + '</span>' : '<span style="color:#E5A54B">○ ' + _t('PDF engine off — amounts from PDFs need manual entry') + '</span>')) +
         _invRow(_t('Last sync'), esc(lastSync)) +
         _invRow(_t('Invoices tracked'), esc(String(count))) +
         '<div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">' +
@@ -9099,6 +9142,79 @@ async function _invRenderSettings() {
       '</div>' +
     '</div>';
 }
+/* Read-only health of the last archive attempt — turns a silently-failing SharePoint upload into
+   something the admin can actually see. Renders nothing until at least one attempt has happened. */
+function _invSpHealthHtml(st) {
+  const h = (st && st.spHealth) || {};
+  const ok = h.ok || 0, failed = h.failed || 0;
+  if (!ok && !failed) return '';
+  const when = h.at ? new Date(h.at).toLocaleString('en-GB') : '';
+  const bad = failed > 0 && h.lastError;
+  return '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.6;' +
+    (bad ? 'background:rgba(200,0,0,.06);border:1px solid rgba(200,0,0,.25)' : 'background:rgba(0,176,96,.07);border:1px solid rgba(0,176,96,.25)') + '">' +
+    '<b>' + _t('Archive activity') + ':</b> ' + _crmEsc(String(ok)) + ' ' + _t('uploaded') + ' · ' + _crmEsc(String(failed)) + ' ' + _t('failed') +
+    (when ? ' · ' + _crmEsc(when) : '') +
+    (bad ? '<div style="margin-top:5px;color:#C00000"><b>' + _t('Last error') + ':</b> ' + _crmEsc(h.lastError) + '</div>' : '') +
+    '</div>';
+}
+
+/* Admin: prove the whole archive path works (link → site → library → month folder → write consent)
+   instead of waiting for the next sync to fail silently. */
+async function _invTestSp() {
+  const box = document.getElementById('inv-sp-test');
+  const btn = document.getElementById('inv-sp-testbtn');
+  if (!box) return;
+  if (btn) { btn.disabled = true; }
+  box.innerHTML = '<div style="font-size:12px;color:var(--text-light)">' + _t('Testing the SharePoint connection…') + '</div>';
+  let r;
+  try { r = await tkApi('/api/invtrack/sptest', { method: 'POST', body: {} }); }
+  catch (e) {
+    if (btn) btn.disabled = false;
+    box.innerHTML = '<div style="font-size:12px;color:#C00000">' + _crmEsc((e && e.message) || _t('Test failed')) + '</div>';
+    return;
+  }
+  if (btn) btn.disabled = false;
+  const stages = (r && r.stages) || [];
+  const rows = stages.map(s =>
+    '<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;font-size:12px">' +
+      '<span style="flex:0 0 auto;font-weight:800;color:' + (s.ok ? '#00B060' : '#C00000') + '">' + (s.ok ? '✓' : '✕') + '</span>' +
+      '<span style="flex:1 1 auto"><span style="font-weight:600">' + _crmEsc(_t(s.label)) + '</span>' +
+        (s.detail ? '<div style="color:var(--text-light);word-break:break-word">' + _crmEsc(s.detail) + '</div>' : '') +
+      '</span>' +
+    '</div>').join('');
+  const good = !!(r && r.ok);
+  box.innerHTML =
+    '<div style="padding:12px 14px;border-radius:8px;' +
+      (good ? 'background:rgba(0,176,96,.07);border:1px solid rgba(0,176,96,.3)' : 'background:rgba(200,0,0,.06);border:1px solid rgba(200,0,0,.3)') + '">' +
+      '<div style="font-size:12.5px;font-weight:800;margin-bottom:6px;color:' + (good ? '#00892F' : '#C00000') + '">' +
+        (good ? '● ' + _t('SharePoint archive is working') : '● ' + _t('SharePoint archive is not working yet')) + '</div>' +
+      rows +
+      (good && r.target ? '<div style="margin-top:8px;font-size:11.5px;color:var(--text-light)">' + _t('New invoice files will be filed under') + ' <b>' + _crmEsc(r.target) + '</b></div>' : '') +
+      (!good ? '<div style="margin-top:8px;font-size:11.5px;color:var(--text-light)">' + _t('Fix the first ✕ above, then test again. Files are always kept in the portal regardless.') + '</div>' : '') +
+    '</div>';
+}
+
+/* Admin: push already-captured files that predate the archive being turned on. */
+async function _invBackfillSp() {
+  const btn = document.getElementById('inv-sp-backfillbtn');
+  const box = document.getElementById('inv-sp-test');
+  if (btn) btn.disabled = true;
+  if (box) box.innerHTML = '<div style="font-size:12px;color:var(--text-light)">' + _t('Archiving existing files to SharePoint…') + '</div>';
+  let r;
+  try { r = await tkApi('/api/invtrack/spbackfill', { method: 'POST', body: {} }); }
+  catch (e) {
+    if (btn) btn.disabled = false;
+    if (box) box.innerHTML = '<div style="font-size:12px;color:#C00000">' + _crmEsc((e && e.message) || _t('Backfill failed')) + '</div>';
+    return;
+  }
+  if (btn) btn.disabled = false;
+  const up = (r && r.uploaded) || 0, failed = (r && r.failed) || 0, rem = (r && r.remaining) || 0;
+  const msg = _t('Archived') + ' ' + up + ' · ' + failed + ' ' + _t('failed') + (rem ? ' · ' + rem + ' ' + _t('remaining (run again)') : '');
+  toast(msg, failed ? 'warn' : 'info', 8000);
+  if (box) box.innerHTML = '<div style="font-size:12px;color:' + (failed ? '#C00000' : '#00892F') + '">' + _crmEsc(msg) + '</div>';
+  if (up) _invRenderSettings();   // refresh the health panel
+}
+
 async function _invSaveSp() {
   const el = document.getElementById('inv-sp-url'); if (!el) return;
   const url = (el.value || '').trim();
@@ -15572,6 +15688,39 @@ const _VI = {
   'Attached PDF / XML invoices are read and filed automatically. Notification-only emails that hide the invoice behind a captcha portal (VNPT, MISA…) cannot be read automatically — use "Fill missing" on the Overview tab or import the tax-authority (GDT) export.': 'Hoá đơn đính kèm PDF / XML được đọc và lưu tự động. Email chỉ báo tin, giấu hoá đơn sau cổng captcha (VNPT, MISA…) không thể đọc tự động — hãy dùng "Điền còn thiếu" ở tab Tổng quan hoặc nhập tệp xuất từ cơ quan thuế (Tổng cục Thuế).',
   'SharePoint folder saved — new invoice files will be archived there.': 'Đã lưu thư mục SharePoint — các tệp hoá đơn mới sẽ được lưu tại đó.',
   'SharePoint link cleared — files stay in the portal.': 'Đã xoá đường dẫn SharePoint — tệp vẫn lưu trong cổng thông tin.',
+  'PDF invoice reading': 'Đọc hoá đơn PDF',
+  'PDF engine off — amounts from PDFs need manual entry': 'Bộ xử lý PDF tắt — số tiền từ PDF phải nhập tay',
+  // ── SharePoint connection test ──
+  'Test connection': 'Kiểm tra kết nối',
+  'Testing the SharePoint connection…': 'Đang kiểm tra kết nối SharePoint…',
+  'Test failed': 'Kiểm tra thất bại',
+  'SharePoint archive is working': 'Lưu trữ SharePoint hoạt động tốt',
+  'SharePoint archive is not working yet': 'Lưu trữ SharePoint chưa hoạt động',
+  'New invoice files will be filed under': 'Tệp hoá đơn mới sẽ được lưu tại',
+  'Fix the first ✕ above, then test again. Files are always kept in the portal regardless.': 'Hãy khắc phục dấu ✕ đầu tiên ở trên rồi kiểm tra lại. Dù thế nào tệp vẫn luôn được giữ trong cổng thông tin.',
+  'Archive activity': 'Hoạt động lưu trữ',
+  'uploaded': 'đã tải lên',
+  'failed': 'thất bại',
+  'Last error': 'Lỗi gần nhất',
+  // stage labels returned by /api/invtrack/sptest
+  'SharePoint folder link is set': 'Đã đặt đường dẫn thư mục SharePoint',
+  'Server has the Microsoft app credentials': 'Máy chủ đã có thông tin đăng nhập ứng dụng Microsoft',
+  'Signed in to Microsoft (app-only)': 'Đã đăng nhập Microsoft (chỉ ứng dụng)',
+  'Folder link is a valid SharePoint site path': 'Đường dẫn thư mục hợp lệ trên SharePoint',
+  'Found the SharePoint site': 'Đã tìm thấy site SharePoint',
+  'Opened the document library': 'Đã mở thư viện tài liệu',
+  "Created / found this month's folder": 'Đã tạo / tìm thấy thư mục tháng này',
+  'Wrote a test file (Sites.ReadWrite.All consent OK)': 'Đã ghi tệp thử (quyền Sites.ReadWrite.All hợp lệ)',
+  // ── Settings resilience + backfill ──
+  'Could not load the current settings — check your connection and reopen this tab. Saving is disabled so the SharePoint link is not overwritten by mistake.': 'Không tải được cài đặt hiện tại — hãy kiểm tra kết nối và mở lại tab này. Việc lưu bị tắt để tránh ghi đè nhầm đường dẫn SharePoint.',
+  'Settings could not be loaded — reopen this tab.': 'Không tải được cài đặt — hãy mở lại tab này.',
+  'Status unavailable': 'Không có trạng thái',
+  'Upload invoices captured before SharePoint was turned on': 'Tải lên các hoá đơn đã thu trước khi bật SharePoint',
+  'Archive existing files': 'Lưu trữ tệp hiện có',
+  'Archiving existing files to SharePoint…': 'Đang lưu trữ các tệp hiện có lên SharePoint…',
+  'Backfill failed': 'Lưu trữ bổ sung thất bại',
+  'Archived': 'Đã lưu trữ',
+  'remaining (run again)': 'còn lại (chạy lại)',
   'Confirm & sync': 'Xác nhận & đồng bộ',
   'Select all': 'Chọn tất cả',
   'Clear all': 'Bỏ chọn tất cả',

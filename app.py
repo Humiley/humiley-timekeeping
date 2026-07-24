@@ -252,9 +252,14 @@ def _invtrack_store_file(raw, name, ct):
         os.makedirs(_INVTRACK_FILE_DIR, exist_ok=True)
         fid = hashlib.sha256(raw).hexdigest()[:32]
         path = os.path.join(_INVTRACK_FILE_DIR, fid + "." + kind)
-        if not os.path.exists(path):
-            with open(path, "wb") as fh:
-                fh.write(raw)
+        # Atomic write: an interrupted sync used to leave a truncated file that the exists-guard then
+        # treated as good forever. Write to a temp then os.replace (atomic), and self-heal a file whose
+        # size doesn't match (a leftover partial from an older crash).
+        if not os.path.exists(path) or os.path.getsize(path) != len(raw):
+            tmp = path + ".tmp-" + hashlib.sha256(raw).hexdigest()[32:48]
+            with open(tmp, "wb") as fh:
+                fh.write(raw); fh.flush(); os.fsync(fh.fileno())
+            os.replace(tmp, path)
         return {"id": fid, "name": (name or (fid + "." + kind))[:200], "kind": kind}
     except Exception:
         return None
@@ -574,10 +579,55 @@ def _graph_put_bytes(url, token, data, ctype):
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _graph_err_text(e):
+    """Short, human-readable reason for a failed Graph call, safe to show an admin in the UI.
+       Pulls Graph's own error.message out of the HTTPError body; never echoes tokens or secrets."""
+    code = getattr(e, "code", None)
+    detail = ""
+    try:
+        body = e.read().decode("utf-8", "replace")          # HTTPError is also a file object
+        ej = json.loads(body)
+        err = ej.get("error") or {}
+        detail = (err.get("message") if isinstance(err, dict) else str(err)) or ""
+        if isinstance(err, dict) and err.get("code"):
+            detail = "%s: %s" % (err["code"], detail)
+    except Exception:
+        detail = str(e)
+    detail = re.sub(r"[A-Za-z0-9_\-]{40,}", "…", str(detail)).strip()   # scrub anything token-shaped
+    detail = detail.split("\n")[0][:300]
+    return ("HTTP %s — %s" % (code, detail)) if code else (detail or "unknown error")
+
+
 # Resolved (siteId, driveId, folder-relative-path) for the configured Invoice-Tracking SharePoint
 # folder, plus a short negative cache so a missing-consent / bad-URL case doesn't re-resolve per file.
 _INVTRACK_SP = {"url": None, "site": "", "drive": "", "rel": ""}
 _INVTRACK_SP_FAIL = {"url": "", "until": 0.0}
+
+
+def _sp_parse_folder(folder):
+    """Parse a pasted SharePoint folder URL → (host, site_path, folder_rel). Accepts BOTH the clean
+       folder path (…/sites/<Site>/Shared Documents/<Folder>) and the browser's library VIEW url
+       (…/sites/<Site>/Forms/AllItems.aspx?id=%2Fsites%2F<Site>%2FShared Documents%2F<Folder>&viewid=…),
+       which is what an admin most often copies from the address bar. Raises ValueError otherwise."""
+    pu = urlparse(folder)
+    host = pu.netloc
+    if not host:
+        raise ValueError("Expected a full https://<tenant>.sharepoint.com/... link")
+    qs = parse_qs(pu.query or "")
+    src = ""                                             # a view URL keeps the real folder in ?id= / ?RootFolder=
+    for key in ("id", "RootFolder", "rootfolder", "FolderCTID".lower()):
+        if qs.get(key):
+            src = qs[key][0]; break
+    parts = [urllib.parse.unquote(p) for p in (src or pu.path).split("/") if p]
+    while parts and (parts[-1].lower().endswith(".aspx") or parts[-1].lower() == "forms"):
+        parts = parts[:-1]                               # strip a trailing /Forms/AllItems.aspx from the path form
+    if len(parts) < 2 or parts[0].lower() != "sites":
+        raise ValueError("Expected a link like https://<tenant>.sharepoint.com/sites/<Site>/Shared Documents/<Folder>")
+    site_path = "/sites/" + parts[1]
+    rest = parts[2:]
+    if rest and rest[0].lower() in ("shared documents", "documents"):   # the default doc library == drive root
+        rest = rest[1:]
+    return host, site_path, "/".join(rest)
 
 
 def _invtrack_sp_resolve(token):
@@ -591,16 +641,7 @@ def _invtrack_sp_resolve(token):
     if _INVTRACK_SP_FAIL["url"] == folder and _INVTRACK_SP_FAIL["until"] > time.time():
         return None
     try:
-        pu = urlparse(folder)
-        host = pu.netloc
-        parts = [urllib.parse.unquote(p) for p in pu.path.split("/") if p]
-        if len(parts) < 2 or parts[0].lower() != "sites":
-            raise ValueError("not a /sites/<name>/… SharePoint folder URL")
-        site_path = "/sites/" + parts[1]
-        rest = parts[2:]
-        if rest and rest[0].lower() in ("shared documents", "documents"):   # the default doc library == drive root
-            rest = rest[1:]
-        folder_rel = "/".join(rest)
+        host, site_path, folder_rel = _sp_parse_folder(folder)
         site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
         site_id = site.get("id")
         drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive", token) if site_id else {}
@@ -612,6 +653,20 @@ def _invtrack_sp_resolve(token):
     except Exception:
         _INVTRACK_SP_FAIL.update({"url": folder, "until": time.time() + 300})
         return None
+
+
+def _invtrack_sp_reset():
+    """Drop every SharePoint cache. Called when an admin changes the folder URL (or runs the
+       connection test) so a corrected URL / freshly-granted consent takes effect IMMEDIATELY
+       instead of waiting out the 5-minute negative cache or a container restart."""
+    _INVTRACK_SP.update({"url": None, "site": "", "drive": "", "rel": ""})
+    _INVTRACK_SP_FAIL.update({"url": "", "until": 0.0})
+    _INVTRACK_SP_DIRS.clear()
+
+
+# Health of the most recent archive attempt, surfaced read-only in Invoice Tracking → Settings so a
+# silent SharePoint failure is visible instead of invisible. Never holds secrets.
+_INVTRACK_SP_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": "", "lastUrl": ""}
 
 
 _INVTRACK_SP_DIRS = set()   # folder paths already ensured this process (so we don't re-create per file)
@@ -645,29 +700,211 @@ def _invtrack_sp_ensure_dir(drive_id, rel_path, token):
     _INVTRACK_SP_DIRS.add(ck)
 
 
-def _invtrack_sp_upload(raw, filename, ct, iso):
+_SP_SIMPLE_PUT_MAX = 4 * 1024 * 1024   # Graph's simple PUT ceiling; bigger files go via an upload session
+
+
+def _graph_upload_session(drive_id, path, token, raw, ct):
+    """Upload a 4–8 MB file (a scanned-PDF invoice) via a Graph upload session. Files this size used to
+       be stored locally but SILENTLY skipped for SharePoint, so the archive was quietly incomplete.
+       Sends the whole payload as one chunk (<=8 MB is well inside the 60 MiB per-request limit)."""
+    su = "https://graph.microsoft.com/v1.0/drives/" + drive_id + "/root:/" + path + ":/createUploadSession"
+    body = json.dumps({"item": {"@microsoft.graph.conflictBehavior": "replace"}}).encode("utf-8")
+    req = urllib.request.Request(su, data=body, method="POST",
+                                 headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        sess = json.loads(r.read().decode("utf-8"))
+    up = sess.get("uploadUrl")
+    if not up:
+        raise ValueError("no uploadUrl in session")
+    n = len(raw)
+    put = urllib.request.Request(up, data=raw, method="PUT",
+                                 headers={"Content-Length": str(n),
+                                          "Content-Range": "bytes 0-%d/%d" % (n - 1, n),
+                                          "Content-Type": ct or "application/octet-stream"})
+    with urllib.request.urlopen(put, timeout=180) as r2:     # the session URL is pre-authorized — no bearer
+        return json.loads(r2.read().decode("utf-8") or "{}")
+
+
+def _sp_safe_leaf(filename, fid):
+    """Collision-proof, path-safe SharePoint file name. The mailbox routinely sends invoices with the
+       SAME default name (VNPT/MISA/Viettel all emit 'HoaDon.pdf'), so naming the archived file after
+       the raw attachment name + conflictBehavior=replace made two different suppliers' invoices in the
+       same month overwrite each other — and the register row then linked to the wrong document. We
+       prefix the content hash so distinct files never collide, and strip any path/illegal characters
+       (SharePoint forbids " * : < > ? / \\ | and a leading ~$) so the name can't escape the folder."""
+    base = os.path.basename((filename or "").replace("\\", "/")) or "invoice"
+    base = re.sub(r'[\\/:*?"<>|]+', "_", base).lstrip("~$ ").strip() or "invoice"
+    base = base[:120]
+    pref = (fid or "")[:12]
+    return (pref + "-" + base) if pref else base
+
+
+def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
     """Best-effort upload one captured invoice file to SharePoint under <folder>/<YYYY>/<MM>/, creating
        the Year/Month folders automatically. Returns the webUrl or None. NEVER raises — SharePoint is an
-       add-on to the always-present local copy. Needs Graph Sites.ReadWrite.All (application) consent."""
+       add-on to the always-present local copy. Needs Graph Sites.ReadWrite.All (application) consent.
+       Records the outcome in _INVTRACK_SP_HEALTH so a silent failure is visible in Settings."""
+    if not (db.get_setting("portal_invtrackSpUrl", "") or "").strip():
+        return None                                  # not configured → zero Graph calls, no health noise
     try:
-        if not raw or len(raw) > 4 * 1024 * 1024:   # small-file PUT only; e-invoice files are tiny
-            return None
-        if not (db.get_setting("portal_invtrackSpUrl", "") or "").strip():
-            return None                              # not configured → zero Graph calls
+        if not raw or len(raw) > _INVTRACK_FILE_MAX:
+            raise ValueError("file too large to archive (%d bytes)" % (len(raw or b""),))
         token = _graph_app_token()
         tgt = _invtrack_sp_resolve(token)
         if not tgt:
-            return None
+            raise ValueError("could not resolve the SharePoint folder — check the link and Sites.ReadWrite.All consent")
         ym = (iso or "")[:7]
         y = ym[:4] or "unknown"; mo = ym[5:7] or "00"
         base_segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [y, mo]
         _invtrack_sp_ensure_dir(tgt["drive"], "/".join(base_segs), token)   # AUTO-CREATE the Year/Month folders
-        path = "/".join(urllib.parse.quote(s) for s in (base_segs + [filename or "invoice"]))
-        url = "https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path + ":/content?@microsoft.graph.conflictBehavior=replace"
-        it = _graph_put_bytes(url, token, raw, ct or "application/octet-stream")
-        return it.get("webUrl") or None
-    except Exception:
+        path = "/".join(urllib.parse.quote(s) for s in (base_segs + [_sp_safe_leaf(filename, fid)]))
+        if len(raw) > _SP_SIMPLE_PUT_MAX:
+            it = _graph_upload_session(tgt["drive"], path, token, raw, ct)
+        else:
+            url = ("https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path
+                   + ":/content?@microsoft.graph.conflictBehavior=replace")
+            it = _graph_put_bytes(url, token, raw, ct or "application/octet-stream")
+        web = it.get("webUrl") or None
+        _INVTRACK_SP_HEALTH.update({"at": _now_iso(), "ok": _INVTRACK_SP_HEALTH["ok"] + 1,
+                                    "lastError": "", "lastUrl": web or ""})
+        return web
+    except Exception as e:
+        _INVTRACK_SP_HEALTH.update({"at": _now_iso(), "failed": _INVTRACK_SP_HEALTH["failed"] + 1,
+                                    "lastError": _graph_err_text(e)})
         return None
+
+
+def _invtrack_sp_diagnose():
+    """Run the WHOLE SharePoint archive path end-to-end and report exactly which stage fails, so an
+       admin configuring the folder link gets a real answer instead of silence. Writes (and then
+       removes) a tiny probe file, which is the only way to prove write consent actually works.
+       Returns {ok, stages:[{key,label,ok,detail}], folder}. Never raises."""
+    folder = (db.get_setting("portal_invtrackSpUrl", "") or "").strip()
+    stages = []
+
+    def add(key, label, ok, detail=""):
+        stages.append({"key": key, "label": label, "ok": bool(ok), "detail": str(detail)[:300]})
+        return ok
+
+    if not add("config", "SharePoint folder link is set", bool(folder),
+               folder or "No link configured — paste the folder URL above and Save."):
+        return {"ok": False, "stages": stages, "folder": ""}
+    if not add("secret", "Server has the Microsoft app credentials", _invtrack_app_ready(),
+               "" if _invtrack_app_ready() else "TK_M365_CLIENT_SECRET / client id / tenant id missing on the server."):
+        return {"ok": False, "stages": stages, "folder": folder}
+
+    _invtrack_sp_reset()          # a test must never be answered from a stale negative cache
+    try:
+        token = _graph_app_token()
+        add("token", "Signed in to Microsoft (app-only)", True)
+    except Exception as e:
+        add("token", "Signed in to Microsoft (app-only)", False, _graph_err_text(e))
+        return {"ok": False, "stages": stages, "folder": folder}
+
+    # --- URL shape (accepts the browser's Forms/AllItems.aspx?id=… view URL too) ---
+    try:
+        host, site_path, folder_rel = _sp_parse_folder(folder)
+        add("url", "Folder link is a valid SharePoint site path", True, "site " + site_path + " · folder /" + (folder_rel or "(library root)"))
+    except Exception as e:
+        add("url", "Folder link is a valid SharePoint site path", False, str(e)[:300])
+        return {"ok": False, "stages": stages, "folder": folder}
+
+    # --- site + drive (needs Sites.Read.All at minimum) ---
+    try:
+        site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+        site_id = site.get("id")
+        if not site_id:
+            raise ValueError("site not found")
+        add("site", "Found the SharePoint site", True, site.get("displayName") or site_path)
+    except Exception as e:
+        add("site", "Found the SharePoint site", False, _graph_err_text(e))
+        return {"ok": False, "stages": stages, "folder": folder}
+    try:
+        drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive", token)
+        drive_id = drive.get("id")
+        if not drive_id:
+            raise ValueError("document library not found")
+        add("drive", "Opened the document library", True, drive.get("name") or "Documents")
+    except Exception as e:
+        add("drive", "Opened the document library", False, _graph_err_text(e))
+        return {"ok": False, "stages": stages, "folder": folder}
+
+    # --- write test into this month's folder (proves Sites.ReadWrite.All consent) ---
+    now = datetime.utcnow()
+    base_segs = [s for s in folder_rel.split("/") if s] + [now.strftime("%Y"), now.strftime("%m")]
+    ym_label = "/" + "/".join(base_segs)
+    try:
+        _invtrack_sp_ensure_dir(drive_id, "/".join(base_segs), token)
+        add("folder", "Created / found this month's folder", True, ym_label)
+    except Exception as e:
+        add("folder", "Created / found this month's folder", False, _graph_err_text(e))
+        return {"ok": False, "stages": stages, "folder": folder}
+
+    probe = "_humiley-portal-connection-test.txt"
+    ppath = "/".join(urllib.parse.quote(s) for s in (base_segs + [probe]))
+    try:
+        payload = ("Humiley Portal — Invoice Tracking archive connection test.\nWritten %s UTC. Safe to delete.\n"
+                   % now.strftime("%Y-%m-%d %H:%M:%S")).encode("utf-8")
+        _graph_put_bytes("https://graph.microsoft.com/v1.0/drives/" + drive_id + "/root:/" + ppath
+                         + ":/content?@microsoft.graph.conflictBehavior=replace", token, payload, "text/plain")
+        add("write", "Wrote a test file (Sites.ReadWrite.All consent OK)", True, ym_label + "/" + probe)
+    except Exception as e:
+        add("write", "Wrote a test file (Sites.ReadWrite.All consent OK)", False, _graph_err_text(e))
+        return {"ok": False, "stages": stages, "folder": folder}
+    try:                                   # tidy up our own probe; failure here doesn't matter
+        req = urllib.request.Request("https://graph.microsoft.com/v1.0/drives/" + drive_id + "/root:/" + ppath,
+                                     method="DELETE", headers={"Authorization": "Bearer " + token})
+        urllib.request.urlopen(req, timeout=30)
+    except Exception:
+        pass
+    return {"ok": True, "stages": stages, "folder": folder, "target": ym_label}
+
+
+def _invtrack_sp_backfill(limit=1000):
+    """Archive to SharePoint every already-captured file that has no spUrl yet. Without this, turning
+       the archive ON only affects invoices that arrive AFTER it is configured — the weeks of invoices
+       already sitting in the portal would never reach SharePoint. Idempotent + bounded; returns counts."""
+    if not (db.get_setting("portal_invtrackSpUrl", "") or "").strip():
+        return {"ok": False, "error": "not_configured"}
+    uploaded = skipped = failed = 0
+    with _INVTRACK_LOCK:
+        docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        if not docs:
+            return {"ok": True, "uploaded": 0, "skipped": 0, "failed": 0, "remaining": 0}
+        cur = docs[0]
+        changed = False
+        remaining = 0
+        for it in (cur.get("items") or []):
+            for f in (it.get("files") or []):
+                if not isinstance(f, dict):
+                    continue
+                if f.get("spUrl"):
+                    continue
+                fid = f.get("id"); kind = f.get("kind")
+                if not (re.fullmatch(r"[0-9a-f]{1,64}", str(fid or "")) and kind in _INVTRACK_FILE_CT):
+                    continue
+                if uploaded >= limit:                    # bound one pass; the button can be pressed again
+                    remaining += 1
+                    continue
+                path = os.path.abspath(os.path.join(_INVTRACK_FILE_DIR, fid + "." + kind))
+                if not (path.startswith(os.path.abspath(_INVTRACK_FILE_DIR) + os.sep) and os.path.isfile(path)):
+                    skipped += 1
+                    continue
+                try:
+                    with open(path, "rb") as fh:
+                        raw = fh.read()
+                except OSError:
+                    skipped += 1
+                    continue
+                sp = _invtrack_sp_upload(raw, f.get("name"), _INVTRACK_FILE_CT.get(kind), it.get("dateISO") or "", fid)
+                if sp:
+                    f["spUrl"] = sp; uploaded += 1; changed = True
+                else:
+                    failed += 1
+        if changed:
+            db.put_collection_item("invtrack", cur)
+    return {"ok": True, "uploaded": uploaded, "skipped": skipped, "failed": failed, "remaining": remaining}
 
 
 def _invtrack_body_fields(html):
@@ -829,7 +1066,7 @@ def _invtrack_sync(trigger="manual"):
                         raw = base64.b64decode(cb)
                         sf = _invtrack_store_file(raw, a.get("name"), a.get("contentType"))
                         if sf:
-                            sp = _invtrack_sp_upload(raw, a.get("name"), a.get("contentType"), (msg.get("receivedDateTime") or ""))
+                            sp = _invtrack_sp_upload(raw, a.get("name"), a.get("contentType"), (msg.get("receivedDateTime") or ""), sf["id"])
                             if sp:
                                 sf["spUrl"] = sp   # SharePoint archive link (when configured + consented)
                             files.append(sf)
@@ -1498,6 +1735,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_m365(body)
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
+        if path == "/api/invtrack/sptest":
+            return self._guard(lambda u: self._invtrack_sptest_ep(u))
+        if path == "/api/invtrack/spbackfill":
+            return self._guard(lambda u: self._invtrack_spbackfill_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/esign":
@@ -2700,9 +2941,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _portal_get(self, u):
         out = {k: db.get_setting("portal_" + k) for k in self.PORTAL_KEYS}
-        out["teamsWebhook"] = db.get_setting("portal_teamsWebhook")
+        rank = self._level_rank(self._caller_level(u))
+        # Integration endpoints are only sent to callers who actually use them, so a plain staff
+        # account can't read the Teams webhook (a posting credential) or the Invoice-Tracking
+        # SharePoint path. financeSpUrl + procurementUrl stay readable — staff legitimately open
+        # bills in SharePoint and launch the granted Procurement app with them.
+        out["teamsWebhook"] = (db.get_setting("portal_teamsWebhook") or "") if rank >= self._level_rank("manager") else ""
         out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
-        out["invtrackSpUrl"] = db.get_setting("portal_invtrackSpUrl", "") or ""
+        out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
         return self._json(out)
 
@@ -2731,6 +2977,8 @@ class Handler(BaseHTTPRequestHandler):
             if not is_admin:
                 return self._err("Admin access required to change integration URLs.", 403)
             db.set_setting(sk, v)
+            if k == "invtrackSpUrl":
+                _invtrack_sp_reset()   # a corrected link must take effect now, not after the 5-min negative cache
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
@@ -2904,7 +3152,48 @@ class Handler(BaseHTTPRequestHandler):
     def _invtrack_status(self, u):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
-        return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"], "ocr": bool(INVTRACK["ocr_url"]), "pdf": _pdf_engine_ok()})
+        return self._json({"appReady": _invtrack_app_ready(), "mailbox": INVTRACK["mailbox"], "interval": INVTRACK["interval"],
+                           "ocr": bool(INVTRACK["ocr_url"]), "pdf": _pdf_engine_ok(),
+                           # SharePoint archive health — so a silently-failing archive is visible in Settings
+                           "spConfigured": bool((db.get_setting("portal_invtrackSpUrl", "") or "").strip()),
+                           "spHealth": dict(_INVTRACK_SP_HEALTH)})
+
+    def _invtrack_sptest_ep(self, u):
+        """Admin-only: run the SharePoint archive path end-to-end and report which stage fails.
+           Admin-gated because it writes a probe file and is the same privilege as setting the link."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required to test the SharePoint connection.", 403)
+        res = _invtrack_sp_diagnose()
+        bad = next((s for s in res.get("stages", []) if not s.get("ok")), None)
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("name") or u.get("email") or "admin",
+                "actor": u.get("email") or u.get("name") or "admin",
+                "action": "Invoice SharePoint connection test", "target": res.get("folder") or "(not set)",
+                "detail": "OK" if res.get("ok") else ("FAILED at " + (bad or {}).get("key", "?") + ": " + (bad or {}).get("detail", ""))})
+        except Exception:
+            pass
+        return self._json(res)
+
+    def _invtrack_spbackfill_ep(self, u):
+        """Admin-only: push every already-captured file that isn't in SharePoint yet, so enabling the
+           archive also covers invoices received before it was turned on."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required to archive to SharePoint.", 403)
+        res = _invtrack_sp_backfill()
+        if res.get("error") == "not_configured":
+            return self._err("Set the SharePoint folder link first.", 400)
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("name") or u.get("email") or "admin",
+                "actor": u.get("email") or u.get("name") or "admin",
+                "action": "Invoice SharePoint backfill",
+                "target": db.get_setting("portal_invtrackSpUrl", "") or "",
+                "detail": "uploaded %s · failed %s · skipped %s · remaining %s" % (
+                    res.get("uploaded", 0), res.get("failed", 0), res.get("skipped", 0), res.get("remaining", 0))})
+        except Exception:
+            pass
+        return self._json(res)
 
     def _invtrack_file(self, u, fid, ext):
         """Serve a captured invoice attachment (PDF/XML/ZIP) by its content id. Gated to Invoice
@@ -2921,13 +3210,22 @@ class Handler(BaseHTTPRequestHandler):
                 data = fh.read()
         except OSError:
             return self._err("Not found.", 404)
-        ctype = _INVTRACK_FILE_CT[ext]
+        # SECURITY: these bytes are MAILBOX-SUPPLIED (anyone can email hd@humiley.com). Only a PDF is
+        # safe to render inline — an XML/ZIP is an ACTIVE document type (XSLT / XHTML <script>), so
+        # serving it inline as application/xml lets an attacker's attachment run JavaScript in the
+        # portal origin and steal the session token. Force non-PDF to download as opaque bytes, and
+        # sandbox EVERY file response so nothing scripts against portal.humiley.com.
+        if ext == "pdf":
+            ctype = "application/pdf"; disp = 'inline; filename="invoice-%s.pdf"' % fid[:12]
+        else:
+            ctype = "application/octet-stream"; disp = 'attachment; filename="invoice-%s.%s"' % (fid[:12], ext)
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        # inline so a PDF opens in the browser; nosniff stops an XML being MIME-sniffed into script.
-        self.send_header("Content-Disposition", 'inline; filename="invoice-%s.%s"' % (fid[:12], ext))
+        self.send_header("Content-Disposition", disp)
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")   # no scripts/network from this doc
+        self.send_header("X-Download-Options", "noopen")
         self._emit_sec_headers(ctype)
         self.end_headers()
         try:
