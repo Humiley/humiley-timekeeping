@@ -2954,12 +2954,18 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "id": db.create_employee(body)})
 
     def _emp_list_for(self, u):
-        """Staff see a directory-safe roster (own record full); managers+ see all fields."""
+        """Directory roster scoped by level (own record is always full):
+        - Approver (management) + : all fields, incl. compensation (they run/see Payroll).
+        - Contributor (manager)   : all fields EXCEPT compensation (PAY_SENSITIVE) — payroll is hidden,
+                                     but leave balances etc. stay visible so they can approve requests.
+        - User (staff)            : directory-safe (the full EMP_SENSITIVE set is stripped from others)."""
         rows = db.list_employees()
-        if self._caller_level(u) != "staff":
+        lvl = self._caller_level(u)
+        if self._level_rank(lvl) >= self._level_rank("management"):
             return rows
         me = u.get("id")
-        return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in self.EMP_SENSITIVE} for e in rows]
+        strip = self.EMP_SENSITIVE if lvl == "staff" else self.PAY_SENSITIVE
+        return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in strip} for e in rows]
 
     ADMIN_EMAILS = {"tony.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
@@ -3181,6 +3187,10 @@ class Handler(BaseHTTPRequestHandler):
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
     HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
+    # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
+    # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
+    # (manager) can approve leave etc. but must NOT see anyone's pay; leave balances stay visible to them.
+    PAY_SENSITIVE = {"salary", "grade", "bank", "taxId"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
     def _coll_list(self, u, name):
