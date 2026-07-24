@@ -90,6 +90,16 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .tab:active,.nav-item:active{transform:translateY(1px)}
 /* Tabular figures so money/IDs don't jitter on update and columns line up. */
 .kpi-value,.kpi-tile-val,.num,td.num,.mono,td[data-num]{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+/* Skeleton loading + shared empty state — replace bare "Loading…" / "No records" text. */
+@keyframes tk-shimmer{0%{background-position:-450px 0}100%{background-position:450px 0}}
+.skeleton{background:linear-gradient(90deg,var(--soft-bg) 25%,var(--light-tint) 37%,var(--soft-bg) 63%);background-size:900px 100%;animation:tk-shimmer 1.25s ease-in-out infinite;border-radius:6px}
+.sk-row{height:44px;margin:9px 0;border-radius:8px}
+.sk-kpi{height:82px;border-radius:14px}
+@media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
+.empty-state{text-align:center;padding:40px 24px;color:var(--text-light)}
+.empty-state .ico{margin:0 auto 12px;opacity:.45;color:var(--navy);display:flex;justify-content:center}
+.empty-state .msg{font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:3px}
+.empty-state .sub{font-size:12.5px;color:var(--text-light);max-width:440px;margin:0 auto 14px;line-height:1.6}
 .btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-deep)}
 .btn-emerald{background:var(--emerald);color:#fff}.btn-emerald:hover{background:var(--emerald-deep)}
 .btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
@@ -4217,7 +4227,7 @@ function tkEsignGovExportXLS() {
 }
 async function tkRenderESignGov() {
   const root = document.getElementById('esigngov-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   let pins = [], audit = [];
   try { const r = await tkApi('/api/esign/pin/all'); pins = (r && r.pins) || []; } catch (e) {}
   try { const r = await tkApi('/api/coll/audit'); audit = (r && (r.items || r)) || []; if (!Array.isArray(audit)) audit = []; } catch (e) {}
@@ -4926,7 +4936,7 @@ function tkRenderStaffPortal() {
   /* My Performance (the signed-in employee's own latest review) */
   const perfEl = document.getElementById('staff-perf');
   if (perfEl) {
-    perfEl.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
+    perfEl.innerHTML = tkSkeleton('list', 3);
     tkLoadColl('reviews').then(() => {
       const mine = (_HR.reviews || []).filter(r => (me.id && r.empId === me.id) || (r.name && r.name === me.name));
       const courses = ((_tkPortalData().learning) || []);
@@ -5114,7 +5124,11 @@ const TK_ICON = {
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   cloud: '<path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>',
   mail: '<path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22,6 12,13 2,6"/>',
-  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>'
+  save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>',
+  folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
 };
 function tkIcon(name, sz) {
   return '<svg width="' + (sz || 14) + '" height="' + (sz || 14) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (TK_ICON[name] || '') + '</svg>';
@@ -5367,7 +5381,7 @@ function tkRenderDatabase() {
 /* Recruitment — pipeline + jobs */
 async function tkRenderRecruitment() {
   const root = document.getElementById('recruitment-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates')]);
   const jobs = _HR.jobs, cands = _HR.candidates;
   const stages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
@@ -5468,7 +5482,7 @@ async function tkAddNewHireGo() {
 }
 async function tkRenderOnboarding() {
   const root = document.getElementById('onboarding-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('onboarding');
   const items = _HR.onboarding;
   const totalTasks = items.reduce((s, o) => s + (o.tasks || []).length, 0);
@@ -5549,7 +5563,7 @@ function tkOnboardReminders() {
 /* Performance Management — PADR (KPI/OKR · Reviews · PIP · Calibration) */
 async function tkRenderPerformance() {
   const root = document.getElementById('performance-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('reviews'), tkLoadColl('goals'), tkLoadColl('padr'), tkLoadColl('pip')]);
   const reviews = _HR.reviews, goals = _HR.goals;
   const avg = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
@@ -5750,7 +5764,7 @@ async function tkPadrSave(id) {
 /* Staff — My Training: enrolled courses with progress + feedback (item 4). */
 async function tkRenderMyTraining() {
   const root = document.getElementById('mytraining-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('enrollments'), tkLoadColl('courses'), tkLoadColl('onboarding')]);
   const me = _tkMe() || {};
   const _crsByTitle = t => (_HR.courses || []).find(c => c.title === t);
@@ -5987,7 +6001,7 @@ function _importBtns(kind) { return '<button class="btn btn-outline btn-sm" oncl
 /* Admin — company-wide asset register: KPIs, charts, full table, CRUD. */
 async function tkRenderDevices() {
   const root = document.getElementById('devices-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('devices');
   const d = _HR.devices || [];
   const units = d.reduce((s, x) => s + (+x.qty || 1), 0);
@@ -6154,7 +6168,7 @@ async function _devBatchSave() {
 /* Staff — devices assigned to the signed-in employee. */
 async function tkRenderMyDevices() {
   const root = document.getElementById('mydevices-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('devices');
   const me = _tkMe() || {};
   const mine = (_HR.devices || []).filter(x => (x.empId && x.empId === me.id) || (x.assignedTo && x.assignedTo === me.name));
@@ -6224,7 +6238,7 @@ function _notifyAssetReturn(e, items, sign, date) {
 function tkMyGoals() { showView('mygoals', null, 'My Goals'); }
 async function tkRenderMyGoals() {
   const root = document.getElementById('mygoals-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('padr');
   const me = _tkMe() || {};
   const mine = (_HR.padr || []).filter(x => x.empId === me.id);
@@ -6372,7 +6386,7 @@ const _NINEBOX = [
 ];
 async function tkRenderTalent() {
   const root = document.getElementById('talent-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('talent');
   const t = _HR.talent;
   const lvl = v => v === 'High' ? 2 : v === 'Medium' ? 1 : 0;
@@ -6408,7 +6422,7 @@ async function tkRenderTalent() {
 /* Training & Development — Catalog + Competency Matrix (Training Matrix) */
 async function tkRenderTraining() {
   const root = document.getElementById('training-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('courses'), tkLoadColl('competency'), tkLoadColl('enrollments')]);
   const c = _HR.courses;
   const enr = _HR.enrollments || [];
@@ -6639,7 +6653,7 @@ function _payBuild() {
 }
 async function tkRenderPayroll() {
   const root = document.getElementById('payroll-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns'), tkLoadColl('payadjust')]);
   if (!_payYM) { const d = new Date(); _payYM = { y: d.getFullYear(), m: d.getMonth() }; }
   _payBuild();
@@ -7825,7 +7839,7 @@ async function tkClaimSave() {
 /* Unified Approval Inbox — every pending action in one place. */
 async function tkRenderInbox() {
   const root = document.getElementById('inbox-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('claims'), tkLoadColl('jobs'), tkLoadColl('padr'), tkLoadColl('travel'), tkLoadColl('payments')]);
   if (!(_HR.audit && _HR.audit.length)) { await tkLoadColl('audit'); }
   const me = TK.user && TK.user.id;
@@ -8067,7 +8081,7 @@ let _tcPeriod = 'all';
 function tkTcSetPeriod(v) { _tcPeriod = v; tkRenderTravelClaims(); }
 async function tkRenderTravelClaims() {
   const root = document.getElementById('travelclaims-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('travel'), tkLoadColl('claims')]);
   const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
   const _tcTitle = isMgr ? 'Travel Expense (TR)' : 'My Travel Expense';
@@ -8193,7 +8207,7 @@ function _payNextNo() {
 function _payIsMine(p, me) { if (!p || !me) return false; return (p.empId && me.id) ? p.empId === me.id : (!!p.name && !!me.name && p.name === me.name); }
 async function tkRenderPayments() {
   const root = document.getElementById('payments-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('payments');
   const _payMine = !!document.querySelector('#view-payments > .myspace-tabbar');   // My Space context → self only (issue #20)
   const _payMe = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
@@ -8793,7 +8807,7 @@ function tkFinDecide(kind, id, status) {
 }
 async function tkRenderFinance() {
   const root = document.getElementById('finance-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('payments'), tkLoadColl('claims'), tkLoadColl('travel')]);
   const items = _finItems();
   const done = items.filter(i => i.status === 'Approved' || i.status === 'Paid');
@@ -9992,7 +10006,7 @@ function _exitSettlement(rec) {
 }
 async function tkRenderOffboarding() {
   const root = document.getElementById('offboarding-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('exits'), tkLoadColl('reviews')]);
   const items = (_HR.exits || []).slice().sort((a, b) => (b.initiated || '').localeCompare(a.initiated || ''));
   const inProg = items.filter(r => r.status !== 'Completed');
@@ -10143,7 +10157,7 @@ async function tkExitComplete(id) {
 /* HR Admin → Benefits by grade (A5). Managers configure allowances per grade; staff see their own in My Profile. */
 async function tkRenderBenefitsAdmin() {
   const root = document.getElementById('hr-benefits-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('benefits');
   const items = (_HR.benefits || []).slice().sort((a, b) => (+(a.grade || '').replace(/\D/g, '') || 0) - (+(b.grade || '').replace(/\D/g, '') || 0));
   const note = '<div class="card" style="padding:14px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light)">Allowances &amp; benefits are defined per <b style="color:var(--text-dark)">grade (G1–G10)</b>. Each employee sees the package for their derived grade in <b style="color:var(--text-dark)">My Profile → Benefits</b>. Lunch/phone/transport stay consistent with payroll welfare.</div>';
@@ -10807,7 +10821,7 @@ async function tkRenderHrMetrics() {
   const wrap = document.getElementById('dash-hr-metrics'); if (!wrap) return;
   // HR is opt-in: a manager without the HR app must not see (or even load) HR data on the dashboard.
   if (typeof _appDeniedCurrent === 'function' && _appDeniedCurrent('hr')) { wrap.innerHTML = ''; const ch = document.getElementById('dash-hr-charts'); if (ch) ch.innerHTML = ''; return; }
-  wrap.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Loading…</div>';
+  wrap.innerHTML = tkSkeleton('list', 3);
   await Promise.all([tkLoadColl('jobs'), tkLoadColl('candidates'), tkLoadColl('onboarding'), tkLoadColl('reviews'), tkLoadColl('courses'), tkLoadColl('talent'), tkLoadColl('exits')]);
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const today = _today();
@@ -12146,7 +12160,7 @@ let _crmPipeTab = 'dashboard';   // 'dashboard' (team/own analytics) | 'board' (
 function _crmPipeGo(t) { _crmPipeTab = t; crmRenderPipeline(); }
 async function crmRenderPipeline() {
   const root = document.getElementById('crm-pipeline-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products'), tkLoadColl('crm_aop')]);
   const period = _crmLF['crm-pipe-period'] || '';
   const allMine = _crmMine(_HR.crm_deals);
@@ -12282,7 +12296,7 @@ function crmDrop(e, stage) { e.preventDefault(); const c = e.currentTarget; if (
 function _crmLeadDate(l) { return (l && (l.date || l.created || l.createdDate || l.ts)) || ''; }
 async function crmRenderLeads() {
   const root = document.getElementById('crm-leads-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
   const period = _crmLF['crm-leads-period'] || '';
   const allLeads = _crmMine(_HR.crm_leads);
@@ -12331,7 +12345,7 @@ async function crmConvertLead(id) {
 /* ── Companies ── */
 async function crmRenderCompanies() {
   const root = document.getElementById('crm-companies-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_deals')]);
   const cos = _crmMine(_HR.crm_companies); const deals = _crmMine(_HR.crm_deals);
   const kpis = _hrKpiRow([_hrKpi('Companies', cos.length), _hrKpi('With open deals', new Set(deals.filter(d => _CRM_OPEN.includes(d.stage || 'New')).map(d => d.company)).size, '#8B5CF6')]);
@@ -12356,7 +12370,7 @@ function crmFillCompanies() {
 /* ── Contacts ── */
 async function crmRenderContacts() {
   const root = document.getElementById('crm-contacts-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('crm_contacts'), tkLoadColl('crm_companies')]);
   const cts = _crmMine(_HR.crm_contacts);
   const kpis = _hrKpiRow([_hrKpi('Contacts', cts.length), _hrKpi('Companies', new Set(cts.map(c => c.company).filter(Boolean)).size, '#8B5CF6')]);
@@ -12375,7 +12389,7 @@ function crmFillContactsTbl() {
 /* ── Products / Services catalog ── */
 async function crmRenderProducts() {
   const root = document.getElementById('crm-products-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await tkLoadColl('crm_products');
   const ps = _HR.crm_products || [];
   const kpis = _hrKpiRow([_hrKpi('Products / services', ps.length), _hrKpi('Avg unit price', _crmMoney(ps.length ? ps.reduce((s, p) => s + (+p.price || 0), 0) / ps.length : 0), '#8B5CF6')]);
@@ -12516,7 +12530,7 @@ function _crmDashControls() {
 }
 async function crmRenderDashboard() {
   const root = document.getElementById('crm-dashboard-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await _crmLoadAll();
   const _fO = _crmDashOwner || '', _fT = _crmDashType || '';
   const deals = _crmMine(_HR.crm_deals).filter(d => (!_fO || (d.owner || '') === _fO) && (!_fT || (d.ptype || '') === _fT));
@@ -13249,7 +13263,7 @@ function _pmReload() { const A = id => { const v = document.getElementById('view
 /* ---------- Projects list (RBAC-scoped) ---------- */
 async function pmRenderProjects() {
   const root = document.getElementById('pm-projects-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await _pmLoadCore();
   const all = _pmMine(_HR.pm_projects || []);
   const active = all.filter(p => PM_ACTIVE_STATUS.indexOf(p.status) >= 0 || !p.status);
@@ -13283,7 +13297,7 @@ function pmFillProjects() {
       '<td style="text-align:right;font-weight:600">' + _pmMoneyShort(p.contractValue || p.budget) + '</td>' +
       '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:18px">' + (_pmSeeAll() ? 'No projects yet. Click <b>New Project</b> to create a Charter — or convert a Won deal from the CRM pipeline.' : 'You are not assigned to any projects yet. A manager can add you to a project <b>Team</b> (Resources tab) or set you as its Project Manager.') + '</td></tr>';
+  }).join('') : tkEmptyRow(9, _pmSeeAll() ? 'No projects yet' : 'You are not assigned to any projects yet', { icon: 'folder', sub: _pmSeeAll() ? 'Click New Project to create a Charter — or convert a Won deal from the CRM pipeline.' : 'A manager can add you to a project Team (Resources tab) or set you as its Project Manager.', cta: _pmSeeAll() ? { label: 'New Project', onclick: "tkQuickAdd('pm_projects')" } : null });
 }
 
 /* ---------- open + Workspace shell ---------- */
@@ -13304,7 +13318,7 @@ const _PM_TABS = [
 function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
 async function pmRenderWorkspace() {
   const root = document.getElementById('pm-project-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await _pmLoadAll();
   const p = _pmProj(); if (!p) { root.innerHTML = '<div class="card" style="padding:20px">Project not found. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
   if (!_pmSeeAll() && !_pmVisIds().has(p.id)) { root.innerHTML = '<div class="card" style="padding:20px">You do not have access to this project. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
@@ -14101,7 +14115,7 @@ let _pmDashDept = '', _pmDashMgr = '';
 function pmSetDash(which, v) { if (which === 'dept') _pmDashDept = v; else _pmDashMgr = v; pmRenderPortfolio(); }
 async function pmRenderPortfolio() {
   const root = document.getElementById('pm-dashboard-root'); if (!root) return;
-  root.innerHTML = '<div style="color:var(--text-light);font-size:13px;padding:8px">Loading…</div>';
+  root.innerHTML = tkSkeleton();
   await _pmLoadCore();
   let projects = _pmMine(_HR.pm_projects || []);
   if (_pmDashDept) projects = projects.filter(p => (p.dept || '') === _pmDashDept);
@@ -15775,6 +15789,11 @@ const _VI = {
   'SharePoint folders ready': 'Thư mục SharePoint đã sẵn sàng',
   'Created': 'Đã tạo', 'already existed': 'đã tồn tại',
   'Open the library in SharePoint to see the full structure.': 'Mở thư viện trong SharePoint để xem toàn bộ cấu trúc.',
+  // empty states
+  'No projects yet': 'Chưa có dự án',
+  'You are not assigned to any projects yet': 'Bạn chưa được phân công dự án nào',
+  'Click New Project to create a Charter — or convert a Won deal from the CRM pipeline.': 'Bấm “Dự án mới” để tạo Điều lệ dự án — hoặc chuyển đổi một cơ hội đã thắng từ CRM.',
+  'A manager can add you to a project Team (Resources tab) or set you as its Project Manager.': 'Quản lý có thể thêm bạn vào Nhóm dự án (tab Nguồn lực) hoặc đặt bạn làm Quản lý dự án.',
   'End date cannot be before the start date.': 'Ngày kết thúc không được trước ngày bắt đầu.',
   'The selected range has no working days — pick different dates.': 'Khoảng thời gian đã chọn không có ngày làm việc — hãy chọn ngày khác.',
   // ── Invoice Tracking → Settings tab ── ('Settings' already defined above)
@@ -16725,6 +16744,24 @@ function _tkDialog(opts) {
 }
 function tkConfirm(opts) { return _tkDialog(Object.assign({}, typeof opts === 'string' ? { body: opts } : opts, { mode: 'confirm' })); }
 function tkAlert(opts)   { return _tkDialog(Object.assign({}, typeof opts === 'string' ? { body: opts } : opts, { mode: 'alert' })); }
+
+/* Shimmer skeleton shaped like the incoming content — feels faster than bare "Loading…" text. */
+function tkSkeleton(kind, n) {
+  if (kind === 'kpi') { n = n || 4; return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:16px">' + Array(n).fill('<div class="skeleton sk-kpi"></div>').join('') + '</div>'; }
+  n = n || 6; return '<div class="card" style="padding:14px 16px">' + Array(n).fill('<div class="skeleton sk-row"></div>').join('') + '</div>';
+}
+/* One consistent empty state (muted icon + message + optional sub + CTA), localized. */
+function tkEmpty(msg, opts) {
+  opts = opts || {};
+  return '<div class="empty-state">' +
+    (opts.icon ? '<div class="ico">' + tkIcon(opts.icon, 38) + '</div>' : '') +
+    '<div class="msg">' + _crmEsc(_t(msg)) + '</div>' +
+    (opts.sub ? '<div class="sub">' + _crmEsc(_t(opts.sub)) + '</div>' : '') +
+    (opts.cta ? '<button type="button" class="btn btn-primary btn-sm" onclick="' + opts.cta.onclick + '">' + _crmEsc(_t(opts.cta.label)) + '</button>' : '') +
+    '</div>';
+}
+/* Empty state as a full-width table row (keeps the table structure but styled). */
+function tkEmptyRow(cols, msg, opts) { return '<tr><td colspan="' + cols + '" style="padding:0;border:none">' + tkEmpty(msg, opts) + '</td></tr>'; }
 
 /* ──────────────────────────────────────────────────────────
    9. CHECK-IN / CHECK-OUT
