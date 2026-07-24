@@ -13,8 +13,6 @@
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
-<script>/* apply the saved theme before first paint — no flash of the wrong theme */
-try{var _tkT=localStorage.getItem('tk_theme');if(_tkT==='dark'||_tkT==='light')document.documentElement.setAttribute('data-theme',_tkT);}catch(e){}</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif}
@@ -33,39 +31,6 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --shadow-card:0 14px 34px rgba(32,80,144,.09);   /* the canonical card/panel elevation */
   --shadow-lg:0 22px 48px rgba(23,58,107,.20);
 }
-/* ── Opt-in dark theme (toggle sets data-theme="dark" on <html>; default is untouched light). Text is
-   already token-driven, so redefining the surface/text/line tokens flips the app; a few high-contrast
-   spots that hardcode --navy get targeted overrides below. Brand navy/emerald keep their identity. ── */
-:root[data-theme="dark"]{
-  --soft-bg:#0d1a2e;--card:#16233c;--white:#16233c;
-  --text-dark:#e9eef8;--text-light:#9fb0c8;
-  --line:#26374f;--border:#26374f;--light-tint:#1d2c46;
-  --navy-light:#6b9ce6;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.4);
-  --shadow-md:0 10px 30px rgba(0,0,0,.4);
-  --shadow-card:0 14px 34px rgba(0,0,0,.4);
-  --shadow-lg:0 22px 48px rgba(0,0,0,.5);
-  color-scheme:dark;
-}
-:root[data-theme="dark"] body{background:var(--soft-bg)}
-/* navy text on a dark surface would be too low-contrast — lift it toward navy-light where it appears */
-:root[data-theme="dark"] .kpi-value,:root[data-theme="dark"] .page-header h1,
-:root[data-theme="dark"] .card-title,:root[data-theme="dark"] .kpi-tile-val,
-:root[data-theme="dark"] .tk-hero h1,:root[data-theme="dark"] .step-content h4{color:var(--navy-light) !important}
-/* Keyboard focus ring: the light-mode navy glow drops to ~1.2:1 on dark surfaces (fails WCAG 1.4.11);
-   re-tint it to a navy-light ring that clears 3:1 on the dark card/soft-bg. */
-:root[data-theme="dark"] .btn:focus-visible,:root[data-theme="dark"] .tab:focus-visible,
-:root[data-theme="dark"] .form-control:focus-visible,:root[data-theme="dark"] .nav-item:focus-visible,
-:root[data-theme="dark"] input:focus-visible,:root[data-theme="dark"] select:focus-visible,
-:root[data-theme="dark"] textarea:focus-visible{box-shadow:0 0 0 3px rgba(107,156,230,.8)}
-:root[data-theme="dark"] :focus-visible{outline-color:var(--navy-light)}
-:root[data-theme="dark"] .btn-primary{background:var(--navy-light) !important;color:#0d1a2e !important}
-:root[data-theme="dark"] .btn-outline{color:var(--navy-light) !important;border-color:var(--navy-light) !important}
-:root[data-theme="dark"] .form-control,:root[data-theme="dark"] .field,:root[data-theme="dark"] .sel-filter,
-:root[data-theme="dark"] input,:root[data-theme="dark"] select,:root[data-theme="dark"] textarea{background:var(--card);color:var(--text-dark);border-color:var(--line)}
-:root[data-theme="dark"] .modal{background:var(--card)}
-:root[data-theme="dark"] table thead th{background:var(--light-tint)}
-:root[data-theme="dark"] img[src*="portal-logo-login"],:root[data-theme="dark"] img[src*="portal-logo-navy"]{filter:brightness(0) invert(1) opacity(.92)}
 html,body{margin:0;padding:0}
 body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;height:100dvh;overflow:hidden}
 
@@ -903,7 +868,6 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="lang-btn" data-lang="en" onclick="tkSetLang('en')" title="English"><svg width="20" height="13" viewBox="0 0 60 40"><clipPath id="usc"><rect width="60" height="40" rx="3"/></clipPath><g clip-path="url(#usc)"><rect width="60" height="40" fill="#B22234"/><g fill="#fff"><rect y="3.08" width="60" height="3.08"/><rect y="9.23" width="60" height="3.08"/><rect y="15.38" width="60" height="3.08"/><rect y="21.54" width="60" height="3.08"/><rect y="27.69" width="60" height="3.08"/><rect y="33.85" width="60" height="3.08"/></g><rect width="24" height="21.54" fill="#3C3B6E"/><g fill="#fff"><circle cx="2" cy="4" r="1.1"/><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="14" cy="4" r="1.1"/><circle cx="18" cy="4" r="1.1"/><circle cx="22" cy="4" r="1.1"/><circle cx="4" cy="9" r="1.1"/><circle cx="8" cy="9" r="1.1"/><circle cx="12" cy="9" r="1.1"/><circle cx="16" cy="9" r="1.1"/><circle cx="20" cy="9" r="1.1"/><circle cx="2" cy="14" r="1.1"/><circle cx="6" cy="14" r="1.1"/><circle cx="10" cy="14" r="1.1"/><circle cx="14" cy="14" r="1.1"/><circle cx="18" cy="14" r="1.1"/><circle cx="22" cy="14" r="1.1"/><circle cx="4" cy="19" r="1.1"/><circle cx="8" cy="19" r="1.1"/><circle cx="12" cy="19" r="1.1"/><circle cx="16" cy="19" r="1.1"/><circle cx="20" cy="19" r="1.1"/></g></g></svg>EN</button>
       <button class="lang-btn" data-lang="vi" onclick="tkSetLang('vi')" title="Tiếng Việt"><svg width="20" height="13" viewBox="0 0 30 20"><rect width="30" height="20" rx="1.5" fill="#da251d"/><path d="M15 4l1.18 3.63h3.82l-3.09 2.24 1.18 3.63L15 11.26l-3.09 2.24 1.18-3.63-3.09-2.24h3.82z" fill="#ff0"/></svg>VN</button>
     </div>
-    <button class="notif-btn" title="Toggle dark mode" aria-label="Toggle dark mode" onclick="tkToggleTheme()" id="theme-toggle"></button>
     <button class="notif-btn" title="Notifications" onclick="toggleNotifications()" id="notif-btn">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
       <span class="notif-dot" id="notif-dot" style="display:none"></span>
@@ -926,7 +890,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div style="display:flex;gap:14px;align-items:center">
       <div style="text-align:right">
         <div id="staff-hero-status" style="font-size:12px;color:var(--text-light);font-weight:600">● Ready to check in</div>
-        <div id="staff-hero-clock" style="font-size:20px;font-weight:800;color:var(--navy-light);line-height:1.1">--:--</div>
+        <div id="staff-hero-clock" style="font-size:20px;font-weight:800;color:var(--navy);line-height:1.1">--:--</div>
       </div>
       <button class="btn btn-emerald" onclick="showView('checkin',null,'Check In / Out')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:6px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -936,7 +900,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- KPI cards -->
-  <div style="font-size:13px;font-weight:700;color:var(--navy-light);margin-bottom:12px">My Workspace at a Glance</div>
+  <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">My Workspace at a Glance</div>
   <div class="staff-kpi-grid">
     <div class="staff-kpi">
       <div class="staff-kpi-icon" style="background:rgba(0,176,96,.12)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
@@ -7140,19 +7104,12 @@ function _payslipPDF(e, c, period) {
   return doc;
 }
 function _payslipFilename(e, period) { return 'Humiley_Payslip_' + (e.name || 'employee').replace(/\s+/g, '_') + '_' + (period || '').replace(/\s+/g, '_') + '.pdf'; }
-/* PDFs always print on the WHITE Humiley letterhead, so the html2canvas capture must use light-theme
-   tokens even when the app is in dark mode — otherwise the captured content block comes out dark navy
-   (var(--card)=#16233c) with light text, unreadable on the white page. Pin the light palette inline;
-   inline custom properties beat the (non-important) :root[data-theme="dark"] token block. */
-const _PDF_LIGHT_VARS = { '--soft-bg': '#f0f2f8', '--card': '#ffffff', '--white': '#ffffff', '--text-dark': '#1F2937', '--text-light': '#5C6470', '--line': '#dde2ee', '--border': '#dde2ee', '--light-tint': '#e8edf6', '--navy-light': '#3168A8' };
-function _pdfForceLight(styleDecl) { if (!styleDecl) return; for (const k in _PDF_LIGHT_VARS) styleDecl.setProperty(k, _PDF_LIGHT_VARS[k]); }
 /* Render an HTML string to an A4 PDF on the Humiley letterhead (html2canvas + branded paginator). */
 async function _htmlToPdfDoc(html, width, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) return null;
   const wrap = document.createElement('div');
   wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:#fff;padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
-  _pdfForceLight(wrap.style);   // force light tokens for the capture (subtree inherits these inline vars)
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
   let canvas; try { canvas = await h2c(wrap, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }   // 1.5× is crisp on A4 and ~40% faster than 2×
@@ -7165,9 +7122,7 @@ async function tkExportElementPDF(elId, filename, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) { toast('PDF engine not loaded', 'warn'); return; }
   toast('Building branded PDF…', 'info', 2000);
-  // Force light tokens on the CLONE only (via onclone) so a dark-mode dashboard still exports on white
-  // — no visible flash on the live page.
-  let canvas; try { canvas = await h2c(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false, onclone: (d) => _pdfForceLight(d.documentElement.style) }); } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 5000); return; }   // 1.5× is crisp on A4 and ~40% faster than 2×
+  let canvas; try { canvas = await h2c(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 5000); return; }   // 1.5× is crisp on A4 and ~40% faster than 2×
   _brandPaginate(new J({ unit: 'mm', format: 'a4' }), canvas, opts || {}).save(filename || 'Humiley_export.pdf');
   toast('PDF downloaded');
 }
@@ -15916,8 +15871,6 @@ const _VI = {
   'No new licensed users to add — everyone in Microsoft 365 is already in the system.': 'Không có người dùng có bản quyền mới để thêm — mọi người trong Microsoft 365 đã có trong hệ thống.',
   // render-cap "show all" control
   'Show all': 'Xem tất cả', 'Showing': 'Đang hiển thị', 'of': 'trong tổng số',
-  // theme toggle
-  'Switch to light mode': 'Chuyển sang giao diện sáng', 'Switch to dark mode': 'Chuyển sang giao diện tối',
   // leave validation (specific)
   'Choose a leave type': 'Hãy chọn loại nghỉ phép',
   'Pick a start date': 'Hãy chọn ngày bắt đầu',
@@ -16868,30 +16821,6 @@ document.addEventListener('click', e => {
 /* ──────────────────────────────────────────────────────────
    8. TOAST
 ────────────────────────────────────────────────────────── */
-/* ── Opt-in dark mode toggle (persisted; default light) ── */
-const _MOON_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
-const _SUN_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
-function _tkPaintThemeIcon() {
-  const b = document.getElementById('theme-toggle'); if (!b) return;
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  b.innerHTML = dark ? _SUN_SVG : _MOON_SVG;
-  const lbl = dark ? _t('Switch to light mode') : _t('Switch to dark mode');
-  b.title = lbl;
-  // The icon-only button's accessible name comes from aria-label (which wins over title), so keep it
-  // in sync with the language + current state, and expose on/off via aria-pressed for screen readers.
-  b.setAttribute('aria-label', lbl);
-  b.setAttribute('aria-pressed', dark ? 'true' : 'false');
-}
-function tkToggleTheme() {
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
-  const next = dark ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  try { localStorage.setItem('tk_theme', next); } catch (e) {}
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#0d1a2e' : '#205090');
-  _tkPaintThemeIcon();
-  try { if (typeof _retintCharts === 'function') _retintCharts(); } catch (e) {}   // re-theme on-screen charts instantly
-}
-document.addEventListener('DOMContentLoaded', _tkPaintThemeIcon);
 
 function toast(msg, type = 'success', dur = 3500) {
   const t = document.getElementById('toast');
@@ -18627,8 +18556,8 @@ function _gradH(left, right) { return (c) => { const a = c.chart.chartArea; if (
 /* Opt-in plugins. Formatters/labels live on the chart INSTANCE ($fmt/$labels/$center) — never in
    chart.options, because Chart.js treats any function found in options as a scriptable and invokes it
    with a context object (which would crash _num on `+object`). */
-const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (chart.config.type !== 'bar' || !chart.$labels) return; const ctx = chart.ctx, fmt = chart.$fmt || _num, horiz = chart.options.indexAxis === 'y'; ctx.save(); ctx.font = '700 10px Calibri'; ctx.fillStyle = _isDark() ? '#c7d2e0' : '#334155'; chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return; meta.data.forEach((el, i) => { const v = ds.data[i]; if (v == null || v === '') return; if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(fmt(v), el.x + 5, el.y); } else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(fmt(v), el.x, el.y - 4); } }); }); ctx.restore(); } };
-const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = _isDark() ? '#e9eef8' : '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = _isDark() ? '#9fb0c8' : '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText((typeof _t === 'function' ? _t(o.label || 'Total') : (o.label || 'Total')), cx, cy + 15); ctx.restore(); } };
+const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (chart.config.type !== 'bar' || !chart.$labels) return; const ctx = chart.ctx, fmt = chart.$fmt || _num, horiz = chart.options.indexAxis === 'y'; ctx.save(); ctx.font = '700 10px Calibri'; ctx.fillStyle = '#334155'; chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return; meta.data.forEach((el, i) => { const v = ds.data[i]; if (v == null || v === '') return; if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(fmt(v), el.x + 5, el.y); } else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(fmt(v), el.x, el.y - 4); } }); }); ctx.restore(); } };
+const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText((typeof _t === 'function' ? _t(o.label || 'Total') : (o.label || 'Total')), cx, cy + 15); ctx.restore(); } };
 /* Chart.js now loads DEFERRED, so register plugins + defaults once it is available — not at
    parse time. Called from DOMContentLoaded and defensively before the first chart is built. */
 function _registerChartPlugins() {
@@ -18659,35 +18588,15 @@ function _mkChart(id, cfg, extra) {
   inst.$labels = (cfg.type === 'bar'); inst.$fmt = extra && extra.fmt; inst.$center = extra && extra.center;
   _dashHrCharts[id] = inst; return inst;
 }
-/* Chart.js reads plain color strings (not CSS vars), so grid/tick/legend/segment colors are chosen
-   per-build from the current theme; _retintCharts() re-tints already-drawn charts on a theme toggle. */
-const _isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
-const _chartGrid = () => _isDark() ? 'rgba(255,255,255,.08)' : '#eef1f4';
-const _chartTick = () => _isDark() ? '#9fb0c8' : '#6b7280';
-const _chartLegend = () => _isDark() ? '#aab6ca' : '#475569';
-const _chartBorder = () => _isDark() ? '#16233c' : '#fff';
+/* Chart.js reads plain color strings (not CSS vars), so grid/tick/legend/segment colors are set here. */
+const _chartGrid = () => '#eef1f4';
+const _chartTick = () => '#6b7280';
+const _chartLegend = () => '#475569';
+const _chartBorder = () => '#fff';
 const _tooltip = (fmt) => ({ backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, displayColors: false, titleFont: { family: 'Calibri', size: 12, weight: '700' }, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const v = c.parsed.y != null ? c.parsed.y : (c.parsed.x != null ? c.parsed.x : c.parsed); return ' ' + ((fmt || _num)(v)); } } });
 const _axisOpts = (horiz, fmt) => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, layout: { padding: { top: 14, right: horiz ? 30 : 6 } }, plugins: { legend: { display: false }, tooltip: _tooltip(fmt) }, scales: { x: { grid: { color: _chartGrid(), display: !horiz, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT } }, y: { beginAtZero: true, grid: { color: _chartGrid(), display: !!horiz, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT, callback: function (v) { return horiz ? this.getLabelForValue(v) : (fmt || _num)(v); } } } }, animation: { duration: _chartAnimDur() } });
 const _doughTooltip = { backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const ds = c.dataset.data || []; const tot = ds.reduce((s, x) => s + (+x || 0), 0); const v = +c.parsed || 0; return ' ' + c.label + ': ' + _num(v) + (tot ? ' (' + Math.round(v / tot * 100) + '%)' : ''); } } };
 const _doughOpts = () => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: _chartLegend(), padding: 10, boxWidth: 10, usePointStyle: true } }, tooltip: _doughTooltip }, animation: { animateRotate: true, duration: _chartAnimDur() } });
-/* Re-tint on-screen charts when the theme flips (no re-fetch / no scroll reset). */
-function _retintCharts() {
-  try {
-    const grid = _chartGrid(), tick = _chartTick(), leg = _chartLegend(), bd = _chartBorder();
-    Object.keys(_dashHrCharts || {}).forEach(id => {
-      const ch = _dashHrCharts[id]; if (!ch || !ch.options) return;
-      // Skip charts whose canvas has been detached (view navigated away / instance destroyed) — the
-      // registry is never pruned, so it accumulates once-visited charts across the session.
-      if (!ch.canvas || !document.body.contains(ch.canvas)) return;
-      const sc = ch.options.scales || {};
-      ['x', 'y'].forEach(ax => { if (sc[ax]) { if (sc[ax].grid) sc[ax].grid.color = grid; if (sc[ax].ticks) sc[ax].ticks.color = tick; } });
-      const lg = ch.options.plugins && ch.options.plugins.legend;
-      if (lg && lg.labels) lg.labels.color = leg;
-      (ch.data.datasets || []).forEach(ds => { if (ds.borderColor === '#fff' || ds.borderColor === '#16233c') ds.borderColor = bd; });
-      ch.update('none');
-    });
-  } catch (e) {}
-}
 const _starFmt = v => (Math.round(v * 10) / 10) + '★';
 function tkBuildDashCharts(d) {
   if (typeof Chart === 'undefined') return;
@@ -18747,7 +18656,6 @@ function initDashChart(period = 'week') {
       }
     }
   });
-  _dashHrCharts['dashChart'] = _dashChart;   // register so _retintCharts() re-tints on theme toggle
 }
 
 function initReportCharts() {
@@ -18786,7 +18694,6 @@ function _initTrendChart() {
       }
     }
   });
-  _dashHrCharts['trendChart'] = _trendChart;
 }
 
 function _initLeaveChart() {
@@ -18808,7 +18715,6 @@ function _initLeaveChart() {
       plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:_chartLegend(), padding:12 } } }
     }
   });
-  _dashHrCharts['leaveDistChart'] = _leaveChart;
 }
 
 function _initDeptChart() {
@@ -18834,7 +18740,6 @@ function _initDeptChart() {
       }
     }
   });
-  _dashHrCharts['deptChart'] = _deptChart;
 }
 
 function initPayrollChart() { _initPayrollChart(); }
@@ -18853,7 +18758,6 @@ function _initPayrollChart() {
       plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:_chartLegend(), padding:10 } } }
     }
   });
-  _dashHrCharts['payrollChart'] = _payChart;
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -19404,7 +19308,7 @@ function viewLeaveDetail(btn) {
       <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Dates</div><div style="font-weight:700;color:var(--navy)">${dates}</div></div>
       <div style="padding:10px;background:var(--soft-bg);border-radius:7px"><div style="font-size:10px;color:var(--text-light);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Status</div><span class="badge b-warn">Pending Manager</span></div>
     </div>
-    <div style="font-size:13px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:12px;border-radius:7px;margin-bottom:12px"><strong>Reason:</strong> ${reason}</div>
+    <div style="font-size:13px;color:var(--text-dark);background:#fffbeb;border:1px solid #fde68a;padding:12px;border-radius:7px;margin-bottom:12px"><strong>Reason:</strong> ${reason}</div>
     ${balNote ? '<div style="font-size:11px;color:var(--text-light);background:var(--soft-bg);padding:8px 10px;border-radius:6px;margin-bottom:14px">' + balNote + '</div>' : ''}
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" onclick="document.getElementById('leaveDetailOverlay').remove()">Close</button>
