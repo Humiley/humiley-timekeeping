@@ -23,6 +23,12 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
   --line:#dde2ee;--border:#dde2ee;--light-tint:#e8edf6;--soft-bg:#f0f2f8;
   --success:#10B981;--warning:#F59E0B;--danger:#C00000;--info:#8B5CF6;
   --white:#FFFFFF;
+  /* Canonical scales — new components use these so radii/shadows stop drifting (17 ad-hoc radii /
+     ~20 shadows across the file). Matches the current retheme look (24px cards / 14px buttons). */
+  --r-sm:8px;--r-md:12px;--r-lg:24px;--r-pill:999px;
+  --shadow-sm:0 1px 2px rgba(32,80,144,.06);
+  --shadow-md:0 8px 24px rgba(32,80,144,.09);
+  --shadow-lg:0 22px 48px rgba(23,58,107,.20);
 }
 html,body{margin:0;padding:0}
 body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--soft-bg);color:var(--text-dark);display:flex;height:100vh;height:100dvh;overflow:hidden}
@@ -93,8 +99,8 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 /* Skeleton loading + shared empty state — replace bare "Loading…" / "No records" text. */
 @keyframes tk-shimmer{0%{background-position:-450px 0}100%{background-position:450px 0}}
 .skeleton{background:linear-gradient(90deg,var(--soft-bg) 25%,var(--light-tint) 37%,var(--soft-bg) 63%);background-size:900px 100%;animation:tk-shimmer 1.25s ease-in-out infinite;border-radius:6px}
-.sk-row{height:44px;margin:9px 0;border-radius:8px}
-.sk-kpi{height:82px;border-radius:14px}
+.sk-row{height:44px;margin:9px 0;border-radius:var(--r-sm)}
+.sk-kpi{height:82px;border-radius:var(--r-md)}
 @media (prefers-reduced-motion:reduce){.skeleton{animation:none}}
 .empty-state{text-align:center;padding:40px 24px;color:var(--text-light)}
 .empty-state .ico{margin:0 auto 12px;opacity:.45;color:var(--navy);display:flex;justify-content:center}
