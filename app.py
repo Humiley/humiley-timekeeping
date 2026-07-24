@@ -273,6 +273,34 @@ def _now_iso():
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")   # `datetime` is the class (from datetime import datetime)
 
 
+def _claim_items(c):
+    """Port of the frontend _claimItems: a claim's line items, or one synthetic legacy line."""
+    its = c.get("items") if isinstance(c, dict) else None
+    if isinstance(its, list) and its:
+        return its
+    return [{"status": (c.get("status") if isinstance(c, dict) else None) or "Submitted"}]
+
+
+def _claim_rollup(c):
+    """Port of the frontend _claimRollup — MUST match it so the My Space 'pending' count agrees with
+    what the user sees. Aggregates per-line item statuses into one claim status."""
+    its = _claim_items(c)
+    if not its:
+        return (c.get("status") if isinstance(c, dict) else None) or "Submitted"
+    ss = [(it.get("status") or "Submitted") for it in its]
+    if any(s == "Submitted" for s in ss):
+        return "Partially approved" if any(s in ("Approved", "Rejected", "Reviewed") for s in ss) else "Submitted"
+    if all(s == "Reviewed" for s in ss):
+        return "Reviewed"
+    if all(s == "Approved" for s in ss):
+        return "Approved"
+    if all(s == "Rejected" for s in ss):
+        return "Rejected"
+    if any(s == "Reviewed" for s in ss):
+        return "Reviewed"
+    return "Partially approved"
+
+
 def _vn_fold(s):
     """Fold Vietnamese diacritics for classification (đ->d, drop accents) so 'HĐĐT'/'Hóa đơn' all match."""
     return "".join(ch for ch in unicodedata.normalize("NFD", str(s or "").lower()) if unicodedata.category(ch) != "Mn").replace("đ", "d")
@@ -1713,6 +1741,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_get(u))
+        if path == "/api/myspace/summary":
+            return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/invtrack/status":
             return self._guard(lambda u: self._invtrack_status(u))
         if path.startswith("/api/invtrack/file/"):
@@ -2951,6 +2981,33 @@ class Handler(BaseHTTPRequestHandler):
         out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
         return self._json(out)
+
+    def _myspace_summary(self, u):
+        """Per-user counts for the My Space landing page in ONE small request, so it no longer blocks
+        first paint on six full company-wide collection loads. Self-scoped: only the caller's own
+        travel/payments/claims/devices/enrolments are counted. Matches the frontend's own arithmetic."""
+        uid = u.get("id"); uname = u.get("name")
+        def mine(rows, name_field="name"):
+            out = []
+            for r in rows:
+                if (uid and r.get("empId") == uid) or (uname and r.get(name_field) == uname):
+                    out.append(r)
+            return out
+        decided = ("Approved", "Rejected", "Paid", "Cancelled")
+        travel = mine(db.list_collection("travel"))
+        pays = mine(db.list_collection("payments"))
+        claims = mine(db.list_collection("claims"))
+        devices = mine(db.list_collection("devices"), name_field="assignedTo")
+        enrols = [e for e in db.list_collection("enrollments") if uid and e.get("empId") == uid]
+        pending = (sum(1 for t in travel if str(t.get("status") or "") not in decided)
+                   + sum(1 for p in pays if str(p.get("status") or "") not in decided)
+                   + sum(1 for c in claims if _claim_rollup(c) not in decided))
+        train_done = sum(1 for e in enrols if e.get("status") == "Completed")
+        train_avg = round(sum(float(e.get("progress") or 0) for e in enrols) / len(enrols)) if enrols else 0
+        return self._json({
+            "pending": pending, "trips": len(travel), "claims": len(claims), "payments": len(pays),
+            "devices": len(devices), "trainDone": train_done, "trainTotal": len(enrols), "trainAvg": train_avg,
+        })
 
     def _portal_update(self, u, body):
         for k in self.PORTAL_KEYS:

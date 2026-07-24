@@ -8703,7 +8703,6 @@ async function tkRenderCrmOverview() {
 async function tkRenderMySpaceOverview() {
   const root = document.getElementById('myspace-overview-root'); if (!root) return;
   root.innerHTML = '<div style="padding:14px;color:var(--text-light);font-size:13px">' + _t('Loading…') + '</div>';
-  try { await Promise.all([tkLoadColl('travel'), tkLoadColl('payments'), tkLoadColl('claims'), tkLoadColl('devices'), tkLoadColl('enrollments'), tkLoadColl('padr')]); } catch (e) {}
   const me = _tkMe() || (TK.user || {});
   const annualRem = (+me.annualTotal || 12) - (+me.annualUsed || 0);
   const sickRem = (+me.sickTotal || 30) - (+me.sickUsed || 0);
@@ -8712,22 +8711,33 @@ async function tkRenderMySpaceOverview() {
   const present = attMine.filter(r => r.status !== 'absent').length;
   const late = attMine.filter(r => r.status === 'late').length;
   const rate = attMine.length ? Math.round(present / attMine.length * 100) + '%' : '—';
-  const undec = s => !['Approved', 'Rejected', 'Paid', 'Cancelled'].includes(String(s || ''));
-  const travelMine = (_HR.travel || []).filter(t => (me.id && t.empId === me.id) || (t.name && t.name === me.name));
-  const payMine = (_HR.payments || []).filter(p => (me.id && p.empId === me.id) || (p.name && p.name === me.name));
-  const claimMine = (_HR.claims || []).filter(c => (me.id && c.empId === me.id) || (c.name && c.name === me.name));
-  const pend = travelMine.filter(t => undec(t.status)).length + payMine.filter(p => undec(p.status)).length + claimMine.filter(c => undec(_claimRollup(c))).length;
-  const devMine = (_HR.devices || []).filter(x => (me.id && x.empId === me.id) || (x.assignedTo && x.assignedTo === me.name));
-  const enr = (_HR.enrollments || []).filter(x => me.id && x.empId === me.id);
-  const trainAvg = enr.length ? Math.round(enr.reduce((s, x) => s + (+x.progress || 0), 0) / enr.length) : 0;
-  const trainDone = enr.filter(x => x.status === 'Completed').length;
+  // ONE small counts request instead of six full company-wide collection loads (blocks first paint).
+  // Falls back to the old client-side computation if the endpoint is unavailable.
+  let pend = 0, _msTrips = 0, _msClaims = 0, _msPays = 0, _msDevices = 0, _msEnr = 0, trainAvg = 0, trainDone = 0;
+  let sum = null; try { sum = await tkApi('/api/myspace/summary'); } catch (e) {}
+  if (sum && typeof sum.pending === 'number') {
+    pend = sum.pending; _msTrips = sum.trips; _msClaims = sum.claims; _msPays = sum.payments;
+    _msDevices = sum.devices; _msEnr = sum.trainTotal; trainAvg = sum.trainAvg; trainDone = sum.trainDone;
+  } else {
+    try { await Promise.all([tkLoadColl('travel'), tkLoadColl('payments'), tkLoadColl('claims'), tkLoadColl('devices'), tkLoadColl('enrollments')]); } catch (e) {}
+    const undec = s => !['Approved', 'Rejected', 'Paid', 'Cancelled'].includes(String(s || ''));
+    const travelMine = (_HR.travel || []).filter(t => (me.id && t.empId === me.id) || (t.name && t.name === me.name));
+    const payMine = (_HR.payments || []).filter(p => (me.id && p.empId === me.id) || (p.name && p.name === me.name));
+    const claimMine = (_HR.claims || []).filter(c => (me.id && c.empId === me.id) || (c.name && c.name === me.name));
+    const devMine = (_HR.devices || []).filter(x => (me.id && x.empId === me.id) || (x.assignedTo && x.assignedTo === me.name));
+    const enr = (_HR.enrollments || []).filter(x => me.id && x.empId === me.id);
+    pend = travelMine.filter(t => undec(t.status)).length + payMine.filter(p => undec(p.status)).length + claimMine.filter(c => undec(_claimRollup(c))).length;
+    _msTrips = travelMine.length; _msClaims = claimMine.length; _msPays = payMine.length; _msDevices = devMine.length; _msEnr = enr.length;
+    trainAvg = enr.length ? Math.round(enr.reduce((s, x) => s + (+x.progress || 0), 0) / enr.length) : 0;
+    trainDone = enr.filter(x => x.status === 'Completed').length;
+  }
 
   const kpis = _hrKpiRow([
     _hrKpi('Annual leave left', annualRem + 'd', '#205090'),
     _hrKpi('Present this month', present, 'var(--emerald)'),
     _hrKpi('On-time rate', rate, '#3168A8'),
     _hrKpi('Pending requests', pend, '#F59E0B'),
-    _hrKpi('My devices', devMine.length, '#8B5CF6'),
+    _hrKpi('My devices', _msDevices, '#8B5CF6'),
     _hrKpi('Training progress', trainAvg + '%', '#00B060')
   ]);
 
@@ -8756,10 +8766,10 @@ async function tkRenderMySpaceOverview() {
     ['attendance', 'Attendance', present + ' ' + _t('present') + ' · ' + late + ' ' + _t('late'), 'Your check-ins and monthly record.', 'Lịch sử chấm công hằng tháng của bạn.', '#3168A8'],
     ['leave', 'Leave', annualRem + 'd ' + _t('annual') + ' · ' + sickRem + 'd ' + _t('sick'), 'Book leave and track balances.', 'Xin nghỉ phép và theo dõi số dư.', '#00B060'],
     ['mygoals', 'My Goals', _t('PADR & self-review'), 'Your goals and self-assessment.', 'Mục tiêu và tự đánh giá của bạn.', '#F59E0B'],
-    ['mytraining', 'My Training', trainDone + '/' + enr.length + ' ' + _t('done'), 'Courses, progress and completion.', 'Khóa học, tiến độ và hoàn thành.', '#14b8a6'],
-    ['travelclaims', 'Travel Expense', travelMine.length + ' ' + _t('trips') + ' · ' + claimMine.length + ' ' + _t('claims'), 'Travel requests and expense claims.', 'Đề nghị công tác và thanh toán chi phí.', '#8B5CF6'],
-    ['payments', 'Payment Requests', payMine.length + ' ' + _t('requests'), 'Raise and track payment requests.', 'Tạo và theo dõi đề nghị thanh toán.', '#0ea5e9'],
-    ['mydevices', 'My Devices', devMine.length + ' ' + _t('assigned'), 'Company assets assigned to you.', 'Tài sản công ty được cấp cho bạn.', '#EF4444']
+    ['mytraining', 'My Training', trainDone + '/' + _msEnr + ' ' + _t('done'), 'Courses, progress and completion.', 'Khóa học, tiến độ và hoàn thành.', '#14b8a6'],
+    ['travelclaims', 'Travel Expense', _msTrips + ' ' + _t('trips') + ' · ' + _msClaims + ' ' + _t('claims'), 'Travel requests and expense claims.', 'Đề nghị công tác và thanh toán chi phí.', '#8B5CF6'],
+    ['payments', 'Payment Requests', _msPays + ' ' + _t('requests'), 'Raise and track payment requests.', 'Tạo và theo dõi đề nghị thanh toán.', '#0ea5e9'],
+    ['mydevices', 'My Devices', _msDevices + ' ' + _t('assigned'), 'Company assets assigned to you.', 'Tài sản công ty được cấp cho bạn.', '#EF4444']
   ];
   const cards = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">' +
     mods.map(m => '<div onclick="_msNav(\'' + m[0] + '\',\'' + _MYSPACE_TAB_TITLE[m[0]] + '\')" style="cursor:pointer;background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:14px;padding:16px 17px;box-shadow:0 1px 2px rgba(16,42,80,.04);transition:.15s" onmouseover="this.style.boxShadow=\'0 8px 20px rgba(16,42,80,.10)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.boxShadow=\'0 1px 2px rgba(16,42,80,.04)\';this.style.transform=\'\'">' +
