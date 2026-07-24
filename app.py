@@ -273,6 +273,31 @@ def _now_iso():
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")   # `datetime` is the class (from datetime import datetime)
 
 
+# ── Rate limiting (in-memory, per real client IP) ──────────────────────────────────────────────
+# Sliding-window counters guard against brute-forcing the login and against write floods / cheap DoS
+# on a single-process stdlib server. Keyed by the REAL client (X-Forwarded-For from Caddy), so the
+# loopback proxy hop is never the key; loopback callers (health probes, the test harness) are exempt.
+_RATE_LOCK = threading.Lock()
+_RATE = collections.defaultdict(collections.deque)   # "bucket:ip" -> deque[timestamps]
+
+
+def _rate_allow(key, limit, window):
+    now = time.time()
+    with _RATE_LOCK:
+        dq = _RATE[key]
+        cutoff = now - window
+        while dq and dq[0] < cutoff:
+            dq.popleft()
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        if len(_RATE) > 4000:                        # bound memory: drop long-idle keys
+            stale = [k for k, v in list(_RATE.items()) if not v or v[-1] < now - 3600]
+            for k in stale[:1500]:
+                _RATE.pop(k, None)
+        return True
+
+
 def _claim_items(c):
     """Port of the frontend _claimItems: a claim's line items, or one synthetic legacy line."""
     its = c.get("items") if isinstance(c, dict) else None
@@ -1652,8 +1677,33 @@ class Handler(BaseHTTPRequestHandler):
     def do_PATCH(self):  self._serve_request("PATCH", self._do_patch)
     def do_DELETE(self): self._serve_request("DELETE", self._do_delete)
 
+    def _client_ip(self):
+        xff = self.headers.get("X-Forwarded-For")
+        if xff:
+            return xff.split(",")[0].strip()
+        try:
+            return self.client_address[0]
+        except Exception:
+            return "?"
+
+    def _rate_check(self, bucket, limit, window):
+        """Return True if allowed; on breach, emit 429 and return False. Loopback (health probes,
+        the in-process test harness, the server itself) is never throttled."""
+        ip = self._client_ip()
+        if ip in ("127.0.0.1", "::1", "localhost") or ip.startswith("127."):
+            return True
+        if _rate_allow(bucket + ":" + ip, limit, window):
+            return True
+        try:
+            self._err("Too many requests — please slow down and try again.", 429)
+        except Exception:
+            pass
+        return False
+
     def _serve_request(self, method, fn):
         try:
+            if method != "GET" and not self._rate_check("write", 240, 60):
+                return   # write flood / cheap DoS guard (per real client IP, ~4/sec sustained)
             return fn()
         except (BrokenPipeError, ConnectionResetError):
             return   # client hung up mid-response — not an application error
@@ -1759,6 +1809,10 @@ class Handler(BaseHTTPRequestHandler):
     def _do_post(self):
         path = urlparse(self.path).path
         body = self._body()
+        # Brute-force guard on sign-in: at most ~20 attempts / minute per real client IP.
+        if path in ("/api/auth/demo", "/api/auth/m365", "/api/esign", "/api/esign/pin"):
+            if not self._rate_check("auth", 20, 60):
+                return
         if path == "/api/auth/demo":
             return self._auth_demo(body)
         if path == "/api/auth/m365":
