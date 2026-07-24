@@ -2261,8 +2261,10 @@ class Handler(BaseHTTPRequestHandler):
                 return "You cannot reject your own request."
             return None
         if t == "paid":
-            if not self._is_mgmt(u):
-                return "Director / Management access is required to mark a request paid."
+            # Disbursement (Mark paid) is restricted to Editor + Admin only — an Approver (management)
+            # can approve a request but must not release the money.
+            if not self._is_approver(u):
+                return "Editor or Admin access is required to mark a request paid."
             if cur != "approved":
                 return "Only an approved request can be marked paid."
             return None

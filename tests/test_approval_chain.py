@@ -72,14 +72,17 @@ def test_editor_may_approve_after_someone_else_reviewed(base_url):
     assert _h()._appr_check(EDITOR, "claims", "Reviewed", "approved", sigs, "HML-STF") is None
 
 
-# ---- Paid (Management only, and only from an approved state) -------------------------------------
-def test_mark_paid_requires_management(base_url):
+# ---- Paid / disbursement (Editor + Admin ONLY, and only from an approved state) -----------------
+def test_mark_paid_requires_editor_or_admin(base_url):
+    # Below Editor cannot disburse — neither staff NOR an Approver (management), who may approve but
+    # must not release the money.
     assert _h()._appr_check(STAFF, "payments", "Approved", "paid", [], "HML-STF")
+    assert _h()._appr_check(DIRECTOR, "payments", "Approved", "paid", [], "HML-STF")
 
 
 def test_mark_paid_only_from_approved(base_url):
-    assert _h()._appr_check(DIRECTOR, "payments", "Reviewed", "paid", [], "HML-STF")          # not approved -> denied
-    assert _h()._appr_check(DIRECTOR, "payments", "Approved", "paid", [], "HML-STF") is None  # approved -> allowed
+    assert _h()._appr_check(EDITOR, "payments", "Reviewed", "paid", [], "HML-STF")          # not approved -> denied
+    assert _h()._appr_check(EDITOR, "payments", "Approved", "paid", [], "HML-STF") is None  # editor + approved -> allowed
 
 
 # ---- Bypass prevention + non-three-level collections --------------------------------------------
