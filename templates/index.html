@@ -97,6 +97,10 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 #content:focus{outline:none}
 /* Honour reduced-motion: near-instant transitions/animations for users who ask for it. */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}}
+/* Subtle content transition when switching views — a soft fade+rise so navigation feels intentional
+   (replays because .active is removed+re-added on every showView; reduced-motion neutralises it). */
+.view.active{animation:tk-view-in .22s cubic-bezier(.22,.61,.36,1) both}
+@keyframes tk-view-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 .btn:focus-visible,.tab:focus-visible,.form-control:focus-visible,.nav-item:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,80,144,.28)}
 .btn:active{transform:translateY(1px) scale(.99)}   /* the .btn transition already pays for transform — now it fires */
 .tab:active,.nav-item:active{transform:translateY(1px)}
