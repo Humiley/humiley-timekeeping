@@ -50,7 +50,15 @@ input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans
 :root[data-theme="dark"] body{background:var(--soft-bg)}
 /* navy text on a dark surface would be too low-contrast — lift it toward navy-light where it appears */
 :root[data-theme="dark"] .kpi-value,:root[data-theme="dark"] .page-header h1,
-:root[data-theme="dark"] .card-title,:root[data-theme="dark"] .kpi-tile-val{color:var(--navy-light) !important}
+:root[data-theme="dark"] .card-title,:root[data-theme="dark"] .kpi-tile-val,
+:root[data-theme="dark"] .tk-hero h1,:root[data-theme="dark"] .step-content h4{color:var(--navy-light) !important}
+/* Keyboard focus ring: the light-mode navy glow drops to ~1.2:1 on dark surfaces (fails WCAG 1.4.11);
+   re-tint it to a navy-light ring that clears 3:1 on the dark card/soft-bg. */
+:root[data-theme="dark"] .btn:focus-visible,:root[data-theme="dark"] .tab:focus-visible,
+:root[data-theme="dark"] .form-control:focus-visible,:root[data-theme="dark"] .nav-item:focus-visible,
+:root[data-theme="dark"] input:focus-visible,:root[data-theme="dark"] select:focus-visible,
+:root[data-theme="dark"] textarea:focus-visible{box-shadow:0 0 0 3px rgba(107,156,230,.8)}
+:root[data-theme="dark"] :focus-visible{outline-color:var(--navy-light)}
 :root[data-theme="dark"] .btn-primary{background:var(--navy-light) !important;color:#0d1a2e !important}
 :root[data-theme="dark"] .btn-outline{color:var(--navy-light) !important;border-color:var(--navy-light) !important}
 :root[data-theme="dark"] .form-control,:root[data-theme="dark"] .field,:root[data-theme="dark"] .sel-filter,
@@ -918,7 +926,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div style="display:flex;gap:14px;align-items:center">
       <div style="text-align:right">
         <div id="staff-hero-status" style="font-size:12px;color:var(--text-light);font-weight:600">● Ready to check in</div>
-        <div id="staff-hero-clock" style="font-size:20px;font-weight:800;color:var(--navy);line-height:1.1">--:--</div>
+        <div id="staff-hero-clock" style="font-size:20px;font-weight:800;color:var(--navy-light);line-height:1.1">--:--</div>
       </div>
       <button class="btn btn-emerald" onclick="showView('checkin',null,'Check In / Out')">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right:6px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
@@ -928,7 +936,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div>
 
   <!-- KPI cards -->
-  <div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:12px">My Workspace at a Glance</div>
+  <div style="font-size:13px;font-weight:700;color:var(--navy-light);margin-bottom:12px">My Workspace at a Glance</div>
   <div class="staff-kpi-grid">
     <div class="staff-kpi">
       <div class="staff-kpi-icon" style="background:rgba(0,176,96,.12)"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
@@ -5691,7 +5699,7 @@ async function tkRenderPerformance() {
     const gLabels = goals.map(g => g.name || ''), gVals = goals.map(g => +g.progress || 0);
     const gColors = gVals.map(v => v >= 75 ? '#00B060' : v >= 40 ? '#205090' : '#F59E0B');
     const _pct = v => v + '%';
-    _mkChart('perf-okr-chart', { type: 'bar', data: { labels: gLabels, datasets: [{ data: gVals, backgroundColor: gColors, borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _pct), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100, grid: { color: '#eef1f4', drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, callback: _pct } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: '#374151', font: _CHART_FONT } } } }) }, { fmt: _pct });
+    _mkChart('perf-okr-chart', { type: 'bar', data: { labels: gLabels, datasets: [{ data: gVals, backgroundColor: gColors, borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _pct), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 100, grid: { color: _chartGrid(), drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT, callback: _pct } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT } } } }) }, { fmt: _pct });
   }
 }
 function tkPerfTab(tab, el) {
@@ -7122,12 +7130,19 @@ function _payslipPDF(e, c, period) {
   return doc;
 }
 function _payslipFilename(e, period) { return 'Humiley_Payslip_' + (e.name || 'employee').replace(/\s+/g, '_') + '_' + (period || '').replace(/\s+/g, '_') + '.pdf'; }
+/* PDFs always print on the WHITE Humiley letterhead, so the html2canvas capture must use light-theme
+   tokens even when the app is in dark mode — otherwise the captured content block comes out dark navy
+   (var(--card)=#16233c) with light text, unreadable on the white page. Pin the light palette inline;
+   inline custom properties beat the (non-important) :root[data-theme="dark"] token block. */
+const _PDF_LIGHT_VARS = { '--soft-bg': '#f0f2f8', '--card': '#ffffff', '--white': '#ffffff', '--text-dark': '#1F2937', '--text-light': '#5C6470', '--line': '#dde2ee', '--border': '#dde2ee', '--light-tint': '#e8edf6', '--navy-light': '#3168A8' };
+function _pdfForceLight(styleDecl) { if (!styleDecl) return; for (const k in _PDF_LIGHT_VARS) styleDecl.setProperty(k, _PDF_LIGHT_VARS[k]); }
 /* Render an HTML string to an A4 PDF on the Humiley letterhead (html2canvas + branded paginator). */
 async function _htmlToPdfDoc(html, width, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) return null;
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:var(--card);padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
+  wrap.style.cssText = 'position:fixed;left:-9999px;top:0;width:' + (width || 720) + 'px;background:#fff;padding:2px;font-family:Calibri,\'Segoe UI\',sans-serif;color:#212529';
+  _pdfForceLight(wrap.style);   // force light tokens for the capture (subtree inherits these inline vars)
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
   let canvas; try { canvas = await h2c(wrap, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } finally { document.body.removeChild(wrap); }   // 1.5× is crisp on A4 and ~40% faster than 2×
@@ -7140,7 +7155,9 @@ async function tkExportElementPDF(elId, filename, opts) {
   const h2c = window.html2canvas; const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!h2c || !J) { toast('PDF engine not loaded', 'warn'); return; }
   toast('Building branded PDF…', 'info', 2000);
-  let canvas; try { canvas = await h2c(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false }); } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 5000); return; }   // 1.5× is crisp on A4 and ~40% faster than 2×
+  // Force light tokens on the CLONE only (via onclone) so a dark-mode dashboard still exports on white
+  // — no visible flash on the live page.
+  let canvas; try { canvas = await h2c(el, { scale: 1.5, backgroundColor: '#ffffff', useCORS: true, logging: false, onclone: (d) => _pdfForceLight(d.documentElement.style) }); } catch (e) { toast('Export failed: ' + _errMsg(e), 'error', 5000); return; }   // 1.5× is crisp on A4 and ~40% faster than 2×
   _brandPaginate(new J({ unit: 'mm', format: 'a4' }), canvas, opts || {}).save(filename || 'Humiley_export.pdf');
   toast('PDF downloaded');
 }
@@ -9464,7 +9481,7 @@ function _invFilterBar() {
   const typeOpts = ['purchase', 'sales', 'internal'].map(k => '<option value="' + k + '"' + (_invLF.type === k ? ' selected' : '') + '>' + _INV_TYPE_LABEL[k] + '</option>').join('');
   const inp = 'class="form-control" style="width:auto;font-size:12px;padding:6px 8px"';
   return '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
-    '<div style="position:relative;flex:1;min-width:180px"><input id="inv-search" placeholder="' + _t('Search supplier, invoice no, tax code, sender…') + '" value="' + _tkEscA(_invLF.q || '') + '" oninput="_invLF.q=this.value;_invRerenderTab(true)" class="form-control" style="width:100%;font-size:12px;padding:6px 10px"></div>' +
+    '<div style="position:relative;flex:1;min-width:180px"><input id="inv-search" placeholder="' + _t('Search supplier, invoice no, tax code, sender…') + '" value="' + _tkEscA(_invLF.q || '') + '" oninput="_invLF.q=this.value;clearTimeout(window._invSrchT);window._invSrchT=setTimeout(function(){_invRerenderTab(true)},180)" class="form-control" style="width:100%;font-size:12px;padding:6px 10px"></div>' +
     '<select ' + inp + ' onchange="_invLF.month=this.value;_invRerenderTab()"><option value="">' + _t('All months') + '</option>' + monthOpts + '</select>' +
     '<select ' + inp + ' onchange="_invLF.quarter=this.value;_invRerenderTab()"><option value="">' + _t('All quarters') + '</option>' + qOpts + '</select>' +
     '<select ' + inp + ' onchange="_invLF.type=this.value;_invRerenderTab()"><option value="">' + _t('All types') + '</option>' + typeOpts + '</select>' +
@@ -15273,6 +15290,7 @@ const _VI = {
   'Daily 10:00 · Find no check-in → Teams absent alert': 'Hằng ngày 10:00 · Tìm trường hợp không chấm vào → Teams cảnh báo vắng mặt',
   'Daily 17:30 · Find unchecked-out → Teams message': 'Hằng ngày 17:30 · Tìm trường hợp chưa chấm ra → Teams nhắn tin',
   'Daily Attendance': 'Chấm công hằng ngày',
+  'Present': 'Có mặt', 'People': 'Người', 'Records': 'Lượt', 'Enrols': 'Ghi danh', 'OT rejected': 'Từ chối OT',
   'Daily Work Hours': 'Số giờ làm việc hằng ngày',
   'Damaged': 'Hư hỏng',
   'Data Management': 'Quản lý dữ liệu',
@@ -16847,7 +16865,12 @@ function _tkPaintThemeIcon() {
   const b = document.getElementById('theme-toggle'); if (!b) return;
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   b.innerHTML = dark ? _SUN_SVG : _MOON_SVG;
-  b.title = dark ? _t('Switch to light mode') : _t('Switch to dark mode');
+  const lbl = dark ? _t('Switch to light mode') : _t('Switch to dark mode');
+  b.title = lbl;
+  // The icon-only button's accessible name comes from aria-label (which wins over title), so keep it
+  // in sync with the language + current state, and expose on/off via aria-pressed for screen readers.
+  b.setAttribute('aria-label', lbl);
+  b.setAttribute('aria-pressed', dark ? 'true' : 'false');
 }
 function tkToggleTheme() {
   const dark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -17692,15 +17715,15 @@ function renderInOutReport() {
       otCell = '<div style="font-size:10px;color:var(--text-light)">OT ' + otH + 'h · pending</div>';
       if (canOt && r.id) otCell += '<div style="display:flex;gap:4px;margin-top:3px"><button class="btn-approve" style="font-size:9px;padding:2px 7px" onclick="tkOtDecide(' + r.id + ",'approve')\">Approve</button><button class=\"btn-reject\" style=\"font-size:9px;padding:2px 7px\" onclick=\"tkOtDecide(" + r.id + ",'reject')\">Reject</button></div>";
     }
-    else if (otSt === 'rejected') otCell = '<span style="color:var(--danger);font-size:10px">OT rejected</span>';
+    else if (otSt === 'rejected') otCell = '<span style="color:var(--danger);font-size:10px">' + _t('OT rejected') + '</span>';
     else otCell = '<span style="color:var(--text-light)">—</span>';
     return `<tr>
-      <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${r.name}</span></div></td>
-      <td><span class="badge b-navy" style="font-size:10px">${r.dept}</span></td>
-      <td style="font-weight:700;font-size:13px;color:var(--navy)">${r.in||'—'}</td>
-      <td style="font-size:13px;color:var(--text-light)">${r.out||'<span style="color:var(--warning);font-size:11px">Not checked out</span>'}</td>
+      <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${_crmEsc(r.name)}</span></div></td>
+      <td><span class="badge b-navy" style="font-size:10px">${_crmEsc(r.dept)}</span></td>
+      <td style="font-weight:700;font-size:13px;color:var(--navy)">${_crmEsc(r.in)||'—'}</td>
+      <td style="font-size:13px;color:var(--text-light)">${_crmEsc(r.out)||'<span style="color:var(--warning);font-size:11px">Not checked out</span>'}</td>
       <td style="font-weight:600;font-size:13px">${hoursStr}</td>
-      <td><span class="badge b-info" style="font-size:10px">${r.loc||'HQ'}</span></td>
+      <td><span class="badge b-info" style="font-size:10px">${_crmEsc(r.loc||'HQ')}</span></td>
       <td><span class="badge ${bcls}" style="font-size:10px">${stat}</span></td>
       <td>${otCell}</td>
     </tr>`;
@@ -18594,8 +18617,8 @@ function _gradH(left, right) { return (c) => { const a = c.chart.chartArea; if (
 /* Opt-in plugins. Formatters/labels live on the chart INSTANCE ($fmt/$labels/$center) — never in
    chart.options, because Chart.js treats any function found in options as a scriptable and invokes it
    with a context object (which would crash _num on `+object`). */
-const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (chart.config.type !== 'bar' || !chart.$labels) return; const ctx = chart.ctx, fmt = chart.$fmt || _num, horiz = chart.options.indexAxis === 'y'; ctx.save(); ctx.font = '700 10px Calibri'; ctx.fillStyle = '#334155'; chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return; meta.data.forEach((el, i) => { const v = ds.data[i]; if (v == null || v === '') return; if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(fmt(v), el.x + 5, el.y); } else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(fmt(v), el.x, el.y - 4); } }); }); ctx.restore(); } };
-const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText(o.label || 'Total', cx, cy + 15); ctx.restore(); } };
+const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (chart.config.type !== 'bar' || !chart.$labels) return; const ctx = chart.ctx, fmt = chart.$fmt || _num, horiz = chart.options.indexAxis === 'y'; ctx.save(); ctx.font = '700 10px Calibri'; ctx.fillStyle = _isDark() ? '#c7d2e0' : '#334155'; chart.data.datasets.forEach((ds, di) => { const meta = chart.getDatasetMeta(di); if (meta.hidden) return; meta.data.forEach((el, i) => { const v = ds.data[i]; if (v == null || v === '') return; if (horiz) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(fmt(v), el.x + 5, el.y); } else { ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.fillText(fmt(v), el.x, el.y - 4); } }); }); ctx.restore(); } };
+const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = _isDark() ? '#e9eef8' : '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = _isDark() ? '#9fb0c8' : '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText((typeof _t === 'function' ? _t(o.label || 'Total') : (o.label || 'Total')), cx, cy + 15); ctx.restore(); } };
 /* Chart.js now loads DEFERRED, so register plugins + defaults once it is available — not at
    parse time. Called from DOMContentLoaded and defensively before the first chart is built. */
 function _registerChartPlugins() {
@@ -18643,6 +18666,9 @@ function _retintCharts() {
     const grid = _chartGrid(), tick = _chartTick(), leg = _chartLegend(), bd = _chartBorder();
     Object.keys(_dashHrCharts || {}).forEach(id => {
       const ch = _dashHrCharts[id]; if (!ch || !ch.options) return;
+      // Skip charts whose canvas has been detached (view navigated away / instance destroyed) — the
+      // registry is never pruned, so it accumulates once-visited charts across the session.
+      if (!ch.canvas || !document.body.contains(ch.canvas)) return;
       const sc = ch.options.scales || {};
       ['x', 'y'].forEach(ax => { if (sc[ax]) { if (sc[ax].grid) sc[ax].grid.color = grid; if (sc[ax].ticks) sc[ax].ticks.color = tick; } });
       const lg = ch.options.plugins && ch.options.plugins.legend;
@@ -18666,7 +18692,7 @@ function tkBuildDashCharts(d) {
   _mkChart('dc-trend', { type: 'line', data: { labels: d.trendLabels, datasets: [{ data: d.trendVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false) });
   _mkChart('dc-emptype', { type: 'doughnut', data: { labels: d.empTypeLabels, datasets: [{ data: d.empTypeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
   _mkChart('dc-training', { type: 'doughnut', data: { labels: d.trainingLabels, datasets: [{ data: d.trainingVals, backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Enrols' } });
-  _mkChart('dc-perfdept', { type: 'bar', data: { labels: d.perfDeptLabels, datasets: [{ data: d.perfDeptVals, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 22 }] }, options: Object.assign(_axisOpts(true, _starFmt), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 5, grid: { color: '#eef1f4', drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, stepSize: 1 } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT } } } }) }, { fmt: _starFmt });
+  _mkChart('dc-perfdept', { type: 'bar', data: { labels: d.perfDeptLabels, datasets: [{ data: d.perfDeptVals, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 22 }] }, options: Object.assign(_axisOpts(true, _starFmt), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 5, grid: { color: _chartGrid(), drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT, stepSize: 1 } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT } } } }) }, { fmt: _starFmt });
 }
 
 function initDashChart(period = 'week') {
@@ -18683,17 +18709,17 @@ function initDashChart(period = 'week') {
     dates.forEach(dt => { const p = _tkDateParts(dt); labels.push(p ? (p.d + ' ' + MON[p.m - 1]) : dt); present.push(byDate[dt].p); late.push(byDate[dt].l); absent.push(byDate[dt].a); });
     const a = _tkDateParts(dates[0]), b = _tkDateParts(dates[dates.length - 1]);
     const t = document.getElementById('dash-att-title');
-    if (t && a && b) t.textContent = 'Daily Attendance — ' + a.d + ' ' + MON[a.m - 1] + ' → ' + b.d + ' ' + MON[b.m - 1] + ' ' + b.y;
+    if (t && a && b) t.textContent = _t('Daily Attendance') + ' — ' + a.d + ' ' + MON[a.m - 1] + ' → ' + b.d + ' ' + MON[b.m - 1] + ' ' + b.y;
   }
-  const _legend = { position: 'top', align: 'end', labels: { font: { family: 'Calibri', size: 12 }, color: '#374151', usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 } };
+  const _legend = { position: 'top', align: 'end', labels: { font: { family: 'Calibri', size: 12 }, color: _chartLegend(), usePointStyle: true, pointStyle: 'circle', boxWidth: 8, padding: 16 } };
   _dashChart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
       datasets: [
-        { label:'Present',  data: present, backgroundColor:'#00B060', borderRadius:{topLeft:0,topRight:0,bottomLeft:5,bottomRight:5}, stack:'a' },
-        { label:'Late',     data: late,    backgroundColor:'#f59e0b', stack:'a' },
-        { label:'Absent',   data: absent,  backgroundColor:'#ef4444', borderRadius:{topLeft:5,topRight:5,bottomLeft:0,bottomRight:0}, stack:'a' }
+        { label:_t('Present'), data: present, backgroundColor:'#00B060', borderRadius:{topLeft:0,topRight:0,bottomLeft:5,bottomRight:5}, stack:'a' },
+        { label:_t('Late'),    data: late,    backgroundColor:'#f59e0b', stack:'a' },
+        { label:_t('Absent'),  data: absent,  backgroundColor:'#ef4444', borderRadius:{topLeft:5,topRight:5,bottomLeft:0,bottomRight:0}, stack:'a' }
       ]
     },
     options: {
@@ -18706,11 +18732,12 @@ function initDashChart(period = 'week') {
           callbacks: { footer: (items) => 'Total: ' + items.reduce((s, i) => s + (i.parsed.y || 0), 0), footerColor: '#cbd5e1' } }
       },
       scales: {
-        x: { stacked: true, grid:{ display:false }, ticks:{ color:'#6b7280', font: _CHART_FONT } },
-        y: { stacked: true, beginAtZero: true, grid:{ color:'#f3f4f6', drawBorder: false }, ticks:{ color:'#6b7280', font: _CHART_FONT, precision: 0 } }
+        x: { stacked: true, grid:{ display:false }, ticks:{ color:_chartTick(), font: _CHART_FONT } },
+        y: { stacked: true, beginAtZero: true, grid:{ color:_chartGrid(), drawBorder: false }, ticks:{ color:_chartTick(), font: _CHART_FONT, precision: 0 } }
       }
     }
   });
+  _dashHrCharts['dashChart'] = _dashChart;   // register so _retintCharts() re-tints on theme toggle
 }
 
 function initReportCharts() {
@@ -18736,19 +18763,20 @@ function _initTrendChart() {
     data: {
       labels: tLabels,
       datasets: [
-        { label:'Present', data:tPresent, borderColor:'#00B060', backgroundColor:'rgba(0,176,96,.1)', fill:true, tension:.4, pointRadius:3 },
-        { label:'Late',    data:tLate,    borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', fill:true, tension:.4, pointRadius:3 }
+        { label:_t('Present'), data:tPresent, borderColor:'#00B060', backgroundColor:'rgba(0,176,96,.1)', fill:true, tension:.4, pointRadius:3 },
+        { label:_t('Late'),    data:tLate,    borderColor:'#f59e0b', backgroundColor:'rgba(245,158,11,.08)', fill:true, tension:.4, pointRadius:3 }
       ]
     },
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{ position:'top', labels:{ font:{ family:'Calibri',size:12 }, color:'#374151' } } },
+      plugins:{ legend:{ position:'top', labels:{ font:{ family:'Calibri',size:12 }, color:_chartLegend() } } },
       scales:{
-        x:{ grid:{ display:false }, ticks:{ color:'#6b7280',font:{ family:'Calibri' } } },
-        y:{ grid:{ color:'#f3f4f6' }, ticks:{ color:'#6b7280',font:{ family:'Calibri' } } }
+        x:{ grid:{ display:false }, ticks:{ color:_chartTick(),font:{ family:'Calibri' } } },
+        y:{ grid:{ color:_chartGrid() }, ticks:{ color:_chartTick(),font:{ family:'Calibri' } } }
       }
     }
   });
+  _dashHrCharts['trendChart'] = _trendChart;
 }
 
 function _initLeaveChart() {
@@ -18767,9 +18795,10 @@ function _initLeaveChart() {
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
-      plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:'#374151', padding:12 } } }
+      plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:_chartLegend(), padding:12 } } }
     }
   });
+  _dashHrCharts['leaveDistChart'] = _leaveChart;
 }
 
 function _initDeptChart() {
@@ -18790,11 +18819,12 @@ function _initDeptChart() {
       indexAxis:'y', responsive:true, maintainAspectRatio:false,
       plugins:{ legend:{ display:false } },
       scales:{
-        x:{ grid:{ color:'#f3f4f6' }, ticks:{ color:'#6b7280',font:{ family:'Calibri' } } },
-        y:{ grid:{ display:false }, ticks:{ color:'#374151',font:{ family:'Calibri',weight:'500' } } }
+        x:{ grid:{ color:_chartGrid() }, ticks:{ color:_chartTick(),font:{ family:'Calibri' } } },
+        y:{ grid:{ display:false }, ticks:{ color:_chartTick(),font:{ family:'Calibri',weight:'500' } } }
       }
     }
   });
+  _dashHrCharts['deptChart'] = _deptChart;
 }
 
 function initPayrollChart() { _initPayrollChart(); }
@@ -18810,9 +18840,10 @@ function _initPayrollChart() {
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'65%',
-      plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:'#374151', padding:10 } } }
+      plugins:{ legend:{ position:'bottom', labels:{ font:{ family:'Calibri',size:11 }, color:_chartLegend(), padding:10 } } }
     }
   });
+  _dashHrCharts['payrollChart'] = _payChart;
 }
 
 /* ──────────────────────────────────────────────────────────

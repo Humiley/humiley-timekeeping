@@ -55,6 +55,39 @@ def test_auth_bucket_returns_429_for_a_real_client_ip(base_url):
             app._RATE.pop(b, None)
 
 
+def test_spoofed_loopback_xff_prefix_does_not_exempt(base_url):
+    """A client cannot dodge the limiter by PREFIXING a fake loopback hop. Caddy appends the real
+    peer as the last X-Forwarded-For entry, so `X-Forwarded-For: 127.0.0.1, <realip>` must key on the
+    rightmost (real) hop and still trip 429 — proving _client_ip trusts the proxy-added hop, not the
+    client-supplied leftmost value."""
+    import app, urllib.request, urllib.error
+    real = "203.0.113.44"
+    for b in list(app._RATE):
+        if b.endswith(":" + real):
+            app._RATE.pop(b, None)
+
+    def hit():
+        req = urllib.request.Request(base_url + "/api/auth/demo", data=b'{"role":"staff"}', method="POST")
+        req.add_header("Content-Type", "application/json")
+        # Attacker prepends a bogus loopback hop; Caddy would append the true peer last.
+        req.add_header("X-Forwarded-For", "127.0.0.1, " + real)
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    codes = [hit() for _ in range(26)]
+    assert 429 in codes, "a spoofed loopback prefix must NOT exempt from throttling (got %r)" % sorted(set(codes))
+    assert codes.index(429) >= 20, "429 should trip only after the ~20/min budget (first at %d)" % codes.index(429)
+    # And the bucket must be keyed on the real (rightmost) hop, not the spoofed loopback.
+    assert any(b.endswith(":" + real) for b in app._RATE), "limiter should key on the proxy-added real IP"
+    assert not any(b.endswith(":127.0.0.1") for b in app._RATE), "must not key on the spoofed loopback hop"
+    for b in list(app._RATE):
+        if b.endswith(":" + real):
+            app._RATE.pop(b, None)
+
+
 def test_writes_never_throttled_from_loopback(api, tokens):
     """The test harness hits from 127.0.0.1, which is exempt — a burst well over the 240/min write cap
     must never return 429 (proves the limiter never throttles server-local / health-probe traffic)."""

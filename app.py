@@ -1678,9 +1678,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self): self._serve_request("DELETE", self._do_delete)
 
     def _client_ip(self):
+        # Behind exactly one trusted reverse proxy (Caddy on this VPS: `reverse_proxy app:8000`),
+        # Caddy APPENDS the real transport peer as the LAST X-Forwarded-For hop. The leftmost
+        # entries are client-supplied and fully spoofable, so we must NOT trust them for rate-limit
+        # keying or the loopback exemption (a request carrying `X-Forwarded-For: 127.0.0.1` would
+        # otherwise become throttle-exempt, and rotating the left value would mint unlimited buckets).
+        # Take the rightmost (Caddy-added) hop instead. If there is no proxy header at all (direct
+        # localhost hit — health probes, the in-process test harness), fall back to the socket peer.
         xff = self.headers.get("X-Forwarded-For")
         if xff:
-            return xff.split(",")[0].strip()
+            hops = [h.strip() for h in xff.split(",") if h.strip()]
+            if hops:
+                return hops[-1]
         try:
             return self.client_address[0]
         except Exception:
@@ -2616,8 +2625,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Already checked in today.")
         thr = self._late_threshold(u.get("schedule"))
         status = "on-time" if (thr is None or t <= thr or not self._is_workday(date)) else "late"
-        rid = db.clock_in(emp_id, date, t, loc=str(body.get("loc") or "")[:120],
-                          lat=lat, lon=lon, status=status)
+        # Strip angle brackets from the free-text location server-side (defense-in-depth): the In/Out
+        # report escapes it on render, but attendance rows bypass the /api/coll _crm_sanitize path, so
+        # neutralise HTML markup here too before it ever reaches storage.
+        loc = str(body.get("loc") or "").replace("<", "").replace(">", "")[:120]
+        rid = db.clock_in(emp_id, date, t, loc=loc, lat=lat, lon=lon, status=status)
         if rid is None:
             return self._err("Already checked in today.")   # atomic double-tap guard (unique index)
         db.put_collection_item("audit", {"actor": u.get("name"), "actorId": emp_id,
