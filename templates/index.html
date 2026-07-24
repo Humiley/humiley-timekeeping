@@ -4700,11 +4700,11 @@ async function _initStaffAnalytics() {
   (_HR.enrollments || []).filter(x => x.empId === me.id).forEach(x => { const s = x.status || 'Enrolled'; tr[s] = (tr[s] || 0) + 1; });
   wrap.innerHTML = _rptChartCard('My Attendance Status', 'sd-att', 190) + _rptChartCard('My Working Hours (recent)', 'sd-hours', 190) + _rptChartCard('My Leave by Type', 'sd-leave', 190) + _rptChartCard('My Training Status', 'sd-training', 190);
   if (typeof Chart === 'undefined') return;
-  _mkChart('sd-att', { type: 'doughnut', data: { labels: ['On Time', 'Late', 'Absent'], datasets: [{ data: [att.ontime, att.late, att.absent], backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  _mkChart('sd-att', { type: 'doughnut', data: { labels: ['On Time', 'Late', 'Absent'], datasets: [{ data: [att.ontime, att.late, att.absent], backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
   _mkChart('sd-hours', { type: 'line', data: { labels: hLabels, datasets: [{ data: hVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, v => v + 'h') });
-  if (Object.keys(lt).length) _mkChart('sd-leave', { type: 'doughnut', data: { labels: Object.keys(lt), datasets: [{ data: Object.values(lt), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  if (Object.keys(lt).length) _mkChart('sd-leave', { type: 'doughnut', data: { labels: Object.keys(lt), datasets: [{ data: Object.values(lt), backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
   else { const c = document.getElementById('sd-leave'); if (c) c.closest('.card').querySelector('div:last-child').innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:60px 0">No leave records yet</div>'; }
-  _mkChart('sd-training', { type: 'doughnut', data: { labels: Object.keys(tr), datasets: [{ data: Object.values(tr), backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Courses' } });
+  _mkChart('sd-training', { type: 'doughnut', data: { labels: Object.keys(tr), datasets: [{ data: Object.values(tr), backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Courses' } });
 }
 
 /* Parse a date value (M/D/YYYY or YYYY-MM-DD) into {y,m,d} (m=1..12) or null. */
@@ -5494,7 +5494,7 @@ let _recMonthlyData = null;
 function _buildRecMonthlyCharts() {
   const d = _recMonthlyData; if (!d || typeof Chart === 'undefined') return;
   _mkChart('rec-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.cumul, backgroundColor: ['#205090', '#3168A8', '#8B5CF6', '#F59E0B', '#00B060'], borderRadius: 6, maxBarThickness: 28 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
-  _mkChart('rec-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
+  _mkChart('rec-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
 }
 function tkRecTab(tab, el) { ['pipeline', 'monthly'].forEach(t => { const p = document.getElementById('rec-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#recruitment-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'monthly') setTimeout(_buildRecMonthlyCharts, 60); }
 function tkCandidateAdvance(id) {
@@ -6086,8 +6086,8 @@ async function tkRenderDevices() {
   devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
-    _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
-    _mkChart('dev-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#3168A8', '#00B060', '#F59E0B', '#94a3b8', '#EF4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
+    _mkChart('dev-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
+    _mkChart('dev-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: ['#3168A8', '#00B060', '#F59E0B', '#94a3b8', '#EF4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Items' } });
     _mkChart('dev-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => valByDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   }
 }
@@ -6745,7 +6745,7 @@ function _payRenderDash() {
     '<div class="card" style="padding:13px 16px;margin-bottom:18px;font-size:12px;color:var(--text-light);border-left:3px solid var(--navy)">Employer SI/HI/UI + 2% Trade Union · Total company statutory: <b style="color:var(--navy)">' + _PAY_FMT(t.ee + t.er) + (t.yearly ? '/yr' : '/mo') + '</b></div>' +
     _rptChartCard('Employer Cost by Department', 'pay-dept', 320);
   if (typeof Chart !== 'undefined') {
-    _mkChart('pay-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [t.P1, t.P2, t.P3, t.welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
+    _mkChart('pay-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [t.P1, t.P2, t.P3, t.welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
     _mkChart('pay-stat', { type: 'bar', data: { labels: ['Employee 10.5%', 'Employer 23.5%', 'PIT withheld'], datasets: [{ data: [t.ee, t.er, t.pit], backgroundColor: ['#8b5cf6', '#205090', '#C00000'], borderRadius: 6, maxBarThickness: 52 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
     _mkChart('pay-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => t.byDept[d]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   }
@@ -8308,8 +8308,8 @@ function _payCharts(list) {
   const byCat = {}, byStatus = {};
   list.forEach(p => { byCat[p.category || 'Other'] = (byCat[p.category || 'Other'] || 0) + (+p.amount || 0); byStatus[p.status || 'Submitted'] = (byStatus[p.status || 'Submitted'] || 0) + 1; });
   const ck = Object.keys(byCat), sk = Object.keys(byStatus);
-  _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
-  _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: sk.map(k => _PAY_ST_CLR[k] || '#9CA3AF'), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
+  _mkChart('pay-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Value', fmt: _money } });
+  _mkChart('pay-status', { type: 'doughnut', data: { labels: sk, datasets: [{ data: sk.map(k => byStatus[k]), backgroundColor: sk.map(k => _PAY_ST_CLR[k] || '#9CA3AF'), borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Requests' } });
 }
 function payFillTable() {
   const tb = document.getElementById('pay-tbody'); if (!tb) return;
@@ -8928,9 +8928,9 @@ function _finRedrawAggs(list) {
   const byCat = {}, byDept = {}, byKind = {};
   done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
   const ck = Object.keys(byCat), dk = Object.keys(byDept).sort((a, b) => byDept[b] - byDept[a]), kk = Object.keys(byKind);
-  _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+  _mkChart('fin-cat', { type: 'doughnut', data: { labels: ck, datasets: [{ data: ck.map(k => byCat[k]), backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
   _mkChart('fin-dept-c', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(k => byDept[k]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
-  _mkChart('fin-kind-c', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
+  _mkChart('fin-kind-c', { type: 'doughnut', data: { labels: kk, datasets: [{ data: kk.map(k => byKind[k]), backgroundColor: kk.map(_finKindHex), borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Outflow', fmt: _money } });
 }
 function finFillTable() {
   const tb = document.getElementById('fin-tbody'); if (!tb) return;
@@ -12660,8 +12660,8 @@ function _crmBuildDashCharts() {
   _mkChart('crm-stage', { type: 'bar', data: { labels: _CRM_STAGES, datasets: [{ data: d.stageVals, backgroundColor: ['#3168A8', '#8b5cf6', '#f59e0b', '#00B060', '#ef4444'], borderRadius: 6, maxBarThickness: 46 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
   _mkChart('crm-owner', { type: 'bar', data: { labels: d.ownLabels, datasets: [{ data: d.ownVals, backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   _mkChart('crm-monthly', { type: 'line', data: { labels: d.monthLabels, datasets: [{ data: d.wonByM, borderColor: '#00B060', backgroundColor: _grad('rgba(0,176,96,.25)', 'rgba(0,176,96,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: '#00B060', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, _money) }, { fmt: _money });
-  _mkChart('crm-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Leads' } });
-  _mkChart('crm-type', { type: 'doughnut', data: { labels: d.typeLabels, datasets: [{ data: d.typeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Pipeline', fmt: _money } });
+  _mkChart('crm-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Leads' } });
+  _mkChart('crm-type', { type: 'doughnut', data: { labels: d.typeLabels, datasets: [{ data: d.typeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Pipeline', fmt: _money } });
 }
 
 /* dynamic option sources for the quick-add form (employees / companies / contacts) */
@@ -13490,11 +13490,11 @@ function pmRenderOverview() {
   try {
     _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'].map(_pmT), datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
-    if (Object.keys(dS).length) _mkChart('pm-ov-deliv', { type: 'doughnut', data: { labels: Object.keys(dS).map(_pmT), datasets: [{ data: Object.values(dS), backgroundColor: Object.keys(dS).map(_pmStatusColor), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Deliv.') } });
+    if (Object.keys(dS).length) _mkChart('pm-ov-deliv', { type: 'doughnut', data: { labels: Object.keys(dS).map(_pmT), datasets: [{ data: Object.values(dS), backgroundColor: Object.keys(dS).map(_pmStatusColor), borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Deliv.') } });
     const tS = {}; _pmScopeFor('pm_tasks', p.id).forEach(t => { const st = t.status || 'Not started'; tS[st] = (tS[st] || 0) + 1; });
-    if (Object.keys(tS).length) _mkChart('pm-ov-tasks', { type: 'doughnut', data: { labels: Object.keys(tS).map(_pmT), datasets: [{ data: Object.values(tS), backgroundColor: Object.keys(tS).map(_pmStatusColor), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Tasks') } });
+    if (Object.keys(tS).length) _mkChart('pm-ov-tasks', { type: 'doughnut', data: { labels: Object.keys(tS).map(_pmT), datasets: [{ data: Object.values(tS), backgroundColor: Object.keys(tS).map(_pmStatusColor), borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Tasks') } });
     const rB = { Low: 0, Medium: 0, High: 0, Critical: 0 }; _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed').forEach(r => { const bd = _pmRiskBand(+r.score || 0).band; if (rB[bd] != null) rB[bd]++; });
-    _mkChart('pm-ov-risk', { type: 'doughnut', data: { labels: ['Low', 'Medium', 'High', 'Critical'].map(_pmT), datasets: [{ data: [rB.Low, rB.Medium, rB.High, rB.Critical], backgroundColor: ['#16A34A', '#F59E0B', '#EA580C', '#DC2626'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Risks') } });
+    _mkChart('pm-ov-risk', { type: 'doughnut', data: { labels: ['Low', 'Medium', 'High', 'Critical'].map(_pmT), datasets: [{ data: [rB.Low, rB.Medium, rB.High, rB.Critical], backgroundColor: ['#16A34A', '#F59E0B', '#EA580C', '#DC2626'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Risks') } });
   } catch (e) { }
 }
 
@@ -14232,8 +14232,8 @@ async function pmRenderPortfolio() {
   const byStatus = {}; projects.forEach(p => { const k = p.status || 'Planning'; byStatus[k] = (byStatus[k] || 0) + 1; });
   const byRag = { Green: 0, Amber: 0, Red: 0 }; projects.forEach(p => { byRag[_pmEffectiveRag(p)]++; });
   try {
-    if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus).map(_pmT), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Projects') } });
-    _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'].map(_pmT), datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Health') } });
+    if (Object.keys(byStatus).length) _mkChart('pm-ch-status', { type: 'doughnut', data: { labels: Object.keys(byStatus).map(_pmT), datasets: [{ data: Object.values(byStatus), backgroundColor: Object.keys(byStatus).map(_pmStatusHex), borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Projects') } });
+    _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'].map(_pmT), datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Health') } });
     const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
     _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
@@ -16856,6 +16856,7 @@ function tkToggleTheme() {
   try { localStorage.setItem('tk_theme', next); } catch (e) {}
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', next === 'dark' ? '#0d1a2e' : '#205090');
   _tkPaintThemeIcon();
+  try { if (typeof _retintCharts === 'function') _retintCharts(); } catch (e) {}   // re-theme on-screen charts instantly
 }
 document.addEventListener('DOMContentLoaded', _tkPaintThemeIcon);
 
@@ -17535,7 +17536,7 @@ async function tkRenderRecruitReport() {
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Openings</th><th>Status</th></tr></thead><tbody>' + (jobRows || tkEmptyRow(5, 'No positions', { icon: 'inbox' })) + '</tbody></table></div></div>';
   if (typeof Chart !== 'undefined') {
     _mkChart('rc-funnel', { type: 'bar', data: { labels: stages, datasets: [{ data: funnel, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
-    _mkChart('rc-stage', { type: 'doughnut', data: { labels: stageAll, datasets: [{ data: stageAllVals, backgroundColor: ['#3168A8', '#0ea5e9', '#8b5cf6', '#f59e0b', '#00B060', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
+    _mkChart('rc-stage', { type: 'doughnut', data: { labels: stageAll, datasets: [{ data: stageAllVals, backgroundColor: ['#3168A8', '#0ea5e9', '#8b5cf6', '#f59e0b', '#00B060', '#ef4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
     _mkChart('rc-opendept', { type: 'bar', data: { labels: odk, datasets: [{ data: odk.map(d => openByDept[d]), backgroundColor: _grad('#f7b94e', '#f59e0b'), borderRadius: 6, maxBarThickness: 40 }] }, options: _axisOpts(false) });
   }
 }
@@ -17564,8 +17565,8 @@ async function tkRenderPayrollReport() {
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + emps.length + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
   if (typeof Chart !== 'undefined') {
     _mkChart('pr-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => byDept[d].er), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
-    _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
-    _mkChart('pr-stat', { type: 'doughnut', data: { labels: ['Employee 10.5%', 'Employer 23.5%'], datasets: [{ data: [si, erStat], backgroundColor: ['#8b5cf6', '#205090'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Statutory', fmt: _money } });
+    _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
+    _mkChart('pr-stat', { type: 'doughnut', data: { labels: ['Employee 10.5%', 'Employer 23.5%'], datasets: [{ data: [si, erStat], backgroundColor: ['#8b5cf6', '#205090'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Statutory', fmt: _money } });
   }
 }
 
@@ -18625,25 +18626,46 @@ function _mkChart(id, cfg, extra) {
   inst.$labels = (cfg.type === 'bar'); inst.$fmt = extra && extra.fmt; inst.$center = extra && extra.center;
   _dashHrCharts[id] = inst; return inst;
 }
+/* Chart.js reads plain color strings (not CSS vars), so grid/tick/legend/segment colors are chosen
+   per-build from the current theme; _retintCharts() re-tints already-drawn charts on a theme toggle. */
+const _isDark = () => document.documentElement.getAttribute('data-theme') === 'dark';
+const _chartGrid = () => _isDark() ? 'rgba(255,255,255,.08)' : '#eef1f4';
+const _chartTick = () => _isDark() ? '#9fb0c8' : '#6b7280';
+const _chartLegend = () => _isDark() ? '#aab6ca' : '#475569';
+const _chartBorder = () => _isDark() ? '#16233c' : '#fff';
 const _tooltip = (fmt) => ({ backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, displayColors: false, titleFont: { family: 'Calibri', size: 12, weight: '700' }, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const v = c.parsed.y != null ? c.parsed.y : (c.parsed.x != null ? c.parsed.x : c.parsed); return ' ' + ((fmt || _num)(v)); } } });
-const _axisOpts = (horiz, fmt) => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, layout: { padding: { top: 14, right: horiz ? 30 : 6 } }, plugins: { legend: { display: false }, tooltip: _tooltip(fmt) }, scales: { x: { grid: { color: '#eef1f4', display: !horiz, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT } }, y: { beginAtZero: true, grid: { color: '#eef1f4', display: !!horiz, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, callback: function (v) { return horiz ? this.getLabelForValue(v) : (fmt || _num)(v); } } } }, animation: { duration: _chartAnimDur() } });
+const _axisOpts = (horiz, fmt) => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, layout: { padding: { top: 14, right: horiz ? 30 : 6 } }, plugins: { legend: { display: false }, tooltip: _tooltip(fmt) }, scales: { x: { grid: { color: _chartGrid(), display: !horiz, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT } }, y: { beginAtZero: true, grid: { color: _chartGrid(), display: !!horiz, drawBorder: false }, border: { display: false }, ticks: { color: _chartTick(), font: _CHART_FONT, callback: function (v) { return horiz ? this.getLabelForValue(v) : (fmt || _num)(v); } } } }, animation: { duration: _chartAnimDur() } });
 const _doughTooltip = { backgroundColor: '#0f1f3a', titleColor: '#fff', bodyColor: '#e5e8ee', padding: 10, cornerRadius: 6, bodyFont: _CHART_FONT, callbacks: { label: (c) => { const ds = c.dataset.data || []; const tot = ds.reduce((s, x) => s + (+x || 0), 0); const v = +c.parsed || 0; return ' ' + c.label + ': ' + _num(v) + (tot ? ' (' + Math.round(v / tot * 100) + '%)' : ''); } } };
-const _doughOpts = () => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: '#475569', padding: 10, boxWidth: 10, usePointStyle: true } }, tooltip: _doughTooltip }, animation: { animateRotate: true, duration: _chartAnimDur() } });
-const _doughnutOpts = _doughOpts();
+const _doughOpts = () => ({ responsive: true, maintainAspectRatio: false, resizeDelay: 150, cutout: '66%', plugins: { legend: { position: 'bottom', labels: { font: _CHART_FONT, color: _chartLegend(), padding: 10, boxWidth: 10, usePointStyle: true } }, tooltip: _doughTooltip }, animation: { animateRotate: true, duration: _chartAnimDur() } });
+/* Re-tint on-screen charts when the theme flips (no re-fetch / no scroll reset). */
+function _retintCharts() {
+  try {
+    const grid = _chartGrid(), tick = _chartTick(), leg = _chartLegend(), bd = _chartBorder();
+    Object.keys(_dashHrCharts || {}).forEach(id => {
+      const ch = _dashHrCharts[id]; if (!ch || !ch.options) return;
+      const sc = ch.options.scales || {};
+      ['x', 'y'].forEach(ax => { if (sc[ax]) { if (sc[ax].grid) sc[ax].grid.color = grid; if (sc[ax].ticks) sc[ax].ticks.color = tick; } });
+      const lg = ch.options.plugins && ch.options.plugins.legend;
+      if (lg && lg.labels) lg.labels.color = leg;
+      (ch.data.datasets || []).forEach(ds => { if (ds.borderColor === '#fff' || ds.borderColor === '#16233c') ds.borderColor = bd; });
+      ch.update('none');
+    });
+  } catch (e) {}
+}
 const _starFmt = v => (Math.round(v * 10) / 10) + '★';
 function tkBuildDashCharts(d) {
   if (typeof Chart === 'undefined') return;
   _mkChart('dc-deptbar', { type: 'bar', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true), { indexAxis: 'y' }) });
-  _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
+  _mkChart('dc-dept', { type: 'doughnut', data: { labels: d.deptLabels, datasets: [{ data: d.deptVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
   _mkChart('dc-funnel', { type: 'bar', data: { labels: d.funnelLabels, datasets: [{ data: d.funnelVals, backgroundColor: _grad('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 38 }] }, options: _axisOpts(false) });
   _mkChart('dc-perf', { type: 'bar', data: { labels: d.perfLabels, datasets: [{ data: d.perfVals, backgroundColor: ['#00B060', '#3dbb6b', '#f59e0b', '#f97316', '#ef4444'], borderRadius: 6, maxBarThickness: 38 }] }, options: _axisOpts(false) });
-  _mkChart('dc-gender', { type: 'doughnut', data: { labels: d.genderLabels, datasets: [{ data: d.genderVals, backgroundColor: ['#3168A8', '#8b5cf6', '#94a3b8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'People' } });
+  _mkChart('dc-gender', { type: 'doughnut', data: { labels: d.genderLabels, datasets: [{ data: d.genderVals, backgroundColor: ['#3168A8', '#8b5cf6', '#94a3b8'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'People' } });
   _mkChart('dc-tenure', { type: 'bar', data: { labels: d.tenureLabels, datasets: [{ data: d.tenureVals, backgroundColor: _grad('#5a8fd6', '#3168A8'), borderRadius: 6, maxBarThickness: 44 }] }, options: _axisOpts(false) });
-  _mkChart('dc-att', { type: 'doughnut', data: { labels: d.attLabels, datasets: [{ data: d.attVals, backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Records' } });
-  _mkChart('dc-leave', { type: 'doughnut', data: { labels: d.leaveLabels, datasets: [{ data: d.leaveVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  _mkChart('dc-att', { type: 'doughnut', data: { labels: d.attLabels, datasets: [{ data: d.attVals, backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Records' } });
+  _mkChart('dc-leave', { type: 'doughnut', data: { labels: d.leaveLabels, datasets: [{ data: d.leaveVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
   _mkChart('dc-trend', { type: 'line', data: { labels: d.trendLabels, datasets: [{ data: d.trendVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false) });
-  _mkChart('dc-emptype', { type: 'doughnut', data: { labels: d.empTypeLabels, datasets: [{ data: d.empTypeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
-  _mkChart('dc-training', { type: 'doughnut', data: { labels: d.trainingLabels, datasets: [{ data: d.trainingVals, backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: '#fff', hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Enrols' } });
+  _mkChart('dc-emptype', { type: 'doughnut', data: { labels: d.empTypeLabels, datasets: [{ data: d.empTypeVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Staff' } });
+  _mkChart('dc-training', { type: 'doughnut', data: { labels: d.trainingLabels, datasets: [{ data: d.trainingVals, backgroundColor: ['#00B060', '#f59e0b', '#3168A8'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Enrols' } });
   _mkChart('dc-perfdept', { type: 'bar', data: { labels: d.perfDeptLabels, datasets: [{ data: d.perfDeptVals, backgroundColor: _gradH('#22c98a', '#00B060'), borderRadius: 6, maxBarThickness: 22 }] }, options: Object.assign(_axisOpts(true, _starFmt), { indexAxis: 'y', scales: { x: { beginAtZero: true, max: 5, grid: { color: '#eef1f4', drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT, stepSize: 1 } }, y: { grid: { display: false, drawBorder: false }, border: { display: false }, ticks: { color: '#6b7280', font: _CHART_FONT } } } }) }, { fmt: _starFmt });
 }
 
@@ -18741,7 +18763,7 @@ function _initLeaveChart() {
     type: 'doughnut',
     data: {
       labels: lLabels,
-      datasets: [{ data:lVals, backgroundColor:['#205090','#00B060','#f59e0b','#8b5cf6','#6b7280','#ef4444'], borderWidth:2, borderColor:'#fff' }]
+      datasets: [{ data:lVals, backgroundColor:['#205090','#00B060','#f59e0b','#8b5cf6','#6b7280','#ef4444'], borderWidth:2, borderColor: _chartBorder() }]
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'70%',
@@ -18784,7 +18806,7 @@ function _initPayrollChart() {
     type: 'doughnut',
     data: {
       labels: ['Regular Hours','Overtime','Leave Taken'],
-      datasets: [{ data:[78,12,10], backgroundColor:['#205090','#00B060','#f59e0b'], borderWidth:2, borderColor:'#fff' }]
+      datasets: [{ data:[78,12,10], backgroundColor:['#205090','#00B060','#f59e0b'], borderWidth:2, borderColor: _chartBorder() }]
     },
     options: {
       responsive:true, maintainAspectRatio:false, cutout:'65%',
