@@ -7,10 +7,14 @@ zones, and app settings.
 """
 
 import os
+import re
+import hmac
 import json
+import hashlib
+import secrets
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import seed_data
 
@@ -18,9 +22,16 @@ DB_PATH = os.environ.get("TK_DB_PATH", os.path.join(os.path.dirname(__file__), "
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    # WAL lets readers and a writer work concurrently (the stdlib server is multi-threaded), and
+    # busy_timeout makes a contended write WAIT briefly instead of raising "database is locked".
+    # synchronous=NORMAL is durable under WAL and much faster. These are the biggest cheap wins for
+    # SQLite under real concurrent use.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    conn.execute("PRAGMA synchronous = NORMAL")
     return conn
 
 
@@ -123,16 +134,48 @@ def init_db():
             PRIMARY KEY (coll, id)
         );
 
+        -- 21 CFR Part 11 signature PIN (second signing component). Salted PBKDF2 hash only;
+        -- kept in its own table so it can never leak through a `SELECT * FROM employees` read path.
+        CREATE TABLE IF NOT EXISTS esign_pin (
+            emp_id       TEXT PRIMARY KEY,
+            algo         TEXT    NOT NULL DEFAULT 'pbkdf2_sha256',
+            iterations   INTEGER NOT NULL,
+            salt         TEXT    NOT NULL,               -- hex, 16 random bytes, unique per set
+            hash         TEXT    NOT NULL,               -- hex PBKDF2-HMAC-SHA256 derived key
+            prev_hash    TEXT,                           -- hex of previous hash, blocks immediate reuse
+            status       TEXT    NOT NULL DEFAULT 'active',  -- 'active' | 'revoked'
+            created_ts   TEXT,
+            updated_ts   TEXT,
+            set_ts       TEXT,                           -- last time the PIN value was set (expiry clock)
+            fail_count   INTEGER NOT NULL DEFAULT 0,
+            last_fail_ts TEXT,
+            locked_until TEXT,                           -- ISO-8601 UTC; NULL = not locked
+            must_change  INTEGER NOT NULL DEFAULT 0,     -- 1 after admin reset -> owner must re-enroll
+            enrolled_via TEXT,
+            enrolled_oid TEXT,
+            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
+        );
+
+        -- Web Push subscriptions (one row per browser/device per user) for OS notifications.
+        CREATE TABLE IF NOT EXISTS push_subs (
+            endpoint TEXT PRIMARY KEY,
+            email    TEXT NOT NULL,
+            sub      TEXT NOT NULL,   -- full PushSubscription JSON (endpoint + p256dh/auth keys)
+            created  TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_att_emp  ON attendance (emp_id);
         CREATE INDEX IF NOT EXISTS idx_att_date ON attendance (date);
         CREATE INDEX IF NOT EXISTS idx_leave_emp ON leave (emp_id);
+        CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
         """
     )
     # migration: add newer columns to older databases
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
                 "englishCert TEXT", "note TEXT", "photo TEXT", "salary REAL",
-                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT"):
+                "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT", "appsAllowed TEXT",
+                "schedule TEXT", "procRole TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -141,6 +184,33 @@ def init_db():
         conn.execute("ALTER TABLE leave ADD COLUMN token TEXT")  # approval-link token
     except sqlite3.OperationalError:
         pass
+    try:
+        conn.execute("ALTER TABLE leave ADD COLUMN signatures TEXT")  # 21 CFR Part 11 e-signatures (JSON)
+    except sqlite3.OperationalError:
+        pass
+    # Overtime request/approval on an attendance record: OT only counts once a manager approves it.
+    for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT"):
+        try:
+            conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass
+    # One-open-record-per-(emp,date) uniqueness. On an EXISTING production DB there may already be
+    # duplicate open rows (pre-fix double-taps / orphaned overnight rows), which would make a bare
+    # CREATE UNIQUE INDEX abort startup — so we first collapse duplicates (keep the latest open row
+    # per emp+date, close the older ones), THEN create the index, and guard the whole thing.
+    try:
+        dups = conn.execute(
+            "SELECT emp_id, date FROM attendance WHERE clock_out IS NULL "
+            "GROUP BY emp_id, date HAVING COUNT(*) > 1").fetchall()
+        for emp_id, date in dups:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM attendance WHERE emp_id=? AND date=? AND clock_out IS NULL "
+                "ORDER BY id DESC", (emp_id, date)).fetchall()]
+            for old_id in ids[1:]:   # keep the newest open row; close the rest to '—' so no data is lost
+                conn.execute("UPDATE attendance SET clock_out=COALESCE(clock_out,'—') WHERE id=?", (old_id,))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL")
+    except sqlite3.OperationalError:
+        pass   # a residual duplicate must never abort startup — the app-level guard still applies
     conn.commit()
     conn.close()
 
@@ -553,7 +623,8 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
               "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
-              "role", "level", "salary", "grade", "dependents", "appsDenied",
+              "role", "level", "salary", "grade", "dependents", "appsDenied", "appsAllowed", "schedule",
+              "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
 
@@ -594,12 +665,19 @@ def create_employee(data):
     return emp_id
 
 
+def _scalar(v):
+    """SQLite can only bind str/int/float/bytes/None; a stray dict/list from a malformed request body
+    would raise InterfaceError (a 500 for any authenticated caller). JSON-encode non-scalars so the
+    write degrades gracefully instead of crashing the handler."""
+    return v if isinstance(v, (str, int, float, bool, bytes, type(None))) else json.dumps(v, ensure_ascii=False)
+
+
 def update_employee(emp_id, data):
     sets, params = [], []
     for f in EMP_FIELDS:
         if f in data:
             sets.append("%s = ?" % f)
-            params.append(data[f])
+            params.append(_scalar(data[f]))
     if not sets:
         return
     params.append(emp_id)
@@ -638,39 +716,78 @@ def open_attendance(emp_id, date):
                 "ORDER BY id DESC LIMIT 1", (emp_id, date))
 
 
-def _hrs_between(cin, cout):
+def _hrs_between(cin, cout, overnight=False):
     try:
         ih, im = map(int, cin.split(":")); oh, om = map(int, cout.split(":"))
         mins = (oh * 60 + om) - (ih * 60 + im)
+        if overnight and mins < 0:
+            mins += 1440          # 18:00 → 00:30 next day = 6h30, not -18h30
+        if mins < 0:
+            return ""             # same-day out<in is rejected upstream; never store negatives
         return "%dh %02dm" % (mins // 60, mins % 60)
     except (ValueError, AttributeError):
         return ""
 
 
+def open_attendance_any(emp_id, dates):
+    """Latest open record on any of the given dates (today + yesterday: overnight checkout)."""
+    marks = ",".join(["?"] * len(dates))
+    return _row("SELECT * FROM attendance WHERE emp_id = ? AND date IN (%s) AND clock_out IS NULL "
+                "ORDER BY date DESC, id DESC LIMIT 1" % marks, [emp_id] + list(dates))
+
+
 def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time"):
     emp = get_employee(emp_id)
     conn = get_conn()
-    cur = conn.execute(
-        "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
-         date, time_hm, status, loc, lat, lon))
-    conn.commit()
+    try:
+        cur = conn.execute(
+            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
+            "VALUES (?,?,?,?,?,?,?,?,?)",
+            (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
+             date, time_hm, status, loc, lat, lon))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # uq_att_open: a concurrent request already opened today's record — atomic double-tap guard
+        conn.close()
+        return None
     rid = cur.lastrowid
     conn.close()
     return rid
 
 
-def clock_out(att_id, time_hm):
+def clock_out(att_id, time_hm, ot_hours=0, ot_reason="", overnight=False):
     rec = _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
     if not rec:
         return None
-    hrs = _hrs_between(rec["clock_in"], time_hm)
+    hrs = _hrs_between(rec["clock_in"], time_hm, overnight=overnight)
+    try:
+        oth = float(ot_hours or 0)
+    except (TypeError, ValueError):
+        oth = 0
     conn = get_conn()
-    conn.execute("UPDATE attendance SET clock_out = ?, hrs = ? WHERE id = ?", (time_hm, hrs, att_id))
+    if oth > 0:
+        # An overtime REQUEST — pending until a manager approves. Until then it does not count.
+        conn.execute("UPDATE attendance SET clock_out = ?, hrs = ?, ot_status = 'pending', ot_hours = ?, ot_reason = ? WHERE id = ?",
+                     (time_hm, hrs, oth, (ot_reason or ""), att_id))
+    else:
+        conn.execute("UPDATE attendance SET clock_out = ?, hrs = ? WHERE id = ?", (time_hm, hrs, att_id))
     conn.commit()
     conn.close()
     return hrs
+
+
+def get_attendance(att_id):
+    return _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
+
+
+def decide_attendance_ot(att_id, decision):
+    """Approve or reject a pending overtime request. Only approved OT counts in the system."""
+    st = "approved" if str(decision or "").lower() in ("approve", "approved", "yes") else "rejected"
+    conn = get_conn()
+    conn.execute("UPDATE attendance SET ot_status = ? WHERE id = ?", (st, att_id))
+    conn.commit()
+    conn.close()
+    return st
 
 
 def generate_attendance(weeks=6, force=False, anchor=None):
@@ -792,6 +909,267 @@ def set_leave_status(leave_id, status, note=None):
     conn.close()
 
 
+def append_leave_signature(leave_id, sig, new_status=None):
+    """Append a 21 CFR Part 11 e-signature (dict) to a leave record, optionally set its status.
+    Returns the row (dict) or None if not found."""
+    row = _row("SELECT * FROM leave WHERE id = ?", (leave_id,))
+    if not row:
+        return None
+    try:
+        sigs = json.loads(row.get("signatures") or "[]")
+    except Exception:
+        sigs = []
+    sigs.append(sig)
+    conn = get_conn()
+    if new_status is not None:
+        conn.execute("UPDATE leave SET signatures = ?, status = ? WHERE id = ?",
+                     (json.dumps(sigs), new_status, leave_id))
+    else:
+        conn.execute("UPDATE leave SET signatures = ? WHERE id = ?", (json.dumps(sigs), leave_id))
+    conn.commit()
+    conn.close()
+    out = dict(row); out["signatures"] = sigs
+    if new_status is not None:
+        out["status"] = new_status
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 21 CFR Part 11 — signature PIN (second signing component)
+#   Stored ONLY as a salted PBKDF2-HMAC-SHA256 hash. The plaintext PIN is never
+#   written, logged or returned. Verification is constant-time; repeated failures
+#   lock the credential; PINs age out and cannot be immediately reused.
+# ---------------------------------------------------------------------------
+
+_HAS_SCRYPT        = hasattr(hashlib, "scrypt")   # scrypt needs OpenSSL (present on the prod Ubuntu box)
+SCRYPT_N           = 16384             # scrypt cost — ~16 MiB working set per derive
+SCRYPT_R           = 8
+SCRYPT_P           = 1
+PIN_ITERATIONS     = 600_000           # PBKDF2 rounds (fallback when scrypt is unavailable)
+PIN_ALGO           = "scrypt" if _HAS_SCRYPT else "pbkdf2_sha256"   # current KDF for new/changed PINs
+PIN_COST           = SCRYPT_N if _HAS_SCRYPT else PIN_ITERATIONS    # cost stored alongside each hash
+PIN_SALT_BYTES     = 16
+PIN_DKLEN          = 32
+PIN_MIN, PIN_MAX   = 6, 12
+PIN_LOCK_THRESHOLD = 5
+PIN_LOCK_SECONDS   = 15 * 60
+PIN_MAX_AGE_DAYS   = 180
+# Optional server-side pepper — kept OUTSIDE the database (env var). When set, a leak of the
+# SQLite file alone cannot be brute-forced offline. Set TK_ESIGN_PEPPER to a long random string
+# in production (e.g. `openssl rand -hex 32`). Empty = no pepper (still salted + slow KDF).
+PIN_PEPPER         = os.environ.get("TK_ESIGN_PEPPER", "").encode("utf-8")
+
+
+def _pin_pre(pin):
+    """Fold in the server-side pepper (if configured) before the KDF."""
+    pw = (pin or "").encode("utf-8")
+    return hmac.new(PIN_PEPPER, pw, hashlib.sha256).digest() if PIN_PEPPER else pw
+
+
+def _pin_derive(pin, salt_hex, algo=PIN_ALGO, cost=None):
+    """Derive the hex key for a PIN + hex salt. Supports scrypt (memory-hard, current) and
+    pbkdf2_sha256 (fallback + legacy rows)."""
+    salt = bytes.fromhex(salt_hex)
+    pw = _pin_pre(pin)
+    if algo == "scrypt":
+        n = int(cost or SCRYPT_N)
+        return hashlib.scrypt(pw, salt=salt, n=n, r=SCRYPT_R, p=SCRYPT_P, maxmem=132 * 1024 * 1024, dklen=PIN_DKLEN).hex()
+    return hashlib.pbkdf2_hmac("sha256", pw, salt, int(cost or PIN_ITERATIONS), dklen=PIN_DKLEN).hex()
+
+
+def _pin_parse_iso(s):
+    """Parse an ISO timestamp to an aware UTC datetime, or None if unparseable."""
+    try:
+        d = datetime.fromisoformat(s)
+        return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d
+    except Exception:
+        return None
+
+
+def _pin_norm(s):
+    return re.sub(r"[^0-9a-z]", "", (s or "").lower())
+
+
+def validate_pin_policy(emp, pin):
+    """Return a machine reason string if the PIN violates policy, else None."""
+    if not isinstance(pin, str) or not re.fullmatch(r"[0-9A-Za-z]{%d,%d}" % (PIN_MIN, PIN_MAX), pin or ""):
+        return "length"
+    if len(set(pin)) == 1:
+        return "all_same"
+    low = pin.lower()
+
+    def _seq(s, step):
+        return len(s) > 1 and all(ord(s[i + 1]) - ord(s[i]) == step for i in range(len(s) - 1))
+    if _seq(low, 1) or _seq(low, -1):
+        return "sequential"
+    if pin in ("1234", "0000", "1111", "2580", "123456", "654321", "111111", "000000", "121212", "abcdef"):
+        return "trivial"
+    np = _pin_norm(pin)
+    if emp and len(np) >= 4:
+        for f in ("id", "phone", "email", "dob", "taxId", "personalId"):
+            v = emp.get(f) if isinstance(emp, dict) else None
+            if not v:
+                continue
+            nv = _pin_norm(str(v).split("@")[0] if f == "email" else str(v))
+            if nv and len(nv) >= 4 and (np == nv or np in nv):
+                return "personal_info"
+    return None
+
+
+def get_pin_status(emp_id):
+    """Public status for the owner's PIN. NEVER returns hash/salt material."""
+    row = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if not row or not row.get("hash"):
+        return {"enrolled": False}
+    now = datetime.now(timezone.utc)
+    locked = False
+    lu = row.get("locked_until")
+    if lu:
+        d = _pin_parse_iso(lu)
+        locked = (d is None) or (d > now)   # unparseable -> treat as locked (fail closed)
+    age_days = None
+    expired = False
+    st = row.get("set_ts")
+    if st:
+        d = _pin_parse_iso(st)
+        if d is None:
+            expired = True                  # unparseable -> treat as expired (fail closed)
+        else:
+            age_days = (now - d).days
+            expired = age_days > PIN_MAX_AGE_DAYS
+    return {"enrolled": True, "status": row.get("status"),
+            "revoked": row.get("status") == "revoked",
+            "mustChange": bool(row.get("must_change")),
+            "locked": locked, "lockedUntil": lu if locked else None,
+            "expired": expired, "ageDays": age_days, "setAt": st}
+
+
+def all_pin_statuses():
+    """PIN status for every employee (manager governance view). Never returns hash/salt material."""
+    out = []
+    for e in list_employees():
+        st = get_pin_status(e.get("id"))
+        out.append({"empId": e.get("id"), "name": e.get("name"), "dept": e.get("dept"),
+                    "title": e.get("title"), "email": e.get("email"),
+                    "enrolled": st.get("enrolled", False), "setAt": st.get("setAt"),
+                    "locked": st.get("locked", False), "expired": st.get("expired", False),
+                    "revoked": st.get("revoked", False), "mustChange": st.get("mustChange", False)})
+    return out
+
+
+def set_pin(emp_id, new_pin, enrolled_via="M365 session", enrolled_oid=None):
+    """Enroll or change the PIN (upsert). Blocks immediate reuse of the previous PIN.
+    Returns (ok, reason)."""
+    prev = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if prev and prev.get("hash") and prev.get("salt"):
+        if hmac.compare_digest(_pin_derive(new_pin, prev["salt"], prev.get("algo") or "pbkdf2_sha256", prev.get("iterations")), prev["hash"]):
+            return (False, "reuse")   # cannot re-set the identical current PIN
+    salt_hex = secrets.token_bytes(PIN_SALT_BYTES).hex()
+    h = _pin_derive(new_pin, salt_hex, PIN_ALGO, PIN_COST)
+    ts = now_iso()
+    conn = get_conn()
+    if prev:
+        conn.execute(
+            "UPDATE esign_pin SET algo=?, iterations=?, salt=?, hash=?, prev_hash=?, status='active', "
+            "updated_ts=?, set_ts=?, fail_count=0, last_fail_ts=NULL, locked_until=NULL, must_change=0, "
+            "enrolled_via=?, enrolled_oid=? WHERE emp_id=?",
+            (PIN_ALGO, PIN_COST, salt_hex, h, prev.get("hash"), ts, ts, enrolled_via, enrolled_oid, emp_id))
+    else:
+        conn.execute(
+            "INSERT INTO esign_pin (emp_id, algo, iterations, salt, hash, status, created_ts, updated_ts, "
+            "set_ts, fail_count, must_change, enrolled_via, enrolled_oid) "
+            "VALUES (?,?,?,?,?, 'active', ?,?,?, 0, 0, ?, ?)",
+            (emp_id, PIN_ALGO, PIN_COST, salt_hex, h, ts, ts, ts, enrolled_via, enrolled_oid))
+    conn.commit()
+    conn.close()
+    return (True, None)
+
+
+def verify_pin(emp_id, pin):
+    """Constant-time PIN verification with lockout / expiry / revoke gates.
+    Returns (ok, reason). reason in {None, no_pin, revoked, must_change, locked, expired, bad_pin}."""
+    row = _row("SELECT * FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    if not row or not row.get("hash"):
+        _pin_derive(pin or "", secrets.token_bytes(PIN_SALT_BYTES).hex())  # burn a derive (timing parity)
+        return (False, "no_pin")
+    if row.get("status") == "revoked":
+        return (False, "revoked")
+    if row.get("must_change"):
+        return (False, "must_change")
+    now = datetime.now(timezone.utc)
+    lu = row.get("locked_until")
+    if lu:
+        d = _pin_parse_iso(lu)
+        if d is None or d > now:        # unparseable -> treat as locked (fail closed)
+            return (False, "locked")
+    st = row.get("set_ts")
+    if st:
+        d = _pin_parse_iso(st)
+        if d is None or (now - d).days > PIN_MAX_AGE_DAYS:   # unparseable -> treat as expired (fail closed)
+            return (False, "expired")
+    got = _pin_derive(pin or "", row["salt"], row.get("algo") or "pbkdf2_sha256", row.get("iterations"))
+    ok = hmac.compare_digest(got, row["hash"])
+    conn = get_conn()
+    if ok:
+        if row.get("algo") != PIN_ALGO or (row.get("iterations") or 0) != PIN_COST:
+            ns = secrets.token_bytes(PIN_SALT_BYTES).hex()      # transparently upgrade the stored hash to the current KDF
+            nh = _pin_derive(pin, ns, PIN_ALGO, PIN_COST)
+            conn.execute("UPDATE esign_pin SET salt=?, hash=?, iterations=?, algo=?, fail_count=0, locked_until=NULL WHERE emp_id=?",
+                         (ns, nh, PIN_COST, PIN_ALGO, emp_id))
+        else:
+            conn.execute("UPDATE esign_pin SET fail_count=0, locked_until=NULL WHERE emp_id=?", (emp_id,))
+        conn.commit()
+        conn.close()
+        return (True, None)
+    fc = (row.get("fail_count") or 0) + 1
+    locked = fc >= PIN_LOCK_THRESHOLD
+    if locked:
+        lock_iso = (now + timedelta(seconds=PIN_LOCK_SECONDS)).replace(microsecond=0).isoformat()
+        conn.execute("UPDATE esign_pin SET fail_count=0, last_fail_ts=?, locked_until=? WHERE emp_id=?",
+                     (now_iso(), lock_iso, emp_id))
+    else:
+        conn.execute("UPDATE esign_pin SET fail_count=?, last_fail_ts=? WHERE emp_id=?",
+                     (fc, now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+    # Audit the unauthorized-use attempt (Part 11 §11.300(d) / §11.10(e)) — never records the PIN.
+    try:
+        emp = get_employee(emp_id) or {}
+        put_collection_item("audit", {"actor": emp.get("name") or "System", "actorId": emp_id,
+            "action": "E-signature PIN — " + ("locked" if locked else "failed attempt"),
+            "target": "esign_pin/" + str(emp_id),
+            "detail": ("locked for %d min after %d consecutive failures" % (PIN_LOCK_SECONDS // 60, PIN_LOCK_THRESHOLD)) if locked else ("consecutive failures=" + str(fc)),
+            "ts": now_iso()})
+    except Exception:
+        pass
+    return (False, "locked" if locked else "bad_pin")
+
+
+def admin_reset_pin(emp_id):
+    """Admin de-authorize: wipe the hash and force the owner to re-enroll. Cannot set a PIN value."""
+    conn = get_conn()
+    conn.execute("UPDATE esign_pin SET hash='', prev_hash=NULL, must_change=1, status='active', "
+                 "fail_count=0, locked_until=NULL, updated_ts=? WHERE emp_id=?", (now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+
+
+def revoke_pin(emp_id):
+    """Admin revoke: mark the credential revoked (owner must re-enroll to sign again)."""
+    conn = get_conn()
+    conn.execute("UPDATE esign_pin SET status='revoked', updated_ts=? WHERE emp_id=?", (now_iso(), emp_id))
+    conn.commit()
+    conn.close()
+
+
+def remove_pin(emp_id):
+    """Owner removes their own PIN entirely."""
+    conn = get_conn()
+    conn.execute("DELETE FROM esign_pin WHERE emp_id = ?", (emp_id,))
+    conn.commit()
+    conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Zones
 # ---------------------------------------------------------------------------
@@ -814,7 +1192,7 @@ def update_zone(zone_id, data):
     sets, params = [], []
     for f in ("name", "lat", "lon", "radius"):
         if f in data:
-            sets.append("%s = ?" % f); params.append(data[f])
+            sets.append("%s = ?" % f); params.append(_scalar(data[f]))
     if not sets:
         return
     params.append(zone_id)
@@ -845,6 +1223,48 @@ def set_setting(key, value):
     conn.execute("INSERT INTO settings (key,value) VALUES (?,?) "
                  "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                  (key, json.dumps(value)))
+    conn.commit()
+    conn.close()
+
+
+# ── Web Push subscriptions (OS notifications) ──
+def push_sub_add(email, sub):
+    """Store/refresh a browser's PushSubscription for a user (keyed by its endpoint)."""
+    endpoint = (sub or {}).get("endpoint")
+    if not endpoint:
+        return
+    conn = get_conn()
+    # On conflict only refresh a row that already belongs to this user — a client cannot
+    # re-point another person's (opaque) endpoint to itself.
+    conn.execute("INSERT INTO push_subs (endpoint,email,sub,created) VALUES (?,?,?,?) "
+                 "ON CONFLICT(endpoint) DO UPDATE SET sub = excluded.sub "
+                 "WHERE push_subs.email = excluded.email",
+                 (endpoint, (email or "").lower(), json.dumps(sub), now_iso()))
+    conn.commit()
+    conn.close()
+
+
+def push_subs_for(emails):
+    """Return [(endpoint, sub_dict), …] for the given list of user emails."""
+    emails = [(e or "").lower() for e in (emails or []) if e]
+    if not emails:
+        return []
+    ph = ",".join("?" * len(emails))
+    rows = _rows("SELECT endpoint, sub FROM push_subs WHERE email IN (%s)" % ph, tuple(emails))
+    out = []
+    for r in rows:
+        try:
+            out.append((r["endpoint"], json.loads(r["sub"])))
+        except (ValueError, TypeError):
+            pass
+    return out
+
+
+def push_sub_remove(endpoint):
+    if not endpoint:
+        return
+    conn = get_conn()
+    conn.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,))
     conn.commit()
     conn.close()
 

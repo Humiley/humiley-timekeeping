@@ -1,6 +1,15 @@
-# Humiley Portal — one-command VPS deploy: app behind Caddy (automatic HTTPS).
-# Usage on the VPS:  cp .env.example .env  (edit it)  →  docker compose up -d --build
+# Humiley — ONE combined stack: Portal (Python) + Procurement (Next.js) + Postgres, behind ONE Caddy.
+# It all runs as a single deployment on one VPS, one domain (portal.humiley.com), one command.
+#   Portal        → portal.humiley.com
+#   Procurement   → portal.humiley.com/procurement   (an app of the portal, no second login)
+#
+# Layout on the VPS (Procurement is cloned INTO this folder so one compose builds both):
+#   /opt/humiley-timekeeping/            ← this repo
+#     humiley-procurement/               ← git clone of the procurement repo (gitignored here)
+#     docker-compose.yml  Caddyfile  .env  update.sh
+# Deploy / update EVERYTHING with one command:  ./update.sh   (see that script)
 services:
+  # ── Portal (the Python timekeeping app) ──────────────────────────────────────────────────────
   app:
     build: .
     container_name: humiley_portal
@@ -8,11 +17,105 @@ services:
     environment:
       - TK_ADMIN_EMAIL=${TK_ADMIN_EMAIL:-tony.nguyen@humiley.com}
       - TK_ADMIN_NAME=${TK_ADMIN_NAME:-Tony Nguyen}
+      # Signature-PIN pepper — kept out of the DB so a DB leak can't crack PINs. Generated once
+      # into .env by update.sh; never change it or existing PINs stop verifying.
+      - TK_ESIGN_PEPPER=${TK_ESIGN_PEPPER:-}
+      # The ONE shared SSO secret. Procurement reads the SAME variable (below), so the no-second-
+      # login handoff can never drift out of sync. Generated once into .env by update.sh.
+      - TK_SSO_SECRET=${TK_SSO_SECRET:-}
+      # Invoice Tracking — app-only Microsoft Graph mail read for the 24/7 hd@humiley.com sync.
+      # Put the "Humiley Portal" Entra app's CLIENT SECRET in .env as TK_M365_CLIENT_SECRET AND grant
+      # that app the Graph Mail.Read APPLICATION permission + admin consent. Empty = the 24/7 scheduler
+      # stays OFF (safe) and the portal falls back to the in-browser (delegated Mail.Read.Shared) sync.
+      - TK_M365_CLIENT_SECRET=${TK_M365_CLIENT_SECRET:-}
+      - TK_INVTRACK_MAILBOX=${TK_INVTRACK_MAILBOX:-hd@humiley.com}
+      - TK_INVTRACK_INTERVAL_MIN=${TK_INVTRACK_INTERVAL_MIN:-10}
+      - TK_OCR_ENDPOINT=${TK_OCR_ENDPOINT:-}
+      # Optional ops alerting: a Teams/Slack incoming-webhook URL. When set, unhandled server errors
+      # fire a one-line alert (fire-and-forget). Empty = errors are still logged + reviewable at
+      # /api/admin/errors (admin only), just no push alert. Uptime monitors should probe /api/health.
+      - TK_ALERT_WEBHOOK=${TK_ALERT_WEBHOOK:-}
     volumes:
       - humiley_data:/data          # SQLite DB persists here across redeploys
     expose:
-      - "8000"                      # internal only — not published to the public interface
+      - "8000"
 
+  # ── Procurement (the Next.js app, served under /procurement) ─────────────────────────────────
+  procurement:
+    build:
+      context: ./humiley-procurement
+      args:
+        BASE_PATH: "/procurement"
+    container_name: humiley_proc_app
+    restart: unless-stopped
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+      - AUTH_SECRET=${AUTH_SECRET:?set AUTH_SECRET (update.sh generates it)}
+      - AUTH_TRUST_HOST=true
+      # E-signature chain HMAC key (21 CFR Part 11). Dedicated so it's decoupled from AUTH_SECRET
+      # rotation; if unset the app derives the key from AUTH_SECRET instead. NEVER change it once set —
+      # existing v2 signatures would fail verifyChain. update.sh generates it once.
+      - ESIGN_SIGNING_SECRET=${ESIGN_SIGNING_SECRET:-}
+      # SAME secret as the portal above — one variable, always in sync.
+      - PORTAL_SSO_SECRET=${TK_SSO_SECRET:-}
+      - APP_URL=${APP_URL:-https://portal.humiley.com/procurement}
+      - DEFAULT_VAT_PCT=${DEFAULT_VAT_PCT:-10}
+    volumes:
+      - proc_storage:/app/storage   # uploaded invoices/bills persist across redeploys
+    expose:
+      - "3000"
+
+  # ── Procurement's database ───────────────────────────────────────────────────────────────────
+  procdb:
+    image: postgres:16-alpine
+    container_name: humiley_proc_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-procurement}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      - POSTGRES_DB=${POSTGRES_DB:-humiley_procurement}
+    volumes:
+      - proc_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-procurement} -d $${POSTGRES_DB:-humiley_procurement}"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+
+  # ── One-off Procurement DB setup (runs from the builder stage: prisma CLI + tsx) ─────────────
+  #    `docker compose --profile setup run --rm proc-migrate`  (update.sh does this automatically)
+  proc-migrate:
+    build:
+      context: ./humiley-procurement
+      target: builder
+      args:
+        BASE_PATH: "/procurement"
+    profiles: ["setup"]
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+    command: sh -c "npx prisma migrate deploy"
+  proc-bootstrap:
+    build:
+      context: ./humiley-procurement
+      target: builder
+    profiles: ["setup"]
+    depends_on:
+      procdb:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-procurement}:${POSTGRES_PASSWORD}@procdb:5432/${POSTGRES_DB:-humiley_procurement}?schema=public
+      - BOOTSTRAP_ADMIN_EMAIL=${BOOTSTRAP_ADMIN_EMAIL:-}
+      - BOOTSTRAP_ADMIN_NAME=${BOOTSTRAP_ADMIN_NAME:-System Administrator}
+    command: sh -c "npm run bootstrap"
+
+  # ── One Caddy: HTTPS edge, routes the whole domain ───────────────────────────────────────────
   caddy:
     image: caddy:2
     container_name: humiley_caddy
@@ -24,12 +127,20 @@ services:
       - PORTAL_DOMAIN=${PORTAL_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data            # Let's Encrypt certificates persist here
+      - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - app
+      - procurement
+
+# All services share this one network, so Caddy reaches app:8000 and humiley_proc_app:3000 by name.
+networks:
+  default:
+    name: humiley_net
 
 volumes:
   humiley_data:
+  proc_db:
+  proc_storage:
   caddy_data:
   caddy_config:

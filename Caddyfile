@@ -1,5 +1,40 @@
 # Caddy automatically obtains + renews a Let's Encrypt certificate for this domain
 # and reverse-proxies HTTPS traffic to the app container. The domain comes from .env.
 {$PORTAL_DOMAIN} {
-	reverse_proxy app:8000
+	# HSTS at the TLS edge — force HTTPS for a year (Caddy does NOT set this by default).
+	# Add `preload` only once you're certain every subdomain is HTTPS-only and you submit to
+	# the preload list; it is hard to undo.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+	# Compress every response (gzip/zstd) — the whole site was served uncompressed. Big win for
+	# text-heavy pages like the 5,613-row HS Code Explorer (~2.7 MB → ~0.5 MB). Caddy skips
+	# already-encoded responses, so it never double-compresses the portal's own gzip.
+	encode gzip zstd
+
+	# Procurement is an app of THIS portal, served under the ONE domain as a PATH —
+	# portal.humiley.com/procurement — so there is NO separate domain, no extra DNS record, and no
+	# separate certificate. It runs as its own compose stack (humiley-procurement) reachable over
+	# the shared humiley_net network by container name. KEEP the /procurement prefix (the Next app
+	# sets basePath to it) — do NOT strip it. Harmless (502) until the procurement stack is up.
+	handle /procurement* {
+		# Procurement is only ever framed by THIS portal (same origin), so restrict framing to
+		# same-origin — closes clickjacking without breaking the in-portal embed.
+		header X-Frame-Options SAMEORIGIN
+		header Content-Security-Policy "frame-ancestors 'self'"
+		reverse_proxy humiley_proc_app:3000 {
+			# Forward the PUBLIC host + scheme so the Next/Auth.js app (trustHost) builds absolute
+			# URLs against portal.humiley.com, NOT its internal bind address. Without this the
+			# container saw host 0.0.0.0:3000, so after the portal SSO Auth.js redirected the embed
+			# iframe to https://0.0.0.0:3000/procurement/dashboard — unreachable → a 404 on the
+			# embedded Dashboard. Host + X-Forwarded-Host/Proto make the SSO + login redirects land
+			# back on the real domain.
+			header_up Host {host}
+			header_up X-Forwarded-Host {host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
+	# Everything else is the timekeeping portal.
+	handle {
+		reverse_proxy app:8000
+	}
 }

@@ -5,6 +5,10 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY . /app
 
+# Install the one optional dependency (Web Push OS notifications). Pure-wheel install,
+# no build tools needed. If it ever fails the app still runs (push auto-disables).
+RUN pip install --no-cache-dir -r requirements.txt
+
 # Bind on all interfaces; persist the SQLite DB on a mounted volume so data
 # survives container restarts/redeploys.
 ENV TK_HOST=0.0.0.0 \

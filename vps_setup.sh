@@ -24,10 +24,19 @@ if [ -d humiley-timekeeping/.git ]; then
 else
   git clone "$REPO" humiley-timekeeping && cd humiley-timekeeping
 fi
-printf 'PORTAL_DOMAIN=%s\nTK_ADMIN_EMAIL=%s\nTK_ADMIN_NAME=%s\n' "$DOMAIN" "$ADMIN_EMAIL" "$ADMIN_NAME" > .env
+# Write the 3 site-config vars WITHOUT clobbering the secrets update.sh generates into the SAME
+# .env (TK_ESIGN_PEPPER, TK_SSO_SECRET, AUTH_SECRET, POSTGRES_PASSWORD). A `> .env` truncation
+# here would wipe those — breaking e-sign PINs and locking Procurement out of its own database
+# (the postgres volume keeps the old password). So set-or-update each key in place instead.
+touch .env
+set_cfg(){ if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else printf '%s=%s\n' "$1" "$2" >> .env; fi; }
+set_cfg PORTAL_DOMAIN  "$DOMAIN"
+set_cfg TK_ADMIN_EMAIL "$ADMIN_EMAIL"
+set_cfg TK_ADMIN_NAME  "$ADMIN_NAME"
 
-echo "==> [4/4] Build + start (takes a few minutes the first time)..."
-docker compose up -d --build
+echo "==> [4/4] Generating secrets, migrating, seeding reference data + starting (via update.sh)..."
+# update.sh owns secret generation + Procurement clone/migrate/bootstrap + build + health checks.
+bash update.sh --bootstrap
 
 echo ""
 echo "==================================================================="
