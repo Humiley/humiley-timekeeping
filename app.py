@@ -540,7 +540,11 @@ _CSP = (
     "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.msftauth.net "
     "https://nominatim.openstreetmap.org https://*.sharepoint.com https://*.webhook.office.com "
     "https://maps.googleapis.com https://cdnjs.cloudflare.com; "
-    "worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src 'self'"
+    # frame-src allows blob:/data: so the in-app file preview (tkFilePreview) can render an attached
+    # PDF inline in an <iframe> — attachments are held client-side as base64/blob, so the src is a
+    # blob:/data: URL, not a same-origin path. These framed docs are opaque-origin (same-origin policy
+    # still blocks them from reading the parent's tokens); without this the PDF pane renders blank.
+    "worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src 'self' blob: data:"
 )
 
 
