@@ -5,7 +5,7 @@
    fallback when the network is offline OR slower than the timeout (keeps the "fast to open on 4G"
    behaviour + offline use). Every successful load refreshes the cached shell, so the fallback is always
    the last-known-good version; static assets + CDN libs stay cache-first. */
-const CACHE = 'hml-pwa-v91';
+const CACHE = 'hml-pwa-v92';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
