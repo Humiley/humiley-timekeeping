@@ -3385,11 +3385,13 @@ async function _pushNotify(to, title, body, url) {
    (submit → reviewer, review → Approvers, decision → requester). */
 function _notifyApprovers(subject, body) {
   try {
-    const approvers = (_DEMO_EMPLOYEES || [])
+    const approvers = [...new Set((_DEMO_EMPLOYEES || [])
       .filter(e => e && e.email && (e.status || 'Active').toString().toLowerCase() !== 'inactive'
         && _lvlRank(_deriveLevel(e)) >= _lvlRank('management'))
-      .map(e => e.email);
-    if (approvers.length) _pushNotify([...new Set(approvers)], subject, body, '/');
+      .map(e => e.email))];
+    if (!approvers.length) return;
+    _pushNotify(approvers, subject, body, '/');                                  // OS push
+    approvers.forEach(em => { try { tkNotifyGraph(em, subject, body); } catch (e) {} });   // + email
   } catch (e) {}
 }
 /* Send myself a test push so users can confirm notifications work on their device. */
@@ -8079,7 +8081,7 @@ function _claimRowsHtml(claims, isMgr) {
     const trip = c.travelId ? (_HR.travel || []).find(t => t.id === c.travelId) : null;
     const tripChip = trip ? ' <span class="badge b-navy" style="font-size:9px" title="Linked travel request">✈ ' + _tkEscA(trip.dest || 'Travel') + '</span>' : (c.claimType === 'Travel' ? ' <span class="badge b-warn" style="font-size:9px">✈ Travel</span>' : '');
     const allBtns = _aprBtns(st, 'tkInboxClaim', c.id, { small: true, stop: true });
-    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + _crmEsc(c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(c.dept || '') + '</div></td><td>' + _crmEsc(c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + (_recHasBill(c) ? _finShowBtn('tkFinShow(\'claims\',\'' + c.id + '\')', _t('Show')) + ' ' : '') + allBtns + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkClaimToggle(\'' + c.id + '\')"><td style="font-weight:600">' + _crmEsc(c.name || '') + '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(c.dept || '') + (c.ts ? ' · ' + _t('Created') + ' ' + tkFmtDate(c.ts) : '') + '</div></td><td>' + _crmEsc(c.title || c.type || '') + tripChip + ' <span style="color:var(--text-light);font-size:11px">▾</span></td><td>' + its.length + '</td><td style="text-align:right;font-weight:600">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _claimBadgeCls(st) + '" style="font-size:10px">' + _aprLabel(st) + '</span></td><td style="white-space:nowrap">' + (_recHasBill(c) ? _finShowBtn('tkFinShow(\'claims\',\'' + c.id + '\')', _t('Show')) + ' ' : '') + allBtns + '</td></tr>';
     const lineBtns = it => (it.id && it.id !== 'legacy') ? _aprBtns(it.status || 'Submitted', null, it.id, { small: true, itemMode: true, claimId: c.id }) : '';
     const detail = '<tr id="claim-det-' + c.id + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:10px 14px"><div style="font-size:10.5px;color:var(--text-light);margin-bottom:6px">Review / approve each line, or use “Review all / Approve all” above.</div><table style="width:100%;font-size:12px"><thead><tr><th>Category</th><th>Note</th><th style="text-align:right">Amount</th><th>Bill</th><th>Status</th><th></th></tr></thead><tbody>' +
       its.map(it => '<tr><td>' + _crmEsc(it.category || '') + '</td><td style="color:var(--text-light)">' + _crmEsc(it.note || '') + '</td><td style="text-align:right">' + _PAY_FMT(it.amount || 0) + '</td><td>' + _attachLink(it) + '</td><td><span class="badge ' + _claimBadgeCls(it.status || 'Submitted') + '" style="font-size:9px">' + _aprLabel(it.status || 'Submitted') + '</span></td><td style="white-space:nowrap">' + lineBtns(it) + '</td></tr>').join('') +
@@ -8206,7 +8208,7 @@ async function tkRenderTravelClaims() {
   const act = (coll, id, status) => _aprBtns(status, (coll === 'travel' ? 'tkTravelDecision' : 'tkTCDecision'), id, { small: true });
   const travelRows = travel.length ? travel.map(t => {
     const chev = '<svg id="fin-chev-trv-' + t.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'trv-' + t.id + '\')"><td><div style="display:flex;align-items:center;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + '<b style="font-weight:600">' + _crmEsc(t.name || '') + '</b></span></div><div style="font-size:11px;color:var(--text-light);padding-left:18px">' + _crmEsc(t.dept || '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(t) ? _finShowBtn('tkFinShow(\'travel\',\'' + t.id + '\')', _t('Show')) + ' ' : '') + act('travel', t.id, t.status) + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'trv-' + t.id + '\')"><td><div style="display:flex;align-items:center;gap:6px"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + '<b style="font-weight:600">' + _crmEsc(t.name || '') + '</b></span></div><div style="font-size:11px;color:var(--text-light);padding-left:18px">' + _crmEsc(t.dept || '') + (t.ts ? ' · ' + _t('Created') + ' ' + tkFmtDate(t.ts) : '') + '</div></td><td>' + _crmEsc(t.dest || '') + '</td><td style="font-size:12px">' + _crmEsc(t.purpose || '') + _attachLink(t) + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td style="text-align:right">' + _PAY_FMT(t.cost || 0) + '</td><td style="text-align:right">' + _PAY_FMT(t.advance || 0) + '</td><td><span class="badge ' + _aprCls(t.status) + '" style="font-size:10px">' + _aprLabel(t.status) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(t) ? _finShowBtn('tkFinShow(\'travel\',\'' + t.id + '\')', _t('Show')) + ' ' : '') + act('travel', t.id, t.status) + '</td></tr>';
     const detail = '<tr id="fin-det-trv-' + t.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(t, 'travel') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(t) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : tkEmptyRow(8, 'No travel requests', { icon: 'inbox' });
@@ -8306,7 +8308,7 @@ async function tkRenderPayments() {
   root.innerHTML = (document.querySelector('#view-payments > .myspace-tabbar') ? '' : _finTabBar('payments')) + '<div id="pay-export">' + kpis + dash +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Payment Register</div><span style="font-size:11px;color:var(--text-light)">' + (isMgr ? 'All requests · Approve / Reject / Mark paid' : 'Mine') + '</span></div>' +
     fbar +
-    '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
+    '<div class="table-wrap"><table style="min-width:960px"><thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th>Purpose</th><th>Department</th><th style="text-align:right">Amount</th><th>Created</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody id="pay-tbody"></tbody></table></div></div></div>';
   payFillTable();
 }
 /* ── Payments view: KPI tiles + donuts computed from a (filtered) row list ──
@@ -8352,10 +8354,10 @@ function payFillTable() {
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
     const _peEdit = (typeof _payIsMine === 'function' && _payIsMine(p, _payMe) && (_aprState(s) === 'submit' || _aprState(s) === 'review')) ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkNewPayment(\'' + p.id + '\')">' + tkIcon('edit', 11) + 'Edit</button> ' : '';
     const chev = '<svg id="fin-chev-pay-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peEdit + act + '</td></tr>';
-    const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="10" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + tkFmtDate(p.ts) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peEdit + act + '</td></tr>';
+    const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="11" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
     return summary + detail;
-  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
+  }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
 }
 /* Eligible payment approvers = the requester's direct manager + anyone with management-level
    access (they can actually approve under _appr_check), so the selector never lists someone who
@@ -8487,6 +8489,7 @@ function tkPaymentDecision(id, status) {
       const e = _hrEmp(p.empId) || {};
       tkFinFlowMail(item || p, 'payment request', (p.reqNo || '') + ' · ' + (p.payee || ''), _PAY_FMT(p.amount || 0), status, e.email, e.name || p.name);
       if (status === 'Approved') { try { _finSpArchiveApproved(item || p, 'payment'); } catch (x) {} }   // auto-file voucher + invoice to SharePoint Year/Month
+      if (status === 'Paid') { try { _finSpArchivePaid(item || p, 'payment'); } catch (x) {} }              // file the payment slip (proof of payment) on disbursement
       tkRenderPayments(); try { tkRenderInbox(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
   });
@@ -9058,6 +9061,31 @@ function _finVoucherDoc(kind, rec) {
   return doc;
 }
 function _payVoucherDoc(p) { return _finVoucherDoc('payment', p); }
+/* On PAID, file the PAYMENT SLIP (the voucher, now stamped Paid with the payer's e-signature) to the same
+   Finance SharePoint folder, so the record has the FULL trail: request/invoice → approved voucher →
+   payment slip. Config-independent fallback: the voucher is always downloadable from the record too. */
+async function _finSpArchivePaid(item, kind) {
+  try {
+    if (!item || item.paidArchived) return;
+    kind = kind || 'payment';
+    if (typeof DEMO_MODE === 'function' && DEMO_MODE()) return;
+    if (!_finSpUrl() || !_msalApp || !_account) return;   // SharePoint not configured — the on-demand voucher covers it
+    const coll = kind === 'claim' ? 'claims' : kind === 'travel' ? 'travel' : 'payments';
+    const ref = _finSpRef(item, kind), sub = _finSpSubPath(item, kind);
+    toast(_t2('Filing the payment slip to Finance SharePoint…', 'Đang lưu phiếu thanh toán vào SharePoint Tài chính…'), 'info', 3000);
+    const doc = _finVoucherDoc(kind, item);   // reflects the now-Paid status + all e-signatures
+    const vf = doc && _dataUriToFile(doc.output('datauristring'), ref + '-Payment-Slip.pdf');
+    const r = vf && await _graphUploadFile(vf, _finSpProj(), sub);
+    if (r && r.webUrl) {
+      item.paidArchived = true;
+      try {
+        const saved = await tkApi('/api/coll/' + coll + '/' + encodeURIComponent(item.id), { method: 'PATCH', body: item });
+        const i = (_HR[coll] || []).findIndex(x => x.id === item.id); if (i >= 0 && saved) _HR[coll][i] = saved;
+      } catch (e) {}
+      toast(_t2('Payment slip filed to SharePoint.', 'Đã lưu phiếu thanh toán vào SharePoint.'), 'success', 3000);
+    }
+  } catch (e) {}
+}
 function tkPaymentVoucherPDF(id) {
   const p = (_HR.payments || []).find(x => x.id === id); if (!p) { toast('Payment not found', 'warn'); return; }
   const doc = _payVoucherDoc(p);
@@ -15295,7 +15323,7 @@ const _VI = {
   'Daily 10:00 · Find no check-in → Teams absent alert': 'Hằng ngày 10:00 · Tìm trường hợp không chấm vào → Teams cảnh báo vắng mặt',
   'Daily 17:30 · Find unchecked-out → Teams message': 'Hằng ngày 17:30 · Tìm trường hợp chưa chấm ra → Teams nhắn tin',
   'Daily Attendance': 'Chấm công hằng ngày',
-  'Present': 'Có mặt', 'People': 'Người', 'Records': 'Lượt', 'Enrols': 'Ghi danh', 'OT rejected': 'Từ chối OT',
+  'Present': 'Có mặt', 'People': 'Người', 'Records': 'Lượt', 'Enrols': 'Ghi danh', 'OT rejected': 'Từ chối OT', 'Created': 'Ngày tạo',
   'Daily Work Hours': 'Số giờ làm việc hằng ngày',
   'Damaged': 'Hư hỏng',
   'Data Management': 'Quản lý dữ liệu',
