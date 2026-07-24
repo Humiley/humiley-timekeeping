@@ -2110,9 +2110,14 @@ class Handler(BaseHTTPRequestHandler):
             return False, "This sign-in was not issued for the Humiley Portal."
         at = claims.get("auth_time")
         if at is None:
-            # Some Entra apps don't emit the optional `auth_time` claim. With prompt=login the
-            # token was just minted by a fresh interactive re-authentication, so `iat` is an
-            # equally-recent proof of re-auth for the max_age window (Part 11 recency preserved).
+            # `auth_time` is the ONLY claim that proves an INTERACTIVE re-auth: a silent token refresh
+            # advances `iat` but never `auth_time`. Once the Entra app registration emits auth_time as an
+            # optional claim (the frontend already requests it), set TK_REQUIRE_AUTH_TIME=1 to HARD-FAIL
+            # when it is absent — fully closing the "a silently-refreshed token passes §11.200 recency"
+            # gap (see docs). Until then we fall back to `iat`: with prompt=login the token was just
+            # minted by a fresh interactive re-auth, so iat is an equally-recent proof for max_age.
+            if os.getenv("TK_REQUIRE_AUTH_TIME"):
+                return False, "Please re-authenticate to sign — an interactive sign-in is required."
             at = claims.get("iat")
         if at is None:
             return False, "The sign-in did not include an authentication time."
