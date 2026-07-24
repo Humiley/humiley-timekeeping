@@ -15858,6 +15858,8 @@ const _VI = {
   'No activities scheduled — set a next step on a deal.': 'Chưa có hoạt động — hãy đặt bước tiếp theo cho một giao dịch.',
   'No files yet — attachments added on any register (daily / weekly reports, RFIs, quality, …) appear here automatically.': 'Chưa có tệp — tệp đính kèm từ bất kỳ sổ nào (báo cáo ngày / tuần, RFI, chất lượng, …) sẽ tự động hiển thị ở đây.',
   'No new licensed users to add — everyone in Microsoft 365 is already in the system.': 'Không có người dùng có bản quyền mới để thêm — mọi người trong Microsoft 365 đã có trong hệ thống.',
+  // render-cap "show all" control
+  'Show all': 'Xem tất cả', 'Showing': 'Đang hiển thị', 'of': 'trong tổng số',
   // leave validation (specific)
   'Choose a leave type': 'Hãy chọn loại nghỉ phép',
   'Pick a start date': 'Hãy chọn ngày bắt đầu',
@@ -17618,11 +17620,13 @@ function renderInOutReport() {
     const matchDate  = !dateF  || r.date === dateF;                        // exact date filter
     const matchMonth = !monthF || (r.date||'').slice(0,7) === monthF;      // month filter
     return matchS && matchD && matchT && matchDate && matchMonth && _inPeriodLF(r.date, 'io-period-f');
-  }).slice(0,60);
+  });   // full filtered set — KPIs below count ALL matches (was silently capped at 60, undercounting)
+  const IO_CAP = 200;   // render only this many rows for speed; "Show all" reveals the rest
+  const capped = window._ioShowAll ? rows : rows.slice(0, IO_CAP);
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
   const _mins = r => { if (!r.in || !r.out) return null; const [ih,im]=r.in.split(':').map(Number); const [oh,om]=r.out.split(':').map(Number); let m=(oh*60+om)-(ih*60+im); if (m<0) m+=1440; return m; };  // overnight-safe
-  tbody.innerHTML = rows.map(r => {
+  tbody.innerHTML = capped.map(r => {
     const emp = empMap[r.name];
     const clr = emp?.clr || tkAvatarColor(r.name);
     const ini = r.name.trim().split(/\s+/).filter(Boolean).slice(-2).map(w=>w[0].toUpperCase()).join('');
@@ -17651,6 +17655,9 @@ function renderInOutReport() {
       <td>${otCell}</td>
     </tr>`;
   }).join('');
+  if (!window._ioShowAll && rows.length > IO_CAP) {   // reveal the rest without re-filtering
+    tbody.innerHTML += '<tr><td colspan="8" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
+  }
   if (!rows.length) tbody.innerHTML = tkEmptyRow(8, 'No records match your filters.', { icon: 'search' });
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
