@@ -2457,7 +2457,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div><div style="font-size:12px;font-weight:600;margin-bottom:4px">Profile Photo</div><input type="file" id="my-photo-file" accept="image/*" onchange="tkReadMyPhoto(this)" style="font-size:12px"><input type="hidden" id="my-photo"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Phone</label><input class="form-control" id="my-phone"></div>
+      <div class="form-group"><label class="form-label">Phone</label><input type="tel" inputmode="tel" class="form-control" id="my-phone"></div>
       <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" id="my-dob"></div>
     </div>
     <div class="grid-2">
@@ -2487,8 +2487,8 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="form-group"><label class="form-label">Location Name</label><input type="text" class="form-control" id="loc-name" placeholder="e.g. Client Office — Binh Thanh"></div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Latitude</label><input type="number" class="form-control" id="loc-lat" placeholder="10.776900" step="0.000001"></div>
-      <div class="form-group"><label class="form-label">Longitude</label><input type="number" class="form-control" id="loc-lon" placeholder="106.698500" step="0.000001"></div>
+      <div class="form-group"><label class="form-label">Latitude</label><input type="number" inputmode="decimal" class="form-control" id="loc-lat" placeholder="10.776900" step="0.000001"></div>
+      <div class="form-group"><label class="form-label">Longitude</label><input type="number" inputmode="decimal" class="form-control" id="loc-lon" placeholder="106.698500" step="0.000001"></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Radius (metres)</label><input type="number" class="form-control" id="loc-radius" value="200" oninput="tkUpdateLocRadius()"></div>
@@ -7741,7 +7741,7 @@ function _claimLineHtml() {
   const i = _claimRowSeq++;
   return '<div class="claim-line" data-ci="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
     '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control claim-cat">' + _CLAIM_CATS.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
-    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Amount (VND)</label><input class="form-control claim-amt" type="number" oninput="tkClaimRecalc()"></div></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Amount (VND)</label><input class="form-control claim-amt" type="number" inputmode="numeric" oninput="tkClaimRecalc()"></div></div>' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Note</label><input class="form-control claim-note" placeholder="e.g. dinner with client"></div>' +
     _ATTACH_FIELD('claim-att-' + i, 'Attach bill / receipt') +
     '<div style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:11px" onclick="this.closest(\'.claim-line\').remove();tkClaimRecalc()">Remove line</button></div></div>';
@@ -8145,8 +8145,8 @@ function tkNewTravel() {
     '<div class="form-group"><label class="form-label">Destination</label><input class="form-control" id="tr-dest"></div>' +
     '<div class="form-group"><label class="form-label">Purpose</label><input class="form-control" id="tr-purpose"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">From</label><input type="date" class="form-control" id="tr-from"></div><div class="form-group"><label class="form-label">To</label><input type="date" class="form-control" id="tr-to"></div></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" class="form-control" id="tr-cost"></div></div>' +
-    '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" class="form-control" id="tr-advance"></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" inputmode="numeric" class="form-control" id="tr-cost"></div></div>' +
+    '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" inputmode="numeric" class="form-control" id="tr-advance"></div>' +
     _ATTACH_MULTI('tr-attach', 'Tickets / quotes / photos — combined into one PDF') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'travelOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkTravelSave()">Submit</button></div></div>';
   document.body.appendChild(el);
@@ -8312,7 +8312,7 @@ function tkNewPayment(editId) {
     '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies" value="' + V('purpose') + '"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + catOpts + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + methOpts + '</select></div></div>' +
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid" value="' + V('payee') + '"></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" class="form-control" id="pay-amount" value="' + (p ? (p.amount || '') : '') + '"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due" value="' + V('dueDate') + '"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" inputmode="numeric" class="form-control" id="pay-amount" value="' + (p ? (p.amount || '') : '') + '"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due" value="' + V('dueDate') + '"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept" value="' + V('department') + '"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv" value="' + V('invoiceNo') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">' + _t2('Approver', 'Người phê duyệt') + '</label><select class="form-control" id="pay-approver"></select></div>' +
     attBlock +
@@ -15794,6 +15794,11 @@ const _VI = {
   // empty states
   'No projects yet': 'Chưa có dự án',
   'You are not assigned to any projects yet': 'Bạn chưa được phân công dự án nào',
+  // leave validation (specific)
+  'Choose a leave type': 'Hãy chọn loại nghỉ phép',
+  'Pick a start date': 'Hãy chọn ngày bắt đầu',
+  'Pick an end date': 'Hãy chọn ngày kết thúc',
+  'Enter a reason': 'Hãy nhập lý do',
   'Click New Project to create a Charter — or convert a Won deal from the CRM pipeline.': 'Bấm “Dự án mới” để tạo Điều lệ dự án — hoặc chuyển đổi một cơ hội đã thắng từ CRM.',
   'A manager can add you to a project Team (Resources tab) or set you as its Project Manager.': 'Quản lý có thể thêm bạn vào Nhóm dự án (tab Nguồn lực) hoặc đặt bạn làm Quản lý dự án.',
   'End date cannot be before the start date.': 'Ngày kết thúc không được trước ngày bắt đầu.',
@@ -17558,7 +17563,10 @@ async function submitLeave() {
   const start = document.getElementById('leave-start')?.value;
   const end   = document.getElementById('leave-end')?.value;
   const reason= document.getElementById('leave-reason')?.value;
-  if (!type || !start || !end || !reason) { toast('Please fill all fields', 'warn'); return; }
+  if (!type)   { toast('Choose a leave type', 'warn'); return; }
+  if (!start)  { toast('Pick a start date', 'warn'); return; }
+  if (!end)    { toast('Pick an end date', 'warn'); return; }
+  if (!reason) { toast('Enter a reason', 'warn'); return; }
   if (new Date(end) < new Date(start)) { toast(_t('End date cannot be before the start date.'), 'warn'); return; }
   const days = _calcWorkingDays(start, end);
   if (!(days > 0)) { toast(_t('The selected range has no working days — pick different dates.'), 'warn'); return; }
@@ -19660,7 +19668,7 @@ function saveEmployeeProfile() {
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Work Email <span style="color:var(--text-light);font-weight:400">(login)</span></label><input type="email" class="form-control" id="emp-email" placeholder="name@humiley.com" oninput="this.dataset.edited='1'"></div>
-      <div class="form-group"><label class="form-label">Phone Number</label><input type="text" class="form-control" id="emp-phone" placeholder="84..."></div>
+      <div class="form-group"><label class="form-label">Phone Number</label><input type="tel" inputmode="tel" class="form-control" id="emp-phone" placeholder="84..."></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Start Date</label><input type="date" class="form-control" id="emp-start"></div>
