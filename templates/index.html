@@ -3354,6 +3354,23 @@ async function _pushEnroll(interactive) {
     return true;
   } catch (e) { return false; }
 }
+/* Turn OS notifications ON automatically after login. If already granted, just re-register this device.
+   If undecided, prompt on the FIRST user gesture (Safari/Chrome require a user gesture for the
+   permission prompt) — so notifications enable themselves without the user hunting for a button. Once. */
+function _autoEnablePush() {
+  try {
+    if (!window.Notification) return;
+    if (Notification.permission === 'granted') { _pushEnroll(false); return; }
+    if (Notification.permission === 'denied') return;   // respect an explicit decline
+    const arm = () => {
+      document.removeEventListener('pointerdown', arm, true);
+      document.removeEventListener('keydown', arm, true);
+      _pushEnroll(true);
+    };
+    document.addEventListener('pointerdown', arm, true);
+    document.addEventListener('keydown', arm, true);
+  } catch (e) {}
+}
 /* Fan out an OS notification to one or more people (by email) via the backend relay. */
 async function _pushNotify(to, title, body, url) {
   try {
@@ -3362,6 +3379,18 @@ async function _pushNotify(to, title, body, url) {
     if (!arr.length) return;
     await tkApi('/api/push/send', { method: 'POST', body: { to: arr, title: title || 'Humiley Portal', body: body || '', url: url || '/' } });
   } catch (e) { /* non-fatal — email/in-app notifications still fire */ }
+}
+/* Ping the next-level Approvers (Director / Finance — Approver/management level and above) that an item
+   is now awaiting their approval, so EVERY step of a tracked request alerts whoever must act next
+   (submit → reviewer, review → Approvers, decision → requester). */
+function _notifyApprovers(subject, body) {
+  try {
+    const approvers = (_DEMO_EMPLOYEES || [])
+      .filter(e => e && e.email && (e.status || 'Active').toString().toLowerCase() !== 'inactive'
+        && _lvlRank(_deriveLevel(e)) >= _lvlRank('management'))
+      .map(e => e.email);
+    if (approvers.length) _pushNotify([...new Set(approvers)], subject, body, '/');
+  } catch (e) {}
 }
 /* Send myself a test push so users can confirm notifications work on their device. */
 async function tkTestPush() {
@@ -3692,6 +3721,7 @@ function tkApprove(id, btn) {
       const msg = isReview ? ('has been REVIEWED by ' + ((TK.user || {}).name || 'your manager') + ' and is now awaiting Director approval')
         : ('has been APPROVED by ' + ((TK.user || {}).name || 'the Director'));
       tkMailRequester(_e.email, _e.name || _l.emp_name, subj, 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') ' + msg + '.\n\nBest regards,\nHumiley Group Inc. — People & Workplace');
+      if (isReview) _notifyApprovers('Leave awaiting your approval', (_e.name || _l.emp_name || 'An employee') + '’s ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : '') + ') is reviewed and awaiting Director approval.');
       try { await tkBootstrap(); } catch (e) {}
       tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); tkRenderInbox(); } catch (e) {}
       toast('Leave ' + a.to + ' & signed');
@@ -4360,7 +4390,7 @@ async function doLogin(role, opts = {}) {
     : 'Welcome! You are viewing your personal workspace', undefined, 4000);
   try { _resetIdleTimer(); } catch (e) {}   // arm the inactivity auto-logout
   try { _armManagerPoll(); } catch (e) {}   // managers: live auto-refresh of admin views
-  try { _pushEnroll(false); } catch (e) {}  // silently re-register this device for OS push (if already allowed)
+  try { _autoEnablePush(); } catch (e) {}  // turn OS notifications on automatically (prompt on first gesture)
 }
 
 /* ── Microsoft 365 SSO login (live mode) ── */
@@ -7036,6 +7066,9 @@ async function tkFinFlowMail(item, kindLabel, ref, amountLabel, newStatus, reque
     paid:     { label: 'Paid', verb: 'PAID', color: '#205090', glyph: '₫', subj: 'has been paid', extra: '', note: 'Reviewer and approver are copied.' }
   }[st];
   if (!S) return false;
+  // Every step alerts whoever must act next: on REVIEW, ping the next-level Approvers (Director /
+  // Finance) that this request is now awaiting their approval — the requester is notified below.
+  if (st === 'reviewed') _notifyApprovers('Awaiting your approval — ' + kindLabel, (who) + '’s ' + line + ' is reviewed and awaiting Director / Approver approval.');
   const esc = v => _crmEsc(String(v == null ? '' : v));
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const badge = '<span style="display:inline-block;background:' + S.color + ';color:#fff;font-weight:700;font-size:14px;padding:8px 20px;border-radius:24px;letter-spacing:.02em">' + S.glyph + '&nbsp; ' + S.label.toUpperCase() + '</span>';
