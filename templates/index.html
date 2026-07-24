@@ -56,7 +56,7 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 .user-info{overflow:hidden;transition:opacity .2s}
 #sidebar.collapsed .user-info{opacity:0;width:0}
 .user-name{color:#fff;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.user-role{color:rgba(255,255,255,.45);font-size:10px}
+.user-role{color:rgba(255,255,255,.62);font-size:10px}
 
 /* ── MAIN ── */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
@@ -100,6 +100,8 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .empty-state .ico{margin:0 auto 12px;opacity:.45;color:var(--navy);display:flex;justify-content:center}
 .empty-state .msg{font-size:14px;font-weight:700;color:var(--text-dark);margin-bottom:3px}
 .empty-state .sub{font-size:12.5px;color:var(--text-light);max-width:440px;margin:0 auto 14px;line-height:1.6}
+/* Button styled as an inline link (keyboard-focusable, unlike <a> with no href). */
+.linklike{background:none;border:none;padding:0;font:inherit;cursor:pointer;line-height:inherit;text-align:inherit}
 .btn-primary{background:var(--navy);color:#fff}.btn-primary:hover{background:var(--navy-deep)}
 .btn-emerald{background:var(--emerald);color:#fff}.btn-emerald:hover{background:var(--emerald-deep)}
 .btn-outline{background:#fff;color:var(--navy);border:1.5px solid var(--navy)}.btn-outline:hover{background:var(--light-tint)}
@@ -465,7 +467,7 @@ body{
   border-radius:26px;
   box-shadow:0 22px 48px rgba(23,58,107,.28);
 }
-.sidebar-section-label{color:rgba(255,255,255,.4) !important;}
+.sidebar-section-label{color:rgba(255,255,255,.6) !important;}
 /* Collapsed sidebar: scale the logo to fit (overrides inline width/height) */
 #sidebar.collapsed .sidebar-logo{padding:14px 6px 10px !important;}
 #sidebar.collapsed .sidebar-logo img{max-width:44px !important;width:auto !important;height:auto !important;object-fit:contain !important;object-position:center !important;}
@@ -3986,13 +3988,13 @@ function tkESign(opts) {
           '<button type="button" onclick="_esignTogglePin()" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-light);font-size:11px;cursor:pointer;font-weight:600">' + _t('Show') + '</button>' +
         '</div>' +
         '<div id="esign-pin-err" style="display:none;color:var(--danger);font-size:11.5px;margin-top:5px"></div>' +
-        (_msalApp ? '<a onclick="_esignSetMethod(\'m365\')" style="display:inline-block;margin-top:7px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use Microsoft 365 instead') + ' →</a>' : '') +
+        (_msalApp ? '<button type="button" class="linklike" onclick="_esignSetMethod(\'m365\')" style="display:inline-block;margin-top:7px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use Microsoft 365 instead') + ' →</button>' : '') +
       '</div>';
   } else {
     methodHtml =
       '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('You will re-authenticate with Microsoft 365 to complete this signature.') + '</div>' +
-      (hasPin ? '<a onclick="_esignSetMethod(\'pin\')" style="display:inline-block;margin:0 2px 4px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use PIN instead') + ' →</a>'
-              : '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('Tip: set up a signing PIN in My Profile to sign faster.') + ' <a onclick="document.getElementById(\'esignOverlay\').remove();showView(\'myprofile\',null,\'My Profile\')" style="color:var(--navy);cursor:pointer;font-weight:600">' + _t('My Profile') + '</a></div>');
+      (hasPin ? '<button type="button" class="linklike" onclick="_esignSetMethod(\'pin\')" style="display:inline-block;margin:0 2px 4px;font-size:11.5px;color:var(--navy);cursor:pointer;font-weight:600">' + _t('Use PIN instead') + ' →</button>'
+              : '<div style="font-size:11px;color:var(--text-light);margin:0 2px 6px">' + _t('Tip: set up a signing PIN in My Profile to sign faster.') + ' <button type="button" class="linklike" onclick="document.getElementById(\'esignOverlay\').remove();showView(\'myprofile\',null,\'My Profile\')" style="color:var(--navy);cursor:pointer;font-weight:600">' + _t('My Profile') + '</button></div>');
   }
   const el = document.createElement('div'); el.id = 'esignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">' + _t('Electronic Signature') + '</div><button class="modal-close" onclick="document.getElementById(\'esignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
@@ -4009,7 +4011,7 @@ function tkESign(opts) {
       '<span id="esign-sig-hint" style="position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;color:var(--text-light);font-size:13px;pointer-events:none">' + _t('Sign here') + '</span>' +
     '</div>' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">' +
-      '<a onclick="_esignSigClear()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px">' + _t('Clear') + '</a>' +
+      '<button type="button" class="linklike" onclick="_esignSigClear()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px">' + _t('Clear') + '</button>' +
       '<a id="esign-sig-saved" onclick="_esignSigUseSaved()" style="color:var(--navy);cursor:pointer;font-weight:600;font-size:11.5px;display:none">' + _t('Use my saved signature') + '</a>' +
     '</div>' +
     '<label style="display:flex;gap:7px;align-items:center;margin-top:6px;font-size:11.5px;color:var(--text-light)"><input type="checkbox" id="esign-sig-save"><span>' + _t('Remember my signature on this device') + '</span></label>' +
@@ -5137,8 +5139,8 @@ function tkIcon(name, sz) {
 const _PLUS_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
 /* Edit + Delete action buttons for a collection item (type === collection name). */
 function _hrEditDel(type, id, reload) {
-  return '<button class="btn btn-ghost btn-sm" title="Edit" style="font-size:10px;padding:4px 7px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
-    '<button class="btn btn-ghost btn-sm" title="Delete" style="font-size:10px;padding:4px 7px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
+  return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
+    '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
 const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload() };
 async function tkCollDelete(coll, id, reload) {
@@ -10923,7 +10925,7 @@ async function tkRenderDashLevelBand() {
       '<span style="margin-left:auto;font-size:10px;color:var(--text-light);white-space:nowrap">' + (a.ts ? tkFmtDate(a.ts) + ' · ' + new Date(a.ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : (a.tsDisp || '')) + '</span></div>'; };
     band.innerHTML = card('System &amp; Access (Admin)',
       row([box('Staff', counts.staff, '#205090', I_USER), box('Managers', counts.manager, '#3168A8', I_USERS), box('Management', counts.management, '#8B5CF6', I_SHIELD), box('Admins', counts.admin, '#F59E0B', I_KEY)]) +
-      '<div style="margin:12px 0 4px"><a onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</a></div>');
+      '<div style="margin:12px 0 4px"><button type="button" class="linklike" onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</button></div>');
   } else if (lvl === 'management') {
     let gross = 0, erCost = 0; const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
     emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
@@ -10933,7 +10935,7 @@ async function tkRenderDashLevelBand() {
     const I_TREND = '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>';
     band.innerHTML = card('Workforce &amp; Finance (Management)',
       row([box('Monthly gross', _PAY_FMT(gross), '#F59E0B', I_CASH), box('Employer cost', _PAY_FMT(erCost), '#205090', I_BANK), box('Headcount', emps.length, '#8B5CF6', TK_ICON.users), box('Turnover (yr)', turnover + '%', '#EF4444', I_TREND)]) +
-      '<div style="margin-top:12px"><a onclick="showView(\'payroll\',null,\'Payroll\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Open payroll →</a></div>');
+      '<div style="margin-top:12px"><button type="button" class="linklike" onclick="showView(\'payroll\',null,\'Payroll\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Open payroll →</button></div>');
   } else { band.innerHTML = ''; }
 }
 
@@ -11784,7 +11786,7 @@ function _m365ShowPreview() {
     '<div class="modal-header"><div class="modal-title">Sync from Microsoft 365 — review before adding</div>' +
     '<button class="modal-close" onclick="document.getElementById(\'m365SyncOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     summary +
-    '<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><a onclick="_m365TickAll(true)" style="cursor:pointer;color:var(--navy);font-weight:600">Select all</a><a onclick="_m365TickAll(false)" style="cursor:pointer;color:var(--text-light)">Clear all</a></div>' +
+    '<div style="display:flex;gap:14px;margin-bottom:8px;font-size:12px"><button type="button" class="linklike" onclick="_m365TickAll(true)" style="cursor:pointer;color:var(--navy);font-weight:600">Select all</button><button type="button" class="linklike" onclick="_m365TickAll(false)" style="cursor:pointer;color:var(--text-light)">Clear all</button></div>' +
     '<div class="table-wrap" style="max-height:46vh;overflow:auto"><table><thead><tr><th style="width:34px"></th><th>Name</th><th>Work email (login)</th><th>Job title</th><th>Department</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'m365SyncOverlay\').remove()">Cancel</button>' +
     '<button class="btn btn-primary" onclick="tkSyncM365Confirm()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> Confirm &amp; sync</button></div></div>';
@@ -16615,7 +16617,13 @@ function switchHRTab(tab, el) {
 ────────────────────────────────────────────────────────── */
 function openModal(id) {
   const m = document.getElementById(id);
-  if (m) { m.style.display = 'flex'; setTimeout(() => m.classList.add('open'), 10); }
+  if (m) {
+    m.style.display = 'flex'; setTimeout(() => m.classList.add('open'), 10);
+    const dlg = m.querySelector('.modal');
+    if (dlg) { dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); }
+    m._prevFocus = document.activeElement;   // restore focus to the trigger on close
+    setTimeout(() => { const f = m.querySelector('input:not([type=hidden]),select,textarea,button'); if (f) { try { f.focus(); } catch (e) {} } }, 70);
+  }
   if (id === 'leaveModal') { try { _tkFillLeaveModal(); } catch (e) { console.warn('fill leave modal:', e.message); } }
 }
 
@@ -16638,8 +16646,24 @@ function _tkFillLeaveModal() {
 
 function closeModal(id) {
   const m = document.getElementById(id);
-  if (m) { m.classList.remove('open'); setTimeout(() => m.style.display = 'none', 250); }
+  if (m) { m.classList.remove('open'); setTimeout(() => m.style.display = 'none', 250); try { if (m._prevFocus && m._prevFocus.focus) m._prevFocus.focus(); } catch (e) {} }
 }
+
+/* A11y: Escape closes the top-most open (id'd) modal; Enter/Space activates any non-native element
+   marked role="button". Dynamic overlays (tkConfirm) handle their own Escape. */
+document.addEventListener('keydown', function (ev) {
+  if (ev.key === 'Escape') {
+    const open = Array.prototype.filter.call(document.querySelectorAll('.modal-overlay[id]'),
+      o => o.classList.contains('open') || o.style.display === 'flex');
+    const top = open[open.length - 1];
+    if (top && top.id) { try { closeModal(top.id); } catch (e) {} ev.preventDefault(); }
+  } else if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+    const el = document.activeElement;
+    if (el && el.getAttribute && el.getAttribute('role') === 'button' && el.tagName !== 'BUTTON' && el.tagName !== 'A' && typeof el.click === 'function') {
+      ev.preventDefault(); el.click();
+    }
+  }
+}, false);
 
 /* True if the modal has ANY field the user has actually typed into / changed — so an accidental
    click outside never throws away a half-filled form. Empty/unchanged modals still close on
