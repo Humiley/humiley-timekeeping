@@ -14124,6 +14124,30 @@ function _pmReadinessCard(p) {
   const items = r.checks.map(c => '<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;color:' + (c.done ? 'var(--text-light)' : 'var(--text-dark)') + '">' + (c.done ? '<span style="color:#00B060;font-weight:700">✓</span>' : '<span style="display:inline-block;width:13px;height:13px;border:1.5px solid var(--border,#cbd5e1);border-radius:3px;flex-shrink:0"></span>') + '<span style="' + (c.done ? 'text-decoration:line-through' : '') + '">' + c.label + '</span></div>').join('');
   return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border-left:3px solid ' + hex + '"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">Project setup readiness</div><div style="display:flex;align-items:center;gap:10px">' + (_pmSeeAll() ? '<button class="btn btn-outline btn-sm" onclick="pmApplyTemplate(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('plus', 12) + ' Seed from template</button>' : '') + '<div style="font-size:18px;font-weight:800;color:' + hex + '">' + r.pct + '%</div></div></div><div style="height:8px;border-radius:6px;background:var(--soft-bg);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + r.pct + '%;background:' + hex + ';border-radius:6px"></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 18px">' + items + '</div></div>';
 }
+/* Phase-gate governance — a go/no-go decision at each project phase boundary. */
+const _PM_PHASES = ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'];
+function _pmPhaseGatesCard(p) {
+  const gates = (p.gates && typeof p.gates === 'object') ? p.gates : {}, canEdit = _pmSeeAll() || _pmCanEditProject(p), curIdx = _PM_PHASES.indexOf(p.phase);
+  const chips = _PM_PHASES.map((ph, i) => {
+    const g = gates[ph] || {}, dec = g.decision || '', isCur = ph === p.phase;
+    let badge = 'Pending', col = '#94a3b8';
+    if (dec === 'Passed') { badge = '✓ Passed'; col = '#00B060'; } else if (dec === 'Held') { badge = '⏸ Held'; col = '#EF4444'; } else if (isCur) { badge = 'Current'; col = '#205090'; }
+    const sel = canEdit ? '<select onchange="pmGateDecision(\'' + p.id + '\',' + i + ',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--line);border-radius:5px;margin-top:6px;width:100%"><option value=""' + (!dec ? ' selected' : '') + '>— set gate —</option><option value="Passed"' + (dec === 'Passed' ? ' selected' : '') + '>Pass gate</option><option value="Held"' + (dec === 'Held' ? ' selected' : '') + '>Hold</option></select>' : '';
+    return '<div style="flex:1;min-width:118px;background:' + col + '12;border:1px solid ' + col + '44;border-radius:9px;padding:9px 10px' + (isCur ? ';box-shadow:0 0 0 2px ' + col + '33' : '') + '"><div style="font-size:11px;font-weight:700;color:var(--text-dark);margin-bottom:3px">' + _pmEsc(ph) + '</div><div style="font-size:10.5px;font-weight:700;color:' + col + '">' + badge + '</div>' + (g.on ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _pmFmt(g.on) + (g.by ? ' · ' + _pmEsc(g.by) : '') + '</div>' : '') + sel + '</div>';
+  }).join('');
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Phase Gates</div><div style="display:flex;gap:8px;overflow-x:auto;padding-bottom:4px">' + chips + '</div></div>';
+}
+async function pmGateDecision(pid, idx, decision) {
+  const p = _pmProj(pid); if (!p) return; const ph = _PM_PHASES[idx]; if (!ph) return;
+  const gates = Object.assign({}, p.gates || {});
+  if (decision) gates[ph] = { decision: decision, on: _today(), by: (TK.user || {}).name || '' }; else delete gates[ph];
+  p.gates = gates;
+  try {
+    await tkApi('/api/coll/pm_projects/' + pid, { method: 'PATCH', body: Object.assign({}, p, { gates: gates }) });
+    try { tkAudit('Phase gate ' + (decision || 'cleared'), p.name || '', ph); } catch (e) { }
+    toast(decision ? ph + ' gate ' + decision.toLowerCase() : 'Gate cleared'); try { pmTab(_pmTabK); } catch (e) { }
+  } catch (e) { toast(_errMsg(e), 'error', 4000); }
+}
 function pmRenderOverview() {
   const host = document.getElementById('pm-tab-body'); if (!host) return;
   const p = _pmProj(); if (!p) { host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'; return; }
@@ -14172,7 +14196,7 @@ function pmRenderOverview() {
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Deliverables by status</div><div style="height:200px"><canvas id="pm-ov-deliv"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule — tasks</div><div style="height:200px"><canvas id="pm-ov-tasks"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Risk exposure</div><div style="height:200px"><canvas id="pm-ov-risk"></canvas></div></div></div>';
-  host.innerHTML = kpis + _pmReadinessCard(p) + _ovCharts + charter + changeTbl + lessonsTbl;
+  host.innerHTML = kpis + _pmReadinessCard(p) + _pmPhaseGatesCard(p) + _ovCharts + charter + changeTbl + lessonsTbl;
   try {
     _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'].map(_pmT), datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
@@ -14259,6 +14283,28 @@ function _pmCPM(tasks) {
   const map = {}; nodes.forEach(n => { map[n.id] = n; });
   return { map: map, projEnd: projEnd, critical: nodes.filter(n => n.critical).length, hasDeps: nodes.some(n => n.preds.length) };
 }
+/* ── Kanban board — drag a card between status columns to update it (with a re-render on drop). ── */
+let _pmDragItem = null;
+function _pmKanban(coll, statuses, colorFn, titleFn, subFn) {
+  const items = _pmScope(_HR[coll]);
+  const cols = statuses.map(st => {
+    const list = items.filter(x => (x.status || statuses[0]) === st);
+    const cards = list.map(x => '<div draggable="true" ondragstart="_pmKanDragStart(event,\'' + coll + '\',\'' + x.id + '\')" ondragend="_pmDragItem=null" style="background:var(--card);border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin-bottom:8px;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.04)"><div style="font-weight:600;font-size:12.5px">' + _pmEsc(titleFn(x)) + '</div>' + (subFn(x) ? '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _pmEsc(subFn(x)) + '</div>' : '') + '</div>').join('');
+    return '<div ondragover="event.preventDefault()" ondrop="_pmKanDrop(event,\'' + coll + '\',\'' + _tkEscA(st) + '\')" style="flex:1;min-width:172px;background:var(--soft-bg);border-radius:10px;padding:10px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px"><span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:' + colorFn(st) + '">' + _pmEsc(st) + '</span><span style="font-size:11px;color:var(--text-light);background:var(--card);border-radius:10px;padding:0 7px">' + list.length + '</span></div>' + (cards || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:10px 0">—</div>') + '</div>';
+  }).join('');
+  return '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">' + cols + '</div>';
+}
+function _pmKanDragStart(e, coll, id) { _pmDragItem = { coll: coll, id: id }; try { e.dataTransfer.effectAllowed = 'move'; } catch (x) { } }
+function _pmTaskBoardHtml() { return _pmKanban('pm_tasks', ['Not started', 'In progress', 'Completed', 'On hold'], _pmStatusColor, x => (x.wbs ? x.wbs + ' · ' : '') + (x.name || ''), x => [x.assignee, x.finish ? _pmFmt(x.finish) : ''].filter(Boolean).join(' · ')); }
+async function _pmKanDrop(e, coll, status) {
+  e.preventDefault(); const d = _pmDragItem; _pmDragItem = null; if (!d || d.coll !== coll) return;
+  const x = (_HR[coll] || []).find(v => v.id === d.id); if (!x || (x.status || '') === status) return;
+  const prev = x.status; x.status = status;
+  try {
+    await tkApi('/api/coll/' + coll + '/' + d.id, { method: 'PATCH', body: Object.assign({}, x, { status: status }) });
+    const el = document.getElementById('pm-board'); if (el && coll === 'pm_tasks') el.innerHTML = _pmTaskBoardHtml(); else { try { pmTab(_pmTabK); } catch (z) { } }
+  } catch (err) { x.status = prev; toast(_errMsg(err), 'error', 4000); }
+}
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
@@ -14319,7 +14365,8 @@ function pmRenderSchedule(pid) {
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], tasks), pmImportBtn());
-  _pmSet(kpis + gantt + tbl);
+  const board = '<div class="card" style="padding:16px 18px;margin-top:14px"><div class="card-title" style="margin-bottom:2px">Board</div><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  _pmSet(kpis + gantt + tbl + board);
 }
 
 /* ---------- 4. Cost / EVM ---------- */
