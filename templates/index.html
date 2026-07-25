@@ -4147,7 +4147,7 @@ async function _esignGo() {
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
-    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '', sigImage: _sigImage }, signAuth) });
+    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '', sigImage: _sigImage, attach: opts.attach || null }, signAuth) });
     const pe = document.getElementById('esign-pin'); if (pe) pe.value = '';   // never leave the PIN in the DOM
     document.getElementById('esignOverlay')?.remove();
     toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
@@ -8484,10 +8484,44 @@ async function tkPaymentSave(editId) {
     }
   });
 }
-function tkPaymentDecision(id, status) {
+/* Required bank-payment-slip upload shown at "Mark paid" — resolves to {bankSlip,bankSlipName} or null
+   (cancelled). The proof of transfer then rides through the Paid e-signature (see _esign). */
+function _promptBankSlip(label) {
+  return new Promise(resolve => {
+    const ov = document.createElement('div'); ov.className = 'modal-overlay'; ov.style.display = 'flex';
+    ov.innerHTML = '<div class="modal" style="max-width:470px"><div class="modal-header"><div class="modal-title">' + _t('Attach bank payment slip') + '</div><button class="modal-close" id="bs-x">' + tkIcon('x', 16) + '</button></div>' +
+      '<div style="padding:2px 2px 0"><div style="font-size:13px;color:var(--text-light);margin-bottom:12px">' + _t('Upload the bank transfer confirmation (proof of payment) for') + ' <b style="color:var(--navy)">' + _crmEsc(label || '') + '</b>. ' + _t('This is required to mark the payment paid, and is filed with the request, approval and invoice.') + '</div>' +
+      '<input type="file" id="bs-file" accept=".pdf,image/*" class="form-control" style="font-size:13px">' +
+      '<div id="bs-name" style="font-size:12px;color:var(--emerald);font-weight:600;margin-top:8px;display:none"></div></div>' +
+      '<div class="modal-footer"><button class="btn btn-ghost" id="bs-cancel">' + _t('Cancel') + '</button><button class="btn btn-primary" id="bs-go" disabled>' + _t('Continue to sign') + ' →</button></div></div>';
+    document.body.appendChild(ov);
+    let picked = null;
+    const close = v => { try { ov.remove(); } catch (e) {} resolve(v); };
+    ov.querySelector('#bs-x').onclick = () => close(null);
+    ov.querySelector('#bs-cancel').onclick = () => close(null);
+    const fi = ov.querySelector('#bs-file');
+    fi.onchange = () => {
+      const f = fi.files && fi.files[0]; if (!f) return;
+      if (f.size > 8 * 1024 * 1024) { toast(_t('File too large — the bank slip must be under 8 MB.'), 'warn', 5000); fi.value = ''; return; }
+      const r = new FileReader();
+      r.onload = () => { picked = { bankSlip: String(r.result), bankSlipName: f.name }; const nm = ov.querySelector('#bs-name'); nm.textContent = '✓ ' + f.name; nm.style.display = 'block'; ov.querySelector('#bs-go').disabled = false; };
+      r.onerror = () => toast(_t('Could not read the file.'), 'warn');
+      r.readAsDataURL(f);
+    };
+    ov.querySelector('#bs-go').onclick = () => { if (picked) close(picked); };
+  });
+}
+async function tkPaymentDecision(id, status) {
   const p = (_HR.payments || []).find(x => x.id === id); if (!p) return;
+  // Disbursement requires the bank transfer slip (proof of payment) — attached here, signed + stored
+  // atomically by the Paid e-signature, and consolidated into the record's dossier.
+  let attach = null;
+  if (status === 'Paid') {
+    attach = await _promptBankSlip((p.reqNo || '') + (p.payee ? ' · ' + p.payee : ''));
+    if (!attach) return;   // cancelled — required, so do not proceed
+  }
   tkESign({
-    coll: 'payments', id: id, setStatus: status,
+    coll: 'payments', id: id, setStatus: status, attach: attach,
     meaning: status + ' — Payment ' + (p.reqNo || '') + ' · ' + (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0),
     onDone: (item) => {
       if (item) { const i = (_HR.payments || []).findIndex(x => x.id === id); if (i >= 0) _HR.payments[i] = item; }
@@ -8510,8 +8544,57 @@ function _tkPreviewUrl(att, name) {
   } catch (e) { try { window.open(att, '_blank'); } catch (e2) { toast('Could not open the file', 'warn'); } }
 }
 /* Open a submission's attachment (payments/travel carry it directly; claims on their first item). */
-function tkFinShow(coll, id) {
+/* Append an uploaded file (image or PDF data-URI) onto NEW pages of a jsPDF doc, each under a navy
+   banner — so the paid dossier is ONE file: request voucher + approval + invoice + bank slip. */
+async function _appendFileToPdf(doc, dataUri, heading) {
+  if (!doc || !dataUri) return;
+  const W = 210, M = 12, PW = W - 2 * M;
+  const banner = () => { doc.addPage(); doc.setFillColor(32, 80, 144); doc.rect(0, 0, W, 12, 'F'); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(_pdfSafe(heading || ''), M, 8); doc.setTextColor(0, 0, 0); };
+  const isPdf = /^data:application\/pdf/i.test(dataUri) || /\.pdf(\?|$)/i.test(String(heading || ''));
+  try {
+    if (isPdf && window.pdfjsLib) {
+      const b64 = String(dataUri).split(',')[1] || ''; const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i); const vp = page.getViewport({ scale: 2 });
+        const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        banner();
+        doc.addImage(cv.toDataURL('image/jpeg', 0.85), 'JPEG', M, 16, PW, Math.min(PW * (cv.height / cv.width), 270));
+      }
+    } else if (/^data:image/i.test(dataUri)) {
+      const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = dataUri; });
+      banner();
+      if (img) doc.addImage(dataUri, M, 16, PW, Math.min(PW * (img.height / img.width), 270));
+      else { doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not render).'), M, 26); }
+    } else { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached to the record.'), M, 26); }
+  } catch (e) { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not embed).'), M, 26); }
+}
+/* One consolidated PDF for a PAID payment: the branded voucher (request + approval e-signatures),
+   then the invoice/bill, then the bank payment slip. */
+async function _finPaidDossierDoc(rec) {
+  const doc = _finVoucherDoc('payment', rec);
+  if (!doc) return null;
+  if (rec.attachment) await _appendFileToPdf(doc, rec.attachment, _t('Invoice / bill') + (rec.attachmentName ? ' — ' + rec.attachmentName : ''));
+  if (rec.bankSlip) await _appendFileToPdf(doc, rec.bankSlip, _t('Bank payment slip') + (rec.bankSlipName ? ' — ' + rec.bankSlipName : ''));
+  return doc;
+}
+async function tkFinShow(coll, id) {
   const r = (_HR[coll] || []).find(x => x.id === id); if (!r) { toast('Not found', 'warn'); return; }
+  // A PAID payment shows the CONSOLIDATED dossier (voucher + approval + invoice + bank slip) as one PDF.
+  if (coll === 'payments' && String(r.status || '').toLowerCase() === 'paid') {
+    toast(_t2('Building the consolidated payment file…', 'Đang tạo hồ sơ thanh toán hợp nhất…'), 'info', 2500);
+    try {
+      const doc = await _finPaidDossierDoc(r);
+      if (doc) {
+        const url = URL.createObjectURL(doc.output('blob'));
+        tkFilePreview(url, (r.reqNo || 'Payment') + ' — dossier.pdf', 'application/pdf');
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 300000);
+        return;
+      }
+    } catch (e) { /* fall back to the plain bill below */ }
+  }
   let att = r.attachment, name = r.attachmentName;
   if (!att && Array.isArray(r.items)) { const it = r.items.find(i => i.attachment); if (it) { att = it.attachment; name = it.attachmentName; } }
   _tkPreviewUrl(att, name);
@@ -9078,7 +9161,7 @@ async function _finSpArchivePaid(item, kind) {
     const coll = kind === 'claim' ? 'claims' : kind === 'travel' ? 'travel' : 'payments';
     const ref = _finSpRef(item, kind), sub = _finSpSubPath(item, kind);
     toast(_t2('Filing the payment slip to Finance SharePoint…', 'Đang lưu phiếu thanh toán vào SharePoint Tài chính…'), 'info', 3000);
-    const doc = _finVoucherDoc(kind, item);   // reflects the now-Paid status + all e-signatures
+    const doc = await _finPaidDossierDoc(item);   // consolidated: voucher + approval + invoice + bank slip
     const vf = doc && _dataUriToFile(doc.output('datauristring'), ref + '-Payment-Slip.pdf');
     const r = vf && await _graphUploadFile(vf, _finSpProj(), sub);
     if (r && r.webUrl) {

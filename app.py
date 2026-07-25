@@ -2419,6 +2419,15 @@ class Handler(BaseHTTPRequestHandler):
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
         if _err:
             return self._err(_err, 403)
+        # A payment disbursement MUST carry the bank transfer slip (proof of payment). Enforce it BEFORE
+        # appending the signature so a slip-less attempt never strands an orphan Paid e-signature. Allow
+        # it if the record already holds one (re-signing / an already-attached slip).
+        if set_status == "Paid" and coll == "payments":
+            _att = body.get("attach") or {}
+            _slip = _att.get("bankSlip") if isinstance(_att, dict) else ""
+            _has_slip = (isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 8_000_000) or bool(item.get("bankSlip"))
+            if not _has_slip:
+                return self._err("A bank payment slip is required to mark a payment paid.", 400)
         item.setdefault("signatures", []).append(sig)
         if set_status:
             item["status"] = set_status
@@ -2432,6 +2441,16 @@ class Handler(BaseHTTPRequestHandler):
                 item["approvedBy"] = signer_name
             if set_status == "Paid":
                 item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
+                item["paidBy"] = signer_name
+                # Proof of payment: the bank transfer slip attached at Mark-paid rides through THIS
+                # authorized disbursement e-signature — decided money records are otherwise immutable to
+                # non-admins, so this is the only place it can be attached. Bounded so it can't bloat
+                # the record; must be a data: URI (an uploaded file, never a URL/script).
+                _att = body.get("attach") or {}
+                _slip = _att.get("bankSlip") if isinstance(_att, dict) else ""
+                if coll == "payments" and isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 8_000_000:
+                    item["bankSlip"] = _slip
+                    item["bankSlipName"] = str(_att.get("bankSlipName") or "bank-payment-slip")[:120]
         db.put_collection_item(coll, item)
         db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
             "action": "E-signature — " + meaning,
