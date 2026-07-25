@@ -3390,8 +3390,9 @@ function _notifyApprovers(subject, body) {
         && _lvlRank(_deriveLevel(e)) >= _lvlRank('management'))
       .map(e => e.email))];
     if (!approvers.length) return;
-    _pushNotify(approvers, subject, body, '/');                                  // OS push
-    approvers.forEach(em => { try { tkNotifyGraph(em, subject, body); } catch (e) {} });   // + email
+    _pushNotify(approvers, subject, body, '/');                                  // OS push (one relay call to all)
+    // Email each approver; post to the Teams channel only ONCE (i>0 skips the duplicate channel post).
+    approvers.forEach((em, i) => { try { tkNotifyGraph(em, subject, body, i > 0); } catch (e) {} });
   } catch (e) {}
 }
 /* Send myself a test push so users can confirm notifications work on their device. */
@@ -5066,7 +5067,7 @@ function tkAudit(action, target, detail) {
   try { tkApi('/api/coll/audit', { method: 'POST', body: entry }).catch(() => {}); } catch (e) {}
 }
 /* Background-safe notification: silent Microsoft Graph email + optional Teams webhook. No mailto (won't hijack the browser). */
-async function tkNotifyGraph(to, subject, body) {
+async function tkNotifyGraph(to, subject, body, noTeams) {
   let sent = false;
   if (to && _msalApp && _account) {
     try {
@@ -5075,8 +5076,12 @@ async function tkNotifyGraph(to, subject, body) {
       sent = resp.ok;
     } catch (e) {}
   }
-  const hook = window._TK_TEAMS_WEBHOOK || (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook);
-  if (hook) { try { fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: subject, text: body }) }).catch(() => {}); sent = true; } catch (e) {} }
+  // The Teams webhook is a CHANNEL post, not per-recipient — callers that fan out to several people
+  // (e.g. _notifyApprovers) pass noTeams on all but the first so the channel isn't spammed N times.
+  if (!noTeams) {
+    const hook = window._TK_TEAMS_WEBHOOK || (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook);
+    if (hook) { try { fetch(hook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: subject, text: body }) }).catch(() => {}); sent = true; } catch (e) {} }
+  }
   return sent;
 }
 /* Humiley onboarding procedure (HR-08 Onboarding Handbook / C&B 5-day + 30-60-90). */
