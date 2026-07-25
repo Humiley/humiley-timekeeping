@@ -454,6 +454,99 @@ def _einv_from_zip(zip_bytes):
     return None
 
 
+def _einv_all_from_zip(zip_bytes):
+    """Parse EVERY e-invoice XML inside a ZIP — a single ZIP can bundle many invoices. Zip-bomb guarded."""
+    out = []
+    if not zip_bytes or len(zip_bytes) > 8 * 1024 * 1024:
+        return out
+    try:
+        z = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except Exception:
+        return out
+    checked = 0
+    for zi in z.infolist():
+        if not zi.filename.lower().endswith(".xml"):
+            continue
+        if zi.file_size > _EINV_MAX_BYTES:                  # skip an over-large (bomb) member
+            continue
+        checked += 1
+        if checked > 40:
+            break
+        try:
+            r = _einv_parse_xml(z.read(zi.filename))
+        except Exception:
+            r = None
+        if r:
+            r["method"] = "zip-xml"
+            out.append(r)
+    return out
+
+
+def _inv_ident(ex):
+    """Canonical identity of a parsed invoice = invoice-no (+ seller-MST when present). Used to key each
+       distinct invoice's row; the invoice number is unique per seller, so the XML and PDF of the SAME
+       invoice share it even if the PDF's serial is formatted differently or its MST wasn't extracted."""
+    if not ex:
+        return None
+    n = str(ex.get("invNo") or "").strip()
+    if not n:
+        return None
+    t = str(ex.get("taxCode") or "").split("-")[0].strip()
+    return (n, t)
+
+
+def _inv_ident_str(ex):
+    """A short string form of the identity — gives each invoice from the same email a DISTINCT stable row key."""
+    ident = _inv_ident(ex)
+    if ident:
+        return "|".join(x for x in ident if x)
+    return (str(ex.get("serial") or "") + "|" + str(int(float(ex.get("after") or 0)))) or "x"
+
+
+def _invtrack_merge_inv(dst, src, sf):
+    """Fold a duplicate parse of the SAME invoice (delivered as a second file) into dst: fill blank fields,
+       take a positive amount over a blank one, and add the file."""
+    def pos(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+    for f in ("before", "vat", "after"):
+        if pos(dst.get(f)) <= 0 and pos(src.get(f)) > 0:
+            dst[f] = src[f]
+    for f in ("serial", "invNo", "taxCode", "supplier", "dateISO", "dateRaw", "desc", "lookup", "lookupCode", "method", "_attachName"):
+        if not dst.get(f) and src.get(f):
+            dst[f] = src[f]
+    if sf and sf.get("id") not in {x.get("id") for x in (dst.get("_files") or [])}:
+        dst.setdefault("_files", []).append(sf)
+
+
+def _invtrack_dedupe_invoices(parsed):
+    """parsed = [(invoice_dict, its_stored_file_ref_or_None), …] gathered from ALL of an email's attachments.
+       Collapse the same invoice delivered as multiple files (XML + PDF share the invoice-no), keep DISTINCT
+       invoices separate. Tolerant: one file may miss the seller-MST. Returns invoice dicts, each with `_files`."""
+    out = []
+    for ex, sf in parsed:
+        if not ex:
+            continue
+        n = str(ex.get("invNo") or "").strip()
+        t = str(ex.get("taxCode") or "").split("-")[0].strip()
+        merged = False
+        if n:
+            for prev in out:
+                pn = str(prev.get("invNo") or "").strip()
+                pt = str(prev.get("taxCode") or "").split("-")[0].strip()
+                if pn == n and (not t or not pt or t == pt):   # same invoice-no + compatible (or missing) seller-MST
+                    _invtrack_merge_inv(prev, ex, sf)
+                    merged = True
+                    break
+        if not merged:
+            ex = dict(ex)
+            ex["_files"] = [sf] if sf else []
+            out.append(ex)
+    return out
+
+
 def _einv_parse_text(text):
     """Best-effort structured fields from OCR/PDF text (Vietnamese invoice labels)."""
     if not text:
@@ -1103,7 +1196,7 @@ def _invtrack_sync(trigger="manual"):
         try:
             link_budget = [20]                         # bound outbound file downloads per sync run
             att_seen = [0]; att_parsed = [0]
-            def _fetch_ex(msg):                        # parse the first parseable attachment; else a DIRECT file link in the body
+            def _fetch_ex(msg):                        # parse EVERY parseable attachment (many invoices per email); else a body file link
                 if not msg.get("hasAttachments") and link_budget[0] <= 0:
                     return None
                 if not msg.get("hasAttachments"):
@@ -1113,7 +1206,7 @@ def _invtrack_sync(trigger="manual"):
                     # contentBytes is $select'ed; the full projection includes contentBytes anyway.
                     aj = _graph_get(base + "/messages/" + urllib.parse.quote(msg["id"], safe="") + "/attachments", token)
                     files = []                                          # every stored PDF/XML/ZIP → shown as a real file link
-                    ex = None
+                    parsed = []                                         # (invoice_dict, its stored file ref) for EVERY invoice found
                     for a in aj.get("value", []):
                         nm = (a.get("name") or "").lower()
                         ct = (a.get("contentType") or "").lower()
@@ -1127,21 +1220,30 @@ def _invtrack_sync(trigger="manual"):
                             if sp:
                                 sf["spUrl"] = sp   # SharePoint archive link (when configured + consented)
                             files.append(sf)
-                        if ex is None:                                  # parse the FIRST parseable attachment for the fields
-                            if nm.endswith(".xml") or "xml" in ct:
-                                ex = _einv_parse_xml(raw)
-                            elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
-                                ex = _einv_from_zip(raw)
-                            elif nm.endswith(".pdf") or "pdf" in ct:
-                                ex = _einv_from_pdf(raw)                 # text-layer PDF (no OCR needed)
-                                if not ex and INVTRACK["ocr_url"]:
-                                    ex = _invtrack_ocr_pdf(raw)          # image-only PDF fallback
-                            if ex:
-                                ex["_attachName"] = a.get("name")
-                    if ex:
-                        if files:
-                            ex["_files"] = files
-                        return ex
+                        exs = []                                        # a ZIP may bundle MANY invoices; an XML/PDF = one
+                        if nm.endswith(".xml") or "xml" in ct:
+                            r = _einv_parse_xml(raw); exs = [r] if r else []
+                        elif nm.endswith(".zip") or "zip" in ct or "compressed" in ct:
+                            exs = _einv_all_from_zip(raw)
+                        elif nm.endswith(".pdf") or "pdf" in ct:
+                            r = _einv_from_pdf(raw)                      # text-layer PDF (no OCR needed)
+                            if not r and INVTRACK["ocr_url"]:
+                                r = _invtrack_ocr_pdf(raw)               # image-only PDF fallback
+                            exs = [r] if r else []
+                        for r in exs:
+                            if r:
+                                r["_attachName"] = a.get("name")
+                                parsed.append((r, sf))
+                    invoices = _invtrack_dedupe_invoices(parsed)         # collapse same-invoice XML+PDF, keep distinct invoices apart
+                    if invoices:
+                        attributed = {f.get("id") for inv in invoices for f in (inv.get("_files") or [])}
+                        leftover = [f for f in files if f.get("id") not in attributed]   # non-parsing files → onto the primary row
+                        primary = invoices[0]
+                        primary["_files"] = (primary.get("_files") or []) + leftover
+                        extra = [inv for inv in invoices[1:] if str(inv.get("invNo") or "").strip()]   # only well-identified extras
+                        if extra:
+                            primary["_extra"] = extra                    # additional DISTINCT invoices → one extra row each
+                        return primary
                     if files:
                         # attachments were captured but none parsed cleanly — still surface the files, and
                         # try the body/link so the amount can come from the notification text.
@@ -1174,6 +1276,11 @@ def _invtrack_sync(trigger="manual"):
                     if ex:
                         return ex
                 return None
+            def _emit_extras(mm, exn, mid_):           # additional DISTINCT invoices in the same email → one row each
+                for ex2 in ((exn or {}).get("_extra") or []):
+                    it2 = _invtrack_item(mm, ex2)
+                    it2["msgId"] = (mid_ or "") + "::" + _inv_ident_str(ex2)   # distinct row key per invoice; deduped by content at merge
+                    new_items.append(it2)
             while url and pages < cap:
                 j = _graph_get(url, token)
                 for m in j.get("value", []):
@@ -1187,13 +1294,17 @@ def _invtrack_sync(trigger="manual"):
                         # …and to backfill the captured FILE (view-file column + SharePoint archive) onto rows that
                         # predate it — re-fetch once when the amount OR the files are still missing. After the first
                         # manual pass every row has its files, so later manual syncs only re-touch amount-blank rows.
-                        if trigger == "manual" and (not (float(stored.get("after") or 0) > 0) or not stored.get("files")):
+                        if trigger == "manual" and (not (float(stored.get("after") or 0) > 0) or not stored.get("files") or (m.get("hasAttachments") and not stored.get("_multiScanned"))):
                             ex = _fetch_ex(m)           # the scheduler stays cheap (body-only) to avoid per-message cost
                         if m.get("hasAttachments"):
                             att_seen[0] += 1
                             if ex and ex.get("_attachName"):
                                 att_parsed[0] += 1
-                        enrich[mid] = _invtrack_item(m, ex)
+                        ei = _invtrack_item(m, ex)
+                        if ex is not None:              # we scanned this email's attachments for additional invoices
+                            ei["_multiScanned"] = True
+                            _emit_extras(m, ex, mid)    # add any not-yet-stored extra invoices (deduped by content at merge)
+                        enrich[mid] = ei
                         continue
                     exn = _fetch_ex(m)
                     if m.get("hasAttachments"):
@@ -1204,6 +1315,7 @@ def _invtrack_sync(trigger="manual"):
                     new_items.append(item)
                     if item.get("needsLookup"):
                         needlook += 1
+                    _emit_extras(m, exn, mid)           # extra distinct invoices in the same email get their own rows
                 url = j.get("@odata.nextLink", "")
                 pages += 1
         except Exception as e:
@@ -1251,6 +1363,8 @@ def _invtrack_sync(trigger="manual"):
                     ex_item[f] = bfi[f]; ch = True
             if bfi.get("method") == "link" and (ex_item.get("method") in (None, "", "email")):
                 ex_item["method"] = "link"; ch = True
+            if bfi.get("_multiScanned"):
+                ex_item["_multiScanned"] = True   # remember we've scanned this email's attachments for extra invoices (bounds re-fetch)
             if ch:
                 enriched += 1
         cur_items = _invtrack_collapse(cur_items)   # fold any blank-notification + filled duplicate rows
