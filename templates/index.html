@@ -11663,6 +11663,8 @@ const _QA_SPECS = {
     { k: 'internalExternal', label: 'Internal / External', type: 'select', options: ['Internal', 'External'] },
     { k: 'influence', label: 'Influence', type: 'select', options: ['Low', 'Medium', 'High'] }, { k: 'interest', label: 'Interest', type: 'select', options: ['Low', 'Medium', 'High'] },
     { k: 'attitude', label: 'Attitude', type: 'select', options: ['Supporter', 'Neutral', 'Resistor', 'Blocker'] },
+    { k: 'engageCurrent', label: 'Engagement — current', type: 'select', options: ['', 'Unaware', 'Resistant', 'Neutral', 'Supportive', 'Leading'] },
+    { k: 'engageDesired', label: 'Engagement — desired', type: 'select', options: ['', 'Unaware', 'Resistant', 'Neutral', 'Supportive', 'Leading'] },
     { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' }, { k: 'engagementStrategy', label: 'Engagement strategy', type: 'textarea' }] },
   pm_rfis: { title: 'RFI / Submittal', coll: 'pm_rfis', reload: 'pm_rfis', fields: [
     { k: 'subject', label: 'Subject' }, { k: 'number', label: 'Number' },
@@ -14008,6 +14010,28 @@ function _pmOverviewSpCard(p) {
   else row = base ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + open + viewAll + '</div>' : '<div style="font-size:12px;color:var(--text-light)">No SharePoint link set yet — a project manager can add it.</div>';
   return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Project Documents (SharePoint)</div>' + hint + row + '</div>';
 }
+/* Setup-readiness — a guided checklist so a new project is easy to stand up the PMBOK way. */
+function _pmReadiness(p) {
+  const pid = p.id, has = (coll, fn) => (_pmScopeFor(coll, pid) || []).some(fn || (() => true));
+  const checks = [
+    { label: 'Charter — objectives, scope & success criteria', done: !!(p.objectives && (p.scopeSummary || p.scopeStatement) && (p.successCriteria || p.acceptanceCriteriaProject)) },
+    { label: 'Budget & baseline set', done: !!(+p.budget && _pmBaseline(p)) },
+    { label: 'WBS / deliverables defined', done: has('pm_deliverables') },
+    { label: 'Schedule — tasks & milestones', done: _pmScopeFor('pm_tasks', pid).some(t => String(t.isMilestone) === 'Yes') },
+    { label: 'Risk register started', done: has('pm_risks') },
+    { label: 'Team assigned (Resources)', done: has('pm_resources') },
+    { label: 'Stakeholders mapped', done: has('pm_stakeholders') },
+    { label: 'Quality — ITP / quality plan', done: has('pm_quality_itp') || has('pm_quality') }
+  ];
+  const done = checks.filter(c => c.done).length;
+  return { checks: checks, done: done, total: checks.length, pct: Math.round(done / checks.length * 100) };
+}
+function _pmReadinessCard(p) {
+  const r = _pmReadiness(p); if (r.pct >= 100) return '';
+  const hex = r.pct >= 75 ? '#00B060' : r.pct >= 40 ? '#F59E0B' : '#EF4444';
+  const items = r.checks.map(c => '<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;color:' + (c.done ? 'var(--text-light)' : 'var(--text-dark)') + '">' + (c.done ? '<span style="color:#00B060;font-weight:700">✓</span>' : '<span style="display:inline-block;width:13px;height:13px;border:1.5px solid var(--border,#cbd5e1);border-radius:3px;flex-shrink:0"></span>') + '<span style="' + (c.done ? 'text-decoration:line-through' : '') + '">' + c.label + '</span></div>').join('');
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border-left:3px solid ' + hex + '"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">Project setup readiness</div><div style="font-size:18px;font-weight:800;color:' + hex + '">' + r.pct + '%</div></div><div style="height:8px;border-radius:6px;background:var(--soft-bg);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + r.pct + '%;background:' + hex + ';border-radius:6px"></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 18px">' + items + '</div></div>';
+}
 function pmRenderOverview() {
   const host = document.getElementById('pm-tab-body'); if (!host) return;
   const p = _pmProj(); if (!p) { host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'; return; }
@@ -14056,7 +14080,7 @@ function pmRenderOverview() {
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Deliverables by status</div><div style="height:200px"><canvas id="pm-ov-deliv"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Schedule — tasks</div><div style="height:200px"><canvas id="pm-ov-tasks"></canvas></div></div>' +
     '<div class="card" style="padding:16px 18px"><div class="card-title" style="margin-bottom:10px">Risk exposure</div><div style="height:200px"><canvas id="pm-ov-risk"></canvas></div></div></div>';
-  host.innerHTML = kpis + _ovCharts + charter + changeTbl + lessonsTbl;
+  host.innerHTML = kpis + _pmReadinessCard(p) + _ovCharts + charter + changeTbl + lessonsTbl;
   try {
     _mkChart('pm-ov-cost', { type: 'bar', data: { labels: ['Budget', 'Earned', 'Actual'].map(_pmT), datasets: [{ data: [ev.bac, ev.ev, ev.ac], backgroundColor: ['#205090', '#00B060', '#F59E0B'], borderRadius: 5, maxBarThickness: 60 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
     const dS = {}; _pmScopeFor('pm_deliverables', p.id).forEach(d => { const st = d.status || 'Not started'; dS[st] = (dS[st] || 0) + 1; });
@@ -14523,6 +14547,22 @@ function pmRenderProcurement(pid) {
 
 /* ---------- 10. Stakeholders (power/interest grid) ---------- */
 function _pmQuadLabel(q) { if (typeof _LANG === 'undefined' || _LANG.cur !== 'vi') return q; const m = { 'Manage Closely': 'Quản lý sát', 'Keep Satisfied': 'Giữ hài lòng', 'Keep Informed': 'Thông báo thường xuyên', 'Monitor': 'Theo dõi' }; return m[q] || q; }
+/* Stakeholder Engagement Assessment Matrix — current (C) vs desired (D) across the 5 PMBOK levels. */
+function _pmEngageMatrix(sk) {
+  const ENG = ['Unaware', 'Resistant', 'Neutral', 'Supportive', 'Leading'];
+  const withEng = sk.filter(s => s.engageCurrent || s.engageDesired);
+  if (!withEng.length) return '';
+  const gaps = withEng.filter(s => s.engageCurrent && s.engageDesired && s.engageCurrent !== s.engageDesired).length;
+  const head = '<th style="text-align:left;padding:7px 10px;position:sticky;left:0;background:var(--card);min-width:150px">Stakeholder</th>' + ENG.map(e => '<th style="font-size:11px;padding:6px 10px;text-align:center;white-space:nowrap">' + e + '</th>').join('');
+  const rows = withEng.map(s => '<tr><td style="font-weight:600;font-size:12px;padding:7px 10px;position:sticky;left:0;background:var(--card);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px;border-top:1px solid var(--line-soft,#eef2f8)">' + _pmEsc(s.name || '') + '</td>' + ENG.map(e => {
+    const isC = s.engageCurrent === e, isD = s.engageDesired === e; let cell = '<span style="color:var(--line)">·</span>';
+    if (isC && isD) cell = '<span style="display:inline-block;background:#00B060;color:#fff;border-radius:5px;font-size:10px;font-weight:700;padding:1px 6px">C=D</span>';
+    else if (isC) cell = '<span style="display:inline-block;background:#F59E0B;color:#fff;border-radius:5px;font-size:10px;font-weight:700;padding:1px 7px">C</span>';
+    else if (isD) cell = '<span style="display:inline-block;background:#205090;color:#fff;border-radius:5px;font-size:10px;font-weight:700;padding:1px 7px">D</span>';
+    return '<td style="text-align:center;padding:5px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + cell + '</td>';
+  }).join('') + '</tr>').join('');
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">Engagement Assessment Matrix</div><div style="font-size:11px;color:var(--text-light)"><span style="color:#F59E0B;font-weight:700">C</span> current &nbsp;<span style="color:#205090;font-weight:700">D</span> desired' + (gaps ? ' &nbsp;·&nbsp; <b style="color:#EF4444">' + gaps + ' gap' + (gaps === 1 ? '' : 's') + ' to close</b>' : '') + '</div></div><div class="table-wrap"><table style="border-collapse:collapse;font-size:12px;min-width:560px"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
 function pmRenderStakeholders(pid) {
   const sk = _pmScope(_HR.pm_stakeholders);
   const manage = sk.filter(s => (s.quadrant || _pmQuadrant(s.influence, s.interest)) === 'Manage Closely').length;
@@ -14538,7 +14578,7 @@ function pmRenderStakeholders(pid) {
     { label: 'Quadrant', render: r => { const qd = r.quadrant || _pmQuadrant(r.influence, r.interest); return _pmBadge(_pmQuadLabel(qd), SK_QUAD_HEX[qd]); } },
     { label: 'Attitude', k: 'attitude' }
   ], _sRows));
-  _pmSet(kpis + grid + tbl);
+  _pmSet(kpis + grid + _pmEngageMatrix(sk) + tbl);
 }
 
 /* ---------- 11. Doc Control (RFIs / Submittals + Site Daily Reports) ---------- */
