@@ -14303,7 +14303,7 @@ function _pmCalendarHtml(pid) {
     let si = idxOf(s), fi = idxOf(f); if (fi < si) { const x = si; si = fi; fi = x; }
     if (fi < 0 || si > totalCells - 1) return;                                    // task lies outside this month view
     const color = ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090'));
-    events.push({ id: t.id, si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), ms, color,
+    events.push({ id: t.id, si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), rsi: si, rfi: fi, ms, color,
       pct: ms ? 0 : ((t.status === 'Completed') ? 100 : _pmPct(t.pctComplete)),
       roundL: si >= 0, roundR: fi <= totalCells - 1,
       label: (ms ? '◆ ' : '') + (t.wbs ? t.wbs + ' ' : '') + (t.name || '(untitled)') });
@@ -14354,7 +14354,7 @@ function _pmCalendarHtml(pid) {
       // fills continuously (early weeks solid-done, the boundary week half-filled, later weeks empty).
       let bg = 'background:' + ev.color + ';';
       if (!ev.ms && ev.pct > 0) {
-        const tspan = ev.fi - ev.si + 1, doneEnd = ev.si + ev.pct / 100 * tspan;
+        const tspan = ev.rfi - ev.rsi + 1, doneEnd = ev.rsi + ev.pct / 100 * tspan;   // true span (not grid-clamped) so cross-month bars fill accurately
         const frac = Math.max(0, Math.min(100, Math.round((doneEnd - (ws + cs)) / span * 100)));
         if (frac >= 100) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.38));';
         else if (frac > 0) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(to right,rgba(0,0,0,.38) 0,rgba(0,0,0,.38) ' + frac + '%,rgba(0,0,0,0) ' + frac + '%);';
