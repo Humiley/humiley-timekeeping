@@ -14264,7 +14264,7 @@ function pmRenderScope(pid) {
 /* ---------- 3. Schedule (Gantt) ---------- */
 let _pmSchedSel = '';
 let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
-let _pmCalMonth = '', _pmCalPid = '';   // calendar sub-view state
+let _pmCalMonth = '', _pmCalPid = '', _pmCalFilter = 'all';   // calendar sub-view state
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 /* Calendar view of the WHOLE schedule — Google-Calendar style: each multi-day task renders as a BAR
    spanning its date range (wrapping across weeks, lane-packed so overlaps stack), milestones as ◆ pills.
@@ -14293,9 +14293,20 @@ function _pmCalendarHtml(pid) {
   const totalCells = Math.round((gridEnd - gridStart) / DAY) + 1, weeks = totalCells / 7;
   const idxOf = ds => { const p = ds.split('-'); return Math.round((new Date(+p[0], +p[1] - 1, +p[2]) - gridStart) / DAY); };
 
+  // Active filter (chips below the header). Month clamp + CPM still use ALL tasks; only what's PLOTTED narrows.
+  const _meL = ((TK.user && TK.user.name) || '').toLowerCase();
+  const _calMatch = t => {
+    if (_pmCalFilter === 'milestones') return String(t.isMilestone) === 'Yes';
+    if (_pmCalFilter === 'critical') return crit(t);
+    if (_pmCalFilter === 'mine') return String(t.assignee || '').toLowerCase() === _meL;
+    if (_pmCalFilter === 'open') return String(t.status) !== 'Completed' && _pmPct(t.pctComplete) < 100;
+    return true;
+  };
+  const vtasks = _pmCalFilter === 'all' ? tasks : tasks.filter(_calMatch);
+
   // Build bar events from every dated task/milestone; count undated ones for an honest footnote.
   let undated = 0; const events = [];
-  tasks.forEach(t => {
+  vtasks.forEach(t => {
     const ms = String(t.isMilestone) === 'Yes';
     let s = _dnorm(t.start), f = _dnorm(t.finish);
     if (ms) { const d = f || s; if (!d) { undated++; return; } s = f = d; }
@@ -14367,11 +14378,23 @@ function _pmCalendarHtml(pid) {
   const undnote = undated ? '<div style="margin-top:8px;font-size:11px;color:var(--text-light)">+ ' + undated + ' item' + (undated > 1 ? 's' : '') + ' with no date set (not shown — add a start/finish to place ' + (undated > 1 ? 'them' : 'it') + ')</div>' : '';
   const sw = c => '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + c + ';vertical-align:middle"></span>';
   const legend = '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span>' + sw('#205090') + ' Task</span><span>' + sw('#EF4444') + ' Critical</span><span>' + sw('#00B060') + ' Done</span></div>';
+  const filterBar = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' + _PM_CAL_FILTERS.map(o => _pmCalFiltBtn(o[0], o[1])).join('') + '</div>';
+  const emptyNote = (events.length === 0 && _pmCalFilter !== 'all') ? '<div style="margin-top:8px;font-size:12px;color:var(--text-light)">No matching items in ' + monthLabel + ' — try another month or clear the filter.</div>' : '';
   return '<div class="card" style="padding:16px 18px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-ghost btn-sm" onclick="pmCalNav(-1)" style="font-size:16px;padding:0 11px;line-height:1.6">‹</button><div class="card-title" style="min-width:158px;text-align:center">' + monthLabel + '</div><button class="btn btn-ghost btn-sm" onclick="pmCalNav(1)" style="font-size:16px;padding:0 11px;line-height:1.6">›</button><button class="btn btn-outline btn-sm" onclick="pmCalNav(0)" style="font-size:11px">Today</button></div>' +
     legend + '</div>' +
-    '<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden">' + head + rows + '</div>' + undnote + '</div>';
+    filterBar +
+    '<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden">' + head + rows + '</div>' + emptyNote + undnote + '</div>';
+}
+const _PM_CAL_FILTERS = [['all', 'All'], ['milestones', '◆ Milestones'], ['critical', 'Critical'], ['mine', 'My tasks'], ['open', 'Open']];
+function _pmCalFiltBtn(key, label) {
+  const on = _pmCalFilter === key;
+  return '<button onclick="pmCalFilter(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:11.5px;padding:5px 12px;border-radius:8px;cursor:pointer;white-space:nowrap">' + label + '</button>';
+}
+function pmCalFilter(key) {
+  _pmCalFilter = key;
+  const el = document.getElementById('psch-calendar'); if (el) el.innerHTML = _pmCalendarHtml(_pmPid());
 }
 function pmCalNav(delta) {
   if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
