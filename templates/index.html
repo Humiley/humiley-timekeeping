@@ -13528,7 +13528,7 @@ function _pmDerive(coll, data) {
   }
 }
 /* Auto-number registers: <first-3-letters-of-project-name>-<TAG>-NNN (e.g. BAO-CR-001) */
-const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' } };
+const _PM_NUMSPEC = { pm_changes: { f: 'crNo', tag: 'CR' }, pm_risks: { f: 'riskNo', tag: 'RISK' }, pm_issues: { f: 'issueNo', tag: 'ISS' }, pm_rfis: { f: 'number', tag: 'RFI' }, pm_quality: { f: 'refNo', tag: 'QA' }, pm_procurement: { f: 'pkgNo', tag: 'PKG' }, pm_quality_itp: { f: 'itpNo', tag: 'ITP' }, pm_procurement_payments: { f: 'certNo', tag: 'IPC' } };
 function _pmPrefix3(pid) { const p = _pmProj(pid); const nm = String((p && p.name) || '').replace(/[^A-Za-z0-9]/g, ''); return (nm.slice(0, 3) || 'PRJ').toUpperCase(); }
 function _pmAutoNumber(coll, data) {
   const sp = _PM_NUMSPEC[coll]; if (!sp) return;
@@ -13577,10 +13577,26 @@ function pmStatusPDF(pid) {
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Manager', p.manager], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall Progress', sr.pct + '%'], ['Health (RAG)', _pmEffectiveRag(p) + (p.ragReason ? '  —  ' + p.ragReason : '')]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; const M = 15; doc.setDrawColor(220, 224, 230); doc.line(M, y, 195, y); y += 6;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
-  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI', ev.cpi.toFixed(2)], ['SPI', ev.spi.toFixed(2)], ['Forecast (EAC)', _pmMoney(ev.eac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
+  const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', _pmMoney(ev.eac)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
-  [['Deliverables Accepted', sr.accepted + ' / ' + sr.total], ['Milestones (overdue)', tr.milestones + ' (' + tr.overdueMs + ')'], ['Open Risks (High+)', rr.open + ' (' + rr.high + ')'], ['Open Issues', _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length], ['Open RFIs', _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open').length]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
-  _brandFooter(doc, 1, 1, 'HML-PMC-STA');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
+  const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
+  const openRfis = _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open');
+  const chs = _pmScopeFor('pm_changes', p.id);
+  const chPend = chs.filter(c => (c.decision || 'Pending') === 'Pending'), chAppr = chs.filter(c => c.decision === 'Approved');
+  const chCost = chAppr.reduce((s, c) => s + (+c.impactCost || 0), 0), chDays = chAppr.reduce((s, c) => s + (+c.impactScheduleDays || 0), 0);
+  [['Deliverables Accepted', sr.accepted + ' / ' + sr.total], ['Milestones (overdue)', tr.milestones + ' (' + tr.overdueMs + ')'], ['Open Risks (High+)', rr.open + ' (' + rr.high + ')'], ['Open Issues', openIssues.length], ['Open RFIs', openRfis.length], ['Change Requests', chs.length + ' total  ·  ' + chPend.length + ' pending  ·  ' + chAppr.length + ' approved'], ['Approved change impact', _pmMoney(chCost) + '   ·   ' + chDays + ' days']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  const sectionT = t => { if (y > 250) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } y += 2; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
+  const bullet = txt => { if (y > 285) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
+  const topRisks = openRisks.slice().sort((a, b) => (+b.score || 0) - (+a.score || 0)).slice(0, 5);
+  if (topRisks.length) { sectionT('Top Open Risks'); topRisks.forEach(r => bullet((r.riskNo ? r.riskNo + '  ' : '') + (r.title || '') + '  —  score ' + (r.score || 0) + ' (' + _pmRiskBand(+r.score || 0).band + ')' + (r.owner ? ', owner ' + r.owner : '') + (+r.costImpact ? ', EMV ' + _pmMoney(_pmEmv(r)) : ''))); }
+  if (openIssues.length) { sectionT('Open Issues'); openIssues.slice(0, 5).forEach(i => bullet((i.issueNo ? i.issueNo + '  ' : '') + (i.title || '') + (i.priority ? '  (' + i.priority + ')' : '') + (i.owner ? ', owner ' + i.owner : '') + (i.due ? ', due ' + _pmFmt(i.due) : ''))); }
+  const upMiles = _pmScopeFor('pm_tasks', p.id).filter(t => String(t.isMilestone) === 'Yes' && t.status !== 'Completed' && t.finish).sort((a, b) => (a.finish || '').localeCompare(b.finish || '')).slice(0, 5);
+  if (upMiles.length) { sectionT('Upcoming Milestones'); upMiles.forEach(t => bullet((t.name || '') + '  —  ' + _pmFmt(t.finish) + (t.finish < _pmToday() ? '  (OVERDUE)' : ''))); }
+  if (chPend.length) { sectionT('Change Requests Pending Decision'); chPend.slice(0, 5).forEach(c => bullet((c.crNo ? c.crNo + '  ' : '') + (c.title || '') + (+c.impactCost ? ', cost ' + _pmMoney(c.impactCost) : '') + (+c.impactScheduleDays ? ', ' + c.impactScheduleDays + ' days' : ''))); }
+  const tot = doc.internal.getNumberOfPages(); for (let i = 1; i <= tot; i++) { doc.setPage(i); _brandFooter(doc, i, tot, 'HML-PMC-STA'); }
   doc.save('Status_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
   try { tkAudit('PM Status report exported', p.name || '', p.code || ''); } catch (e) { }
 }
