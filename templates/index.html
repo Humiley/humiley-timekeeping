@@ -747,7 +747,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="nav-item" data-roles="manager" onclick="showView('manager',this,'Team Monitoring')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
     <span class="nav-label">Team Monitoring</span>
-    <span class="nav-badge" id="badge-pending">4</span>
+    <span class="nav-badge" id="badge-pending" style="display:none"></span>
   </div>
 
   <div class="sidebar-section-label" data-app="crm">Sales / CRM</div>
@@ -822,7 +822,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="nav-item" data-roles="manager" onclick="showView('locations',this,'GPS Locations')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
     <span class="nav-label">GPS Locations</span>
-    <span class="nav-badge" id="badge-anomaly">2</span>
+    <span class="nav-badge" id="badge-anomaly" style="display:none"></span>
   </div>
 
 
@@ -836,9 +836,6 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="user-role" id="sidebar-user-role">Managing Director</div>
       </div>
     </div>
-    <button id="tk-view-toggle" class="logout-btn hidden" onclick="tkToggleView()" style="margin-bottom:6px;color:var(--emerald)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px;margin-right:6px"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>View as Staff
-    </button>
     <button class="logout-btn" onclick="tkForceUpdate()" style="margin-bottom:6px;color:var(--navy);background:rgba(32,80,144,.08);border-color:rgba(32,80,144,.2)">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Check for updates
