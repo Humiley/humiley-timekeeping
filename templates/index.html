@@ -14259,8 +14259,55 @@ function pmRenderScope(pid) {
 
 /* ---------- 3. Schedule (Gantt) ---------- */
 let _pmSchedSel = '';
-let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board'
+let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
+let _pmCalMonth = '', _pmCalPid = '';   // calendar sub-view state
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
+/* Calendar view of the WHOLE schedule — every task start (▶), finish/deadline (⚑) and milestone (◆)
+   plotted on a month grid; critical-path finishes are red. Purely a view over pm_tasks. */
+function _pmCalendarHtml(pid) {
+  const tasks = _pmScopeFor('pm_tasks', pid) || [];
+  const cpm = _pmCPM(tasks), crit = t => cpm.hasDeps ? !!(cpm.map[t.id] && cpm.map[t.id].critical) : String(t.critical) === 'Yes';
+  const today = _pmToday();
+  if (!_pmCalMonth) {   // default to the month that actually has data near today
+    const ds = tasks.map(t => (t.start || '').slice(0, 10)).concat(tasks.map(t => (t.finish || '').slice(0, 10))).filter(Boolean).sort();
+    let m = today.slice(0, 7);
+    if (ds.length) { const lo = ds[0], hi = ds[ds.length - 1]; const clamp = today < lo ? lo : (today > hi ? hi : today); m = clamp.slice(0, 7); }
+    _pmCalMonth = m;
+  }
+  const parts = _pmCalMonth.split('-'), Y = +parts[0], MM = +parts[1];
+  const first = new Date(Y, MM - 1, 1), daysIn = new Date(Y, MM, 0).getDate();
+  const monthLabel = first.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const startWd = (first.getDay() + 6) % 7;   // 0=Mon … 6=Sun (Monday-start weeks)
+  const byDay = {};
+  const put = (d, kind, t) => { if (!d) return; d = d.slice(0, 10); (byDay[d] = byDay[d] || { m: [], f: [], s: [] })[kind].push(t); };
+  tasks.forEach(t => {
+    if (String(t.isMilestone) === 'Yes') put(t.finish || t.start, 'm', t);
+    else { put(t.start, 's', t); put(t.finish, 'f', t); }
+  });
+  const chip = (t, color, icon) => '<div title="' + _tkEscA((t.wbs ? t.wbs + ' ' : '') + (t.name || '')) + '" onclick="pmSchedTab(\'activities\')" style="font-size:10px;line-height:1.5;padding:0 4px;border-radius:4px;background:' + color + '22;color:' + color + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;cursor:pointer">' + icon + ' ' + _pmEsc((t.name || '').slice(0, 24)) + '</div>';
+  const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const head = dow.map(d => '<div style="font-size:11px;font-weight:700;color:var(--text-light);text-align:center;padding:6px 0">' + d + '</div>').join('');
+  let cells = '';
+  for (let i = 0; i < startWd; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.45"></div>';
+  for (let d = 1; d <= daysIn; d++) {
+    const ds = Y + '-' + String(MM).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    const ev = byDay[ds] || { m: [], f: [], s: [] }, isToday = ds === today;
+    const items = [].concat(ev.m.map(t => chip(t, '#8B5CF6', '◆')), ev.f.map(t => chip(t, crit(t) ? '#EF4444' : '#205090', '⚑')), ev.s.map(t => chip(t, '#00B060', '▶')));
+    const more = items.length > 4 ? '<div style="font-size:9.5px;color:var(--text-light)">+' + (items.length - 4) + ' more</div>' : '';
+    cells += '<div style="min-height:92px;border:1px solid ' + (isToday ? 'var(--navy)' : 'var(--line)') + ';border-radius:8px;padding:4px 5px;overflow:hidden' + (isToday ? ';box-shadow:inset 0 0 0 1px var(--navy)' : '') + '"><div style="font-size:11px;font-weight:700;color:' + (isToday ? 'var(--navy)' : 'var(--text-dark)') + ';margin-bottom:3px">' + d + (isToday ? ' <span style="font-size:9px;font-weight:600">today</span>' : '') + '</div>' + items.slice(0, 4).join('') + more + '</div>';
+  }
+  return '<div class="card" style="padding:16px 18px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
+    '<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-ghost btn-sm" onclick="pmCalNav(-1)" style="font-size:16px;padding:0 11px;line-height:1.6">‹</button><div class="card-title" style="min-width:158px;text-align:center">' + monthLabel + '</div><button class="btn btn-ghost btn-sm" onclick="pmCalNav(1)" style="font-size:16px;padding:0 11px;line-height:1.6">›</button><button class="btn btn-outline btn-sm" onclick="pmCalNav(0)" style="font-size:11px">Today</button></div>' +
+    '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span><span style="color:#205090">⚑</span> Finish</span><span><span style="color:#EF4444">⚑</span> Critical</span><span><span style="color:#00B060">▶</span> Start</span></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">' + head + cells + '</div></div>';
+}
+function pmCalNav(delta) {
+  if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
+  else { const parts = _pmCalMonth.split('-'), dd = new Date(+parts[0], (+parts[1] - 1) + delta, 1); _pmCalMonth = dd.getFullYear() + '-' + String(dd.getMonth() + 1).padStart(2, '0'); }
+  const el = document.getElementById('psch-calendar'); if (el) el.innerHTML = _pmCalendarHtml(_pmPid());
+}
 function pmSchedRange() { const f = (document.getElementById('pm-sched-from') || {}).value || ''; const t = (document.getElementById('pm-sched-to') || {}).value || ''; _pmSchedSel = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('schedule'); }
 /* Critical Path Method — forward/backward pass over task predecessors (referenced by WBS code).
    Duration = the `duration` field, else days(start→finish)+1, else 1 (0 for milestones). Cycle-guarded.
@@ -14312,6 +14359,7 @@ async function _pmKanDrop(e, coll, status) {
 }
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
+  if (_pmCalPid !== pid) { _pmCalMonth = ''; _pmCalPid = pid; }   // re-center calendar on project switch
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
   let alld = []; allTasks.forEach(t => { if (t.start) alld.push(t.start); if (t.finish) alld.push(t.finish); }); if (p.startPlanned) alld.push(p.startPlanned); if (p.endPlanned) alld.push(p.endPlanned);
   const pmin = alld.length ? alld.reduce((a, b) => a < b ? a : b) : _pmToday(), pmax = alld.length ? alld.reduce((a, b) => a > b ? a : b) : _pmToday();
@@ -14371,11 +14419,12 @@ function pmRenderSchedule(pid) {
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   const board = '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
-  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + '</div>';
+  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
   _pmSet(kpis + subtabs +
     '<div id="psch-gantt"' + (_pmSchedTab === 'gantt' ? '' : ' style="display:none"') + '>' + gantt + '</div>' +
     '<div id="psch-activities"' + (_pmSchedTab === 'activities' ? '' : ' style="display:none"') + '>' + tbl + '</div>' +
-    '<div id="psch-board"' + (_pmSchedTab === 'board' ? '' : ' style="display:none"') + '>' + board + '</div>');
+    '<div id="psch-board"' + (_pmSchedTab === 'board' ? '' : ' style="display:none"') + '>' + board + '</div>' +
+    '<div id="psch-calendar"' + (_pmSchedTab === 'calendar' ? '' : ' style="display:none"') + '>' + _pmCalendarHtml(pid) + '</div>');
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
@@ -14383,7 +14432,7 @@ function _pmSchedTabBtn(key, label) {
 }
 function pmSchedTab(name) {
   _pmSchedTab = name;
-  ['gantt', 'activities', 'board'].forEach(k => {
+  ['gantt', 'activities', 'board', 'calendar'].forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
     const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--navy)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
   });
