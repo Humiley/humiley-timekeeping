@@ -5992,11 +5992,31 @@ function _devIcon(cat, sz) {
   const p = _DEV_ICONS[cat] || _DEV_ICONS['Other']; const c = _DEV_COLORS[cat] || '#6b7280'; const s = sz || 34;
   return '<div style="width:' + s + 'px;height:' + s + 'px;border-radius:9px;background:' + c + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="' + Math.round(s * 0.5) + '" height="' + Math.round(s * 0.5) + '" viewBox="0 0 24 24" fill="none" stroke="' + c + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p + '</svg></div>';
 }
-/* Photo / attachment cell — image thumbnail (click to enlarge) or a download link. */
+/* Full-screen image lightbox — click a photo to see it big, with download + Esc/backdrop to close. */
+function tkImgLightbox(src, caption, dl) {
+  if (!src) return;
+  document.getElementById('imgLightbox')?.remove();
+  const el = document.createElement('div'); el.id = 'imgLightbox'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.style.zIndex = '4000'; el.style.background = 'rgba(8,15,30,.86)';
+  el.onclick = (e) => { if (e.target === el) el.remove(); };
+  el.innerHTML = '<div style="max-width:94vw;max-height:94vh;display:flex;flex-direction:column;gap:10px;align-items:center">' +
+    '<div style="display:flex;align-items:center;gap:12px;color:#fff;width:100%;justify-content:space-between">' +
+      '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _crmEsc(caption || _t('Photo')) + '</div>' +
+      '<div style="display:flex;gap:8px;flex-shrink:0">' +
+        '<a href="' + src + '" download="' + _tkEscA(dl || 'photo') + '" class="btn btn-sm" style="background:rgba(255,255,255,.16);color:#fff;border:none" title="' + _tkEscA(_t('Download')) + '">' + tkIcon('download') + '</a>' +
+        '<button class="btn btn-sm" style="background:rgba(255,255,255,.16);color:#fff;border:none" onclick="document.getElementById(\'imgLightbox\').remove()" title="' + _tkEscA(_t('Close')) + '">' + tkIcon('x', 16) + '</button>' +
+      '</div></div>' +
+    '<img src="' + src + '" alt="' + _tkEscA(caption || '') + '" style="max-width:94vw;max-height:84vh;border-radius:12px;object-fit:contain;box-shadow:0 24px 60px rgba(0,0,0,.55)">' +
+    '</div>';
+  document.body.appendChild(el);
+  const esc = (ev) => { if (ev.key === 'Escape') { el.remove(); document.removeEventListener('keydown', esc); } };
+  document.addEventListener('keydown', esc);
+}
+/* Photo / attachment cell — image thumbnail (click to enlarge in a lightbox) or a download link. */
 function _devPhotoCell(x, sz) {
   const s = sz || 38;
   if (!x || !x.photo) return '<span style="color:var(--text-light)">—</span>';
-  if (/^data:image|\.(png|jpe?g|gif|webp|svg)$/i.test(x.photo)) return '<img src="' + x.photo + '" alt="Photo" onclick="window.open(this.src,\'_blank\')" title="Click to enlarge" style="width:' + s + 'px;height:' + s + 'px;border-radius:8px;object-fit:cover;border:1px solid var(--line);cursor:pointer">';
+  if (/^data:image|\.(png|jpe?g|gif|webp|svg)$/i.test(x.photo)) return '<img src="' + x.photo + '" alt="Photo" data-cap="' + _tkEscA((x.name || '') + (x.serial ? ' · ' + x.serial : '')) + '" data-dl="' + _tkEscA(x.photoName || ((x.name || 'photo') + '.jpg')) + '" onclick="tkImgLightbox(this.src, this.getAttribute(\'data-cap\'), this.getAttribute(\'data-dl\'))" title="Click to enlarge" style="width:' + s + 'px;height:' + s + 'px;border-radius:8px;object-fit:cover;border:1px solid var(--line);cursor:zoom-in">';
   return '<a href="' + x.photo + '" download="' + _tkEscA(x.photoName || 'attachment') + '" title="Download attachment" style="display:inline-flex;width:' + s + 'px;height:' + s + 'px;border-radius:8px;border:1px solid var(--line);align-items:center;justify-content:center;color:var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></a>';
 }
 /* ════════════════ EXCEL / CSV BULK IMPORT (admin) ════════════════ */
@@ -6111,9 +6131,18 @@ async function tkRenderDevices() {
     '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button><button class="btn btn-outline btn-sm" onclick="tkDeviceBatchAdd()">' + tkIcon('plus') + 'Add Several</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Asset Register</div></div>' +
-    '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + _crmFiltPeriod('dev-period-f', 'devFillTable') + '</div>' +
-    '<div class="table-wrap"><table style="min-width:960px"><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div></div>';
+    '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin-bottom:14px">' + _devTabBtn('inventory', _t('Inventory'), true) + _devTabBtn('assignments', _t('Assignments'), false) + '</div>' +
+    '<div id="dev-tab-inventory">' +
+      '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + _t('Inventory') + ' — ' + _t('all assets') + '</div></div>' +
+      '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + _crmFiltPeriod('dev-period-f', 'devFillTable') + '</div>' +
+      '<div class="table-wrap"><table style="min-width:1000px"><thead><tr><th>Device / Equipment</th><th>Photo</th><th>Category</th><th>Assigned To</th><th>Department</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th><th>Provided</th><th>Status</th><th></th></tr></thead><tbody id="dev-tbody"></tbody></table></div></div>' +
+    '</div>' +
+    '<div id="dev-tab-assignments" style="display:none">' +
+      '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + _t('Assignments') + ' — ' + _t('who has what') + '</div></div>' +
+      '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('asg-q', 'Search employee / asset / serial…', 'devAsgFill') + '</div>' +
+      '<div class="table-wrap"><table style="min-width:940px"><thead><tr><th>' + _t('Employee') + '</th><th>' + _t('Department') + '</th><th>' + _t('Asset') + '</th><th>' + _t('Serial / Tag') + '</th><th>' + _t('Category') + '</th><th>' + _t('Assigned On') + '</th><th>' + _t('Signed') + '</th><th style="text-align:right">' + _t('Value') + '</th><th></th></tr></thead><tbody id="asg-tbody"></tbody></table></div></div>' +
+    '</div>' +
+    '</div>';
   devFillTable();
   if (typeof Chart !== 'undefined') {
     const ck = Object.keys(byCat), sk = Object.keys(byStatus);
@@ -6133,8 +6162,50 @@ function devFillTable() {
   }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
   tb.innerHTML = list.length ? list.map(x => {
     const tot = (+x.qty || 1) * (+x.unitPrice || 0);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td>' + (x.assignedTo || '<span style="color:var(--text-light)">— unassigned</span>') + '</td><td>' + (x.department || '') + '</td><td style="text-align:right">' + (x.qty || 1) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td style="white-space:nowrap">' + tkFmtDate(x.purchaseDate) + '</td><td><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px">' + (x.status || '—') + '</span></td><td style="white-space:nowrap">' + _devAsgBtn(x.id) + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
+}
+/* Row action — open the Assign & e-sign modal. */
+function _devAsgBtn(id) {
+  return '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Assign & e-sign')) + '" aria-label="Assign" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:var(--navy)" onclick="tkDeviceAssign(\'' + id + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>';
+}
+function _devHandoverBtn(empId) {
+  if (!empId) return '';
+  return '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Handover PDF')) + '" aria-label="Handover PDF" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:var(--navy)" onclick="tkDownloadHandover(\'' + empId + '\')">' + tkIcon('download') + '</button>';
+}
+/* Inventory / Assignments tab switch on the Asset Register. */
+function _devTabBtn(key, label, active) {
+  return '<button id="devtab-' + key + '" onclick="tkDevTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (active ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (active ? '#fff' : 'var(--text)') + ';font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:9px;cursor:pointer">' + label + '</button>';
+}
+function tkDevTab(name) {
+  ['inventory', 'assignments'].forEach(k => {
+    const pane = document.getElementById('dev-tab-' + k); if (pane) pane.style.display = (k === name) ? '' : 'none';
+    const btn = document.getElementById('devtab-' + k);
+    if (btn) { const on = k === name; btn.style.background = on ? 'var(--navy)' : 'var(--card,#fff)'; btn.style.color = on ? '#fff' : 'var(--text)'; }
+  });
+  if (name === 'assignments') { try { devAsgFill(); } catch (e) {} }
+}
+/* Assignments tab — one row per currently-assigned asset, showing who holds it + signed status. */
+function devAsgFill() {
+  const tb = document.getElementById('asg-tbody'); if (!tb) return;
+  const q = (_crmLF['asg-q'] || '').toLowerCase();
+  const list = (_HR.devices || []).filter(x => {
+    const assigned = (x.empId || x.assignedTo) && (x.status || '') !== 'Available' && (x.status || '') !== 'Retired';
+    if (!assigned) return false;
+    const hay = ((x.assignedTo || '') + ' ' + (x.name || '') + ' ' + (x.serial || '') + ' ' + (x.department || '') + ' ' + (x.category || '')).toLowerCase();
+    return (!q || hay.includes(q));
+  }).sort((a, b) => (a.assignedTo || '').localeCompare(b.assignedTo || '') || (a.name || '').localeCompare(b.name || ''));
+  tb.innerHTML = list.length ? list.map(x => {
+    const signed = (x.signatures || []).some(s => /handover|acknowled/i.test(s.meaning || ''));
+    const tot = (+x.qty || 1) * (+x.unitPrice || 0);
+    return '<tr><td style="font-weight:600">' + _crmEsc(x.assignedTo || '') + '</td><td>' + _crmEsc(x.department || '') + '</td>' +
+      '<td><div style="display:flex;align-items:center;gap:8px">' + (x.photo ? _devPhotoCell(x, 30) : _devIcon(x.category, 30)) + '<span>' + _crmEsc(x.name || '') + '</span></div></td>' +
+      '<td style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '—') + '</td><td>' + _crmEsc(x.category || '') + '</td>' +
+      '<td style="white-space:nowrap">' + tkFmtDate(x.assignedOn || x.purchaseDate) + '</td>' +
+      '<td>' + (signed ? '<span class="badge b-ok" style="font-size:10px">' + _t('Signed') + '</span>' : '<span class="badge b-warn" style="font-size:10px">' + _t('Unsigned') + '</span>') + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td>' +
+      '<td style="white-space:nowrap">' + _devAsgBtn(x.id) + _devHandoverBtn(x.empId) + '</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No assets are currently assigned.') + '</td></tr>';
 }
 /* ===== Audit Log (admin) — immutable security & workflow event trail =====
    Reads the append-only `audit` collection (check-ins/out, OT decisions, e-signatures, deletions,
@@ -6248,7 +6319,8 @@ async function _devBatchSave() {
   if (!rows.length) { toast('Add at least one device with a name.', 'warn'); return; }
   let ok = 0, fail = 0;
   for (const r of rows) {
-    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
+    const _em = r.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(r.assignedTo).toLowerCase()) : null;
+    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: _em ? _em.id : '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
     try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
   }
   document.getElementById('devBatchOverlay')?.remove();
@@ -6323,6 +6395,97 @@ function _notifyAssetReturn(e, items, sign, date) {
   const subject = 'Asset return signed off — ' + (e.name || '');
   const body = 'Dear HR / Manager,\n\n' + (e.name || 'The employee') + ' has returned and signed off the following company assets on ' + tkFmtDate(date) + ':\n\n- ' + (items.join('\n- ') || 'None') + '\n\nSigned by: ' + sign + '\n\nHumiley Group Inc. — People & Workplace';
   tkMailRequester(to, 'HR & Manager', subject, body);
+}
+
+/* ── Reusable hand-drawn signature pad (same behaviour as the e-sign pad, but for any canvas). ── */
+function _sigPadWire(canvasId, hintId) {
+  var c = document.getElementById(canvasId); if (!c || c._wired) return;
+  var dpr = window.devicePixelRatio || 1, rect = c.getBoundingClientRect();
+  var cssW = Math.round(rect.width) || 430, cssH = 150;
+  c.width = Math.round(cssW * dpr); c.height = Math.round(cssH * dpr);
+  var ctx = c.getContext('2d'); ctx.scale(dpr, dpr);
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#0b2e63';
+  c._empty = true; c._wired = true;
+  var drawing = false, last = null;
+  function pt(e) { var r = c.getBoundingClientRect(); var t = (e.touches && e.touches[0]) || e; return { x: t.clientX - r.left, y: t.clientY - r.top }; }
+  function down(e) { e.preventDefault(); drawing = true; last = pt(e); }
+  function move(e) { if (!drawing) return; e.preventDefault(); var p = pt(e); ctx.beginPath(); ctx.moveTo(last.x, last.y); ctx.lineTo(p.x, p.y); ctx.stroke(); last = p; if (c._empty) { c._empty = false; var h = hintId && document.getElementById(hintId); if (h) h.style.display = 'none'; } }
+  function up() { drawing = false; }
+  if (window.PointerEvent) { c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); window.addEventListener('pointerup', up); }
+  else { c.addEventListener('mousedown', down); c.addEventListener('mousemove', move); window.addEventListener('mouseup', up); c.addEventListener('touchstart', down, { passive: false }); c.addEventListener('touchmove', move, { passive: false }); window.addEventListener('touchend', up); }
+}
+function _sigPadImage(canvasId) {
+  var c = document.getElementById(canvasId); if (!c || c._empty) return '';
+  try { var stc = document.createElement('canvas'); stc.width = 440; stc.height = 150; stc.getContext('2d').drawImage(c, 0, 0, 440, 150); return stc.toDataURL('image/png'); }
+  catch (e) { try { return c.toDataURL('image/png'); } catch (x) { return ''; } }
+}
+function _sigPadClear(canvasId, hintId) {
+  var c = document.getElementById(canvasId); if (!c) return;
+  c.getContext('2d').clearRect(0, 0, c.width, c.height); c._empty = true;
+  var h = hintId && document.getElementById(hintId); if (h) h.style.display = '';
+}
+
+/* ── Assign a company asset to an employee with the employee's e-signature (handover acknowledgment). ──
+   Sets empId (so it appears in the employee's My Devices), records the drawn signature on the asset,
+   creates/updates the handover record + emails a signed copy, and notifies the manager/HR. */
+async function tkDeviceAssign(id) {
+  if (!_requireLevel('manager')) return;                 // assigning a company asset is a management action
+  await tkLoadColl('devices');
+  const x = (_HR.devices || []).find(v => v.id === id); if (!x) { toast(_t('Not found'), 'warn'); return; }
+  document.getElementById('devAssignOverlay')?.remove();
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active') === 'Active').sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const opts = '<option value="">— ' + _t('Select employee') + ' —</option>' + emps.map(e => '<option value="' + e.id + '"' + (x.empId === e.id ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.dept ? ' · ' + _crmEsc(e.dept) : '') + '</option>').join('');
+  const el = document.createElement('div'); el.id = 'devAssignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:92vh;max-height:92dvh;overflow:auto"><div class="modal-header"><div class="modal-title">' + _t('Assign asset & e-sign') + '</div><button class="modal-close" onclick="document.getElementById(\'devAssignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + (x.photo ? _devPhotoCell(x, 40) : _devIcon(x.category, 40)) + '<div><div style="font-weight:700">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc((x.category || '') + (x.serial ? ' · ' + x.serial : '')) + '</div></div></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + _t('The employee signs below to acknowledge receipt — this records the handover, adds the asset to their My Devices, and emails a signed copy.') + '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Assign to (employee)') + '</label><select class="form-control" id="asg-emp">' + opts + '</select></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t('Provided date') + '</label><input class="form-control" type="date" id="asg-date" value="' + _today() + '"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Condition') + '</label><select class="form-control" id="asg-cond"><option>Good / New</option><option>Used — good</option><option>Used — fair</option></select></div></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Note (optional)') + '</label><input class="form-control" id="asg-note" placeholder="' + _tkEscA(_t('e.g. charger + bag included')) + '"></div>' +
+    '<div class="form-group" style="margin-bottom:6px"><label class="form-label">' + _t('Employee signature — sign to acknowledge receipt') + '</label>' +
+      '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden"><canvas id="asg-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas>' +
+      '<div id="asg-sig-hint" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa4b2;font-size:12px;pointer-events:none">' + _t('Sign here') + '</div></div>' +
+      '<div style="text-align:right;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_sigPadClear(\'asg-sigpad\',\'asg-sig-hint\')">' + _t('Clear') + '</button></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devAssignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" onclick="tkDeviceAssignSave(\'' + id + '\')">' + tkIcon('check') + _t('Confirm & sign') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => _sigPadWire('asg-sigpad', 'asg-sig-hint'), 40);
+}
+async function tkDeviceAssignSave(id) {
+  const x = (_HR.devices || []).find(v => v.id === id); if (!x) return;
+  const eid = (document.getElementById('asg-emp') || {}).value || '';
+  if (!eid) { toast(_t('Please select an employee.'), 'warn'); return; }
+  const e = _hrEmp(eid) || (_DEMO_EMPLOYEES || []).find(v => v.id === eid); if (!e) { toast(_t('Employee not found'), 'warn'); return; }
+  const sigImg = _sigPadImage('asg-sigpad');
+  if (!sigImg) { toast(_t('Please ask the employee to sign to acknowledge receipt.'), 'warn'); return; }
+  const date = (document.getElementById('asg-date') || {}).value || _today();
+  const cond = (document.getElementById('asg-cond') || {}).value || 'Good / New';
+  const note = (document.getElementById('asg-note') || {}).value || '';
+  const sig = { name: e.name, meaning: 'Asset handover — acknowledged receipt (' + cond + ')', ts: new Date().toISOString(), method: 'signature', image: sigImg, by: (TK.user || {}).name || '' };
+  const patch = Object.assign({}, x, {
+    status: 'Assigned', assignedTo: e.name, empId: e.id,
+    department: x.department || e.dept || '', assignedOn: date, assignCondition: cond,
+    assignNote: note, signatures: (x.signatures || []).concat([sig])
+  });
+  try {
+    await tkApi('/api/coll/devices/' + id, { method: 'PATCH', body: patch });
+    Object.assign(x, patch);
+    tkAudit('Asset assigned & signed', (TK.user || {}).name, (x.name || '') + ' -> ' + (e.name || '') + ' (' + cond + ')');
+    document.getElementById('devAssignOverlay')?.remove();
+    toast(_t('Asset assigned to') + ' ' + (e.name || '') + ' · ' + _t('signed'));
+    try { await tkSendAssetHandover(e.id, { auto: true }); } catch (x2) {}     // emails the employee the signed handover + stores the record
+    try { _notifyAssetAssign(e, x, e.name, date); } catch (x2) {}              // notifies manager + HR
+    try { await tkRenderDevices(); } catch (x2) {}
+  } catch (err) { toast(_t('Could not save') + ': ' + _errMsg(err), 'error', 5000); }
+}
+/* Notify the manager + HR that an asset was assigned & signed for (the employee is emailed the handover PDF separately). */
+function _notifyAssetAssign(e, item, sign, date) {
+  const hr = (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || '') && (x.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || ''));
+  const to = [e.managerEmail, (hr && hr.email)].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).join(', ');
+  if (!to) return;
+  const subject = 'Asset assigned & signed — ' + (item.name || '') + ' -> ' + (e.name || '');
+  const body = 'Dear Manager / HR,\n\n' + (e.name || 'The employee') + ' has been assigned and has e-signed for the following company asset on ' + tkFmtDate(date) + ':\n\n- ' + (item.name || '') + (item.serial ? ' (Serial / Tag: ' + item.serial + ')' : '') + '\n  Category: ' + (item.category || '—') + ' · Qty: ' + (item.qty || 1) + '\n\nAcknowledged by: ' + sign + '\n\nThe asset now appears under the employee\'s My Devices. A signed handover form has been emailed to the employee.\n\nHumiley Group Inc. — People & Workplace';
+  tkMailRequester(to, 'Manager & HR', subject, body);
 }
 /* Back-compat launcher — opens the full My Goals page. */
 function tkMyGoals() { showView('mygoals', null, 'My Goals'); }
@@ -11529,6 +11692,11 @@ async function tkQuickAddSave() {
   });
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
   if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
+  if (_qaType === 'devices') {   // resolve the assignee to an employee id so an assigned asset shows in that employee's My Devices
+    const _em = data.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(data.assignedTo).toLowerCase()) : null;
+    data.empId = _em ? _em.id : '';
+    if (data.assignedTo && (!data.status || data.status === 'Available')) data.status = 'Assigned';
+  }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   const _prevSpUrl = (_qaType === 'pm_projects' && _qaEditId) ? (((_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {}).sharepointUrl || '') : '';
   try {
@@ -15239,6 +15407,10 @@ const _VI = {
   'Recent Attendance': 'Chấm công gần đây', 'My Leave Requests': 'Đơn nghỉ phép của tôi', 'Company Announcements': 'Thông báo công ty',
   'Celebrations This Month': 'Sự kiện trong tháng', 'Upcoming Holidays': 'Ngày lễ sắp tới', 'My Team': 'Nhóm của tôi',
   'Asset Register': 'Sổ tài sản', 'Staff by Department': 'Nhân sự theo phòng ban', 'Headcount by Department': 'Nhân sự theo phòng',
+  'all assets': 'tất cả tài sản', 'who has what': 'ai đang giữ gì', 'Serial / Tag': 'Serial / Mã tài sản', 'Assigned On': 'Ngày cấp', 'Signed': 'Đã ký', 'Unsigned': 'Chưa ký', 'Provided date': 'Ngày cấp', 'Handover PDF': 'Biên bản bàn giao (PDF)', 'Select employee': 'Chọn nhân viên',
+  'Assign & e-sign': 'Cấp phát & ký', 'Assign asset & e-sign': 'Cấp phát tài sản & ký điện tử', 'Assign to (employee)': 'Cấp cho (nhân viên)', 'Note (optional)': 'Ghi chú (tùy chọn)', 'e.g. charger + bag included': 'ví dụ: kèm sạc + túi', 'Employee signature — sign to acknowledge receipt': 'Chữ ký nhân viên — ký để xác nhận đã nhận', 'Confirm & sign': 'Xác nhận & ký', 'Asset assigned to': 'Đã cấp tài sản cho', 'signed': 'đã ký',
+  'Please select an employee.': 'Vui lòng chọn nhân viên.', 'Employee not found': 'Không tìm thấy nhân viên', 'Please ask the employee to sign to acknowledge receipt.': 'Vui lòng đề nghị nhân viên ký để xác nhận đã nhận.', 'No assets are currently assigned.': 'Hiện chưa có tài sản nào được cấp phát.',
+  'The employee signs below to acknowledge receipt — this records the handover, adds the asset to their My Devices, and emails a signed copy.': 'Nhân viên ký bên dưới để xác nhận đã nhận — thao tác này lưu biên bản bàn giao, thêm tài sản vào “Thiết bị của tôi” và gửi email bản đã ký.',
   'Recruitment Funnel': 'Phễu tuyển dụng', 'Performance Distribution': 'Phân bố hiệu suất', 'Gender Split': 'Tỷ lệ giới tính',
   'Tenure Bands': 'Thâm niên', 'Attendance Status': 'Tình trạng chấm công', 'Leave Days by Type': 'Ngày nghỉ theo loại',
   'Headcount Growth': 'Tăng trưởng nhân sự', 'Employment Type': 'Loại hợp đồng', 'Training Status': 'Tình trạng đào tạo',
