@@ -14259,6 +14259,7 @@ function pmRenderScope(pid) {
 
 /* ---------- 3. Schedule (Gantt) ---------- */
 let _pmSchedSel = '';
+let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board'
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 function pmSchedRange() { const f = (document.getElementById('pm-sched-from') || {}).value || ''; const t = (document.getElementById('pm-sched-to') || {}).value || ''; _pmSchedSel = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('schedule'); }
 /* Critical Path Method — forward/backward pass over task predecessors (referenced by WBS code).
@@ -14368,9 +14369,24 @@ function pmRenderSchedule(pid) {
     { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
-  ], tasks), pmImportBtn());
-  const board = '<div class="card" style="padding:16px 18px;margin-top:14px"><div class="card-title" style="margin-bottom:2px">Board</div><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
-  _pmSet(kpis + gantt + tbl + board);
+  ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
+  const board = '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + '</div>';
+  _pmSet(kpis + subtabs +
+    '<div id="psch-gantt"' + (_pmSchedTab === 'gantt' ? '' : ' style="display:none"') + '>' + gantt + '</div>' +
+    '<div id="psch-activities"' + (_pmSchedTab === 'activities' ? '' : ' style="display:none"') + '>' + tbl + '</div>' +
+    '<div id="psch-board"' + (_pmSchedTab === 'board' ? '' : ' style="display:none"') + '>' + board + '</div>');
+}
+function _pmSchedTabBtn(key, label) {
+  const on = _pmSchedTab === key;
+  return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
+}
+function pmSchedTab(name) {
+  _pmSchedTab = name;
+  ['gantt', 'activities', 'board'].forEach(k => {
+    const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
+    const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--navy)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
+  });
 }
 
 /* ---------- 4. Cost / EVM ---------- */
