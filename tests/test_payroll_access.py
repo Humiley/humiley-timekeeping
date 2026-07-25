@@ -43,3 +43,24 @@ def test_own_record_always_shows_full_compensation(api, tokens):
     db.update_employee("HML-STF", {"salary": 21_000_000})
     own = _emp(api, "staff", tokens["staff"], "HML-STF")
     assert own is not None and own.get("salary") == 21_000_000
+
+
+def test_manager_edit_cannot_wipe_or_change_compensation(api, tokens):
+    # The read-strip means a manager's Edit-Employee form loads a BLANK salary; saving the form would
+    # PATCH salary='' — but _emp_update strips compensation from a below-Approver body, so the real
+    # value is PRESERVED (no data loss). This pairs the read gate with the write gate.
+    db.update_employee("HML-OTH", {"salary": 55_000_000, "bank": "1234", "grade": "G6"})
+    st, _ = api("PATCH", "/api/employees/HML-OTH", tokens["mgr"],
+                {"name": "Other Staff", "phone": "0900000000", "salary": "", "bank": "", "grade": ""})
+    assert st == 200, "the benign profile edit should still succeed"
+    row = db.get_employee("HML-OTH")
+    assert row.get("salary") == 55_000_000, "a manager's save must NOT wipe salary"
+    assert row.get("bank") == "1234" and row.get("grade") == "G6"
+    assert row.get("phone") == "0900000000", "the non-compensation edit should apply"
+
+
+def test_approver_edit_can_set_compensation(api, tokens):
+    st, _ = api("PATCH", "/api/employees/HML-OTH", tokens["management"],
+                {"name": "Other Staff", "salary": 60_000_000})
+    assert st == 200
+    assert db.get_employee("HML-OTH").get("salary") == 60_000_000, "an Approver may set compensation"
