@@ -13603,6 +13603,33 @@ function pmStatusPDF(pid) {
   doc.save('Status_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
   try { tkAudit('PM Status report exported', p.name || '', p.code || ''); } catch (e) { }
 }
+/* Formal Project Closeout Report (PMBOK Closing) — financial closeout, deliverables acceptance,
+   contract/retention, open-item check, lessons learned, and a sign-off block. */
+function pmCloseoutPDF(pid) {
+  const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
+  const M = 15;
+  let y = _brandHeader(doc, { title: 'Project Closeout Report', subtitle: _pmPdfTxt((p.code || p.name) + '  -  ' + _pmFmt(_pmToday())), docCode: 'HML-PMC-CLO', confidential: true });
+  y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id);
+  [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Project Manager', p.manager], ['Sponsor', p.sponsor], ['Contract Type / Value', (p.contractType || '') + (p.contractValue ? '  ·  ' + _pmMoney(p.contractValue) : '')], ['Final Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall % Complete', sr.pct + '%'], ['Final Health (RAG)', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
+  const bullet = txt => { if (y > 285) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
+  sect('Financial Closeout');
+  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
+  const procs = _pmScopeFor('pm_procurement', p.id), procClosed = procs.filter(x => x.status === 'Closed' || x.status === 'Completed').length;
+  const ret = procs.reduce((s, x) => s + (+x.value || 0) * (+x.retentionPct || 0) / 100, 0);
+  sect('Contracts & Procurement'); [['Packages Closed', procClosed + ' / ' + procs.length], ['Retention (indicative)', _pmMoney(ret)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  const openR = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed').length, openI = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length, openF = _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open').length, openQ = _pmScopeFor('pm_quality', p.id).filter(q => q.status !== 'Closed').length;
+  sect('Open Items at Closeout'); [['Open Risks', openR], ['Open Issues', openI], ['Open RFIs', openF], ['Open NCR / Quality', openQ]].forEach(r => { y = _pmRow(doc, r[0] + (r[1] > 0 ? '  (to resolve)' : '  (clear)'), r[1], y); });
+  const lessons = _pmScopeFor('pm_lessons', p.id);
+  if (lessons.length) { sect('Lessons Learned'); lessons.slice(0, 8).forEach(l => bullet((l.title || '') + (l.recommendation ? '  —  ' + l.recommendation : ''))); }
+  y += 10; if (y > 250) { doc.addPage(); y = 40; }
+  doc.setDrawColor(154, 164, 178); const cw = 180 / 2;
+  [['Project Manager', p.manager || ''], ['Sponsor / Client', p.sponsor || '']].forEach((s, i) => { const cx = M + cw * i; doc.line(cx + 4, y + 12, cx + cw - 8, y + 12); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); doc.text(s[0], cx + 4, y + 17); doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(120, 128, 138); if (s[1]) doc.text(_pmPdfTxt(s[1]), cx + 4, y + 21); });
+  const tot = doc.internal.getNumberOfPages(); for (let i = 1; i <= tot; i++) { doc.setPage(i); _brandFooter(doc, i, tot, 'HML-PMC-CLO'); }
+  doc.save('Closeout_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
+  try { tkAudit('PM Closeout report exported', p.name || '', p.code || ''); } catch (e) { }
+}
 /* ============================================================================
    PM SHELL — Projects list · Workspace + tabs · Overview · generic register · CRM handoff
    ========================================================================== */
@@ -13837,6 +13864,23 @@ function _pmTable(coll, cols, rows, opts) {
 
 function _pmReload() { const A = id => { const v = document.getElementById('view-' + id); return v && v.classList.contains('active'); }; if (A('pm-project')) pmTab(_pmTabK); else if (A('pm-projects')) pmRenderProjects(); else if (A('pm-dashboard')) pmRenderPortfolio(); }
 /* ---------- Projects list (RBAC-scoped) ---------- */
+/* Portfolio Health — cross-project roll-up for managers (RAG mix, avg CPI/SPI, budget burn, overdue). */
+function _pmPortfolioCard(projects) {
+  if (!_pmSeeAll() || (projects || []).length < 2) return '';
+  let g = 0, a = 0, r = 0, budget = 0, actual = 0, cpiSum = 0, spiSum = 0, meas = 0, overdueProj = 0;
+  projects.forEach(p => {
+    const rag = _pmEffectiveRag(p); if (rag === 'Green') g++; else if (rag === 'Amber') a++; else r++;
+    const ev = _pmEvm(p); budget += ev.bac; actual += ev.ac; if (ev.measurable) { cpiSum += ev.cpi; spiSum += ev.spi; meas++; }
+    if (_pmOverdueMilestones(p.id) > 0) overdueProj++;
+  });
+  const avgCpi = meas ? cpiSum / meas : 1, avgSpi = meas ? spiSum / meas : 1, burn = budget ? Math.round(actual / budget * 100) : 0;
+  const seg = (n, label, hex) => n ? '<div style="flex:' + n + ';background:' + hex + ';height:100%" title="' + label + ': ' + n + '"></div>' : '';
+  const tile = (l, v, c) => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px;flex:1;min-width:112px"><div style="font-size:11px;color:var(--text-light)">' + l + '</div><div style="font-size:16px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div></div>';
+  return '<div class="card" style="padding:16px 18px;margin-bottom:16px"><div class="card-title" style="margin-bottom:10px">Portfolio Health</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' + tile('Projects', projects.length) + tile('Avg CPI', avgCpi.toFixed(2), _ragHex(_pmIndexRag(avgCpi))) + tile('Avg SPI', avgSpi.toFixed(2), _ragHex(_pmIndexRag(avgSpi))) + tile('Budget burn', burn + '%', burn > 100 ? '#EF4444' : 'var(--navy)') + tile('With overdue MS', overdueProj, overdueProj ? '#EF4444' : '#00B060') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:5px">Health mix (RAG)</div><div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--soft-bg)">' + seg(g, 'Green', '#16A34A') + seg(a, 'Amber', '#F59E0B') + seg(r, 'Red', '#EF4444') + '</div>' +
+    '<div style="display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--text-light)"><span><b style="color:#16A34A">' + g + '</b> Green</span><span><b style="color:#F59E0B">' + a + '</b> Amber</span><span><b style="color:#EF4444">' + r + '</b> Red</span></div></div>';
+}
 async function pmRenderProjects() {
   const root = document.getElementById('pm-projects-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
@@ -13854,7 +13898,7 @@ async function pmRenderProjects() {
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
   const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects') + _crmFiltPeriod('pm-pperiod-f', 'pmFillProjects'));
   const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
-  root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + _pmPortfolioCard(all) + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
   _pmMyActionsLoad();   // fills the "My Project Actions" slot in the background — keeps the list fast
 }
@@ -13970,6 +14014,7 @@ async function pmRenderWorkspace() {
     '<div><div style="font-weight:800;color:var(--navy);font-size:18px">' + _pmEsc(p.name || '') + '</div><div style="font-size:12px;color:var(--text-light)">' + _pmEsc((p.code || '') + (p.account || p.client ? ' · ' + (p.account || p.client) : '') + (p.manager ? ' · PM: ' + p.manager : '')) + '</div></div></div></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + (p.phase ? _pmBadge(p.phase, '#3168A8') : '') +
     '<button class="btn btn-ghost btn-sm" onclick="pmCharterPDF(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('download', 12) + ' Charter</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="pmCloseoutPDF(\'' + p.id + '\')" style="font-size:11px" title="Project Closeout Report (PDF)">' + tkIcon('download', 12) + ' Closeout</button>' +
     pmReportBtns(p.id) + _pmSpBtn(p) +
     (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
