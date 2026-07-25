@@ -13829,8 +13829,9 @@ async function pmRenderProjects() {
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
   const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects') + _crmFiltPeriod('pm-pperiod-f', 'pmFillProjects'));
   const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
+  _pmMyActionsLoad();   // fills the "My Project Actions" slot in the background — keeps the list fast
 }
 function pmFillProjects() {
   const tb = document.getElementById('pm-proj-tbody'); if (!tb) return;
@@ -13849,6 +13850,66 @@ function pmFillProjects() {
       '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
   }).join('') : tkEmptyRow(9, _pmSeeAll() ? 'No projects yet' : 'You are not assigned to any projects yet', { icon: 'folder', sub: _pmSeeAll() ? 'Click New Project to create a Charter — or convert a Won deal from the CRM pipeline.' : 'A manager can add you to a project Team (Resources tab) or set you as its Project Manager.', cta: _pmSeeAll() ? { label: 'New Project', onclick: "tkQuickAdd('pm_projects')" } : null });
+}
+/* Open a project directly on a chosen workspace tab (mirrors pmOpenProject but honours the tab). */
+function pmGoto(id, tabK) {
+  _pmCurrentProject = id;
+  try { sessionStorage.setItem('pm_proj', id); } catch (e) { }
+  _pmTabK = _PM_TABS.some(t => t.k === tabK) ? tabK : 'overview';
+  showView('pm-project', null, 'Project Workspace');
+}
+/* ── "My PM Actions" cockpit — everything across all my projects that needs me: tasks due, RFIs in my
+   court, risks/issues I own, change requests to decide, ITPs to approve. Rendered at the top of the
+   Projects list; its extra collections load in the background so the list itself stays fast. ── */
+const _PM_ACTION_COLLS = ['pm_tasks', 'pm_rfis', 'pm_risks', 'pm_issues', 'pm_changes', 'pm_quality_itp'];
+async function _pmMyActionsLoad() {
+  try {
+    await Promise.all(_PM_ACTION_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+    const slot = document.getElementById('pm-myactions-slot');
+    if (slot) slot.innerHTML = _pmMyActionsHtml();
+  } catch (e) { }
+}
+function _pmMyActionsHtml() {
+  const me = (TK.user && TK.user.name) || ''; if (!me) return '';
+  const meL = me.toLowerCase();
+  const projs = _pmMine(_HR.pm_projects || []); if (!projs.length) return '';
+  const pById = {}, visIds = new Set(); projs.forEach(p => { pById[p.id] = p; visIds.add(p.id); });
+  const inScope = arr => (arr || []).filter(x => visIds.has(x.projectId));
+  const isMe = v => String(v || '').toLowerCase() === meL;
+  const has = v => String(v || '').toLowerCase().indexOf(meL) >= 0;
+  const today = _pmToday(), seeAll = _pmSeeAll();
+  const tasks = inScope(_HR.pm_tasks).filter(t => isMe(t.assignee) && t.status !== 'Completed');
+  const rfis = inScope(_HR.pm_rfis).filter(r => (r.status === 'Open' || r.status === 'Answered') && (has(r.ballInCourt) || isMe(r.raisedBy)));
+  const risks = inScope(_HR.pm_risks).filter(r => isMe(r.owner) && r.status !== 'Closed');
+  const issues = inScope(_HR.pm_issues).filter(i => isMe(i.owner) && i.status !== 'Closed' && i.status !== 'Resolved');
+  const changes = inScope(_HR.pm_changes).filter(c => (c.decision || 'Pending') === 'Pending' && (isMe(c.requestedBy) || seeAll || isMe((pById[c.projectId] || {}).manager)));
+  const itps = inScope(_HR.pm_quality_itp).filter(q => (q.status || '') === 'Draft' && (isMe(q.approvedBy) || isMe(q.preparedBy)));
+  const total = tasks.length + rfis.length + risks.length + issues.length + changes.length + itps.length;
+  const dd = d => { if (!d) return null; const t = new Date(String(d).slice(0, 10)), n = new Date(today); const v = Math.round((t - n) / 86400000); return isNaN(v) ? null : v; };
+  const soon = d => { const n = dd(d); return n != null && n >= 0 && n <= 7; };
+  const od = d => { const n = dd(d); return n != null && n < 0; };
+  const overdueN = tasks.filter(t => od(t.finish)).length + rfis.filter(r => od(r.requiredBy)).length + risks.filter(r => od(r.due)).length + issues.filter(i => od(i.due)).length;
+  const dueWeekN = tasks.filter(t => soon(t.finish)).length + rfis.filter(r => soon(r.requiredBy)).length + risks.filter(r => soon(r.due)).length + issues.filter(i => soon(i.due)).length;
+  const awaitingN = changes.length + itps.length;
+  const dueChip = d => { const n = dd(d); if (n == null) return ''; if (n < 0) return '<span class="badge b-danger" style="font-size:10px;flex-shrink:0">Overdue ' + (-n) + 'd</span>'; if (n <= 7) return '<span class="badge b-warn" style="font-size:10px;flex-shrink:0">Due ' + (n === 0 ? 'today' : 'in ' + n + 'd') + '</span>'; return '<span style="font-size:11px;color:var(--text-light);flex-shrink:0">' + tkFmtDate(d) + '</span>'; };
+  const pcode = pid => { const p = pById[pid] || {}; return (p.code || p.name || 'Project'); };
+  const byDue = (arr, f) => arr.slice().sort((a, b) => { const x = dd(f(a)), y = dd(f(b)); if (x == null) return 1; if (y == null) return -1; return x - y; });
+  const row = (title, sub, dueDate, pid, tabK) => '<div onclick="pmGoto(\'' + pid + '\',\'' + (tabK || '') + '\')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 14px;border-top:1px solid var(--line-soft,#eef2f8);cursor:pointer">' +
+    '<div style="min-width:0"><div style="font-weight:600;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(title || '(untitled)') + '</div><div style="font-size:11px;color:var(--text-light)">' + _pmEsc(sub) + '</div></div>' + dueChip(dueDate) + '</div>';
+  const sec = (label, color, icon, items, rowFn) => { if (!items.length) return ''; const shown = items.slice(0, 6); return '<div style="margin-top:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="display:inline-flex;width:24px;height:24px;border-radius:7px;background:' + color + '22;color:' + color + ';align-items:center;justify-content:center;flex-shrink:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></span><span style="font-weight:700;font-size:13px">' + label + '</span><span class="badge b-navy" style="font-size:10px">' + items.length + '</span></div><div class="card" style="padding:0;overflow:hidden">' + shown.map(rowFn).join('') + (items.length > 6 ? '<div style="padding:8px 14px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line-soft,#eef2f8)">+' + (items.length - 6) + ' more…</div>' : '') + '</div></div>'; };
+  if (total === 0) return '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:11px;border-left:3px solid var(--emerald)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--emerald)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><div><div style="font-weight:700;font-size:14px">My Project Actions</div><div style="font-size:12.5px;color:var(--text-light)">You’re all caught up — no tasks, RFIs, risks, issues or approvals are waiting on you.</div></div></div>';
+  const kpi = (n, label, color) => '<div style="flex:1;min-width:90px;text-align:center;padding:6px 4px"><div style="font-size:22px;font-weight:800;color:' + color + '">' + n + '</div><div style="font-size:11px;color:var(--text-light)">' + label + '</div></div>';
+  const IC = { task: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', rfi: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', risk: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', issue: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>', cr: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>', itp: '<path d="M9 11l3 3L22 4"/><path d="M22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/>' };
+  return '<div class="card" style="padding:16px 18px;margin-bottom:16px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">My Project Actions</div><div style="font-size:11px;color:var(--text-light)">' + _pmEsc(me) + ' · across ' + projs.length + ' project' + (projs.length === 1 ? '' : 's') + '</div></div>' +
+    '<div style="display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line-soft,#eef2f8);padding-bottom:6px;margin-top:8px">' + kpi(overdueN, 'Overdue', overdueN ? '#C00000' : 'var(--text-light)') + kpi(dueWeekN, 'Due this week', dueWeekN ? '#E0912A' : 'var(--text-light)') + kpi(awaitingN, 'Awaiting me', awaitingN ? 'var(--navy)' : 'var(--text-light)') + '</div>' +
+    sec('My tasks', '#205090', IC.task, byDue(tasks, t => t.finish), t => row(t.name, pcode(t.projectId) + (t.wbs ? ' · ' + t.wbs : ''), t.finish, t.projectId, 'schedule')) +
+    sec('RFIs in my court', '#8B5CF6', IC.rfi, byDue(rfis, r => r.requiredBy), r => row((r.number ? r.number + ' — ' : '') + (r.subject || ''), pcode(r.projectId) + ' · ' + (r.type || 'RFI'), r.requiredBy, r.projectId, 'docs')) +
+    sec('Risks I own', '#EF4444', IC.risk, risks, r => row((r.riskNo ? r.riskNo + ' — ' : '') + (r.title || ''), pcode(r.projectId) + ' · P' + (r.probability || '?') + '×I' + (r.impact || '?'), r.due, r.projectId, 'risk')) +
+    sec('Issues I own', '#F59E0B', IC.issue, byDue(issues, i => i.due), i => row((i.issueNo ? i.issueNo + ' — ' : '') + (i.title || ''), pcode(i.projectId) + ' · ' + (i.priority || ''), i.due, i.projectId, 'comms')) +
+    sec('Change requests to decide', '#3168A8', IC.cr, changes, c => row((c.crNo ? c.crNo + ' — ' : '') + (c.title || ''), pcode(c.projectId) + ' · ' + (c.priority || ''), c.requestedDate, c.projectId, 'overview')) +
+    sec('ITPs to approve', '#00B060', IC.itp, itps, q => row((q.itpNo ? q.itpNo + ' — ' : '') + (q.title || ''), pcode(q.projectId) + ' · ' + (q.discipline || ''), q.plannedStart, q.projectId, 'quality')) +
+    '</div>';
 }
 
 /* ---------- open + Workspace shell ---------- */
