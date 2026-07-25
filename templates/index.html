@@ -9195,7 +9195,7 @@ async function tkRenderFinance() {
     _crmFiltSel('fin-status', 'All status', ['Submitted', 'Reviewed', 'Approved', 'Partially approved', 'Paid', 'Rejected'], 'finFillTable') +
     _crmFiltPeriod('fin-period', 'finFillTable') +
     _crmFiltSel('fin-dept', 'All departments', _crmDistinct(items, 'dept'), 'finFillTable') + '</div>';
-  const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:900px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
+  const registerCard = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Company Finance Register</div><span style="font-size:11px;color:var(--text-light)">Every submission across the company</span></div>' + fbar + '<div class="table-wrap"><table style="min-width:1080px"><thead><tr><th>Type</th><th>Requested by</th><th>Reference</th><th>Category</th><th>Department</th><th style="text-align:right">Amount</th><th style="white-space:nowrap">' + _t('Date requested') + '</th><th style="white-space:nowrap">' + _t('Date approved') + '</th><th style="white-space:nowrap">' + _t('Date paid') + '</th><th>Status</th><th>File</th></tr></thead><tbody id="fin-tbody"></tbody></table></div></div>';
   root.innerHTML = _finTabBar('finance') + '<div id="fin-export">' + '<div id="fin-kpis">' + kpis + '</div>' + charts + pendCard + registerCard + '</div>';
   finFillTable();   // KPIs + all three charts now redraw from the (filtered) list via _finRedrawAggs
 }
@@ -9240,10 +9240,11 @@ function finFillTable() {
       const lines = rec.items.filter(it => it.attachment || it.spUrl).map((it, n) => '<div style="margin-top:5px;font-size:12px">' + _crmEsc(it.category || ('Item ' + (n + 1))) + ': ' + _finBillsHtml(it, 'claim', i.id + '-li' + n) + '</div>');
       if (lines.length) bills = '<div>' + _finBillsHtml(rec, 'claim') + lines.join('') + '</div>';
     }
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'reg-' + i.id + '\')"><td><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _pmBadge(i.kind, _finKindHex(i.kind)) + '</span></td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td><td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td onclick="event.stopPropagation()">' + fileCell(i) + '</td></tr>';
-    const detail = '<tr id="fin-det-reg-' + i.id + '" style="display:none"><td colspan="8" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + bills + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(rec) + '</div></div></td></tr>';
+    const _dcell = v => { const d = v ? tkFmtDate(v) : ''; return '<td style="white-space:nowrap;font-size:12px' + (d && d !== '—' ? '' : ';color:var(--text-light)') + '">' + (d && d !== '—' ? d : '—') + '</td>'; };
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'reg-' + i.id + '\')"><td><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _pmBadge(i.kind, _finKindHex(i.kind)) + '</span></td><td style="font-weight:600">' + _crmEsc(i.who) + '</td><td>' + _crmEsc(i.ref) + '</td><td style="font-size:12px">' + _crmEsc(i.category) + '</td><td>' + _crmEsc(i.dept) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(i.amount) + '</td>' + _dcell(rec.ts || i.date) + _dcell(rec.approvedOn || _finStatusDate(rec, 'Approved')) + _dcell(rec.paidOn || _finStatusDate(rec, 'Paid')) + '<td><span class="badge ' + _finStCls(i.status) + '" style="font-size:10px">' + _aprLabel(i.status) + '</span></td><td onclick="event.stopPropagation()">' + fileCell(i) + '</td></tr>';
+    const detail = '<tr id="fin-det-reg-' + i.id + '" style="display:none"><td colspan="11" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + bills + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(rec) + '</div></div></td></tr>';
     return summary + detail;
-  }).join('') : tkEmptyRow(8, 'No finance records match your filters.', { icon: 'search' });
+  }).join('') : tkEmptyRow(11, 'No finance records match your filters.', { icon: 'search' });
   _finRedrawAggs(list);
 }
 /* Date a given status was reached, from the 21 CFR Part 11 e-signature trail (ISO ts).
@@ -9300,6 +9301,11 @@ function _finVoucherDoc(kind, rec) {
     its.forEach((it, i) => row('Item ' + (i + 1) + ' · ' + (it.category || ''), fmt(it.amount) + (it.note ? ' — ' + it.note : '') + '  [' + _aprLabel(it.status || 'Submitted') + ']'));
     row('Total', fmt(_claimTotal(rec)), true);
     row('Status', _aprLabel(_claimRollup(rec)));
+    // Same date trail as payments — approved / paid (dates recovered from the e-signature trail for older records).
+    const _apDc = rec.approvedOn || _finStatusDate(rec, 'Approved');
+    if (rec.approvedBy || _apDc) row('Approved on', _finWho(rec.approvedBy, _apDc));
+    const _pdDc = rec.paidOn || _finStatusDate(rec, 'Paid');
+    if (rec.paidBy || _pdDc) row('Paid on', _finWho(rec.paidBy, _pdDc));
   } else if (kind === 'travel') {
     row('Requested by', rec.name); row('Department', rec.dept);
     row('Destination', rec.dest); if (rec.purpose) row('Purpose', rec.purpose);
@@ -14910,6 +14916,7 @@ const _VI = {
   'Pending Approvals': 'Chờ duyệt',
   'Company Finance Register': 'Sổ tài chính công ty',
   'Every submission across the company': 'Mọi hồ sơ trong toàn công ty',
+  'Date requested': 'Ngày đề nghị', 'Date approved': 'Ngày duyệt', 'Date paid': 'Ngày thanh toán',
   'Payments · Claims · Travel — ': 'Thanh toán · Chi phí · Công tác — ',
   'Reference': 'Tham chiếu',
   'File': 'Tệp',
