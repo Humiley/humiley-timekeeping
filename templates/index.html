@@ -13904,7 +13904,7 @@ async function pmRenderProjects() {
   _crmLF['pm-pq'] = _crmLF['pm-pq'] || '';
   const fbar = _crmFiltBar(_crmFiltSearch('pm-pq', 'Search projects…', 'pmFillProjects') + _crmFiltSel('pm-pstatus', 'All status', PM_PROJECT_STATUS, 'pmFillProjects') + _crmFiltSel('pm-pdept', 'All departments', PM_DEPT, 'pmFillProjects') + _crmFiltPeriod('pm-pperiod-f', 'pmFillProjects'));
   const addBtn = _pmSeeAll() ? '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_projects\')">' + _PLUS_SVG + ' New Project</button>' : '';
-  root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + _pmPortfolioCard(all) + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + _pmPortfolioCard(all) + _pmPortfolioCalCard(all) + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
   _pmMyActionsLoad();   // fills the "My Project Actions" slot in the background — keeps the list fast
 }
@@ -14265,18 +14265,24 @@ function pmRenderScope(pid) {
 let _pmSchedSel = '';
 let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
 let _pmCalMonth = '', _pmCalPid = '', _pmCalFilter = 'all';   // calendar sub-view state
+let _pmCalHost = { el: 'psch-calendar', render: () => _pmCalendarHtml(_pmPid()), portfolio: false };   // which calendar nav/filter/export act on
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 /* Calendar view of the WHOLE schedule — Google-Calendar style: each multi-day task renders as a BAR
    spanning its date range (wrapping across weeks, lane-packed so overlaps stack), milestones as ◆ pills.
    Critical-path = red, Completed = green, else navy; the completed % darkens the bar from the start.
    Clicking a bar opens that task's editor (tkQuickAdd). Purely a view over pm_tasks. */
-function _pmCalendarHtml(pid) {
-  const tasks = _pmScopeFor('pm_tasks', pid) || [];
+function _pmCalendarHtml(pid, opts) {
+  const O = opts || {}, portfolio = !!O.portfolio;
+  const tasks = O.tasks || (_pmScopeFor('pm_tasks', pid) || []);
+  // Remember which calendar is on-screen so nav / filter / export re-render THIS instance
+  // (the project schedule uses #psch-calendar; the portfolio view uses #pm-portfolio-cal).
+  _pmCalHost = { el: O.hostId || 'psch-calendar', render: () => _pmCalendarHtml(pid, O), portfolio: portfolio, title: O.title || '' };
   // Normalise any stored date to zero-padded YYYY-MM-DD so legacy/imported values ('2026-7-5') or ISO
   // datetimes ('2026-06-30T00:00:00Z') land on the correct day cell (grid keys are padded) and sort right —
   // otherwise such rows render on Gantt/Activities but silently vanish from the calendar.
   const _dnorm = s => { if (!s) return ''; const m = String(s).slice(0, 10).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); return m ? m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0') : String(s).slice(0, 10); };
-  const cpm = _pmCPM(tasks), crit = t => cpm.hasDeps ? !!(cpm.map[t.id] && cpm.map[t.id].critical) : String(t.critical) === 'Yes';
+  // CPM references predecessors WITHIN a project, so it's meaningless across a portfolio — fall back to the manual critical flag there.
+  const cpm = portfolio ? { hasDeps: false, map: {} } : _pmCPM(tasks), crit = t => cpm.hasDeps ? !!(cpm.map[t.id] && cpm.map[t.id].critical) : String(t.critical) === 'Yes';
   const today = _pmToday();
   if (!_pmCalMonth) {   // default to the month that actually has data near today
     const ds = tasks.map(t => _dnorm(t.start)).concat(tasks.map(t => _dnorm(t.finish))).filter(Boolean).sort();
@@ -14313,11 +14319,12 @@ function _pmCalendarHtml(pid) {
     else { if (!s && !f) { undated++; return; } if (!s) s = f; if (!f) f = s; }
     let si = idxOf(s), fi = idxOf(f); if (fi < si) { const x = si; si = fi; fi = x; }
     if (fi < 0 || si > totalCells - 1) return;                                    // task lies outside this month view
-    const color = ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090'));
+    const color = portfolio ? _pmProjColor(t.projectId) : (ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090')));
     events.push({ id: t.id, si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), rsi: si, rfi: fi, ms, color,
       pct: ms ? 0 : ((t.status === 'Completed') ? 100 : _pmPct(t.pctComplete)),
       roundL: si >= 0, roundR: fi <= totalCells - 1,
-      label: (ms ? '◆ ' : '') + (t.wbs ? t.wbs + ' ' : '') + (t.name || '(untitled)') });
+      click: portfolio ? ('pmGoto(\'' + t.projectId + '\',\'schedule\')') : ('tkQuickAdd(\'pm_tasks\',\'' + t.id + '\')'),
+      label: (ms ? '◆ ' : '') + (portfolio ? (_pmProjName(t.projectId) ? _pmProjName(t.projectId) + ' · ' : '') : (t.wbs ? t.wbs + ' ' : '')) + (t.name || '(untitled)') });
   });
 
   // Global lane assignment — greedy interval colouring; longest bars first so long spans take the low lanes.
@@ -14370,14 +14377,14 @@ function _pmCalendarHtml(pid) {
         if (frac >= 100) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.38));';
         else if (frac > 0) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(to right,rgba(0,0,0,.38) 0,rgba(0,0,0,.38) ' + frac + '%,rgba(0,0,0,0) ' + frac + '%);';
       }
-      bars += '<div title="' + _tkEscA(ev.label + (ev.ms ? '' : ' · ' + ev.pct + '% complete')) + '" onclick="tkQuickAdd(\'pm_tasks\',\'' + ev.id + '\')" style="position:absolute;top:' + top + 'px;left:calc(' + (cs / 7 * 100) + '% + 2px);width:calc(' + (span / 7 * 100) + '% - 4px);height:' + BARH + 'px;' + bg + 'color:#fff;border-radius:' + rad + ';font-size:10px;line-height:' + BARH + 'px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;text-shadow:0 1px 1px rgba(0,0,0,.3);box-shadow:0 1px 2px rgba(0,0,0,.12)">' + (rl ? '' : '‹ ') + _pmEsc(ev.label) + '</div>';
+      bars += '<div title="' + _tkEscA(ev.label + (ev.ms ? '' : ' · ' + ev.pct + '% complete')) + '" onclick="' + ev.click + '" style="position:absolute;top:' + top + 'px;left:calc(' + (cs / 7 * 100) + '% + 2px);width:calc(' + (span / 7 * 100) + '% - 4px);height:' + BARH + 'px;' + bg + 'color:#fff;border-radius:' + rad + ';font-size:10px;line-height:' + BARH + 'px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;text-shadow:0 1px 1px rgba(0,0,0,.3);box-shadow:0 1px 2px rgba(0,0,0,.12)">' + (rl ? '' : '‹ ') + _pmEsc(ev.label) + '</div>';
     });
     rows += '<div style="position:relative">' + cellGrid + '<div style="position:absolute;inset:0;pointer-events:none">' + bars + '</div></div>';
   }
 
   const undnote = undated ? '<div style="margin-top:8px;font-size:11px;color:var(--text-light)">+ ' + undated + ' item' + (undated > 1 ? 's' : '') + ' with no date set (not shown — add a start/finish to place ' + (undated > 1 ? 'them' : 'it') + ')</div>' : '';
   const sw = c => '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + c + ';vertical-align:middle"></span>';
-  const legend = '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span>' + sw('#205090') + ' Task</span><span>' + sw('#EF4444') + ' Critical</span><span>' + sw('#00B060') + ' Done</span></div>';
+  const legend = portfolio ? _pmPortLegend(tasks) : '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span>' + sw('#205090') + ' Task</span><span>' + sw('#EF4444') + ' Critical</span><span>' + sw('#00B060') + ' Done</span></div>';
   const filterBar = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' + _PM_CAL_FILTERS.map(o => _pmCalFiltBtn(o[0], o[1])).join('') + '</div>';
   const emptyNote = (events.length === 0 && _pmCalFilter !== 'all') ? '<div style="margin-top:8px;font-size:12px;color:var(--text-light)">No matching items in ' + monthLabel + ' — try another month or clear the filter.</div>' : '';
   const exportBtn = '<button class="btn btn-outline btn-sm" onclick="pmCalExportPDF()" title="Export this month to a branded PDF" style="font-size:11px">' + tkIcon('download') + 'Export PDF</button>';
@@ -14398,7 +14405,7 @@ function _pmCalFiltBtn(key, label) {
 }
 function pmCalFilter(key) {
   _pmCalFilter = key;
-  const el = document.getElementById('psch-calendar'); if (el) el.innerHTML = _pmCalendarHtml(_pmPid());
+  const el = document.getElementById(_pmCalHost.el); if (el) el.innerHTML = _pmCalHost.render();
 }
 /* Export the current month calendar (respecting the active filter) to the branded Humiley A4 PDF. */
 async function pmCalExportPDF() {
@@ -14409,18 +14416,56 @@ async function pmCalExportPDF() {
     for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150));
   }
   if (!ready()) { if (typeof toast === 'function') toast('PDF engine not ready — try again in a moment', 'warn'); return; }
+  const portfolio = !!(_pmCalHost && _pmCalHost.portfolio);
   const p = _pmProj(_pmPid()); const proj = (p && (p.name || p.code)) || 'Project';
   const parts = (_pmCalMonth || _pmToday().slice(0, 7)).split('-');
   const ml = new Date(+parts[0], +parts[1] - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
   const fLabel = _pmCalFilter === 'all' ? '' : ((_PM_CAL_FILTERS.find(x => x[0] === _pmCalFilter) || [])[1] || '').replace('◆ ', '');
   const subtitle = [ml, fLabel && ('Filter: ' + fLabel)].filter(Boolean).join('   ·   ');
-  const fn = 'Humiley_Schedule_Calendar_' + proj.replace(/[^A-Za-z0-9]+/g, '_') + '_' + (_pmCalMonth || '') + '.pdf';
-  await tkExportElementPDF('pm-cal-capture', fn, { title: 'SCHEDULE CALENDAR — ' + proj.toUpperCase(), subtitle: subtitle, docCode: 'HML-PM-CAL' });
+  const title = portfolio ? 'PORTFOLIO CALENDAR' : ('SCHEDULE CALENDAR — ' + proj.toUpperCase());
+  const fn = (portfolio ? 'Humiley_Portfolio_Calendar_' : ('Humiley_Schedule_Calendar_' + proj.replace(/[^A-Za-z0-9]+/g, '_') + '_')) + (_pmCalMonth || '') + '.pdf';
+  await tkExportElementPDF('pm-cal-capture', fn, { title: title, subtitle: subtitle, docCode: 'HML-PM-CAL' });
 }
 function pmCalNav(delta) {
   if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
   else { const parts = _pmCalMonth.split('-'), dd = new Date(+parts[0], (+parts[1] - 1) + delta, 1); _pmCalMonth = dd.getFullYear() + '-' + String(dd.getMonth() + 1).padStart(2, '0'); }
-  const el = document.getElementById('psch-calendar'); if (el) el.innerHTML = _pmCalendarHtml(_pmPid());
+  const el = document.getElementById(_pmCalHost.el); if (el) el.innerHTML = _pmCalHost.render();
+}
+/* ---- Portfolio Calendar: the same month engine over ALL a manager's projects, bars coloured by project ---- */
+const _PM_PROJ_PALETTE = ['#205090', '#00B060', '#8B5CF6', '#EF4444', '#F59E0B', '#0EA5E9', '#DB2777', '#0D9488', '#7C3AED', '#B45309', '#2563EB', '#16A34A'];
+function _pmProjColor(pid) { const s = String(pid || ''); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return _PM_PROJ_PALETTE[h % _PM_PROJ_PALETTE.length]; }
+function _pmProjName(pid) { const p = (_HR.pm_projects || []).find(x => x.id === pid); return p ? (p.name || p.code || '') : ''; }
+function _pmPortLegend(tasks) {
+  const ids = []; (tasks || []).forEach(t => { if (t.projectId && ids.indexOf(t.projectId) < 0) ids.push(t.projectId); });
+  const items = ids.slice(0, 12).map(id => '<span style="white-space:nowrap"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + _pmProjColor(id) + ';vertical-align:middle"></span> ' + _pmEsc(_pmProjName(id) || id) + '</span>');
+  const more = ids.length > 12 ? '<span>+' + (ids.length - 12) + ' more</span>' : '';
+  return '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:var(--text-light)">◆</span> Milestone</span>' + items.join('') + more + '</div>';
+}
+/* Card shown on the Projects landing (managers / directors) — collapsed by default; renders on expand. */
+function _pmPortfolioCalCard(projs) {
+  if (!_pmSeeAll() || !(projs || []).length) return '';
+  return '<div style="margin-bottom:16px" id="pm-portcal-card">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;cursor:pointer" onclick="pmPortfolioCalToggle()">' +
+    '<div style="font-weight:700;font-size:15px;color:var(--text-dark)">Portfolio Calendar <span style="font-weight:500;color:var(--text-light);font-size:12px">· every project on one month</span></div>' +
+    '<button class="btn btn-outline btn-sm" id="pm-portcal-toggle" style="font-size:12px" onclick="event.stopPropagation();pmPortfolioCalToggle()">Show ▾</button></div>' +
+    '<div id="pm-portcal-body" style="display:none"><div id="pm-portfolio-cal"></div></div></div>';
+}
+function pmPortfolioCalToggle() {
+  const body = document.getElementById('pm-portcal-body'), btn = document.getElementById('pm-portcal-toggle');
+  if (!body) return;
+  const show = body.style.display === 'none';
+  body.style.display = show ? 'block' : 'none';
+  if (btn) btn.textContent = show ? 'Hide ▴' : 'Show ▾';
+  if (show) pmPortfolioCal();
+}
+async function pmPortfolioCal() {
+  const host = document.getElementById('pm-portfolio-cal'); if (!host) return;
+  host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light);font-size:13px">Loading schedule…</div>';
+  try { if (typeof tkLoadColl === 'function') await tkLoadColl('pm_tasks'); } catch (e) {}
+  const projs = _pmMine(_HR.pm_projects || []); const ids = new Set(projs.map(p => p.id));
+  const tasks = (_HR.pm_tasks || []).filter(t => ids.has(t.projectId));
+  if (_pmCalPid !== '__portfolio') { _pmCalMonth = ''; _pmCalPid = '__portfolio'; }   // re-centre when entering the portfolio view
+  host.innerHTML = _pmCalendarHtml('', { portfolio: true, tasks: tasks, hostId: 'pm-portfolio-cal', title: 'PORTFOLIO CALENDAR' });
 }
 function pmSchedRange() { const f = (document.getElementById('pm-sched-from') || {}).value || ''; const t = (document.getElementById('pm-sched-to') || {}).value || ''; _pmSchedSel = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('schedule'); }
 /* Critical Path Method — forward/backward pass over task predecessors (referenced by WBS code).
