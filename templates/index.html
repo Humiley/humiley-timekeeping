@@ -612,7 +612,7 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   body [style*="grid-template-columns"]{grid-template-columns:minmax(0,1fr) !important}
   /* …but a real month grid must STAY 7 columns on phones (a 1-column calendar is meaningless) —
      the Schedule → Calendar sub-tab opts out of the inline flattener above (higher specificity beats it). */
-  #content .pm-cal-grid{grid-template-columns:repeat(7,1fr) !important;gap:3px !important}
+  #content .pm-cal-grid{grid-template-columns:repeat(7,1fr) !important;gap:0 !important}
   #content .pm-cal-grid > div{min-width:0 !important}
   /* allow grid/flex items to shrink below their content's intrinsic min-content width */
   [style*="grid-template-columns"] > *, .grid-2 > *, .grid-3 > *, .grid-7-5 > *, .grid-6-4 > *, .grid-75 > *, .kpi-grid > *, .staff-kpi-grid > *{min-width:0}
@@ -14266,8 +14266,9 @@ let _pmSchedSel = '';
 let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
 let _pmCalMonth = '', _pmCalPid = '';   // calendar sub-view state
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
-/* Calendar view of the WHOLE schedule — every task start (▶), finish/deadline (⚑) and milestone (◆)
-   plotted on a month grid; critical-path finishes are red. Purely a view over pm_tasks. */
+/* Calendar view of the WHOLE schedule — Google-Calendar style: each multi-day task renders as a BAR
+   spanning its date range (wrapping across weeks, lane-packed so overlaps stack), milestones as ◆ pills.
+   Critical-path = red, Completed = green, else navy. Purely a view over pm_tasks. */
 function _pmCalendarHtml(pid) {
   const tasks = _pmScopeFor('pm_tasks', pid) || [];
   // Normalise any stored date to zero-padded YYYY-MM-DD so legacy/imported values ('2026-7-5') or ISO
@@ -14283,33 +14284,83 @@ function _pmCalendarHtml(pid) {
     _pmCalMonth = m;
   }
   const parts = _pmCalMonth.split('-'), Y = +parts[0], MM = +parts[1];
-  const first = new Date(Y, MM - 1, 1), daysIn = new Date(Y, MM, 0).getDate();
+  const first = new Date(Y, MM - 1, 1), daysIn = new Date(Y, MM, 0).getDate(), last = new Date(Y, MM - 1, daysIn);
   const monthLabel = first.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-  const startWd = (first.getDay() + 6) % 7;   // 0=Mon … 6=Sun (Monday-start weeks)
-  const byDay = {};
-  const put = (d, kind, t) => { d = _dnorm(d); if (!d) return; (byDay[d] = byDay[d] || { m: [], f: [], s: [] })[kind].push(t); };
+  const DAY = 86400000;
+  const gridStart = new Date(Y, MM - 1, 1 - ((first.getDay() + 6) % 7));         // Monday on/before the 1st
+  const gridEnd = new Date(Y, MM - 1, daysIn + (6 - ((last.getDay() + 6) % 7))); // Sunday on/after the last
+  const totalCells = Math.round((gridEnd - gridStart) / DAY) + 1, weeks = totalCells / 7;
+  const idxOf = ds => { const p = ds.split('-'); return Math.round((new Date(+p[0], +p[1] - 1, +p[2]) - gridStart) / DAY); };
+
+  // Build bar events from every dated task/milestone; count undated ones for an honest footnote.
+  let undated = 0; const events = [];
   tasks.forEach(t => {
-    if (String(t.isMilestone) === 'Yes') put(t.finish || t.start, 'm', t);
-    else { put(t.start, 's', t); put(t.finish, 'f', t); }
+    const ms = String(t.isMilestone) === 'Yes';
+    let s = _dnorm(t.start), f = _dnorm(t.finish);
+    if (ms) { const d = f || s; if (!d) { undated++; return; } s = f = d; }
+    else { if (!s && !f) { undated++; return; } if (!s) s = f; if (!f) f = s; }
+    let si = idxOf(s), fi = idxOf(f); if (fi < si) { const x = si; si = fi; fi = x; }
+    if (fi < 0 || si > totalCells - 1) return;                                    // task lies outside this month view
+    const color = ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090'));
+    events.push({ si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), ms, color,
+      roundL: si >= 0, roundR: fi <= totalCells - 1,
+      label: (ms ? '◆ ' : '') + (t.wbs ? t.wbs + ' ' : '') + (t.name || '(untitled)') });
   });
-  const chip = (t, color, icon) => '<div title="' + _tkEscA((t.wbs ? t.wbs + ' ' : '') + (t.name || '')) + '" onclick="pmSchedTab(\'activities\')" style="font-size:10px;line-height:1.5;padding:0 4px;border-radius:4px;background:' + color + '22;color:' + color + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;cursor:pointer">' + icon + ' ' + _pmEsc((t.name || '').slice(0, 24)) + '</div>';
+
+  // Global lane assignment — greedy interval colouring; longest bars first so long spans take the low lanes.
+  events.sort((a, b) => a.si - b.si || (b.fi - b.si) - (a.fi - a.si));
+  const lanes = [], MAXL = 4, hiddenByCell = {};
+  events.forEach(ev => {
+    let k = 0; for (; k < lanes.length; k++) { if (!lanes[k].some(iv => ev.si <= iv.fi && iv.si <= ev.fi)) break; }
+    if (k === lanes.length) lanes.push([]);
+    lanes[k].push({ si: ev.si, fi: ev.fi }); ev.lane = k;
+    if (k >= MAXL) { ev.hidden = true; for (let c = ev.si; c <= ev.fi; c++) hiddenByCell[c] = (hiddenByCell[c] || 0) + 1; }
+  });
+  const anyHidden = Object.keys(hiddenByCell).length > 0;
+  const NUMH = 19, BARH = 15, BARG = 2, lanesShown = Math.min(MAXL, lanes.length);
+  const rowMinH = Math.max(66, NUMH + lanesShown * (BARH + BARG) + (anyHidden ? 12 : 0) + 4);
+
+  // Weekday header row (part of the same bordered grid).
   const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  const head = dow.map(d => '<div style="font-size:11px;font-weight:700;color:var(--text-light);text-align:center;padding:6px 0">' + d + '</div>').join('');
-  let cells = '';
-  for (let i = 0; i < startWd; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.45"></div>';
-  for (let d = 1; d <= daysIn; d++) {
-    const ds = Y + '-' + String(MM).padStart(2, '0') + '-' + String(d).padStart(2, '0');
-    const ev = byDay[ds] || { m: [], f: [], s: [] }, isToday = ds === today;
-    const items = [].concat(ev.m.map(t => chip(t, '#8B5CF6', '◆')), ev.f.map(t => chip(t, crit(t) ? '#EF4444' : '#205090', '⚑')), ev.s.map(t => chip(t, '#00B060', '▶')));
-    const more = items.length > 4 ? '<div style="font-size:9.5px;color:var(--text-light)">+' + (items.length - 4) + ' more</div>' : '';
-    cells += '<div style="min-height:92px;border:1px solid ' + (isToday ? 'var(--navy)' : 'var(--line)') + ';border-radius:8px;padding:4px 5px;overflow:hidden' + (isToday ? ';box-shadow:inset 0 0 0 1px var(--navy)' : '') + '"><div style="font-size:11px;font-weight:700;color:' + (isToday ? 'var(--navy)' : 'var(--text-dark)') + ';margin-bottom:3px">' + d + (isToday ? ' <span style="font-size:9px;font-weight:600">today</span>' : '') + '</div>' + items.slice(0, 4).join('') + more + '</div>';
+  const head = '<div class="pm-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:0">' +
+    dow.map((d, i) => '<div style="font-size:11px;font-weight:700;color:var(--text-light);text-align:center;padding:6px 0;' + (i < 6 ? 'border-right:1px solid var(--line);' : '') + 'border-bottom:1px solid var(--line);' + (i >= 5 ? 'background:var(--soft-bg);' : '') + '">' + d + '</div>').join('') + '</div>';
+
+  // Week rows: a day-cell background grid + an absolutely-positioned bar overlay per week.
+  let rows = '';
+  for (let w = 0; w < weeks; w++) {
+    let cells = '';
+    for (let c = 0; c < 7; c++) {
+      const idx = w * 7 + c, dt = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + idx);
+      const ds = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      const inMonth = dt.getMonth() === MM - 1, isToday = ds === today, weekend = c >= 5;
+      const numColor = isToday ? 'var(--navy)' : (inMonth ? 'var(--text-dark)' : 'var(--text-light)');
+      const hid = hiddenByCell[idx] ? '<div style="position:absolute;bottom:1px;left:4px;font-size:9px;color:var(--text-light)">+' + hiddenByCell[idx] + '</div>' : '';
+      cells += '<div style="position:relative;min-height:' + rowMinH + 'px;' + (c < 6 ? 'border-right:1px solid var(--line);' : '') + (w < weeks - 1 ? 'border-bottom:1px solid var(--line);' : '') + (weekend ? 'background:var(--soft-bg);' : '') + (isToday ? 'box-shadow:inset 0 0 0 2px var(--navy);' : '') + 'padding:2px 3px">' +
+        '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '700') + ';color:' + numColor + ';opacity:' + (inMonth ? '1' : '.6') + '">' + dt.getDate() + '</div>' + hid + '</div>';
+    }
+    const cellGrid = '<div class="pm-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:0">' + cells + '</div>';
+    let bars = '';
+    const ws = w * 7, we = ws + 6;
+    events.forEach(ev => {
+      if (ev.hidden || ev.fi < ws || ev.si > we) return;                          // not visible in this week
+      const cs = Math.max(ev.si, ws) - ws, ce = Math.min(ev.fi, we) - ws, span = ce - cs + 1;
+      const startsHere = ev.si >= ws, endsHere = ev.fi <= we;
+      const rl = ev.roundL && startsHere, rr = ev.roundR && endsHere;
+      const top = NUMH + ev.lane * (BARH + BARG);
+      const rad = (rl ? '4px' : '0') + ' ' + (rr ? '4px' : '0') + ' ' + (rr ? '4px' : '0') + ' ' + (rl ? '4px' : '0');
+      bars += '<div title="' + _tkEscA(ev.label) + '" onclick="pmSchedTab(\'activities\')" style="position:absolute;top:' + top + 'px;left:calc(' + (cs / 7 * 100) + '% + 2px);width:calc(' + (span / 7 * 100) + '% - 4px);height:' + BARH + 'px;background:' + ev.color + ';color:#fff;border-radius:' + rad + ';font-size:10px;line-height:' + BARH + 'px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.12)">' + (rl ? '' : '‹ ') + _pmEsc(ev.label) + '</div>';
+    });
+    rows += '<div style="position:relative">' + cellGrid + '<div style="position:absolute;inset:0;pointer-events:none">' + bars + '</div></div>';
   }
+
+  const undnote = undated ? '<div style="margin-top:8px;font-size:11px;color:var(--text-light)">+ ' + undated + ' item' + (undated > 1 ? 's' : '') + ' with no date set (not shown — add a start/finish to place ' + (undated > 1 ? 'them' : 'it') + ')</div>' : '';
+  const sw = c => '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' + c + ';vertical-align:middle"></span>';
+  const legend = '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span>' + sw('#205090') + ' Task</span><span>' + sw('#EF4444') + ' Critical</span><span>' + sw('#00B060') + ' Done</span></div>';
   return '<div class="card" style="padding:16px 18px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-ghost btn-sm" onclick="pmCalNav(-1)" style="font-size:16px;padding:0 11px;line-height:1.6">‹</button><div class="card-title" style="min-width:158px;text-align:center">' + monthLabel + '</div><button class="btn btn-ghost btn-sm" onclick="pmCalNav(1)" style="font-size:16px;padding:0 11px;line-height:1.6">›</button><button class="btn btn-outline btn-sm" onclick="pmCalNav(0)" style="font-size:11px">Today</button></div>' +
-    '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span><span style="color:#205090">⚑</span> Finish</span><span><span style="color:#EF4444">⚑</span> Critical</span><span><span style="color:#00B060">▶</span> Start</span></div>' +
-    '</div>' +
-    '<div class="pm-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">' + head + cells + '</div></div>';
+    legend + '</div>' +
+    '<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden">' + head + rows + '</div>' + undnote + '</div>';
 }
 function pmCalNav(delta) {
   if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
