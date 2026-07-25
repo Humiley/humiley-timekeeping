@@ -14380,12 +14380,16 @@ function _pmCalendarHtml(pid) {
   const legend = '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span>' + sw('#205090') + ' Task</span><span>' + sw('#EF4444') + ' Critical</span><span>' + sw('#00B060') + ' Done</span></div>';
   const filterBar = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' + _PM_CAL_FILTERS.map(o => _pmCalFiltBtn(o[0], o[1])).join('') + '</div>';
   const emptyNote = (events.length === 0 && _pmCalFilter !== 'all') ? '<div style="margin-top:8px;font-size:12px;color:var(--text-light)">No matching items in ' + monthLabel + ' — try another month or clear the filter.</div>' : '';
+  const exportBtn = '<button class="btn btn-outline btn-sm" onclick="pmCalExportPDF()" title="Export this month to a branded PDF" style="font-size:11px">' + tkIcon('download') + 'Export PDF</button>';
   return '<div class="card" style="padding:16px 18px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
     '<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-ghost btn-sm" onclick="pmCalNav(-1)" style="font-size:16px;padding:0 11px;line-height:1.6">‹</button><div class="card-title" style="min-width:158px;text-align:center">' + monthLabel + '</div><button class="btn btn-ghost btn-sm" onclick="pmCalNav(1)" style="font-size:16px;padding:0 11px;line-height:1.6">›</button><button class="btn btn-outline btn-sm" onclick="pmCalNav(0)" style="font-size:11px">Today</button></div>' +
-    legend + '</div>' +
+    exportBtn + '</div>' +
     filterBar +
-    '<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden">' + head + rows + '</div>' + emptyNote + undnote + '</div>';
+    '<div id="pm-cal-capture" style="background:var(--card,#fff)">' +
+    '<div style="margin-bottom:9px">' + legend + '</div>' +
+    '<div style="border:1px solid var(--line);border-radius:9px;overflow:hidden">' + head + rows + '</div>' + emptyNote + undnote +
+    '</div></div>';
 }
 const _PM_CAL_FILTERS = [['all', 'All'], ['milestones', '◆ Milestones'], ['critical', 'Critical'], ['mine', 'My tasks'], ['open', 'Open']];
 function _pmCalFiltBtn(key, label) {
@@ -14395,6 +14399,23 @@ function _pmCalFiltBtn(key, label) {
 function pmCalFilter(key) {
   _pmCalFilter = key;
   const el = document.getElementById('psch-calendar'); if (el) el.innerHTML = _pmCalendarHtml(_pmPid());
+}
+/* Export the current month calendar (respecting the active filter) to the branded Humiley A4 PDF. */
+async function pmCalExportPDF() {
+  const ready = () => window.html2canvas && ((window.jspdf && window.jspdf.jsPDF) || window.jsPDF);
+  if (!ready()) {
+    if (typeof tkEnsureExportLibs === 'function') tkEnsureExportLibs();
+    if (typeof toast === 'function') toast('Loading PDF engine…', 'info', 2500);
+    for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150));
+  }
+  if (!ready()) { if (typeof toast === 'function') toast('PDF engine not ready — try again in a moment', 'warn'); return; }
+  const p = _pmProj(_pmPid()); const proj = (p && (p.name || p.code)) || 'Project';
+  const parts = (_pmCalMonth || _pmToday().slice(0, 7)).split('-');
+  const ml = new Date(+parts[0], +parts[1] - 1, 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const fLabel = _pmCalFilter === 'all' ? '' : ((_PM_CAL_FILTERS.find(x => x[0] === _pmCalFilter) || [])[1] || '').replace('◆ ', '');
+  const subtitle = [ml, fLabel && ('Filter: ' + fLabel)].filter(Boolean).join('   ·   ');
+  const fn = 'Humiley_Schedule_Calendar_' + proj.replace(/[^A-Za-z0-9]+/g, '_') + '_' + (_pmCalMonth || '') + '.pdf';
+  await tkExportElementPDF('pm-cal-capture', fn, { title: 'SCHEDULE CALENDAR — ' + proj.toUpperCase(), subtitle: subtitle, docCode: 'HML-PM-CAL' });
 }
 function pmCalNav(delta) {
   if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
