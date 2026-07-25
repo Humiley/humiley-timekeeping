@@ -610,6 +610,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
      blowing out to a grid item's min-content width (which overflowed Check-In / Team pages). */
   .grid-2,.grid-3,.grid-7-5,.grid-6-4,.grid-75{grid-template-columns:minmax(0,1fr) !important;gap:12px !important}
   body [style*="grid-template-columns"]{grid-template-columns:minmax(0,1fr) !important}
+  /* …but a real month grid must STAY 7 columns on phones (a 1-column calendar is meaningless) —
+     the Schedule → Calendar sub-tab opts out of the inline flattener above (higher specificity beats it). */
+  #content .pm-cal-grid{grid-template-columns:repeat(7,1fr) !important;gap:3px !important}
+  #content .pm-cal-grid > div{min-width:0 !important}
   /* allow grid/flex items to shrink below their content's intrinsic min-content width */
   [style*="grid-template-columns"] > *, .grid-2 > *, .grid-3 > *, .grid-7-5 > *, .grid-6-4 > *, .grid-75 > *, .kpi-grid > *, .staff-kpi-grid > *{min-width:0}
   /* form controls in a flex row (e.g. the check-in location select + Re-check button) must
@@ -14266,10 +14270,14 @@ function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
    plotted on a month grid; critical-path finishes are red. Purely a view over pm_tasks. */
 function _pmCalendarHtml(pid) {
   const tasks = _pmScopeFor('pm_tasks', pid) || [];
+  // Normalise any stored date to zero-padded YYYY-MM-DD so legacy/imported values ('2026-7-5') or ISO
+  // datetimes ('2026-06-30T00:00:00Z') land on the correct day cell (grid keys are padded) and sort right —
+  // otherwise such rows render on Gantt/Activities but silently vanish from the calendar.
+  const _dnorm = s => { if (!s) return ''; const m = String(s).slice(0, 10).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/); return m ? m[1] + '-' + m[2].padStart(2, '0') + '-' + m[3].padStart(2, '0') : String(s).slice(0, 10); };
   const cpm = _pmCPM(tasks), crit = t => cpm.hasDeps ? !!(cpm.map[t.id] && cpm.map[t.id].critical) : String(t.critical) === 'Yes';
   const today = _pmToday();
   if (!_pmCalMonth) {   // default to the month that actually has data near today
-    const ds = tasks.map(t => (t.start || '').slice(0, 10)).concat(tasks.map(t => (t.finish || '').slice(0, 10))).filter(Boolean).sort();
+    const ds = tasks.map(t => _dnorm(t.start)).concat(tasks.map(t => _dnorm(t.finish))).filter(Boolean).sort();
     let m = today.slice(0, 7);
     if (ds.length) { const lo = ds[0], hi = ds[ds.length - 1]; const clamp = today < lo ? lo : (today > hi ? hi : today); m = clamp.slice(0, 7); }
     _pmCalMonth = m;
@@ -14279,7 +14287,7 @@ function _pmCalendarHtml(pid) {
   const monthLabel = first.toLocaleString('en-US', { month: 'long', year: 'numeric' });
   const startWd = (first.getDay() + 6) % 7;   // 0=Mon … 6=Sun (Monday-start weeks)
   const byDay = {};
-  const put = (d, kind, t) => { if (!d) return; d = d.slice(0, 10); (byDay[d] = byDay[d] || { m: [], f: [], s: [] })[kind].push(t); };
+  const put = (d, kind, t) => { d = _dnorm(d); if (!d) return; (byDay[d] = byDay[d] || { m: [], f: [], s: [] })[kind].push(t); };
   tasks.forEach(t => {
     if (String(t.isMilestone) === 'Yes') put(t.finish || t.start, 'm', t);
     else { put(t.start, 's', t); put(t.finish, 'f', t); }
@@ -14301,7 +14309,7 @@ function _pmCalendarHtml(pid) {
     '<div style="display:flex;align-items:center;gap:6px"><button class="btn btn-ghost btn-sm" onclick="pmCalNav(-1)" style="font-size:16px;padding:0 11px;line-height:1.6">‹</button><div class="card-title" style="min-width:158px;text-align:center">' + monthLabel + '</div><button class="btn btn-ghost btn-sm" onclick="pmCalNav(1)" style="font-size:16px;padding:0 11px;line-height:1.6">›</button><button class="btn btn-outline btn-sm" onclick="pmCalNav(0)" style="font-size:11px">Today</button></div>' +
     '<div style="font-size:11px;color:var(--text-light);display:flex;gap:12px;flex-wrap:wrap"><span><span style="color:#8B5CF6">◆</span> Milestone</span><span><span style="color:#205090">⚑</span> Finish</span><span><span style="color:#EF4444">⚑</span> Critical</span><span><span style="color:#00B060">▶</span> Start</span></div>' +
     '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">' + head + cells + '</div></div>';
+    '<div class="pm-cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">' + head + cells + '</div></div>';
 }
 function pmCalNav(delta) {
   if (delta === 0) { _pmCalMonth = _pmToday().slice(0, 7); }
