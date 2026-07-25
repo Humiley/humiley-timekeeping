@@ -14268,7 +14268,8 @@ let _pmCalMonth = '', _pmCalPid = '';   // calendar sub-view state
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 /* Calendar view of the WHOLE schedule — Google-Calendar style: each multi-day task renders as a BAR
    spanning its date range (wrapping across weeks, lane-packed so overlaps stack), milestones as ◆ pills.
-   Critical-path = red, Completed = green, else navy. Purely a view over pm_tasks. */
+   Critical-path = red, Completed = green, else navy; the completed % darkens the bar from the start.
+   Clicking a bar opens that task's editor (tkQuickAdd). Purely a view over pm_tasks. */
 function _pmCalendarHtml(pid) {
   const tasks = _pmScopeFor('pm_tasks', pid) || [];
   // Normalise any stored date to zero-padded YYYY-MM-DD so legacy/imported values ('2026-7-5') or ISO
@@ -14302,7 +14303,8 @@ function _pmCalendarHtml(pid) {
     let si = idxOf(s), fi = idxOf(f); if (fi < si) { const x = si; si = fi; fi = x; }
     if (fi < 0 || si > totalCells - 1) return;                                    // task lies outside this month view
     const color = ms ? '#8B5CF6' : (crit(t) ? '#EF4444' : ((t.status === 'Completed') ? '#00B060' : '#205090'));
-    events.push({ si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), ms, color,
+    events.push({ id: t.id, si: Math.max(0, si), fi: Math.min(totalCells - 1, fi), ms, color,
+      pct: ms ? 0 : ((t.status === 'Completed') ? 100 : _pmPct(t.pctComplete)),
       roundL: si >= 0, roundR: fi <= totalCells - 1,
       label: (ms ? '◆ ' : '') + (t.wbs ? t.wbs + ' ' : '') + (t.name || '(untitled)') });
   });
@@ -14348,7 +14350,16 @@ function _pmCalendarHtml(pid) {
       const rl = ev.roundL && startsHere, rr = ev.roundR && endsHere;
       const top = NUMH + ev.lane * (BARH + BARG);
       const rad = (rl ? '4px' : '0') + ' ' + (rr ? '4px' : '0') + ' ' + (rr ? '4px' : '0') + ' ' + (rl ? '4px' : '0');
-      bars += '<div title="' + _tkEscA(ev.label) + '" onclick="pmSchedTab(\'activities\')" style="position:absolute;top:' + top + 'px;left:calc(' + (cs / 7 * 100) + '% + 2px);width:calc(' + (span / 7 * 100) + '% - 4px);height:' + BARH + 'px;background:' + ev.color + ';color:#fff;border-radius:' + rad + ';font-size:10px;line-height:' + BARH + 'px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,.12)">' + (rl ? '' : '‹ ') + _pmEsc(ev.label) + '</div>';
+      // %-complete: darken the completed portion, mapped across the WHOLE task span so a multi-week bar
+      // fills continuously (early weeks solid-done, the boundary week half-filled, later weeks empty).
+      let bg = 'background:' + ev.color + ';';
+      if (!ev.ms && ev.pct > 0) {
+        const tspan = ev.fi - ev.si + 1, doneEnd = ev.si + ev.pct / 100 * tspan;
+        const frac = Math.max(0, Math.min(100, Math.round((doneEnd - (ws + cs)) / span * 100)));
+        if (frac >= 100) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.38));';
+        else if (frac > 0) bg = 'background-color:' + ev.color + ';background-image:linear-gradient(to right,rgba(0,0,0,.38) 0,rgba(0,0,0,.38) ' + frac + '%,rgba(0,0,0,0) ' + frac + '%);';
+      }
+      bars += '<div title="' + _tkEscA(ev.label + (ev.ms ? '' : ' · ' + ev.pct + '% complete')) + '" onclick="tkQuickAdd(\'pm_tasks\',\'' + ev.id + '\')" style="position:absolute;top:' + top + 'px;left:calc(' + (cs / 7 * 100) + '% + 2px);width:calc(' + (span / 7 * 100) + '% - 4px);height:' + BARH + 'px;' + bg + 'color:#fff;border-radius:' + rad + ';font-size:10px;line-height:' + BARH + 'px;padding:0 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:auto;cursor:pointer;text-shadow:0 1px 1px rgba(0,0,0,.3);box-shadow:0 1px 2px rgba(0,0,0,.12)">' + (rl ? '' : '‹ ') + _pmEsc(ev.label) + '</div>';
     });
     rows += '<div style="position:relative">' + cellGrid + '<div style="position:absolute;inset:0;pointer-events:none">' + bars + '</div></div>';
   }
