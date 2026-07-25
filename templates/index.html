@@ -6064,7 +6064,7 @@ const _IMPORT_SPECS = {
       { h: 'status', lbl: 'Status', keys: ['status'], sample: 'Available' },
       { h: 'note', lbl: 'Note', keys: ['note', 'notes', 'remark'], sample: '' }
     ],
-    build: (o) => ({ name: o.name, category: o.category || 'Other', serial: o.serial || '', assignedTo: o.assignedTo || '', empId: '', department: o.department || '', qty: +o.qty || 1, unitPrice: +o.unitPrice || 0, purchaseDate: o.purchaseDate || '', status: o.status || (o.assignedTo ? 'Assigned' : 'Available'), note: o.note || '' })
+    build: (o) => ({ name: o.name, category: o.category || 'Other', serial: o.serial || '', assignedTo: o.assignedTo || '', empId: (o.assignedTo ? (((_DEMO_EMPLOYEES || []).find(e => (e.name || '').toLowerCase() === String(o.assignedTo).toLowerCase()) || {}).id || '') : ''), department: o.department || '', qty: +o.qty || 1, unitPrice: +o.unitPrice || 0, purchaseDate: o.purchaseDate || '', status: o.status || (o.assignedTo ? 'Assigned' : 'Available'), note: o.note || '' })
   }
 };
 function tkImport(kind) {
@@ -6335,16 +6335,51 @@ async function tkRenderMyDevices() {
   const me = _tkMe() || {};
   const mine = (_HR.devices || []).filter(x => (x.empId && x.empId === me.id) || (x.assignedTo && x.assignedTo === me.name));
   const value = mine.reduce((s, x) => s + (+x.qty || 1) * (+x.unitPrice || 0), 0);
+  const _mdHeld = x => (x.status || '') !== 'Available' && (x.status || '') !== 'Retired';
+  const _mdSigned = x => (x.signatures || []).some(s => s.ack || /handover|acknowled/i.test(s.meaning || ''));
+  const _mdSigDate = x => { const s = (x.signatures || []).slice().reverse().find(s => s.ack || /handover|acknowled/i.test(s.meaning || '')); return x.ackOn || (s && s.ts) || ''; };
+  const toAck = mine.filter(x => _mdHeld(x) && !_mdSigned(x)).length;
   const kpis = _hrKpiRow([
     _kpiTile('My devices', mine.length, '#205090', '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
     _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
-    _kpiTile('In use', mine.filter(x => x.status === 'Assigned').length, '#8B5CF6', '<polyline points="20 6 9 17 4 12"/>')
+    _kpiTile('To acknowledge', toAck, toAck ? '#F59E0B' : '#8B5CF6', '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>')
   ]);
-  const cards = mine.length ? mine.map(x => '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + (x.photo ? _devPhotoCell(x, 38) : _devIcon(x.category, 38)) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
-    '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Provided: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div></div>').join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
+  const cards = mine.length ? mine.map(x => {
+    const foot = _mdSigned(x)
+      ? '<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);font-size:11.5px;color:var(--emerald-deep,#008548);font-weight:600;display:flex;align-items:center;gap:6px">' + tkIcon('check', 13) + _t('Receipt acknowledged') + (_mdSigDate(x) ? ' · ' + tkFmtDate(_mdSigDate(x)) : '') + '</div>'
+      : (_mdHeld(x) ? '<div style="margin-top:10px;padding-top:9px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><span style="font-size:11.5px;color:var(--warning,#F59E0B);font-weight:600">' + _t('Awaiting your signature') + '</span><button class="btn btn-primary btn-sm" style="font-size:11px;padding:5px 11px" onclick="tkMyDeviceSign(\'' + x.id + '\')">' + tkIcon('check', 12) + _t('Acknowledge receipt') + '</button></div>' : '');
+    return '<div class="card" style="padding:16px 18px"><div style="display:flex;justify-content:space-between;align-items:start;gap:10px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px;min-width:0">' + (x.photo ? _devPhotoCell(x, 38) : _devIcon(x.category, 38)) + '<div style="font-weight:700;font-size:14px">' + (x.name || '') + '</div></div><span class="badge ' + _DEV_STCLS(x.status) + '" style="font-size:10px;flex-shrink:0">' + (x.status || '') + '</span></div>' +
+      '<div style="font-size:12px;color:var(--text-light);line-height:1.8">' + (x.category ? ('Category: <b style="color:var(--text-dark)">' + x.category + '</b><br>') : '') + (x.serial ? ('Serial / Tag: <b style="color:var(--text-dark)">' + x.serial + '</b><br>') : '') + 'Provided: <b style="color:var(--text-dark)">' + tkFmtDate(x.purchaseDate) + '</b>' + (x.note ? ('<br>Note: ' + x.note) : '') + '</div>' + foot + '</div>';
+  }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No company devices are currently assigned to you.</div>';
   root.innerHTML = kpis +
-    '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>You are responsible for the company assets assigned to you. On offboarding, all devices must be returned and signed off before your last working day.</div>' +
+    '<div class="card" style="padding:13px 16px;margin-bottom:16px;font-size:12px;color:var(--text-light);display:flex;gap:10px;align-items:center;border-left:3px solid var(--navy)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>' + _t('You are responsible for the company assets assigned to you. Please e-sign to acknowledge receipt of each item. On offboarding, all devices must be returned and signed off before your last working day.') + '</div>' +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">' + cards + '</div>';
+}
+/* Employee self-service — e-sign to acknowledge receipt of a company asset from My Devices. */
+function tkMyDeviceSign(id) {
+  const x = (_HR.devices || []).find(v => v.id === id); if (!x) { toast(_t('Not found'), 'warn'); return; }
+  document.getElementById('mdSignOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'mdSignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">' + _t('Acknowledge receipt') + '</div><button class="modal-close" onclick="document.getElementById(\'mdSignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + (x.photo ? _devPhotoCell(x, 40) : _devIcon(x.category, 40)) + '<div><div style="font-weight:700">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc((x.category || '') + (x.serial ? ' · ' + x.serial : '')) + '</div></div></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' + _t('By signing you confirm you have received this company asset and are responsible for it until it is returned.') + '</div>' +
+    '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden"><canvas id="md-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas><div id="md-sig-hint" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa4b2;font-size:12px;pointer-events:none">' + _t('Sign here') + '</div></div>' +
+    '<div style="text-align:right;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_sigPadClear(\'md-sigpad\',\'md-sig-hint\')">' + _t('Clear') + '</button></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'mdSignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" onclick="tkMyDeviceSignSave(\'' + id + '\')">' + tkIcon('check') + _t('Sign & acknowledge') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => _sigPadWire('md-sigpad', 'md-sig-hint'), 40);
+}
+async function tkMyDeviceSignSave(id) {
+  const img = _sigPadImage('md-sigpad');
+  if (!img) { toast(_t('Please draw your signature to acknowledge.'), 'warn'); return; }
+  try {
+    const r = await tkApi('/api/coll/devices/' + id, { method: 'PATCH', body: { ackSignature: { image: img } } });
+    const x = (_HR.devices || []).find(v => v.id === id);
+    if (x && r && r.item) Object.assign(x, r.item);
+    document.getElementById('mdSignOverlay')?.remove();
+    toast(_t('Receipt acknowledged — thank you.'));
+    try { tkRenderMyDevices(); } catch (e) {}
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 /* Offboarding — asset return checklist + sign-off (employee signs before leaving). */
 async function tkAssetReturn(empId, exitId) {
@@ -15417,6 +15452,9 @@ const _VI = {
   'all assets': 'tất cả tài sản', 'who has what': 'ai đang giữ gì', 'Serial / Tag': 'Serial / Mã tài sản', 'Assigned On': 'Ngày cấp', 'Signed': 'Đã ký', 'Unsigned': 'Chưa ký', 'Provided date': 'Ngày cấp', 'Handover PDF': 'Biên bản bàn giao (PDF)', 'Select employee': 'Chọn nhân viên',
   'Assign & e-sign': 'Cấp phát & ký', 'Assign asset & e-sign': 'Cấp phát tài sản & ký điện tử', 'Assign to (employee)': 'Cấp cho (nhân viên)', 'Note (optional)': 'Ghi chú (tùy chọn)', 'e.g. charger + bag included': 'ví dụ: kèm sạc + túi', 'Employee signature — sign to acknowledge receipt': 'Chữ ký nhân viên — ký để xác nhận đã nhận', 'Confirm & sign': 'Xác nhận & ký', 'Asset assigned to': 'Đã cấp tài sản cho', 'signed': 'đã ký',
   'Please select an employee.': 'Vui lòng chọn nhân viên.', 'Employee not found': 'Không tìm thấy nhân viên', 'Please ask the employee to sign to acknowledge receipt.': 'Vui lòng đề nghị nhân viên ký để xác nhận đã nhận.', 'No assets are currently assigned.': 'Hiện chưa có tài sản nào được cấp phát.',
+  'To acknowledge': 'Cần xác nhận', 'Receipt acknowledged': 'Đã xác nhận nhận', 'Awaiting your signature': 'Chờ bạn ký xác nhận', 'Acknowledge receipt': 'Xác nhận đã nhận', 'Sign & acknowledge': 'Ký & xác nhận', 'Please draw your signature to acknowledge.': 'Vui lòng ký để xác nhận.', 'Receipt acknowledged — thank you.': 'Đã xác nhận nhận tài sản — cảm ơn bạn.',
+  'By signing you confirm you have received this company asset and are responsible for it until it is returned.': 'Bằng việc ký, bạn xác nhận đã nhận tài sản của công ty và chịu trách nhiệm cho đến khi hoàn trả.',
+  'You are responsible for the company assets assigned to you. Please e-sign to acknowledge receipt of each item. On offboarding, all devices must be returned and signed off before your last working day.': 'Bạn chịu trách nhiệm với các tài sản công ty được cấp. Vui lòng ký điện tử để xác nhận đã nhận từng thiết bị. Khi nghỉ việc, tất cả thiết bị phải được hoàn trả và ký bàn giao trước ngày làm việc cuối cùng.',
   'The employee signs below to acknowledge receipt — this records the handover, adds the asset to their My Devices, and emails a signed copy.': 'Nhân viên ký bên dưới để xác nhận đã nhận — thao tác này lưu biên bản bàn giao, thêm tài sản vào “Thiết bị của tôi” và gửi email bản đã ký.',
   'Recruitment Funnel': 'Phễu tuyển dụng', 'Performance Distribution': 'Phân bố hiệu suất', 'Gender Split': 'Tỷ lệ giới tính',
   'Tenure Bands': 'Thâm niên', 'Attendance Status': 'Tình trạng chấm công', 'Leave Days by Type': 'Ngày nghỉ theo loại',
@@ -20005,7 +20043,7 @@ async function saveEmployee() {
     const newEmp = (res && (res.item || res.employee || res)) || {};
     const empId = newEmp.id || ''; const today = _today();
     for (const w of want) {
-      try { await tkApi('/api/coll/devices', { method: 'POST', body: { name: w.name, category: w.category, serial: '', assignedTo: name, empId: empId, department: dept, qty: 1, unitPrice: w.unitPrice, purchaseDate: today, status: 'Assigned', note: w.note || '' } }); provN++; } catch (e) {}
+      try { await tkApi('/api/coll/devices', { method: 'POST', body: { name: w.name, category: w.category, serial: '', assignedTo: name, empId: empId, department: dept, qty: 1, unitPrice: w.unitPrice, purchaseDate: today, assignedOn: today, status: 'Assigned', note: w.note || '' } }); provN++; } catch (e) {}
     }
   }
   try { await tkBootstrap(); _renderEmployeeTable(); tkRenderBalances(); tkRenderDashboard(); } catch (e) {}

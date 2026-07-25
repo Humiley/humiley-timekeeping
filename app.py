@@ -1889,7 +1889,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
             nm = seg[0]
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in self.STAFF_WRITE and nm not in ("onboarding",) and not nm.startswith("crm_")))
+            # devices: let it reach _coll_update so the OWNER can append a receipt-acknowledgment
+            # signature (staff self-service); _coll_update still blocks every other staff device write.
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in self.STAFF_WRITE and nm not in ("onboarding", "devices") and not nm.startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -3526,6 +3528,34 @@ class Handler(BaseHTTPRequestHandler):
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
+        # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
+        # acknowledge receipt from their own My Devices. Owner-scoped + APPEND-ONLY — exactly one ack
+        # signature is added; no other field is touched, so it can't rewrite the asset register. Handled
+        # up here so it's uniform for staff (who otherwise can't PATCH devices) and managers alike.
+        if name == "devices" and isinstance(body, dict) and "ackSignature" in body:
+            existing = next((x for x in db.list_collection("devices") if x.get("id") == iid), None)
+            if not existing:
+                return self._err("You can only sign for a device assigned to you.", 403)
+            _own = (existing.get("empId") == u.get("id")) if existing.get("empId") else (existing.get("assignedTo") == u.get("name"))
+            if not _own and self._caller_level(u) != "admin":
+                return self._err("You can only sign for a device assigned to you.", 403)
+            _sig = body.get("ackSignature")
+            _img = _sig.get("image") if isinstance(_sig, dict) else None
+            if not (isinstance(_img, str) and _img.startswith("data:image") and len(_img) <= 2_000_000):
+                return self._err("A drawn signature is required to acknowledge receipt.", 400)
+            _sigs = list(existing.get("signatures") or [])
+            _sigs.append({"name": u.get("name"), "meaning": "Asset handover — acknowledged receipt",
+                          "ts": self._utc_now(), "method": "signature", "image": _img,
+                          "by": u.get("name"), "ack": True})
+            existing["signatures"] = _sigs
+            existing["ackOn"] = time.strftime("%Y-%m-%d")
+            existing["ackBy"] = u.get("name")
+            existing["id"] = iid
+            db.put_collection_item("devices", existing)
+            db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+                "action": "E-signature — asset receipt acknowledged", "target": "devices/" + str(iid),
+                "detail": existing.get("name") or "", "ts": self._utc_now()})
+            return self._json({"ok": True, "item": {k: v for k, v in existing.items() if k != "token"}})
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
