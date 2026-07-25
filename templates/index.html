@@ -14055,6 +14055,53 @@ function _pmOverviewSpCard(p) {
   else row = base ? '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + open + viewAll + '</div>' : '<div style="font-size:12px;color:var(--text-light)">No SharePoint link set yet — a project manager can add it.</div>';
   return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Project Documents (SharePoint)</div>' + hint + row + '</div>';
 }
+/* Quick-start templates — batch-seed a standard WBS, risk register, ITP list and stakeholder types
+   for a project. Purely additive: it only CREATES rows, never touches existing ones. */
+const _PM_TEMPLATES = {
+  'Construction / EPC': {
+    deliverables: [{ name: 'Detailed Design Package', wbsCode: '1', weight: 15 }, { name: 'Procurement & Subcontracts', wbsCode: '2', weight: 15 }, { name: 'Civil & Structural Works', wbsCode: '3', weight: 25 }, { name: 'MEP Installation', wbsCode: '4', weight: 20 }, { name: 'Commissioning & Qualification', wbsCode: '5', weight: 15 }, { name: 'Handover & Closeout', wbsCode: '6', weight: 10 }],
+    risks: [{ title: 'Design changes / late information', category: 'Technical', probability: '3', impact: '3' }, { title: 'Subcontractor delay', category: 'Schedule', probability: '3', impact: '4' }, { title: 'Material price escalation', category: 'Cost', probability: '3', impact: '3' }, { title: 'Site safety incident', category: 'Safety', probability: '2', impact: '5' }, { title: 'Adverse weather', category: 'External', probability: '3', impact: '2' }],
+    itps: [{ title: 'Civil / Structural ITP', discipline: 'Structural' }, { title: 'MEP ITP', discipline: 'MEP' }, { title: 'Commissioning ITP', discipline: 'Commissioning' }],
+    stakeholders: [{ name: 'Client / Employer', role: 'Sponsor', internalExternal: 'External', influence: 'High', interest: 'High' }, { name: 'Main Contractor', role: 'Contractor', internalExternal: 'External', influence: 'High', interest: 'High' }, { name: 'Local Authority', role: 'Regulator', internalExternal: 'External', influence: 'Medium', interest: 'Low' }]
+  },
+  'PMC / Consultancy': {
+    deliverables: [{ name: 'Project Management Plan', wbsCode: '1', weight: 10 }, { name: 'Design Review & Value Engineering', wbsCode: '2', weight: 20 }, { name: 'Tender & Contract Administration', wbsCode: '3', weight: 20 }, { name: 'Construction Supervision', wbsCode: '4', weight: 30 }, { name: 'Cost & Progress Reporting', wbsCode: '5', weight: 10 }, { name: 'Closeout & Final Account', wbsCode: '6', weight: 10 }],
+    risks: [{ title: 'Client decision delays', category: 'External', probability: '3', impact: '3' }, { title: 'Contractor claims', category: 'Commercial', probability: '3', impact: '4' }, { title: 'Scope creep', category: 'Technical', probability: '3', impact: '3' }, { title: 'Resource availability', category: 'Schedule', probability: '2', impact: '3' }],
+    itps: [{ title: 'Supervision Inspection Plan', discipline: 'General / Multi' }],
+    stakeholders: [{ name: 'Client / Employer', role: 'Sponsor', internalExternal: 'External', influence: 'High', interest: 'High' }, { name: 'Contractor', role: 'Contractor', internalExternal: 'External', influence: 'High', interest: 'High' }, { name: 'Design Consultant', role: 'Designer', internalExternal: 'External', influence: 'Medium', interest: 'Medium' }]
+  },
+  'Design': {
+    deliverables: [{ name: 'Concept Design', wbsCode: '1', weight: 20 }, { name: 'Basic / FEED', wbsCode: '2', weight: 25 }, { name: 'Detailed Design', wbsCode: '3', weight: 35 }, { name: 'IFC Drawings & Specs', wbsCode: '4', weight: 20 }],
+    risks: [{ title: 'Incomplete client brief', category: 'Technical', probability: '3', impact: '3' }, { title: 'Interdisciplinary clashes', category: 'Technical', probability: '3', impact: '3' }, { title: 'Code / regulatory change', category: 'External', probability: '2', impact: '3' }],
+    itps: [], stakeholders: [{ name: 'Client', role: 'Sponsor', internalExternal: 'External', influence: 'High', interest: 'High' }, { name: 'Authority Having Jurisdiction', role: 'Regulator', internalExternal: 'External', influence: 'Medium', interest: 'Low' }]
+  }
+};
+function pmApplyTemplate(pid) {
+  if (!_requireLevel('manager')) return;
+  const p = _pmProj(pid); if (!p) return;
+  document.getElementById('pmTplOverlay')?.remove();
+  const opts = Object.keys(_PM_TEMPLATES).map(k => '<option value="' + _tkEscA(k) + '">' + _pmEsc(k) + '</option>').join('');
+  const el = document.createElement('div'); el.id = 'pmTplOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">Seed from template</div><button class="modal-close" onclick="document.getElementById(\'pmTplOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Adds a standard WBS, risk register, ITP list and stakeholder types to this project. It only <b>creates</b> items — nothing existing is changed or removed.</div>' +
+    '<div class="form-group"><label class="form-label">Template</label><select class="form-control" id="pm-tpl-sel">' + opts + '</select></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pmTplOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="pmApplyTemplateSave(\'' + pid + '\')">' + tkIcon('check') + ' Seed project</button></div></div>';
+  document.body.appendChild(el);
+}
+async function pmApplyTemplateSave(pid) {
+  const key = (document.getElementById('pm-tpl-sel') || {}).value || '';
+  const t = _PM_TEMPLATES[key]; if (!t) return;
+  document.getElementById('pmTplOverlay')?.remove();
+  toast('Seeding “' + key + '” template…', 'info', 2500);
+  let n = 0;
+  const post = async (coll, body) => { try { await tkApi('/api/coll/' + coll, { method: 'POST', body: Object.assign({ projectId: pid }, body) }); n++; } catch (e) { } };
+  for (const d of (t.deliverables || [])) await post('pm_deliverables', Object.assign({ status: 'Not started', percentComplete: 0 }, d));
+  for (const r of (t.risks || [])) await post('pm_risks', Object.assign({ status: 'Open', direction: 'Threat', score: (+r.probability || 0) * (+r.impact || 0), responseStrategy: 'Mitigate' }, r));
+  for (const q of (t.itps || [])) await post('pm_quality_itp', Object.assign({ status: 'Draft' }, q));
+  for (const s of (t.stakeholders || [])) await post('pm_stakeholders', s);
+  toast(n + ' item(s) seeded from “' + key + '”.');
+  try { await _pmLoadAll(); pmTab(_pmTabK); } catch (e) { }
+}
 /* Setup-readiness — a guided checklist so a new project is easy to stand up the PMBOK way. */
 function _pmReadiness(p) {
   const pid = p.id, has = (coll, fn) => (_pmScopeFor(coll, pid) || []).some(fn || (() => true));
@@ -14075,7 +14122,7 @@ function _pmReadinessCard(p) {
   const r = _pmReadiness(p); if (r.pct >= 100) return '';
   const hex = r.pct >= 75 ? '#00B060' : r.pct >= 40 ? '#F59E0B' : '#EF4444';
   const items = r.checks.map(c => '<div style="display:flex;align-items:center;gap:7px;font-size:12px;padding:3px 0;color:' + (c.done ? 'var(--text-light)' : 'var(--text-dark)') + '">' + (c.done ? '<span style="color:#00B060;font-weight:700">✓</span>' : '<span style="display:inline-block;width:13px;height:13px;border:1.5px solid var(--border,#cbd5e1);border-radius:3px;flex-shrink:0"></span>') + '<span style="' + (c.done ? 'text-decoration:line-through' : '') + '">' + c.label + '</span></div>').join('');
-  return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border-left:3px solid ' + hex + '"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">Project setup readiness</div><div style="font-size:18px;font-weight:800;color:' + hex + '">' + r.pct + '%</div></div><div style="height:8px;border-radius:6px;background:var(--soft-bg);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + r.pct + '%;background:' + hex + ';border-radius:6px"></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 18px">' + items + '</div></div>';
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px;border-left:3px solid ' + hex + '"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">Project setup readiness</div><div style="display:flex;align-items:center;gap:10px">' + (_pmSeeAll() ? '<button class="btn btn-outline btn-sm" onclick="pmApplyTemplate(\'' + p.id + '\')" style="font-size:11px">' + tkIcon('plus', 12) + ' Seed from template</button>' : '') + '<div style="font-size:18px;font-weight:800;color:' + hex + '">' + r.pct + '%</div></div></div><div style="height:8px;border-radius:6px;background:var(--soft-bg);overflow:hidden;margin-bottom:10px"><div style="height:100%;width:' + r.pct + '%;background:' + hex + ';border-radius:6px"></div></div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:2px 18px">' + items + '</div></div>';
 }
 function pmRenderOverview() {
   const host = document.getElementById('pm-tab-body'); if (!host) return;
