@@ -14584,7 +14584,7 @@ function _pmGanttHtml(pid) {
   const geo = (s, f) => { let off = Math.min(100, Math.max(0, (_pmDateDiff(min, s) || 0) / span * 100)); let w = Math.max(1.2, ((_pmDateDiff(s, f) || 0) / span) * 100); if (off + w > 100) w = 100 - off; return { off: off, w: Math.max(0.6, w) }; };
   // rows (left table + timeline, in lockstep)
   let leftRows = '<div style="height:' + HDR + 'px;display:flex;align-items:center;gap:6px;padding:0 6px;border-bottom:1px solid var(--line);font-size:9px;font-weight:700;color:var(--text-light);letter-spacing:.04em"><span style="width:20px;text-align:center;flex:0 0 auto">#</span><span style="flex:1;min-width:0">TASK</span><span style="width:24px;text-align:center;flex:0 0 auto">WHO</span><span style="width:50px;text-align:right;flex:0 0 auto">START</span><span style="width:32px;text-align:right;flex:0 0 auto">DUR</span></div>';
-  let tlRows = '', n = 0;
+  let tlRows = '', n = 0, y = 0, taskPos = {}, wbsToId = {};   // y tracks px offset for dependency connectors
   secKeys.forEach(sk => {
     const items = groups[sk], collapsed = !!_pmGanttCol[sk];
     let ss = null, sf = null, wsum = 0, wpct = 0;
@@ -14593,6 +14593,7 @@ function _pmGanttHtml(pid) {
     leftRows += '<div data-ph="' + _tkEscA(sk) + '" onclick="pmGanttSection(this.dataset.ph)" style="height:' + SECH + 'px;display:flex;align-items:center;gap:5px;padding:0 6px;background:var(--soft-bg);border-bottom:1px solid var(--line);cursor:pointer;font-weight:700;font-size:11.5px;color:var(--text-dark)"><span style="width:12px;flex:0 0 auto;color:var(--text-light);font-size:10px">' + (collapsed ? '▸' : '▾') + '</span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(sk) + '</span><span style="font-weight:500;color:var(--text-light);font-size:10px;flex:0 0 auto">' + items.length + ' · ' + secPct + '%</span></div>';
     const sg = (ss && sf) ? geo(ss, sf) : { off: 0, w: 0 };
     tlRows += '<div style="position:relative;height:' + SECH + 'px;border-bottom:1px solid var(--line)">' + (sg.w > 0 ? '<div title="' + _tkEscA(sk + ' · ' + secPct + '%') + '" style="position:absolute;left:' + sg.off + '%;width:' + sg.w + '%;top:11px;height:8px;border-radius:4px;background:var(--navy);opacity:.28;overflow:hidden"><div style="width:' + secPct + '%;height:100%;background:var(--navy);opacity:.85"></div></div>' : '') + '</div>';
+    y += SECH;
     if (collapsed) return;
     items.forEach(t => {
       n++;
@@ -14605,6 +14606,7 @@ function _pmGanttHtml(pid) {
         '<span style="width:50px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);white-space:nowrap;font-variant-numeric:tabular-nums">' + _pmDShort(t.start) + '</span>' +
         '<span style="width:32px;text-align:right;flex:0 0 auto;font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (dur !== '' ? dur + 'd' : '—') + '</span></div>';
       const s = t.start || t.finish || min, f = t.finish || t.start || min, g = geo(s, f);
+      taskPos[t.id] = { y: y + 15.5, sx: g.off, ex: mile ? g.off : g.off + g.w }; if (t.wbs) wbsToId[String(t.wbs)] = t.id;
       const overdue = t.status !== 'Completed' && t.finish && t.finish < _pmToday();
       const hex = mile ? '#8B5CF6' : crit ? '#EF4444' : (t.status === 'Completed') ? '#00B060' : overdue ? '#F59E0B' : '#205090';
       const dt = mile ? _pmFmt(f) : (_pmFmt(s) + ' → ' + _pmFmt(f) + ' · ' + (dur || 1) + 'd');
@@ -14615,15 +14617,31 @@ function _pmGanttHtml(pid) {
       const lblAt = mile ? g.off : g.off + g.w;
       const lbl = (lblAt < 82) ? '<div style="position:absolute;left:calc(' + lblAt + '% + 9px);top:9px;height:13px;line-height:13px;font-size:10px;color:var(--text-light);white-space:nowrap;pointer-events:none;max-width:200px;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(t.name || '') + '</div>' : '';
       tlRows += '<div style="position:relative;height:' + ROW + 'px;border-bottom:1px solid var(--soft-bg)">' + bar + lbl + '</div>';
+      y += ROW;
     });
   });
+  // Dependency connectors (finish→start) drawn only between currently-visible tasks. Elbow path via SVG
+  // (viewBox 0-100 in x = %, y in px; non-scaling-stroke keeps the dash crisp under the responsive x-scale)
+  // + a CSS-triangle arrowhead positioned at the successor's start (unscaled, so it stays crisp).
+  let _conns = '', _arrows = '';
+  tasks.forEach(t => {
+    if (!t.predecessors || !taskPos[t.id]) return;
+    const succ = taskPos[t.id];
+    String(t.predecessors).split(',').forEach(pw => {
+      pw = pw.trim(); const pid = pw && wbsToId[pw]; if (!pid || pid === t.id || !taskPos[pid]) return;
+      const pred = taskPos[pid], Ex = pred.ex, Ey = pred.y, Sx = succ.sx, Sy = succ.y, mx = Math.min(100, Ex + 1.3);
+      _conns += '<path d="M ' + Ex + ' ' + Ey + ' H ' + mx + ' V ' + Sy + ' H ' + Sx + '" fill="none" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="3.5 2.5" vector-effect="non-scaling-stroke"/>';
+      _arrows += '<div style="position:absolute;left:' + Sx + '%;top:' + Sy + 'px;width:0;height:0;border-top:3px solid transparent;border-bottom:3px solid transparent;border-left:5px solid #94a3b8;transform:translate(-5px,-3px);z-index:1;pointer-events:none"></div>';
+    });
+  });
+  const _connLayer = _conns ? ('<svg viewBox="0 0 100 ' + Math.max(1, Math.round(y)) + '" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1">' + _conns + '</svg>' + _arrows) : '';
   const scaleW = { month: 2.8, week: 8, day: 26 }[_pmGanttScale] || 0;
   const tlMinW = scaleW ? Math.max(360, Math.round(span * scaleW)) : 360;
   const legend = '<div style="padding:8px 16px 12px;font-size:11px;color:var(--text-light);display:flex;gap:14px;flex-wrap:wrap"><span><span style="display:inline-block;width:10px;height:8px;background:#205090;border-radius:2px;vertical-align:middle"></span> Task</span><span><span style="display:inline-block;width:9px;height:9px;background:#8B5CF6;transform:rotate(45deg);vertical-align:middle"></span> Milestone</span><span><span style="display:inline-block;width:10px;height:8px;background:#EF4444;border-radius:2px;vertical-align:middle"></span> Critical</span><span><span style="display:inline-block;width:10px;height:8px;background:#00B060;border-radius:2px;vertical-align:middle"></span> Done</span><span><span style="display:inline-block;width:10px;height:8px;background:#F59E0B;border-radius:2px;vertical-align:middle"></span> Overdue</span><span style="border-left:2px solid #EF4444;padding-left:5px">Today</span></div>';
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' + hdrTop +
     '<div style="display:flex;overflow-x:auto;border-top:1px solid var(--line)">' +
     '<div style="width:334px;flex:0 0 auto;position:sticky;left:0;z-index:6;background:var(--card,#fff);border-right:1px solid var(--line)">' + leftRows + '</div>' +
-    '<div style="flex:1 0 auto;min-width:' + tlMinW + 'px;padding:0 16px 0 8px">' + _monthHdr + '<div style="position:relative">' + _grid + _today + tlRows + '</div></div>' +
+    '<div style="flex:1 0 auto;min-width:' + tlMinW + 'px;padding:0 16px 0 8px">' + _monthHdr + '<div style="position:relative">' + _grid + _today + _connLayer + tlRows + '</div></div>' +
     '</div>' + legend +
     '<div id="pm-gtip" data-html2canvas-ignore="true" style="position:fixed;z-index:9999;display:none;pointer-events:none;background:#1f2937;color:#fff;padding:9px 12px;border-radius:9px;box-shadow:0 10px 26px rgba(0,0,0,.30);min-width:150px;max-width:270px"></div></div>';
 }
