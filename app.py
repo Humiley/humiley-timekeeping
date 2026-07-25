@@ -2408,8 +2408,10 @@ class Handler(BaseHTTPRequestHandler):
                 line["status"] = set_status
                 if set_status == "Reviewed":
                     line["reviewedBy"] = signer_name; line["reviewedById"] = u.get("id")
+                    line.setdefault("reviewedOn", time.strftime("%Y-%m-%d"))
                 elif set_status == "Approved":
                     line["approvedBy"] = signer_name
+                    line.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
                 item["status"] = self._claim_rollup(lines)
             db.put_collection_item("claims", item)
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
@@ -2437,8 +2439,10 @@ class Handler(BaseHTTPRequestHandler):
                         it["status"] = set_status
             if set_status == "Reviewed":
                 item["reviewedBy"] = signer_name
+                item.setdefault("reviewedOn", time.strftime("%Y-%m-%d"))
             if set_status == "Approved":
                 item["approvedBy"] = signer_name
+                item.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
             if set_status == "Paid":
                 item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
                 item["paidBy"] = signer_name

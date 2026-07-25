@@ -443,6 +443,8 @@ select.form-control{cursor:pointer}
 .staff-quick-btn .qicon svg{width:26px;height:26px;stroke:var(--navy)}
 .logout-btn{width:100%;margin-top:10px;background:rgba(192,0,0,.08);border:1px solid rgba(192,0,0,.2);color:#C00000;border-radius:8px;padding:8px;font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:6px}
 .logout-btn:hover{background:rgba(192,0,0,.14)}
+.upd-btn{color:#8FE9C0;background:rgba(0,176,96,.16);border-color:rgba(0,176,96,.42)}
+.upd-btn:hover{background:rgba(0,176,96,.26)}
 .role-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px}
 .role-badge.mgr{background:rgba(32,80,144,.12);color:var(--navy)}
 .role-badge.staff{background:rgba(0,176,96,.12);color:var(--emerald-deep)}
@@ -836,7 +838,7 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="user-role" id="sidebar-user-role">Managing Director</div>
       </div>
     </div>
-    <button class="logout-btn" onclick="tkForceUpdate()" style="margin-bottom:6px;color:var(--navy);background:rgba(32,80,144,.08);border-color:rgba(32,80,144,.2)">
+    <button class="logout-btn upd-btn" onclick="tkForceUpdate()" style="margin-bottom:6px">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Check for updates
     </button>
@@ -8543,7 +8545,7 @@ function _tkPreviewUrl(att, name) {
 /* Open a submission's attachment (payments/travel carry it directly; claims on their first item). */
 /* Append an uploaded file (image or PDF data-URI) onto NEW pages of a jsPDF doc, each under a navy
    banner — so the paid dossier is ONE file: request voucher + approval + invoice + bank slip. */
-async function _appendFileToPdf(doc, dataUri, heading) {
+async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
   if (!doc || !dataUri) return;
   const W = 210, M = 12, PW = W - 2 * M;
   const banner = () => { doc.addPage(); doc.setFillColor(32, 80, 144); doc.rect(0, 0, W, 12, 'F'); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(_pdfSafe(heading || ''), M, 8); doc.setTextColor(0, 0, 0); };
@@ -8553,7 +8555,8 @@ async function _appendFileToPdf(doc, dataUri, heading) {
       const b64 = String(dataUri).split(',')[1] || ''; const bin = atob(b64);
       const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-      for (let i = 1; i <= pdf.numPages; i++) {
+      const _start = 1 + (skipFirst > 0 ? skipFirst : 0);       // skip leading auto-generated cover page(s)
+      for (let i = _start; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i); const vp = page.getViewport({ scale: 2 });
         const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
         await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
@@ -8573,7 +8576,15 @@ async function _appendFileToPdf(doc, dataUri, heading) {
 async function _finPaidDossierDoc(rec) {
   const doc = _finVoucherDoc('payment', rec);
   if (!doc) return null;
-  if (rec.attachment) await _appendFileToPdf(doc, rec.attachment, _t('Invoice / bill') + (rec.attachmentName ? ' — ' + rec.attachmentName : ''));
+  if (rec.attachment) {
+    // The stored attachment was combined at submission (_combineToPdf) and ALWAYS begins with an
+    // auto-generated "Payment Request" cover page. The voucher above IS that request page — signed —
+    // so the attachment's copy is a redundant, unsigned duplicate. Skip it and show just the real
+    // bill(s). The auto-combined attachment is the one named "<reqNo>.pdf"; a raw uploaded file is not.
+    const _cover = rec.attachmentName === (rec.reqNo || '') + '.pdf';
+    const _head = _t('Invoice / bill') + (!_cover && rec.attachmentName ? ' — ' + rec.attachmentName : '');
+    await _appendFileToPdf(doc, rec.attachment, _head, _cover ? 1 : 0);
+  }
   if (rec.bankSlip) await _appendFileToPdf(doc, rec.bankSlip, _t('Bank payment slip') + (rec.bankSlipName ? ' — ' + rec.bankSlipName : ''));
   return doc;
 }
@@ -9064,6 +9075,24 @@ function finFillTable() {
   }).join('') : tkEmptyRow(8, 'No finance records match your filters.', { icon: 'search' });
   _finRedrawAggs(list);
 }
+/* Date a given status was reached, from the 21 CFR Part 11 e-signature trail (ISO ts).
+   Falls back through the trail so records created before approvedOn/paidOn were stored still show a date. */
+function _finStatusDate(rec, status) {
+  const sigs = (rec && rec.signatures) || [];
+  const want = String(status || '').toLowerCase();
+  for (let i = sigs.length - 1; i >= 0; i--) {                 // most-recent matching signature wins
+    const s = sigs[i] || {};
+    if (String(s.setStatus || '').toLowerCase() === want) return s.ts || '';
+    if (!s.setStatus && new RegExp(want, 'i').test(String(s.meaning || ''))) return s.ts || '';
+  }
+  return '';
+}
+/* "Name · Jun-06-26" for a voucher who/when row (either half may be missing). */
+function _finWho(name, dateStr) {
+  const d = dateStr ? tkFmtDate(dateStr) : '';
+  if (name && d && d !== '—') return name + ' · ' + d;
+  return name || (d && d !== '—' ? d : '—');
+}
 /* Branded Payment Request Voucher (Humiley letterhead) — for finance records / physical filing. */
 /* Finance vouchers — drawn NATIVELY with jsPDF text on the Humiley letterhead (no html2canvas
    rasterization), so they download instantly instead of waiting for a DOM screenshot. One builder
@@ -9114,8 +9143,11 @@ function _finVoucherDoc(kind, rec) {
     if (rec.purpose) row('Purpose', rec.purpose);
     row('Amount', fmt(rec.amount), true);
     row('Due date', tkFmtDate(rec.dueDate)); row('Status', _aprLabel(rec.status || 'Submitted'));
-    if (rec.approvedBy) row('Approved by', rec.approvedBy);
-    if (rec.paidOn) row('Paid on', tkFmtDate(rec.paidOn));
+    // Full date trail — requested (above) / approved / paid; who + when, dates recovered from the e-signature trail for older records.
+    const _apDate = rec.approvedOn || _finStatusDate(rec, 'Approved');
+    if (rec.approvedBy || _apDate) row('Approved on', _finWho(rec.approvedBy, _apDate));
+    const _pdDate = rec.paidOn || _finStatusDate(rec, 'Paid');
+    if (rec.paidBy || _pdDate) row('Paid on', _finWho(rec.paidBy, _pdDate));
     if (rec.note) row('Note', rec.note);
   }
   /* signature boxes — spill to a second page when a long item list runs into them */

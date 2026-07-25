@@ -45,6 +45,7 @@ def test_mark_paid_attaches_the_bank_slip(api, tokens, monkeypatch):
     assert row.get("bankSlip") == slip, "the bank slip must be stored on the paid payment"
     assert row.get("bankSlipName") == "bank-slip.pdf"
     assert row.get("paidBy")
+    assert row.get("paidOn"), "the disbursement date must be stamped for the voucher date-trail"
 
 
 def test_a_non_data_slip_is_rejected(api, tokens, monkeypatch):
