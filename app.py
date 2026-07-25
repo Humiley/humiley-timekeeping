@@ -1870,6 +1870,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._push_unsub(u, body))
         if path == "/api/push/send":
             return self._guard(lambda u: self._push_send(u, body))
+        if path == "/api/devices/ack-backfill":
+            return self._guard(lambda u: self._device_ack_backfill_ep(u), manager=True)
         if path == "/api/employees":
             return self._guard(lambda u: self._emp_create(u, body), manager=True)
         if path == "/api/zones":
@@ -3513,6 +3515,61 @@ class Handler(BaseHTTPRequestHandler):
             item.setdefault("createdById", u.get("id"))
         return self._json({"ok": True, "item": db.put_collection_item(name, item)})
 
+    def _device_ack_backfill_ep(self, u):
+        # One-time migration (admin): every CURRENTLY-ASSIGNED asset/assignment with no acknowledgment is
+        # marked acknowledged-on-record, so pre-feature assignments don't all show "Awaiting signature".
+        # Records a NON-drawn legacy ack (method=migration, no image) so the audit stays honest — it is
+        # explicitly not a forged hand signature.
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        now = self._utc_now()
+        today = time.strftime("%Y-%m-%d")
+
+        def _acked(sigs, ack_on):
+            if ack_on:
+                return True
+            for s in (sigs or []):
+                m = str((s or {}).get("meaning") or "").lower()
+                if (s or {}).get("ack") or "acknowled" in m or "handover" in m:
+                    return True
+            return False
+
+        def _mk(who):
+            return {"name": who or "", "meaning": "Asset handover — acknowledged (existing record, migrated)",
+                    "ts": now, "method": "migration", "by": "System — pre-existing record", "ack": True, "legacy": True}
+
+        n = 0
+        for x in db.list_collection("devices"):
+            changed = False
+            assigns = x.get("assignments")
+            if isinstance(assigns, list) and assigns:
+                for a in assigns:
+                    if not isinstance(a, dict) or _acked(a.get("signatures"), a.get("ackOn")):
+                        continue
+                    a.setdefault("signatures", []).append(_mk(a.get("name")))
+                    a["ackOn"] = a.get("assignedOn") or today
+                    a["ackBy"] = a.get("name") or ""
+                    changed = True
+                    n += 1
+                if changed:
+                    x["assignments"] = assigns
+            else:
+                status = str(x.get("status") or "")
+                assigned = (x.get("empId") or x.get("assignedTo")) and status not in ("Available", "Retired")
+                if assigned and not _acked(x.get("signatures"), x.get("ackOn")):
+                    x.setdefault("signatures", []).append(_mk(x.get("assignedTo")))
+                    x["ackOn"] = x.get("assignedOn") or x.get("purchaseDate") or today
+                    x["ackBy"] = x.get("assignedTo") or ""
+                    changed = True
+                    n += 1
+            if changed:
+                db.put_collection_item("devices", x)
+        if n:
+            db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+                "action": "Asset acknowledgment backfill", "target": "devices",
+                "detail": "%d assignment(s) marked acknowledged-on-record" % n, "ts": now})
+        return self._json({"ok": True, "count": n})
+
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:
             return self._err("Unknown item.", 404)
@@ -3536,23 +3593,37 @@ class Handler(BaseHTTPRequestHandler):
             existing = next((x for x in db.list_collection("devices") if x.get("id") == iid), None)
             if not existing:
                 return self._err("You can only sign for a device assigned to you.", 403)
-            _own = (existing.get("empId") == u.get("id")) if existing.get("empId") else (existing.get("assignedTo") == u.get("name"))
-            if not _own and self._caller_level(u) != "admin":
-                return self._err("You can only sign for a device assigned to you.", 403)
             _sig = body.get("ackSignature")
             _img = _sig.get("image") if isinstance(_sig, dict) else None
             if not (isinstance(_img, str) and _img.startswith("data:image") and len(_img) <= 2_000_000):
                 return self._err("A drawn signature is required to acknowledge receipt.", 400)
-            _sigs = list(existing.get("signatures") or [])
-            _sigs.append({"name": u.get("name"), "meaning": "Asset handover — acknowledged receipt",
-                          "ts": self._utc_now(), "method": "signature", "image": _img,
-                          "by": u.get("name"), "ack": True})
-            existing["signatures"] = _sigs
-            existing["ackOn"] = time.strftime("%Y-%m-%d")
-            existing["ackBy"] = u.get("name")
+            _uid, _uname, _today = u.get("id"), u.get("name"), time.strftime("%Y-%m-%d")
+            _ack = {"name": _uname, "meaning": "Asset handover — acknowledged receipt", "ts": self._utc_now(),
+                    "method": "signature", "image": _img, "by": _uname, "ack": True}
+            _assigns = existing.get("assignments")
+            if isinstance(_assigns, list) and _assigns:
+                # Per-assignment model: sign ONLY the assignment(s) belonging to the caller.
+                _mine = [a for a in _assigns if isinstance(a, dict) and ((a.get("empId") and a.get("empId") == _uid) or (not a.get("empId") and a.get("name") == _uname))]
+                if not _mine and self._caller_level(u) != "admin":
+                    return self._err("You can only sign for a device assigned to you.", 403)
+                for a in _mine:
+                    a.setdefault("signatures", []).append(dict(_ack))
+                    a["ackOn"] = _today
+                    a["ackBy"] = _uname
+                existing["assignments"] = _assigns
+            else:
+                # Legacy single-assignee record.
+                _own = (existing.get("empId") == _uid) if existing.get("empId") else (existing.get("assignedTo") == _uname)
+                if not _own and self._caller_level(u) != "admin":
+                    return self._err("You can only sign for a device assigned to you.", 403)
+                _sigs = list(existing.get("signatures") or [])
+                _sigs.append(_ack)
+                existing["signatures"] = _sigs
+                existing["ackOn"] = _today
+                existing["ackBy"] = _uname
             existing["id"] = iid
             db.put_collection_item("devices", existing)
-            db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
+            db.put_collection_item("audit", {"actor": _uname, "actorId": _uid,
                 "action": "E-signature — asset receipt acknowledged", "target": "devices/" + str(iid),
                 "detail": existing.get("name") or "", "ts": self._utc_now()})
             return self._json({"ok": True, "item": {k: v for k, v in existing.items() if k != "token"}})
