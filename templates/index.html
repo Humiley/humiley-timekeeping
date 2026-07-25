@@ -11637,10 +11637,12 @@ const _QA_SPECS = {
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Resolved', 'Closed'] }, { k: 'resolution', label: 'Resolution', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_risks: { title: 'Risk', coll: 'pm_risks', reload: 'pm_risks', fields: [
     { k: 'title', label: 'Risk title' }, { k: 'riskNo', label: 'Risk No.' },
+    { k: 'direction', label: 'Type', type: 'select', options: ['Threat', 'Opportunity'] },
     { k: 'category', label: 'Category', type: 'select', options: ['Technical', 'Schedule', 'Cost', 'External', 'Safety', 'Commercial'] },
     { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
     { k: 'probability', label: 'Probability (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] }, { k: 'impact', label: 'Impact (1-5)', type: 'select', options: ['1', '2', '3', '4', '5'] },
-    { k: 'responseStrategy', label: 'Response', type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept'] }, { k: 'mitigationActions', label: 'Mitigation actions', type: 'textarea' },
+    { k: 'costImpact', label: 'Cost impact (₫) — for EMV', type: 'money' },
+    { k: 'responseStrategy', label: 'Response', type: 'select', options: ['Avoid', 'Mitigate', 'Transfer', 'Accept', 'Exploit', 'Enhance', 'Share'] }, { k: 'mitigationActions', label: 'Mitigation / response actions', type: 'textarea' },
     { k: 'owner', label: 'Owner', type: 'select', options: 'employees' },
     { k: 'residualProbability', label: 'Residual probability', type: 'select', options: ['', '1', '2', '3', '4', '5'] }, { k: 'residualImpact', label: 'Residual impact', type: 'select', options: ['', '1', '2', '3', '4', '5'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Mitigating', 'Closed'] }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
@@ -13432,6 +13434,10 @@ const _ragHex = r => RAG_HEX[r] || '#94a3b8';
 function _ragWorst() { return [].reduce.call(arguments, (w, r) => (RAG_RANK[r] > RAG_RANK[w] ? r : w), 'Green'); }
 function _pmIndexRag(v) { if (v == null) return 'Amber'; if (v >= 0.95) return 'Green'; if (v >= 0.85) return 'Amber'; return 'Red'; }
 const RISK_BANDS = [{ max: 4, band: 'Low', hex: '#16A34A' }, { max: 9, band: 'Medium', hex: '#F59E0B' }, { max: 14, band: 'High', hex: '#EA580C' }, { max: 25, band: 'Critical', hex: '#DC2626' }];
+/* Expected Monetary Value — qualitative probability (1–5) mapped to a % applied to the cost impact. */
+const _PM_PMAP = { 1: 0.1, 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.9 };
+function _pmEmv(r) { return Math.round((_PM_PMAP[+r.probability] || 0) * (+r.costImpact || 0)); }
+function _pmIsOpp(r) { return String(r.direction || 'Threat').toLowerCase() === 'opportunity'; }
 function _pmRiskBand(score) { if (!score) return { band: '—', hex: '#94a3b8' }; return RISK_BANDS.find(b => score <= b.max) || RISK_BANDS[RISK_BANDS.length - 1]; }
 const RACI = ['R', 'A', 'C', 'I', 'R/A'];
 const RACI_HEX = { R: '#205090', A: '#00B060', C: '#F59E0B', I: '#94a3b8', 'R/A': '#00B060' };
@@ -14259,8 +14265,43 @@ function pmRenderResources(pid) {
     { label: 'Rate', align: 'right', render: r => r.rate ? _pmMoney(r.rate) : '—' }
   ], rs));
   const wl = Object.keys(byPerson).length ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Workload (total allocation per person)</div>' + Object.keys(byPerson).sort((a, b) => byPerson[b] - byPerson[a]).map(n => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:7px"><div style="width:150px;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(n) + '</div><div style="flex:1">' + _pmBar(Math.min(100, byPerson[n]), byPerson[n] > 100 ? '#EF4444' : '#205090') + '</div><div style="width:48px;text-align:right;font-size:12px;font-weight:700;color:' + (byPerson[n] > 100 ? '#EF4444' : 'var(--navy)') + '">' + byPerson[n] + '%</div></div>').join('') + '</div>' : '';
-  _pmSet(kpis + tbl + wl);
+  _pmSet(kpis + tbl + _pmRaciMatrix(pid) + wl);
   pmSyncMembers(pid);
+}
+/* RACI matrix — deliverables (rows) × team members (cols). Managers click a cell to cycle
+   R → A → C → I → blank, stored in deliverable.raciMap (a NEW additive field; nothing else touched). */
+function _pmRaciMembers(pid) {
+  const p = _pmProj(pid) || {}; const names = new Set();
+  _pmMembers(p).forEach(n => { if (n) names.add(n); });
+  _pmScopeFor('pm_resources', pid || _pmPid()).forEach(r => { if (r.name) names.add(r.name); });
+  return Array.from(names);
+}
+function _pmRaciMatrix(pid) {
+  const dels = _pmScope(_HR.pm_deliverables); const members = _pmRaciMembers(pid);
+  if (!dels.length || !members.length) return '';
+  const canEdit = _pmSeeAll() || _pmCanEditProject(_pmProj(pid));
+  const legend = [['R', 'Responsible'], ['A', 'Accountable'], ['C', 'Consulted'], ['I', 'Informed']].map(x => '<span style="display:inline-flex;align-items:center;gap:4px;margin-left:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + (RACI_HEX[x[0]] || '#94a3b8') + '"></span>' + x[1] + '</span>').join('');
+  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map(m => '<th style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc((m.split(' ')[0]) || m) + '</th>').join('');
+  const rows = dels.map(d => {
+    const map = d.raciMap || {};
+    return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-family:monospace;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
+      const v = map[m] || '';
+      const cell = v ? '<span style="display:inline-block;min-width:22px;background:' + (RACI_HEX[v] || '#94a3b8') + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 5px">' + v + '</span>' : '<span style="color:var(--line)">·</span>';
+      return '<td style="text-align:center;padding:5px 8px;border-top:1px solid var(--line-soft,#eef2f8)' + (canEdit ? ';cursor:pointer' : '') + '"' + (canEdit ? ' onclick="pmRaciCycle(\'' + d.id + '\',' + mi + ')"' : '') + '>' + cell + '</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  return '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><div class="card-title">RACI Matrix — deliverables × team</div><div style="font-size:11px;color:var(--text-light)">' + legend + '</div></div>' + (canEdit ? '<div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Click a cell to cycle R → A → C → I → blank.</div>' : '') + '<div class="table-wrap"><table style="border-collapse:collapse;font-size:12px;min-width:' + (160 + members.length * 60) + 'px"><thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+async function pmRaciCycle(delivId, mi) {
+  const d = (_HR.pm_deliverables || []).find(x => x.id === delivId); if (!d) return;
+  const member = _pmRaciMembers(_pmPid())[mi]; if (!member) return;
+  const cyc = ['', 'R', 'A', 'C', 'I']; const map = Object.assign({}, d.raciMap || {});
+  const next = cyc[(cyc.indexOf(map[member] || '') + 1) % cyc.length];
+  if (next) map[member] = next; else delete map[member];
+  d.raciMap = map;
+  try { await tkApi('/api/coll/pm_deliverables/' + delivId, { method: 'PATCH', body: Object.assign({}, d, { raciMap: map }) }); }
+  catch (e) { toast(_errMsg(e), 'error', 4000); }
+  try { pmRenderResources(_pmPid()); } catch (e) { }
 }
 
 /* ---------- 7. Communications & Issues ---------- */
@@ -14311,7 +14352,11 @@ function pmRenderComms(pid) {
 function pmRenderRisks(pid) {
   const risks = _pmScope(_HR.pm_risks);
   const rr = _pmRiskRollup(pid);
-  const kpis = _hrKpiRow([_hrKpi('Risks', risks.length), _hrKpi('Open', rr.open, '#F59E0B'), _hrKpi('High / Critical', rr.high, '#EF4444'), _hrKpi('Top score', rr.top + ' (' + rr.band + ')', _pmRiskBand(rr.top).hex)]);
+  const openR = risks.filter(r => r.status !== 'Closed');
+  const threatEmv = openR.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
+  const oppN = openR.filter(_pmIsOpp).length;
+  const oppEmv = openR.filter(_pmIsOpp).reduce((s, r) => s + _pmEmv(r), 0);
+  const kpis = _hrKpiRow([_hrKpi('Risks', risks.length), _hrKpi('Open', rr.open, '#F59E0B'), _hrKpi('High / Critical', rr.high, '#EF4444'), _hrKpi('Threat exposure (EMV)', threatEmv ? _pmMoneyShort(threatEmv) : '—', _pmRiskBand(rr.top).hex), _hrKpi('Opportunities', oppN + (oppEmv ? ' · +' + _pmMoneyShort(oppEmv) : ''), '#00B060')]);
   let cells = '';
   for (let im = 5; im >= 1; im--) {
     cells += '<tr><td style="font-size:10px;color:var(--text-light);text-align:right;padding-right:6px;font-weight:700">' + im + '</td>';
@@ -14325,9 +14370,12 @@ function pmRenderRisks(pid) {
   const _rBar = _pmFiltBar('pm_risks', risks, _rSpecs), _rRows = _pmFiltApply('pm_risks', risks, _rSpecs);
   const tbl = _pmCard('Risk Register', 'pm_risks', 'Add risk', _rBar + _pmTable('pm_risks', [
     { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.riskNo || '—') + '</span>' },
-    { label: 'Risk', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Category', k: 'category' },
+    { label: 'Risk', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
+    { label: 'Type', align: 'center', render: r => _pmIsOpp(r) ? _pmBadge('Opportunity', '#00B060') : _pmBadge('Threat', '#EF4444') },
+    { label: 'Category', k: 'category' },
     { label: 'P', align: 'center', render: r => _pmEsc(r.probability || '—') }, { label: 'I', align: 'center', render: r => _pmEsc(r.impact || '—') },
     { label: 'Score', align: 'center', render: r => { const b = _pmRiskBand(+r.score || 0); return '<span style="display:inline-block;background:' + b.hex + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 7px">' + (r.score || 0) + ' ' + b.band + '</span>'; } },
+    { label: 'EMV', align: 'right', render: r => (+r.costImpact ? '<span style="font-weight:600;color:' + (_pmIsOpp(r) ? '#00B060' : '#EF4444') + '">' + (_pmIsOpp(r) ? '+' : '−') + _pmMoneyShort(_pmEmv(r)) + '</span>' : '<span style="color:var(--text-light)">—</span>') },
     { label: 'Response', k: 'responseStrategy' }, { label: 'Owner', k: 'owner' }, { label: 'Contractor / Sub', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_risks', r) }
