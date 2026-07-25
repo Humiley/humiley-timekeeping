@@ -6221,7 +6221,7 @@ function devFillTable() {
   }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
   tb.innerHTML = list.length ? list.map(x => {
     const tot = (+x.qty || 1) * (+x.unitPrice || 0), asgQ = _devAssignedQty(x), rem = _devRemaining(x), av = _devAvail(x);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + (x.category || '') + '</td><td style="font-size:12px">' + _devAssignSummary(x) + '</td><td>' + (x.department || '') + '</td><td style="text-align:right;font-weight:600">' + (x.qty || 1) + '</td><td style="text-align:right">' + asgQ + '</td><td style="text-align:right;font-weight:700;color:' + (rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--text-light)') + '">' + rem + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _devAvailCls(av) + '" style="font-size:10px">' + _t(av) + '</span></td><td style="white-space:nowrap">' + _devAsgBtn(x.id) + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + _crmEsc(x.category || '') + '</td><td style="font-size:12px">' + _devAssignSummary(x) + '</td><td>' + _crmEsc(x.department || '') + '</td><td style="text-align:right;font-weight:600">' + (x.qty || 1) + '</td><td style="text-align:right">' + asgQ + '</td><td style="text-align:right;font-weight:700;color:' + (rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--text-light)') + '">' + rem + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _devAvailCls(av) + '" style="font-size:10px">' + _t(av) + '</span></td><td style="white-space:nowrap">' + _devAsgBtn(x.id) + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
 }
 /* Row action — open the Assign & e-sign modal. */
@@ -6379,7 +6379,9 @@ async function _devBatchSave() {
   let ok = 0, fail = 0;
   for (const r of rows) {
     const _em = r.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(r.assignedTo).toLowerCase()) : null;
-    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: _em ? _em.id : '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: '', status: r.status || (r.assignedTo ? 'Assigned' : 'Available'), note: '' };
+    const _today0 = _today();
+    const _status = r.assignedTo && (!r.status || r.status === 'Available') ? 'Assigned' : (r.status || 'Available');   // an assignee must not save as Available (else _devAssigns drops it)
+    const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: _em ? _em.id : '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: _today0, status: _status, assignedOn: r.assignedTo ? _today0 : '', note: '' };
     try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
   }
   document.getElementById('devBatchOverlay')?.remove();
@@ -6448,9 +6450,9 @@ async function tkAssetReturn(empId, exitId) {
   const mine = (_HR.devices || []).filter(x => _devHeldBy(x, e).length && (x.status || '') !== 'Retired');
   document.getElementById('assetReturnOverlay')?.remove();
   const today = _today();
-  const rows = mine.length ? mine.map(x => '<tr><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + (x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (x.serial || '') + ' · ' + (x.category || '') + '</div></div></label></td><td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>').join('') : tkEmptyRow(2, 'No assigned devices to return.', { icon: 'inbox' });
+  const rows = mine.length ? mine.map(x => '<tr><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + ' · ' + _crmEsc(x.category || '') + '</div></div></label></td><td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>').join('') : tkEmptyRow(2, 'No assigned devices to return.', { icon: 'inbox' });
   const el = document.createElement('div'); el.id = 'assetReturnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + (e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+  el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + _crmEsc(e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Tick each asset returned and record its condition. The employee signs below to confirm hand-back before their last day (FRM-014 Exit Clearance).</div>' +
     '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Return?</th><th>Condition</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><div class="form-group" style="margin:0"><label class="form-label">Employee signature (type full name)</label><input class="form-control" id="ar-sign" value="' + _tkEscA(e.name || '') + '" placeholder="' + _tkEscA(e.name || '') + '"></div><div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-control" id="ar-date" type="date" value="' + today + '"></div></div>' +
@@ -6471,7 +6473,7 @@ async function tkAssetReturnSave(empId, exitId) {
       const cond = (document.querySelector('[data-ar-cond="' + id + '"]') || {}).value || 'Good';
       const x = (_HR.devices || []).find(v => v.id === id); if (!x) continue;
       // Remove ONLY this employee's assignment(s) — freeing that quantity back to stock. Other holders keep theirs.
-      const keep = _devAssigns(x).filter(a => !((a.empId && a.empId === empId) || (a.name === e.name)));
+      const keep = _devAssigns(x).filter(a => !((a.empId && a.empId === empId) || (!a.empId && a.name === e.name)));
       const stillHeld = keep.length > 0;
       const newStatus = stillHeld ? 'Assigned' : (cond === 'Lost' ? 'Lost' : cond === 'Damaged' ? 'In Repair' : 'Available');
       const patch = { ...x, assignments: keep, assignedTo: keep.map(a => a.name).filter(Boolean).join(', '), empId: (keep[0] || {}).empId || '', status: newStatus, returnedOn: date, returnCondition: cond };
@@ -6530,7 +6532,7 @@ function _sigPadClear(canvasId, hintId) {
 /* Assignments held by a given employee across a device (id or name match). */
 function _devHeldBy(x, emp) {
   const eid = emp && emp.id, nm = emp && emp.name;
-  return _devAssigns(x).filter(a => (a.empId && a.empId === eid) || (nm && a.name === nm));
+  return _devAssigns(x).filter(a => (a.empId && a.empId === eid) || (!a.empId && nm && a.name === nm));
 }
 function _devUid() { return 'a_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 async function tkDeviceAssign(id) {
@@ -13398,7 +13400,7 @@ const _pmMoney = n => _crmMoney(n);
 function _pmMoneyShort(n) { n = +n || 0; const neg = n < 0 ? '-' : ''; const a = Math.abs(n); if (a >= 1e9) return neg + '₫' + (a / 1e9).toFixed(2).replace(/\.?0+$/, '') + 'B'; if (a >= 1e6) return neg + '₫' + (a / 1e6).toFixed(1).replace(/\.0$/, '') + 'M'; if (a >= 1e3) return neg + '₫' + Math.round(a / 1e3) + 'K'; return neg + '₫' + a; }
 const _pmEsc = s => _crmEsc(s == null ? '' : s);
 const _pmInPeriod = (d) => { try { return _crmInPeriod(d); } catch (e) { return true; } };
-function _pmToday() { return new Date().toISOString().slice(0, 10); }
+function _pmToday() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }   // LOCAL day — toISOString() is UTC and shifts +07 mornings to yesterday
 function _pmFmt(d) { try { return d ? tkFmtDate(d) : '—'; } catch (e) { return d || '—'; } }
 function _pmNum(v) { return +String(v == null ? '' : v).replace(/[^0-9.\-]/g, '') || 0; }
 function _pmDateDiff(a, b) { if (!a || !b) return null; const d1 = new Date(a), d2 = new Date(b); if (isNaN(d1) || isNaN(d2)) return null; return Math.round((d2 - d1) / 86400000); }
@@ -13592,7 +13594,7 @@ function pmStatusPDF(pid) {
   const chCost = chAppr.reduce((s, c) => s + (+c.impactCost || 0), 0), chDays = chAppr.reduce((s, c) => s + (+c.impactScheduleDays || 0), 0);
   [['Deliverables Accepted', sr.accepted + ' / ' + sr.total], ['Milestones (overdue)', tr.milestones + ' (' + tr.overdueMs + ')'], ['Open Risks (High+)', rr.open + ' (' + rr.high + ')'], ['Open Issues', openIssues.length], ['Open RFIs', openRfis.length], ['Change Requests', chs.length + ' total  ·  ' + chPend.length + ' pending  ·  ' + chAppr.length + ' approved'], ['Approved change impact', _pmMoney(chCost) + '   ·   ' + chDays + ' days']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   const sectionT = t => { if (y > 250) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } y += 2; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
-  const bullet = txt => { if (y > 285) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
+  const bullet = txt => { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   const topRisks = openRisks.slice().sort((a, b) => (+b.score || 0) - (+a.score || 0)).slice(0, 5);
   if (topRisks.length) { sectionT('Top Open Risks'); topRisks.forEach(r => bullet((r.riskNo ? r.riskNo + '  ' : '') + (r.title || '') + '  —  score ' + (r.score || 0) + ' (' + _pmRiskBand(+r.score || 0).band + ')' + (r.owner ? ', owner ' + r.owner : '') + (+r.costImpact ? ', EMV ' + _pmMoney(_pmEmv(r)) : ''))); }
   if (openIssues.length) { sectionT('Open Issues'); openIssues.slice(0, 5).forEach(i => bullet((i.issueNo ? i.issueNo + '  ' : '') + (i.title || '') + (i.priority ? '  (' + i.priority + ')' : '') + (i.owner ? ', owner ' + i.owner : '') + (i.due ? ', due ' + _pmFmt(i.due) : ''))); }
@@ -13612,7 +13614,7 @@ function pmCloseoutPDF(pid) {
   y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Project Manager', p.manager], ['Sponsor', p.sponsor], ['Contract Type / Value', (p.contractType || '') + (p.contractValue ? '  ·  ' + _pmMoney(p.contractValue) : '')], ['Final Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall % Complete', sr.pct + '%'], ['Final Health (RAG)', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
-  const bullet = txt => { if (y > 285) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
+  const bullet = txt => { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
   [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
@@ -13979,8 +13981,8 @@ function _pmMyActionsHtml() {
     sec('RFIs in my court', '#8B5CF6', IC.rfi, byDue(rfis, r => r.requiredBy), r => row((r.number ? r.number + ' — ' : '') + (r.subject || ''), pcode(r.projectId) + ' · ' + (r.type || 'RFI'), r.requiredBy, r.projectId, 'docs')) +
     sec('Risks I own', '#EF4444', IC.risk, risks, r => row((r.riskNo ? r.riskNo + ' — ' : '') + (r.title || ''), pcode(r.projectId) + ' · P' + (r.probability || '?') + '×I' + (r.impact || '?'), r.due, r.projectId, 'risk')) +
     sec('Issues I own', '#F59E0B', IC.issue, byDue(issues, i => i.due), i => row((i.issueNo ? i.issueNo + ' — ' : '') + (i.title || ''), pcode(i.projectId) + ' · ' + (i.priority || ''), i.due, i.projectId, 'comms')) +
-    sec('Change requests to decide', '#3168A8', IC.cr, changes, c => row((c.crNo ? c.crNo + ' — ' : '') + (c.title || ''), pcode(c.projectId) + ' · ' + (c.priority || ''), c.requestedDate, c.projectId, 'overview')) +
-    sec('ITPs to approve', '#00B060', IC.itp, itps, q => row((q.itpNo ? q.itpNo + ' — ' : '') + (q.title || ''), pcode(q.projectId) + ' · ' + (q.discipline || ''), q.plannedStart, q.projectId, 'quality')) +
+    sec('Change requests to decide', '#3168A8', IC.cr, changes, c => row((c.crNo ? c.crNo + ' — ' : '') + (c.title || ''), pcode(c.projectId) + ' · ' + (c.priority || '') + (c.requestedDate ? ' · raised ' + tkFmtDate(c.requestedDate) : ''), null, c.projectId, 'overview')) +
+    sec('ITPs to approve', '#00B060', IC.itp, itps, q => row((q.itpNo ? q.itpNo + ' — ' : '') + (q.title || ''), pcode(q.projectId) + ' · ' + (q.discipline || '') + (q.plannedStart ? ' · planned ' + tkFmtDate(q.plannedStart) : ''), null, q.projectId, 'quality')) +
     '</div>';
 }
 
@@ -14264,9 +14266,11 @@ function pmSchedRange() { const f = (document.getElementById('pm-sched-from') ||
    Returns a map by task id → {es,ef,ls,lf,float,critical} plus projEnd + whether any dependencies exist. */
 function _pmCPM(tasks) {
   const byKey = {}, nodes = tasks.map(t => {
-    let dur = +t.duration || 0;
-    if (!dur && t.start && t.finish) { const d = _pmDateDiff(t.start, t.finish); dur = (d || 0) + 1; }
-    if (!dur) dur = String(t.isMilestone) === 'Yes' ? 0 : 1;
+    let dur;
+    if (+t.duration) dur = +t.duration;                       // explicit duration wins
+    else if (String(t.isMilestone) === 'Yes') dur = 0;        // a milestone is a zero-duration event (even when start===finish)
+    else if (t.start && t.finish) dur = (_pmDateDiff(t.start, t.finish) || 0) + 1;
+    else dur = 1;
     const key = String(t.wbs || t.id || '').trim() || t.id;
     const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), es: 0, ef: dur, ls: 0, lf: 0, float: 0, critical: false };
     byKey[key] = n; return n;
@@ -14395,7 +14399,8 @@ function _pmMonths(start, end) {
   return out;
 }
 function pmRenderCosts(pid) {
-  const p = _pmProj(pid), ev = _pmEvm(p);
+  const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
+  const ev = _pmEvm(p);
   const costs = _pmScope(_HR.pm_costs);
   const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
   const budget = +p.budget || 0, mgmtR = +p.managementReserve || 0, contR = +p.contingencyReserve || 0;
@@ -14421,7 +14426,10 @@ function pmRenderCosts(pid) {
   const cats = {}; costs.forEach(c => { const k = c.category || 'Other'; (cats[k] = cats[k] || { b: 0, a: 0 }); cats[k].b += +c.budget || 0; cats[k].a += +c.actual || 0; });
   if (Object.keys(cats).length) try { _mkChart('pm-cost-chart', { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: 'Budget', data: Object.values(cats).map(x => x.b), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: Object.values(cats).map(x => x.a), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) }); } catch (e) { }
   // S-curve: cumulative Planned Value (BAC spread linearly over the baseline months) vs Actual (cost periods)
-  const scMonths = _pmMonths((bl && bl.start) || p.startPlanned, (bl && bl.finish) || p.endPlanned);
+  const _costPers = costs.map(c => String(c.period || '').slice(0, 7)).filter(Boolean).sort();   // include cost periods outside the baseline window so the S-curve Actual reconciles with the AC KPI
+  const _scLo = [((bl && bl.start) || p.startPlanned || '').slice(0, 7), _costPers[0]].filter(Boolean).sort()[0];
+  const _scHi = [((bl && bl.finish) || p.endPlanned || '').slice(0, 7), _costPers[_costPers.length - 1]].filter(Boolean).sort().slice(-1)[0];
+  const scMonths = _pmMonths(_scLo, _scHi);
   if (scMonths.length && typeof Chart !== 'undefined') {
     const bac = ev.bac || 0, planned = scMonths.map((m, i) => Math.round(bac * (i + 1) / scMonths.length));
     const actByM = {}; costs.forEach(c => { const per = String(c.period || '').slice(0, 7); if (per) actByM[per] = (actByM[per] || 0) + (+c.actual || 0); });
@@ -14550,10 +14558,11 @@ async function pmRaciCycle(delivId, mi) {
   const cyc = ['', 'R', 'A', 'C', 'I']; const map = Object.assign({}, d.raciMap || {});
   const next = cyc[(cyc.indexOf(map[member] || '') + 1) % cyc.length];
   if (next) map[member] = next; else delete map[member];
-  d.raciMap = map;
-  try { await tkApi('/api/coll/pm_deliverables/' + delivId, { method: 'PATCH', body: Object.assign({}, d, { raciMap: map }) }); }
-  catch (e) { toast(_errMsg(e), 'error', 4000); }
-  try { pmRenderResources(_pmPid()); } catch (e) { }
+  try {
+    await tkApi('/api/coll/pm_deliverables/' + delivId, { method: 'PATCH', body: Object.assign({}, d, { raciMap: map }) });
+    d.raciMap = map;                       // commit + re-render ONLY after the save succeeds
+    try { pmRenderResources(_pmPid()); } catch (e) { }
+  } catch (e) { toast(_errMsg(e), 'error', 4000); }   // rejected/offline → leave the saved value on screen
 }
 /* ── Governance sign-off — a manager e-signs a Change-Request decision or an IPC certification with a
    drawn signature (reuses the asset signature pad). Adds signatures[]+decidedBy/certifiedBy — additive;
@@ -14597,10 +14606,11 @@ async function pmSignDecisionSave(coll, id) {
 /* Sign-off cell shared by the CR + IPC tables. */
 function _pmSignCell(coll, r) {
   const isCR = coll === 'pm_changes';
-  const decided = isCR ? ((r.decision || 'Pending') !== 'Pending') : ((r.status || 'Submitted') !== 'Submitted');
-  if (!decided) return _pmSeeAll() ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;color:var(--navy);white-space:nowrap" onclick="pmSignDecision(\'' + coll + '\',\'' + r.id + '\')">' + tkIcon('check', 12) + (isCR ? ' Decide &amp; sign' : ' Certify &amp; sign') + '</button>' : '<span style="color:var(--text-light)">—</span>';
   const who = isCR ? r.decidedBy : r.certifiedBy, when = isCR ? r.decidedOn : r.certDate;
-  return who ? '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">✍ ' + _pmEsc(who) + (when ? ' · ' + _pmFmt(when) : '') + '</span>' : '<span style="color:var(--emerald)">✓</span>';
+  // "Signed" is the presence of a captured SIGNER, not the free-editable decision/status field — so a
+  // decision set via the plain edit form (no e-signature) still surfaces the sign action, never a bare ✓.
+  if (!who) return _pmSeeAll() ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;color:var(--navy);white-space:nowrap" onclick="pmSignDecision(\'' + coll + '\',\'' + r.id + '\')">' + tkIcon('check', 12) + (isCR ? ' Decide &amp; sign' : ' Certify &amp; sign') + '</button>' : '<span style="color:var(--text-light)">—</span>';
+  return '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">✍ ' + _pmEsc(who) + (when ? ' · ' + _pmFmt(when) : '') + '</span>';
 }
 
 /* ---------- 7. Communications & Issues ---------- */
