@@ -489,6 +489,9 @@ body{
 /* Collapsed sidebar: scale the logo to fit (overrides inline width/height) */
 #sidebar.collapsed .sidebar-logo{padding:14px 6px 10px !important;}
 #sidebar.collapsed .sidebar-logo img{max-width:44px !important;width:auto !important;height:auto !important;object-fit:contain !important;object-position:center !important;}
+/* Collapsed rail: show ONLY the H mark (the full logo's "Humiley…" text is illegible at 44px). */
+#sidebar.collapsed .sidebar-logo img.sidebar-logo-full{display:none !important;}
+#sidebar.collapsed .sidebar-logo img.sidebar-logo-mark{display:block !important;height:34px !important;width:34px !important;max-width:34px !important;object-fit:contain !important;object-position:center !important;}
 .nav-item{margin:1px 10px;border-radius:12px;border-left:none !important;padding:9px 13px !important;}
 .nav-item.active{background:rgba(255,255,255,.16) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
 .nav-item.active::before{content:'';position:absolute;left:-10px;width:4px;height:20px;border-radius:4px;background:var(--emerald)}
@@ -579,6 +582,9 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   #sidebar.collapsed .nav-label,#sidebar.collapsed .user-info{opacity:1;width:auto}
   #sidebar.collapsed .sidebar-section-label{opacity:1;height:auto;padding:14px 16px 5px}
   #sidebar.collapsed .nav-badge{display:inline-block}
+  /* Mobile drawer is full-width even when "collapsed" — keep the full logo, hide the mark. */
+  #sidebar.collapsed .sidebar-logo-full{display:block !important}
+  #sidebar.collapsed .sidebar-logo-mark{display:none !important}
   #sbOverlay{position:fixed;inset:0;background:rgba(15,31,58,.5);z-index:1100}
   body.sb-open #sbOverlay{display:block}
   #main,#main.expanded{width:100%;min-width:0;margin:0 !important}
@@ -714,9 +720,11 @@ window.addEventListener('orientationchange', _setLoginBg);
 <a href="#content" class="skip-link">Skip to main content</a>
 <nav id="sidebar">
   <div class="sidebar-logo">
-    <img src="/static/brand/portal-logo-sidebar.png"
+    <img class="sidebar-logo-full" src="/static/brand/portal-logo-sidebar.png"
            alt="Humiley Engineering &amp; Solutions"
            style="height:36px;width:auto;max-width:180px;display:block">
+    <img class="sidebar-logo-mark" src="/static/brand/H-mark-white.png"
+           alt="Humiley" style="display:none">
   </div>
 
   <div class="sidebar-scroll">
