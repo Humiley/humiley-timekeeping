@@ -11597,8 +11597,8 @@ const _QA_SPECS = {
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee', type: 'select', options: 'employees' },
-    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
-    { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path?', type: 'select', options: ['No', 'Yes'] },
+    { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
+    { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path? (auto if predecessors set)', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
     { k: 'item', label: 'Cost item' },
@@ -14235,6 +14235,30 @@ function pmRenderScope(pid) {
 let _pmSchedSel = '';
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
 function pmSchedRange() { const f = (document.getElementById('pm-sched-from') || {}).value || ''; const t = (document.getElementById('pm-sched-to') || {}).value || ''; _pmSchedSel = (f || t) ? ('R' + f + '_' + t) : ''; pmTab('schedule'); }
+/* Critical Path Method — forward/backward pass over task predecessors (referenced by WBS code).
+   Duration = the `duration` field, else days(start→finish)+1, else 1 (0 for milestones). Cycle-guarded.
+   Returns a map by task id → {es,ef,ls,lf,float,critical} plus projEnd + whether any dependencies exist. */
+function _pmCPM(tasks) {
+  const byKey = {}, nodes = tasks.map(t => {
+    let dur = +t.duration || 0;
+    if (!dur && t.start && t.finish) { const d = _pmDateDiff(t.start, t.finish); dur = (d || 0) + 1; }
+    if (!dur) dur = String(t.isMilestone) === 'Yes' ? 0 : 1;
+    const key = String(t.wbs || t.id || '').trim() || t.id;
+    const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), es: 0, ef: dur, ls: 0, lf: 0, float: 0, critical: false };
+    byKey[key] = n; return n;
+  });
+  nodes.forEach(n => { n.preds = n.preds.filter(k => byKey[k] && byKey[k] !== n); });
+  let changed = true, guard = 0;
+  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { let es = 0; n.preds.forEach(k => { es = Math.max(es, byKey[k].ef); }); if (es !== n.es) { n.es = es; n.ef = es + n.dur; changed = true; } }); }
+  const projEnd = nodes.reduce((m, n) => Math.max(m, n.ef), 0);
+  const succ = {}; nodes.forEach(n => n.preds.forEach(k => { (succ[k] = succ[k] || []).push(n.key); }));
+  nodes.forEach(n => { n.lf = projEnd; n.ls = projEnd - n.dur; });
+  changed = true; guard = 0;
+  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { const ss = succ[n.key] || []; let lf = projEnd; if (ss.length) { lf = Infinity; ss.forEach(k => { lf = Math.min(lf, byKey[k].ls); }); } if (lf !== n.lf) { n.lf = lf; n.ls = lf - n.dur; changed = true; } }); }
+  nodes.forEach(n => { n.float = n.ls - n.es; n.critical = n.float <= 0; });
+  const map = {}; nodes.forEach(n => { map[n.id] = n; });
+  return { map: map, projEnd: projEnd, critical: nodes.filter(n => n.critical).length, hasDeps: nodes.some(n => n.preds.length) };
+}
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
@@ -14253,7 +14277,8 @@ function pmRenderSchedule(pid) {
   const tasks = zoom ? allTasks.filter(t => overlap(t.start || t.finish, t.finish || t.start)) : allTasks;
   const min = zoom ? selStart : pmin, max = zoom ? selEnd : pmax, span = Math.max(1, _pmDateDiff(min, max) || 1);
   const tr = _pmTaskRollup(pid);
-  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Overdue milestones', tr.overdueMs, '#EF4444')]);
+  const cpm = _pmCPM(allTasks);
+  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
   const sel = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSchedSet(this.value)" title="Filter the schedule by period"><option value="">All time</option><optgroup label="By year">' + years.map(yy => '<option value="Y' + yy + '"' + (_pmSchedSel === 'Y' + yy ? ' selected' : '') + '>' + yy + '</option>').join('') + '</optgroup><optgroup label="By month">' + monthsOpt.map(m => '<option value="M' + m + '"' + (_pmSchedSel === 'M' + m ? ' selected' : '') + '>' + mLab(m) + '</option>').join('') + '</optgroup></select>';
   const _isR = _pmSchedSel.charAt(0) === 'R', _rp = _isR ? _pmSchedSel.slice(1).split('_') : ['', ''];
   const rangeUi = '<span style="font-size:11px;color:var(--text-light)">Day range</span><input type="date" id="pm-sched-from" value="' + (_rp[0] || '') + '" onchange="pmSchedRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px" title="From day"><span style="color:var(--text-light)">\u2192</span><input type="date" id="pm-sched-to" value="' + (_rp[1] || '') + '" onchange="pmSchedRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px" title="To day">' + (_isR ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSchedSet(\'\')" title="Clear day range">Clear</button>' : '');
@@ -14287,8 +14312,9 @@ function pmRenderSchedule(pid) {
   }
   const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
-    { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') },
+    { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', k: 'assignee' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
+    { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
     { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
