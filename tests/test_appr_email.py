@@ -63,3 +63,13 @@ def test_overdue_reminder_engine(monkeypatch, base_url):
     before = len(sent)
     assert app._appr_reminders() == 0, "dedup — a second sweep the same day sends nothing"
     assert len(sent) == before
+
+
+def test_waiting_since_handles_leave_string_signatures_and_created_at(base_url):
+    import json as _json
+    rev = {"status": "reviewed", "created_at": "2026-06-01T09:00:00Z",
+           "signatures": _json.dumps([{"setStatus": "Reviewed", "ts": "2026-06-05T10:00:00Z"}])}
+    t = app._appr_waiting_since(rev, "review")           # must NOT crash on the JSON-string signatures
+    assert t == app._appr_epoch("2026-06-05T10:00:00Z")  # uses the Reviewed-signature clock
+    sub = {"status": "pending", "created_at": "2026-06-01T09:00:00Z", "startDate": "2026-07-20", "signatures": "[]"}
+    assert app._appr_waiting_since(sub, "submit") == app._appr_epoch("2026-06-01T09:00:00Z"), "created_at, not startDate"

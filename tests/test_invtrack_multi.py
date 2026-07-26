@@ -243,8 +243,8 @@ def test_portal_backfill_fills_existing_portal_row(monkeypatch, base_url):
     assert n == 1
     r = items[0]
     assert r["after"] == 3990000 and r["invNo"] == "975" and len(r["items"]) == 1
-    assert (r.get("files") or []) and r["_portalTried"] and not r.get("needsLookup")
-    # idempotent: _portalTried stops a second attempt
+    assert (r.get("files") or []) and not r.get("needsLookup")
+    # idempotent: a filled row now has files, so a second sweep skips it (no _portalTried needed on success)
     assert app._invtrack_portal_backfill(items) == 0
 
 
@@ -268,3 +268,19 @@ def test_portal_backfill_ehoadon_uses_email_invno_not_wrong_stored(monkeypatch, 
     assert captured.get("serial") == "C26MME", captured
     assert captured.get("invno") == "10039", captured        # NOT the wrong stored "1"
     assert captured.get("code") == "MVHSMPB954D", captured
+
+
+def test_zip_bounded_read_skips_bomb_member():
+    # a member whose DECOMPRESSED size exceeds the 4 MB cap is skipped WITHOUT trusting zi.file_size
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("bomb.xml", b"<HDon>" + b" " * (5 * 1024 * 1024) + b"</HDon>")
+        z.writestr("ok.xml", _xml("1C26TAA", "5001", "0311111111", "1000000", "100000", "1100000"))
+    invs = app._einv_all_from_zip(buf.getvalue())
+    assert [i["invNo"] for i in invs] == ["5001"], "oversized member skipped, valid invoice still parsed"
+
+
+def test_utf16_doctype_rejected():
+    xml16 = '<?xml version="1.0"?><!DOCTYPE a [<!ENTITY x "y">]><HDon/>'.encode("utf-16")
+    assert app._einv_safe_xml(xml16) is None, "UTF-16 DOCTYPE/ENTITY must be rejected (XXE guard bypass)"
+    assert app._einv_safe_xml(_xml("1C26TAA", "1", "0311111111", "100", "10", "110")) is not None

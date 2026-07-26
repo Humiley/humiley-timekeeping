@@ -260,6 +260,12 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
 
 
 _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "rejected", "paid": "paid"}
+# The effective defaults the config GET substitutes for these keys — the SAVE side must compare against the
+# SAME defaults, else a manager's unchanged (echoed-default) value looks like a change and trips the admin gate.
+_APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
+                          "apprSenderFinance": "finance@humiley.com", "apprSenderProc": "procurement@humiley.com",
+                          "apprReminders": "1", "apprReminderDays": "2"}
+_APPR_REMIND_LOCK = threading.Lock()
 
 
 def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0):
@@ -348,7 +354,13 @@ def _appr_epoch(v):
 
 def _appr_waiting_since(item, st):
     """When the request entered its CURRENT waiting state (review vs submit) — the clock for overdue."""
-    sigs = item.get("signatures") or []
+    sigs = item.get("signatures")
+    if isinstance(sigs, str):                        # leave rows carry signatures as a raw JSON string (db.list_leave)
+        try:
+            sigs = json.loads(sigs or "[]")
+        except Exception:
+            sigs = []
+    sigs = sigs if isinstance(sigs, list) else []
     if st == "review":
         for s in reversed(sigs):
             if str(s.get("setStatus") or "").lower() == "reviewed":
@@ -358,7 +370,8 @@ def _appr_waiting_since(item, st):
         t = _appr_epoch(item.get("reviewedOn"))
         if t:
             return t
-    for k in ("submittedOn", "createdOn", "createdAt", "date", "reqDate", "startDate"):
+    # 'created_at' is the leave table's snake_case submission column; the rest cover the JSON collections.
+    for k in ("submittedOn", "createdOn", "createdAt", "created_at", "date", "reqDate", "startDate"):
         t = _appr_epoch(item.get(k))
         if t:
             return t
@@ -371,6 +384,8 @@ def _appr_reminders():
     """Scan pending 3-level requests and email a reminder to whoever must act next, once/day, once a
        request has waited ≥ portal_apprReminderDays (default 2). Dedup + age tracked in a settings blob
        so no request schema changes and leave (separate table) is covered too. Best-effort; never raises."""
+    if not _APPR_REMIND_LOCK.acquire(blocking=False):
+        return 0   # a sweep (6h scheduler vs a manual click) is already running — avoid the dedup-blob read/modify/write race
     try:
         if (db.get_setting("portal_apprReminders", "1") or "1").lower() not in ("1", "true", "on", "yes"):
             return 0
@@ -424,6 +439,8 @@ def _appr_reminders():
         return sent
     except Exception:
         return 0
+    finally:
+        _APPR_REMIND_LOCK.release()
 
 
 def _appr_reminder_scheduler():
@@ -660,9 +677,22 @@ def _einv_safe_xml(xml_bytes):
     if not xml_bytes or len(xml_bytes) > _EINV_MAX_BYTES:
         return None
     low = xml_bytes.lower()   # scan the FULL (already <=4MB-capped) content — a padded prolog comment must not hide a DOCTYPE
-    if b"<!doctype" in low or b"<!entity" in low:   # TT78 e-invoices never carry a DTD/entities
+    flat = low.replace(b"\x00", b"")   # defeat UTF-16/UTF-32 XML: expat auto-detects them, but the DOCTYPE bytes are null-interleaved
+    if b"<!doctype" in low or b"<!entity" in low or b"<!doctype" in flat or b"<!entity" in flat:   # TT78 e-invoices never carry a DTD/entities
         return None
     return xml_bytes
+
+
+def _zip_read_bounded(z, zi, limit):
+    """Read a ZIP member with a HARD decompressed-size cap — NEVER trust zi.file_size (attacker-controlled
+       central-directory metadata). Bounds the decompression itself, so a bomb member can't blow up memory.
+       Returns the bytes, or None if the member exceeds the cap or fails to read."""
+    try:
+        with z.open(zi) as fh:
+            data = fh.read(limit + 1)
+        return None if len(data) > limit else data
+    except Exception:
+        return None
 
 
 def _einv_parse_xml(xml_bytes):
@@ -764,13 +794,14 @@ def _einv_from_zip(zip_bytes):
     for zi in z.infolist():
         if not zi.filename.lower().endswith(".xml"):
             continue
-        if zi.file_size > _EINV_MAX_BYTES:          # skip an over-large (bomb) member
-            continue
         checked += 1
         if checked > 20:
             break
+        raw = _zip_read_bounded(z, zi, _EINV_MAX_BYTES)   # bounded read — do NOT trust zi.file_size (bomb defence)
+        if raw is None:
+            continue
         try:
-            r = _einv_parse_xml(z.read(zi.filename))
+            r = _einv_parse_xml(raw)
         except Exception:
             r = None
         if r:
@@ -789,16 +820,21 @@ def _einv_all_from_zip(zip_bytes):
     except Exception:
         return out
     checked = 0
+    total = 0
     for zi in z.infolist():
         if not zi.filename.lower().endswith(".xml"):
-            continue
-        if zi.file_size > _EINV_MAX_BYTES:                  # skip an over-large (bomb) member
             continue
         checked += 1
         if checked > 40:
             break
+        raw = _zip_read_bounded(z, zi, _EINV_MAX_BYTES)     # bounded read — do NOT trust zi.file_size (bomb defence)
+        if raw is None:
+            continue
+        total += len(raw)
+        if total > 24 * 1024 * 1024:                        # cap total decompressed bytes across the whole archive
+            break
         try:
-            r = _einv_parse_xml(z.read(zi.filename))
+            r = _einv_parse_xml(raw)
         except Exception:
             r = None
         if r:
@@ -1661,7 +1697,6 @@ def _invtrack_portal_backfill(items, limit=12):
         blob = (it.get("sender") or "") + " " + (it.get("lookup") or "") + " " + (it.get("desc") or "")
         if not re.search(r"ehoadon\.vn|meinvoice\.vn", blob, re.I):
             continue
-        it["_portalTried"] = 3
         mc = re.search(r"(?:MTC[:=\s]*|[?&](?:MTC|sc)=|M[ãa]\s*tra\s*c[ứu]+u[:=\s]*)([0-9A-Za-z]{6,24})", blob, re.I)
         code = mc.group(1) if mc else ""
         serial = it.get("serial") or ""
@@ -1671,12 +1706,13 @@ def _invtrack_portal_backfill(items, limit=12):
         is_eh = "ehoadon" in (url + " " + (it.get("sender") or "")).lower()
         # eHoadon needs serial + the REAL invoice-no; the row's stored invNo is often wrong (e.g. "1" from
         # the notification), so re-read the email body and PREFER its values (Ký hiệu / Hóa đơn số / MTC).
+        graph_ok = True
         if is_eh and it.get("msgId"):
             try:
                 if token_box[0] is None:
                     token_box[0] = _graph_app_token()
                 q = ("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(INVTRACK["mailbox"]) +
-                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(it["msgId"]) + "'&$select=body&$top=1")
+                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(str(it["msgId"]).replace("'", "''")) + "'&$select=body&$top=1")
                 arr = (_graph_get(q, token_box[0]) or {}).get("value") or []
                 if arr:
                     bf = _invtrack_body_fields(((arr[0].get("body") or {}).get("content") or ""))
@@ -1684,11 +1720,14 @@ def _invtrack_portal_backfill(items, limit=12):
                     invno = bf.get("invNo") or invno
                     code = bf.get("code") or code
             except Exception:
-                pass
+                graph_ok = False   # transient Graph error — retry next run, don't give up on the row
         if not code or (is_eh and not (serial and invno)):
+            if graph_ok:           # genuinely can't build the link (email lacks the fields) → stop retrying this row
+                it["_portalTried"] = 3
             continue
         raw, ex = _invtrack_fetch_by_url(url, serial, invno, code)
         if not ex:
+            it["_portalTried"] = 3   # the portal genuinely returned nothing for this row → stop retrying
             continue
         if raw:
             sf = _invtrack_store_file(raw, (serial or ex.get("serial") or "hoadon") + "-" + (invno or code) + ".pdf", "application/pdf")
@@ -2227,7 +2266,7 @@ def _invtrack_portal_fetch(body):
             try:
                 token = _graph_app_token()
                 q = ("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(INVTRACK["mailbox"]) +
-                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(msgid) +
+                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(msgid.replace("'", "''")) +
                      "'&$select=body,subject&$top=1")
                 arr = (_graph_get(q, token) or {}).get("value") or []
                 if arr:
@@ -3363,6 +3402,7 @@ class Handler(BaseHTTPRequestHandler):
             _err = self._appr_check(u, "claims", line.get("status") or "Submitted", set_status, synth, item.get("empId"))
             if _err:
                 return self._err(_err, 403)
+            _prev_roll = self._claim_rollup(lines)   # rolled-up status BEFORE this line's change (for one-email-per-transition)
             item.setdefault("signatures", []).append(sig)
             if set_status:
                 line["status"] = set_status
@@ -3377,8 +3417,8 @@ class Handler(BaseHTTPRequestHandler):
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
                 "action": "E-signature — " + meaning, "target": "claims/" + str(iid) + "/item/" + str(item_id),
                 "detail": (set_status or "signed") + " · " + method, "ts": self._utc_now()})
-            _cev = _APPR_EVENT.get(str(set_status or "").strip().lower())               # lifecycle email on the claim's rolled-up decision
-            if _cev:
+            _cev = _APPR_EVENT.get(str(item.get("status") or "").strip().lower())       # fire on the claim's ROLLED-UP status,
+            if _cev and item.get("status") != _prev_roll:                               # ONCE, only when it actually transitions (not per line)
                 _appr_notify("claims", item, _cev, signer_name)
             return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
@@ -4155,7 +4195,7 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             if k != "teamsWebhook":
                 v = v.strip()
-            cur = db.get_setting(sk, "") or ""
+            cur = db.get_setting(sk, "") or _APPR_SETTING_DEFAULTS.get(k, "")   # compare against the SAME effective default the GET returns
             if v == (cur if isinstance(cur, str) else ""):
                 continue
             if not is_admin:

@@ -1802,9 +1802,9 @@ window.addEventListener('orientationchange', _setLoginBg);
           <div><label class="form-label" style="font-size:11px">Finance sender · claims, travel, payments</label><input class="form-control" id="portal-apprFin" placeholder="finance@humiley.com"></div>
           <div><label class="form-label" style="font-size:11px">Procurement sender</label><input class="form-control" id="portal-apprProc" placeholder="procurement@humiley.com"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" id="portal-apprTestBtn" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
         <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" id="portal-apprSweepBtn" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
       </div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
@@ -4868,7 +4868,8 @@ async function tkRenderPortalEditor() {
     if (typeof live.procurementUrl === 'string') { window._TK_PORTAL.procurementUrl = live.procurementUrl; if (TK.cfg) TK.cfg.procurementUrl = live.procurementUrl; }
   }
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
-  [tw, fs, pu].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change integration URLs.' : ''; } });
+  const _apprEls = ['portal-apprEmail', 'portal-apprHr', 'portal-apprFin', 'portal-apprProc', 'portal-apprRemind', 'portal-apprRemindDays', 'portal-apprTestBtn', 'portal-apprSweepBtn'].map(id => document.getElementById(id));
+  [tw, fs, pu, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
 }
 
 function _tkPortalRenderRows() {
