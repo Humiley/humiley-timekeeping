@@ -27,6 +27,7 @@ import io
 import sys
 import collections
 import traceback
+from tkutil import _money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv_xml_num   # pure leaf utilities (extracted from this file)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -193,11 +194,7 @@ def _appr_email_sender(coll):
     return hr   # leave, padr, hr, and anything else
 
 
-def _money_vnd(v):
-    try:
-        return "{:,.0f} ₫".format(float(str(v).replace(",", "").replace(" ", "").replace("₫", "")))
-    except Exception:
-        return str(v or "")
+# _money_vnd → tkutil.py (extracted)
 
 
 def _graph_send_mail(sender, to, subject, html, cc=None):
@@ -1043,8 +1040,7 @@ def _invtrack_app_ready():
     return bool(M365["clientId"] and M365["tenantId"] and M365["clientSecret"])
 
 
-def _now_iso():
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")   # `datetime` is the class (from datetime import datetime)
+# _now_iso → tkutil.py (extracted)
 
 
 # ── Rate limiting (in-memory, per real client IP) ──────────────────────────────────────────────
@@ -1100,62 +1096,16 @@ def _claim_rollup(c):
     return "Partially approved"
 
 
-def _vn_fold(s):
-    """Fold Vietnamese diacritics for classification (đ->d, drop accents) so 'HĐĐT'/'Hóa đơn' all match."""
-    return "".join(ch for ch in unicodedata.normalize("NFD", str(s or "").lower()) if unicodedata.category(ch) != "Mn").replace("đ", "d")
+# _vn_fold → tkutil.py (extracted)
 
 
-def _iso_minus(iso, minutes):
-    """Subtract minutes from an ISO instant (for a safe overlap window). Best-effort; returns input on failure."""
-    try:
-        return (datetime.strptime((iso or "").split(".")[0].replace("Z", ""), "%Y-%m-%dT%H:%M:%S")
-                - timedelta(minutes=minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    except Exception:
-        return iso
+# _iso_minus → tkutil.py (extracted)
 
 
-def _einv_num(x):
-    """Parse a money value tolerant of VN/EN grouping+decimal conventions. TT78 XML uses plain integers."""
-    s = re.sub(r"[^0-9,.\-]", "", str(x if x is not None else "")).strip()
-    if not s:
-        return 0.0
-    neg = s.startswith("-")
-    s = s.lstrip("-")
-    last = max(s.rfind(","), s.rfind("."))
-    frac = len(s) - last - 1
-    if last != -1 and 1 <= frac <= 2:              # last separator with 1-2 trailing digits = decimal
-        s = s[:last].replace(",", "").replace(".", "") + "." + s[last + 1:]
-    else:                                          # all separators are thousands-grouping
-        s = s.replace(",", "").replace(".", "")
-    try:
-        v = float(s or 0)
-    except ValueError:
-        return 0.0
-    return -v if neg else v
+# _einv_num → tkutil.py (extracted)
 
 
-def _einv_xml_num(x):
-    """Parse a numeric value from e-invoice XML, where dot is the DECIMAL point (xs:decimal — issuers
-       like MISA use fixed 6 places, e.g. '2736000.000000' / '23.790000'). The display-format parser
-       _einv_num would wrongly read those dots as thousands separators. Falls back to dot-as-thousands
-       when a plain float() fails (a rare issuer that writes '2.736.000' in the XML)."""
-    s = re.sub(r"[^0-9,.\-]", "", str(x if x is not None else "")).strip()
-    if not s:
-        return 0.0
-    neg = s.startswith("-")
-    s = s.lstrip("-")
-    if "," in s and "." in s:                      # both -> VN display 1.234.567,89 (dot thousands, comma decimal)
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s:                                 # comma as the decimal mark
-        s = s.replace(",", ".")
-    try:
-        v = float(s)                               # only dots (or none) -> standard xs:decimal
-    except ValueError:
-        try:
-            v = float(s.replace(".", ""))          # multiple dots were thousands grouping
-        except ValueError:
-            return 0.0
-    return -v if neg else v
+# _einv_xml_num → tkutil.py (extracted)
 
 
 def _einv_safe_xml(xml_bytes):
