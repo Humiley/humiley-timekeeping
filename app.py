@@ -1387,12 +1387,12 @@ def _invtrack_portal_backfill(items, limit=12):
     for it in items:
         if done >= limit:
             break
-        if it.get("_portalTried") or it.get("files"):
+        if it.get("files") or it.get("_portalTried") == 3:   # bump this int to force a retry of all rows after a fix
             continue
         blob = (it.get("sender") or "") + " " + (it.get("lookup") or "") + " " + (it.get("desc") or "")
         if not re.search(r"ehoadon\.vn|meinvoice\.vn", blob, re.I):
             continue
-        it["_portalTried"] = True
+        it["_portalTried"] = 3
         mc = re.search(r"(?:MTC[:=\s]*|[?&](?:MTC|sc)=|M[ãa]\s*tra\s*c[ứu]+u[:=\s]*)([0-9A-Za-z]{6,24})", blob, re.I)
         code = mc.group(1) if mc else ""
         serial = it.get("serial") or ""
@@ -1400,7 +1400,9 @@ def _invtrack_portal_backfill(items, limit=12):
         murl = re.search(r"https?://[^\s\"'<>]+", blob)
         url = murl.group(0) if murl else ("https://www.meinvoice.vn/" if "meinvoice" in blob.lower() else "https://tchd.ehoadon.vn/")
         is_eh = "ehoadon" in (url + " " + (it.get("sender") or "")).lower()
-        if is_eh and not (serial and invno) and it.get("msgId"):     # the serial lives in the email BODY
+        # eHoadon needs serial + the REAL invoice-no; the row's stored invNo is often wrong (e.g. "1" from
+        # the notification), so re-read the email body and PREFER its values (Ký hiệu / Hóa đơn số / MTC).
+        if is_eh and it.get("msgId"):
             try:
                 if token_box[0] is None:
                     token_box[0] = _graph_app_token()
@@ -1409,9 +1411,9 @@ def _invtrack_portal_backfill(items, limit=12):
                 arr = (_graph_get(q, token_box[0]) or {}).get("value") or []
                 if arr:
                     bf = _invtrack_body_fields(((arr[0].get("body") or {}).get("content") or ""))
-                    serial = serial or bf.get("serial") or ""
-                    invno = invno or bf.get("invNo") or ""
-                    code = code or bf.get("code") or ""
+                    serial = bf.get("serial") or serial
+                    invno = bf.get("invNo") or invno
+                    code = bf.get("code") or code
             except Exception:
                 pass
         if not code or (is_eh and not (serial and invno)):
@@ -1436,7 +1438,10 @@ def _invtrack_portal_backfill(items, limit=12):
         for k in ("before", "vat", "after"):
             if (ex.get(k) or 0) > 0:
                 it[k] = ex.get(k)
-        for k in ("invNo", "serial", "taxCode", "dateISO", "dateRaw", "supplier",
+        for k in ("invNo", "serial"):                    # the fetched invoice is authoritative → correct a wrong stored value
+            if ex.get(k):
+                it[k] = ex.get(k)
+        for k in ("taxCode", "dateISO", "dateRaw", "supplier",
                   "buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate"):
             if ex.get(k) and not it.get(k):
                 it[k] = ex.get(k)
@@ -1958,9 +1963,9 @@ def _invtrack_portal_fetch(body):
                 arr = (_graph_get(q, token) or {}).get("value") or []
                 if arr:
                     bf = _invtrack_body_fields(((arr[0].get("body") or {}).get("content") or ""))
-                    serial = serial or bf.get("serial") or ""
-                    code = code or bf.get("code") or ""
-                    invno = invno or bf.get("invNo") or ""
+                    serial = bf.get("serial") or serial          # PREFER the email body — the row's stored
+                    code = bf.get("code") or code                # invNo is often the wrong "1" from the note
+                    invno = bf.get("invNo") or invno
             except Exception:
                 pass
         # pick the issuer portal from the row's lookup URL / sender

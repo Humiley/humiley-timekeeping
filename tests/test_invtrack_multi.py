@@ -246,3 +246,25 @@ def test_portal_backfill_fills_existing_portal_row(monkeypatch, base_url):
     assert (r.get("files") or []) and r["_portalTried"] and not r.get("needsLookup")
     # idempotent: _portalTried stops a second attempt
     assert app._invtrack_portal_backfill(items) == 0
+
+
+def test_portal_backfill_ehoadon_uses_email_invno_not_wrong_stored(monkeypatch, base_url):
+    """The eHoadon row often stores a wrong invNo ('1'); the backfill must re-read the email and use the
+       REAL invoice-no (Hóa đơn số 00010039 -> 10039) + serial (Ký hiệu C26MME) to build the file URL."""
+    monkeypatch.setattr(app, "_invtrack_app_ready", lambda: True)
+    monkeypatch.setattr(app, "_graph_app_token", lambda: "tok")
+    body_html = "Kinh gui. Ky hieu: C26MME  Hoa don so 00010039  Ma tra cuu: MVHSMPB954D"
+    monkeypatch.setattr(app, "_graph_get", lambda url, tok: {"value": [{"body": {"content": body_html}}]})
+    captured = {}
+
+    def fake_fetch(url, serial="", invno="", code=""):
+        captured.update(url=url, serial=serial, invno=invno, code=code)
+        return (None, None)
+    monkeypatch.setattr(app, "_invtrack_fetch_by_url", fake_fetch)
+    items = [{"msgId": "<eh@x>", "sender": "noreply@ehoadon.vn", "after": 0, "files": [],
+              "invNo": "1", "serial": "", "lookup": "https://tchd.ehoadon.vn/TCHD?MTC=MVHSMPB954D",
+              "desc": "Hoa don so 00010039 - MTC: MVHSMPB954D"}]
+    app._invtrack_portal_backfill(items)
+    assert captured.get("serial") == "C26MME", captured
+    assert captured.get("invno") == "10039", captured        # NOT the wrong stored "1"
+    assert captured.get("code") == "MVHSMPB954D", captured
