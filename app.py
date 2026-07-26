@@ -5117,10 +5117,16 @@ class Handler(BaseHTTPRequestHandler):
             _dd = _DAYS[int(db.get_setting("portal_digestDay", "0") or "0")]
         except Exception:
             _dd = "Monday"
+        # Digest/monthly email go through the fire-and-forget _graph_send_mail, whose async 401/403 is
+        # recorded in _APPR_EMAIL_HEALTH — NOT in _DIGEST/_MONTHLY_HEALTH. Surface that shared transport
+        # error here so a missing Mail.Send consent can't leave these rows falsely green. The counter is
+        # "queued" (attempts), not "sent" — fire-and-forget can't confirm delivery.
+        _mail_err = _APPR_EMAIL_HEALTH.get("lastError") or ""
+        _dig_err = _DIGEST_HEALTH.get("lastError") or _mail_err
         add("digest", "Weekly manager & leadership digest",
-            "down" if (dig_on and _DIGEST_HEALTH.get("lastError")) else ("ok" if dig_on else "warn"),
-            ("On · every " + _dd + (" · " + str(_DIGEST_HEALTH["sent"]) + " sent" if _DIGEST_HEALTH.get("sent") else "")) if dig_on else "Off (opt-in)",
-            (_DIGEST_HEALTH.get("lastError") or "") if (dig_on and _DIGEST_HEALTH.get("lastError")) else ("" if dig_on else "Optional — turn on in Access & Permissions → System Integrations."))
+            "down" if (dig_on and _dig_err) else ("ok" if dig_on else "warn"),
+            ("On · every " + _dd + (" · " + str(_DIGEST_HEALTH["sent"]) + " queued" if _DIGEST_HEALTH.get("sent") else "")) if dig_on else "Off (opt-in)",
+            _dig_err if (dig_on and _dig_err) else ("" if dig_on else "Optional — turn on in Access & Permissions → System Integrations."))
 
         tkn_on = (db.get_setting("portal_tkNudges", "0") or "0").lower() in ("1", "true", "on", "yes")
         add("tknudge", "Timekeeping check-in/out nudges", "ok" if tkn_on else "warn",
@@ -5128,10 +5134,11 @@ class Handler(BaseHTTPRequestHandler):
             "" if tkn_on else "Optional — push reminders; turn on in Access & Permissions → System Integrations.")
 
         mth_on = (db.get_setting("portal_monthlyReports", "0") or "0").lower() in ("1", "true", "on", "yes")
+        _mth_err = _MONTHLY_HEALTH.get("lastError") or _mail_err
         add("monthly", "Monthly report pack",
-            "down" if (mth_on and _MONTHLY_HEALTH.get("lastError")) else ("ok" if mth_on else "warn"),
-            ("On · day " + (db.get_setting("portal_monthlyDay", "1") or "1") + " each month" + (" · " + str(_MONTHLY_HEALTH["sent"]) + " sent" if _MONTHLY_HEALTH.get("sent") else "")) if mth_on else "Off (opt-in)",
-            (_MONTHLY_HEALTH.get("lastError") or "") if (mth_on and _MONTHLY_HEALTH.get("lastError")) else ("" if mth_on else "Optional — auto-email leadership the month-end summary; turn on in Settings."))
+            "down" if (mth_on and _mth_err) else ("ok" if mth_on else "warn"),
+            ("On · day " + (db.get_setting("portal_monthlyDay", "1") or "1") + " each month" + (" · " + str(_MONTHLY_HEALTH["sent"]) + " queued" if _MONTHLY_HEALTH.get("sent") else "")) if mth_on else "Off (opt-in)",
+            _mth_err if (mth_on and _mth_err) else ("" if mth_on else "Optional — auto-email leadership the month-end summary; turn on in Settings."))
 
         return self._json({"rows": rows, "checkedAt": _now_iso(),
                            "ok": sum(1 for r in rows if r["status"] == "ok"),
