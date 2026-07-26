@@ -10052,11 +10052,22 @@ function _invDetailHTML(i, idx) {
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('VAT') + '</div><input id="invedit-vat-' + idx + '" type="text" value="' + iv(i.vat) + '" placeholder="0" style="width:120px;text-align:right"></div>' +
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Total (after tax)') + '</div><input id="invedit-after-' + idx + '" type="text" value="' + iv(i.after) + '" placeholder="0" style="width:150px;text-align:right;font-weight:700"></div>' +
       '<button class="btn btn-primary btn-sm" onclick="_invSaveAmount(' + idx + ')">' + _t('Save amount') + '</button>' +
+      (_invIsEhoadon(i) ? '<button class="btn btn-outline btn-sm" onclick="_invPortalFetch(' + idx + ')" title="' + _tkEscA(_t('Download the real invoice from the Bkav eHoadon portal and auto-fill every field')) + '">' + tkIcon('download', 13) + _t('Auto-fetch invoice + fill') + '</button>' : '') +
       (_fdl ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(_fdl) + '" target="_blank" rel="noopener" download>' + tkIcon('download', 13) + _t('Download real invoice') + '</a>' : '') +
       (url ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(url) + '" target="_blank" rel="noopener">' + _t('Open portal to read amount') + ' ↗</a>' : '') +
     '</div>' +
     '<div style="font-size:10.5px;color:var(--text-light);margin-top:6px">' + _t('Open the portal, read the total, type it here and Save — it sticks and updates every total, chart and export.') + '</div>' +
   '</div>';
+}
+function _invIsEhoadon(i) { return /ehoadon\.vn/i.test((i.sender || '') + ' ' + (i.lookup || '') + ' ' + _invLookupUrl(i)); }
+async function _invPortalFetch(idx) {
+  const i = _invRegList[idx]; if (!i) return;
+  toast(_t('Fetching the invoice from the issuer portal…'), 'info', 3500);
+  try {
+    const r = await tkApi('/api/invtrack/portal_fetch', { method: 'POST', body: { msgId: i.msgId || '', serial: i.serial || '', invNo: i.invNo || '' } });
+    if (r && r.ok) { await _invLoad(true); tkRenderInvTrack(); toast(_t('Fetched from portal') + ' — ' + (r.file || '') + (r.after ? ('  ' + _invMoney(r.after)) : ''), 'info', 6000); }
+    else toast((r && r.message) || _t('Could not fetch this invoice from the portal'), 'warn', 8000);
+  } catch (e) { toast(_t('Fetch failed') + ': ' + (e.message || ''), 'error', 7000); }
 }
 async function _invSaveAmount(idx) {
   const i = _invRegList[idx]; if (!i) return;
@@ -15788,6 +15799,9 @@ const _VI = {
   'Currency': 'Tiền tệ', 'VAT rate': 'Thuế suất', 'Tax': 'Thuế',
   'Line items (goods & services)': 'Chi tiết hàng hoá & dịch vụ',
   'Qty': 'SL', 'Unit price': 'Đơn giá', 'Amount': 'Thành tiền',
+  'Auto-fetch invoice + fill': 'Tự tải hoá đơn + điền', 'Fetching the invoice from the issuer portal…': 'Đang tải hoá đơn từ cổng phát hành…',
+  'Fetched from portal': 'Đã tải từ cổng', 'Could not fetch this invoice from the portal': 'Không tải được hoá đơn này từ cổng',
+  'Fetch failed': 'Tải thất bại', 'Download the real invoice from the Bkav eHoadon portal and auto-fill every field': 'Tải hoá đơn thật từ cổng Bkav eHoadon và tự điền mọi trường',
   'Payee / Vendor': 'Người nhận / Nhà cung cấp',
   'Payee': 'Người nhận',
   'Amount (VND)': 'Số tiền (VND)',

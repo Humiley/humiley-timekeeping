@@ -624,6 +624,43 @@ def _pdf_engine_ok():
         return False
 
 
+_PDF_ITEM_RE = re.compile(
+    r"^(\d{1,3})\s+(.+?)\s+(\d[\d.,]*)\s+([\d.,]{3,})\s+([\d.,]{3,})\s+(\d{1,2})\s*%\s+([\d.,]{1,})\s+([\d.,]{3,})$")
+_PDF_UNIT_RE = re.compile(r"(Su[ấa]t/ph[ầa]n|C[ốo]c/ly|Chai|C[áa]i|B[ộo]|L[ầa]n|Kg|Lon|H[ộo]p|Th[ùu]ng|Ph[ầa]n|T[úu]i|G[óo]i|M[ée]t|B[ìi]nh|Su[ấa]t|Chi[ếe]c|Đôi|Bao|Can)\s*$")
+
+
+def _einv_pdf_items(text):
+    """Best-effort line items from a Bkav-style e-invoice PDF text layer. Each row ends with the regular
+       numeric tail <qty> <unitPrice> <amountBeforeTax> <rate>% <taxAmount> <lineTotal>; the name+unit
+       precede it (the unit often wraps to the next line, so we un-wrap first). Same shape as XML items."""
+    if not text:
+        return []
+    joined = re.sub(r"([^\W\d_])[ \t]*\n[ \t]*(?=[^\W\d_])", r"\1", text, flags=re.UNICODE)   # heal a mid-word wrap ('phầ'+'n')
+    out = []
+    for ln in joined.split("\n"):                    # match PER LINE so a stray number can't span rows
+        ln = re.sub(r"\s{2,}", " ", ln.strip())
+        m = _PDF_ITEM_RE.match(ln)
+        if not m:
+            continue
+        qty = _einv_num(m.group(3))
+        total = _einv_num(m.group(8))
+        if not (qty and total):
+            continue
+        name = (m.group(2) or "").strip()
+        unit = ""
+        um = _PDF_UNIT_RE.search(name)
+        if um:
+            unit = um.group(1)
+            name = name[:um.start()].strip()
+        if not name or len(name) > 160:
+            continue
+        out.append({"no": m.group(1), "name": name, "unit": unit,
+                    "qty": qty, "price": _einv_num(m.group(4)), "amount": total, "taxRate": m.group(6) + "%"})
+        if len(out) >= 200:
+            break
+    return out
+
+
 def _einv_from_pdf(pdf_bytes):
     """Extract a VN e-invoice from a PDF attachment's TEXT layer (no OCR). Most VN e-invoice PDFs are
        generated (not scanned), so pypdf reads the amounts / tax-code / invoice-no directly. Returns
@@ -660,9 +697,24 @@ def _einv_from_pdf(pdf_bytes):
             dr = md.group(0)
         except Exception:
             diso = ""
+    # A Bkav-layout total row lists the three sums together: "Tổng cộng <before> <VAT> <after>" — read
+    # all three so we never mislabel the pre-tax subtotal as the grand total (the body regex grabs one).
+    b3 = v3 = a3 = 0
+    mt = re.search(r"T[ổo]ng\s*c[ộo]ng(?:\s*ti[ềe]n\s*thanh\s*to[áa]n)?\s*[:\-]?\s*([\d.,]{4,})\s+([\d.,]{2,})\s+([\d.,]{4,})", text)
+    if mt:
+        b3 = _einv_num(mt.group(1))
+        v3 = _einv_num(mt.group(2))
+        a3 = _einv_num(mt.group(3))
+    items = _einv_pdf_items(text)
+    vrate = ""
+    for it in items:
+        if it.get("taxRate"):
+            vrate = it["taxRate"]
+            break
     return {"invNo": bf.get("invNo", ""), "serial": serial, "taxCode": bf.get("taxCode", ""),
-            "before": bf.get("before", 0), "vat": bf.get("vat", 0), "after": bf.get("after", 0),
-            "supplier": "", "dateISO": diso, "dateRaw": dr, "lookupCode": bf.get("code", ""), "_method": "pdf"}
+            "before": b3 or bf.get("before", 0), "vat": v3 or bf.get("vat", 0), "after": a3 or bf.get("after", 0),
+            "supplier": "", "dateISO": diso, "dateRaw": dr, "lookupCode": bf.get("code", ""),
+            "items": items, "vatRate": vrate, "_method": "pdf"}
 
 
 _INVLINK_HOSTS = ("vnpt-invoice.vn", "vnpt-invoice.com.vn", "vnpt.vn", "meinvoice.vn", "misa.vn", "misa.com.vn",
@@ -708,6 +760,43 @@ def _invtrack_url_safe(url):
         return True
     except Exception:
         return False
+
+
+def _invtrack_fetch_ehoadon(serial, invno, mtc):
+    """BKAV eHoadon (noreply@ehoadon.vn notifications) serves the invoice's DISPLAY PDF publicly at a
+       derivable path — the tra-cứu code (MTC) in the filename IS the access token, so NO login/CAPTCHA
+       is needed. Given the serial (Ký hiệu), invoice-no and MTC from the email, build the URL, fetch
+       the PDF and parse it. Returns (pdf_bytes, parsed_dict) or (None, None)."""
+    serial = re.sub(r"[^0-9A-Za-z]", "", (serial or "")).upper()
+    mtc = re.sub(r"[^0-9A-Za-z]", "", (mtc or ""))
+    ivn = re.sub(r"\D", "", str(invno or ""))
+    if not (len(serial) >= 4 and len(mtc) >= 6 and ivn):
+        return (None, None)
+    ivn8 = ivn.zfill(8)
+    for suffix in ("DPH", "DCT", "GOC", "TBP"):          # DPH = issued display copy; a few known fallbacks
+        url = "https://tchd.ehoadon.vn/Invoice_View/%s/%s/%s-%s-%s-%s.pdf" % (serial[:2], serial[2:4], serial, ivn8, mtc, suffix)
+        if not _invtrack_url_safe(url):
+            return (None, None)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (HumileyInvoiceBot)"})
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                ct = (resp.headers.get("Content-Type") or "").lower()
+                data = resp.read(12 * 1024 * 1024 + 1)
+        except Exception:
+            continue
+        if len(data) > 12 * 1024 * 1024:
+            return (None, None)
+        if not (data[:5] == b"%PDF-" or "pdf" in ct):    # a wrong suffix returns an HTML error page → try next
+            continue
+        ex = _einv_from_pdf(data) or {}
+        if not ex.get("serial"):
+            ex["serial"] = serial
+        if not ex.get("invNo"):
+            ex["invNo"] = ivn.lstrip("0") or ivn
+        ex["lookupCode"] = mtc
+        ex["method"] = "ehoadon-pdf"
+        return (data, ex)
+    return (None, None)
 
 
 def _invtrack_fetch_linked(url):
@@ -1110,7 +1199,7 @@ def _invtrack_body_fields(html):
     """Best-effort pull from a VN e-invoice NOTIFICATION email body (no attachment): the tra-cứu
        lookup URL + code, invoice no / seller MST, and amounts (before/VAT/after) when clearly
        labelled. Identifiers (digits) are read from the diacritic-folded text; the code keeps its case."""
-    out = {"url": "", "code": "", "invNo": "", "taxCode": "", "before": 0, "vat": 0, "after": 0, "fileUrls": []}
+    out = {"url": "", "code": "", "invNo": "", "serial": "", "taxCode": "", "before": 0, "vat": 0, "after": 0, "fileUrls": []}
     if not html:
         return out
     href_urls = re.findall(r'''(?:href|src)\s*=\s*["']?(https?://[^\s"'<>]+)''', html, re.I)   # links live in the href, not visible text
@@ -1134,9 +1223,12 @@ def _invtrack_body_fields(html):
         if is_dl and _invtrack_url_safe(href) and href not in out["fileUrls"]:
             out["fileUrls"].append(href)
     out["fileUrls"].sort(key=lambda u: 0 if re.search(r'pdf|type=pdf', u, re.I) else 1)   # try the PDF first (human-readable + carries the total)
-    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw, re.I)
+    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code|[?&]MTC=)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw + " " + " ".join(href_urls), re.I)
     if mc:
         out["code"] = mc.group(1)
+    ms = re.search(r"(?:Ký\s*hiệu|Ky\s*hieu|Serial)\s*(?:hóa\s*đơn)?\s*[:\-]?\s*([0-9A-Z]{5,8})\b", raw, re.I)   # e-invoice serial e.g. C26MME
+    if ms:
+        out["serial"] = ms.group(1).upper()
     mi = re.search(r"(?:so hoa don|hoa don[^0-9]{0,18}so|so hd|so\s*\(no\.?\)?|invoice\s*(?:no|number|#))\s*[:\-]?\s*0*(\d{1,10})", low)
     if mi:
         out["invNo"] = mi.group(1)
@@ -1358,6 +1450,22 @@ def _invtrack_sync(trigger="manual"):
                     return None
                 body = ((msg.get("body") or {}).get("content") or "") or (msg.get("bodyPreview") or "")
                 bf = _invtrack_body_fields(body)
+                # 0) BKAV eHoadon (noreply@ehoadon.vn): the display PDF is public at a derivable path —
+                #    fetch it directly (no CAPTCHA), attach the REAL invoice file, and fill the amounts.
+                from_addr0 = (((msg.get("from") or {}).get("emailAddress") or {}).get("address") or "").lower()
+                if link_budget[0] > 0 and bf.get("code") and bf.get("serial") and bf.get("invNo") \
+                        and re.search(r"ehoadon\.vn", (bf.get("url") or "") + " " + from_addr0, re.I):
+                    link_budget[0] -= 1
+                    raw, ex = _invtrack_fetch_ehoadon(bf.get("serial"), bf.get("invNo"), bf.get("code"))
+                    if raw and ex:
+                        sf = _invtrack_store_file(raw, bf.get("serial") + "-" + bf.get("invNo") + ".pdf", "application/pdf")
+                        if sf:
+                            sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (msg.get("receivedDateTime") or ""), sf["id"])
+                            if sp:
+                                sf["spUrl"] = sp
+                            ex["_files"] = [sf]
+                            ex["_attachName"] = sf["name"]
+                        return ex
                 # 1) the real invoice download links ("tải PDF/XML") — auto-fetch the file + amount, no lookup
                 for fu in (bf.get("fileUrls") or []):
                     if link_budget[0] <= 0:
@@ -1650,6 +1758,97 @@ def _invtrack_import(body):
         if added or updated:
             _invtrack_audit("import", added, 0)
         return {"ok": True, "added": added, "updated": updated, "total": len(cur_items)}
+
+
+def _invtrack_portal_fetch(body):
+    """On-demand (a button on a tracked row): pull the REAL invoice PDF from BKAV eHoadon, store it,
+       fill amounts/date/parties, and attach the file — so an EXISTING row (synced before auto-fetch,
+       or a CAPTCHA-notification row) gets its data + file with one click. Accepts {msgId} (re-reads
+       the source email to recover the serial when the row lacks it) or explicit {serial,invNo,code}."""
+    def _n(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+    b = body or {}
+    msgid = str(b.get("msgId") or "").strip()
+    serial = str(b.get("serial") or "").strip()
+    invno = str(b.get("invNo") or "").strip()
+    code = str(b.get("code") or "").strip()
+    with _INVTRACK_LOCK:
+        docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        cur = docs[0] if docs else None
+        row = None
+        if cur and msgid:
+            for it in (cur.get("items") or []):
+                if it.get("msgId") == msgid:
+                    row = it
+                    break
+        if row:
+            serial = serial or row.get("serial") or ""
+            invno = invno or str(row.get("invNo") or "")
+            blob = (row.get("desc") or "") + " " + (row.get("lookup") or "")
+            if not code:
+                mc = re.search(r"(?:MTC[:=\s]*|[?&]MTC=)([0-9A-Za-z]{6,24})", blob, re.I)
+                code = mc.group(1) if mc else ""
+            if not invno:
+                mi = re.search(r"(?:hóa\s*đơn\s*số|số\s*hd|invoice)\D{0,6}0*(\d{1,10})", blob, re.I)
+                invno = mi.group(1) if mi else ""
+        # serial lives in the email BODY, not the subject/row — re-read the source message if we must
+        if not serial and msgid and _invtrack_app_ready():
+            try:
+                token = _graph_app_token()
+                q = ("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(INVTRACK["mailbox"]) +
+                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(msgid) +
+                     "'&$select=body,subject&$top=1")
+                arr = (_graph_get(q, token) or {}).get("value") or []
+                if arr:
+                    bf = _invtrack_body_fields(((arr[0].get("body") or {}).get("content") or ""))
+                    serial = serial or bf.get("serial") or ""
+                    code = code or bf.get("code") or ""
+                    invno = invno or bf.get("invNo") or ""
+            except Exception:
+                pass
+        if not (serial and invno and code):
+            return {"ok": False, "message": "Missing serial (Ký hiệu) / invoice-no / lookup code — can't build the eHoadon link. Open the portal once and copy the Ký hiệu into the row, then retry."}
+        raw, ex = _invtrack_fetch_ehoadon(serial, invno, code)
+        if not (raw and ex):
+            return {"ok": False, "message": "eHoadon did not return a PDF for this invoice (code/serial may be wrong, or it isn't a Bkav eHoadon invoice)."}
+        sf = _invtrack_store_file(raw, serial + "-" + invno + ".pdf", "application/pdf")
+        if sf:
+            try:
+                sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (row.get("dateISO") if row else "") or "", sf["id"])
+                if sp:
+                    sf["spUrl"] = sp
+            except Exception:
+                pass
+        if row is None and cur is not None:
+            row = {"msgId": msgid, "type": "Hoá đơn mua vào (NCC)", "source": "portal", "desc": ""}
+            cur.setdefault("items", []).append(row)
+        if row is None:
+            return {"ok": False, "message": "No invoice dataset to update."}
+        for k in ("before", "vat", "after"):
+            if _n(ex.get(k)) > 0:
+                row[k] = _n(ex.get(k))
+        for k in ("invNo", "serial", "taxCode", "dateISO", "dateRaw", "supplier",
+                  "buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate"):
+            if ex.get(k) and not row.get(k):
+                row[k] = ex.get(k)
+        if ex.get("items") and not (row.get("items") or []):
+            row["items"] = ex["items"]
+        if sf:
+            fs = row.get("files") or []
+            if sf["id"] not in {x.get("id") for x in fs}:
+                fs.append(sf)
+            row["files"] = fs
+            row["attach"] = row.get("attach") or sf["name"]
+        if _n(row.get("after")) > 0:
+            row["needsLookup"] = False
+        row["method"] = "ehoadon-pdf"
+        db.put_collection_item("invtrack", cur)
+        return {"ok": True, "before": row.get("before"), "vat": row.get("vat"), "after": row.get("after"),
+                "file": (sf or {}).get("name"), "invNo": row.get("invNo"), "serial": row.get("serial")}
 
 
 def _invtrack_scheduler():
@@ -2065,6 +2264,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_spbackfill_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
+        if path == "/api/invtrack/portal_fetch":
+            return self._guard(lambda u: self._invtrack_portal_fetch_ep(u, body))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -3665,6 +3866,11 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json(_invtrack_import(body or {}))
+
+    def _invtrack_portal_fetch_ep(self, u, body):
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
+        return self._json(_invtrack_portal_fetch(body or {}))
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:

@@ -152,3 +152,34 @@ def test_dedupe_preserves_line_items_from_xml_when_pdf_has_none():
     assert len(out) == 1, "same invoice XML+PDF collapse to one"
     assert len(out[0]["items"]) == 2, "line items from the XML survive the merge with the item-less PDF"
     assert out[0]["buyerName"] == "Humiley Co"
+
+
+def test_pdf_line_item_parser_and_totals():
+    # Bkav-style PDF text: item #1's unit wraps ('Suất/phầ' + 'n'); the total row lists all three sums.
+    text = ("STT Ten hang hoa Don vi tinh So luong Don gia Tien chua thue Thue suat Tien thue Thanh tien\n"
+            "1 Banh Bao xa xiu Suat/pha\n"
+            "n 1 79.000 79.000 8% 6.320 85.320\n"
+            "2 Nuoc Dasani 510ml Chai 1 29.000 29.000 8% 2.320 31.320\n"
+            "Tong cong 108.000 8.640 116.640\n")
+    items = app._einv_pdf_items(text)
+    assert len(items) == 2, "both line items parsed (incl. the wrapped-unit first row)"
+    assert items[0]["name"] == "Banh Bao xa xiu" and items[0]["unit"] == "Suat/phan"
+    assert items[0]["amount"] == 85320 and items[0]["qty"] == 1 and items[0]["price"] == 79000
+    assert items[1]["name"] == "Nuoc Dasani 510ml" and items[1]["unit"] == "Chai"
+    assert sum(i["amount"] for i in items) == 116640   # == the total row's grand total
+
+
+def test_body_fields_extracts_ehoadon_serial_invno_mtc():
+    body = ("Kính gửi Quý khách. Ký hiệu: C26MME  Số hóa đơn: 00010039  "
+            "Mã tra cứu: MVHSMPB954D  <a href='https://tchd.ehoadon.vn/TCHD?MTC=MVHSMPB954D'>Tra cứu</a>")
+    bf = app._invtrack_body_fields(body)
+    assert bf["serial"] == "C26MME"
+    assert bf["code"] == "MVHSMPB954D"
+    assert bf["invNo"] == "10039"
+
+
+def test_ehoadon_fetch_guards_bad_input():
+    # missing any of serial / invoice-no / code -> no network call, returns (None, None)
+    assert app._invtrack_fetch_ehoadon("", "10039", "MVHSMPB954D") == (None, None)
+    assert app._invtrack_fetch_ehoadon("C26MME", "", "MVHSMPB954D") == (None, None)
+    assert app._invtrack_fetch_ehoadon("C26MME", "10039", "") == (None, None)
