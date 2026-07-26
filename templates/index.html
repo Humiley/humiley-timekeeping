@@ -82,6 +82,16 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 #gsearch-panel .gs-t{font-size:13px;color:var(--text-dark);font-weight:600;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #gsearch-panel .gs-s{font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #gsearch-panel .gs-empty{padding:14px 12px;font-size:12.5px;color:var(--text-light)}
+#my-actions .ma-grp{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:var(--text-light);font-weight:700;margin:12px 0 6px}
+#my-actions .ma-n{display:inline-block;background:rgba(32,80,144,.12);color:var(--navy);border-radius:10px;padding:0 7px;font-size:11px;margin-left:4px}
+#my-actions .ma-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;border:1px solid var(--line);margin-bottom:6px}
+#my-actions .ma-row:hover{background:var(--soft-bg)}
+#my-actions .ma-ic{width:28px;height:28px;border-radius:8px;background:rgba(0,176,96,.12);color:var(--emerald);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:13px;font-weight:700}
+#my-actions .ma-tx{flex:1;min-width:0}
+#my-actions .ma-t{font-size:13px;font-weight:600;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#my-actions .ma-s{font-size:11.5px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#my-actions .ma-go{color:var(--text-light);flex-shrink:0}
+#my-actions .ma-empty{padding:14px;font-size:13px;color:var(--text-light);text-align:center}
 #lang-toggle{display:flex;gap:5px;align-items:center;flex-shrink:0}
 .lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:var(--card);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
 .lang-btn svg{border-radius:2px}
@@ -959,6 +969,9 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
     </div>
   </div>
+
+  <!-- My Actions — one personal worklist across modules (approvals awaiting me + my in-flight requests) -->
+  <div id="my-actions"></div>
 
   <!-- My Analytics — professional charts (same engine as the admin dashboard) -->
   <div class="staff-panel" style="margin-bottom:20px">
@@ -4669,6 +4682,33 @@ function _applyRole(role) {
 }
 
 /* ── Staff dashboard init ── */
+/* My Actions — a single personal worklist on the dashboard: approvals awaiting me (reuses the same
+   aggregator as the bell/inbox) + my own requests still in flight. Best-effort; never throws. */
+async function _myActionsRender() {
+  const box = document.getElementById('my-actions'); if (!box) return;
+  try { await Promise.all(['claims', 'travel', 'payments'].map(n => tkLoadColl(n).catch(() => {}))); } catch (e) {}
+  const meId = TK.user && TK.user.id, meName = (TK.user && TK.user.name) || '';
+  const done = s => ['approved', 'paid', 'rejected', 'cancelled', 'canceled', 'closed', 'completed'].includes(String(s || '').toLowerCase());
+  const infl = s => !!s && !done(s);
+  const isMine = r => (meId && r.empId === meId) || (meName && r.name === meName);
+  let awaiting = [];
+  try { awaiting = _tkBellItems() || []; } catch (e) {}
+  const mine = [];
+  try {
+    (_HR.claims || []).forEach(c => { const st = (typeof _claimRollup === 'function') ? _claimRollup(c) : c.status; if (isMine(c) && infl(st)) mine.push({ ic: '₫', t: 'Expense claim' + (c.title ? ' — ' + c.title : ''), s: _PAY_FMT((typeof _claimTotal === 'function') ? _claimTotal(c) : (c.amount || 0)) + ' · ' + st, view: 'travelclaims' }); });
+    (_HR.travel || []).forEach(t2 => { if (isMine(t2) && infl(t2.status)) mine.push({ ic: '✈', t: 'Travel — ' + (t2.dest || t2.title || 'request'), s: _PAY_FMT(t2.cost || 0) + ' · ' + t2.status, view: 'travelclaims' }); });
+    (_HR.payments || []).forEach(p => { if (isMine(p) && infl(p.status)) mine.push({ ic: '₫', t: 'Payment — ' + (p.payee || p.reqNo || ''), s: _PAY_FMT(p.amount || 0) + ' · ' + p.status, view: 'payments' }); });
+    (_DEMO_LEAVE || []).forEach(l => { if (meId && l.emp_id === meId && infl(l.status)) mine.push({ ic: '⏱', t: 'Leave — ' + (l.type || ''), s: (l.startDate || '') + ' → ' + (l.endDate || '') + ' · ' + l.status, view: 'leave' }); });
+  } catch (e) {}
+  const row = it => '<div class="ma-row" onclick="showView(\'' + (it.view || 'inbox') + '\')"><div class="ma-ic">' + _tkEscT(it.ic || '•') + '</div><div class="ma-tx"><div class="ma-t">' + _crmEsc(it.title || it.t || '') + '</div><div class="ma-s">' + _crmEsc(it.sub || it.s || '') + '</div></div><div class="ma-go">&rarr;</div></div>';
+  let html = '';
+  if (awaiting.length) html += '<div class="ma-grp">Awaiting your action <span class="ma-n">' + awaiting.length + '</span></div>' + awaiting.slice(0, 6).map(row).join('');
+  if (mine.length) html += '<div class="ma-grp">Your requests in flight <span class="ma-n">' + mine.length + '</span></div>' + mine.slice(0, 6).map(row).join('');
+  if (!html) html = '<div class="ma-empty"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><polyline points="20 6 9 17 4 12"/></svg>You&rsquo;re all caught up — nothing needs your action.</div>';
+  box.innerHTML = '<div class="card" style="margin-bottom:20px"><div class="card-hdr"><div class="card-title">My Actions</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="showView(\'checkin\',null,\'Check In / Out\')">Check in / out</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="showView(\'travelclaims\',null,\'Travel Expense\')">New claim</button></div></div>' + html + '</div>';
+}
 function _initStaffDashboard() {
   /* greeting */
   const hour = new Date().getHours();
@@ -4677,6 +4717,7 @@ function _initStaffDashboard() {
   if (el) el.innerHTML = 'Welcome back, <b style="color:var(--emerald)">' + (_staffName.split(/\s+/)[0] || _staffName) + '</b>';
   const dateEl = document.getElementById('staff-welcome-date');
   if (dateEl) dateEl.innerHTML = '<span>' + greeting + '</span> · ' + tkFmtDateObj(new Date());
+  try { _myActionsRender(); } catch (e) {}   // personal worklist (async loads its own data, then fills)
 
   /* hero */
   const heroName = document.getElementById('staff-hero-name');
