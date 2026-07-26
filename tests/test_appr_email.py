@@ -65,6 +65,67 @@ def test_overdue_reminder_engine(monkeypatch, base_url):
     assert len(sent) == before
 
 
+def _run_send_synchronously(monkeypatch):
+    """Make _graph_send_mail's fire-and-forget thread run inline so a test can assert its outcome."""
+    class _Sync:
+        def __init__(self, target=None, daemon=None, **k):
+            self._t = target
+
+        def start(self):
+            self._t()
+    monkeypatch.setattr(app.threading, "Thread", _Sync)
+
+
+def test_send_mail_selfheals_after_consent(monkeypatch):
+    """A just-granted Mail.Send consent is NOT in the CACHED app token → Graph 403s. The sender must
+       discard the stale token, mint a fresh one (force=True), and retry ONCE so it succeeds with no restart."""
+    import io
+    import urllib.error
+    tok_calls, posts = [], []
+
+    def fake_token(force=False):
+        tok_calls.append(force)
+        return "FRESH" if force else "STALE"
+    monkeypatch.setattr(app, "_graph_app_token", fake_token)
+
+    def fake_urlopen(req, timeout=None):
+        auth = req.get_header("Authorization") or ""
+        posts.append(auth)
+        if "FRESH" in auth:
+            return io.BytesIO(b"")                       # 202-equivalent; .read() works
+        raise urllib.error.HTTPError(req.full_url, 403, "Forbidden", {},
+                                     io.BytesIO(b'{"error":{"code":"ErrorAccessDenied","message":"Access is denied."}}'))
+    monkeypatch.setattr(app.urllib.request, "urlopen", fake_urlopen)
+    _run_send_synchronously(monkeypatch)
+
+    app._APPR_EMAIL_HEALTH.update({"at": "", "ok": 0, "failed": 0, "lastError": ""})
+    assert app._graph_send_mail("finance@humiley.com", ["a@h.com"], "Hi", "<p>hi</p>") is True
+
+    assert tok_calls == [False, True], "cached token first, then FORCE a fresh one on 403"
+    assert "STALE" in posts[0] and "FRESH" in posts[1], "the retry must use the refreshed token"
+    assert app._APPR_EMAIL_HEALTH["ok"] == 1 and app._APPR_EMAIL_HEALTH["lastError"] == ""
+    assert app._APPR_EMAIL_HEALTH["failed"] == 0
+
+
+def test_send_mail_no_retry_on_non_auth_error(monkeypatch):
+    """A non-auth failure (e.g. 500) must NOT force-refresh/retry — the self-heal is for consent (401/403) only."""
+    import io
+    import urllib.error
+    forced = []
+    monkeypatch.setattr(app, "_graph_app_token", lambda force=False: (forced.append(force) or "T"))
+
+    def fake_urlopen(req, timeout=None):
+        raise urllib.error.HTTPError(req.full_url, 500, "Server Error", {},
+                                     io.BytesIO(b'{"error":{"code":"x","message":"boom"}}'))
+    monkeypatch.setattr(app.urllib.request, "urlopen", fake_urlopen)
+    _run_send_synchronously(monkeypatch)
+
+    app._APPR_EMAIL_HEALTH.update({"at": "", "ok": 0, "failed": 0, "lastError": ""})
+    app._graph_send_mail("finance@humiley.com", ["a@h.com"], "Hi", "<p>hi</p>")
+    assert forced == [False], "500 is not auth — no force-refresh, no retry"
+    assert app._APPR_EMAIL_HEALTH["failed"] == 1 and app._APPR_EMAIL_HEALTH["ok"] == 0
+
+
 def test_waiting_since_handles_leave_string_signatures_and_created_at(base_url):
     import json as _json
     rev = {"status": "reviewed", "created_at": "2026-06-01T09:00:00Z",

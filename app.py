@@ -215,10 +215,24 @@ def _graph_send_mail(sender, to, subject, html, cc=None):
                                "ccRecipients": [{"emailAddress": {"address": a}} for a in (cc or [])]},
                    "saveToSentItems": True}
             url = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(sender) + "/sendMail"
-            req = urllib.request.Request(url, data=json.dumps(msg).encode("utf-8"),
-                                         headers={"Authorization": "Bearer " + _graph_app_token(),
-                                                  "Content-Type": "application/json"})
-            urllib.request.urlopen(req, timeout=15).read()
+            body = json.dumps(msg).encode("utf-8")
+
+            def _post(tok):
+                req = urllib.request.Request(url, data=body,
+                                             headers={"Authorization": "Bearer " + tok,
+                                                      "Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=15).read()
+
+            try:
+                _post(_graph_app_token())
+            except urllib.error.HTTPError as he:
+                # A just-granted Mail.Send consent is NOT in the cached app token (minted before consent),
+                # so Graph returns 401/403. Discard the stale token, mint a fresh one, and retry ONCE —
+                # this makes a new consent take effect immediately, with no app restart.
+                if he.code in (401, 403):
+                    _post(_graph_app_token(force=True))
+                else:
+                    raise
             _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1, "lastError": ""})
         except Exception as e:
             _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
@@ -1202,8 +1216,10 @@ def _invtrack_fetch_linked(url):
         return None
 
 
-def _graph_app_token():
-    if _GRAPH_APP_TOK["tok"] and _GRAPH_APP_TOK["exp"] > time.time() + 60:
+def _graph_app_token(force=False):
+    # force=True busts the cache — needed right after a NEW application permission is consented, because
+    # the cached token was minted before consent and still lacks the new role (Graph would 403 it).
+    if not force and _GRAPH_APP_TOK["tok"] and _GRAPH_APP_TOK["exp"] > time.time() + 60:
         return _GRAPH_APP_TOK["tok"]
     data = urllib.parse.urlencode({
         "client_id": M365["clientId"], "client_secret": M365["clientSecret"],
@@ -4579,7 +4595,7 @@ class Handler(BaseHTTPRequestHandler):
                                 ". If it arrived, the Microsoft 365 Mail.Send permission is consented and working.",
                                 rows, "Open the portal", _portal_base() + "/?inbox=1")
         _graph_send_mail(sender, [to], "[Humiley] Approval email — connection test", html)
-        time.sleep(1.3)   # let the async send finish so the health reflects THIS attempt
+        time.sleep(2.5)   # let the async send (incl. a possible token-refresh + retry) finish so health reflects THIS attempt
         h = _APPR_EMAIL_HEALTH
         ok = bool(h.get("ok")) and not h.get("lastError")
         return self._json({"ok": ok, "sentFrom": sender, "sentTo": to, "lastError": h.get("lastError", ""),
