@@ -1301,6 +1301,32 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Master data &amp; governance for the Procurement app — administered here, alongside access &amp; permissions.</div>
     <div id="proc-admin-host"></div>
   </div>
+  <div id="perm-integrations" class="card" style="margin-top:18px">
+    <div class="card-hdr" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+      <div><div class="card-title">System Integrations</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">Microsoft 365, approval email, SharePoint &amp; the Procurement launcher. Admin only — these control where data is sent.</div></div>
+      <button class="btn btn-emerald btn-sm" type="button" onclick="tkSaveIntegrations()">Save integrations</button>
+    </div>
+    <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
+    <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
+      <div style="font-size:11px;color:var(--text-light);margin:2px 0 10px">Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365 <b>Mail.Send</b> application consent on the Humiley app.</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div><label class="form-label" style="font-size:11px">HR sender · leave, PADR</label><input class="form-control" id="portal-apprHr" placeholder="hr@humiley.com"></div>
+        <div><label class="form-label" style="font-size:11px">Finance sender · claims, travel, payments</label><input class="form-control" id="portal-apprFin" placeholder="finance@humiley.com"></div>
+        <div><label class="form-label" style="font-size:11px">Procurement sender</label><input class="form-control" id="portal-apprProc" placeholder="procurement@humiley.com"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" id="portal-apprTestBtn" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
+      <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" id="portal-apprSweepBtn" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0">Integrations &amp; health<button class="btn btn-outline btn-sm" type="button" onclick="_healthCheck()">Check now</button></label>
+      <div style="font-size:11px;color:var(--text-light);margin:4px 0 8px">Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.</div>
+      <div id="portal-health"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
+  </div>
 </div>
 
 <div id="view-payroll" class="view">
@@ -1791,28 +1817,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div style="font-size:12px;color:var(--text-light)">Manage what employees see on their dashboard. Changes apply to everyone after saving.</div>
       <button class="btn btn-emerald btn-sm" onclick="tkSavePortal()">Save Portal Content</button>
     </div>
-    <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
-      <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
-      <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
-      <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
-        <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
-        <div style="font-size:11px;color:var(--text-light);margin:2px 0 10px">Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365 <b>Mail.Send</b> application consent on the Humiley app.</div>
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
-          <div><label class="form-label" style="font-size:11px">HR sender · leave, PADR</label><input class="form-control" id="portal-apprHr" placeholder="hr@humiley.com"></div>
-          <div><label class="form-label" style="font-size:11px">Finance sender · claims, travel, payments</label><input class="form-control" id="portal-apprFin" placeholder="finance@humiley.com"></div>
-          <div><label class="form-label" style="font-size:11px">Procurement sender</label><input class="form-control" id="portal-apprProc" placeholder="procurement@humiley.com"></div>
-        </div>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" id="portal-apprTestBtn" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
-        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" id="portal-apprSweepBtn" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
-      </div>
-      <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
-        <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0">Integrations &amp; health<button class="btn btn-outline btn-sm" type="button" onclick="_healthCheck()">Check now</button></label>
-        <div style="font-size:11px;color:var(--text-light);margin:4px 0 8px">Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.</div>
-        <div id="portal-health"></div>
-      </div>
-      <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
-    </div>
+    <!-- Integrations moved to Access & Permissions (admin) — see #perm-integrations -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
       <div class="card">
         <div class="card-hdr"><div class="card-title">Announcements</div><button class="btn btn-outline btn-sm" onclick="tkPortalAdd('announcements')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add</button></div>
@@ -4849,9 +4854,14 @@ async function tkRenderPortalEditor() {
   const PD = _tkPortalData();
   _tkPortalModel = JSON.parse(JSON.stringify({ announcements: PD.announcements, holidays: PD.holidays, learning: PD.learning, resources: PD.resources }));
   _tkPortalRenderRows();
-  // Load the integration URLs FRESH from the server, not from the boot-time cache: the editor echoes
-  // whatever is in these inputs back on save, so a stale value would silently revert a change another
-  // admin made after this browser loaded.
+}
+
+// System Integrations now live on the Access & Permissions view (admin), NOT the Company Portal tab.
+// Load their live values when that view opens. We fetch FRESH from the server (not the boot cache)
+// because the editor echoes these inputs back on save — a stale value would silently revert a change
+// another admin made after this browser loaded.
+async function tkLoadIntegrations() {
+  if (!document.getElementById('portal-teams')) return;   // integrations card absent (non-admin / other view)
   let live = null;
   try { live = await tkApi('/api/portal'); } catch (e) {}
   const g = (k, fb) => (live && typeof live[k] === 'string') ? live[k] : fb;
@@ -4955,24 +4965,41 @@ async function tkSavePortal() {
     announcements: m.announcements.filter(x => (x.title || '').trim()).map(x => ({ tag: x.tag || 'News', color: x.color || '#205090', title: x.title, body: x.body || '', audience: x.audience || 'All' })),
     holidays: m.holidays.filter(x => (x.date || '') && (x.name || '').trim()).map(x => ({ date: x.date, name: x.name })),
     learning: m.learning.filter(x => (x.name || '').trim()).map(x => ({ name: x.name, meta: x.meta || '', pct: Math.max(0, Math.min(100, parseInt(x.pct, 10) || 0)), url: (x.url || '').trim() })),
-    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
-    teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
-    financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim(),
-    procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim(),
-    apprEmail: (document.getElementById('portal-apprEmail') && document.getElementById('portal-apprEmail').checked) ? '1' : '0',
-    apprSenderHr: ((document.getElementById('portal-apprHr') || {}).value || '').trim(),
-    apprSenderFinance: ((document.getElementById('portal-apprFin') || {}).value || '').trim(),
-    apprSenderProc: ((document.getElementById('portal-apprProc') || {}).value || '').trim(),
-    apprReminders: (document.getElementById('portal-apprRemind') && document.getElementById('portal-apprRemind').checked) ? '1' : '0',
-    apprReminderDays: String(parseInt((document.getElementById('portal-apprRemindDays') || {}).value, 10) || 2)
-  };
+    resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() }))
+  };   // integration URLs are saved separately on Access & Permissions (tkSaveIntegrations); the backend merges per-key
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save portal content', 'error', 5000); return; }
-    window._TK_PORTAL = { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources, teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, invtrackSpUrl: (window._TK_PORTAL && window._TK_PORTAL.invtrackSpUrl) || '', procurementUrl: payload.procurementUrl };   // invtrackSpUrl is owned by the Invoice Tracking → Settings tab; preserve it here
-    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks the new values up without a reload
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { announcements: payload.announcements, holidays: payload.holidays, learning: payload.learning, resources: payload.resources });   // preserve integration URLs / invtrackSpUrl already cached
     toast('Company portal updated — employees will see this on their dashboard.');
+  } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
+// Save the System Integrations card (Access & Permissions, admin). PATCHes ONLY the integration keys —
+// the backend merges per key, so this never touches announcements / holidays and vice-versa.
+async function tkSaveIntegrations() {
+  if (!document.getElementById('portal-teams')) return;
+  const V = id => ((document.getElementById(id) || {}).value || '').trim();
+  const C = id => !!(document.getElementById(id) && document.getElementById(id).checked);
+  const payload = {
+    teamsWebhook: V('portal-teams'),
+    financeSpUrl: V('portal-finsp'),
+    procurementUrl: V('portal-procurl'),
+    apprEmail: C('portal-apprEmail') ? '1' : '0',
+    apprSenderHr: V('portal-apprHr'),
+    apprSenderFinance: V('portal-apprFin'),
+    apprSenderProc: V('portal-apprProc'),
+    apprReminders: C('portal-apprRemind') ? '1' : '0',
+    apprReminderDays: String(parseInt(V('portal-apprRemindDays'), 10) || 2)
+  };
+  try {
+    const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save integrations', 'error', 5000); return; }
+    window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl });
+    if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks new values up without a reload
+    toast('Integration settings saved.');
   } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
@@ -15739,7 +15766,7 @@ function showView(id, navEl, title) {
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
-  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } try { _tkProcAdminOpen(); } catch (e) {} }
+  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } try { _tkProcAdminOpen(); } catch (e) {} try { tkLoadIntegrations(); } catch (e) {} }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
