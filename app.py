@@ -360,6 +360,30 @@ def _einv_num(x):
     return -v if neg else v
 
 
+def _einv_xml_num(x):
+    """Parse a numeric value from e-invoice XML, where dot is the DECIMAL point (xs:decimal — issuers
+       like MISA use fixed 6 places, e.g. '2736000.000000' / '23.790000'). The display-format parser
+       _einv_num would wrongly read those dots as thousands separators. Falls back to dot-as-thousands
+       when a plain float() fails (a rare issuer that writes '2.736.000' in the XML)."""
+    s = re.sub(r"[^0-9,.\-]", "", str(x if x is not None else "")).strip()
+    if not s:
+        return 0.0
+    neg = s.startswith("-")
+    s = s.lstrip("-")
+    if "," in s and "." in s:                      # both -> VN display 1.234.567,89 (dot thousands, comma decimal)
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:                                 # comma as the decimal mark
+        s = s.replace(",", ".")
+    try:
+        v = float(s)                               # only dots (or none) -> standard xs:decimal
+    except ValueError:
+        try:
+            v = float(s.replace(".", ""))          # multiple dots were thousands grouping
+        except ValueError:
+            return 0.0
+    return -v if neg else v
+
+
 def _einv_safe_xml(xml_bytes):
     """Reject untrusted XML that could be an entity-expansion (billion-laughs) bomb before parsing."""
     if isinstance(xml_bytes, str):
@@ -439,8 +463,8 @@ def _einv_parse_xml(xml_bytes):
             continue
         items.append({"no": cell.get("STT") or cell.get("STHang") or str(len(items) + 1),
                       "name": name, "unit": cell.get("DVTinh", ""),
-                      "qty": _einv_num(cell.get("SLuong", "")), "price": _einv_num(cell.get("DGia", "")),
-                      "amount": _einv_num(cell.get("ThTien", "")), "taxRate": cell.get("TSuat", "")})
+                      "qty": _einv_xml_num(cell.get("SLuong", "")), "price": _einv_xml_num(cell.get("DGia", "")),
+                      "amount": _einv_xml_num(cell.get("ThTien", "")), "taxRate": cell.get("TSuat", "")})
         if len(items) >= 200:
             break
     vat_rate = ""
@@ -454,8 +478,8 @@ def _einv_parse_xml(xml_bytes):
             "supplier": seller, "taxCode": seller_mst, "buyerMST": buyer_mst,
             "buyerName": buyer_name, "sellerAddr": seller_addr, "buyerAddr": buyer_addr,
             "currency": currency, "payMethod": pay_method, "vatRate": vat_rate, "items": items,
-            "before": _einv_num(first("TgTCThue")), "vat": _einv_num(first("TgTThue")),
-            "after": _einv_num(first("TgTTTBSo")), "lookupCode": lookup,
+            "before": _einv_xml_num(first("TgTCThue")), "vat": _einv_xml_num(first("TgTThue")),
+            "after": _einv_xml_num(first("TgTTTBSo")), "lookupCode": lookup,
             "docType": first("THDon"), "method": "xml"}
 
 
@@ -796,6 +820,54 @@ def _invtrack_fetch_ehoadon(serial, invno, mtc):
         ex["lookupCode"] = mtc
         ex["method"] = "ehoadon-pdf"
         return (data, ex)
+    return (None, None)
+
+
+def _invtrack_fetch_misa(sc):
+    """MISA meInvoice serves the invoice XML + display PDF PUBLICLY via its DownloadHandler keyed only by
+       the tra-cứu code (sc) — no session, no CAPTCHA (verified server-side). Prefer the XML (full line
+       items + parties, exact amounts); attach the PDF. Returns (pdf_bytes, parsed_dict) or (None, None)."""
+    sc = re.sub(r"[^0-9A-Za-z]", "", (sc or ""))
+    if len(sc) < 6:
+        return (None, None)
+    base = "https://www.meinvoice.vn/tra-cuu/tra-cuu/DownloadHandler.ashx?Code=" + sc + "&Type="
+    if not _invtrack_url_safe(base + "xml"):
+        return (None, None)
+    ex = None
+    try:
+        req = urllib.request.Request(base + "xml", headers={"User-Agent": "Mozilla/5.0 (HumileyInvoiceBot)"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            xdata = resp.read(8 * 1024 * 1024 + 1)
+        if 0 < len(xdata) <= 8 * 1024 * 1024:
+            ex = _einv_parse_xml(xdata)
+    except Exception:
+        ex = None
+    pdf = None
+    try:
+        req = urllib.request.Request(base + "pdf", headers={"User-Agent": "Mozilla/5.0 (HumileyInvoiceBot)"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            pdata = resp.read(12 * 1024 * 1024 + 1)
+        if pdata[:5] == b"%PDF-" and len(pdata) <= 12 * 1024 * 1024:
+            pdf = pdata
+    except Exception:
+        pdf = None
+    if not ex and pdf:
+        ex = _einv_from_pdf(pdf)
+    if not ex:
+        return (None, None)
+    ex["lookupCode"] = sc
+    ex["method"] = "misa-xml" if ex.get("method") == "xml" else "misa-pdf"
+    return (pdf, ex)
+
+
+def _invtrack_fetch_by_url(url, serial="", invno="", code=""):
+    """Dispatch to the right issuer-portal fetcher by the lookup URL / sender host. Returns
+       (pdf_bytes_or_None, parsed_dict) or (None, None). Extend here to add another provider."""
+    host = (urllib.parse.urlparse(url or "").hostname or "").lower() + " " + (url or "").lower()
+    if "ehoadon.vn" in host:
+        return _invtrack_fetch_ehoadon(serial, invno, code)
+    if "meinvoice.vn" in host:
+        return _invtrack_fetch_misa(code)
     return (None, None)
 
 
@@ -1223,7 +1295,7 @@ def _invtrack_body_fields(html):
         if is_dl and _invtrack_url_safe(href) and href not in out["fileUrls"]:
             out["fileUrls"].append(href)
     out["fileUrls"].sort(key=lambda u: 0 if re.search(r'pdf|type=pdf', u, re.I) else 1)   # try the PDF first (human-readable + carries the total)
-    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code|[?&]MTC=)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw + " " + " ".join(href_urls), re.I)
+    mc = re.search(r"(?:Mã\s*tra\s*cứu|Mã\s*số\s*bí\s*mật|Mã\s*nhận\s*hóa\s*đơn|Mã\s*bí\s*mật|Lookup\s*code|[?&](?:MTC|sc)=)\s*[:\-]?\s*([0-9A-Za-z]{4,24})", raw + " " + " ".join(href_urls), re.I)
     if mc:
         out["code"] = mc.group(1)
     ms = re.search(r"(?:Ký\s*hiệu|Ky\s*hieu|Serial)\s*(?:hóa\s*đơn)?\s*[:\-]?\s*([0-9A-Z]{5,8})\b", raw, re.I)   # e-invoice serial e.g. C26MME
@@ -1450,21 +1522,24 @@ def _invtrack_sync(trigger="manual"):
                     return None
                 body = ((msg.get("body") or {}).get("content") or "") or (msg.get("bodyPreview") or "")
                 bf = _invtrack_body_fields(body)
-                # 0) BKAV eHoadon (noreply@ehoadon.vn): the display PDF is public at a derivable path —
-                #    fetch it directly (no CAPTCHA), attach the REAL invoice file, and fill the amounts.
+                # 0) Issuer portals that serve the file PUBLICLY by the lookup code (Bkav eHoadon, MISA
+                #    meInvoice): fetch the REAL invoice (no CAPTCHA), attach it, and fill every field.
                 from_addr0 = (((msg.get("from") or {}).get("emailAddress") or {}).get("address") or "").lower()
-                if link_budget[0] > 0 and bf.get("code") and bf.get("serial") and bf.get("invNo") \
-                        and re.search(r"ehoadon\.vn", (bf.get("url") or "") + " " + from_addr0, re.I):
+                lu0 = bf.get("url") or ""
+                if link_budget[0] > 0 and bf.get("code") and re.search(r"ehoadon\.vn|meinvoice\.vn", lu0 + " " + from_addr0, re.I):
                     link_budget[0] -= 1
-                    raw, ex = _invtrack_fetch_ehoadon(bf.get("serial"), bf.get("invNo"), bf.get("code"))
-                    if raw and ex:
-                        sf = _invtrack_store_file(raw, bf.get("serial") + "-" + bf.get("invNo") + ".pdf", "application/pdf")
-                        if sf:
-                            sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (msg.get("receivedDateTime") or ""), sf["id"])
-                            if sp:
-                                sf["spUrl"] = sp
-                            ex["_files"] = [sf]
-                            ex["_attachName"] = sf["name"]
+                    hint = lu0 if re.search(r"https?://", lu0) else ("https://www.meinvoice.vn/" if "meinvoice" in (lu0 + from_addr0) else "https://tchd.ehoadon.vn/")
+                    raw, ex = _invtrack_fetch_by_url(hint, bf.get("serial"), bf.get("invNo"), bf.get("code"))
+                    if ex:
+                        if raw:
+                            nm = (bf.get("serial") or ex.get("serial") or "hoadon") + "-" + (bf.get("invNo") or ex.get("invNo") or bf.get("code")) + ".pdf"
+                            sf = _invtrack_store_file(raw, nm, "application/pdf")
+                            if sf:
+                                sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (msg.get("receivedDateTime") or ""), sf["id"])
+                                if sp:
+                                    sf["spUrl"] = sp
+                                ex["_files"] = [sf]
+                                ex["_attachName"] = sf["name"]
                         return ex
                 # 1) the real invoice download links ("tải PDF/XML") — auto-fetch the file + amount, no lookup
                 for fu in (bf.get("fileUrls") or []):
@@ -1790,7 +1865,7 @@ def _invtrack_portal_fetch(body):
             invno = invno or str(row.get("invNo") or "")
             blob = (row.get("desc") or "") + " " + (row.get("lookup") or "")
             if not code:
-                mc = re.search(r"(?:MTC[:=\s]*|[?&]MTC=)([0-9A-Za-z]{6,24})", blob, re.I)
+                mc = re.search(r"(?:MTC[:=\s]*|[?&](?:MTC|sc)=|M[ãa]\s*tra\s*c[ứu]+u[:=\s]*)([0-9A-Za-z]{6,24})", blob, re.I)
                 code = mc.group(1) if mc else ""
             if not invno:
                 mi = re.search(r"(?:hóa\s*đơn\s*số|số\s*hd|invoice)\D{0,6}0*(\d{1,10})", blob, re.I)
@@ -1810,9 +1885,23 @@ def _invtrack_portal_fetch(body):
                     invno = invno or bf.get("invNo") or ""
             except Exception:
                 pass
-        if not (serial and invno and code):
-            return {"ok": False, "message": "Missing serial (Ký hiệu) / invoice-no / lookup code — can't build the eHoadon link. Open the portal once and copy the Ký hiệu into the row, then retry."}
-        raw, ex = _invtrack_fetch_ehoadon(serial, invno, code)
+        # pick the issuer portal from the row's lookup URL / sender
+        _blob = ((row or {}).get("desc") or "") + " " + ((row or {}).get("lookup") or "")
+        _snd = ((row or {}).get("sender") or "")
+        url = ""
+        _mu = re.search(r"https?://[^\s\"'<>]+", _blob)
+        if _mu:
+            url = _mu.group(0)
+        if not url:
+            if "meinvoice" in (_blob + " " + _snd).lower():
+                url = "https://www.meinvoice.vn/"
+            elif "ehoadon" in (_blob + " " + _snd).lower():
+                url = "https://tchd.ehoadon.vn/"
+        is_eh = "ehoadon" in (url + " " + _snd).lower()
+        if not code or (is_eh and not (serial and invno)):
+            return {"ok": False, "message": ("Missing the lookup code" + (" / serial (Ký hiệu) / invoice-no" if is_eh else "") +
+                    " for this row — open the portal once and copy the Ký hiệu into the row, then retry.")}
+        raw, ex = _invtrack_fetch_by_url(url, serial, invno, code)
         if not (raw and ex):
             return {"ok": False, "message": "eHoadon did not return a PDF for this invoice (code/serial may be wrong, or it isn't a Bkav eHoadon invoice)."}
         sf = _invtrack_store_file(raw, serial + "-" + invno + ".pdf", "application/pdf")

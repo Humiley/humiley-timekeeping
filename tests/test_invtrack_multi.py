@@ -183,3 +183,19 @@ def test_ehoadon_fetch_guards_bad_input():
     assert app._invtrack_fetch_ehoadon("", "10039", "MVHSMPB954D") == (None, None)
     assert app._invtrack_fetch_ehoadon("C26MME", "", "MVHSMPB954D") == (None, None)
     assert app._invtrack_fetch_ehoadon("C26MME", "10039", "") == (None, None)
+
+
+def test_xml_number_parser_handles_decimal_and_display():
+    n = app._einv_xml_num
+    assert n("2736000.000000") == 2736000       # MISA fixed 6-decimal (dot = decimal point)
+    assert n("23.790000") == 23.79
+    assert round(n("115006.310000"), 2) == 115006.31
+    assert n("3009600") == 3009600
+    assert n("2.736.000") == 2736000             # rare: dots as thousands in XML -> fallback
+    assert n("1.234.567,89") == 1234567.89       # VN display 1.234.567,89
+    assert n("") == 0.0
+
+
+def test_misa_and_dispatch_guards():
+    assert app._invtrack_fetch_misa("abc") == (None, None)      # code too short -> no network call
+    assert app._invtrack_fetch_by_url("https://example.com/x", code="ABCDEF") == (None, None)  # unknown host
