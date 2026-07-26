@@ -822,6 +822,19 @@ _MONTHLY_LOCK = threading.Lock()
 _MONTHLY_HEALTH = {"at": "", "sent": 0, "lastError": ""}
 
 
+def _invtrack_all_items():
+    """The flat list of captured invoices. invtrack is stored as ONE dataset doc with an `.items`
+       array (NOT one row per invoice), so any aggregation must read `.items`, not the collection rows."""
+    out = []
+    try:
+        for d in db.list_collection("invtrack"):
+            if isinstance(d.get("items"), list):
+                out.extend(d["items"])
+    except Exception:
+        pass
+    return out
+
+
 def _monthly_gather(ym):
     """Aggregate one closed month (YYYY-MM): payments approved/paid + invoices captured, plus a live
        approvals-pending snapshot and current headcount. Best-effort; never raises."""
@@ -844,7 +857,7 @@ def _monthly_gather(ym):
     inv_total = inv_vat = 0.0
     inv_n = 0
     try:
-        for it in db.list_collection("invtrack"):
+        for it in _invtrack_all_items():
             if str(it.get("dateISO") or "")[:7] == ym:
                 inv_n += 1
                 tot = _n(it.get("after"))
@@ -4703,7 +4716,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         try:
-            for it in db.list_collection("invtrack"):
+            for it in _invtrack_all_items():
                 d = str(it.get("dateISO") or "")[:7]
                 if d in lbset:
                     tot = _n(it.get("after"))
@@ -4770,9 +4783,9 @@ class Handler(BaseHTTPRequestHandler):
         inv_total = inv_vat = 0.0
         inv_n = 0
         try:
-            for it in db.list_collection("invtrack"):
+            for it in _invtrack_all_items():
                 inv_n += 1
-                tot = _n(it.get("total") or it.get("after"))
+                tot = _n(it.get("after"))
                 if not tot:
                     tot = _n(it.get("before")) + _n(it.get("vat"))
                 inv_total += tot

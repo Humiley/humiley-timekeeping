@@ -934,6 +934,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div><h1>Executive Dashboard</h1><p>The whole company on one screen — people, approvals, finance &amp; projects</p></div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="tkRenderExecDash(true)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
+      <button class="btn btn-outline btn-sm" onclick="tkExportAccounting()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>For accounting</button>
       <button class="btn btn-primary btn-sm" onclick="tkExportElementPDF('view-execdash','Humiley_Executive_Dashboard.pdf',{title:'EXECUTIVE DASHBOARD',docCode:'HML-EXEC'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
     </div>
   </div>
@@ -4773,6 +4774,30 @@ async function _execDrawTrends() {
       { label: 'VAT', data: t.vat, borderColor: '#00B060', backgroundColor: 'rgba(0,176,96,.10)', fill: true, tension: .3, pointRadius: 3, borderWidth: 2 }
     ] }, options: lo });
   } catch (e) {}
+}
+
+/* Export for accounting — a portable Excel (2 sheets: approved/paid Payments + captured Invoices with
+   their VN e-invoice fields) that imports into any accounting/ERP system. Closes the re-keying loop
+   without an ERP-specific integration. Invoices need Editor+ read access (else that sheet is empty). */
+async function tkExportAccounting() {
+  try { if (window.tkEnsureExportLibs) tkEnsureExportLibs(); } catch (e) {}
+  let tries = 0;
+  while (!window.XLSX && tries < 40) { await new Promise(r => setTimeout(r, 120)); tries++; }
+  if (!window.XLSX) { toast('Excel engine is still loading — try again in a moment.', 'warn'); return; }
+  toast('Building accounting export…', 'info', 3000);
+  try { await Promise.all(['payments', 'invtrack'].map(n => tkLoadColl(n).catch(() => {}))); } catch (e) {}
+  const done = s => ['approved', 'paid'].includes(String(s || '').toLowerCase());
+  const pays = (_HR.payments || []).filter(p => done(p.status));
+  const payRows = pays.map(p => ({ 'No.': p.reqNo || '', Date: p.paidOn || p.approvedOn || p.submittedOn || '', Payee: p.payee || '', Department: p.department || '', Category: p.category || '', Purpose: p.purpose || '', Amount: +p.amount || 0, 'Invoice/PO': p.invoiceNo || '', Status: p.status || '', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' }));
+  const invItems = (_HR.invtrack || []).filter(d => Array.isArray(d.items)).flatMap(d => d.items);
+  const invRows = invItems.map(it => ({ 'Invoice No.': it.invNo || '', Serial: it.serial || '', Date: it.dateISO || '', Supplier: it.supplier || '', Buyer: it.buyerName || '', 'Tax code': it.taxCode || '', 'Before VAT': +it.before || 0, VAT: +it.vat || 0, Total: +it.after || 0, Type: it.type || '' }));
+  try {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ Note: 'No approved / paid payments' }]), 'Approved Payments');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invRows.length ? invRows : [{ Note: 'No invoices captured (needs Editor+ access)' }]), 'Invoices');
+    XLSX.writeFile(wb, 'Humiley_Accounting_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+    toast('Accounting export ready — ' + payRows.length + ' payment(s) · ' + invRows.length + ' invoice(s).');
+  } catch (e) { toast('Export failed: ' + (e.message || ''), 'error', 5000); }
 }
 
 /* My Actions — a single personal worklist on the dashboard: approvals awaiting me (reuses the same

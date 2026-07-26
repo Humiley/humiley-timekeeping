@@ -21,6 +21,24 @@ def test_monthly_gather_scopes_to_month(base_url):
     assert g["ym"] == ym and isinstance(g["headcount"], int)
 
 
+def test_monthly_gather_reads_invoice_items(base_url):
+    """invtrack is ONE dataset doc with an .items array — the gather must read .items (month-scoped),
+       not treat each collection row as an invoice (which would always report zero)."""
+    import db
+    for d in list(db.list_collection("invtrack")):
+        if d.get("id"):
+            db.delete_collection_item("invtrack", d["id"])
+    db.put_collection_item("invtrack", {"kind": "invtrack-dataset", "items": [
+        {"dateISO": "2026-05-10", "before": 1000000, "vat": 100000, "after": 1100000, "invNo": "INV-1"},
+        {"dateISO": "2026-05-22", "before": 2000000, "vat": 200000, "after": 2200000, "invNo": "INV-2"},
+        {"dateISO": "2026-04-01", "before": 9000000, "vat": 900000, "after": 9900000, "invNo": "INV-OLD"},
+    ]})
+    g = app._monthly_gather("2026-05")
+    assert g["invCount"] == 2, "reads the dataset doc's .items, month-scoped"
+    assert g["invTotal"] == 3300000.0 and g["invVat"] == 300000.0
+    assert len(app._invtrack_all_items()) == 3
+
+
 def test_monthly_off_switch(monkeypatch, base_url):
     import db
     db.set_setting("portal_monthlyReports", "0")
