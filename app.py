@@ -3024,6 +3024,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._portal_get(u))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
+        if path == "/api/exec/summary":
+            return self._guard(lambda u: self._exec_summary(u))
         if path == "/api/invtrack/status":
             return self._guard(lambda u: self._invtrack_status(u))
         if path == "/api/health/integrations":
@@ -4401,6 +4403,84 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({
             "pending": pending, "trips": len(travel), "claims": len(claims), "payments": len(pays),
             "devices": len(devices), "trainDone": train_done, "trainTotal": len(enrols), "trainAvg": train_avg,
+        })
+
+    def _exec_summary(self, u):
+        """Company-on-one-screen aggregate for the Executive Dashboard (management+). Reuses the tested
+           digest gatherer for approvals-in-flight; everything else is a bounded read of collections."""
+        if not self._is_mgmt(u):
+            return self._err("Management access required.", 403)
+
+        def _n(v):
+            try:
+                return float(str(v).replace(",", "").replace(" ", "").replace("₫", "") or 0)
+            except Exception:
+                return 0.0
+        today = _now_iso()[:10]
+        ym = today[:7]
+        try:
+            emps = db.list_employees() or []
+        except Exception:
+            emps = []
+        active = [e for e in emps if str(e.get("status") or "Active").lower() != "inactive"]
+        liability = 0
+        for e in active:
+            try:
+                liability += max(0, int(e.get("annualTotal") or 12) - int(e.get("annualUsed") or 0))
+            except Exception:
+                pass
+        try:
+            _m, _l, counts = _digest_gather()
+        except Exception:
+            counts = {"await": 0, "review": 0, "overdue": 0, "valuePending": 0.0}
+        on_leave_today = pending_leave = 0
+        try:
+            for lv in db.list_leave() or []:
+                st = str(lv.get("status") or "").lower()
+                if st in ("pending", "reviewed"):
+                    pending_leave += 1
+                elif st == "approved" and (lv.get("startDate") or "")[:10] <= today <= (lv.get("endDate") or "9999")[:10]:
+                    on_leave_today += 1
+        except Exception:
+            pass
+        pay_month = 0.0
+        pay_n = 0
+        try:
+            for p in db.list_collection("payments"):
+                if str(p.get("status") or "").lower() in ("approved", "paid"):
+                    d = str(p.get("paidOn") or p.get("approvedOn") or p.get("submittedOn") or p.get("date") or "")[:7]
+                    if d == ym:
+                        pay_month += _n(p.get("amount") or p.get("total"))
+                        pay_n += 1
+        except Exception:
+            pass
+        inv_total = inv_vat = 0.0
+        inv_n = 0
+        try:
+            for it in db.list_collection("invtrack"):
+                inv_n += 1
+                tot = _n(it.get("total") or it.get("after"))
+                if not tot:
+                    tot = _n(it.get("before")) + _n(it.get("vat"))
+                inv_total += tot
+                inv_vat += _n(it.get("vat"))
+        except Exception:
+            pass
+        try:
+            projs = db.list_collection("pm_projects")
+        except Exception:
+            projs = []
+        _closed = ("closed", "completed", "cancelled", "canceled", "archived", "on hold")
+        proj_active = sum(1 for p in projs if str(p.get("status") or "").lower() not in _closed)
+        return self._json({
+            "headcount": len(active), "onLeaveToday": on_leave_today,
+            "leaveLiabilityDays": liability, "pendingLeave": pending_leave,
+            "apprAwait": counts.get("await", 0), "apprReview": counts.get("review", 0),
+            "apprOverdue": counts.get("overdue", 0), "apprValue": counts.get("valuePending", 0.0),
+            "payMonth": pay_month, "payMonthCount": pay_n,
+            "invoiceCount": inv_n, "invoiceTotal": inv_total, "invoiceVat": inv_vat,
+            "projectCount": len(projs), "projectActive": proj_active,
+            "month": ym, "at": _now_iso(),
         })
 
     def _portal_update(self, u, body):

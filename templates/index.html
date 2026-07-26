@@ -763,6 +763,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg></span>
     <span class="nav-label">Company Dashboard</span>
   </div>
+  <div class="nav-item" data-roles="manager" data-level="management" id="nav-exec-dash" onclick="showView('execdash',this,'Executive Dashboard')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.8L7 14.3"/></svg></span>
+    <span class="nav-label">Executive Dashboard</span>
+  </div>
 
   <div class="sidebar-section-label">My Workspace</div>
   <div class="nav-item" id="nav-my-dash" onclick="showView('staff-dashboard',this,'My Dashboard')">
@@ -918,6 +922,17 @@ window.addEventListener('orientationchange', _setLoginBg);
 <!-- ═══════════════════════════════════════════════════════
      VIEW: STAFF DASHBOARD (personal portal)
 ═══════════════════════════════════════════════════════ -->
+<div id="view-execdash" class="view">
+  <div class="page-header">
+    <div><h1>Executive Dashboard</h1><p>The whole company on one screen — people, approvals, finance &amp; projects</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-outline btn-sm" onclick="tkRenderExecDash(true)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="tkExportElementPDF('view-execdash','Humiley_Executive_Dashboard.pdf',{title:'EXECUTIVE DASHBOARD',docCode:'HML-EXEC'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
+    </div>
+  </div>
+  <div id="execdash-root"><div style="padding:40px;text-align:center;color:var(--text-light);font-size:13px">Loading company summary…</div></div>
+</div>
+
 <div id="view-staff-dashboard" class="view">
   <!-- Clean header (matches the Admin "Welcome back" style) -->
   <div class="tk-hero">
@@ -4682,6 +4697,43 @@ function _applyRole(role) {
 }
 
 /* ── Staff dashboard init ── */
+/* Executive Dashboard — the whole company on one screen from a single /api/exec/summary call
+   (management+). Reuses the existing kpi-card / kpi-grid styles. Best-effort; shows an error card. */
+async function tkRenderExecDash(force) {
+  const root = document.getElementById('execdash-root'); if (!root) return;
+  let d;
+  try { d = await tkApi('/api/exec/summary'); }
+  catch (e) { root.innerHTML = '<div class="card" style="padding:22px;color:#E5484D;font-size:13px">Could not load the summary: ' + _crmEsc(e.message || '') + '</div>'; return; }
+  const fmt = n => _PAY_FMT(n || 0);
+  const num = n => (+n || 0).toLocaleString('en-US');
+  const tile = (val, lbl, hint, cls) => '<div class="kpi-card ' + (cls || 'c-navy') + '"><div class="kpi-label">' + _crmEsc(lbl) + '</div><div class="kpi-value">' + val + '</div><div class="kpi-delta neu">' + _crmEsc(hint || '') + '</div></div>';
+  const sec = (title, tiles) => '<div style="font-size:12px;font-weight:700;color:var(--navy);letter-spacing:.5px;text-transform:uppercase;margin:22px 0 10px">' + title + '</div><div class="kpi-grid">' + tiles.join('') + '</div>';
+  root.innerHTML =
+    sec('People', [
+      tile(num(d.headcount), 'Active headcount', '', 'c-navy'),
+      tile(num(d.onLeaveToday), 'On leave today', '', 'c-emerald'),
+      tile(num(d.leaveLiabilityDays), 'Leave liability (days)', 'Unused annual leave, all staff', 'c-warn'),
+      tile(num(d.pendingLeave), 'Leave requests pending', '', 'c-danger')
+    ]) +
+    sec('Approvals in flight', [
+      tile(num(d.apprAwait), 'Awaiting review', '', 'c-navy'),
+      tile(num(d.apprReview), 'Awaiting final approval', '', 'c-emerald'),
+      tile(num(d.apprOverdue), 'Overdue', d.apprOverdue ? 'Past the reminder threshold' : 'None overdue', d.apprOverdue ? 'c-danger' : 'c-emerald'),
+      tile(fmt(d.apprValue), 'Pending value', '', 'c-warn')
+    ]) +
+    sec('Finance', [
+      tile(fmt(d.payMonth), 'Payments approved', (num(d.payMonthCount) + ' this month · ' + (d.month || '')), 'c-navy'),
+      tile(num(d.invoiceCount), 'Invoices tracked', '', 'c-emerald'),
+      tile(fmt(d.invoiceTotal), 'Invoice value', '', 'c-navy'),
+      tile(fmt(d.invoiceVat), 'VAT captured', '', 'c-warn')
+    ]) +
+    sec('Projects', [
+      tile(num(d.projectActive), 'Active projects', '', 'c-emerald'),
+      tile(num(d.projectCount), 'Projects total', '', 'c-navy')
+    ]) +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:18px">As of ' + _crmEsc(d.at || '') + ' · figures reflect the data your access level can see.</div>';
+}
+
 /* My Actions — a single personal worklist on the dashboard: approvals awaiting me (reuses the same
    aggregator as the bell/inbox) + my own requests still in flight. Best-effort; never throws. */
 async function _myActionsRender() {
@@ -15911,6 +15963,7 @@ function showView(id, navEl, title) {
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
   if (_HR_HUB_VIEWS.has(id)) { try { _hrEnsureTabBar(id); } catch (e) {} }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
+  if (id === 'execdash') { try { tkRenderExecDash(); } catch (e) { console.warn('execdash:', e.message); } }
   if (id === 'myprofile') { Promise.all([tkLoadColl('acks'), tkLoadColl('benefits')]).then(() => { try { tkRenderMyProfile(); } catch (e) { console.warn('profile:', e.message); } }); }
   if (id === 'database') { try { tkRenderDatabase(); } catch (e) { console.warn('db:', e.message); } }
   if (id === 'devices') { try { tkRenderDevices(); } catch (e) { console.warn('devices:', e.message); } }
