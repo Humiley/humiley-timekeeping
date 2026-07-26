@@ -167,6 +167,151 @@ def _alert_webhook(text):
         pass
 
 
+# ── Approval-lifecycle EMAIL (branded, Graph app-only sendMail) ────────────────
+# Emails the right people at each step of the 3-level approval flow. Decisions are still made IN THE
+# PORTAL with an e-signature (21 CFR Part 11) — the email carries the request detail + a deep-link, never
+# a one-click approve token (that was retired because a leaked link allowed unsigned self-approval).
+# Sender is picked by department: HR (leave/PADR) → hr@, Finance (claims/travel/payments/payroll) →
+# finance@, Procurement → procurement@. Needs Graph Mail.Send application consent; degrades gracefully.
+_APPR_EMAIL_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": ""}
+
+
+def _portal_base():
+    return "https://" + (os.environ.get("PORTAL_DOMAIN") or "portal.humiley.com").strip().rstrip("/")
+
+
+def _appr_email_sender(coll):
+    """Department mailbox that SENDS (and is CC'd on) a request's approval emails."""
+    hr = (db.get_setting("portal_apprSenderHr", "") or "").strip() or "hr@humiley.com"
+    fin = (db.get_setting("portal_apprSenderFinance", "") or "").strip() or "finance@humiley.com"
+    proc = (db.get_setting("portal_apprSenderProc", "") or "").strip() or "procurement@humiley.com"
+    c = str(coll or "")
+    if c in ("claims", "travel", "payments", "payroll"):
+        return fin
+    if c.startswith("proc") or c.startswith("pr_") or c.startswith("po_"):
+        return proc
+    return hr   # leave, padr, hr, and anything else
+
+
+def _money_vnd(v):
+    try:
+        return "{:,.0f} ₫".format(float(str(v).replace(",", "").replace(" ", "").replace("₫", "")))
+    except Exception:
+        return str(v or "")
+
+
+def _graph_send_mail(sender, to, subject, html, cc=None):
+    """App-only sendMail as `sender`. Fire-and-forget (own thread) so it never blocks the approval
+       response; records health in _APPR_EMAIL_HEALTH so a missing Mail.Send consent is visible."""
+    to = [a for a in (to or []) if a]
+    if not sender or not to:
+        return False
+
+    def _send():
+        try:
+            msg = {"message": {"subject": subject,
+                               "body": {"contentType": "HTML", "content": html},
+                               "toRecipients": [{"emailAddress": {"address": a}} for a in to],
+                               "ccRecipients": [{"emailAddress": {"address": a}} for a in (cc or [])]},
+                   "saveToSentItems": True}
+            url = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(sender) + "/sendMail"
+            req = urllib.request.Request(url, data=json.dumps(msg).encode("utf-8"),
+                                         headers={"Authorization": "Bearer " + _graph_app_token(),
+                                                  "Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=15).read()
+            _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "ok": _APPR_EMAIL_HEALTH["ok"] + 1, "lastError": ""})
+        except Exception as e:
+            _APPR_EMAIL_HEALTH.update({"at": _now_iso(), "failed": _APPR_EMAIL_HEALTH["failed"] + 1,
+                                       "lastError": _graph_err_text(e)})
+    try:
+        threading.Thread(target=_send, daemon=True).start()
+    except Exception:
+        pass
+    return True
+
+
+def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
+    NAVY = "#205090"; INK = "#1F2937"; MUT = "#5C6470"; LINE = "#e3e8f0"; BG = "#f0f2f8"
+    scolor = {"Approved": "#00B060", "Reviewed": "#205090", "Rejected": "#C0392B", "Paid": "#008548",
+              "Submitted": "#8a6d1f"}.get(str(status), "#205090")
+
+    def esc(v):
+        return _hesc("" if v is None else str(v))
+    tr = ""
+    for k, v in rows:
+        tr += ("<tr><td style='padding:7px 0;color:" + MUT + ";font-size:13px;width:150px;vertical-align:top'>" + esc(k) +
+               "</td><td style='padding:7px 0;color:" + INK + ";font-size:13px;font-weight:600'>" + esc(v) + "</td></tr>")
+    return (
+        "<div style='margin:0;padding:24px;background:" + BG + ";font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
+        "<div style='max-width:600px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
+        "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
+        "<div style='font-size:18px;font-weight:700'>Humiley Portal</div>"
+        "<div style='font-size:12px;opacity:.85'>Engineering &amp; Solutions</div></div>"
+        "<div style='padding:24px'>"
+        "<span style='display:inline-block;background:" + scolor + "22;color:" + scolor + ";font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.5px'>" + esc(str(status).upper()) + "</span>"
+        "<h1 style='font-size:19px;color:" + INK + ";margin:14px 0 6px'>" + esc(title) + "</h1>"
+        "<p style='font-size:14px;color:" + MUT + ";line-height:1.6;margin:0 0 18px'>" + esc(intro) + "</p>"
+        "<table style='width:100%;border-collapse:collapse;border-top:1px solid " + LINE + ";border-bottom:1px solid " + LINE + ";margin:0 0 22px'>" + tr + "</table>"
+        "<a href='" + esc(cta_url) + "' style='display:inline-block;background:" + NAVY + ";color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 26px;border-radius:9px'>" + esc(cta_label) + " &rarr;</a>"
+        "<p style='font-size:12px;color:" + MUT + ";margin:20px 0 0;line-height:1.6'>Approvals are made in the portal with your e-signature (21 CFR Part 11). This is an automated message — please do not reply.</p>"
+        "</div></div>"
+        "<div style='max-width:600px;margin:10px auto 0;text-align:center;font-size:11px;color:" + MUT + "'>&copy; Humiley Việt Nam &middot; portal.humiley.com</div></div>"
+    )
+
+
+_APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "rejected", "paid": "paid"}
+
+
+def _appr_notify(coll, rec, event, actor_name=""):
+    """Send the branded lifecycle email for ONE request. event ∈ submitted/reviewed/approved/rejected/paid.
+       Best-effort; gated by the portal_apprEmail setting (default on). Never raises."""
+    try:
+        if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
+            return
+        sender = _appr_email_sender(coll)
+        emp = db.get_employee(rec.get("emp_id") or rec.get("empId")) if (rec.get("emp_id") or rec.get("empId")) else None
+        req_email = (emp or {}).get("email") or rec.get("email") or ""
+        req_name = (emp or {}).get("name") or rec.get("name") or "the requester"
+        mgr_email = (emp or {}).get("managerEmail") or ""
+        label = {"claims": "Expense claim", "travel": "Travel request", "payments": "Payment request",
+                 "leave": "Leave request", "payroll": "Payroll"}.get(coll, "Request")
+        ref = rec.get("reqNo") or rec.get("title") or rec.get("dest") or (("#" + str(rec.get("id"))) if rec.get("id") else "—")
+        status = rec.get("status") or (event.title())
+        rows = [("Type", label), ("Reference", ref), ("Requester", req_name)]
+        if coll == "leave":
+            rows.append(("Dates", (rec.get("startDate", "") + " → " + rec.get("endDate", "")).strip(" →")))
+            if rec.get("leaveType") or rec.get("type"):
+                rows.append(("Leave type", rec.get("leaveType") or rec.get("type")))
+        amt = rec.get("amount") or rec.get("total")
+        if amt:
+            rows.append(("Amount", _money_vnd(amt)))
+        rows.append(("Current status", status))
+        low = label.lower()
+        table = {
+            "submitted": (req_name + " submitted a " + low + " that needs your review.",
+                          [mgr_email], [sender], "Review this request", label + " from " + req_name + " — needs review"),
+            "reviewed": (label + " from " + req_name + " was reviewed by " + (actor_name or "a manager") + " and now needs final approval.",
+                         [sender], [req_email, mgr_email], "Give final approval", label + " from " + req_name + " — awaiting approval"),
+            "approved": ("Your " + low + " has been approved by " + (actor_name or "management") + ".",
+                         [req_email], [mgr_email, sender], "View in the portal", label + " from " + req_name + " — approved"),
+            "rejected": ("Your " + low + " was rejected by " + (actor_name or "a manager") + ". Open the portal for details.",
+                         [req_email], [mgr_email], "View in the portal", label + " from " + req_name + " — rejected"),
+            "paid": ("Your " + low + " has been paid.",
+                     [req_email], [sender], "View in the portal", label + " from " + req_name + " — paid"),
+        }.get(event)
+        if not table:
+            return
+        intro, to, cc, cta, subject = table
+        to = [x for x in to if x]
+        if not to:
+            to = [sender]
+        cc = [x for x in cc if x and x not in to]
+        html = _appr_email_html(subject, status, intro, rows, cta, _portal_base() + "/?inbox=1")
+        _graph_send_mail(sender, to, "[Humiley] " + subject, html, cc)
+    except Exception:
+        pass
+
+
 def _record_error(method, path, exc, email=None):
     """Capture one unhandled request error: ring buffer + structured stderr line + optional alert."""
     entry = {
@@ -2528,6 +2673,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_portal_fetch_ep(u, body))
         if path == "/api/invtrack/attach_file":
             return self._guard(lambda u: self._invtrack_attach_file_ep(u, body))
+        if path == "/api/appr/emailtest":
+            return self._guard(lambda u: self._appr_email_test(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -3056,6 +3203,12 @@ class Handler(BaseHTTPRequestHandler):
                 "action": "E-signature — " + meaning, "target": "leave/" + str(iid),
                 "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
                 "ts": self._utc_now()})
+            _lev = _APPR_EVENT.get(str(set_status or "").strip().lower())               # lifecycle email (best-effort)
+            if not _lev and not set_status and lv.get("emp_id") == u.get("id"):
+                _lev = "submitted"
+            if _lev:
+                _lrec = dict(lv); _lrec["status"] = set_status or lv.get("status")
+                _appr_notify("leave", _lrec, _lev, signer_name)
             return self._json({"ok": True, "item": {k: v for k, v in (row or {}).items() if k != "token"}})
         if coll not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -3098,6 +3251,9 @@ class Handler(BaseHTTPRequestHandler):
             db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
                 "action": "E-signature — " + meaning, "target": "claims/" + str(iid) + "/item/" + str(item_id),
                 "detail": (set_status or "signed") + " · " + method, "ts": self._utc_now()})
+            _cev = _APPR_EVENT.get(str(set_status or "").strip().lower())               # lifecycle email on the claim's rolled-up decision
+            if _cev:
+                _appr_notify("claims", item, _cev, signer_name)
             return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
         if _err:
@@ -3142,6 +3298,12 @@ class Handler(BaseHTTPRequestHandler):
             "target": coll + "/" + str(iid),
             "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
             "ts": self._utc_now()})
+        if coll in self.THREE_LEVEL_COLLS:                        # branded lifecycle email (best-effort)
+            _ev = _APPR_EVENT.get(str(set_status or "").strip().lower())
+            if not _ev and not set_status and item.get("empId") == u.get("id"):
+                _ev = "submitted"
+            if _ev:
+                _appr_notify(coll, item, _ev, signer_name)
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
 
     # Freshness window for PIN-lifecycle M365 tokens (enroll/change/reset/remove). Relaxed vs the
@@ -3805,6 +3967,12 @@ class Handler(BaseHTTPRequestHandler):
         out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
         out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
+        # Approval-lifecycle email (department senders + on/off + last-send health for managers+).
+        out["apprEmail"] = db.get_setting("portal_apprEmail", "1") or "1"
+        out["apprSenderHr"] = db.get_setting("portal_apprSenderHr", "") or "hr@humiley.com"
+        out["apprSenderFinance"] = db.get_setting("portal_apprSenderFinance", "") or "finance@humiley.com"
+        out["apprSenderProc"] = db.get_setting("portal_apprSenderProc", "") or "procurement@humiley.com"
+        out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
     def _myspace_summary(self, u):
@@ -3847,7 +4015,11 @@ class Handler(BaseHTTPRequestHandler):
         for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
                       ("financeSpUrl", "portal_financeSpUrl"),
                       ("invtrackSpUrl", "portal_invtrackSpUrl"),
-                      ("procurementUrl", "portal_procurementUrl")):
+                      ("procurementUrl", "portal_procurementUrl"),
+                      ("apprEmail", "portal_apprEmail"),
+                      ("apprSenderHr", "portal_apprSenderHr"),
+                      ("apprSenderFinance", "portal_apprSenderFinance"),
+                      ("apprSenderProc", "portal_apprSenderProc")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -4138,6 +4310,29 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json(_invtrack_attach_file(body or {}))
+
+    def _appr_email_test(self, u):
+        """Admin sends themselves a sample approval email — the way to verify Mail.Send consent works
+        and to preview the branded template. Reports the last-send health so a 403/consent error shows."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        to = (u.get("email") or "").strip()
+        if not to:
+            return self._err("Your account has no email address to send the test to.", 400)
+        sender = _appr_email_sender("claims")
+        rows = [("Type", "Test message"), ("Requester", u.get("name") or "Admin"),
+                ("Reference", "TEST-0001"), ("Current status", "Submitted")]
+        html = _appr_email_html("Approval email — connection test", "Submitted",
+                                "This confirms the Humiley approval-email system can send from " + sender +
+                                ". If it arrived, the Microsoft 365 Mail.Send permission is consented and working.",
+                                rows, "Open the portal", _portal_base() + "/?inbox=1")
+        _graph_send_mail(sender, [to], "[Humiley] Approval email — connection test", html)
+        time.sleep(1.3)   # let the async send finish so the health reflects THIS attempt
+        h = _APPR_EMAIL_HEALTH
+        ok = bool(h.get("ok")) and not h.get("lastError")
+        return self._json({"ok": ok, "sentFrom": sender, "sentTo": to, "lastError": h.get("lastError", ""),
+                           "message": ("Sent from %s to %s — check your inbox." % (sender, to)) if ok
+                           else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented for the app, and does the sender mailbox exist?"))})
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:

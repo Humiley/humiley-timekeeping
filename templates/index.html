@@ -1794,6 +1794,16 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card" style="margin-bottom:18px"><div class="card-hdr"><div class="card-title">Integrations</div></div>
       <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
       <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
+      <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+        <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
+        <div style="font-size:11px;color:var(--text-light);margin:2px 0 10px">Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365 <b>Mail.Send</b> application consent on the Humiley app.</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+          <div><label class="form-label" style="font-size:11px">HR sender · leave, PADR</label><input class="form-control" id="portal-apprHr" placeholder="hr@humiley.com"></div>
+          <div><label class="form-label" style="font-size:11px">Finance sender · claims, travel, payments</label><input class="form-control" id="portal-apprFin" placeholder="finance@humiley.com"></div>
+          <div><label class="form-label" style="font-size:11px">Procurement sender</label><input class="form-control" id="portal-apprProc" placeholder="procurement@humiley.com"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
+      </div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
@@ -4840,6 +4850,12 @@ async function tkRenderPortalEditor() {
   const g = (k, fb) => (live && typeof live[k] === 'string') ? live[k] : fb;
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = g('teamsWebhook', (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '');
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = g('financeSpUrl', (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '');
+  const _ae = document.getElementById('portal-apprEmail'); if (_ae) _ae.checked = String(g('apprEmail', '1')) !== '0';
+  const _ah = document.getElementById('portal-apprHr'); if (_ah) _ah.value = g('apprSenderHr', 'hr@humiley.com');
+  const _af = document.getElementById('portal-apprFin'); if (_af) _af.value = g('apprSenderFinance', 'finance@humiley.com');
+  const _ap = document.getElementById('portal-apprProc'); if (_ap) _ap.value = g('apprSenderProc', 'procurement@humiley.com');
+  const _hh = document.getElementById('portal-apprHealth'); const _H = (live && live.apprEmailHealth) || null;
+  if (_hh && _H) _hh.textContent = _H.lastError ? ('Last error: ' + _H.lastError) : (_H.ok ? (_H.ok + ' sent OK' + (_H.at ? (' · ' + _H.at) : '')) : '');
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
   if (live) {   // keep the caches consistent with what we just showed so the save echo matches the server
     window._TK_PORTAL = window._TK_PORTAL || {};
@@ -4892,6 +4908,14 @@ function tkPortalAdd(type) {
   _tkPortalRenderRows();
 }
 
+async function _apprEmailTest() {
+  const el = document.getElementById('portal-apprHealth'); if (el) el.textContent = 'Sending…';
+  try {
+    const r = await tkApi('/api/appr/emailtest', { method: 'POST', body: {} });
+    if (el) el.textContent = (r && r.message) || (r && r.ok ? 'Sent — check your inbox.' : 'Send failed.');
+    toast((r && r.message) || 'Test email sent', (r && r.ok) ? 'info' : 'warn', 8000);
+  } catch (e) { if (el) el.textContent = 'Failed: ' + (e.message || ''); toast('Test failed: ' + (e.message || ''), 'error', 6000); }
+}
 async function tkSavePortal() {
   const m = _tkPortalModel; if (!m) { toast('Open the Company Portal tab first', 'warn'); return; }
   const payload = {
@@ -4901,7 +4925,11 @@ async function tkSavePortal() {
     resources: m.resources.filter(x => (x.label || '').trim()).map(x => ({ label: x.label, url: (x.url || '').trim() })),
     teamsWebhook: ((document.getElementById('portal-teams') || {}).value || '').trim(),
     financeSpUrl: ((document.getElementById('portal-finsp') || {}).value || '').trim(),
-    procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim()
+    procurementUrl: ((document.getElementById('portal-procurl') || {}).value || '').trim(),
+    apprEmail: (document.getElementById('portal-apprEmail') && document.getElementById('portal-apprEmail').checked) ? '1' : '0',
+    apprSenderHr: ((document.getElementById('portal-apprHr') || {}).value || '').trim(),
+    apprSenderFinance: ((document.getElementById('portal-apprFin') || {}).value || '').trim(),
+    apprSenderProc: ((document.getElementById('portal-apprProc') || {}).value || '').trim()
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
