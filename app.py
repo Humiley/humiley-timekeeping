@@ -282,7 +282,8 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "apprReminders": "1", "apprReminderDays": "2",
                           "apprEscalateDays": "0", "apprEscalateTo": "",
                           "digestEnabled": "0", "digestDay": "0", "digestLeadTo": "",
-                          "tkNudges": "0", "tkCheckinHour": "10", "tkCheckoutHour": "19"}
+                          "tkNudges": "0", "tkCheckinHour": "10", "tkCheckoutHour": "19",
+                          "monthlyReports": "0", "monthlyDay": "1", "monthlyTo": ""}
 _APPR_REMIND_LOCK = threading.Lock()
 
 
@@ -809,6 +810,120 @@ def _tk_nudge_scheduler():
                     seen[key] = time.time()
                     seen = {k: v for k, v in seen.items() if v and (time.time() - v) < 30 * 86400}
                     db.set_setting("_tkNudgeSent", json.dumps(seen))
+        except Exception:
+            pass
+
+
+# ── Scheduled monthly report pack ───────────────────────────────────────────────────────────
+# On a configured day of the month, email leadership a branded month-end summary of the just-closed
+# month (payments, invoices+VAT, approvals, headcount) with a deep-link to open + export the full
+# pack in the portal. Reuses the approval-email template. Opt-in; best-effort; never raises.
+_MONTHLY_LOCK = threading.Lock()
+_MONTHLY_HEALTH = {"at": "", "sent": 0, "lastError": ""}
+
+
+def _monthly_gather(ym):
+    """Aggregate one closed month (YYYY-MM): payments approved/paid + invoices captured, plus a live
+       approvals-pending snapshot and current headcount. Best-effort; never raises."""
+    def _n(v):
+        try:
+            return float(str(v).replace(",", "").replace(" ", "").replace("₫", "") or 0)
+        except Exception:
+            return 0.0
+    pay_total = 0.0
+    pay_n = 0
+    try:
+        for p in db.list_collection("payments"):
+            if str(p.get("status") or "").lower() in ("approved", "paid"):
+                d = str(p.get("paidOn") or p.get("approvedOn") or p.get("submittedOn") or p.get("date") or "")[:7]
+                if d == ym:
+                    pay_total += _n(p.get("amount") or p.get("total"))
+                    pay_n += 1
+    except Exception:
+        pass
+    inv_total = inv_vat = 0.0
+    inv_n = 0
+    try:
+        for it in db.list_collection("invtrack"):
+            if str(it.get("dateISO") or "")[:7] == ym:
+                inv_n += 1
+                tot = _n(it.get("after"))
+                if not tot:
+                    tot = _n(it.get("before")) + _n(it.get("vat"))
+                inv_total += tot
+                inv_vat += _n(it.get("vat"))
+    except Exception:
+        pass
+    try:
+        _m, _l, counts = _digest_gather()
+    except Exception:
+        counts = {"await": 0, "review": 0, "overdue": 0, "valuePending": 0.0}
+    try:
+        headcount = sum(1 for e in (db.list_employees() or []) if str(e.get("status") or "Active").lower() != "inactive")
+    except Exception:
+        headcount = 0
+    return {"ym": ym, "payTotal": pay_total, "payCount": pay_n, "invCount": inv_n,
+            "invTotal": inv_total, "invVat": inv_vat, "headcount": headcount,
+            "apprPending": counts.get("await", 0) + counts.get("review", 0),
+            "apprOverdue": counts.get("overdue", 0)}
+
+
+def _monthly_send(preview_to=None, ym=None):
+    """Email the month-end pack to leadership (portal_monthlyTo, falling back to portal_digestLeadTo).
+       preview_to overrides the recipient (admin self-test). Gated by portal_monthlyReports + portal_apprEmail."""
+    try:
+        if not preview_to and (db.get_setting("portal_monthlyReports", "0") or "0").lower() not in ("1", "true", "on", "yes"):
+            return 0
+        if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
+            return 0
+        if not ym:
+            first = (datetime.utcnow() + timedelta(hours=7)).replace(day=1)
+            ym = (first - timedelta(days=1)).strftime("%Y-%m")   # the just-closed month
+        g = _monthly_gather(ym)
+        try:
+            mlabel = datetime.strptime(ym + "-01", "%Y-%m-%d").strftime("%B %Y")
+        except Exception:
+            mlabel = ym
+        rows = [
+            ("Payments approved", _money_vnd(g["payTotal"]) + " · " + str(g["payCount"]) + " request(s)"),
+            ("Invoices captured", str(g["invCount"]) + " · " + _money_vnd(g["invTotal"])),
+            ("VAT captured", _money_vnd(g["invVat"])),
+            ("Approvals in flight (now)", str(g["apprPending"]) + " pending" + ((", " + str(g["apprOverdue"]) + " overdue") if g["apprOverdue"] else "")),
+            ("Active headcount", str(g["headcount"])),
+        ]
+        to = (preview_to or (db.get_setting("portal_monthlyTo", "") or "").strip() or (db.get_setting("portal_digestLeadTo", "") or "").strip())
+        if not to:
+            return 0
+        intro = ("Month-end summary for " + mlabel + ". Open the portal to view the live dashboards and export the full branded pack (PDF).")
+        html = _appr_email_html("Month-end pack — " + mlabel, "Month-end", intro, rows, "Open & export the full pack", _portal_base() + "/")
+        n = 1 if _graph_send_mail(_appr_email_sender("payments"), [to], "[Humiley] Month-end pack — " + mlabel, html) else 0
+        _MONTHLY_HEALTH.update({"at": _now_iso(), "sent": _MONTHLY_HEALTH["sent"] + n})
+        return n
+    except Exception as e:
+        _MONTHLY_HEALTH.update({"at": _now_iso(), "lastError": str(e)[:200]})
+        return 0
+
+
+def _monthly_scheduler():
+    """Hourly wake; on portal_monthlyDay (VN morning) email the month-end pack once that month."""
+    while True:
+        time.sleep(3600)
+        try:
+            if (db.get_setting("portal_monthlyReports", "0") or "0").lower() not in ("1", "true", "on", "yes"):
+                continue
+            now_vn = datetime.utcnow() + timedelta(hours=7)
+            try:
+                want_day = max(1, min(28, int(db.get_setting("portal_monthlyDay", "1") or "1")))
+            except Exception:
+                want_day = 1
+            if now_vn.day != want_day or now_vn.hour < 8:
+                continue
+            this_month = now_vn.strftime("%Y-%m")
+            with _MONTHLY_LOCK:
+                if (db.get_setting("_monthlySentMonth", "") or "") == this_month:
+                    continue
+                _monthly_send()
+                db.set_setting("_monthlySentMonth", this_month)
         except Exception:
             pass
 
@@ -3210,6 +3325,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
             return self._guard(lambda u: self._tk_nudge_test(u))
+        if path == "/api/monthly/test":
+            return self._guard(lambda u: self._monthly_test(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -4518,6 +4635,9 @@ class Handler(BaseHTTPRequestHandler):
         out["tkNudges"] = db.get_setting("portal_tkNudges", "0") or "0"
         out["tkCheckinHour"] = db.get_setting("portal_tkCheckinHour", "10") or "10"
         out["tkCheckoutHour"] = db.get_setting("portal_tkCheckoutHour", "19") or "19"
+        out["monthlyReports"] = db.get_setting("portal_monthlyReports", "0") or "0"
+        out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
+        out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4653,7 +4773,10 @@ class Handler(BaseHTTPRequestHandler):
                       ("digestLeadTo", "portal_digestLeadTo"),
                       ("tkNudges", "portal_tkNudges"),
                       ("tkCheckinHour", "portal_tkCheckinHour"),
-                      ("tkCheckoutHour", "portal_tkCheckoutHour")):
+                      ("tkCheckoutHour", "portal_tkCheckoutHour"),
+                      ("monthlyReports", "portal_monthlyReports"),
+                      ("monthlyDay", "portal_monthlyDay"),
+                      ("monthlyTo", "portal_monthlyTo")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -4941,6 +5064,12 @@ class Handler(BaseHTTPRequestHandler):
             ("On · check-in " + (db.get_setting("portal_tkCheckinHour", "10") or "10") + ":00, check-out " + (db.get_setting("portal_tkCheckoutHour", "19") or "19") + ":00 (working days)") if tkn_on else "Off (opt-in)",
             "" if tkn_on else "Optional — push reminders; turn on in Access & Permissions → System Integrations.")
 
+        mth_on = (db.get_setting("portal_monthlyReports", "0") or "0").lower() in ("1", "true", "on", "yes")
+        add("monthly", "Monthly report pack",
+            "down" if (mth_on and _MONTHLY_HEALTH.get("lastError")) else ("ok" if mth_on else "warn"),
+            ("On · day " + (db.get_setting("portal_monthlyDay", "1") or "1") + " each month" + (" · " + str(_MONTHLY_HEALTH["sent"]) + " sent" if _MONTHLY_HEALTH.get("sent") else "")) if mth_on else "Off (opt-in)",
+            (_MONTHLY_HEALTH.get("lastError") or "") if (mth_on and _MONTHLY_HEALTH.get("lastError")) else ("" if mth_on else "Optional — auto-email leadership the month-end summary; turn on in Settings."))
+
         return self._json({"rows": rows, "checkedAt": _now_iso(),
                            "ok": sum(1 for r in rows if r["status"] == "ok"),
                            "warn": sum(1 for r in rows if r["status"] == "warn"),
@@ -5072,6 +5201,21 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "sent": n,
                            "message": ("Sent %d reminder(s) for overdue approvals." % n) if n
                            else "No approvals are overdue for a reminder right now."})
+
+    def _monthly_test(self, u):
+        """Admin: email the month-end pack to YOURSELF as a preview (uses last month's data)."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        to = (u.get("email") or "").strip()
+        if not to:
+            return self._err("Your account has no email address.", 400)
+        _monthly_send(preview_to=to)
+        time.sleep(2.5)
+        h = _APPR_EMAIL_HEALTH
+        ok = not h.get("lastError")
+        return self._json({"ok": ok, "sentTo": to, "lastError": h.get("lastError", ""),
+                           "message": ("Month-end pack sent to %s — check your inbox." % to) if ok
+                           else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented?"))})
 
     def _tk_nudge_test(self, u):
         """Admin: send a sample timekeeping nudge to YOURSELF only (verifies push works, no staff pinged)."""
@@ -5565,6 +5709,7 @@ def main():
         threading.Thread(target=_appr_reminder_scheduler, daemon=True).start()   # overdue-approval nudges
         threading.Thread(target=_digest_scheduler, daemon=True).start()          # weekly manager/leadership digest
         threading.Thread(target=_tk_nudge_scheduler, daemon=True).start()        # check-in/out timekeeping nudges
+        threading.Thread(target=_monthly_scheduler, daemon=True).start()         # month-end report pack to leadership
         print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
