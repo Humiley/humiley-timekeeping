@@ -262,8 +262,9 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
 _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "rejected", "paid": "paid"}
 
 
-def _appr_notify(coll, rec, event, actor_name=""):
+def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0):
     """Send the branded lifecycle email for ONE request. event ∈ submitted/reviewed/approved/rejected/paid.
+       reminder=True reframes it as an overdue nudge to whoever must act next.
        Best-effort; gated by the portal_apprEmail setting (default on). Never raises."""
     try:
         if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
@@ -302,6 +303,12 @@ def _appr_notify(coll, rec, event, actor_name=""):
         if not table:
             return
         intro, to, cc, cta, subject = table
+        if reminder:
+            wait = str(int(age_days)) + (" day" if int(age_days) == 1 else " days")
+            need = "your review" if event == "submitted" else "final approval"
+            intro = ("Reminder — this " + low + " from " + req_name + " has been waiting " + wait +
+                     " for " + need + ". Please action it in the portal.")
+            subject = "Reminder · " + subject
         to = [x for x in to if x]
         if not to:
             to = [sender]
@@ -310,6 +317,123 @@ def _appr_notify(coll, rec, event, actor_name=""):
         _graph_send_mail(sender, to, "[Humiley] " + subject, html, cc)
     except Exception:
         pass
+
+
+def _appr_state_of(status):
+    s = str(status or "").strip().lower()
+    if s in ("reviewed", "pending approval"):
+        return "review"
+    if s == "approved":
+        return "approved"
+    if s == "paid":
+        return "paid"
+    if s == "rejected":
+        return "rejected"
+    return "submit"
+
+
+def _appr_epoch(v):
+    """Best-effort epoch (UTC) from an ISO timestamp or a 'YYYY-MM-DD' date string. None if unparseable."""
+    if not v:
+        return None
+    s = str(v).strip()
+    for parse in (lambda x: datetime.strptime(x.replace("T", " ").replace("Z", "").split(".")[0][:19], "%Y-%m-%d %H:%M:%S"),
+                  lambda x: datetime.strptime(x[:10], "%Y-%m-%d")):
+        try:
+            return (parse(s) - datetime(1970, 1, 1)).total_seconds()
+        except Exception:
+            pass
+    return None
+
+
+def _appr_waiting_since(item, st):
+    """When the request entered its CURRENT waiting state (review vs submit) — the clock for overdue."""
+    sigs = item.get("signatures") or []
+    if st == "review":
+        for s in reversed(sigs):
+            if str(s.get("setStatus") or "").lower() == "reviewed":
+                t = _appr_epoch(s.get("ts"))
+                if t:
+                    return t
+        t = _appr_epoch(item.get("reviewedOn"))
+        if t:
+            return t
+    for k in ("submittedOn", "createdOn", "createdAt", "date", "reqDate", "startDate"):
+        t = _appr_epoch(item.get(k))
+        if t:
+            return t
+    if sigs:
+        return _appr_epoch(sigs[0].get("ts"))
+    return None
+
+
+def _appr_reminders():
+    """Scan pending 3-level requests and email a reminder to whoever must act next, once/day, once a
+       request has waited ≥ portal_apprReminderDays (default 2). Dedup + age tracked in a settings blob
+       so no request schema changes and leave (separate table) is covered too. Best-effort; never raises."""
+    try:
+        if (db.get_setting("portal_apprReminders", "1") or "1").lower() not in ("1", "true", "on", "yes"):
+            return 0
+        if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
+            return 0
+        try:
+            days = max(1, int(db.get_setting("portal_apprReminderDays", "2") or "2"))
+        except Exception:
+            days = 2
+        now = time.time()
+        try:
+            seen = json.loads(db.get_setting("_apprRemindedAt") or "{}")
+        except Exception:
+            seen = {}
+        sent = 0
+
+        def _due(key, since):
+            if since is None or (now - since) < days * 86400:
+                return False
+            last = seen.get(key) or 0
+            return not (last and (now - last) < 20 * 3600)   # at most ~once/day per request
+
+        def _remind(coll, rec, st):
+            since = _appr_waiting_since(rec, st)
+            key = coll + ":" + str(rec.get("id"))
+            if not _due(key, since):
+                return 0
+            _appr_notify(coll, rec, "submitted" if st == "submit" else "reviewed", "",
+                         reminder=True, age_days=int((now - since) // 86400))
+            seen[key] = now
+            return 1
+
+        for coll in ("claims", "travel", "payments"):
+            for item in db.list_collection(coll):
+                status = _claim_rollup(item) if coll == "claims" else item.get("status")
+                st = _appr_state_of(status)
+                if st in ("submit", "review"):
+                    sent += _remind(coll, item, st)
+        try:
+            for lv in (db.list_leave(status="pending") or []) + (db.list_leave(status="reviewed") or []):
+                st = _appr_state_of(lv.get("status"))
+                if st in ("submit", "review"):
+                    sent += _remind("leave", lv, st)
+        except Exception:
+            pass
+        try:
+            seen = {k: v for k, v in seen.items() if (now - (v or 0)) < 30 * 86400}   # prune >30-day-old dedup keys
+            db.set_setting("_apprRemindedAt", json.dumps(seen))
+        except Exception:
+            pass
+        return sent
+    except Exception:
+        return 0
+
+
+def _appr_reminder_scheduler():
+    """Background thread: nudge overdue approvals every 6 h (the per-request once/day guard prevents spam)."""
+    while True:
+        time.sleep(6 * 3600)
+        try:
+            _appr_reminders()
+        except Exception:
+            pass
 
 
 def _record_error(method, path, exc, email=None):
@@ -2675,6 +2799,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_attach_file_ep(u, body))
         if path == "/api/appr/emailtest":
             return self._guard(lambda u: self._appr_email_test(u))
+        if path == "/api/appr/remind":
+            return self._guard(lambda u: self._appr_remind_ep(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -3972,6 +4098,8 @@ class Handler(BaseHTTPRequestHandler):
         out["apprSenderHr"] = db.get_setting("portal_apprSenderHr", "") or "hr@humiley.com"
         out["apprSenderFinance"] = db.get_setting("portal_apprSenderFinance", "") or "finance@humiley.com"
         out["apprSenderProc"] = db.get_setting("portal_apprSenderProc", "") or "procurement@humiley.com"
+        out["apprReminders"] = db.get_setting("portal_apprReminders", "1") or "1"
+        out["apprReminderDays"] = db.get_setting("portal_apprReminderDays", "2") or "2"
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4019,7 +4147,9 @@ class Handler(BaseHTTPRequestHandler):
                       ("apprEmail", "portal_apprEmail"),
                       ("apprSenderHr", "portal_apprSenderHr"),
                       ("apprSenderFinance", "portal_apprSenderFinance"),
-                      ("apprSenderProc", "portal_apprSenderProc")):
+                      ("apprSenderProc", "portal_apprSenderProc"),
+                      ("apprReminders", "portal_apprReminders"),
+                      ("apprReminderDays", "portal_apprReminderDays")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -4333,6 +4463,15 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": ok, "sentFrom": sender, "sentTo": to, "lastError": h.get("lastError", ""),
                            "message": ("Sent from %s to %s — check your inbox." % (sender, to)) if ok
                            else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented for the app, and does the sender mailbox exist?"))})
+
+    def _appr_remind_ep(self, u):
+        """Admin: run the overdue-approval reminder sweep now (it otherwise runs every 6 h)."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        n = _appr_reminders()
+        return self._json({"ok": True, "sent": n,
+                           "message": ("Sent %d reminder(s) for overdue approvals." % n) if n
+                           else "No approvals are overdue for a reminder right now."})
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
@@ -4794,6 +4933,7 @@ def main():
     print("=" * 62)
     if _invtrack_app_ready():
         threading.Thread(target=_invtrack_scheduler, daemon=True).start()
+        threading.Thread(target=_appr_reminder_scheduler, daemon=True).start()   # overdue-approval nudges
         print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

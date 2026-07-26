@@ -1803,6 +1803,8 @@ window.addEventListener('orientationchange', _setLoginBg);
           <div><label class="form-label" style="font-size:11px">Procurement sender</label><input class="form-control" id="portal-apprProc" placeholder="procurement@humiley.com"></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
+        <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
       </div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
@@ -4854,6 +4856,8 @@ async function tkRenderPortalEditor() {
   const _ah = document.getElementById('portal-apprHr'); if (_ah) _ah.value = g('apprSenderHr', 'hr@humiley.com');
   const _af = document.getElementById('portal-apprFin'); if (_af) _af.value = g('apprSenderFinance', 'finance@humiley.com');
   const _ap = document.getElementById('portal-apprProc'); if (_ap) _ap.value = g('apprSenderProc', 'procurement@humiley.com');
+  const _ar = document.getElementById('portal-apprRemind'); if (_ar) _ar.checked = String(g('apprReminders', '1')) !== '0';
+  const _ard = document.getElementById('portal-apprRemindDays'); if (_ard) _ard.value = g('apprReminderDays', '2');
   const _hh = document.getElementById('portal-apprHealth'); const _H = (live && live.apprEmailHealth) || null;
   if (_hh && _H) _hh.textContent = _H.lastError ? ('Last error: ' + _H.lastError) : (_H.ok ? (_H.ok + ' sent OK' + (_H.at ? (' · ' + _H.at) : '')) : '');
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
@@ -4908,6 +4912,14 @@ function tkPortalAdd(type) {
   _tkPortalRenderRows();
 }
 
+async function _apprRemindNow() {
+  const el = document.getElementById('portal-apprRemindMsg'); if (el) el.textContent = ' · running…';
+  try {
+    const r = await tkApi('/api/appr/remind', { method: 'POST', body: {} });
+    if (el) el.textContent = ' · ' + ((r && r.message) || 'done');
+    toast((r && r.message) || 'Reminder sweep complete', 'info', 6000);
+  } catch (e) { if (el) el.textContent = ' · failed'; toast('Reminder sweep failed: ' + (e.message || ''), 'error', 5000); }
+}
 async function _apprEmailTest() {
   const el = document.getElementById('portal-apprHealth'); if (el) el.textContent = 'Sending…';
   try {
@@ -4929,7 +4941,9 @@ async function tkSavePortal() {
     apprEmail: (document.getElementById('portal-apprEmail') && document.getElementById('portal-apprEmail').checked) ? '1' : '0',
     apprSenderHr: ((document.getElementById('portal-apprHr') || {}).value || '').trim(),
     apprSenderFinance: ((document.getElementById('portal-apprFin') || {}).value || '').trim(),
-    apprSenderProc: ((document.getElementById('portal-apprProc') || {}).value || '').trim()
+    apprSenderProc: ((document.getElementById('portal-apprProc') || {}).value || '').trim(),
+    apprReminders: (document.getElementById('portal-apprRemind') && document.getElementById('portal-apprRemind').checked) ? '1' : '0',
+    apprReminderDays: String(parseInt((document.getElementById('portal-apprRemindDays') || {}).value, 10) || 2)
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });

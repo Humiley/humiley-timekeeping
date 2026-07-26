@@ -37,3 +37,29 @@ def test_approval_email_off_switch(monkeypatch, base_url):
     monkeypatch.setattr(app.db, "get_setting", lambda k, d="": ("0" if k == "portal_apprEmail" else d))
     app._appr_notify("claims", {"empId": "E1"}, "approved", "Bob")
     assert not calls, "portal_apprEmail=0 must send nothing"
+
+
+def test_overdue_reminder_engine(monkeypatch, base_url):
+    import db
+    from datetime import datetime, timedelta
+    for coll in ("payments", "claims", "travel"):
+        for d in list(db.list_collection(coll)):
+            if d.get("id"):
+                db.delete_collection_item(coll, d["id"])
+    db.set_setting("_apprRemindedAt", "{}")
+    old = (datetime.utcnow() - timedelta(days=5)).strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    db.put_collection_item("payments", {"empId": "E1", "reqNo": "PAY-OLD", "status": "Submitted", "submittedOn": old, "amount": 500000})
+    db.put_collection_item("payments", {"empId": "E1", "reqNo": "PAY-NEW", "status": "Submitted", "submittedOn": today, "amount": 100000})
+    db.put_collection_item("payments", {"empId": "E1", "reqNo": "PAY-DONE", "status": "Approved", "submittedOn": old})
+    sent = []
+    monkeypatch.setattr(app, "_graph_send_mail", lambda sender, to, subject, html, cc=None: sent.append(subject) or True)
+    monkeypatch.setattr(app.db, "get_employee", lambda i: {"email": "a@h.com", "name": "Alice", "managerEmail": "b@h.com"} if i else None)
+
+    n1 = app._appr_reminders()
+    assert n1 >= 1, "the 5-day-old pending payment must be reminded"
+    assert all("Reminder ·" in s for s in sent), sent
+    assert any("Payment request" in s and "needs review" in s for s in sent)
+    before = len(sent)
+    assert app._appr_reminders() == 0, "dedup — a second sweep the same day sends nothing"
+    assert len(sent) == before
