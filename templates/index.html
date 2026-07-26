@@ -72,6 +72,16 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 .topbar-title{font-size:12px;font-weight:600;color:var(--text-light);min-width:90px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topbar-search{display:flex;align-items:center;gap:8px;background:var(--soft-bg);border:1px solid var(--line);border-radius:8px;padding:6px 12px;width:230px}
 .topbar-search input{border:none;background:transparent;font-size:13px;color:var(--text-dark);outline:none;width:100%;font-family:inherit}
+#gsearch-panel{position:absolute;top:calc(100% + 8px);left:0;width:min(440px,86vw);max-height:66vh;overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 14px 38px rgba(20,42,80,.20);z-index:3000;display:none;padding:6px}
+#gsearch-panel.open{display:block}
+#gsearch-panel .gs-grp{font-size:10px;letter-spacing:.6px;text-transform:uppercase;color:var(--text-light);font-weight:700;padding:9px 10px 4px}
+#gsearch-panel .gs-row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer}
+#gsearch-panel .gs-row:hover,#gsearch-panel .gs-row.sel{background:var(--soft-bg)}
+#gsearch-panel .gs-ic{width:26px;height:26px;border-radius:7px;background:rgba(32,80,144,.12);color:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;text-transform:uppercase}
+#gsearch-panel .gs-tx{min-width:0}
+#gsearch-panel .gs-t{font-size:13px;color:var(--text-dark);font-weight:600;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#gsearch-panel .gs-s{font-size:11px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#gsearch-panel .gs-empty{padding:14px 12px;font-size:12.5px;color:var(--text-light)}
 #lang-toggle{display:flex;gap:5px;align-items:center;flex-shrink:0}
 .lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:var(--card);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
 .lang-btn svg{border-radius:2px}
@@ -877,9 +887,10 @@ window.addEventListener('orientationchange', _setLoginBg);
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
     </button>
     <div class="topbar-title" id="topbarTitle">Dashboard</div>
-    <div class="topbar-search">
+    <div class="topbar-search" style="position:relative">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-      <input type="search" aria-label="Search employees and records" placeholder="Search employees, records…">
+      <input id="gsearch" type="search" autocomplete="off" aria-label="Search employees and records" placeholder="Search employees, records…" oninput="_gsInput()" onfocus="_gsFocus()" onkeydown="_gsKey(event)">
+      <div id="gsearch-panel" role="listbox" aria-label="Search results"></div>
     </div>
     <div id="lang-toggle">
       <button class="lang-btn" data-lang="en" onclick="tkSetLang('en')" title="English"><svg width="20" height="13" viewBox="0 0 60 40"><clipPath id="usc"><rect width="60" height="40" rx="3"/></clipPath><g clip-path="url(#usc)"><rect width="60" height="40" fill="#B22234"/><g fill="#fff"><rect y="3.08" width="60" height="3.08"/><rect y="9.23" width="60" height="3.08"/><rect y="15.38" width="60" height="3.08"/><rect y="21.54" width="60" height="3.08"/><rect y="27.69" width="60" height="3.08"/><rect y="33.85" width="60" height="3.08"/></g><rect width="24" height="21.54" fill="#3C3B6E"/><g fill="#fff"><circle cx="2" cy="4" r="1.1"/><circle cx="6" cy="4" r="1.1"/><circle cx="10" cy="4" r="1.1"/><circle cx="14" cy="4" r="1.1"/><circle cx="18" cy="4" r="1.1"/><circle cx="22" cy="4" r="1.1"/><circle cx="4" cy="9" r="1.1"/><circle cx="8" cy="9" r="1.1"/><circle cx="12" cy="9" r="1.1"/><circle cx="16" cy="9" r="1.1"/><circle cx="20" cy="9" r="1.1"/><circle cx="2" cy="14" r="1.1"/><circle cx="6" cy="14" r="1.1"/><circle cx="10" cy="14" r="1.1"/><circle cx="14" cy="14" r="1.1"/><circle cx="18" cy="14" r="1.1"/><circle cx="22" cy="14" r="1.1"/><circle cx="4" cy="19" r="1.1"/><circle cx="8" cy="19" r="1.1"/><circle cx="12" cy="19" r="1.1"/><circle cx="16" cy="19" r="1.1"/><circle cx="20" cy="19" r="1.1"/></g></g></svg>EN</button>
@@ -5273,6 +5284,111 @@ async function tkLoadColl(name, opts) {
 }
 /* Mark a collection stale so the next tkLoadColl re-fetches it (called after a write). */
 function tkCollInvalidate(name) { if (name) _COLL_TS[name] = 0; else for (const k in _COLL_TS) _COLL_TS[k] = 0; }
+/* ══ Global search (topbar) — jump to any page, person, or already-loaded record.
+   Pages come from the VISIBLE sidebar nav items, so results respect each user's access;
+   records come from the per-user collection cache (_HR), already scoped by the backend. ══ */
+let _gsSel = -1, _gsRows = [], _gsPrefetched = false, _gsBound = false;
+const _GS_REC = {
+  payments:    { view: 'payments',     title: 'Payment Requests', fields: ['reqNo', 'vendor', 'payee', 'desc', 'purpose', 'amount', 'status'], label: r => r.reqNo || r.payee || r.vendor || ('Payment #' + r.id) },
+  invtrack:    { view: 'invtrack',     title: 'Invoice Tracking', fields: ['invNo', 'serial', 'sellerName', 'buyerName', 'seller', 'total'],    label: r => (r.invNo || r.serial || 'Invoice') + (r.sellerName ? (' · ' + r.sellerName) : '') },
+  pm_projects: { view: 'pm-projects',  title: 'Projects',         fields: ['name', 'code', 'client', 'pm', 'status'],                          label: r => r.name || r.code || ('Project #' + r.id) },
+  devices:     { view: 'devices',      title: 'Devices & Assets', fields: ['name', 'serial', 'assetTag', 'model', 'assignedTo', 'category'],   label: r => r.name || r.assetTag || r.serial || ('Asset #' + r.id) },
+  claims:      { view: 'travelclaims', title: 'Travel & Expense', fields: ['reqNo', 'purpose', 'dest', 'desc', 'status'],                      label: r => r.reqNo || r.purpose || r.dest || ('Claim #' + r.id) },
+  travel:      { view: 'travelclaims', title: 'Travel & Expense', fields: ['reqNo', 'purpose', 'dest', 'desc', 'status'],                      label: r => r.reqNo || r.dest || r.purpose || ('Travel #' + r.id) },
+};
+function _gsFocus() {
+  if (!_gsBound) { _gsBound = true; document.addEventListener('click', e => { const w = document.querySelector('.topbar-search'); if (w && !w.contains(e.target)) _gsClose(); }); }
+  if (!_gsPrefetched) {
+    _gsPrefetched = true;
+    if (!(_DEMO_EMPLOYEES && _DEMO_EMPLOYEES.length)) { try { tkReloadEmployees(); } catch (e) {} }
+    Object.keys(_GS_REC).forEach(n => { try { tkLoadColl(n); } catch (e) {} });   // fire-and-forget; backend scopes/denies per user
+  }
+  if (((document.getElementById('gsearch') || {}).value || '').trim()) _gsInput();
+}
+function _gsClose() { const p = document.getElementById('gsearch-panel'); if (p) { p.classList.remove('open'); p.innerHTML = ''; } _gsSel = -1; _gsRows = []; }
+function _gsMatch(hay, q) { return String(hay).toLowerCase().indexOf(q) >= 0; }
+function _gsPages(q) {
+  const out = [], seen = {};
+  document.querySelectorAll('.nav-item').forEach(el => {
+    if (getComputedStyle(el).display === 'none') return;        // gated out by role/level/app (the item's own display, so sidebar-collapse doesn't hide accessible pages)
+    const lbl = ((el.querySelector('.nav-label') || {}).textContent || '').trim();
+    if (!lbl || seen[lbl] || !_gsMatch(lbl, q)) return;
+    seen[lbl] = 1;
+    out.push({ ic: '›', t: lbl, s: 'Page', go: () => { _gsClose(); try { el.click(); } catch (e) {} } });
+  });
+  return out.slice(0, 6);
+}
+function _gsPeople(q) {
+  if (!(typeof _userRole !== 'undefined' && _userRole !== 'staff')) return [];   // directory search is manager+
+  const out = [];
+  (_DEMO_EMPLOYEES || []).forEach(e => {
+    const hay = [e.name, e.email, e.dept, e.title, e.role, e.empId].filter(Boolean).join(' ');
+    if (!_gsMatch(hay, q)) return;
+    out.push({ ic: (e.ini || (e.name || '?')[0]), t: e.name || e.email || '—',
+      s: [e.title || e.role, e.dept].filter(Boolean).join(' · ') || 'Employee', go: () => _gsGoPerson(e) });
+  });
+  return out.slice(0, 6);
+}
+function _gsRecords(q) {
+  const out = [];
+  Object.keys(_GS_REC).forEach(name => {
+    const cfg = _GS_REC[name], items = _HR[name];
+    if (!Array.isArray(items)) return;
+    let hit = 0;
+    for (const r of items) {
+      if (hit >= 4) break;
+      const hay = cfg.fields.map(f => r[f]).filter(v => v != null).join(' ');
+      if (!hay || !_gsMatch(hay, q)) continue;
+      hit++;
+      const _v = cfg.view, _tt = cfg.title;
+      out.push({ ic: cfg.title[0], t: String(cfg.label(r)), s: cfg.title + (r.status ? (' · ' + r.status) : ''),
+        go: () => { _gsClose(); if (document.getElementById('view-' + _v)) { try { showView(_v, null, _tt); } catch (e) {} } else { try { toast(_tt, 'info', 3000); } catch (e) {} } } });
+    }
+  });
+  return out.slice(0, 8);
+}
+function _gsGoPerson(emp) {
+  _gsClose();
+  try { showView('database', null, 'Employee Database'); } catch (e) {}
+  setTimeout(() => {
+    const inp = document.querySelector('#hr-employees .search-box input');
+    if (inp) { inp.value = emp.name || emp.email || ''; try { _renderEmployeeTable(); } catch (e) {} }
+  }, 130);
+}
+function _gsInput() {
+  const inp = document.getElementById('gsearch'), panel = document.getElementById('gsearch-panel');
+  if (!inp || !panel) return;
+  const q = (inp.value || '').trim().toLowerCase();
+  if (q.length < 1) { _gsClose(); return; }
+  const groups = [['Pages', _gsPages(q)], ['People', _gsPeople(q)], ['Records', _gsRecords(q)]];
+  _gsRows = []; let html = '';
+  groups.forEach(g => {
+    if (!g[1].length) return;
+    html += '<div class="gs-grp">' + g[0] + '</div>';
+    g[1].forEach(r => {
+      const i = _gsRows.length; _gsRows.push(r);
+      html += '<div class="gs-row" data-i="' + i + '"><div class="gs-ic">' + _tkEscT(r.ic) + '</div>' +
+        '<div class="gs-tx"><div class="gs-t">' + _tkEscT(r.t) + '</div><div class="gs-s">' + _tkEscT(r.s) + '</div></div></div>';
+    });
+  });
+  panel.innerHTML = html || ('<div class="gs-empty">No matches for “' + _tkEscT(inp.value.trim()) + '”.</div>');
+  panel.querySelectorAll('.gs-row').forEach(el => { el.onclick = () => { const r = _gsRows[+el.dataset.i]; if (r) r.go(); }; });
+  panel.classList.add('open');
+  _gsSel = -1;
+}
+function _gsKey(ev) {
+  const panel = document.getElementById('gsearch-panel');
+  if (ev.key === 'Escape') { _gsClose(); try { ev.target.blur(); } catch (e) {} return; }
+  if (!panel || !panel.classList.contains('open') || !_gsRows.length) return;
+  if (ev.key === 'ArrowDown') { ev.preventDefault(); _gsSel = (_gsSel + 1) % _gsRows.length; _gsPaintSel(); }
+  else if (ev.key === 'ArrowUp') { ev.preventDefault(); _gsSel = (_gsSel - 1 + _gsRows.length) % _gsRows.length; _gsPaintSel(); }
+  else if (ev.key === 'Enter') { ev.preventDefault(); const r = _gsRows[_gsSel] || _gsRows[0]; if (r) r.go(); }
+}
+function _gsPaintSel() {
+  const panel = document.getElementById('gsearch-panel'); if (!panel) return;
+  panel.querySelectorAll('.gs-row').forEach(el => el.classList.toggle('sel', +el.dataset.i === _gsSel));
+  const cur = panel.querySelector('.gs-row.sel'); if (cur) cur.scrollIntoView({ block: 'nearest' });
+}
 function _hrEmp(id) { return (_DEMO_EMPLOYEES || []).find(e => e.id === id); }
 function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:#205090">' + ((e && e.ini) || '?') + '</div>'; }
 /* Pick a sensible icon from the KPI label so every page gets a consistent icon+text KPI. */
