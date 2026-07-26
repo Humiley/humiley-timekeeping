@@ -203,7 +203,7 @@ select.form-control{cursor:pointer}
 /* ── TABS ── */
 .tabs{display:flex;gap:4px;background:var(--soft-bg);padding:4px;border-radius:10px;margin-bottom:18px;width:fit-content}
 .tab{padding:6px 15px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-light);transition:all .15s;border:none;background:none;font-family:inherit}
-.tab.active{background:var(--card);color:var(--emerald);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.tab.active{background:var(--emerald);color:#fff;box-shadow:0 1px 4px rgba(0,0,0,.12)}
 
 /* ── FILTER BAR ── */
 .filter-bar{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap}
@@ -6244,13 +6244,13 @@ function _devHandoverBtn(empId) {
 }
 /* Inventory / Assignments tab switch on the Asset Register. */
 function _devTabBtn(key, label, active) {
-  return '<button id="devtab-' + key + '" onclick="tkDevTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (active ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (active ? '#fff' : 'var(--text)') + ';font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:9px;cursor:pointer">' + label + '</button>';
+  return '<button id="devtab-' + key + '" onclick="tkDevTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (active ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (active ? '#fff' : 'var(--text)') + ';font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:9px;cursor:pointer">' + label + '</button>';
 }
 function tkDevTab(name) {
   ['inventory', 'assignments'].forEach(k => {
     const pane = document.getElementById('dev-tab-' + k); if (pane) pane.style.display = (k === name) ? '' : 'none';
     const btn = document.getElementById('devtab-' + k);
-    if (btn) { const on = k === name; btn.style.background = on ? 'var(--navy)' : 'var(--card,#fff)'; btn.style.color = on ? '#fff' : 'var(--text)'; }
+    if (btn) { const on = k === name; btn.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; btn.style.color = on ? '#fff' : 'var(--text)'; }
   });
   if (name === 'assignments') { try { devAsgFill(); } catch (e) {} }
 }
@@ -14038,13 +14038,13 @@ async function pmRenderWorkspace() {
     pmReportBtns(p.id) + _pmSpBtn(p) +
     (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--navy)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
+    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
   pmTab(_pmTabK);
 }
 function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
-  document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--navy)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
+  document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
 }
 
@@ -14415,7 +14415,7 @@ function _pmCalendarHtml(pid, opts) {
 const _PM_CAL_FILTERS = [['all', 'All'], ['milestones', '◆ Milestones'], ['critical', 'Critical'], ['mine', 'My tasks'], ['open', 'Open']];
 function _pmCalFiltBtn(key, label) {
   const on = _pmCalFilter === key;
-  return '<button onclick="pmCalFilter(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:11.5px;padding:5px 12px;border-radius:8px;cursor:pointer;white-space:nowrap">' + label + '</button>';
+  return '<button onclick="pmCalFilter(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:11.5px;padding:5px 12px;border-radius:8px;cursor:pointer;white-space:nowrap">' + label + '</button>';
 }
 function pmCalFilter(key) {
   _pmCalFilter = key;
@@ -14577,7 +14577,7 @@ function _pmGanttHtml(pid) {
   const sel = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSchedSet(this.value)" title="Filter the schedule by period"><option value="">All time</option><optgroup label="By year">' + years.map(yy => '<option value="Y' + yy + '"' + (_pmSchedSel === 'Y' + yy ? ' selected' : '') + '>' + yy + '</option>').join('') + '</optgroup><optgroup label="By month">' + monthsOpt.map(m => '<option value="M' + m + '"' + (_pmSchedSel === 'M' + m ? ' selected' : '') + '>' + mLab(m) + '</option>').join('') + '</optgroup></select>';
   const _isR = _pmSchedSel.charAt(0) === 'R', _rp = _isR ? _pmSchedSel.slice(1).split('_') : ['', ''];
   const rangeUi = '<input type="date" id="pm-sched-from" value="' + (_rp[0] || '') + '" onchange="pmSchedRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px" title="From day"><span style="color:var(--text-light)">→</span><input type="date" id="pm-sched-to" value="' + (_rp[1] || '') + '" onchange="pmSchedRange()" style="font-size:12px;padding:4px 7px;border:1px solid var(--border);border-radius:7px" title="To day">' + (_isR ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmSchedSet(\'\')" title="Clear day range">Clear</button>' : '');
-  const scaleBtn = (k, l) => '<button onclick="pmGanttScale(\'' + k + '\')" style="border:1px solid var(--line);background:' + (_pmGanttScale === k ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (_pmGanttScale === k ? '#fff' : 'var(--text-light)') + ';font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:6px;cursor:pointer" title="' + l[1] + '">' + l[0] + '</button>';
+  const scaleBtn = (k, l) => '<button onclick="pmGanttScale(\'' + k + '\')" style="border:1px solid var(--line);background:' + (_pmGanttScale === k ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (_pmGanttScale === k ? '#fff' : 'var(--text-light)') + ';font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:6px;cursor:pointer" title="' + l[1] + '">' + l[0] + '</button>';
   const scaleUi = '<div data-html2canvas-ignore="true" style="display:flex;gap:3px;align-items:center"><span style="font-size:11px;color:var(--text-light);margin-right:2px">Scale</span>' + [['Fit', 'Fit to width'], ['M', 'Months'], ['W', 'Weeks'], ['D', 'Days']].map((l, i) => scaleBtn(['fit', 'month', 'week', 'day'][i], l)).join('') + '</div>';
   const statusBadge = '<span style="display:inline-flex;align-items:center;gap:5px;background:' + ragHex + '18;color:' + ragHex + ';border:1px solid ' + ragHex + '55;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px">STATUS <span style="width:7px;height:7px;border-radius:50%;background:' + ragHex + '"></span>' + ragLbl + '</span>';
   const hdrTop = '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Schedule — Gantt</div>' + statusBadge + '<span style="font-size:11px;color:var(--text-light)">' + _pmFmt(min) + ' → ' + _pmFmt(max) + '</span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' + sel + scaleUi + rangeUi + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">' + _PLUS_SVG + ' Add task</button></div></div>';
@@ -14689,13 +14689,13 @@ function pmRenderSchedule(pid) {
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
-  return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
+  return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
 }
 function pmSchedTab(name) {
   _pmSchedTab = name;
   ['gantt', 'activities', 'board', 'calendar'].forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
-    const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--navy)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
+    const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
   });
 }
 
