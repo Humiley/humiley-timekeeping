@@ -9995,6 +9995,30 @@ function _invToggleDetail(rowEl, idx, ev) {
   td.innerHTML = _invDetailHTML(i, idx); tr.appendChild(td);
   rowEl.parentNode.insertBefore(tr, rowEl.nextElementSibling);
 }
+function _invItemsTable(items) {
+  const esc = v => _crmEsc(v == null || v === '' ? '' : String(v));
+  const money = n => _invNum(n) ? _invMoney(n) : '';
+  let rows = '';
+  (items || []).forEach((it, n) => {
+    rows += '<tr style="border-bottom:1px solid var(--border)">' +
+      '<td style="padding:5px 8px;color:var(--text-light);white-space:nowrap">' + esc(it.no || (n + 1)) + '</td>' +
+      '<td style="padding:5px 8px">' + esc(it.name) + '</td>' +
+      '<td style="padding:5px 8px;white-space:nowrap">' + esc(it.unit) + '</td>' +
+      '<td style="padding:5px 8px;text-align:right;white-space:nowrap">' + (_invNum(it.qty) ? esc(it.qty) : '') + '</td>' +
+      '<td style="padding:5px 8px;text-align:right;white-space:nowrap">' + money(it.price) + '</td>' +
+      '<td style="padding:5px 8px;text-align:center;white-space:nowrap">' + esc(it.taxRate) + '</td>' +
+      '<td style="padding:5px 8px;text-align:right;font-weight:600;white-space:nowrap">' + money(it.amount) + '</td>' +
+    '</tr>';
+  });
+  return '<div style="margin-top:14px"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t('Line items (goods & services)') + '  ·  ' + (items || []).length + '</div>' +
+    '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:11.5px">' +
+    '<thead><tr style="background:var(--card);border-bottom:2px solid var(--border);text-align:left">' +
+      '<th style="padding:6px 8px">#</th><th style="padding:6px 8px">' + _t('Description') + '</th>' +
+      '<th style="padding:6px 8px">' + _t('Unit') + '</th><th style="padding:6px 8px;text-align:right">' + _t('Qty') + '</th>' +
+      '<th style="padding:6px 8px;text-align:right">' + _t('Unit price') + '</th><th style="padding:6px 8px;text-align:center">' + _t('Tax') + '</th>' +
+      '<th style="padding:6px 8px;text-align:right">' + _t('Amount') + '</th></tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div></div>';
+}
 function _invDetailHTML(i, idx) {
   const esc = v => _crmEsc(v == null || v === '' ? '—' : String(v));
   const tk = _invTypeKey(i.type); const url = _invLookupUrl(i);
@@ -10011,10 +10035,18 @@ function _invDetailHTML(i, idx) {
       fld(_t('Supplier / Seller'), esc(i.supplier)) + fld(_t('Seller tax code (MST)'), esc(i.taxCode)) +
       fld(_t('Invoice no'), esc(i.invNo)) + fld(_t('Serial'), esc(i.serial)) +
       fld(_t('Invoice date'), esc(_invDMY(i.dateISO) || i.dateRaw)) + fld(_t('Type'), _INV_TYPE_LABEL[tk]) +
+      (i.buyerName ? fld(_t('Buyer / Customer'), esc(i.buyerName)) : '') +
+      (i.buyerMST ? fld(_t('Buyer tax code (MST)'), esc(i.buyerMST)) : '') +
+      (i.currency ? fld(_t('Currency'), esc(i.currency)) : '') +
+      (i.vatRate ? fld(_t('VAT rate'), esc(i.vatRate)) : '') +
+      (i.payMethod ? fld(_t('Payment method'), esc(i.payMethod)) : '') +
+      (i.sellerAddr ? fld(_t('Seller address'), esc(i.sellerAddr)) : '') +
+      (i.buyerAddr ? fld(_t('Buyer address'), esc(i.buyerAddr)) : '') +
       fld(_t('Sender email'), esc(i.sender)) + fld(_t('File / lookup'), fileHtml + (i.lookup && !i.attach ? '<div style="font-size:10.5px;color:var(--text-light);word-break:break-all">' + esc(i.lookup) + '</div>' : '')) +
       (recon ? fld(_t('Reconciliation'), recon) : '') +
     '</div>' +
     '<div style="margin-top:12px;font-size:12px"><b>' + _t('Description') + ':</b> ' + esc(i.desc) + '</div>' +
+    (Array.isArray(i.items) && i.items.length ? _invItemsTable(i.items) : '') +
     '<div style="margin-top:14px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;border-top:1px solid var(--border);padding-top:12px">' +
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Before tax') + '</div><input id="invedit-before-' + idx + '" type="text" value="' + iv(i.before) + '" placeholder="0" style="width:130px;text-align:right"></div>' +
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('VAT') + '</div><input id="invedit-vat-' + idx + '" type="text" value="' + iv(i.vat) + '" placeholder="0" style="width:120px;text-align:right"></div>' +
@@ -15751,6 +15783,11 @@ const _VI = {
   'Request & approve operational and purchase payments — one register for the whole process': 'Đề nghị & phê duyệt thanh toán vận hành và mua sắm — một sổ theo dõi toàn bộ quy trình',
   'Purpose / description': 'Mục đích / mô tả',
   'Payment method': 'Hình thức thanh toán',
+  'Buyer / Customer': 'Bên mua / Khách hàng', 'Buyer tax code (MST)': 'MST bên mua',
+  'Seller address': 'Địa chỉ bên bán', 'Buyer address': 'Địa chỉ bên mua',
+  'Currency': 'Tiền tệ', 'VAT rate': 'Thuế suất', 'Tax': 'Thuế',
+  'Line items (goods & services)': 'Chi tiết hàng hoá & dịch vụ',
+  'Qty': 'SL', 'Unit price': 'Đơn giá', 'Amount': 'Thành tiền',
   'Payee / Vendor': 'Người nhận / Nhà cung cấp',
   'Payee': 'Người nhận',
   'Amount (VND)': 'Số tiền (VND)',

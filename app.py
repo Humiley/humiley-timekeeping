@@ -420,8 +420,40 @@ def _einv_parse_xml(xml_bytes):
     if not (serial or inv_no or seller):
         return None
     iso = date_raw[:10] if (len(date_raw) >= 10 and date_raw[4:5] == "-") else ""
+    # Richer party + document detail (so the tracking row carries EVERYTHING on the invoice).
+    buyer_name = under("NMua", "Ten")
+    seller_addr = under("NBan", "DChi")
+    buyer_addr = under("NMua", "DChi")
+    currency = first("DVTTe")
+    pay_method = first("HTTToan") or first("HTThuc")     # payment-method label varies by issuer
+    # Line items: every <HHDVu> under the goods/services list — the heart of "all information".
+    items = []
+    for el in root.iter():
+        if _local(el.tag) != "HHDVu":
+            continue
+        cell = {}
+        for c in el:
+            cell[_local(c.tag)] = (c.text or "").strip()
+        name = cell.get("THHDVu") or cell.get("TChat") or ""
+        if not name and not cell.get("ThTien"):          # a pure discount/placeholder line
+            continue
+        items.append({"no": cell.get("STT") or cell.get("STHang") or str(len(items) + 1),
+                      "name": name, "unit": cell.get("DVTinh", ""),
+                      "qty": _einv_num(cell.get("SLuong", "")), "price": _einv_num(cell.get("DGia", "")),
+                      "amount": _einv_num(cell.get("ThTien", "")), "taxRate": cell.get("TSuat", "")})
+        if len(items) >= 200:
+            break
+    vat_rate = ""
+    for it in items:
+        if it.get("taxRate"):
+            vat_rate = it["taxRate"]
+            break
+    if not vat_rate:
+        vat_rate = first("TSuat")
     return {"serial": serial, "invNo": inv_no, "dateISO": iso, "dateRaw": date_raw,
             "supplier": seller, "taxCode": seller_mst, "buyerMST": buyer_mst,
+            "buyerName": buyer_name, "sellerAddr": seller_addr, "buyerAddr": buyer_addr,
+            "currency": currency, "payMethod": pay_method, "vatRate": vat_rate, "items": items,
             "before": _einv_num(first("TgTCThue")), "vat": _einv_num(first("TgTThue")),
             "after": _einv_num(first("TgTTTBSo")), "lookupCode": lookup,
             "docType": first("THDon"), "method": "xml"}
@@ -514,9 +546,12 @@ def _invtrack_merge_inv(dst, src, sf):
     for f in ("before", "vat", "after"):
         if pos(dst.get(f)) <= 0 and pos(src.get(f)) > 0:
             dst[f] = src[f]
-    for f in ("serial", "invNo", "taxCode", "supplier", "dateISO", "dateRaw", "desc", "lookup", "lookupCode", "method", "_attachName"):
+    for f in ("serial", "invNo", "taxCode", "supplier", "dateISO", "dateRaw", "desc", "lookup", "lookupCode", "method", "_attachName",
+              "buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate"):
         if not dst.get(f) and src.get(f):
             dst[f] = src[f]
+    if not (dst.get("items") or []) and (src.get("items") or []):   # the XML usually carries the line items; a PDF may not
+        dst["items"] = src["items"]
     if sf and sf.get("id") not in {x.get("id") for x in (dst.get("_files") or [])}:
         dst.setdefault("_files", []).append(sf)
 
@@ -611,9 +646,23 @@ def _einv_from_pdf(pdf_bytes):
         serial = ms.group(1).upper()
     if not (bf.get("after") or bf.get("invNo") or serial):
         return None
+    diso = ""
+    dr = ""
+    md = re.search(r"[Nn]g[àa]y\s*0?(\d{1,2})\s*th[áa]ng\s*0?(\d{1,2})\s*n[ăa]m\s*(\d{4})", text)
+    if not md:
+        md = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", text)   # some PDFs print an ISO date
+        if md:
+            diso = md.group(0)
+            dr = diso
+    if md and not diso:
+        try:
+            diso = "%s-%02d-%02d" % (md.group(3), int(md.group(2)), int(md.group(1)))
+            dr = md.group(0)
+        except Exception:
+            diso = ""
     return {"invNo": bf.get("invNo", ""), "serial": serial, "taxCode": bf.get("taxCode", ""),
             "before": bf.get("before", 0), "vat": bf.get("vat", 0), "after": bf.get("after", 0),
-            "supplier": "", "dateISO": "", "dateRaw": "", "lookupCode": bf.get("code", ""), "_method": "pdf"}
+            "supplier": "", "dateISO": diso, "dateRaw": dr, "lookupCode": bf.get("code", ""), "_method": "pdf"}
 
 
 _INVLINK_HOSTS = ("vnpt-invoice.vn", "vnpt-invoice.com.vn", "vnpt.vn", "meinvoice.vn", "misa.vn", "misa.com.vn",
@@ -1152,7 +1201,57 @@ def _invtrack_item(m, ex):
             "sender": from_addr or from_name, "lookup": lookup, "fileUrl": file_url,
             "files": ex.get("_files") or [],   # real attached PDF/XML/ZIP, served by /api/invtrack/file/<id>
             "method": method,
+            "buyerMST": ex.get("buyerMST", ""), "buyerName": ex.get("buyerName", ""),
+            "sellerAddr": ex.get("sellerAddr", ""), "buyerAddr": ex.get("buyerAddr", ""),
+            "currency": ex.get("currency", ""), "vatRate": ex.get("vatRate", ""),
+            "payMethod": ex.get("payMethod", ""), "items": ex.get("items") or [],
             "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
+
+
+def _invtrack_enrich_existing(items, limit=400):
+    """One-time BACKFILL: re-read each row's already-stored attachment (xml/zip/pdf) and fill the richer
+       fields added later — buyer, addresses, currency, payment method, VAT rate and line items — so
+       invoices synced BEFORE the enrichment still show full detail without a re-download. Bounded +
+       idempotent via the `_enrichedV2` flag, so it processes each row at most once."""
+    done = 0
+    for it in items:
+        if done >= limit:
+            break
+        if it.get("_enrichedV2"):
+            continue
+        if it.get("items") and it.get("buyerName"):     # already rich (freshly parsed) → just mark it
+            it["_enrichedV2"] = True
+            continue
+        ex = None
+        for f in (it.get("files") or []):
+            fid = f.get("id")
+            kind = f.get("kind")
+            if not fid or kind not in ("xml", "zip", "pdf"):
+                continue
+            try:
+                with open(os.path.join(_INVTRACK_FILE_DIR, str(fid) + "." + kind), "rb") as fh:
+                    raw = fh.read()
+            except Exception:
+                continue
+            if kind == "xml":
+                ex = _einv_parse_xml(raw)
+            elif kind == "zip":
+                exs = _einv_all_from_zip(raw)
+                ex = exs[0] if exs else None
+            else:
+                ex = _einv_from_pdf(raw)
+            if ex and (ex.get("items") or ex.get("buyerName")):
+                break
+        it["_enrichedV2"] = True                          # attempted once — don't retry a fileless/unparseable row forever
+        if not ex:
+            continue
+        for k in ("buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate", "dateISO"):
+            if not it.get(k) and ex.get(k):
+                it[k] = ex[k]
+        if not (it.get("items") or []) and (ex.get("items") or []):
+            it["items"] = ex["items"]
+        done += 1
+    return done
 
 
 def _invtrack_audit(trigger, added, needlook, err=""):
@@ -1368,6 +1467,7 @@ def _invtrack_sync(trigger="manual"):
             if ch:
                 enriched += 1
         cur_items = _invtrack_collapse(cur_items)   # fold any blank-notification + filled duplicate rows
+        _invtrack_enrich_existing(cur_items)        # backfill richer detail (buyer/items/…) onto pre-enrichment rows
         needlook = sum(1 for it in cur_items if it.get("needsLookup"))   # report ALL outstanding, not only newly-added
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),

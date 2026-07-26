@@ -98,3 +98,57 @@ def test_multi_invoice_sync_e2e_idempotent(monkeypatch, base_url):
     app._invtrack_sync("manual")   # re-sync
     assert len(rows()) == 2, "re-sync must not duplicate the multi-invoice rows"
     assert sum(i.get("after") or 0 for i in rows()) == 3300000
+
+
+def _xml_full(invno, mst, with_items=True):
+    items = ""
+    if with_items:
+        items = (
+            "<DSHHDVu>"
+            "<HHDVu><STT>1</STT><THHDVu>May quat</THHDVu><DVTinh>Cai</DVTinh><SLuong>2</SLuong>"
+            "<DGia>1000000</DGia><TSuat>10%</TSuat><ThTien>2000000</ThTien></HHDVu>"
+            "<HHDVu><STT>2</STT><THHDVu>Lap dat</THHDVu><DVTinh>Lan</DVTinh><SLuong>1</SLuong>"
+            "<DGia>500000</DGia><TSuat>10%</TSuat><ThTien>500000</ThTien></HHDVu>"
+            "</DSHHDVu>")
+    return (
+        "<HDon><DLHDon><TTChung>"
+        "<KHHDon>1C26TAA</KHHDon><SHDon>" + invno + "</SHDon><NLap>2026-06-15</NLap>"
+        "<DVTTe>VND</DVTTe><HTTToan>Chuyen khoan</HTTToan></TTChung><NDHDon>"
+        "<NBan><Ten>Cong ty " + invno + "</Ten><MST>" + mst + "</MST><DChi>12 Le Loi, Q1, HCM</DChi></NBan>"
+        "<NMua><Ten>Humiley Co</Ten><MST>0318835868</MST><DChi>KCN Long Duc, Dong Nai</DChi></NMua>"
+        + items +
+        "<TToan><TgTCThue>2500000</TgTCThue><TgTThue>250000</TgTThue><TgTTTBSo>2750000</TgTTTBSo></TToan>"
+        "</NDHDon></DLHDon></HDon>"
+    ).encode("utf-8")
+
+
+def test_xml_captures_all_invoice_detail():
+    r = app._einv_parse_xml(_xml_full("900", "0311111111"))
+    assert r["buyerName"] == "Humiley Co" and r["buyerMST"] == "0318835868"
+    assert r["sellerAddr"].startswith("12 Le Loi") and r["buyerAddr"].startswith("KCN Long Duc")
+    assert r["currency"] == "VND" and r["payMethod"] == "Chuyen khoan" and r["vatRate"] == "10%"
+    assert len(r["items"]) == 2
+    assert r["items"][0]["name"] == "May quat" and r["items"][0]["amount"] == 2000000
+    assert r["items"][0]["unit"] == "Cai" and r["items"][0]["qty"] == 2 and r["items"][0]["price"] == 1000000
+    assert sum(it["amount"] for it in r["items"]) == 2500000   # matches TgTCThue
+
+
+def test_row_carries_enriched_fields():
+    ex = app._einv_parse_xml(_xml_full("901", "0311111111"))
+    msg = {"id": "AAA", "internetMessageId": "<x@y>", "subject": "Hoa don",
+           "from": {"emailAddress": {"address": "seller@ncc.vn", "name": "NCC"}},
+           "receivedDateTime": "2026-06-15T09:00:00Z", "hasAttachments": True, "body": {"content": ""}}
+    row = app._invtrack_item(msg, ex)
+    assert row["buyerName"] == "Humiley Co" and row["buyerMST"] == "0318835868"
+    assert row["currency"] == "VND" and row["payMethod"] == "Chuyen khoan" and row["vatRate"] == "10%"
+    assert row["sellerAddr"] and row["buyerAddr"]
+    assert len(row["items"]) == 2 and row["items"][1]["name"] == "Lap dat"
+
+
+def test_dedupe_preserves_line_items_from_xml_when_pdf_has_none():
+    xml_ex = app._einv_parse_xml(_xml_full("902", "0311111111", with_items=True))
+    pdf_ex = {"invNo": "902", "serial": "C26TAA", "taxCode": "", "after": 2750000, "items": [], "method": "pdf"}
+    out = app._invtrack_dedupe_invoices([(pdf_ex, {"id": "fp"}), (xml_ex, {"id": "fx"})])
+    assert len(out) == 1, "same invoice XML+PDF collapse to one"
+    assert len(out[0]["items"]) == 2, "line items from the XML survive the merge with the item-less PDF"
+    assert out[0]["buyerName"] == "Humiley Co"
