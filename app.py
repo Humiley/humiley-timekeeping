@@ -281,7 +281,8 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "apprSenderFinance": "finance@humiley.com", "apprSenderProc": "procurement@humiley.com",
                           "apprReminders": "1", "apprReminderDays": "2",
                           "apprEscalateDays": "0", "apprEscalateTo": "",
-                          "digestEnabled": "0", "digestDay": "0", "digestLeadTo": ""}
+                          "digestEnabled": "0", "digestDay": "0", "digestLeadTo": "",
+                          "tkNudges": "0", "tkCheckinHour": "10", "tkCheckoutHour": "19"}
 _APPR_REMIND_LOCK = threading.Lock()
 
 
@@ -688,6 +689,126 @@ def _digest_scheduler():
                     continue
                 _digest_send()
                 db.set_setting("_digestSentWeek", wk)
+        except Exception:
+            pass
+
+
+# ── Timekeeping nudges ──────────────────────────────────────────────────────────────────────
+# Web-push reminders on working days: a check-in nudge to active staff with no record yet, and a
+# check-out nudge to anyone still clocked in. Opt-in (off by default); skips weekends, configured
+# holidays, and staff on approved leave. Best-effort; never raises into a request or the scheduler.
+_TK_NUDGE_LOCK = threading.Lock()
+
+
+def _tk_push(emails, title, body, url="/", tag=""):
+    """Fan a Web Push out to a set of employee emails. Best-effort; returns count of pushes sent."""
+    if not _PUSH_OK:
+        return 0
+    emails = [str(e).lower() for e in emails if e]
+    if not emails:
+        return 0
+    payload = {"title": title[:120], "body": body[:400], "url": url[:300], "tag": tag[:80]}
+    sent = 0
+    try:
+        for endpoint, sub in db.push_subs_for(emails):
+            if _web_push(endpoint, sub, payload):
+                sent += 1
+    except Exception:
+        pass
+    return sent
+
+
+def _tk_is_workday(date_str):
+    try:
+        if datetime.strptime(date_str, "%Y-%m-%d").weekday() >= 5:   # Sat / Sun
+            return False
+    except Exception:
+        return True
+    try:
+        hols = db.get_setting("portal_holidays") or []
+        if any(isinstance(h, dict) and (h.get("date") or "")[:10] == date_str for h in hols):
+            return False
+    except Exception:
+        pass
+    return True
+
+
+def _tk_on_leave_today(today):
+    out = set()
+    try:
+        for lv in db.list_leave() or []:
+            if (str(lv.get("status") or "").lower() == "approved"
+                    and (lv.get("startDate") or "")[:10] <= today <= (lv.get("endDate") or "9999")[:10]
+                    and lv.get("emp_id")):
+                out.add(lv.get("emp_id"))
+    except Exception:
+        pass
+    return out
+
+
+def _tk_nudges(kind, today=None):
+    """kind='checkin' → active staff with NO attendance record today; kind='checkout' → still clocked in.
+       Working days only; skips staff on approved leave. Returns the list of emails nudged."""
+    today = today or (datetime.utcnow() + timedelta(hours=7)).strftime("%Y-%m-%d")
+    if not _tk_is_workday(today):
+        return []
+    on_leave = _tk_on_leave_today(today)
+    todays = {}
+    try:
+        for a in db.list_attendance(start=today, end=today):
+            todays.setdefault(a.get("emp_id"), a)
+    except Exception:
+        return []
+    targets = []
+    for e in (db.list_employees() or []):
+        if str(e.get("status") or "Active").lower() == "inactive" or e.get("id") in on_leave or not e.get("email"):
+            continue
+        rec = todays.get(e.get("id"))
+        if kind == "checkin" and not rec:
+            targets.append(e["email"])
+        elif kind == "checkout" and rec and str(rec.get("clock_out") or "").strip() in ("", "—"):
+            targets.append(e["email"])
+    if targets:
+        if kind == "checkin":
+            _tk_push(targets, "Check-in reminder", "You haven't checked in yet today — tap to check in.", "/?checkin=1", "tk-checkin-" + today)
+        else:
+            _tk_push(targets, "Check-out reminder", "You're still checked in — tap to check out before you leave.", "/?checkin=1", "tk-checkout-" + today)
+    return targets
+
+
+def _tk_nudge_scheduler():
+    """Hourly wake; fires the check-in nudge at portal_tkCheckinHour and check-out at portal_tkCheckoutHour
+       (VN local, UTC+7), once per day per kind (dedup blob), only while portal_tkNudges is on."""
+    while True:
+        time.sleep(3600)
+        try:
+            if (db.get_setting("portal_tkNudges", "0") or "0").lower() not in ("1", "true", "on", "yes"):
+                continue
+            now_vn = datetime.utcnow() + timedelta(hours=7)
+            today = now_vn.strftime("%Y-%m-%d")
+            try:
+                ci = int(db.get_setting("portal_tkCheckinHour", "10") or "10")
+            except Exception:
+                ci = 10
+            try:
+                co = int(db.get_setting("portal_tkCheckoutHour", "19") or "19")
+            except Exception:
+                co = 19
+            for kind, want in (("checkin", ci), ("checkout", co)):
+                if now_vn.hour != want:
+                    continue
+                key = kind + ":" + today
+                with _TK_NUDGE_LOCK:
+                    try:
+                        seen = json.loads(db.get_setting("_tkNudgeSent") or "{}")
+                    except Exception:
+                        seen = {}
+                    if seen.get(key):
+                        continue
+                    _tk_nudges(kind, today)
+                    seen[key] = time.time()
+                    seen = {k: v for k, v in seen.items() if v and (time.time() - v) < 30 * 86400}
+                    db.set_setting("_tkNudgeSent", json.dumps(seen))
         except Exception:
             pass
 
@@ -3087,6 +3208,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._appr_remind_ep(u))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
+        if path == "/api/tk/nudgetest":
+            return self._guard(lambda u: self._tk_nudge_test(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -4392,6 +4515,9 @@ class Handler(BaseHTTPRequestHandler):
         out["digestEnabled"] = db.get_setting("portal_digestEnabled", "0") or "0"
         out["digestDay"] = db.get_setting("portal_digestDay", "0") or "0"
         out["digestLeadTo"] = db.get_setting("portal_digestLeadTo", "") or ""
+        out["tkNudges"] = db.get_setting("portal_tkNudges", "0") or "0"
+        out["tkCheckinHour"] = db.get_setting("portal_tkCheckinHour", "10") or "10"
+        out["tkCheckoutHour"] = db.get_setting("portal_tkCheckoutHour", "19") or "19"
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4524,7 +4650,10 @@ class Handler(BaseHTTPRequestHandler):
                       ("apprEscalateTo", "portal_apprEscalateTo"),
                       ("digestEnabled", "portal_digestEnabled"),
                       ("digestDay", "portal_digestDay"),
-                      ("digestLeadTo", "portal_digestLeadTo")):
+                      ("digestLeadTo", "portal_digestLeadTo"),
+                      ("tkNudges", "portal_tkNudges"),
+                      ("tkCheckinHour", "portal_tkCheckinHour"),
+                      ("tkCheckoutHour", "portal_tkCheckoutHour")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -4807,6 +4936,11 @@ class Handler(BaseHTTPRequestHandler):
             ("On · every " + _dd + (" · " + str(_DIGEST_HEALTH["sent"]) + " sent" if _DIGEST_HEALTH.get("sent") else "")) if dig_on else "Off (opt-in)",
             (_DIGEST_HEALTH.get("lastError") or "") if (dig_on and _DIGEST_HEALTH.get("lastError")) else ("" if dig_on else "Optional — turn on in Access & Permissions → System Integrations."))
 
+        tkn_on = (db.get_setting("portal_tkNudges", "0") or "0").lower() in ("1", "true", "on", "yes")
+        add("tknudge", "Timekeeping check-in/out nudges", "ok" if tkn_on else "warn",
+            ("On · check-in " + (db.get_setting("portal_tkCheckinHour", "10") or "10") + ":00, check-out " + (db.get_setting("portal_tkCheckoutHour", "19") or "19") + ":00 (working days)") if tkn_on else "Off (opt-in)",
+            "" if tkn_on else "Optional — push reminders; turn on in Access & Permissions → System Integrations.")
+
         return self._json({"rows": rows, "checkedAt": _now_iso(),
                            "ok": sum(1 for r in rows if r["status"] == "ok"),
                            "warn": sum(1 for r in rows if r["status"] == "warn"),
@@ -4938,6 +5072,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "sent": n,
                            "message": ("Sent %d reminder(s) for overdue approvals." % n) if n
                            else "No approvals are overdue for a reminder right now."})
+
+    def _tk_nudge_test(self, u):
+        """Admin: send a sample timekeeping nudge to YOURSELF only (verifies push works, no staff pinged)."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        to = (u.get("email") or "").strip()
+        if not to:
+            return self._err("Your account has no email / push identity.", 400)
+        if not _PUSH_OK:
+            return self._json({"ok": False, "message": "Web Push isn't available on the server (install pywebpush + cryptography)."})
+        n = _tk_push([to], "Check-in reminder (test)", "This is a test timekeeping nudge — real nudges reach staff who forget to check in/out.", "/?checkin=1", "tk-test")
+        return self._json({"ok": n > 0, "sent": n,
+                           "message": ("Test nudge pushed to your device." if n else "No push device is registered for your account — enable notifications on this device, then retry.")})
 
     def _appr_digest_test(self, u):
         """Admin: send yourself a preview of the weekly leadership digest (verifies it renders & delivers).
@@ -5417,6 +5564,7 @@ def main():
         threading.Thread(target=_invtrack_scheduler, daemon=True).start()
         threading.Thread(target=_appr_reminder_scheduler, daemon=True).start()   # overdue-approval nudges
         threading.Thread(target=_digest_scheduler, daemon=True).start()          # weekly manager/leadership digest
+        threading.Thread(target=_tk_nudge_scheduler, daemon=True).start()        # check-in/out timekeeping nudges
         print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
