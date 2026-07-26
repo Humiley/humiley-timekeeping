@@ -279,7 +279,8 @@ _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "reje
 # SAME defaults, else a manager's unchanged (echoed-default) value looks like a change and trips the admin gate.
 _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "apprSenderFinance": "finance@humiley.com", "apprSenderProc": "procurement@humiley.com",
-                          "apprReminders": "1", "apprReminderDays": "2"}
+                          "apprReminders": "1", "apprReminderDays": "2",
+                          "digestEnabled": "0", "digestDay": "0", "digestLeadTo": ""}
 _APPR_REMIND_LOCK = threading.Lock()
 
 
@@ -464,6 +465,214 @@ def _appr_reminder_scheduler():
         time.sleep(6 * 3600)
         try:
             _appr_reminders()
+        except Exception:
+            pass
+
+
+# ── Weekly leadership & manager digest ──────────────────────────────────────────────────────
+# One email per manager on the configured weekday: what's awaiting their review, plus a company
+# roll-up to leadership. Reuses the SAME pending-state machinery as the reminder engine so the two
+# never disagree. Opt-in (off by default); best-effort; never raises into a request or the scheduler.
+_DIGEST_LOCK = threading.Lock()
+_DIGEST_HEALTH = {"at": "", "sent": 0, "lastError": ""}
+_DIGEST_LABELS = {"claims": "Expense claim", "travel": "Travel request",
+                  "payments": "Payment request", "leave": "Leave request"}
+
+
+def _digest_enabled():
+    return (db.get_setting("portal_digestEnabled", "0") or "0").lower() in ("1", "true", "on", "yes")
+
+
+def _emp_name_by_email(email):
+    if not email:
+        return ""
+    fn = getattr(db, "get_employee_by_email", None)
+    if fn:
+        try:
+            e = fn(email)
+            if e and e.get("name"):
+                return e["name"]
+        except Exception:
+            pass
+    return email
+
+
+def _digest_gather():
+    """Roll every pending 3-level request up by who must act next. Returns
+       (managers, leadership, counts): managers = {mgrEmail: {"name":.., "rows":[row]}} (items in
+       SUBMIT state, awaiting that manager's review); leadership = [row] (items in REVIEW state,
+       awaiting the Director); counts = {await, review, overdue, valuePending}. Never raises."""
+    now = time.time()
+    try:
+        days = max(1, int(db.get_setting("portal_apprReminderDays", "2") or "2"))
+    except Exception:
+        days = 2
+    managers, leadership = {}, []
+    counts = {"await": 0, "review": 0, "overdue": 0, "valuePending": 0.0}
+
+    def _row(coll, item, st, emp):
+        since = _appr_waiting_since(item, st)
+        age = int((now - since) // 86400) if since else 0
+        overdue = since is not None and (now - since) >= days * 86400
+        ref = item.get("reqNo") or item.get("title") or item.get("dest") or (("#" + str(item.get("id"))) if item.get("id") else "—")
+        amt = item.get("amount") or item.get("total") or 0
+        try:
+            counts["valuePending"] += float(str(amt).replace(",", "").replace(" ", "").replace("₫", "") or 0)
+        except Exception:
+            pass
+        if overdue:
+            counts["overdue"] += 1
+        return {"label": _DIGEST_LABELS.get(coll, "Request"), "ref": ref,
+                "requester": (emp or {}).get("name") or item.get("name") or "—",
+                "amount": _money_vnd(amt) if amt else "", "age": age, "overdue": overdue}
+
+    def _scan(coll, item, status):
+        st = _appr_state_of(status)
+        if st not in ("submit", "review"):
+            return
+        emp = None
+        rid = item.get("emp_id") or item.get("empId")
+        if rid:
+            try:
+                emp = db.get_employee(rid)
+            except Exception:
+                emp = None
+        row = _row(coll, item, st, emp)
+        if st == "submit":
+            counts["await"] += 1
+            mgr = (emp or {}).get("managerEmail") or ""
+            if mgr:
+                managers.setdefault(mgr, {"name": _emp_name_by_email(mgr), "rows": []})["rows"].append(row)
+        else:
+            counts["review"] += 1
+            leadership.append(row)
+
+    try:
+        for coll in ("claims", "travel", "payments"):
+            for item in db.list_collection(coll):
+                _scan(coll, item, _claim_rollup(item) if coll == "claims" else item.get("status"))
+    except Exception:
+        pass
+    try:
+        for lv in (db.list_leave(status="pending") or []) + (db.list_leave(status="reviewed") or []):
+            _scan("leave", lv, lv.get("status"))
+    except Exception:
+        pass
+    return managers, leadership, counts
+
+
+def _digest_html(title, intro, sections, summary):
+    """Branded digest email: same navy header + real logo as the approval emails, then one table
+       per section (heading + rows) and a summary strip. `sections` = [(heading, [row])]."""
+    NAVY = "#205090"; INK = "#1F2937"; MUT = "#5C6470"; LINE = "#e3e8f0"; BG = "#f0f2f8"; EMER = "#00B060"
+
+    def esc(v):
+        return _hesc("" if v is None else str(v))
+    body = ""
+    for heading, rows in sections:
+        body += ("<div style='font-size:12px;font-weight:700;color:" + NAVY + ";text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px'>"
+                 + esc(heading) + " <span style='color:" + MUT + ";font-weight:600'>(" + str(len(rows)) + ")</span></div>")
+        if not rows:
+            body += "<div style='font-size:13px;color:" + MUT + "'>Nothing — all clear.</div>"
+            continue
+        body += "<table style='width:100%;border-collapse:collapse'>"
+        for r in rows:
+            flag = ("<span style='color:#C0392B;font-weight:700'>&#9888; " + str(r["age"]) + "d</span>") if r.get("overdue") else ("<span style='color:" + MUT + "'>" + str(r["age"]) + "d</span>")
+            body += ("<tr>"
+                     "<td style='padding:6px 0;border-top:1px solid " + LINE + ";font-size:13px;color:" + INK + ";font-weight:600'>" + esc(r["label"]) + " <span style='color:" + MUT + ";font-weight:400'>" + esc(r["ref"]) + "</span></td>"
+                     "<td style='padding:6px 0;border-top:1px solid " + LINE + ";font-size:13px;color:" + MUT + "'>" + esc(r["requester"]) + "</td>"
+                     "<td style='padding:6px 0;border-top:1px solid " + LINE + ";font-size:13px;color:" + INK + ";text-align:right'>" + esc(r["amount"]) + "</td>"
+                     "<td style='padding:6px 0;border-top:1px solid " + LINE + ";font-size:12px;text-align:right;white-space:nowrap;padding-left:10px'>" + flag + "</td>"
+                     "</tr>")
+        body += "</table>"
+    chips = ""
+    for lbl, val in summary:
+        chips += ("<span style='display:inline-block;background:#fff;border:1px solid " + LINE + ";border-radius:8px;padding:6px 12px;margin:0 6px 6px 0;font-size:12px;color:" + MUT + "'>"
+                  + esc(lbl) + " <b style='color:" + NAVY + "'>" + esc(val) + "</b></span>")
+    return (
+        "<div style='margin:0;padding:24px;background:" + BG + ";font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
+        "<div style='max-width:620px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
+        "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
+        "<img src='" + _portal_base() + "/static/brand/Humiley_Logo_White.png' alt='Humiley' height='28' style='height:28px;width:auto;display:block;border:0;margin:0 0 6px'>"
+        "<div style='font-size:12px;opacity:.85'>Weekly digest &middot; Engineering &amp; Solutions That Move Air, Smartly.</div></div>"
+        "<div style='padding:22px 24px'>"
+        "<h1 style='font-size:19px;color:" + INK + ";margin:0 0 6px'>" + esc(title) + "</h1>"
+        "<p style='font-size:14px;color:" + MUT + ";line-height:1.6;margin:0 0 6px'>" + esc(intro) + "</p>"
+        "<div style='margin:12px 0 4px'>" + chips + "</div>"
+        + body +
+        "<a href='" + esc(_portal_base()) + "/?inbox=1' style='display:inline-block;margin-top:20px;background:" + NAVY + ";color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:9px'>Open the portal &rarr;</a>"
+        "<p style='font-size:12px;color:" + MUT + ";margin:18px 0 0;line-height:1.6'>Decisions are made in the portal with your e-signature. Automated weekly summary — please do not reply. Turn off in Access &amp; Permissions &rarr; System Integrations.</p>"
+        "</div></div>"
+        "<div style='max-width:620px;margin:10px auto 0;text-align:center;font-size:11px;color:" + MUT + "'>&copy; Humiley Vi&#7879;t Nam &middot; portal.humiley.com</div></div>")
+
+
+def _digest_send(preview_to=None):
+    """Scheduled: email each manager their awaiting-review list, plus a company roll-up to the
+       leadership address. preview_to: send that ONE address the full company preview instead.
+       Gated by portal_digestEnabled AND portal_apprEmail. Returns number of emails sent."""
+    try:
+        if not preview_to and not _digest_enabled():
+            return 0
+        if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
+            return 0
+        managers, leadership, counts = _digest_gather()
+        sender = _appr_email_sender("leave")   # the HR mailbox is the neutral cross-company ops sender
+        summary = [("Awaiting review", str(counts["await"])), ("Awaiting approval", str(counts["review"])),
+                   ("Overdue", str(counts["overdue"])), ("Pending value", _money_vnd(counts["valuePending"]))]
+        sent = 0
+        if preview_to:
+            html = _digest_html("Company approvals — weekly summary (preview)",
+                                "This is a preview of the weekly digest sent to leadership. It shows everything currently in flight.",
+                                [("Awaiting final approval (with Director)", leadership)], summary)
+            if _graph_send_mail(sender, [preview_to], "[Humiley] Weekly digest — preview", html):
+                sent = 1
+            _DIGEST_HEALTH.update({"at": _now_iso(), "sent": _DIGEST_HEALTH["sent"] + sent})
+            return sent
+        for mgr_email, data in managers.items():
+            html = _digest_html("Your team — awaiting your review",
+                                "These requests from your team are waiting for you. Overdue items are flagged.",
+                                [("Awaiting your review", data["rows"])],
+                                [("Awaiting you", str(len(data["rows"]))),
+                                 ("Overdue", str(sum(1 for r in data["rows"] if r["overdue"])))])
+            if _graph_send_mail(sender, [mgr_email], "[Humiley] Weekly digest — " + str(len(data["rows"])) + " awaiting your review", html):
+                sent += 1
+        lead_to = (db.get_setting("portal_digestLeadTo", "") or "").strip()
+        if lead_to:
+            html = _digest_html("Company approvals — weekly summary",
+                                "Everything currently in the approval pipeline across the company.",
+                                [("Awaiting final approval (with Director)", leadership)], summary)
+            if _graph_send_mail(sender, [lead_to], "[Humiley] Weekly leadership digest", html):
+                sent += 1
+        _DIGEST_HEALTH.update({"at": _now_iso(), "sent": _DIGEST_HEALTH["sent"] + sent})
+        return sent
+    except Exception as e:
+        _DIGEST_HEALTH.update({"at": _now_iso(), "lastError": str(e)[:200]})
+        return 0
+
+
+def _digest_scheduler():
+    """Background thread: once a week on the configured weekday (VN morning), send the digest.
+       Wakes hourly; a per-ISO-week dedup flag makes the actual send idempotent."""
+    while True:
+        time.sleep(3600)
+        try:
+            if not _digest_enabled():
+                continue
+            now_vn = datetime.utcnow() + timedelta(hours=7)   # Humiley operates on ICT (UTC+7)
+            try:
+                want_day = int(db.get_setting("portal_digestDay", "0") or "0")
+            except Exception:
+                want_day = 0
+            if now_vn.weekday() != want_day or now_vn.hour < 7:
+                continue
+            wk = now_vn.strftime("%G-W%V")
+            if (db.get_setting("_digestSentWeek", "") or "") == wk:
+                continue
+            with _DIGEST_LOCK:
+                if (db.get_setting("_digestSentWeek", "") or "") == wk:
+                    continue
+                _digest_send()
+                db.set_setting("_digestSentWeek", wk)
         except Exception:
             pass
 
@@ -2859,6 +3068,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._appr_email_test(u))
         if path == "/api/appr/remind":
             return self._guard(lambda u: self._appr_remind_ep(u))
+        if path == "/api/appr/digesttest":
+            return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -4159,6 +4370,9 @@ class Handler(BaseHTTPRequestHandler):
         out["apprSenderProc"] = db.get_setting("portal_apprSenderProc", "") or "procurement@humiley.com"
         out["apprReminders"] = db.get_setting("portal_apprReminders", "1") or "1"
         out["apprReminderDays"] = db.get_setting("portal_apprReminderDays", "2") or "2"
+        out["digestEnabled"] = db.get_setting("portal_digestEnabled", "0") or "0"
+        out["digestDay"] = db.get_setting("portal_digestDay", "0") or "0"
+        out["digestLeadTo"] = db.get_setting("portal_digestLeadTo", "") or ""
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4208,7 +4422,10 @@ class Handler(BaseHTTPRequestHandler):
                       ("apprSenderFinance", "portal_apprSenderFinance"),
                       ("apprSenderProc", "portal_apprSenderProc"),
                       ("apprReminders", "portal_apprReminders"),
-                      ("apprReminderDays", "portal_apprReminderDays")):
+                      ("apprReminderDays", "portal_apprReminderDays"),
+                      ("digestEnabled", "portal_digestEnabled"),
+                      ("digestDay", "portal_digestDay"),
+                      ("digestLeadTo", "portal_digestLeadTo")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -4480,6 +4697,17 @@ class Handler(BaseHTTPRequestHandler):
             ("On · after " + (db.get_setting("portal_apprReminderDays", "2") or "2") + " days") if rem_on else "Off",
             "" if rem_on else "Turn on in Settings → Approval emails.")
 
+        dig_on = _digest_enabled()
+        _DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        try:
+            _dd = _DAYS[int(db.get_setting("portal_digestDay", "0") or "0")]
+        except Exception:
+            _dd = "Monday"
+        add("digest", "Weekly manager & leadership digest",
+            "down" if (dig_on and _DIGEST_HEALTH.get("lastError")) else ("ok" if dig_on else "warn"),
+            ("On · every " + _dd + (" · " + str(_DIGEST_HEALTH["sent"]) + " sent" if _DIGEST_HEALTH.get("sent") else "")) if dig_on else "Off (opt-in)",
+            (_DIGEST_HEALTH.get("lastError") or "") if (dig_on and _DIGEST_HEALTH.get("lastError")) else ("" if dig_on else "Optional — turn on in Access & Permissions → System Integrations."))
+
         return self._json({"rows": rows, "checkedAt": _now_iso(),
                            "ok": sum(1 for r in rows if r["status"] == "ok"),
                            "warn": sum(1 for r in rows if r["status"] == "warn"),
@@ -4611,6 +4839,22 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "sent": n,
                            "message": ("Sent %d reminder(s) for overdue approvals." % n) if n
                            else "No approvals are overdue for a reminder right now."})
+
+    def _appr_digest_test(self, u):
+        """Admin: send yourself a preview of the weekly leadership digest (verifies it renders & delivers).
+           Reports the same Mail.Send health as the approval-email test."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        to = (u.get("email") or "").strip()
+        if not to:
+            return self._err("Your account has no email address to send the preview to.", 400)
+        _digest_send(preview_to=to)
+        time.sleep(2.5)   # let the async send (incl. a possible token-refresh + retry) finish
+        h = _APPR_EMAIL_HEALTH
+        ok = not h.get("lastError")
+        return self._json({"ok": ok, "sentTo": to, "lastError": h.get("lastError", ""),
+                           "message": ("Preview digest sent to %s — check your inbox." % to) if ok
+                           else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented?"))})
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
@@ -5073,6 +5317,7 @@ def main():
     if _invtrack_app_ready():
         threading.Thread(target=_invtrack_scheduler, daemon=True).start()
         threading.Thread(target=_appr_reminder_scheduler, daemon=True).start()   # overdue-approval nudges
+        threading.Thread(target=_digest_scheduler, daemon=True).start()          # weekly manager/leadership digest
         print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

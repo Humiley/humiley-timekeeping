@@ -1319,6 +1319,12 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" type="button" id="portal-apprTestBtn" onclick="_apprEmailTest()">Send a test email to me</button><span id="portal-apprHealth" style="font-size:11px;color:var(--text-light)"></span></div>
       <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
       <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" id="portal-apprSweepBtn" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
+      <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:16px"><input type="checkbox" id="portal-digestEnabled" style="width:auto">Weekly digest — summary email to managers &amp; leadership</label>
+      <div style="font-size:11px;color:var(--text-light);margin:2px 0 8px">Once a week, each manager gets what’s awaiting their review; leadership gets a company‑wide roll‑up (pending · overdue · total value). Uses the same Mail.Send as above.</div>
+      <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Send every
+        <select class="form-control" id="portal-digestDay" style="width:130px;padding:4px 8px"><option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option><option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option><option value="6">Sunday</option></select>
+        · Leadership email <input class="form-control" id="portal-digestLeadTo" placeholder="director@humiley.com" style="flex:1;min-width:170px">
+        <button class="btn btn-outline btn-sm" type="button" id="portal-digestTestBtn" onclick="_digestTest()">Send me a test digest</button><span id="portal-digestMsg" style="font-size:11px;color:var(--text-light)"></span></div>
     </div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0">Integrations &amp; health<button class="btn btn-outline btn-sm" type="button" onclick="_healthCheck()">Check now</button></label>
@@ -4873,6 +4879,9 @@ async function tkLoadIntegrations() {
   const _ap = document.getElementById('portal-apprProc'); if (_ap) _ap.value = g('apprSenderProc', 'procurement@humiley.com');
   const _ar = document.getElementById('portal-apprRemind'); if (_ar) _ar.checked = String(g('apprReminders', '1')) !== '0';
   const _ard = document.getElementById('portal-apprRemindDays'); if (_ard) _ard.value = g('apprReminderDays', '2');
+  const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
+  const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
+  const _dlt = document.getElementById('portal-digestLeadTo'); if (_dlt) _dlt.value = g('digestLeadTo', '');
   const _hh = document.getElementById('portal-apprHealth'); const _H = (live && live.apprEmailHealth) || null;
   if (_hh && _H) _hh.textContent = _H.lastError ? ('Last error: ' + _H.lastError) : (_H.ok ? (_H.ok + ' sent OK' + (_H.at ? (' · ' + _H.at) : '')) : '');
   const pu = document.getElementById('portal-procurl'); if (pu) pu.value = g('procurementUrl', (window._TK_PORTAL && window._TK_PORTAL.procurementUrl) || (TK.cfg && TK.cfg.procurementUrl) || '');
@@ -4883,7 +4892,7 @@ async function tkLoadIntegrations() {
     if (typeof live.procurementUrl === 'string') { window._TK_PORTAL.procurementUrl = live.procurementUrl; if (TK.cfg) TK.cfg.procurementUrl = live.procurementUrl; }
   }
   const _urlLock = _userLevel !== 'admin';   // server rejects non-admin changes; make the UI honest too
-  const _apprEls = ['portal-apprEmail', 'portal-apprHr', 'portal-apprFin', 'portal-apprProc', 'portal-apprRemind', 'portal-apprRemindDays', 'portal-apprTestBtn', 'portal-apprSweepBtn'].map(id => document.getElementById(id));
+  const _apprEls = ['portal-apprEmail', 'portal-apprHr', 'portal-apprFin', 'portal-apprProc', 'portal-apprRemind', 'portal-apprRemindDays', 'portal-apprTestBtn', 'portal-apprSweepBtn', 'portal-digestEnabled', 'portal-digestDay', 'portal-digestLeadTo', 'portal-digestTestBtn'].map(id => document.getElementById(id));
   [tw, fs, pu, ..._apprEls].forEach(el => { if (el) { el.disabled = _urlLock; el.title = _urlLock ? 'Only an Admin can change these settings.' : ''; } });
 }
 
@@ -4959,6 +4968,14 @@ async function _apprEmailTest() {
     toast((r && r.message) || 'Test email sent', (r && r.ok) ? 'info' : 'warn', 8000);
   } catch (e) { if (el) el.textContent = 'Failed: ' + (e.message || ''); toast('Test failed: ' + (e.message || ''), 'error', 6000); }
 }
+async function _digestTest() {
+  const el = document.getElementById('portal-digestMsg'); if (el) el.textContent = 'Sending…';
+  try {
+    const r = await tkApi('/api/appr/digesttest', { method: 'POST', body: {} });
+    if (el) el.textContent = (r && r.message) || (r && r.ok ? 'Sent — check your inbox.' : 'Send failed.');
+    toast((r && r.message) || 'Test digest sent', (r && r.ok) ? 'info' : 'warn', 8000);
+  } catch (e) { if (el) el.textContent = 'Failed: ' + (e.message || ''); toast('Test failed: ' + (e.message || ''), 'error', 6000); }
+}
 async function tkSavePortal() {
   const m = _tkPortalModel; if (!m) { toast('Open the Company Portal tab first', 'warn'); return; }
   const payload = {
@@ -4991,7 +5008,10 @@ async function tkSaveIntegrations() {
     apprSenderFinance: V('portal-apprFin'),
     apprSenderProc: V('portal-apprProc'),
     apprReminders: C('portal-apprRemind') ? '1' : '0',
-    apprReminderDays: String(parseInt(V('portal-apprRemindDays'), 10) || 2)
+    apprReminderDays: String(parseInt(V('portal-apprRemindDays'), 10) || 2),
+    digestEnabled: C('portal-digestEnabled') ? '1' : '0',
+    digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
+    digestLeadTo: V('portal-digestLeadTo')
   };
   try {
     const r = await fetch('/api/portal', { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify(payload) });
