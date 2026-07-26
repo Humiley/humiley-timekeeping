@@ -1982,19 +1982,21 @@ def _invtrack_portal_fetch(body):
                 url = "https://tchd.ehoadon.vn/"
         is_eh = "ehoadon" in (url + " " + _snd).lower()
         if not code or (is_eh and not (serial and invno)):
-            return {"ok": False, "message": ("Missing the lookup code" + (" / serial (Ký hiệu) / invoice-no" if is_eh else "") +
-                    " for this row — open the portal once and copy the Ký hiệu into the row, then retry.")}
+            return {"ok": False, "message": ("Couldn't build the portal link — got serial='%s' invNo='%s' code='%s' from the row + email. eHoadon needs all three (the Ký hiệu is often missing from the notification email); MISA needs only the code. If the portal has a CAPTCHA, use 'Attach invoice file'." % (serial, invno, code))}
         raw, ex = _invtrack_fetch_by_url(url, serial, invno, code)
-        if not (raw and ex):
-            return {"ok": False, "message": "eHoadon did not return a PDF for this invoice (code/serial may be wrong, or it isn't a Bkav eHoadon invoice)."}
-        sf = _invtrack_store_file(raw, serial + "-" + invno + ".pdf", "application/pdf")
-        if sf:
-            try:
-                sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (row.get("dateISO") if row else "") or "", sf["id"])
-                if sp:
-                    sf["spUrl"] = sp
-            except Exception:
-                pass
+        if not ex:                                       # ex is what matters; the PDF file (raw) is a bonus
+            host = (url.split("/")[2] if "//" in url else url)
+            return {"ok": False, "message": ("The portal (%s) returned nothing for serial='%s' invNo='%s' code='%s' — the values may be wrong, or it needs a CAPTCHA. Use 'Attach invoice file' instead." % (host, serial, invno, code))}
+        sf = None
+        if raw:
+            sf = _invtrack_store_file(raw, (serial or ex.get("serial") or "hoadon") + "-" + (invno or code) + ".pdf", "application/pdf")
+            if sf:
+                try:
+                    sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", (row.get("dateISO") if row else "") or "", sf["id"])
+                    if sp:
+                        sf["spUrl"] = sp
+                except Exception:
+                    pass
         if row is None and cur is not None:
             row = {"msgId": msgid, "type": "Hoá đơn mua vào (NCC)", "source": "portal", "desc": ""}
             cur.setdefault("items", []).append(row)
@@ -2017,10 +2019,11 @@ def _invtrack_portal_fetch(body):
             row["attach"] = row.get("attach") or sf["name"]
         if _n(row.get("after")) > 0:
             row["needsLookup"] = False
-        row["method"] = "ehoadon-pdf"
+        row["method"] = ex.get("method") or "portal"
         db.put_collection_item("invtrack", cur)
         return {"ok": True, "before": row.get("before"), "vat": row.get("vat"), "after": row.get("after"),
-                "file": (sf or {}).get("name"), "invNo": row.get("invNo"), "serial": row.get("serial")}
+                "file": (sf or {}).get("name"), "items": len(row.get("items") or []),
+                "invNo": row.get("invNo"), "serial": row.get("serial")}
 
 
 def _invtrack_attach_file(body):
