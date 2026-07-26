@@ -134,3 +134,58 @@ def test_waiting_since_handles_leave_string_signatures_and_created_at(base_url):
     assert t == app._appr_epoch("2026-06-05T10:00:00Z")  # uses the Reviewed-signature clock
     sub = {"status": "pending", "created_at": "2026-06-01T09:00:00Z", "startDate": "2026-07-20", "signatures": "[]"}
     assert app._appr_waiting_since(sub, "submit") == app._appr_epoch("2026-06-01T09:00:00Z"), "created_at, not startDate"
+
+
+def _reset_reminders(db):
+    from datetime import datetime, timedelta
+    for coll in ("payments", "claims", "travel"):
+        for d in list(db.list_collection(coll)):
+            if d.get("id"):
+                db.delete_collection_item(coll, d["id"])
+    db.set_setting("_apprRemindedAt", "{}")
+    db.set_setting("portal_apprEmail", "1")
+    db.set_setting("portal_apprReminders", "1")
+    db.set_setting("portal_apprReminderDays", "2")
+
+
+def test_overdue_escalates_past_threshold(monkeypatch, base_url):
+    """Once an overdue item passes portal_apprEscalateDays, the nudge is re-labelled 'Escalated' and
+       CCs the escalation recipient (approvals never get stuck on one absent approver)."""
+    import db
+    from datetime import datetime, timedelta
+    _reset_reminders(db)
+    db.set_setting("portal_apprEscalateDays", "3")
+    db.set_setting("portal_apprEscalateTo", "director@h.com")
+    old = (datetime.utcnow() - timedelta(days=5)).strftime("%Y-%m-%d")
+    db.put_collection_item("payments", {"empId": "E1", "reqNo": "PAY-ESC", "status": "Submitted", "submittedOn": old, "amount": 500000})
+    sent = []
+    monkeypatch.setattr(app, "_graph_send_mail", lambda sender, to, subject, html, cc=None: sent.append({"subject": subject, "cc": cc or []}) or True)
+    monkeypatch.setattr(app.db, "get_employee", lambda i: {"email": "a@h.com", "name": "Alice", "managerEmail": "b@h.com"} if i else None)
+    try:
+        assert app._appr_reminders() >= 1
+        esc = [s for s in sent if "Escalated ·" in s["subject"]]
+        assert esc, "5-day overdue past the 3-day threshold must escalate, got: " + str([s["subject"] for s in sent])
+        assert "director@h.com" in esc[0]["cc"], "escalation must CC the escalation recipient"
+    finally:
+        db.set_setting("portal_apprEscalateDays", "0")
+        db.set_setting("portal_apprEscalateTo", "")
+
+
+def test_below_escalate_threshold_only_reminds(monkeypatch, base_url):
+    import db
+    from datetime import datetime, timedelta
+    _reset_reminders(db)
+    db.set_setting("portal_apprEscalateDays", "10")   # higher than the item's age → no escalation yet
+    db.set_setting("portal_apprEscalateTo", "director@h.com")
+    old = (datetime.utcnow() - timedelta(days=3)).strftime("%Y-%m-%d")
+    db.put_collection_item("payments", {"empId": "E1", "reqNo": "PAY-REM", "status": "Submitted", "submittedOn": old, "amount": 100000})
+    sent = []
+    monkeypatch.setattr(app, "_graph_send_mail", lambda sender, to, subject, html, cc=None: sent.append({"subject": subject, "cc": cc or []}) or True)
+    monkeypatch.setattr(app.db, "get_employee", lambda i: {"email": "a@h.com", "name": "Alice", "managerEmail": "b@h.com"} if i else None)
+    try:
+        app._appr_reminders()
+        assert sent and all("Reminder ·" in s["subject"] for s in sent), "below threshold it must remind, not escalate"
+        assert all("director@h.com" not in s["cc"] for s in sent), "no escalation CC below the threshold"
+    finally:
+        db.set_setting("portal_apprEscalateDays", "0")
+        db.set_setting("portal_apprEscalateTo", "")

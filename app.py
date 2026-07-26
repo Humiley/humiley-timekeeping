@@ -280,13 +280,15 @@ _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "reje
 _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "apprSenderFinance": "finance@humiley.com", "apprSenderProc": "procurement@humiley.com",
                           "apprReminders": "1", "apprReminderDays": "2",
+                          "apprEscalateDays": "0", "apprEscalateTo": "",
                           "digestEnabled": "0", "digestDay": "0", "digestLeadTo": ""}
 _APPR_REMIND_LOCK = threading.Lock()
 
 
-def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0):
+def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0, escalate_to=None):
     """Send the branded lifecycle email for ONE request. event ∈ submitted/reviewed/approved/rejected/paid.
-       reminder=True reframes it as an overdue nudge to whoever must act next.
+       reminder=True reframes it as an overdue nudge to whoever must act next; escalate_to (an email)
+       additionally CCs a higher authority and re-labels it an escalation.
        Best-effort; gated by the portal_apprEmail setting (default on). Never raises."""
     try:
         if (db.get_setting("portal_apprEmail", "1") or "1").lower() not in ("1", "true", "on", "yes"):
@@ -328,9 +330,15 @@ def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0):
         if reminder:
             wait = str(int(age_days)) + (" day" if int(age_days) == 1 else " days")
             need = "your review" if event == "submitted" else "final approval"
-            intro = ("Reminder — this " + low + " from " + req_name + " has been waiting " + wait +
-                     " for " + need + ". Please action it in the portal.")
-            subject = "Reminder · " + subject
+            if escalate_to:
+                intro = ("Escalation — this " + low + " from " + req_name + " has been waiting " + wait +
+                         " for " + need + " and is now overdue. Please make sure it is actioned in the portal.")
+                subject = "Escalated · " + subject
+                cc = list(cc) + [escalate_to]
+            else:
+                intro = ("Reminder — this " + low + " from " + req_name + " has been waiting " + wait +
+                         " for " + need + ". Please action it in the portal.")
+                subject = "Reminder · " + subject
         to = [x for x in to if x]
         if not to:
             to = [sender]
@@ -411,6 +419,11 @@ def _appr_reminders():
             days = max(1, int(db.get_setting("portal_apprReminderDays", "2") or "2"))
         except Exception:
             days = 2
+        try:
+            esc_days = int(db.get_setting("portal_apprEscalateDays", "0") or "0")   # 0 = escalation off
+        except Exception:
+            esc_days = 0
+        esc_to = (db.get_setting("portal_apprEscalateTo", "") or "").strip()
         now = time.time()
         try:
             seen = json.loads(db.get_setting("_apprRemindedAt") or "{}")
@@ -429,8 +442,10 @@ def _appr_reminders():
             key = coll + ":" + str(rec.get("id"))
             if not _due(key, since):
                 return 0
+            age = int((now - since) // 86400)
+            esc = esc_to if (esc_days > 0 and esc_to and age >= esc_days) else None   # escalate once past the higher threshold
             _appr_notify(coll, rec, "submitted" if st == "submit" else "reviewed", "",
-                         reminder=True, age_days=int((now - since) // 86400))
+                         reminder=True, age_days=age, escalate_to=esc)
             seen[key] = now
             return 1
 
@@ -4372,6 +4387,8 @@ class Handler(BaseHTTPRequestHandler):
         out["apprSenderProc"] = db.get_setting("portal_apprSenderProc", "") or "procurement@humiley.com"
         out["apprReminders"] = db.get_setting("portal_apprReminders", "1") or "1"
         out["apprReminderDays"] = db.get_setting("portal_apprReminderDays", "2") or "2"
+        out["apprEscalateDays"] = db.get_setting("portal_apprEscalateDays", "0") or "0"
+        out["apprEscalateTo"] = db.get_setting("portal_apprEscalateTo", "") or ""
         out["digestEnabled"] = db.get_setting("portal_digestEnabled", "0") or "0"
         out["digestDay"] = db.get_setting("portal_digestDay", "0") or "0"
         out["digestLeadTo"] = db.get_setting("portal_digestLeadTo", "") or ""
@@ -4503,6 +4520,8 @@ class Handler(BaseHTTPRequestHandler):
                       ("apprSenderProc", "portal_apprSenderProc"),
                       ("apprReminders", "portal_apprReminders"),
                       ("apprReminderDays", "portal_apprReminderDays"),
+                      ("apprEscalateDays", "portal_apprEscalateDays"),
+                      ("apprEscalateTo", "portal_apprEscalateTo"),
                       ("digestEnabled", "portal_digestEnabled"),
                       ("digestDay", "portal_digestDay"),
                       ("digestLeadTo", "portal_digestLeadTo")):
