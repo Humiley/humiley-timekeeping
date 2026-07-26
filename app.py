@@ -1100,10 +1100,11 @@ def _sp_safe_leaf(filename, fid):
 
 
 def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
-    """Best-effort upload one captured invoice file to SharePoint under <folder>/<YYYY>/<MM>/, creating
-       the Year/Month folders automatically. Returns the webUrl or None. NEVER raises — SharePoint is an
-       add-on to the always-present local copy. Needs Graph Sites.ReadWrite.All (application) consent.
-       Records the outcome in _INVTRACK_SP_HEALTH so a silent failure is visible in Settings."""
+    """Best-effort upload one captured invoice file to SharePoint under <folder>/Invoice Monthly (MM-YY)/,
+       creating the monthly folder automatically so every tracked invoice for a month lands together.
+       Returns the webUrl or None. NEVER raises — SharePoint is an add-on to the always-present local
+       copy. Needs Graph Sites.ReadWrite.All (application) consent. Records the outcome in
+       _INVTRACK_SP_HEALTH so a silent failure is visible in Settings."""
     if not (db.get_setting("portal_invtrackSpUrl", "") or "").strip():
         return None                                  # not configured → zero Graph calls, no health noise
     try:
@@ -1114,9 +1115,11 @@ def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
         if not tgt:
             raise ValueError("could not resolve the SharePoint folder — check the link and Sites.ReadWrite.All consent")
         ym = (iso or "")[:7]
-        y = ym[:4] or "unknown"; mo = ym[5:7] or "00"
-        base_segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [y, mo]
-        _invtrack_sp_ensure_dir(tgt["drive"], "/".join(base_segs), token)   # AUTO-CREATE the Year/Month folders
+        y = ym[:4] or "0000"; mo = ym[5:7] or "00"
+        yy = y[2:] if len(y) == 4 else (y or "00")
+        month_folder = "Invoice Monthly (%s-%s)" % (mo, yy)   # one folder per month, e.g. "Invoice Monthly (07-26)"
+        base_segs = [s for s in (tgt["rel"].split("/") if tgt["rel"] else []) if s] + [month_folder]
+        _invtrack_sp_ensure_dir(tgt["drive"], "/".join(base_segs), token)   # AUTO-CREATE the monthly folder
         path = "/".join(urllib.parse.quote(s) for s in (base_segs + [_sp_safe_leaf(filename, fid)]))
         if len(raw) > _SP_SIMPLE_PUT_MAX:
             it = _graph_upload_session(tgt["drive"], path, token, raw, ct)
@@ -1370,6 +1373,80 @@ def _invtrack_item(m, ex):
             "currency": ex.get("currency", ""), "vatRate": ex.get("vatRate", ""),
             "payMethod": ex.get("payMethod", ""), "items": ex.get("items") or [],
             "needsLookup": bool(invoiceish and not (after > 0)), "source": "mailbox"}   # only invoices count toward "need lookup"
+
+
+def _invtrack_portal_backfill(items, limit=12):
+    """During a sync / 'Get all tracks', AUTO-FETCH the real invoice for EXISTING rows that only carry a
+       portal lookup (eHoadon / MISA) and have no file yet — so the user doesn't have to click the
+       per-row button. Bounded (default 12/run) + a `_portalTried` flag caps retries; for eHoadon it
+       re-reads the source email once to recover the serial (Ký hiệu) it needs to build the file URL."""
+    if not _invtrack_app_ready():
+        return 0
+    token_box = [None]
+    done = 0
+    for it in items:
+        if done >= limit:
+            break
+        if it.get("_portalTried") or it.get("files"):
+            continue
+        blob = (it.get("sender") or "") + " " + (it.get("lookup") or "") + " " + (it.get("desc") or "")
+        if not re.search(r"ehoadon\.vn|meinvoice\.vn", blob, re.I):
+            continue
+        it["_portalTried"] = True
+        mc = re.search(r"(?:MTC[:=\s]*|[?&](?:MTC|sc)=|M[ãa]\s*tra\s*c[ứu]+u[:=\s]*)([0-9A-Za-z]{6,24})", blob, re.I)
+        code = mc.group(1) if mc else ""
+        serial = it.get("serial") or ""
+        invno = str(it.get("invNo") or "")
+        murl = re.search(r"https?://[^\s\"'<>]+", blob)
+        url = murl.group(0) if murl else ("https://www.meinvoice.vn/" if "meinvoice" in blob.lower() else "https://tchd.ehoadon.vn/")
+        is_eh = "ehoadon" in (url + " " + (it.get("sender") or "")).lower()
+        if is_eh and not (serial and invno) and it.get("msgId"):     # the serial lives in the email BODY
+            try:
+                if token_box[0] is None:
+                    token_box[0] = _graph_app_token()
+                q = ("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(INVTRACK["mailbox"]) +
+                     "/messages?$filter=internetMessageId eq '" + urllib.parse.quote(it["msgId"]) + "'&$select=body&$top=1")
+                arr = (_graph_get(q, token_box[0]) or {}).get("value") or []
+                if arr:
+                    bf = _invtrack_body_fields(((arr[0].get("body") or {}).get("content") or ""))
+                    serial = serial or bf.get("serial") or ""
+                    invno = invno or bf.get("invNo") or ""
+                    code = code or bf.get("code") or ""
+            except Exception:
+                pass
+        if not code or (is_eh and not (serial and invno)):
+            continue
+        raw, ex = _invtrack_fetch_by_url(url, serial, invno, code)
+        if not ex:
+            continue
+        if raw:
+            sf = _invtrack_store_file(raw, (serial or ex.get("serial") or "hoadon") + "-" + (invno or code) + ".pdf", "application/pdf")
+            if sf:
+                try:
+                    sp = _invtrack_sp_upload(raw, sf.get("name"), "application/pdf", it.get("dateISO") or ex.get("dateISO") or "", sf["id"])
+                    if sp:
+                        sf["spUrl"] = sp
+                except Exception:
+                    pass
+                fs = it.get("files") or []
+                if sf["id"] not in {x.get("id") for x in fs}:
+                    fs.append(sf)
+                it["files"] = fs
+                it["attach"] = it.get("attach") or sf["name"]
+        for k in ("before", "vat", "after"):
+            if (ex.get(k) or 0) > 0:
+                it[k] = ex.get(k)
+        for k in ("invNo", "serial", "taxCode", "dateISO", "dateRaw", "supplier",
+                  "buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate"):
+            if ex.get(k) and not it.get(k):
+                it[k] = ex.get(k)
+        if ex.get("items") and not (it.get("items") or []):
+            it["items"] = ex["items"]
+        if (it.get("after") or 0) > 0:
+            it["needsLookup"] = False
+        it["method"] = ex.get("method") or it.get("method")
+        done += 1
+    return done
 
 
 def _invtrack_enrich_existing(items, limit=400):
@@ -1651,6 +1728,7 @@ def _invtrack_sync(trigger="manual"):
                 enriched += 1
         cur_items = _invtrack_collapse(cur_items)   # fold any blank-notification + filled duplicate rows
         _invtrack_enrich_existing(cur_items)        # backfill richer detail (buyer/items/…) onto pre-enrichment rows
+        _invtrack_portal_backfill(cur_items)        # AUTO-FETCH existing eHoadon/MISA portal rows (file + amounts), bounded
         needlook = sum(1 for it in cur_items if it.get("needsLookup"))   # report ALL outstanding, not only newly-added
         cur_meta = cur.get("meta") or {}
         cur_meta.update({"mailbox": mb, "company": cur_meta.get("company", "CÔNG TY TNHH HUMILEY VIỆT NAM (MST 0318835868)"),

@@ -227,3 +227,22 @@ def test_attach_file_rejects_junk(base_url):
     r = app._invtrack_attach_file({"msgId": "<j@x>", "name": "note.txt",
                                    "contentB64": base64.b64encode(b"just some text").decode()})
     assert not r["ok"]
+
+
+def test_portal_backfill_fills_existing_portal_row(monkeypatch, base_url):
+    fake = {"invNo": "975", "serial": "1C26TGV", "after": 3990000, "before": 3694444, "vat": 295556,
+            "supplier": "GVSG", "buyerName": "HUMILEY", "method": "misa-xml",
+            "items": [{"no": "1", "name": "Gach", "unit": "Thung", "qty": 35, "price": 105555, "amount": 3694444, "taxRate": "8%"}]}
+    monkeypatch.setattr(app, "_invtrack_app_ready", lambda: True)
+    monkeypatch.setattr(app, "_invtrack_fetch_by_url", lambda url, serial="", invno="", code="": (b"%PDF-1.4 fake", fake))
+    monkeypatch.setattr(app, "_invtrack_store_file", lambda raw, name, ct: {"id": "abc123", "kind": "pdf", "name": name})
+    monkeypatch.setattr(app, "_invtrack_sp_upload", lambda *a, **k: None)
+    items = [{"msgId": "<m@x>", "sender": "no-reply@meinvoice.vn", "after": 0, "files": [],
+              "lookup": "A9FBUJBK88B  https://www.meinvoice.vn/tra-cuu/?sc=A9FBUJBK88B", "desc": "Hoa don"}]
+    n = app._invtrack_portal_backfill(items)
+    assert n == 1
+    r = items[0]
+    assert r["after"] == 3990000 and r["invNo"] == "975" and len(r["items"]) == 1
+    assert (r.get("files") or []) and r["_portalTried"] and not r.get("needsLookup")
+    # idempotent: _portalTried stops a second attempt
+    assert app._invtrack_portal_backfill(items) == 0
