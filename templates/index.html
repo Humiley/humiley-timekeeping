@@ -1806,6 +1806,11 @@ window.addEventListener('orientationchange', _setLoginBg);
         <label class="form-label" style="display:flex;align-items:center;gap:8px;margin-top:14px"><input type="checkbox" id="portal-apprRemind" style="width:auto">Overdue reminders — nudge whoever must act</label>
         <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-light);flex-wrap:wrap">Remind after <input class="form-control" id="portal-apprRemindDays" type="number" min="1" max="30" style="width:64px;padding:4px 8px" value="2"> day(s) waiting, then once a day.<button class="btn btn-outline btn-sm" type="button" id="portal-apprSweepBtn" onclick="_apprRemindNow()">Run sweep now</button><span id="portal-apprRemindMsg"></span></div>
       </div>
+      <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+        <label class="form-label" style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0">Integrations &amp; health<button class="btn btn-outline btn-sm" type="button" onclick="_healthCheck()">Check now</button></label>
+        <div style="font-size:11px;color:var(--text-light);margin:4px 0 8px">Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.</div>
+        <div id="portal-health"></div>
+      </div>
       <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:18px">
@@ -4913,6 +4918,21 @@ function tkPortalAdd(type) {
   _tkPortalRenderRows();
 }
 
+async function _healthCheck() {
+  const box = document.getElementById('portal-health'); if (!box) return;
+  box.innerHTML = '<div style="font-size:12px;color:var(--text-light)">Checking…</div>';
+  try {
+    const r = await tkApi('/api/health/integrations');
+    const col = { ok: '#00B060', warn: '#E5A54B', down: '#E5484D' };
+    const dot = s => '<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (col[s] || '#999') + '"></span>';
+    box.innerHTML = (r.rows || []).map(x =>
+      '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)">' +
+      '<div style="margin-top:5px">' + dot(x.status) + '</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + _crmEsc(x.label) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);word-break:break-word">' + _crmEsc(x.detail || '') + (x.hint ? (' — <span style="color:#E5A54B">' + _crmEsc(x.hint) + '</span>') : '') + '</div></div></div>'
+    ).join('') + '<div style="font-size:10.5px;color:var(--text-light);margin-top:6px">' + (r.ok || 0) + ' OK · ' + (r.warn || 0) + ' warn · ' + (r.down || 0) + ' down · checked ' + _crmEsc(r.checkedAt || '') + '</div>';
+  } catch (e) { box.innerHTML = '<div style="font-size:12px;color:#E5484D">Could not load health: ' + _crmEsc(e.message || '') + '</div>'; }
+}
 async function _apprRemindNow() {
   const el = document.getElementById('portal-apprRemindMsg'); if (el) el.textContent = ' · running…';
   try {

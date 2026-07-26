@@ -2800,6 +2800,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/invtrack/status":
             return self._guard(lambda u: self._invtrack_status(u))
+        if path == "/api/health/integrations":
+            return self._guard(lambda u: self._health_integrations(u))
         if path.startswith("/api/invtrack/file/"):
             seg = path[len("/api/invtrack/file/"):]
             fid, _dot, ext = seg.partition(".")
@@ -4385,6 +4387,86 @@ class Handler(BaseHTTPRequestHandler):
                            # SharePoint archive health — so a silently-failing archive is visible in Settings
                            "spConfigured": bool((db.get_setting("portal_invtrackSpUrl", "") or "").strip()),
                            "spHealth": dict(_INVTRACK_SP_HEALTH)})
+
+    def _health_integrations(self, u):
+        """One-screen operations health: each integration as ok / warn / down + a fix hint, so an admin
+        can VERIFY the go-live switch-ons worked (M365 consent, invoice sync, approval email, SharePoint,
+        push) instead of discovering a silent failure later. Manager+ (read-only status; no secrets)."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access required.", 403)
+        rows = []
+
+        def add(key, label, status, detail="", hint=""):
+            rows.append({"key": key, "label": label, "status": status, "detail": detail, "hint": hint})
+
+        ready = _invtrack_app_ready()
+        add("m365", "Microsoft 365 app connection", "ok" if ready else "down",
+            ("Connected · " + INVTRACK["mailbox"]) if ready else "Not connected",
+            "" if ready else "Grant admin consent for Mail.Read (application) to the Humiley app in Entra, and set the client secret in .env.")
+
+        cnt, ls = 0, ""
+        try:
+            docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+            docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+            if docs:
+                meta = docs[0].get("meta") or {}
+                cnt = len(docs[0].get("items") or [])
+                ls = meta.get("lastSync") or meta.get("lastSyncRun") or ""
+        except Exception:
+            pass
+        add("invsync", "Invoice inbox sync", "ok" if ls else ("warn" if ready else "down"),
+            (str(cnt) + " invoices · last sync " + (ls or "never")),
+            "" if ls else "Open Invoice Tracking → Get all tracks (needs the M365 connection above).")
+
+        ae_on = (db.get_setting("portal_apprEmail", "1") or "1").lower() in ("1", "true", "on", "yes")
+        h = _APPR_EMAIL_HEALTH
+        if not ae_on:
+            st, det = "warn", "Turned off in Settings"
+        elif h.get("lastError"):
+            st, det = "down", "Last error: " + h.get("lastError", "")
+        elif h.get("ok"):
+            st, det = "ok", str(h.get("ok")) + " sent · last " + (h.get("at") or "")
+        else:
+            st, det = "warn", "On, but nothing sent yet — send a test"
+        add("apprmail", "Approval emails (Mail.Send)", st, det,
+            "" if st == "ok" else "Grant Mail.Send consent, then use 'Send a test email' in Settings.")
+
+        sp_conf = bool((db.get_setting("portal_invtrackSpUrl", "") or "").strip())
+        sh = _INVTRACK_SP_HEALTH
+        if not sp_conf:
+            sst, sdet = "warn", "Not configured (files stay inside the portal)"
+        elif sh.get("lastError"):
+            sst, sdet = "down", "Last error: " + sh.get("lastError", "")
+        elif sh.get("ok"):
+            sst, sdet = "ok", str(sh.get("ok")) + " archived · last " + (sh.get("at") or "")
+        else:
+            sst, sdet = "warn", "Configured, nothing archived yet"
+        add("sharepoint", "SharePoint invoice archive", sst, sdet,
+            "" if sst != "down" else "Check the folder link + Sites.ReadWrite consent (Invoice Tracking → Settings → Test).")
+
+        pdfok = _pdf_engine_ok()
+        add("pdf", "Invoice PDF reader", "ok" if pdfok else "warn",
+            "pypdf available" if pdfok else "pypdf missing — PDF invoices can't be read",
+            "" if pdfok else "Add pypdf to the app image.")
+
+        try:
+            vp = _ensure_vapid()
+            push_ok = bool(vp and vp.get("pub"))
+        except Exception:
+            push_ok = False
+        add("push", "Push notifications", "ok" if push_ok else "warn",
+            "Enabled" if push_ok else "Web-push keys unavailable",
+            "" if push_ok else "Install pywebpush + cryptography in the app image.")
+
+        rem_on = (db.get_setting("portal_apprReminders", "1") or "1").lower() in ("1", "true", "on", "yes")
+        add("reminders", "Overdue-approval reminders", "ok" if rem_on else "warn",
+            ("On · after " + (db.get_setting("portal_apprReminderDays", "2") or "2") + " days") if rem_on else "Off",
+            "" if rem_on else "Turn on in Settings → Approval emails.")
+
+        return self._json({"rows": rows, "checkedAt": _now_iso(),
+                           "ok": sum(1 for r in rows if r["status"] == "ok"),
+                           "warn": sum(1 for r in rows if r["status"] == "warn"),
+                           "down": sum(1 for r in rows if r["status"] == "down"), "total": len(rows)})
 
     def _invtrack_sptest_ep(self, u):
         """Admin-only: run the SharePoint archive path end-to-end and report which stage fails.
