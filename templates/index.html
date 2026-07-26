@@ -92,6 +92,13 @@ body{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif;background:var(--
 #my-actions .ma-s{font-size:11.5px;color:var(--text-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #my-actions .ma-go{color:var(--text-light);flex-shrink:0}
 #my-actions .ma-empty{padding:14px;font-size:13px;color:var(--text-light);text-align:center}
+#onboarding .ob-row{display:flex;align-items:center;gap:12px;padding:9px 2px;border-top:1px solid var(--line)}
+#onboarding .ob-row:first-of-type{border-top:none}
+#onboarding .ob-cb{width:17px;height:17px;accent-color:var(--emerald);cursor:pointer;flex-shrink:0}
+#onboarding .ob-tx{flex:1;min-width:0}
+#onboarding .ob-t{font-size:13px;font-weight:600;color:var(--text-dark)}
+#onboarding .ob-t.ob-done{text-decoration:line-through;color:var(--text-light)}
+#onboarding .ob-d{font-size:11.5px;color:var(--text-light)}
 #lang-toggle{display:flex;gap:5px;align-items:center;flex-shrink:0}
 .lang-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border:1px solid var(--line);background:var(--card);border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;color:var(--text-light);font-family:inherit;transition:all .15s}
 .lang-btn svg{border-radius:2px}
@@ -987,6 +994,9 @@ window.addEventListener('orientationchange', _setLoginBg);
 
   <!-- My Actions — one personal worklist across modules (approvals awaiting me + my in-flight requests) -->
   <div id="my-actions"></div>
+
+  <!-- Getting started — role-based first-run onboarding checklist (localStorage, dismissible) -->
+  <div id="onboarding"></div>
 
   <!-- My Analytics — professional charts (same engine as the admin dashboard) -->
   <div class="staff-panel" style="margin-bottom:20px">
@@ -4762,6 +4772,52 @@ async function _myActionsRender() {
     '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="showView(\'checkin\',null,\'Check In / Out\')">Check in / out</button>' +
     '<button class="btn btn-outline btn-sm" onclick="showView(\'travelclaims\',null,\'Travel Expense\')">New claim</button></div></div>' + html + '</div>';
 }
+/* Getting-started onboarding checklist — role-based first-run guide on My Dashboard. Manual-tick +
+   dismiss, persisted per user in localStorage; auto-hides when complete or dismissed. Navigation only. */
+const _ONBOARD_KEY = () => 'tk_onboard_' + ((TK.user && TK.user.id) || 'anon');
+function _onboardState() { try { return JSON.parse(localStorage.getItem(_ONBOARD_KEY()) || '{}') || {}; } catch (e) { return {}; } }
+function _onboardSave(s) { try { localStorage.setItem(_ONBOARD_KEY(), JSON.stringify(s)); } catch (e) {} }
+function _onboardItems() {
+  const lvl = (typeof _userLevel !== 'undefined') ? _userLevel : 'staff';
+  const rank = ({ staff: 1, manager: 2, management: 3, editor: 4, admin: 5 })[lvl] || 1;
+  const isMgr = (typeof _userRole !== 'undefined' && _userRole !== 'staff');
+  const items = [
+    { id: 'profile', t: 'Complete your profile', d: 'Photo, contact & personal details', go: () => _msNav('myprofile', 'My Profile') },
+    { id: 'checkin', t: 'Check in & out', d: 'Record your first attendance', go: () => showView('checkin', null, 'Check In / Out') },
+    { id: 'pin', t: 'Enrol your signing PIN', d: 'Needed to e-sign submissions (Part 11)', go: () => _msNav('myprofile', 'My Profile') },
+    { id: 'leave', t: 'Try a leave request', d: 'Book time off and see your balance', go: () => _msNav('leave', 'Leave Management') },
+    { id: 'portal', t: 'Read the company portal', d: 'Announcements, holidays & resources', go: () => _msNav('myspace-overview', 'My Space') }
+  ];
+  if (isMgr) items.push(
+    { id: 'inbox', t: 'Review your Approval Inbox', d: 'Approve or review team requests', go: () => showView('inbox', null, 'Approval Inbox') },
+    { id: 'team', t: 'Open Team Monitoring', d: 'Attendance & activity for your team', go: () => showView('manager', null, 'Team Monitoring') });
+  if (rank >= 3) items.push(
+    { id: 'finance', t: 'Explore Finance Control', d: 'Payments, payroll & finance KPIs', go: () => showView('finance', null, 'Finance Control') });
+  if (rank >= 5) items.push(
+    { id: 'admin', t: 'Set Access & Integrations', d: 'Grant roles, configure M365 & email', go: () => showView('permissions', null, 'Access & Permissions') });
+  return items;
+}
+function _onboardRender() {
+  const box = document.getElementById('onboarding'); if (!box) return;
+  const s = _onboardState();
+  if (s.dismissed) { box.innerHTML = ''; return; }
+  const items = _onboardItems();
+  const done = s.done || {};
+  const nDone = items.filter(it => done[it.id]).length;
+  if (nDone >= items.length) { box.innerHTML = ''; return; }   // fully complete → nothing to nag about
+  const pct = Math.round(nDone / items.length * 100);
+  const rows = items.map(it =>
+    '<div class="ob-row"><input type="checkbox" class="ob-cb" ' + (done[it.id] ? 'checked' : '') + ' onchange="_onboardToggle(\'' + it.id + '\')" aria-label="' + _tkEscA(it.t) + '">' +
+    '<div class="ob-tx"><div class="ob-t' + (done[it.id] ? ' ob-done' : '') + '">' + _crmEsc(it.t) + '</div><div class="ob-d">' + _crmEsc(it.d) + '</div></div>' +
+    '<button class="btn btn-outline btn-sm" data-ob="' + it.id + '">Open</button></div>').join('');
+  box.innerHTML = '<div class="card" style="margin-bottom:20px"><div class="card-hdr"><div><div class="card-title">Getting started</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">A quick checklist to set up your portal</div></div>' +
+    '<div style="display:flex;align-items:center;gap:10px"><span style="font-size:12px;color:var(--text-light);font-weight:700">' + nDone + ' / ' + items.length + '</span><button class="btn btn-ghost btn-sm" onclick="_onboardDismiss()">Dismiss</button></div></div>' +
+    '<div class="prog-wrap" style="margin:2px 0 14px"><div class="prog-fill prog-emerald" style="width:' + pct + '%"></div></div>' + rows + '</div>';
+  box.querySelectorAll('button[data-ob]').forEach(b => { const it = items.find(x => x.id === b.dataset.ob); b.onclick = () => { try { it.go(); } catch (e) {} }; });
+}
+function _onboardToggle(id) { const s = _onboardState(); s.done = s.done || {}; s.done[id] = !s.done[id]; _onboardSave(s); _onboardRender(); }
+function _onboardDismiss() { const s = _onboardState(); s.dismissed = true; _onboardSave(s); _onboardRender(); }
+
 function _initStaffDashboard() {
   /* greeting */
   const hour = new Date().getHours();
@@ -4771,6 +4827,7 @@ function _initStaffDashboard() {
   const dateEl = document.getElementById('staff-welcome-date');
   if (dateEl) dateEl.innerHTML = '<span>' + greeting + '</span> · ' + tkFmtDateObj(new Date());
   try { _myActionsRender(); } catch (e) {}   // personal worklist (async loads its own data, then fills)
+  try { _onboardRender(); } catch (e) {}     // role-based getting-started checklist
 
   /* hero */
   const heroName = document.getElementById('staff-hero-name');
