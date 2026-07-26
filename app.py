@@ -3277,6 +3277,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/exec/summary":
             return self._guard(lambda u: self._exec_summary(u))
+        if path == "/api/exec/trends":
+            return self._guard(lambda u: self._exec_trends(u))
         if path == "/api/invtrack/status":
             return self._guard(lambda u: self._invtrack_status(u))
         if path == "/api/health/integrations":
@@ -4667,6 +4669,54 @@ class Handler(BaseHTTPRequestHandler):
             "pending": pending, "trips": len(travel), "claims": len(claims), "payments": len(pays),
             "devices": len(devices), "trainDone": train_done, "trainTotal": len(enrols), "trainAvg": train_avg,
         })
+
+    def _exec_trends(self, u, months=6):
+        """Management+: per-month finance trend series for the last `months` months — payments approved,
+           invoice value captured, and VAT — so the Executive Dashboard can chart direction, not just a snapshot."""
+        if not self._is_mgmt(u):
+            return self._err("Management access required.", 403)
+
+        def _n(v):
+            try:
+                return float(str(v).replace(",", "").replace(" ", "").replace("₫", "") or 0)
+            except Exception:
+                return 0.0
+        now_vn = datetime.utcnow() + timedelta(hours=7)
+        y, m = now_vn.year, now_vn.month
+        labels = []
+        for i in range(months - 1, -1, -1):
+            mm, yy = m - i, y
+            while mm <= 0:
+                mm += 12
+                yy -= 1
+            labels.append("%04d-%02d" % (yy, mm))
+        lbset = set(labels)
+        pay = {lb: 0.0 for lb in labels}
+        inv = {lb: 0.0 for lb in labels}
+        vat = {lb: 0.0 for lb in labels}
+        try:
+            for p in db.list_collection("payments"):
+                if str(p.get("status") or "").lower() in ("approved", "paid"):
+                    d = str(p.get("paidOn") or p.get("approvedOn") or p.get("submittedOn") or p.get("date") or "")[:7]
+                    if d in lbset:
+                        pay[d] += _n(p.get("amount") or p.get("total"))
+        except Exception:
+            pass
+        try:
+            for it in db.list_collection("invtrack"):
+                d = str(it.get("dateISO") or "")[:7]
+                if d in lbset:
+                    tot = _n(it.get("after"))
+                    if not tot:
+                        tot = _n(it.get("before")) + _n(it.get("vat"))
+                    inv[d] += tot
+                    vat[d] += _n(it.get("vat"))
+        except Exception:
+            pass
+        return self._json({"months": labels,
+                           "payments": [round(pay[lb], 2) for lb in labels],
+                           "invoices": [round(inv[lb], 2) for lb in labels],
+                           "vat": [round(vat[lb], 2) for lb in labels]})
 
     def _exec_summary(self, u):
         """Company-on-one-screen aggregate for the Executive Dashboard (management+). Reuses the tested

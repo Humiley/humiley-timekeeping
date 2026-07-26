@@ -4750,7 +4750,29 @@ async function tkRenderExecDash(force) {
       tile(num(d.projectActive), 'Active projects', '', 'c-emerald'),
       tile(num(d.projectCount), 'Projects total', '', 'c-navy')
     ]) +
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);letter-spacing:.5px;text-transform:uppercase;margin:24px 0 10px">Trends — last 6 months</div>' +
+    '<div class="grid-2" style="gap:16px">' +
+      '<div class="card"><div class="card-hdr"><div class="card-title">Payments approved</div><span class="card-sub">per month</span></div><div class="chart-wrap" style="height:210px"><canvas id="ex-trend-spend"></canvas></div></div>' +
+      '<div class="card"><div class="card-hdr"><div class="card-title">Invoices &amp; VAT captured</div><span class="card-sub">per month</span></div><div class="chart-wrap" style="height:210px"><canvas id="ex-trend-inv"></canvas></div></div>' +
+    '</div>' +
     '<div style="font-size:11px;color:var(--text-light);margin-top:18px">As of ' + _crmEsc(d.at || '') + ' · figures reflect the data your access level can see.</div>';
+  try { setTimeout(_execDrawTrends, 60); } catch (e) {}
+}
+async function _execDrawTrends() {
+  if (typeof Chart === 'undefined') { setTimeout(_execDrawTrends, 500); return; }   // Chart.js loads deferred
+  let t;
+  try { t = await tkApi('/api/exec/trends'); } catch (e) { return; }
+  if (!t || !t.months || !document.getElementById('ex-trend-spend')) return;
+  const vShort = v => { v = +v || 0; return '₫' + (v >= 1e9 ? (v / 1e9).toFixed(1) + 'B' : v >= 1e6 ? (v / 1e6).toFixed(1) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'k' : Math.round(v)); };
+  try {
+    _mkChart('ex-trend-spend', { type: 'bar', data: { labels: t.months, datasets: [{ data: t.payments, backgroundColor: (typeof _grad === 'function' ? _grad('#3a78c6', '#205090') : '#205090'), borderRadius: 6, maxBarThickness: 34 }] }, options: _axisOpts(false, vShort) });
+    const lo = _axisOpts(false, vShort);
+    lo.plugins = Object.assign({}, lo.plugins, { legend: { display: true, position: 'bottom', labels: { boxWidth: 10, usePointStyle: true, color: '#475569', font: { family: 'Calibri', size: 11 } } } });
+    _mkChart('ex-trend-inv', { type: 'line', data: { labels: t.months, datasets: [
+      { label: 'Invoice value', data: t.invoices, borderColor: '#205090', backgroundColor: 'rgba(32,80,144,.12)', fill: true, tension: .3, pointRadius: 3, borderWidth: 2 },
+      { label: 'VAT', data: t.vat, borderColor: '#00B060', backgroundColor: 'rgba(0,176,96,.10)', fill: true, tension: .3, pointRadius: 3, borderWidth: 2 }
+    ] }, options: lo });
+  } catch (e) {}
 }
 
 /* My Actions — a single personal worklist on the dashboard: approvals awaiting me (reuses the same
