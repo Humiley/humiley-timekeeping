@@ -199,3 +199,31 @@ def test_xml_number_parser_handles_decimal_and_display():
 def test_misa_and_dispatch_guards():
     assert app._invtrack_fetch_misa("abc") == (None, None)      # code too short -> no network call
     assert app._invtrack_fetch_by_url("https://example.com/x", code="ABCDEF") == (None, None)  # unknown host
+
+
+def test_attach_file_fills_row_and_attaches(base_url):
+    import base64
+    import db
+    for d in list(db.list_collection("invtrack")):        # prod keeps ONE dataset doc; isolate from other tests
+        if d.get("id"):
+            db.delete_collection_item("invtrack", d["id"])
+    db.put_collection_item("invtrack", {"kind": "invtrack-dataset", "meta": {}, "items": [
+        {"msgId": "<att@x>", "desc": "Hoa don VNPT", "type": "Hoá đơn mua vào (NCC)", "after": 0}]})
+    xml = _xml_full("7001", "0311111111")   # user 'downloaded' this from a CAPTCHA portal and uploads it
+    r = app._invtrack_attach_file({"msgId": "<att@x>", "name": "hoadon.xml",
+                                   "contentB64": base64.b64encode(xml).decode()})
+    assert r["ok"] and r["parsed"], r
+    rows = [i for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)
+            for i in d["items"] if i.get("msgId") == "<att@x>"]
+    assert rows and rows[0]["invNo"] == "7001" and rows[0]["buyerName"] == "Humiley Co"
+    assert len(rows[0].get("items") or []) == 2 and (rows[0].get("files") or [])
+    assert rows[0]["after"] == 2750000 and not rows[0].get("needsLookup")
+
+
+def test_attach_file_rejects_junk(base_url):
+    import base64
+    import db
+    db.put_collection_item("invtrack", {"kind": "invtrack-dataset", "meta": {}, "items": [{"msgId": "<j@x>"}]})
+    r = app._invtrack_attach_file({"msgId": "<j@x>", "name": "note.txt",
+                                   "contentB64": base64.b64encode(b"just some text").decode()})
+    assert not r["ok"]

@@ -10053,6 +10053,7 @@ function _invDetailHTML(i, idx) {
       '<div><div style="font-size:10px;color:var(--text-light);text-transform:uppercase">' + _t('Total (after tax)') + '</div><input id="invedit-after-' + idx + '" type="text" value="' + iv(i.after) + '" placeholder="0" style="width:150px;text-align:right;font-weight:700"></div>' +
       '<button class="btn btn-primary btn-sm" onclick="_invSaveAmount(' + idx + ')">' + _t('Save amount') + '</button>' +
       (_invCanPortalFetch(i) ? '<button class="btn btn-outline btn-sm" onclick="_invPortalFetch(' + idx + ')" title="' + _tkEscA(_t('Download the real invoice from the issuer portal (eHoadon / MISA) and auto-fill every field')) + '">' + tkIcon('download', 13) + _t('Auto-fetch invoice + fill') + '</button>' : '') +
+      '<button class="btn btn-outline btn-sm" onclick="_invAttachFile(' + idx + ')" title="' + _tkEscA(_t('Upload the invoice XML / PDF / ZIP you downloaded from any portal — it attaches and auto-fills every field')) + '">' + tkIcon('file', 13) + _t('Attach invoice file') + '</button>' +
       (_fdl ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(_fdl) + '" target="_blank" rel="noopener" download>' + tkIcon('download', 13) + _t('Download real invoice') + '</a>' : '') +
       (url ? '<a class="btn btn-outline btn-sm" href="' + _tkEscA(url) + '" target="_blank" rel="noopener">' + _t('Open portal to read amount') + ' ↗</a>' : '') +
     '</div>' +
@@ -10068,6 +10069,23 @@ async function _invPortalFetch(idx) {
     if (r && r.ok) { await _invLoad(true); tkRenderInvTrack(); toast(_t('Fetched from portal') + ' — ' + (r.file || '') + (r.after ? ('  ' + _invMoney(r.after)) : ''), 'info', 6000); }
     else toast((r && r.message) || _t('Could not fetch this invoice from the portal'), 'warn', 8000);
   } catch (e) { toast(_t('Fetch failed') + ': ' + (e.message || ''), 'error', 7000); }
+}
+function _invAttachFile(idx) {
+  const i = _invRegList[idx]; if (!i) return;
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.xml,.pdf,.zip,application/pdf,application/xml,text/xml,application/zip';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { toast(_t('File too large (max 8 MB)'), 'warn', 5000); return; }
+    toast(_t('Attaching and reading the invoice…'), 'info', 3000);
+    try {
+      const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(f); });
+      const r = await tkApi('/api/invtrack/attach_file', { method: 'POST', body: { msgId: i.msgId || '', name: f.name, contentB64: b64 } });
+      if (r && r.ok) { await _invLoad(true); tkRenderInvTrack(); toast(_t('Attached') + ' — ' + (r.file || '') + (r.parsed ? (' · ' + _t('data filled')) : ''), 'info', 6000); }
+      else toast((r && r.message) || _t('Attach failed'), 'warn', 7000);
+    } catch (e) { toast(_t('Attach failed') + ': ' + (e.message || ''), 'error', 6000); }
+  };
+  inp.click();
 }
 async function _invSaveAmount(idx) {
   const i = _invRegList[idx]; if (!i) return;
@@ -15802,6 +15820,8 @@ const _VI = {
   'Auto-fetch invoice + fill': 'Tự tải hoá đơn + điền', 'Fetching the invoice from the issuer portal…': 'Đang tải hoá đơn từ cổng phát hành…',
   'Fetched from portal': 'Đã tải từ cổng', 'Could not fetch this invoice from the portal': 'Không tải được hoá đơn này từ cổng',
   'Fetch failed': 'Tải thất bại', 'Download the real invoice from the issuer portal (eHoadon / MISA) and auto-fill every field': 'Tải hoá đơn thật từ cổng phát hành (eHoadon / MISA) và tự điền mọi trường',
+  'Attach invoice file': 'Đính kèm file hoá đơn', 'Upload the invoice XML / PDF / ZIP you downloaded from any portal — it attaches and auto-fills every field': 'Tải lên file XML / PDF / ZIP hoá đơn bạn tải từ bất kỳ cổng nào — hệ thống đính kèm và tự điền mọi trường',
+  'Attaching and reading the invoice…': 'Đang đính kèm và đọc hoá đơn…', 'Attached': 'Đã đính kèm', 'data filled': 'đã điền dữ liệu', 'Attach failed': 'Đính kèm thất bại', 'File too large (max 8 MB)': 'File quá lớn (tối đa 8 MB)',
   'Payee / Vendor': 'Người nhận / Nhà cung cấp',
   'Payee': 'Người nhận',
   'Amount (VND)': 'Số tiền (VND)',

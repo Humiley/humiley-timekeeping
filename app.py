@@ -1940,6 +1940,91 @@ def _invtrack_portal_fetch(body):
                 "file": (sf or {}).get("name"), "invNo": row.get("invNo"), "serial": row.get("serial")}
 
 
+def _invtrack_attach_file(body):
+    """UNIVERSAL fallback: attach a manually-downloaded invoice file (XML/PDF/ZIP) to a tracked row and
+       auto-parse it. For providers we can't auto-fetch (a CAPTCHA-gated VNPT lookup, EasyInvoice, any
+       new issuer), the user opens the portal, downloads the file, and uploads it here — we store it,
+       fill every field, and it shows in the list like a fetched one. Accepts {msgId, name, contentB64}."""
+    def _n(v):
+        try:
+            return float(v or 0)
+        except Exception:
+            return 0.0
+    b = body or {}
+    msgid = str(b.get("msgId") or "").strip()
+    name = (str(b.get("name") or "invoice").strip() or "invoice")[:120]
+    try:
+        raw = base64.b64decode((b.get("contentB64") or "").split(",")[-1], validate=False)
+    except Exception:
+        raw = b""
+    if not raw:
+        return {"ok": False, "message": "Empty file."}
+    if len(raw) > _INVTRACK_FILE_MAX:
+        return {"ok": False, "message": "File too large (max 8 MB)."}
+    low = name.lower()
+    ct = ("application/xml" if low.endswith(".xml") else "application/zip" if low.endswith(".zip")
+          else "application/pdf" if low.endswith(".pdf") else "")
+    if not ct:                                          # sniff by content when the name has no extension
+        head = raw[:8]
+        if head[:5] == b"%PDF-":
+            ct = "application/pdf"; name += ".pdf"
+        elif head[:2] == b"PK":
+            ct = "application/zip"; name += ".zip"
+        elif raw.lstrip()[:1] == b"<":
+            ct = "application/xml"; name += ".xml"
+        else:
+            return {"ok": False, "message": "Please upload the invoice XML, PDF or ZIP file."}
+    ex = None
+    if "xml" in ct:
+        ex = _einv_parse_xml(raw)
+    elif "zip" in ct:
+        exs = _einv_all_from_zip(raw)
+        ex = exs[0] if exs else None
+    else:
+        ex = _einv_from_pdf(raw)
+    with _INVTRACK_LOCK:
+        docs = [d for d in db.list_collection("invtrack") if isinstance(d.get("items"), list)]
+        docs.sort(key=lambda d: len(d.get("items") or []), reverse=True)
+        cur = docs[0] if docs else None
+        if cur is None:
+            return {"ok": False, "message": "No invoice dataset to update."}
+        row = None
+        for it in (cur.get("items") or []):
+            if msgid and it.get("msgId") == msgid:
+                row = it
+                break
+        if row is None:
+            return {"ok": False, "message": "Row not found — reopen the invoice and retry."}
+        sf = _invtrack_store_file(raw, name, ct)
+        if sf:
+            try:
+                sp = _invtrack_sp_upload(raw, sf.get("name"), ct, row.get("dateISO") or "", sf["id"])
+                if sp:
+                    sf["spUrl"] = sp
+            except Exception:
+                pass
+            fs = row.get("files") or []
+            if sf["id"] not in {x.get("id") for x in fs}:
+                fs.append(sf)
+            row["files"] = fs
+            row["attach"] = row.get("attach") or sf["name"]
+        if ex:
+            for k in ("before", "vat", "after"):
+                if _n(ex.get(k)) > 0:
+                    row[k] = _n(ex.get(k))
+            for k in ("invNo", "serial", "taxCode", "dateISO", "dateRaw", "supplier",
+                      "buyerName", "buyerMST", "sellerAddr", "buyerAddr", "currency", "payMethod", "vatRate"):
+                if ex.get(k) and not row.get(k):
+                    row[k] = ex.get(k)
+            if ex.get("items") and not (row.get("items") or []):
+                row["items"] = ex["items"]
+            if _n(row.get("after")) > 0:
+                row["needsLookup"] = False
+        db.put_collection_item("invtrack", cur)
+        return {"ok": True, "file": (sf or {}).get("name"), "parsed": bool(ex),
+                "after": row.get("after"), "items": len(row.get("items") or [])}
+
+
 def _invtrack_scheduler():
     """Background thread: sync every INVTRACK['interval'] minutes (24/7, app-only). Never dies on error."""
     while True:
@@ -2355,6 +2440,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
             return self._guard(lambda u: self._invtrack_portal_fetch_ep(u, body))
+        if path == "/api/invtrack/attach_file":
+            return self._guard(lambda u: self._invtrack_attach_file_ep(u, body))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -3960,6 +4047,11 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         return self._json(_invtrack_portal_fetch(body or {}))
+
+    def _invtrack_attach_file_ep(self, u, body):
+        if self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
+            return self._err("Invoice Tracking requires Editor level or above.", 403)
+        return self._json(_invtrack_attach_file(body or {}))
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
