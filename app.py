@@ -30,6 +30,7 @@ import traceback
 from tkutil import (_money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv_xml_num,   # pure leaf utilities (extracted from this file)
                     _appr_state_of, _appr_epoch, _claim_items, _claim_rollup)
 from einv import (_einv_safe_xml, _zip_read_bounded, _einv_parse_xml, _einv_from_zip, _einv_all_from_zip, _inv_ident, _inv_ident_str, _einv_parse_text, _pdf_engine_ok, _einv_pdf_items)   # e-invoice parsers (extracted)
+from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate limiter (extracted); _RATE/_RATE_LOCK re-exported (same objects) so callers/tests keep the app.* surface
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -1025,25 +1026,7 @@ def _invtrack_app_ready():
 # Sliding-window counters guard against brute-forcing the login and against write floods / cheap DoS
 # on a single-process stdlib server. Keyed by the REAL client (X-Forwarded-For from Caddy), so the
 # loopback proxy hop is never the key; loopback callers (health probes, the test harness) are exempt.
-_RATE_LOCK = threading.Lock()
-_RATE = collections.defaultdict(collections.deque)   # "bucket:ip" -> deque[timestamps]
-
-
-def _rate_allow(key, limit, window):
-    now = time.time()
-    with _RATE_LOCK:
-        dq = _RATE[key]
-        cutoff = now - window
-        while dq and dq[0] < cutoff:
-            dq.popleft()
-        if len(dq) >= limit:
-            return False
-        dq.append(now)
-        if len(_RATE) > 4000:                        # bound memory: drop long-idle keys
-            stale = [k for k, v in list(_RATE.items()) if not v or v[-1] < now - 3600]
-            for k in stale[:1500]:
-                _RATE.pop(k, None)
-        return True
+# rate limiter (_RATE, _RATE_LOCK, _rate_allow) → ratelimit.py (extracted)
 
 
 # _claim_items, _claim_rollup → tkutil.py (extracted)
