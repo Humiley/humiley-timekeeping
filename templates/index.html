@@ -206,6 +206,54 @@ td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
 tr:hover td{background:var(--soft-bg)}
 tr:last-child td{border-bottom:none}
 
+/* ═══ Wide-table comfort polish — nicer scrollbars, roomier rows, frozen-header + scroll cues ═══ */
+/* On-brand thin scrollbars on BOTH axes — matches the #content house bar (lines ~514-516), extended
+   to the horizontal axis wide tables slide on. Replaces the fat, macOS-auto-hiding OS scrollbar (the
+   #1 "not comfortable" gap). Slim rounded pill via a 3px transparent border + background-clip. */
+.table-wrap{scrollbar-width:thin;scrollbar-color:rgba(32,80,144,.28) transparent}
+.table-wrap::-webkit-scrollbar{width:11px;height:11px}
+.table-wrap::-webkit-scrollbar-track{background:transparent}
+.table-wrap::-webkit-scrollbar-thumb{background:rgba(32,80,144,.22);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
+.table-wrap::-webkit-scrollbar-thumb:hover{background:rgba(32,80,144,.36);background-clip:padding-box}
+.table-wrap::-webkit-scrollbar-corner{background:transparent}
+/* Roomier, calmer rows — scoped under .table-wrap so it wins by specificity (no !important) and never
+   touches form/inline/stray tables. tabular-nums aligns figures; hover uses --light-tint. */
+.table-wrap td{padding:13px 16px;line-height:1.45;font-variant-numeric:tabular-nums}
+.table-wrap th{padding:10px 16px}
+.table-wrap th:first-child,.table-wrap td:first-child{padding-left:18px}
+.table-wrap th:last-child,.table-wrap td:last-child{padding-right:18px}
+.table-wrap tbody tr{transition:background .12s ease}
+.table-wrap tbody tr:hover td{background:var(--light-tint)}
+.table-wrap td.num,.table-wrap th.num,.table-wrap td[data-num]{text-align:right}
+/* Opt-out for dense input grids (e.g. the quotation builder) — class="table-wrap dense". */
+.table-wrap.dense td,.table-wrap.dense th{padding:7px 9px}
+.table-wrap.dense td:first-child,.table-wrap.dense th:first-child{padding-left:9px}
+.table-wrap.dense td:last-child,.table-wrap.dense th:last-child{padding-right:9px}
+/* Frozen-header depth: at rest only the crisp 1px --line divider shows; a soft brand-tinted shadow
+   fades in once the body is scrolled (.is-scrolled toggled by _tblCues — no bg change, so the sticky
+   opaque header set earlier stands). */
+.table-wrap thead th{transition:box-shadow .18s ease}
+.table-wrap.is-scrolled thead th{box-shadow:0 6px 12px -8px rgba(32,80,144,.22)}
+/* Horizontal-scroll affordance: a gentle INSET shadow on whichever edge has more columns off-screen
+   (background-independent, so safe on white / tinted / modal panels). Toggled by _tblCues. */
+.table-wrap.can-x-left{box-shadow:inset 15px 0 12px -13px rgba(32,80,144,.20)}
+.table-wrap.can-x-right{box-shadow:inset -15px 0 12px -13px rgba(32,80,144,.20)}
+.table-wrap.can-x-left.can-x-right{box-shadow:inset 15px 0 12px -13px rgba(32,80,144,.20),inset -15px 0 12px -13px rgba(32,80,144,.20)}
+/* Never bake a scroll cue into an html2canvas capture (body.exporting is set during export). transition:none
+   snaps the shadow off INSTANTLY — html2canvas clones the DOM synchronously right after the class is set,
+   so a .18s fade would otherwise be captured mid-transition. */
+body.exporting .table-wrap,body.exporting .table-wrap thead th{box-shadow:none !important;transition:none !important}
+/* Collapsible above-table block ("Overview & stats" on content-heavy views) — reclaims vertical room
+   so the table breathes. Reusable .tk-collapse (used on the Employee Database KPI band). */
+.tk-collapse{margin-bottom:18px}
+.tk-collapse:not([open]){margin-bottom:14px}
+.tk-collapse>summary{list-style:none;cursor:pointer;user-select:none;display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--text-light);padding:6px 14px;border-radius:var(--r-pill);background:var(--card);box-shadow:var(--shadow-sm);transition:color .15s}
+.tk-collapse>summary::-webkit-details-marker{display:none}
+.tk-collapse>summary::before{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .15s}
+.tk-collapse[open]>summary{margin-bottom:14px}
+.tk-collapse[open]>summary::before{transform:rotate(-135deg)}
+.tk-collapse>summary:hover{color:var(--navy)}
+
 /* ── BADGES ── */
 .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap}
 .b-ok{background:#D1FAE5;color:#065F46}
@@ -636,7 +684,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   /* wide data tables already sit in .table-wrap; make it scroll smoothly and never stretch the page.
      On phones the page itself scrolls (there's no persistent scrollbar to strand), so DON'T cap the
      box height here — let it grow to the full table and keep the smooth horizontal swipe. */
-  .table-wrap{overflow-x:auto !important;max-height:none !important;-webkit-overflow-scrolling:touch;max-width:100%}
+  .table-wrap{overflow-x:auto !important;max-height:none !important;-webkit-overflow-scrolling:touch;max-width:100%;scrollbar-width:none}
+  .table-wrap::-webkit-scrollbar{display:none}   /* phones swipe + use the edge affordance shadow; no chunky persistent bar */
   /* tab bars (hub sub-tabs) can hold up to 9 tabs — let the row scroll instead of overflowing/clipping */
   .tabs{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
@@ -1214,7 +1263,10 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="btn btn-outline btn-sm" onclick="tkSyncM365Users()" title="Import users from your Microsoft 365 directory"><svg width="14" height="14" viewBox="0 0 23 23" fill="none" style="margin-right:5px"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>Sync from Microsoft 365</button>
     </div>
   </div>
-  <div id="database-kpis"></div>
+  <details id="db-overview" class="tk-collapse" open ontoggle="try{localStorage.setItem('tk-db-overview',this.open?'1':'0')}catch(e){}; _fitTablesSoon()">
+    <summary>Overview &amp; stats</summary>
+    <div id="database-kpis"></div>
+  </details>
   <div id="hr-employees">
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="clearTimeout(window._hrSrchT);window._hrSrchT=setTimeout(_renderEmployeeTable,180)"></div>
@@ -13525,7 +13577,7 @@ function crmQuoteBuilder(id) {
   el.innerHTML = '<div class="modal" style="max-width:980px;width:96vw">' +
     '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
-    '<div class="table-wrap"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px;text-align:right">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
+    '<div class="table-wrap dense"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px;text-align:right">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
     '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
   document.body.appendChild(el);
@@ -16194,7 +16246,7 @@ function _fitTableScroll() {
   content.querySelectorAll('.table-wrap').forEach(w => {
     if (!w.getClientRects().length) { if (w.style.maxHeight) w.style.maxHeight = ''; return; }  // hidden view
     const top0 = w.getBoundingClientRect().top + content.scrollTop;   // the box's top when this view is at page-top (scroll-independent)
-    const avail = Math.max(Math.round(vh - top0 - 16), 96);           // floor keeps it usable if a table starts very low
+    const avail = Math.max(Math.round(vh - top0 - 20), 120);          // fit to viewport (small floor only — a LARGE floor would push the scrollbar back below the fold); real breathing room comes from collapsing the above-table block, not from over-growing this box
     w.style.maxHeight = avail + 'px';
   });
 }
@@ -16202,17 +16254,33 @@ let _fitPending = 0;
 function _fitTablesSoon() {
   if (_fitPending) return;
   _fitPending = 1;
-  const run = () => { _fitPending = 0; try { _fitTableScroll(); } catch (e) {} };
+  const run = () => { _fitPending = 0; try { _fitTableScroll(); } catch (e) {} try { _fitTableCues(); } catch (e) {} };
   // rAF coalesces to one recompute per frame when the tab is visible; fall back to a timer when rAF
   // is paused (a hidden/background tab), so sizing still happens on restore instead of never firing.
   if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(run);
   else setTimeout(run, 0);
 }
+/* ── Wide-table scroll cues: CLASS TOGGLES ONLY. Unlike _fitTableScroll this never writes layout, so
+   it is safe to run on every scroll (no resize→scrollHeight→scroll feedback loop). Powers the frozen-
+   header depth shadow (.is-scrolled) and the horizontal "more columns →" affordance (.can-x-*). */
+function _tblCues(w) {
+  if (!w || !w.classList || !w.classList.contains('table-wrap')) return;
+  const sx = w.scrollLeft, maxX = w.scrollWidth - w.clientWidth;
+  w.classList.toggle('is-scrolled', w.scrollTop > 2);
+  w.classList.toggle('can-x-left', sx > 4);
+  w.classList.toggle('can-x-right', sx < maxX - 4);   // -4 swallows sub-pixel + the scrollbar gutter so the cue clears at the true end
+}
+// scroll doesn't bubble → one capture-phase listener catches every current & future .table-wrap
+document.addEventListener('scroll', e => { try { _tblCues(e.target); } catch (_) {} }, true);
+// initial state per render/resize — a table can overflow horizontally before it's ever scrolled; query
+// the whole document so body-appended modal tables (e.g. the quotation builder) are covered too.
+function _fitTableCues() { document.querySelectorAll('.table-wrap').forEach(_tblCues); }
 (function _initFitTables() {
   const start = () => {
     window.addEventListener('resize', _fitTablesSoon);
     document.addEventListener('visibilitychange', _fitTablesSoon);   // re-fit when a background tab is shown
     window.addEventListener('pageshow', _fitTablesSoon);             // and on bfcache restore
+    try { const dbo = document.getElementById('db-overview'); if (dbo && localStorage.getItem('tk-db-overview') === '0') dbo.open = false; } catch (e) {}   // restore Employee-DB overview collapse state
     const content = document.getElementById('content');
     // Catch async table (re)renders without wiring every render fn. childList only (not attributes),
     // so our own max-height writes don't re-trigger it.
