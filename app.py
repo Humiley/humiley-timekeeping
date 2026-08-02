@@ -27,7 +27,8 @@ import io
 import sys
 import collections
 import traceback
-from tkutil import _money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv_xml_num   # pure leaf utilities (extracted from this file)
+from tkutil import (_money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv_xml_num,   # pure leaf utilities (extracted from this file)
+                    _appr_state_of, _appr_epoch, _claim_items, _claim_rollup)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -348,31 +349,7 @@ def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0, es
         pass
 
 
-def _appr_state_of(status):
-    s = str(status or "").strip().lower()
-    if s in ("reviewed", "pending approval"):
-        return "review"
-    if s == "approved":
-        return "approved"
-    if s == "paid":
-        return "paid"
-    if s == "rejected":
-        return "rejected"
-    return "submit"
-
-
-def _appr_epoch(v):
-    """Best-effort epoch (UTC) from an ISO timestamp or a 'YYYY-MM-DD' date string. None if unparseable."""
-    if not v:
-        return None
-    s = str(v).strip()
-    for parse in (lambda x: datetime.strptime(x.replace("T", " ").replace("Z", "").split(".")[0][:19], "%Y-%m-%d %H:%M:%S"),
-                  lambda x: datetime.strptime(x[:10], "%Y-%m-%d")):
-        try:
-            return (parse(s) - datetime(1970, 1, 1)).total_seconds()
-        except Exception:
-            pass
-    return None
+# _appr_state_of, _appr_epoch → tkutil.py (extracted)
 
 
 def _appr_waiting_since(item, st):
@@ -1068,32 +1045,7 @@ def _rate_allow(key, limit, window):
         return True
 
 
-def _claim_items(c):
-    """Port of the frontend _claimItems: a claim's line items, or one synthetic legacy line."""
-    its = c.get("items") if isinstance(c, dict) else None
-    if isinstance(its, list) and its:
-        return its
-    return [{"status": (c.get("status") if isinstance(c, dict) else None) or "Submitted"}]
-
-
-def _claim_rollup(c):
-    """Port of the frontend _claimRollup — MUST match it so the My Space 'pending' count agrees with
-    what the user sees. Aggregates per-line item statuses into one claim status."""
-    its = _claim_items(c)
-    if not its:
-        return (c.get("status") if isinstance(c, dict) else None) or "Submitted"
-    ss = [(it.get("status") or "Submitted") for it in its]
-    if any(s == "Submitted" for s in ss):
-        return "Partially approved" if any(s in ("Approved", "Rejected", "Reviewed") for s in ss) else "Submitted"
-    if all(s == "Reviewed" for s in ss):
-        return "Reviewed"
-    if all(s == "Approved" for s in ss):
-        return "Approved"
-    if all(s == "Rejected" for s in ss):
-        return "Rejected"
-    if any(s == "Reviewed" for s in ss):
-        return "Reviewed"
-    return "Partially approved"
+# _claim_items, _claim_rollup → tkutil.py (extracted)
 
 
 # _vn_fold → tkutil.py (extracted)
