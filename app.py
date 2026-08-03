@@ -65,6 +65,13 @@ PROCUREMENT_SSO_SECRET = os.environ.get("TK_SSO_SECRET", "")
 SESSIONS = {}
 SESSION_TTL = 30 * 24 * 60 * 60   # 30 days
 
+
+def _tok_hash(token):
+    """Sessions are keyed by sha256(token), NEVER the raw token — so one read of the persisted
+    _sessions blob (or a leaked DB file) can't be replayed into live access for the whole company.
+    The client keeps the raw token; the server only ever stores + compares its hash."""
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
     ".js": "application/javascript; charset=utf-8", ".png": "image/png",
@@ -88,10 +95,23 @@ def _load_sessions():
     try:
         data = json.loads(db.get_setting("_sessions") or "{}")
         now = time.time()
+        migrated = 0
         for tok, ses in (data or {}).items():
-            if isinstance(ses, dict) and ses.get("expires", 0) > now:
+            if not (isinstance(ses, dict) and ses.get("expires", 0) > now):
+                continue
+            # Migrate legacy RAW-token keys (from before token hashing) to sha256, so existing
+            # sessions survive the upgrade WITHOUT bouncing everyone to the login screen. A stored key
+            # that isn't a 64-char hex digest is a raw token → re-key it to its hash (the client's raw
+            # token then hashes to the same key on the next request).
+            if len(tok) == 64 and all(c in "0123456789abcdef" for c in tok):
                 SESSIONS[tok] = ses
-        print(f"[sessions] restored {len(SESSIONS)} active session(s)", flush=True)
+            else:
+                SESSIONS[_tok_hash(tok)] = ses
+                migrated += 1
+        if migrated:
+            _persist_sessions()   # write the blob back with hashed keys
+        print(f"[sessions] restored {len(SESSIONS)} active session(s)"
+              + (f", migrated {migrated} to hashed keys" if migrated else ""), flush=True)
     except Exception as e:
         # Never fail the boot over this — but say so loudly: a silent empty restore means every
         # user is bounced to sign-in (the "signed in but must re-login in the morning" symptom).
@@ -100,16 +120,17 @@ def _load_sessions():
 
 def new_session(emp_id, role):
     token = secrets.token_urlsafe(32)
-    SESSIONS[token] = {"emp_id": emp_id, "role": role, "expires": time.time() + SESSION_TTL}
+    SESSIONS[_tok_hash(token)] = {"emp_id": emp_id, "role": role, "expires": time.time() + SESSION_TTL}
     _persist_sessions()
-    return token
+    return token   # the RAW token goes to the client; only its hash is stored server-side
 
 
 def session_user(token):
-    s = SESSIONS.get(token or "")
+    key = _tok_hash(token)
+    s = SESSIONS.get(key)
     now = time.time()
     if not s or s["expires"] < now:
-        SESSIONS.pop(token, None)
+        SESSIONS.pop(key, None)
         return None
     # Sliding expiration: extend on use so an active user's session never lapses. Persist only when
     # it moves by more than an hour to avoid a DB write on every request.
@@ -123,7 +144,7 @@ def session_user(token):
         # survive being set Inactive. Protected super-admins are exempt so a mistaken deactivation
         # can never lock the whole company out.
         if (emp.get("status") or "Active").strip().lower() == "inactive" and (emp.get("email") or "").lower() not in Handler.ADMIN_EMAILS:
-            SESSIONS.pop(token, None)
+            SESSIONS.pop(key, None)
             _persist_sessions()
             return None
         # The DB row is authoritative — a demoted manager must not keep manager rights
@@ -2817,8 +2838,9 @@ class Handler(BaseHTTPRequestHandler):
         could be replayed if it had been exfiltrated before logout. Idempotent — always returns ok."""
         auth = self.headers.get("Authorization", "")
         token = auth[7:].strip() if auth.startswith("Bearer ") else ""
-        if token and token in SESSIONS:
-            SESSIONS.pop(token, None)
+        key = _tok_hash(token)
+        if token and key in SESSIONS:
+            SESSIONS.pop(key, None)
             _persist_sessions()
         return self._json({"ok": True})
 
