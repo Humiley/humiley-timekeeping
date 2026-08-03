@@ -10290,13 +10290,31 @@ async function _invLoad(force) {
     const arr = (resp && resp.items) || (Array.isArray(resp) ? resp : []);
     const docs = arr.filter(x => Array.isArray(x.items)).sort((a, b) => (b.items.length - a.items.length));
     const doc = docs[0] || arr[0] || null;
-    _INV = doc ? { id: doc.id, items: doc.items || [], meta: doc.meta || {}, loaded: true } : { id: null, items: [], meta: {}, loaded: true };
+    _INV = doc ? { id: doc.id, items: doc.items || [], meta: doc.meta || {}, _rev: doc._rev, loaded: true } : { id: null, items: [], meta: {}, loaded: true };
   } catch (e) { _INV = { id: null, items: [], meta: {}, loaded: true }; }
 }
-async function _invSaveDoc() {
-  const body = { kind: 'invtrack-dataset', meta: _INV.meta || {}, items: _INV.items || [] };
-  if (_INV.id) { await tkApi('/api/coll/invtrack/' + _INV.id, { method: 'PATCH', body: Object.assign({ id: _INV.id }, body) }); }
-  else { const r = await tkApi('/api/coll/invtrack', { method: 'POST', body: body }); const id = r && (r.id || (r.item && r.item.id)); if (id) _INV.id = id; }
+/* Unique key per captured invoice — mirrors the backend de-dupe (msgId first, then invoice-number+serial). */
+function _invKey(it) { return (it && (it.msgId || it.internetMessageId || (it.invNo ? (it.invNo + '|' + (it.serial || '')) : '') || it.id)) || JSON.stringify(it); }
+async function _invSaveDoc(_retried) {
+  // Carry _rev so the optimistic-concurrency guard fires: if the 24/7 mailbox sync updated the register
+  // between our load and this save, the PATCH 409s instead of silently overwriting (= dropping) the
+  // invoices it just added. On 409 we merge our edits onto the fresh doc (keeping the sync's new
+  // invoices — our version wins for shared keys) and retry once, so nothing is lost either way.
+  const body = { kind: 'invtrack-dataset', meta: _INV.meta || {}, items: _INV.items || [], _rev: _INV._rev };
+  try {
+    if (_INV.id) { const r = await tkApi('/api/coll/invtrack/' + _INV.id, { method: 'PATCH', body: Object.assign({ id: _INV.id }, body) }); if (r && r.item) _INV._rev = r.item._rev; }
+    else { const r = await tkApi('/api/coll/invtrack', { method: 'POST', body: body }); const id = r && (r.id || (r.item && r.item.id)); if (id) _INV.id = id; if (r && r.item) _INV._rev = r.item._rev; }
+  } catch (e) {
+    if (e && e.conflict && !_retried) {
+      const mine = _INV.items || [];
+      await _invLoad(true);                                     // fresh doc (has the sync's new invoices + a new _rev)
+      const byKey = new Map((_INV.items || []).map(it => [_invKey(it), it]));
+      mine.forEach(it => byKey.set(_invKey(it), it));           // our edited version wins for shared keys; keeps sync-only ones
+      _INV.items = Array.from(byKey.values());
+      return _invSaveDoc(true);
+    }
+    throw e;
+  }
   /* keep exactly ONE dataset doc — remove stragglers from earlier/failed imports */
   try { const all = await tkApi('/api/coll/invtrack'); const list = (all && all.items) || (Array.isArray(all) ? all : []); for (const d of list) { if (d && d.id && d.id !== _INV.id) { try { await tkApi('/api/coll/invtrack/' + d.id, { method: 'DELETE' }); } catch (e) {} } } } catch (e) {}
 }
