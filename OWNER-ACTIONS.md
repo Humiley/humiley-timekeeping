@@ -107,8 +107,11 @@ All current alerting fires from a daemon *inside* the app, so a kernel panic / d
 ## P1‑3 · M365 client‑secret expiry + rotation runbook
 Entra client secrets expire (max ~24 months). Approval mail, invoice‑mailbox sync, digests, the monthly pack,
 and overdue nudges all depend on `TK_M365_CLIENT_SECRET`, and the app checks it's *present*, not *valid* — so
-on expiry every Graph call 401s **silently**. Put the expiry date on a calendar reminder ~30 days out, and
-write the 5‑minute rotation steps (Entra → new secret → update VPS `.env` → restart) next to it.
+on expiry every Graph call 401s **silently**.
+✅ **The runbook is now written: [`docs/SECRET-ROTATION.md`](docs/SECRET-ROTATION.md)** — the 5‑minute
+rotation procedure, verification steps, rollback, and (important) which secrets must **never** be rotated.
+**Your remaining action:** open Entra, read the current secret's expiry date, write it into that doc, and
+set a calendar reminder ~30 days before it.
 
 ## P1‑4 · Set the two production env flags
 In the VPS `.env`:
@@ -120,9 +123,13 @@ In the VPS `.env`:
   way). **Confirm you have ≥2 Editor/Admin users before relying on the default.**
 
 ## P1‑5 · Full‑host‑rebuild runbook + a stated RTO
-Write (and once rehearse) the steps to rebuild a lost VPS from zero: re‑provision, restore `.env`, restore
-both databases, re‑consent the M365 secret, re‑point DNS, re‑issue the Caddy cert. Put a target **RTO** (how
-long recovery takes) next to it — leadership will ask, and it's currently undefined.
+✅ **The runbook is now written: [`docs/DISASTER-RECOVERY.md`](docs/DISASTER-RECOVERY.md)** — provision →
+restore `.env` from escrow → build → restore both databases → DNS → TLS → M365, with a verification
+checklist, the DNSSEC gotcha, and a quarterly drill. Stated **RTO 4 h / RPO 24 h** (RPO = the nightly
+backup interval).
+**Your remaining actions:** (1) **rehearse it once** — an unrehearsed recovery path is a hypothesis, not a
+plan, and the RTO above is only credible after a real run; (2) close the honest gap it documents — the
+Procurement Postgres + uploads are still unbacked (P0‑4), so today a full host loss loses that data.
 
 ---
 
