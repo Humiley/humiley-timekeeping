@@ -5325,6 +5325,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown item.", 404)
         if not isinstance(body, dict):     # a non-object JSON body would 500 in dict(body) below
             return self._err("Invalid record.", 400)
+        # Optimistic concurrency (lost-update guard): if the caller sent an `If-Match: <rev>` precondition,
+        # it must equal the record's CURRENT server `_rev`. If it doesn't, the record was changed by
+        # someone else since the caller loaded it, and this blind full-document PATCH would silently
+        # clobber that edit — so 409 and let the client re-fetch and re-apply. Opt-in by header, so a
+        # caller that doesn't send it is unaffected (the write still bumps `_rev` in put_collection_item).
+        _ifm = self.headers.get("If-Match")
+        if _ifm is not None:
+            _cur = db.get_collection_item(name, iid)
+            if _cur is not None:
+                try:
+                    _cur_rev = int(_cur.get("_rev") or 0)
+                except (TypeError, ValueError):
+                    _cur_rev = 0
+                try:
+                    _want_rev = int(str(_ifm).strip().strip('"'))
+                except (TypeError, ValueError):
+                    _want_rev = None
+                if _want_rev is not None and _want_rev != _cur_rev:
+                    return self._json({"error": "This record was just changed by someone else. "
+                                                 "Reload the latest version and re-apply your change.",
+                                       "conflict": True, "currentRev": _cur_rev}, 409)
         # The audit trail is APPEND-ONLY (21 CFR Part 11). _coll_delete already blocks deletion; block
         # updates here too so a stored audit event can never be edited/rewritten via the generic store.
         if name == "audit":

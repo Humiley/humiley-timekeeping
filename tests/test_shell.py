@@ -33,3 +33,13 @@ def test_shell_leaks_no_server_error(base_url):
     _, _, html = _shell(base_url)
     assert "Traceback (most recent call last)" not in html
     assert "PORTAL_ERROR" not in html
+
+
+def test_shell_toast_has_a_reveal_rule(base_url):
+    # toast() reveals the notifier by adding the `show` class. Without a CSS rule that flips
+    # #toast.show to display:block, EVERY toast in the app (success / error / conflict feedback) is
+    # silently invisible — a bug that shipped once already. Assert the reveal rule is present.
+    _, _, html = _shell(base_url)
+    assert 'id="toast"' in html, "the toast element is missing from the shell"
+    assert "#toast.show{display:block" in html.replace(" ", ""), \
+        "no CSS rule reveals #toast.show — toasts would be invisible app-wide"

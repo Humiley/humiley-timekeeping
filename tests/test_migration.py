@@ -50,8 +50,11 @@ def test_get_collection_item_matches_the_old_scan(base_url):
     # The indexed single-item lookup must be exactly equivalent to the list-and-scan it replaced.
     db.put_collection_item("gcitest", {"id": "gc-1", "x": 1})
     db.put_collection_item("gcitest", {"id": "gc-2", "x": 2})
-    assert db.get_collection_item("gcitest", "gc-1") == {"id": "gc-1", "x": 1}
-    assert db.get_collection_item("gcitest", "gc-2") == {"id": "gc-2", "x": 2}
+    # get returns the stored item incl. the server-owned _rev; compare on the payload keys.
+    g1 = db.get_collection_item("gcitest", "gc-1")
+    assert g1["id"] == "gc-1" and g1["x"] == 1 and g1["_rev"] == 1
+    g2 = db.get_collection_item("gcitest", "gc-2")
+    assert g2["id"] == "gc-2" and g2["x"] == 2 and g2["_rev"] == 1
     assert db.get_collection_item("gcitest", "nope") is None            # missing -> None (like next(..., None))
     assert db.get_collection_item("no-such-coll", "gc-1") is None
     # equivalence with the old scan for a present id

@@ -73,12 +73,14 @@ def tokens(base_url):
 
 @pytest.fixture
 def api(base_url):
-    def _call(method, path, token=None, body=None):
+    def _call(method, path, token=None, body=None, headers=None):
         data = json.dumps(body).encode() if body is not None else None
         req = urllib.request.Request(base_url + path, data=data, method=method)
         req.add_header("Content-Type", "application/json")
         if token:
             req.add_header("Authorization", "Bearer " + token)
+        for _k, _v in (headers or {}).items():
+            req.add_header(_k, str(_v))
         try:
             with urllib.request.urlopen(req, timeout=10) as r:
                 raw = r.read().decode() or "{}"

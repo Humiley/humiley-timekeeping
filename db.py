@@ -1294,10 +1294,25 @@ def collection_count(coll):
 
 
 def put_collection_item(coll, item):
-    """Insert or update one item (a dict). Generates an id if missing. Returns the item."""
+    """Insert or update one item (a dict). Generates an id if missing. Returns the item.
+
+    Maintains a server-owned optimistic-concurrency counter `_rev`: every write monotonically bumps
+    the STORED rev (new rows start at 1), ignoring whatever `_rev` the client sent — the client value
+    is only ever a PRECONDITION checked in the API layer (If-Match), never the source of truth. This
+    is how the blind full-document PATCH stops silently clobbering a concurrent edit: the record's rev
+    moves on each save, so a second writer holding a stale rev is detected.
+    """
     if not item.get("id"):
         item["id"] = coll[:3] + "-" + uuid.uuid4().hex[:8]
     conn = get_conn()
+    prev = conn.execute("SELECT data FROM collections WHERE coll = ? AND id = ?", (coll, item["id"])).fetchone()
+    cur_rev = 0
+    if prev:
+        try:
+            cur_rev = int((json.loads(prev["data"]) or {}).get("_rev") or 0)
+        except (ValueError, TypeError):
+            cur_rev = 0
+    item["_rev"] = cur_rev + 1
     conn.execute("INSERT INTO collections (coll,id,data) VALUES (?,?,?) "
                  "ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data",
                  (coll, item["id"], json.dumps(item)))

@@ -437,6 +437,13 @@ select.form-control{cursor:pointer}
 
 /* ── TOAST ── */
 #toast{position:fixed;bottom:24px;right:24px;background:var(--navy-deep);color:#fff;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:2000;max-width:340px;box-shadow:0 8px 24px rgba(0,0,0,.3);line-height:1.5}
+/* toast() adds the `show` class to reveal it (and removes it to hide) — WITHOUT this rule the toast
+   stayed display:none forever, so every notification in the app (success confirmations, export
+   messages, error feedback, concurrency-conflict warnings) was silently invisible. */
+#toast.show{display:block;animation:tkToastIn .2s ease}
+#toast.warn{background:#92400E}#toast.error{background:#B91C1C}#toast.info{background:var(--navy)}
+@keyframes tkToastIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){#toast.show{animation:none}}
 
 /* ── GPS MAP ANIMATION ── composited scale/opacity (animating the SVG r attribute forced a
    continuous layout+repaint every frame, stealing main-thread time whenever the map is visible) */
@@ -2853,6 +2860,15 @@ async function _revalidateSession(force) {
 async function tkApi(path, opts = {}) {
   const headers = opts.headers || {};
   if (TK.token) headers['Authorization'] = 'Bearer ' + TK.token;
+  const _m = (opts.method || 'GET').toUpperCase();
+  // Optimistic concurrency: on a single-item collection PATCH, echo the record's server `_rev` as an
+  // If-Match precondition (the object we're saving already carries the `_rev` the server sent). The
+  // backend 409s if the stored rev moved on — i.e. someone else saved since we loaded — so this blind
+  // full-document PATCH can't silently clobber their edit. Opt out per call with opts._noIfMatch.
+  if (_m === 'PATCH' && opts.body && typeof opts.body === 'object' && opts.body._rev != null
+      && headers['If-Match'] == null && !opts._noIfMatch && /^\/api\/coll\/[^\/?#]+\/[^\/?#]+/.test(path)) {
+    headers['If-Match'] = String(opts.body._rev);
+  }
   if (opts.body && typeof opts.body !== 'string') {
     headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
@@ -2861,10 +2877,18 @@ async function tkApi(path, opts = {}) {
   if (!res.ok) {
     let e; try { e = await res.json(); } catch (_) {}
     if (res.status === 401 && !opts._no401) { try { _tkSessionExpired(); } catch (_) {} }   // _no401: caller handles the heal/retry itself
+    // 409 = optimistic-concurrency conflict: the record changed under us. Invalidate the load cache so
+    // the next read is server-truth, tell the user plainly, and throw a TYPED error (.conflict) so the
+    // caller ABORTS rather than blindly re-PATCHing over the newer version.
+    if (res.status === 409 && _m !== 'GET') {
+      const cm = /^\/api\/coll\/([^\/?#]+)/.exec(path); if (cm && typeof tkCollInvalidate === 'function') tkCollInvalidate(cm[1]);
+      const _msg = (e && e.error) || _t2('This record was just changed by someone else. Reloading the latest version — please re-apply your change.', 'Bản ghi này vừa được người khác thay đổi. Đang tải lại bản mới nhất — vui lòng nhập lại thay đổi của bạn.');
+      try { if (typeof toast === 'function') toast(_msg, 'warn', 7000); } catch (_) {}
+      const _c = new Error(_msg); _c.status = 409; _c.conflict = true; if (e && e.currentRev != null) _c.currentRev = e.currentRev; throw _c;
+    }
     const _err = new Error((e && e.error) || ('HTTP ' + res.status)); _err.status = res.status; throw _err;
   }
   // A successful write invalidates that collection's load cache so the next read re-fetches server truth.
-  const _m = (opts.method || 'GET').toUpperCase();
   if (_m !== 'GET' && typeof tkCollInvalidate === 'function') {
     const cm = /^\/api\/coll\/([^\/?#]+)/.exec(path); if (cm) tkCollInvalidate(cm[1]);
   }
