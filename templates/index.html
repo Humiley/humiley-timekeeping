@@ -4874,16 +4874,42 @@ async function tkExportAccounting() {
   toast('Building accounting export…', 'info', 3000);
   try { await Promise.all(['payments', 'invtrack'].map(n => tkLoadColl(n).catch(() => {}))); } catch (e) {}
   const done = s => ['approved', 'paid'].includes(String(s || '').toLowerCase());
+  const per = d => (String(d || '').slice(0, 7)) || '';                       // accounting period YYYY-MM
+  // currency-aware VND equivalent: a foreign-currency payment carries currency + fxRate; VN payments
+  // are already VND (rate 1). This gives the external GL a single-currency posting amount.
+  const vndOf = p => { const r = +p.fxRate || 1; return Math.round((+p.amount || 0) * r); };
   const pays = (_HR.payments || []).filter(p => done(p.status));
-  const payRows = pays.map(p => ({ 'No.': p.reqNo || '', Date: p.paidOn || p.approvedOn || p.submittedOn || '', Payee: p.payee || '', Department: p.department || '', Category: p.category || '', Purpose: p.purpose || '', Amount: +p.amount || 0, 'Invoice/PO': p.invoiceNo || '', Status: p.status || '', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' }));
+  const payRows = pays.map(p => {
+    const cur = p.currency || 'VND', d = p.paidOn || p.approvedOn || p.submittedOn || '';
+    return { 'No.': p.reqNo || '', Period: per(d), Date: d, Payee: p.payee || '', 'Tax code': p.payeeMst || p.taxCode || '',
+      Department: p.department || '', 'Cost centre': p.costCentre || p.department || '', 'Account code': p.accountCode || '',
+      Category: p.category || '', Purpose: p.purpose || '', Currency: cur, 'FX rate': +p.fxRate || 1, Amount: +p.amount || 0,
+      'Amount (VND)': vndOf(p), 'Invoice/PO': p.invoiceNo || '', Status: p.status || '', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' };
+  });
+  // Balanced double-entry journal — one Debit (expense, by cost centre) + one Credit (bank/AP) per
+  // payment, same ref/period, amounts equal so each entry balances. Account codes are left blank for
+  // your chart of accounts to map on import (MISA/Fast/Bravo); everything else is filled.
+  const journalRows = [];
+  pays.forEach(p => {
+    const d = p.paidOn || p.approvedOn || p.submittedOn || '', vnd = vndOf(p), ref = p.reqNo || '';
+    journalRows.push({ Date: d, Period: per(d), 'Account code': p.accountCode || '', 'Account name': p.category || 'Expense',
+      'Cost centre': p.costCentre || p.department || '', Debit: vnd, Credit: '', Ref: ref, Description: ((p.payee || '') + ' — ' + (p.purpose || '')).trim() });
+    journalRows.push({ Date: d, Period: per(d), 'Account code': '', 'Account name': String(p.status).toLowerCase() === 'paid' ? 'Bank' : 'Accounts payable',
+      'Cost centre': '', Debit: '', Credit: vnd, Ref: ref, Description: 'Payment to ' + (p.payee || '') });
+  });
   const invItems = (_HR.invtrack || []).filter(d => Array.isArray(d.items)).flatMap(d => d.items);
-  const invRows = invItems.map(it => ({ 'Invoice No.': it.invNo || '', Serial: it.serial || '', Date: it.dateISO || '', Supplier: it.supplier || '', Buyer: it.buyerName || '', 'Tax code': it.taxCode || '', 'Before VAT': +it.before || 0, VAT: +it.vat || 0, Total: +it.after || 0, Type: it.type || '' }));
+  const invRows = invItems.map(it => ({ 'Invoice No.': it.invNo || '', Serial: it.serial || '', Period: per(it.dateISO), Date: it.dateISO || '',
+    Supplier: it.supplier || '', Buyer: it.buyerName || '', 'Tax code': it.taxCode || '', Currency: it.currency || 'VND',
+    'Before VAT': +it.before || 0, VAT: +it.vat || 0, Total: +it.after || 0, Type: it.type || '' }));
   try {
     const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(journalRows.length ? journalRows : [{ Note: 'No approved / paid payments to post' }]), 'Journal (double-entry)');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(payRows.length ? payRows : [{ Note: 'No approved / paid payments' }]), 'Approved Payments');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(invRows.length ? invRows : [{ Note: 'No invoices captured (needs Editor+ access)' }]), 'Invoices');
     XLSX.writeFile(wb, 'Humiley_Accounting_Export_' + new Date().toISOString().slice(0, 10) + '.xlsx');
-    toast('Accounting export ready — ' + payRows.length + ' payment(s) · ' + invRows.length + ' invoice(s).');
+    // Log the export run so a data pull off the system of record is auditable (best-effort).
+    try { tkApi('/api/coll/audit', { method: 'POST', body: { action: 'Accounting export', module: 'Finance', detail: payRows.length + ' payment(s) · ' + invRows.length + ' invoice(s) · ' + journalRows.length + ' journal line(s)', ts: new Date().toISOString() } }); } catch (e) {}
+    toast('Accounting export ready — ' + payRows.length + ' payment(s), ' + journalRows.length + ' journal line(s), ' + invRows.length + ' invoice(s).');
   } catch (e) { toast('Export failed: ' + (e.message || ''), 'error', 5000); }
 }
 
