@@ -5188,6 +5188,28 @@ class Handler(BaseHTTPRequestHandler):
                            "message": ("Preview digest sent to %s — check your inbox." % to) if ok
                            else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented?"))})
 
+    def _payperiod_finalised(self, period):
+        """True once a COMPANY pay run for this period has been finalised (Director-e-signed). A finalised
+        month is closed — its manual payroll adjustments (payadjust) must not be added, edited or deleted
+        afterwards, or a signed month's basis could be changed with no trail."""
+        if not period:
+            return False
+        p = str(period).strip().lower()
+        for r in db.list_collection("payruns"):
+            if str(r.get("period") or "").strip().lower() == p and r.get("scope") != "individual" \
+                    and str(r.get("status") or "").strip().lower() in ("finalised", "finalized"):
+                return True
+        return False
+
+    def _audit_payadjust(self, u, action, item):
+        """Manual payroll adjustments are money-affecting but had no audit trail — record every add/edit to
+        the tamper-evident audit chain (delete is already audited by _coll_delete)."""
+        db.put_collection_item("audit", {"actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": action, "target": "payadjust/" + str(item.get("id") or ""),
+            "detail": (str(item.get("empId") or "") + " · " + str(item.get("period") or "")
+                       + (" · net " + str(item.get("net")) if item.get("net") is not None else "")),
+            "ts": self._utc_now()})
+
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -5257,6 +5279,14 @@ class Handler(BaseHTTPRequestHandler):
             item["status"] = "Pending Approval"
             item["preparedBy"] = u.get("name")
             item["preparedById"] = u.get("id")
+        # Manual payroll adjustment: a finalised (closed) month is locked, and every add is written to the
+        # tamper-evident audit trail (adjustments are money-affecting but previously had no audit record).
+        if name == "payadjust":
+            if self._payperiod_finalised(item.get("period")):
+                return self._err("That pay period is finalised and locked — payroll adjustments can no longer be added.", 403)
+            created = db.put_collection_item("payadjust", item)
+            self._audit_payadjust(u, "Payroll adjustment added", created)
+            return self._json({"ok": True, "item": created})
         # Idempotency: a retried identical financial submit within the window returns the record the
         # first attempt already created, instead of a duplicate (transport-retry double-pay guard).
         # For financial collections the check + create + store all run under ONE lock, so a CONCURRENT
@@ -5383,6 +5413,12 @@ class Handler(BaseHTTPRequestHandler):
                         body[_k] = _pr.get(_k)
                     else:
                         body.pop(_k, None)
+        # Manual payroll adjustment: a finalised (closed) month is locked against edits (check the STORED
+        # period, so the period can't be moved to dodge the lock). The audited-write happens below.
+        if name == "payadjust":
+            _cur = db.get_collection_item("payadjust", iid)
+            if self._payperiod_finalised((_cur or {}).get("period") or body.get("period")):
+                return self._err("That pay period is finalised and locked — its payroll adjustments can no longer be edited.", 403)
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
@@ -5637,6 +5673,10 @@ class Handler(BaseHTTPRequestHandler):
                 # no existing record to protect against — refuse to create a signed record via PATCH
                 for _k in ("status", "signatures"):
                     item.pop(_k, None)
+        if name == "payadjust":
+            saved = db.put_collection_item("payadjust", item)
+            self._audit_payadjust(u, "Payroll adjustment edited", saved)
+            return self._json({"ok": True, "item": saved})
         return self._json({"ok": True, "item": {k: v for k, v in db.put_collection_item(name, item).items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
@@ -5657,6 +5697,9 @@ class Handler(BaseHTTPRequestHandler):
         if not existing:
             return self._err("Not found.", 404)
         is_admin = self._caller_level(u) == "admin"
+        # A payroll adjustment in a FINALISED (closed) month is locked — it can't be deleted either.
+        if name == "payadjust" and self._payperiod_finalised(existing.get("period")):
+            return self._err("That pay period is finalised and locked — its payroll adjustments can no longer be deleted.", 403)
         # Approved / paid financial records are immutable evidence — block deletion (admin included).
         if name in ("claims", "travel", "payments"):
             st = str(existing.get("status") or "").strip().lower()
