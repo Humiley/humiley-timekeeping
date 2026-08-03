@@ -89,3 +89,15 @@ def api(base_url):
             except Exception:
                 return e.code, {}
     return _call
+
+
+@pytest.fixture(autouse=True)
+def _reset_global_state():
+    # The idempotency cache is module-global and outlives a single test; different tests reuse the
+    # same financial payload as a fixture, so without this a later identical submit would dedup to an
+    # earlier test's record. Clear it before each test (same hygiene as the rate limiter's _RATE).
+    try:
+        app._IDEM.clear()
+    except Exception:
+        pass
+    yield

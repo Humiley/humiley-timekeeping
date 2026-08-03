@@ -287,6 +287,27 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "payerSeparation": "1"}   # require a 2nd Editor/Admin to pay a request they approved (disbursement SoD)
 _APPR_REMIND_LOCK = threading.Lock()
 
+# ── Idempotency for financial submits ─────────────────────────────────────────────────────────
+# A retried identical financial POST over a flaky field connection must not create a DUPLICATE
+# claim/payment/travel (which could then be approved and paid twice). Keyed by an explicit client
+# Idempotency-Key header, or a hash of (owner, collection, payload). A hit within the window returns
+# the record the first attempt already created instead of a second one. In-process + short window
+# (single-process server), so restart-loss is irrelevant — mirrors the rate-limiter's pattern.
+_IDEM = {}                        # key -> (created_item_snapshot, ts)
+_IDEM_LOCK = threading.Lock()
+_IDEM_WINDOW = 60                 # seconds — long enough to swallow a transport retry, short enough that
+#                                   two deliberately-identical submits are very unlikely to collide. A
+#                                   client that wants a hard guarantee sends an explicit Idempotency-Key.
+_IDEM_COLLS = ("claims", "travel", "payments")
+
+
+def _idem_key(uid, name, item, header_key):
+    if header_key:
+        return "%s|%s|k:%s" % (uid, name, str(header_key)[:120])
+    payload = {k: v for k, v in item.items() if k not in ("token", "id")}   # token is server-added + random
+    blob = json.dumps(payload, sort_keys=True, default=str)
+    return "%s|%s|h:%s" % (uid, name, hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest())
+
 
 def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0, escalate_to=None):
     """Send the branded lifecycle email for ONE request. event ∈ submitted/reviewed/approved/rejected/paid.
@@ -5079,7 +5100,24 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
-        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
+        # Idempotency: a retried identical financial submit within the window returns the record the
+        # first attempt already created, instead of a duplicate (transport-retry double-pay guard).
+        _ik = None
+        if name in _IDEM_COLLS:
+            _ik = _idem_key(u.get("id"), name, item, self.headers.get("Idempotency-Key"))
+            with _IDEM_LOCK:
+                _prev = _IDEM.get(_ik)
+                if _prev and time.time() - _prev[1] < _IDEM_WINDOW:
+                    return self._json({"ok": True, "item": _prev[0], "idempotent": True})
+        created = db.put_collection_item(name, item)
+        if _ik is not None:
+            with _IDEM_LOCK:
+                _IDEM[_ik] = (created, time.time())
+                if len(_IDEM) > 2000:                                  # bound memory: drop entries past the window
+                    _cut = time.time() - _IDEM_WINDOW
+                    for _k in [k for k, v in list(_IDEM.items()) if v[1] < _cut]:
+                        _IDEM.pop(_k, None)
+        return self._json({"ok": True, "item": created})
 
     def _device_ack_backfill_ep(self, u):
         # One-time migration (admin): every CURRENTLY-ASSIGNED asset/assignment with no acknowledgment is
