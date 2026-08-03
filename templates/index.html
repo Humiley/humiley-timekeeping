@@ -1424,6 +1424,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the Editor/Admin who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> Editor/Admin users. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
       <div style="font-size:11px;color:var(--text-light);margin:2px 0 10px">Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365 <b>Mail.Send</b> application consent on the Humiley app.</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
@@ -5181,6 +5185,7 @@ async function tkLoadIntegrations() {
   const _ard = document.getElementById('portal-apprRemindDays'); if (_ard) _ard.value = g('apprReminderDays', '2');
   const _ed = document.getElementById('portal-apprEscalateDays'); if (_ed) _ed.value = g('apprEscalateDays', '0');
   const _et = document.getElementById('portal-apprEscalateTo'); if (_et) _et.value = g('apprEscalateTo', '');
+  const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
   const _dlt = document.getElementById('portal-digestLeadTo'); if (_dlt) _dlt.value = g('digestLeadTo', '');
@@ -5335,6 +5340,7 @@ async function tkSaveIntegrations() {
     apprReminderDays: String(parseInt(V('portal-apprRemindDays'), 10) || 2),
     apprEscalateDays: String(parseInt(V('portal-apprEscalateDays'), 10) || 0),
     apprEscalateTo: V('portal-apprEscalateTo'),
+    payerSeparation: C('portal-payerSeparation') ? '1' : '0',
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
     digestLeadTo: V('portal-digestLeadTo'),
