@@ -7623,6 +7623,20 @@ function _payBuild() {
   let wdTotal = 0; monthsArr.forEach(m => wdTotal += _payWD(_payYM.y, m));
   t.count = emps.length; t.wd = wdTotal; t.yearly = yearly; _payTotals = t; return emps;
 }
+// Payroll dual-control: a Director (Management/Admin) finalises a prepared run with an e-signature.
+// The backend enforces Director level + preparer!=approver; this just opens the reusable sign modal.
+function tkPayrunFinalise(id) {
+  const r = (_HR.payruns || []).find(x => x.id === id); if (!r) return;
+  tkESign({
+    coll: 'payruns', id: id, setStatus: 'Finalised',
+    meaning: 'Payroll finalisation — ' + (r.period || '') + (r.scope === 'individual' ? ' (' + (r.empName || 'individual') + ')' : ''),
+    onDone: (item) => {
+      if (item) { const i = (_HR.payruns || []).findIndex(x => x.id === id); if (i >= 0) _HR.payruns[i] = item; }
+      try { tkRenderPayroll(); } catch (e) {}
+    }
+  });
+}
+
 async function tkRenderPayroll() {
   const root = document.getElementById('payroll-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
@@ -7690,7 +7704,7 @@ function payRunsFillTable() {
   const runs = (_HR.payruns || []).filter(r =>
     (!q || ((r.period || '') + ' ' + (r.empName || '')).toLowerCase().includes(q)) && _inPeriodLF(r.created, 'payrun-period-f')
   ).sort((a, b) => (a.period < b.period ? 1 : -1));
-  tb.innerHTML = (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge b-ok" style="font-size:10px">' + (r.status || 'Finalised') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">' + ((_HR.payruns || []).length ? 'No pay runs match your filters.' : 'No pay runs yet — use Create Pay Run or Individual Pay Run.') + '</td></tr>');
+  tb.innerHTML = (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge ' + (String(r.status || '').toLowerCase().indexOf('final') >= 0 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || 'Pending Approval') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + (String(r.status || '').toLowerCase().indexOf('final') < 0 && ['management', 'admin'].indexOf(_userLevel) >= 0 ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px;margin-left:4px" onclick="tkPayrunFinalise(\'' + r.id + '\')">' + _t('Finalize (Director e-sign)') + '</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">' + ((_HR.payruns || []).length ? 'No pay runs match your filters.' : 'No pay runs yet — use Create Pay Run or Individual Pay Run.') + '</td></tr>');
 }
 /* Individual monthly pay run for one employee (A15). */
 function tkIndivPayRun() {
@@ -7733,7 +7747,7 @@ async function tkCreatePayRun() {
     const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.payruns = _HR.payruns || []).push(res.item);
     _payRenderRuns();
-    toast('Pay run created for ' + period + ' — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
+    toast('Pay run prepared for ' + period + ' — ' + t.count + ' employees, net ' + _PAY_FMT(t.net) + '. Pending Director approval.', 'success', 6000);
   } catch (e) { toast('Could not create pay run: ' + _errMsg(e), 'error', 5000); }
 }
 /* Per-employee payroll adjustment editor — override any 3P / statutory parameter + add ad-hoc items. */
@@ -7818,7 +7832,7 @@ async function tkRollOutPayroll() {
     const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'company', period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
     (_HR.payruns = _HR.payruns || []).push(res.item);
     tkAudit('Payroll rolled out', period, t.count + ' employees · net ' + _PAY_FMT(t.net));
-    toast(period + ' payroll rolled out — ' + t.count + ' employees, net ' + _PAY_FMT(t.net), 'success', 6000);
+    toast(period + ' payroll prepared — ' + t.count + ' employees, net ' + _PAY_FMT(t.net) + '. A Director must e-sign to finalise.', 'success', 6000);
     _payRenderReg(); _payRenderRuns();
   } catch (e) { toast('Could not roll out: ' + _errMsg(e), 'error', 5000); }
 }

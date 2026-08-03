@@ -3487,6 +3487,18 @@ class Handler(BaseHTTPRequestHandler):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
         Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage."""
         t = str(set_status or "").strip().lower()
+        # Payroll runs are dual-controlled (owner_id here is the PREPARER, preparedById): only a
+        # Director (Management or Admin level) may finalise, and never the person who prepared the run.
+        if coll == "payruns":
+            if t in ("finalised", "finalized"):
+                if self._caller_level(u) not in ("management", "admin"):
+                    return "Director approval (Management or Admin level) is required to finalise a payroll run."
+                if owner_id and owner_id == u.get("id"):
+                    return "The person who prepared a payroll run cannot also finalise it (segregation of duties)."
+                if str(cur_status or "").strip().lower() not in ("pending approval", "pending", "prepared"):
+                    return "Only a pending payroll run can be finalised."
+                return None
+            return "A payroll run can only be finalised, via a Director e-signature."
         if coll not in self.THREE_LEVEL_COLLS:
             if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
                 return "Manager access required to approve, reject or mark paid."
@@ -3714,7 +3726,10 @@ class Handler(BaseHTTPRequestHandler):
             if _cev and item.get("status") != _prev_roll:                               # ONCE, only when it actually transitions (not per line)
                 _appr_notify("claims", item, _cev, signer_name)
             return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
-        _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), item.get("empId"))
+        # For payroll runs the segregation-of-duties owner is the PREPARER (preparedById), not empId
+        # (empId on an individual run is the employee the run is FOR).
+        _appr_owner = item.get("preparedById") if coll == "payruns" else item.get("empId")
+        _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), _appr_owner)
         if _err:
             return self._err(_err, 403)
         # A payment disbursement MUST carry the bank transfer slip (proof of payment). Enforce it BEFORE
@@ -3739,6 +3754,10 @@ class Handler(BaseHTTPRequestHandler):
             if set_status == "Approved":
                 item["approvedBy"] = signer_name
                 item.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
+            if set_status in ("Finalised", "Finalized") and coll == "payruns":
+                item["finalisedBy"] = signer_name                       # the Director who signed off payroll
+                item["approvedBy"] = signer_name
+                item.setdefault("finalisedOn", time.strftime("%Y-%m-%d"))
             if set_status == "Paid":
                 item.setdefault("paidOn", time.strftime("%Y-%m-%d"))
                 item["paidBy"] = signer_name
@@ -5219,6 +5238,13 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        # Payroll dual-control: a run is PREPARED here (never born finalised, even if the client says so)
+        # and only a Director e-signature (/api/esign, preparer != approver) can finalise it. Stamp the
+        # preparer so segregation of duties can exclude them.
+        if name == "payruns":
+            item["status"] = "Pending Approval"
+            item["preparedBy"] = u.get("name")
+            item["preparedById"] = u.get("id")
         # Idempotency: a retried identical financial submit within the window returns the record the
         # first attempt already created, instead of a duplicate (transport-retry double-pay guard).
         # For financial collections the check + create + store all run under ONE lock, so a CONCURRENT
@@ -5303,6 +5329,18 @@ class Handler(BaseHTTPRequestHandler):
         # updates here too so a stored audit event can never be edited/rewritten via the generic store.
         if name == "audit":
             return self._err("The audit trail is append-only and cannot be modified.", 403)
+        # Payroll dual-control: a run's status changes ONLY through the Director e-signature (/api/esign),
+        # and a FINALISED run is immutable. A plain PATCH may only amend a still-pending run's figures —
+        # it can neither finalise a run nor edit a finalised one.
+        if name == "payruns":
+            _pr = db.get_collection_item("payruns", iid)
+            if _pr and str(_pr.get("status") or "").strip().lower() in ("finalised", "finalized"):
+                return self._err("A finalised payroll run is immutable.", 403)
+            if _pr:
+                # A PATCH may amend a pending run's figures but can never CHANGE its status (the update
+                # is a blind full-document overwrite, so pin status to its stored value rather than
+                # dropping it) — finalisation happens only through the Director e-signature.
+                body["status"] = _pr.get("status") or "Pending Approval"
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
