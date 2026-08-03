@@ -2908,7 +2908,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_file(os.path.join(STATIC_DIR, path.lstrip("/") if path != "/favicon.ico" else "icons/favicon-32.png"))
         if path.startswith("/static/"):
             safe = os.path.normpath(os.path.join(STATIC_DIR, path[len("/static/"):]))
-            if not safe.startswith(STATIC_DIR):
+            # Require the resolved path to be strictly INSIDE STATIC_DIR. Compare against
+            # STATIC_DIR + os.sep so a sibling like ".../static-evil" can't satisfy a bare
+            # startswith(STATIC_DIR) (the invtrack file guards already do this).
+            if not safe.startswith(STATIC_DIR + os.sep):
                 return self._err("Forbidden.", 403)
             return self._serve_file(safe)
 
@@ -5430,6 +5433,12 @@ def main():
     if not DEMO_MODE and not os.environ.get("TK_ESIGN_PEPPER"):
         print("  \033[1;33m⚠  TK_ESIGN_PEPPER is NOT set.\033[0m Set it (openssl rand -hex 32) BEFORE")
         print("     any user enrolls an e-signature PIN — adding it later invalidates existing PINs.")
+    # Part 11 signing tokens: without this flag, JWKS signature verification SOFT-FAILS if the crypto
+    # lib / JWKS endpoint is unavailable (a structurally-valid but unverified token would be accepted).
+    if not DEMO_MODE and os.environ.get("TK_ESIGN_REQUIRE_VERIFIED_TOKEN") != "1":
+        print("  \033[1;33m⚠  TK_ESIGN_REQUIRE_VERIFIED_TOKEN is not '1'.\033[0m E-signature token")
+        print("     verification will soft-fail on a JWKS/crypto outage. Set it to 1 in production so a")
+        print("     signing token is accepted only when its RS256 signature is fully verified.")
     if seeded:
         print("  Database seeded with %d employees." % len(db.list_employees()))
     print("  Open: http://localhost:%d/" % PORT)
