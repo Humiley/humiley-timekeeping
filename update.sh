@@ -41,8 +41,21 @@ if [ "$SKIP_BACKUP" -eq 0 ] && docker ps --format '{{.Names}}' | grep -q "^$APP$
   mkdir -p "$BACKUP_DIR"; OUT="$BACKUP_DIR/portal-$(date +%F-%H%M%S).db"
   if docker exec "$APP" python3 -c "import sqlite3,os;s=sqlite3.connect(os.environ.get('TK_DB_PATH','/data/timekeeping.db'));d=sqlite3.connect('/data/_backup.db');s.backup(d);d.close();s.close()"; then
     docker cp "$APP:/data/_backup.db" "$OUT"; docker exec "$APP" rm -f /data/_backup.db 2>/dev/null || true
-    gzip -f "$OUT"; echo "    saved: $OUT.gz"
-    ls -1t "$BACKUP_DIR"/portal-*.db.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
+    gzip -f "$OUT"
+    # Encrypt at rest when a key exists — these pre-deploy snapshots hold the same payroll/PII/GPS as
+    # the nightly ones and land in the same directory (which gets copied off-box). Unlike backup.sh this
+    # does NOT fail closed: a deploy must never be blocked by a missing backup key (you may be shipping
+    # an urgent fix), so it warns loudly and keeps going.
+    KEYFILE="${BACKUP_KEYFILE:-$BACKUP_DIR/.backup-key}"
+    if [ -f "$KEYFILE" ]; then
+      openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$OUT.gz" -out "$OUT.gz.enc" -pass "file:$KEYFILE" \
+        && rm -f "$OUT.gz" && echo "    saved (encrypted): $OUT.gz.enc"
+    else
+      echo "    saved: $OUT.gz"
+      echo "    ⚠️  UNENCRYPTED — no key at $KEYFILE. Create one so snapshots aren't plaintext HR/finance data:" >&2
+      echo "        openssl rand -base64 48 > $KEYFILE && chmod 600 $KEYFILE" >&2
+    fi
+    ls -1t "$BACKUP_DIR"/portal-*.db.gz "$BACKUP_DIR"/portal-*.db.gz.enc 2>/dev/null | tail -n +15 | xargs -r rm -f
   else echo "    WARNING: portal backup failed — aborting (use --no-backup to override)." >&2; exit 1; fi
 fi
 
