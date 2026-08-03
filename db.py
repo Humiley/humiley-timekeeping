@@ -13,13 +13,23 @@ import json
 import hashlib
 import secrets
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone, timedelta
 
 import seed_data
 
 DB_PATH = os.environ.get("TK_DB_PATH", os.path.join(os.path.dirname(__file__), "timekeeping.db"))
-SCHEMA_VERSION = 1   # bumped when init_db's migrations change; written to PRAGMA user_version
+SCHEMA_VERSION = 2   # bumped when init_db's migrations change; written to PRAGMA user_version
+
+# ── Tamper-evident audit hash chain ──────────────────────────────────────────
+# Every audit row is a link in a keyed-HMAC hash chain: hash = HMAC(AUDIT_KEY, prevHash | canonical(row)).
+# A dedicated pepper (NOT the PIN pepper or SSO secret — key separation) keys it, so an attacker with raw
+# DB-write access cannot forge a valid successor link without the secret. The chain is maintained in the
+# SINGLE write path (put_collection_item where coll=="audit") under a lock, so every audit write in the
+# app is covered with no per-call-site changes; verify_audit_chain() recomputes it end to end.
+AUDIT_KEY   = os.environ.get("TK_AUDIT_PEPPER", "").encode("utf-8")
+_AUDIT_LOCK = threading.Lock()   # serialize read-head -> insert -> advance-head so concurrent writers can't fork the chain
 
 
 def get_conn():
@@ -135,6 +145,15 @@ def init_db():
             PRIMARY KEY (coll, id)
         );
 
+        -- Tamper-evident audit hash chain: singleton checkpoint holding the current chain length and
+        -- head hash. Persisting the head separately makes tail-truncation (deleting the newest audit
+        -- rows) detectable — without it, chopping the end of the chain would leave a valid-looking prefix.
+        CREATE TABLE IF NOT EXISTS audit_chain (
+            id        INTEGER PRIMARY KEY,           -- always 1 (singleton)
+            seq       INTEGER NOT NULL DEFAULT 0,    -- number of chained audit rows
+            head_hash TEXT    NOT NULL DEFAULT ''    -- hash of the most recent link
+        );
+
         -- 21 CFR Part 11 signature PIN (second signing component). Salted PBKDF2 hash only;
         -- kept in its own table so it can never leak through a `SELECT * FROM employees` read path.
         CREATE TABLE IF NOT EXISTS esign_pin (
@@ -212,6 +231,27 @@ def init_db():
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL")
     except sqlite3.OperationalError:
         pass   # a residual duplicate must never abort startup — the app-level guard still applies
+    # Audit hash chain: establish (or continue) the tamper-evident keyed-HMAC chain over the audit log.
+    # On a DB that predates the chain, backfill links over the existing rows in insertion (rowid) order
+    # so the whole history becomes verifiable from one trusted checkpoint. Runs ONCE — gated on the
+    # audit_chain singleton being absent — and is a no-op on every later init (new rows are chained live
+    # in put_collection_item). If TK_AUDIT_PEPPER is unset the chain still forms (empty key); it just
+    # isn't cryptographically unforgeable until a real pepper is set — hence the startup warning in app.py.
+    try:
+        if not conn.execute("SELECT 1 FROM audit_chain WHERE id=1").fetchone():
+            prev, seq = "", 0
+            for r in conn.execute("SELECT id, data FROM collections WHERE coll='audit' ORDER BY rowid").fetchall():
+                item = json.loads(r["data"])
+                seq += 1
+                item["seq"] = seq
+                item["prevHash"] = prev
+                item.setdefault("_rev", 1)
+                item["hash"] = _audit_link_hash(prev, item)
+                conn.execute("UPDATE collections SET data=? WHERE coll='audit' AND id=?", (json.dumps(item), r["id"]))
+                prev = item["hash"]
+            conn.execute("INSERT INTO audit_chain (id, seq, head_hash) VALUES (1, ?, ?)", (seq, prev))
+    except sqlite3.OperationalError:
+        pass   # never let the chain backfill abort startup
     # Schema version marker (PRAGMA user_version): lets ops/tests read the applied schema version and
     # gives future ordered migrations a value to branch on. The ALTERs above are idempotent, so this
     # is a marker today, not a gate.
@@ -1304,6 +1344,8 @@ def put_collection_item(coll, item):
     """
     if not item.get("id"):
         item["id"] = coll[:3] + "-" + uuid.uuid4().hex[:8]
+    if coll == "audit":
+        return _put_audit_chained(item)          # append-only + tamper-evident hash chain
     conn = get_conn()
     prev = conn.execute("SELECT data FROM collections WHERE coll = ? AND id = ?", (coll, item["id"])).fetchone()
     cur_rev = 0
@@ -1319,6 +1361,80 @@ def put_collection_item(coll, item):
     conn.commit()
     conn.close()
     return item
+
+
+def _audit_link_hash(prev_hash, item):
+    """One link's HMAC: keyed over the previous link's hash + the canonical (deterministic) JSON of this
+    row, EXCLUDING its own `hash` field. Sorting keys makes it order-independent of dict insertion; the
+    compact separators make it byte-stable. Binds id, seq, prevHash and all content into the digest."""
+    canonical = json.dumps({k: v for k, v in item.items() if k != "hash"}, sort_keys=True, separators=(",", ":"))
+    return hmac.new(AUDIT_KEY, ((prev_hash or "") + "|" + canonical).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _put_audit_chained(item):
+    """Append one audit row as the next link in the hash chain. Under a lock so a concurrent writer can't
+    read the same head and fork the chain. APPEND-ONLY: an existing audit id is never rewritten (its
+    link is immutable), so an internal re-put can't silently rewrite history."""
+    with _AUDIT_LOCK:
+        conn = get_conn()
+        try:
+            existing = conn.execute("SELECT data FROM collections WHERE coll='audit' AND id=?", (item["id"],)).fetchone()
+            if existing:
+                return json.loads(existing["data"])     # append-only: never rewrite a chained link
+            head = conn.execute("SELECT seq, head_hash FROM audit_chain WHERE id=1").fetchone()
+            seq0, prev_hash = (head["seq"], head["head_hash"]) if head else (0, "")
+            item["_rev"] = 1
+            item["seq"] = seq0 + 1
+            item["prevHash"] = prev_hash or ""
+            item["hash"] = _audit_link_hash(item["prevHash"], item)
+            conn.execute("INSERT INTO collections (coll,id,data) VALUES ('audit',?,?)",
+                         (item["id"], json.dumps(item)))
+            conn.execute("INSERT INTO audit_chain (id, seq, head_hash) VALUES (1, ?, ?) "
+                         "ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, head_hash = excluded.head_hash",
+                         (item["seq"], item["hash"]))
+            conn.commit()
+            return item
+        finally:
+            conn.close()
+
+
+def verify_audit_chain():
+    """Recompute the audit hash chain from genesis and report the first break. Detects: edited content
+    (hash mismatch), reordering / a deleted middle row (seq gap or prevHash mismatch), a row inserted
+    out-of-band with no link (unchained), and — via the persisted head checkpoint — deletion/truncation
+    of the newest rows. Returns {ok, count, brokenAtSeq, reason, ...}."""
+    conn = get_conn()
+    try:
+        rows = [json.loads(r["data"]) for r in conn.execute("SELECT data FROM collections WHERE coll='audit'").fetchall()]
+        head = conn.execute("SELECT seq, head_hash FROM audit_chain WHERE id=1").fetchone()
+    finally:
+        conn.close()
+    chained = [r for r in rows if isinstance(r.get("seq"), int) and r.get("hash")]
+    unchained = len(rows) - len(chained)
+    chained.sort(key=lambda r: r["seq"])
+    prev = ""
+    for i, r in enumerate(chained):
+        want = i + 1
+        if r["seq"] != want:
+            return {"ok": False, "count": len(chained), "brokenAtSeq": r["seq"],
+                    "reason": "sequence gap or reordering near #%d (found seq %s) — a row may have been deleted or moved" % (want, r["seq"])}
+        if (r.get("prevHash") or "") != prev:
+            return {"ok": False, "count": len(chained), "brokenAtSeq": r["seq"],
+                    "reason": "prevHash mismatch at #%d — the chain link was broken" % r["seq"]}
+        if _audit_link_hash(prev, r) != r["hash"]:
+            return {"ok": False, "count": len(chained), "brokenAtSeq": r["seq"],
+                    "reason": "content was altered at #%d — recomputed hash does not match" % r["seq"]}
+        prev = r["hash"]
+    exp_seq = head["seq"] if head else 0
+    exp_head = (head["head_hash"] if head else "") or ""
+    if len(chained) != exp_seq or prev != exp_head:
+        return {"ok": False, "count": len(chained), "brokenAtSeq": exp_seq,
+                "reason": "chain head mismatch — %d entries present but the checkpoint records %d (newest rows may have been deleted)" % (len(chained), exp_seq)}
+    if unchained:
+        return {"ok": False, "count": len(chained), "brokenAtSeq": None,
+                "reason": "%d audit row(s) are not part of the hash chain (inserted out-of-band?)" % unchained}
+    return {"ok": True, "count": len(chained), "unchained": 0, "headHash": prev, "brokenAtSeq": None,
+            "keyed": bool(AUDIT_KEY)}
 
 
 def delete_collection_item(coll, item_id):

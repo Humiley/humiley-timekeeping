@@ -3010,6 +3010,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._admin_errors(u))
         if path == "/api/admin/metrics":  # admin-only request telemetry (latency / error-rate / per-route)
             return self._guard(lambda u: self._metrics_report(u))
+        if path == "/api/admin/audit/verify":  # admin-only tamper-evidence check of the audit hash chain
+            return self._guard(lambda u: self._audit_verify(u))
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
@@ -4862,6 +4864,15 @@ class Handler(BaseHTTPRequestHandler):
             "errors": list(_ERR_LOG)[-100:],   # newest last
         })
 
+    def _audit_verify(self, u):
+        """Tamper-evidence check — admin only. Recomputes the audit hash chain end to end and reports
+        whether it is intact (and if not, the first broken sequence number + why). This is what turns
+        the append-only audit log into a *provably* untampered ledger: an edit, reorder, insertion, or
+        deletion made directly against the DB file (bypassing the API's append-only guards) is detected."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        return self._json(db.verify_audit_chain())
+
     def _metrics_report(self, u):
         """Request telemetry — admin only. Per-route counts, error count, avg + max latency, so the
         platform is diagnosable ('what is my p-ish latency / error rate') instead of guesswork."""
@@ -5689,6 +5700,13 @@ def main():
     if not DEMO_MODE and not os.environ.get("TK_ESIGN_PEPPER"):
         print("  \033[1;33m⚠  TK_ESIGN_PEPPER is NOT set.\033[0m Set it (openssl rand -hex 32) BEFORE")
         print("     any user enrolls an e-signature PIN — adding it later invalidates existing PINs.")
+    # Audit hash chain is keyed by TK_AUDIT_PEPPER — without it the chain still forms but is not
+    # cryptographically unforgeable (an attacker with DB write access could recompute valid links).
+    # Must be stable once set: changing the key invalidates every existing link's verification.
+    if not DEMO_MODE and not os.environ.get("TK_AUDIT_PEPPER"):
+        print("  \033[1;33m⚠  TK_AUDIT_PEPPER is NOT set.\033[0m Set it (openssl rand -hex 32) to make the")
+        print("     audit trail tamper-EVIDENT. Set it once and keep it stable — changing it later")
+        print("     invalidates verification of all existing audit links.")
     # Part 11 signing tokens: without this flag, JWKS signature verification SOFT-FAILS if the crypto
     # lib / JWKS endpoint is unavailable (a structurally-valid but unverified token would be accepted).
     if not DEMO_MODE and os.environ.get("TK_ESIGN_REQUIRE_VERIFIED_TOKEN") != "1":

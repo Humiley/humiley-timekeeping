@@ -6894,7 +6894,7 @@ async function tkRenderAudit() {
       '<button class="btn btn-outline btn-sm" onclick="tkExportAuditXlsx()">' + tkIcon('download') + _t('Export Excel') + '</button>' +
     '</div>' +
     '<div class="card" style="padding:0;overflow:hidden">' +
-    '<div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center"><div class="card-title">' + _t('Audit Log') + '</div><div id="aud-count" style="font-size:12px;color:var(--text-light)"></div></div>' +
+    '<div class="card-hdr" style="padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div class="card-title">' + _t('Audit Log') + '</div><div style="display:flex;align-items:center;gap:10px"><span id="aud-chain" style="font-size:11px;font-weight:700" title="' + _tkEscA(_t('Cryptographic tamper-evidence: each entry is HMAC-chained to the previous one.')) + '"></span><div id="aud-count" style="font-size:12px;color:var(--text-light)"></div></div></div>' +
     '<div style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
       _crmFiltSearch('aud-q', _t('Search actor / action / target / detail…'), 'audFillTable') +
       _crmFiltSel('aud-action', 'All actions', _crmDistinct(rows, 'action'), 'audFillTable') +
@@ -6903,6 +6903,31 @@ async function tkRenderAudit() {
     '<div class="table-wrap"><table style="min-width:820px"><thead><tr><th>' + _t('When') + '</th><th>' + _t('Actor') + '</th><th>' + _t('Action') + '</th><th>' + _t('Record') + '</th><th>' + _t('Details') + '</th></tr></thead><tbody id="aud-tbody"></tbody></table></div>' +
     '</div>';
   audFillTable();
+  tkAuditChainCheck();
+}
+/* Ask the backend to recompute the audit hash chain and show a tamper-evidence badge. Admin-only
+   endpoint; a non-admin (or any error) just leaves the badge blank rather than surfacing a scary state. */
+async function tkAuditChainCheck() {
+  const el = document.getElementById('aud-chain'); if (!el) return;
+  el.textContent = '';
+  const pill = (bg, fg, bd, txt) => '<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;background:' + bg + ';color:' + fg + ';border:1px solid ' + bd + '">' + txt + '</span>';
+  try {
+    const r = await tkApi('/api/admin/audit/verify');
+    if (r && r.ok) {
+      const n = r.count || 0;
+      if (r.keyed === false) {
+        el.innerHTML = pill('#FEF3C7', '#92400E', '#92400E33', '● ' + _t2('Chain intact (unkeyed) · ', 'Chuỗi nguyên vẹn (chưa khóa) · ') + n);
+      } else {
+        el.innerHTML = pill('#E7F7EF', '#067A46', '#067A4633', '✓ ' + _t2('Chain verified · ', 'Đã xác minh chuỗi · ') + n);
+      }
+    } else {
+      const at = (r && r.brokenAtSeq != null) ? (' #' + r.brokenAtSeq) : '';
+      el.innerHTML = pill('#FDECEC', '#B91C1C', '#B91C1C33', '⚠ ' + _t2('Chain broken', 'Chuỗi bị phá vỡ') + at);
+      el.title = (r && r.reason) || '';
+    }
+  } catch (e) {
+    el.textContent = '';   // 403 for non-admins, or offline — show nothing
+  }
 }
 function _audFiltered() {
   const q = (_crmLF['aud-q'] || '').toLowerCase();

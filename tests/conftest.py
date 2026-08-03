@@ -19,6 +19,7 @@ import pytest
 # --- point the app at a throwaway DB + a test pepper, before importing it -------------------
 os.environ["TK_DB_PATH"] = os.path.join(tempfile.mkdtemp(prefix="tk-test-"), "test.db")
 os.environ.setdefault("TK_ESIGN_PEPPER", "test-pepper-abcdefghijklmnop")
+os.environ.setdefault("TK_AUDIT_PEPPER", "test-audit-pepper-qrstuvwxyz")   # keys the audit hash chain
 os.environ.setdefault("TK_ADMIN_EMAIL", "admin@humiley.com")
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -36,8 +36,10 @@ plaintext when the key is missing.
 ## P0‑3 · Escrow the `.env` crown jewels (off‑box)
 Store these **off the VPS** (password manager / sealed vault) today — a lost disk is otherwise unrecoverable
 even *with* a perfect DB backup:
-`TK_ESIGN_PEPPER` (lose it → every enrolled e‑sign PIN is unverifiable), `POSTGRES_PASSWORD`
-(lose it → the restored Procurement DB is locked), `TK_SSO_SECRET`, and the `TK_M365_CLIENT_SECRET`.
+`TK_ESIGN_PEPPER` (lose it → every enrolled e‑sign PIN is unverifiable), `TK_AUDIT_PEPPER` (keys the
+tamper‑evident audit hash chain — set it once in the VPS `.env` with `openssl rand -hex 32`; lose or
+change it → the audit trail can no longer be verified), `POSTGRES_PASSWORD` (lose it → the restored
+Procurement DB is locked), `TK_SSO_SECRET`, and the `TK_M365_CLIENT_SECRET`.
 
 ## P0‑4 · Back up the **Procurement Postgres** + uploads (VPS) — currently 100% unbacked
 `backup.sh` snapshots only the portal SQLite. `docker-compose.yml` also runs `procdb` (all PO/GRN, the
