@@ -12,13 +12,17 @@
 # off-box copy on OneDrive/SharePoint is ciphertext. Create the key ONCE (keep it OFF the server too,
 # in a password manager — losing it means losing every encrypted backup):
 #   openssl rand -base64 48 > /root/humiley-backups/.backup-key && chmod 600 /root/humiley-backups/.backup-key
-# With no key file, it falls back to plain gzip (a warning is logged) so the cron never silently fails.
+# FAIL-CLOSED: with no key file this script now ABORTS instead of writing a plaintext snapshot. The
+# backup directory is meant to be copied off-box (see the rclone TIP at the bottom), so a silent
+# plaintext fallback would ship unencrypted payroll/PII/GPS to consumer cloud. Set
+# BACKUP_ALLOW_PLAINTEXT=1 to deliberately opt out (dev/testing only — never in production).
 #
 # Env (all optional):
 #   TK_CONTAINER    app container name      (default: humiley_portal)
 #   BACKUP_DIR      where snapshots go      (default: /root/humiley-backups)
 #   RETAIN_DAYS     delete older than N     (default: 14)
-#   BACKUP_KEYFILE  AES-256 passphrase file (default: $BACKUP_DIR/.backup-key; absent => plaintext)
+#   BACKUP_KEYFILE  AES-256 passphrase file (default: $BACKUP_DIR/.backup-key; absent => ABORT)
+#   BACKUP_ALLOW_PLAINTEXT=1  allow an UNENCRYPTED snapshot (dev only; prints a loud warning)
 set -euo pipefail
 
 CONTAINER="${TK_CONTAINER:-humiley_portal}"
@@ -30,25 +34,66 @@ OUT="$BACKUP_DIR/timekeeping-$STAMP.db"
 
 mkdir -p "$BACKUP_DIR"
 
+# 0) FAIL-CLOSED KEY CHECK — before any data leaves the container. This directory gets copied off-box,
+#    so a missing key must abort the run, not silently produce a plaintext dump of payroll/PII/GPS.
+if [ ! -f "$KEYFILE" ]; then
+  if [ "${BACKUP_ALLOW_PLAINTEXT:-0}" = "1" ]; then
+    echo "[$(date +%F\ %T)] ⚠️  BACKUP_ALLOW_PLAINTEXT=1 — writing an UNENCRYPTED snapshot. Never do this in production." >&2
+  else
+    echo "[$(date +%F\ %T)] ✖ ABORT: no encryption key at $KEYFILE — refusing to write a plaintext backup of HR/finance data." >&2
+    echo "    Create it once (and store a copy OFF this server, in a password manager):" >&2
+    echo "      openssl rand -base64 48 > $KEYFILE && chmod 600 $KEYFILE" >&2
+    echo "    Or set BACKUP_ALLOW_PLAINTEXT=1 to override (dev/testing only)." >&2
+    exit 1
+  fi
+fi
+
 # 1) Consistent online snapshot inside the container (uses the app's own Python; no host sqlite3 needed).
 docker exec "$CONTAINER" python3 -c "import sqlite3,os; \
 src=sqlite3.connect(os.environ.get('TK_DB_PATH','/data/timekeeping.db')); \
 dst=sqlite3.connect('/data/_backup.db'); src.backup(dst); dst.close(); src.close()"
+
+# 1b) VERIFY AT CREATION — a backup is only real if it's readable. Check SQLite integrity and assert the
+#     snapshot actually holds rows, so corruption/truncation is caught NOW rather than during a restore
+#     in an emergency. Any failure aborts (and clears the temp copy) so a bad snapshot is never kept.
+if ! docker exec "$CONTAINER" python3 -c "
+import sqlite3, sys
+c = sqlite3.connect('/data/_backup.db')
+ok = c.execute('PRAGMA integrity_check').fetchone()[0]
+if ok != 'ok':
+    print('integrity_check failed: %s' % ok); sys.exit(1)
+n = c.execute('SELECT COUNT(*) FROM employees').fetchone()[0]
+if n < 1:
+    print('sanity check failed: employees table is empty'); sys.exit(1)
+print('verified: integrity ok, %d employee row(s)' % n)
+"; then
+  echo "[$(date +%F\ %T)] ✖ ABORT: snapshot failed verification — not keeping it." >&2
+  docker exec "$CONTAINER" rm -f /data/_backup.db 2>/dev/null || true
+  exit 1
+fi
 
 # 2) Copy out to the host, compress, remove the temp copy from the volume.
 docker cp "$CONTAINER:/data/_backup.db" "$OUT"
 gzip -f "$OUT"
 docker exec "$CONTAINER" rm -f /data/_backup.db 2>/dev/null || true
 
-# 3) Encrypt at rest (AES-256-CBC + PBKDF2) if a key file exists; otherwise keep plaintext + warn.
+# 3) Encrypt at rest (AES-256-CBC + PBKDF2). The key was already required in step 0, so reaching the
+#    plaintext branch means BACKUP_ALLOW_PLAINTEXT=1 was set deliberately.
 FINAL="$OUT.gz"
 if [ -f "$KEYFILE" ]; then
   openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$OUT.gz" -out "$OUT.gz.enc" -pass "file:$KEYFILE"
+  # Verify the ciphertext actually decrypts with this key before discarding the plaintext — an
+  # unreadable "backup" is worse than none, and this catches a truncated write or a bad key file.
+  if ! openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$OUT.gz.enc" -pass "file:$KEYFILE" 2>/dev/null | gzip -t; then
+    echo "[$(date +%F\ %T)] ✖ ABORT: the encrypted snapshot did not decrypt/verify — keeping nothing." >&2
+    rm -f "$OUT.gz.enc" "$OUT.gz"
+    exit 1
+  fi
   rm -f "$OUT.gz"
   FINAL="$OUT.gz.enc"
-  echo "[$(date +%F\ %T)] backup OK (encrypted) -> $FINAL ($(du -h "$FINAL" | cut -f1))"
+  echo "[$(date +%F\ %T)] backup OK (encrypted, decrypt-verified) -> $FINAL ($(du -h "$FINAL" | cut -f1))"
 else
-  echo "[$(date +%F\ %T)] backup OK (PLAINTEXT — no key at $KEYFILE) -> $FINAL ($(du -h "$FINAL" | cut -f1))" >&2
+  echo "[$(date +%F\ %T)] backup OK (⚠️ UNENCRYPTED — BACKUP_ALLOW_PLAINTEXT=1) -> $FINAL ($(du -h "$FINAL" | cut -f1))" >&2
 fi
 
 # 4) Retention: prune old snapshots (both encrypted + plaintext forms).
