@@ -10943,7 +10943,7 @@ async function tkInvSyncMailbox(opts) {
     const H = { Authorization: 'Bearer ' + token };
     const msgs = []; let pages = 0;
     while (url && pages < 8) {
-      const resp = await fetch(url, { headers: H });
+      const resp = await _graphFetch(url, { headers: H });
       if (!resp.ok) { const b = await resp.text().catch(() => ''); throw new Error('Graph ' + resp.status + (resp.status === 403 ? ' — no access to hd@humiley.com (grant the user shared-mailbox access + Mail.Read.Shared consent).' : '') + (b ? ' · ' + b.slice(0, 120) : '')); }
       const j = await resp.json(); (j.value || []).forEach(m => msgs.push(m)); url = j['@odata.nextLink'] || ''; pages++;
     }
@@ -10955,7 +10955,7 @@ async function tkInvSyncMailbox(opts) {
       let extracted = null, lookup = null;
       if (m.hasAttachments) {
         try {
-          const ar = await fetch('https://graph.microsoft.com/v1.0/users/' + encodeURIComponent(_INV_SHARED_MAILBOX) + '/messages/' + m.id + '/attachments?$select=name,contentType,contentBytes', { headers: H });
+          const ar = await _graphFetch('https://graph.microsoft.com/v1.0/users/' + encodeURIComponent(_INV_SHARED_MAILBOX) + '/messages/' + m.id + '/attachments?$select=name,contentType,contentBytes', { headers: H });
           const aj = ar.ok ? await ar.json() : { value: [] };
           const atts = aj.value || [];
           // 1) XML e-invoice = most reliable
@@ -13026,7 +13026,7 @@ async function tkSyncM365Users() {
   const users = [];
   try {
     while (url) {
-      const resp = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+      const resp = await _graphFetch(url, { headers: { Authorization: 'Bearer ' + token } });
       if (!resp.ok) { toast('Microsoft Graph error ' + resp.status + (resp.status === 403 ? ' — admin consent for User.Read.All is required.' : ''), 'error', 9000); return; }
       const j = await resp.json();
       (j.value || []).forEach(u => users.push(u));
@@ -13135,6 +13135,23 @@ function _loadDemoUser() {
 /* ──────────────────────────────────────────────────────────
    3. GRAPH API HELPERS
 ────────────────────────────────────────────────────────── */
+/* Microsoft Graph fetch with 429/503 back-off. Graph throttles bursty callers and returns a
+   Retry-After; without honouring it the 24/7 invoice-mailbox poll and the directory sync error out on a
+   transient throttle instead of waiting it out. Retries up to `max` times, sleeping the server-advised
+   delay (or an exponential fallback), each sleep capped at 60s. */
+async function _graphFetch(url, opts, max) {
+  max = (max == null) ? 4 : max;
+  for (let attempt = 0; ; attempt++) {
+    const resp = await fetch(url, opts);
+    if ((resp.status === 429 || resp.status === 503) && attempt < max) {
+      let wait = parseInt(resp.headers.get('Retry-After') || '', 10);
+      if (!(wait > 0)) wait = Math.min(Math.pow(2, attempt), 30);   // exp backoff when no Retry-After
+      await new Promise(r => setTimeout(r, Math.min(wait, 60) * 1000));
+      continue;
+    }
+    return resp;
+  }
+}
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 async function spGet(list, filter = '') {
