@@ -122,6 +122,9 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
 .skip-link{position:absolute;left:-9999px;top:0;z-index:3000;background:var(--navy);color:#fff;padding:10px 16px;border-radius:0 0 8px 0;font-weight:700;font-size:13px;text-decoration:none}
 .skip-link:focus{left:0}
 #content:focus{outline:none}
+/* Screen-reader-only: out of the visual flow, still in the accessibility tree. Backs the chart data
+   tables — a <canvas> is opaque to assistive tech, and paints nothing at all if Chart.js fails to load. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);clip-path:inset(50%);white-space:nowrap;border:0}
 /* Honour reduced-motion: near-instant transitions/animations for users who ask for it. */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms !important;animation-iteration-count:1 !important;transition-duration:.001ms !important;scroll-behavior:auto !important}}
 /* Subtle content transition when switching views — a soft fade+rise so navigation feels intentional
@@ -20730,9 +20733,71 @@ const _valueLabels = { id: 'hmlValueLabels', afterDatasetsDraw(chart) { if (char
 const _doughCenter = { id: 'hmlDoughCenter', afterDraw(chart) { if (chart.config.type !== 'doughnut' || !chart.$center) return; const o = chart.$center, a = chart.chartArea; if (!a) return; const ctx = chart.ctx, cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2; const tot = (chart.data.datasets[0].data || []).reduce((s, x) => s + (+x || 0), 0); ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#0f1f3a'; ctx.font = '800 19px Calibri'; ctx.fillText(o.fmt ? o.fmt(tot) : _num(tot), cx, cy - 2); ctx.fillStyle = '#94a3b8'; ctx.font = '600 10px Calibri'; ctx.fillText((typeof _t === 'function' ? _t(o.label || 'Total') : (o.label || 'Total')), cx, cy + 15); ctx.restore(); } };
 /* Chart.js now loads DEFERRED, so register plugins + defaults once it is available — not at
    parse time. Called from DOMContentLoaded and defensively before the first chart is built. */
+/* ── CHART TEXT ALTERNATIVE ──────────────────────────────────────────────────────────────────────
+   A <canvas> is invisible to screen readers, and if Chart.js ever fails to load it paints nothing at
+   all — so every KPI chart was both inaccessible AND a silent blank. Each canvas now gets role="img"
+   + an aria-label summary, plus a visually-hidden data table built from the SAME cfg.data the chart is
+   given. Driven from one place: _mkChart calls it before Chart.js is even required (so the table exists
+   in the no-Chart.js case), and the hmlA11y plugin re-runs it for charts built outside _mkChart and
+   after any update(). Idempotent via a data signature, so re-render/resize never thrashes the DOM. */
+const _A11Y_MAX_CELLS = 60;   /* beyond this the table is dropped; the aria-label still describes it */
+/* The heading nearest ABOVE the canvas. Chart cards in this file label themselves in several ways —
+   .card-title, .card-hdr, or (most often) a plain bold <div> that is simply the previous sibling of the
+   canvas's wrapper — so walk up a few levels and take the first short preceding text. */
+function _a11yChartTitle(cv) {
+  try {
+    const own = cv.getAttribute('data-chart-title'); if (own) return own;
+    for (let n = cv, i = 0; n && i < 4; n = n.parentElement, i++) {
+      for (let p = n.previousElementSibling; p; p = p.previousElementSibling) {
+        if (p.classList && p.classList.contains('sr-only')) continue;   // never read back our own table
+        if (p.tagName === 'CANVAS') continue;
+        const s = (p.textContent || '').replace(/\s+/g, ' ').trim();
+        if (s && s.length <= 120) return s;
+      }
+      if (n.classList && n.classList.contains('card')) break;           // don't wander out of the card
+    }
+  } catch (e) {}
+  return _t2('Chart', 'Biểu đồ');
+}
+function _a11yChart(cv, cfg) {
+  try {
+    if (!cv || !cfg || !cfg.data) return;
+    const labels = cfg.data.labels || [];
+    const sets = (cfg.data.datasets || []).filter(d => d && d.data);
+    if (!sets.length) return;
+    const sig = (cfg.type || '') + '|' + labels.join('') + '|' +
+      sets.map(d => (d.label || '') + ':' + (d.data || []).join(',')).join(';');
+    if (cv._a11ySig === sig) return;                       // nothing changed — skip
+    cv._a11ySig = sig;
+    const kind = { doughnut: ['doughnut chart', 'biểu đồ tròn'], pie: ['pie chart', 'biểu đồ tròn'],
+                   line: ['line chart', 'biểu đồ đường'], bar: ['bar chart', 'biểu đồ cột'] }[cfg.type]
+                 || ['chart', 'biểu đồ'];
+    const title = _a11yChartTitle(cv);
+    cv.setAttribute('role', 'img');
+    const n1 = (n, en, enP) => n + ' ' + _t2(n === 1 ? en : enP, 'mục');   // "1 category" not "1 categories"
+    cv.setAttribute('aria-label', title + ' — ' + _t2(kind[0], kind[1]) + ', ' +
+      n1(labels.length, 'category', 'categories') + ', ' +
+      (sets.length === 1 ? _t2('1 series', '1 chuỗi') : sets.length + ' ' + _t2('series', 'chuỗi')));
+    // Hidden equivalent table, right after the canvas.
+    let tbl = cv.nextElementSibling;
+    if (!(tbl && tbl.classList && tbl.classList.contains('sr-only') && tbl.dataset.a11yFor === 'chart')) {
+      tbl = document.createElement('div'); tbl.className = 'sr-only'; tbl.dataset.a11yFor = 'chart';
+      if (cv.parentNode) cv.parentNode.insertBefore(tbl, cv.nextSibling); else return;
+    }
+    if (labels.length * sets.length > _A11Y_MAX_CELLS) { tbl.innerHTML = ''; return; }   // too big to be useful
+    const esc = s => _crmEsc(String(s == null ? '' : s));
+    tbl.innerHTML = '<table><caption>' + esc(title) + '</caption><thead><tr><th>' +
+      _t2('Category', 'Hạng mục') + '</th>' + sets.map(d => '<th>' + esc(d.label || _t2('Value', 'Giá trị')) + '</th>').join('') +
+      '</tr></thead><tbody>' + labels.map((l, i) => '<tr><th>' + esc(l) + '</th>' +
+        sets.map(d => '<td>' + esc(d.data[i]) + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+  } catch (e) {}
+}
+/* Covers charts built OUTSIDE _mkChart (the invoice charts + the hand-rolled dashboard/report ones)
+   and refreshes the table after any .update(). */
+const _a11yPlugin = { id: 'hmlA11y', afterRender(c) { try { _a11yChart(c.canvas, c.config); } catch (e) {} } };
 function _registerChartPlugins() {
   if (window._chartPluginsDone || typeof Chart === 'undefined') return;
-  try { Chart.register(_valueLabels, _doughCenter); Chart.defaults.font.family = 'Calibri'; Chart.defaults.color = '#6b7280'; window._chartPluginsDone = true; } catch (e) {}
+  try { Chart.register(_valueLabels, _doughCenter, _a11yPlugin); Chart.defaults.font.family = 'Calibri'; Chart.defaults.color = '#6b7280'; window._chartPluginsDone = true; } catch (e) {}
 }
 /* Mobile smoothness: charts are destroyed + recreated on every render/poll, and each was
    re-running a 1000 ms tween (14+ live canvases at once) — a constant source of jank on phones.
@@ -20751,7 +20816,11 @@ function _tuneChartDefaults() {
 (function _armChartTune() { if (typeof Chart !== 'undefined') { _tuneChartDefaults(); } else { setTimeout(_armChartTune, 400); } })();
 function _mkChart(id, cfg, extra) {
   _registerChartPlugins();
-  const ctx = document.getElementById(id); if (!ctx || typeof Chart === 'undefined') return;
+  const ctx = document.getElementById(id);
+  // Text alternative FIRST — so the hidden data table is present even when Chart.js failed to load
+  // (in which case the canvas paints nothing and this table is the only copy of the data).
+  if (ctx) { try { _a11yChart(ctx, cfg); } catch (e) {} }
+  if (!ctx || typeof Chart === 'undefined') return;
   _tuneChartDefaults();
   if (_dashHrCharts[id]) { try { _dashHrCharts[id].destroy(); } catch (e) {} }
   const inst = new Chart(ctx, cfg);
