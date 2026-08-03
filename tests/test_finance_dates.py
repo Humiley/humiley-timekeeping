@@ -39,8 +39,9 @@ def test_approve_and_pay_stamp_the_date_trail(api, tokens, monkeypatch):
     assert row.get("status") == "Approved"
     assert row.get("approvedBy") and row.get("approvedOn"), "approval must stamp approvedBy + approvedOn"
 
-    # Pay (editor, with the required bank slip) -> paidBy + paidOn stamped.
-    st, b = api("POST", "/api/esign", tokens["editor"],
+    # Pay: a DIFFERENT Editor/Admin than the approver releases the money (disbursement SoD), with the
+    # required bank slip -> paidBy + paidOn stamped. (editor approved above, so admin pays.)
+    st, b = api("POST", "/api/esign", tokens["admin"],
                 {"coll": "payments", "id": pid, "meaning": "Paid — PR-DATE", "setStatus": "Paid",
                  "attach": {"bankSlip": "data:application/pdf;base64,YmFuaw==", "bankSlipName": "slip.pdf"}})
     assert st == 200, b

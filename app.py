@@ -283,7 +283,8 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "apprEscalateDays": "0", "apprEscalateTo": "",
                           "digestEnabled": "0", "digestDay": "0", "digestLeadTo": "",
                           "tkNudges": "0", "tkCheckinHour": "10", "tkCheckoutHour": "19",
-                          "monthlyReports": "0", "monthlyDay": "1", "monthlyTo": ""}
+                          "monthlyReports": "0", "monthlyDay": "1", "monthlyTo": "",
+                          "payerSeparation": "1"}   # require a 2nd Editor/Admin to pay a request they approved (disbursement SoD)
 _APPR_REMIND_LOCK = threading.Lock()
 
 
@@ -3425,6 +3426,19 @@ class Handler(BaseHTTPRequestHandler):
                 return "Editor or Admin access is required to mark a request paid."
             if cur != "approved":
                 return "Only an approved request can be marked paid."
+            # Disbursement segregation of duties. Paying your OWN request is never allowed (hard rule).
+            if same_person:
+                return "You cannot release payment on your own request."
+            # The person who releases the money must not also be the one who gave final approval.
+            # Requires a 2nd Editor/Admin; a single-finance-person org can relax this by setting
+            # portal_payerSeparation to "0" (owner!=payer above still holds).
+            sep = (db.get_setting("portal_payerSeparation", "") or _APPR_SETTING_DEFAULTS["payerSeparation"]) == "1"
+            if sep:
+                approver_ids = [s.get("userId") for s in (sigs or [])
+                                if str(s.get("setStatus") or "").lower() == "approved"          # server-applied (authoritative)
+                                or "approv" in str(s.get("meaning", "")).lower()]               # legacy sigs fallback
+                if u.get("id") in approver_ids:
+                    return "A different person must release payment than the one who gave final approval."
             return None
         # Any other status is NOT a valid approval transition on a three-level record. Deny it — a
         # requester could otherwise self-sign their OWN record with an intermediate status such as
@@ -4316,6 +4330,7 @@ class Handler(BaseHTTPRequestHandler):
         out["monthlyReports"] = db.get_setting("portal_monthlyReports", "0") or "0"
         out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
         out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
+        out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4502,7 +4517,8 @@ class Handler(BaseHTTPRequestHandler):
                       ("tkCheckoutHour", "portal_tkCheckoutHour"),
                       ("monthlyReports", "portal_monthlyReports"),
                       ("monthlyDay", "portal_monthlyDay"),
-                      ("monthlyTo", "portal_monthlyTo")):
+                      ("monthlyTo", "portal_monthlyTo"),
+                      ("payerSeparation", "portal_payerSeparation")):
             v = body.get(k)
             if not isinstance(v, str):
                 continue
