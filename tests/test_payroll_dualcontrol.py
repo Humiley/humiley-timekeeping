@@ -74,3 +74,27 @@ def test_patch_cannot_finalise_and_finalised_is_immutable(api, tokens, monkeypat
         {"coll": "payruns", "id": pid, "meaning": "Finalise", "setStatus": "Finalised"})
     st, r = api("PATCH", "/api/coll/payruns/" + pid, tokens["editor"], dict(_get(pid), gross=999))
     assert st != 200 and "immutable" in str(r).lower(), (st, r)
+
+
+def test_preparer_cannot_blank_or_spoof_preparedById_to_self_finalise(api, tokens, monkeypatch):
+    # SoD-bypass regression: the preparer must not be able to clear/spoof preparedById via the blind
+    # full-object PATCH and then finalise their OWN run (owner_id falsy/mismatched → the preparer!=signer
+    # check would be skipped). The stored preparer identity is pinned, so the guard still fires.
+    monkeypatch.setattr(app, "DEMO_MODE", True)
+    _, b = _run(api, tokens["admin"], "June 2026")          # admin prepares
+    pid = b["item"]["id"]
+    assert _get(pid)["preparedById"] == "HML-ADM"
+    # (a) try to BLANK preparedById via PATCH, then self-finalise
+    api("PATCH", "/api/coll/payruns/" + pid, tokens["admin"], dict(_get(pid), preparedById="", preparedBy=""))
+    assert _get(pid)["preparedById"] == "HML-ADM", "preparedById must be immutable via PATCH"
+    st, r = api("POST", "/api/esign", tokens["admin"],
+                {"coll": "payruns", "id": pid, "meaning": "Finalise", "setStatus": "Finalised"})
+    assert st != 200 and "prepared" in str(r).lower(), (st, r)
+    # (b) try to SPOOF preparedById to someone else, then self-finalise
+    edit = dict(_get(pid)); edit.pop("preparedById", None)   # omit it entirely from the full-object body
+    api("PATCH", "/api/coll/payruns/" + pid, tokens["admin"], edit)
+    assert _get(pid)["preparedById"] == "HML-ADM"
+    st2, r2 = api("POST", "/api/esign", tokens["admin"],
+                  {"coll": "payruns", "id": pid, "meaning": "Finalise", "setStatus": "Finalised"})
+    assert st2 != 200 and "prepared" in str(r2).lower(), (st2, r2)
+    assert _get(pid)["status"] == "Pending Approval"

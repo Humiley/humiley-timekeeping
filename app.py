@@ -5374,6 +5374,15 @@ class Handler(BaseHTTPRequestHandler):
                 # is a blind full-document overwrite, so pin status to its stored value rather than
                 # dropping it) — finalisation happens only through the Director e-signature.
                 body["status"] = _pr.get("status") or "Pending Approval"
+                # SoD: the PREPARER identity is immutable evidence. Pin it from the stored record so a
+                # preparer can't blank or spoof preparedById via this blind overwrite and then finalise
+                # their own run (with owner_id falsy/mismatched, the preparer!=signer check would be
+                # skipped) — that would defeat the whole dual-control guarantee.
+                for _k in ("preparedById", "preparedBy"):
+                    if _pr.get(_k) is not None:
+                        body[_k] = _pr.get(_k)
+                    else:
+                        body.pop(_k, None)
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
