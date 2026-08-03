@@ -5188,6 +5188,34 @@ class Handler(BaseHTTPRequestHandler):
                            "message": ("Preview digest sent to %s — check your inbox." % to) if ok
                            else ("Send failed: " + (h.get("lastError") or "unknown — is Mail.Send consented?"))})
 
+    @staticmethod
+    def _invtrack_dup_error(body):
+        """Server-side duplicate guard for the invoice register.
+
+        invtrack is a single dataset doc whose `.items` array is the legal tax-invoice register. The
+        BACKEND sync path de-dupes (_invtrack_dedupe_invoices), but the client's manual save writes an
+        arbitrary array — so duplicate prevention was app-logic-only and a buggy/hostile client could
+        inject the same legal invoice twice. Enforce it here, at the write boundary, for every caller.
+        Identity mirrors the frontend's _invKey: mailbox message id first, else invoice-number+serial.
+        """
+        items = (body or {}).get("items")
+        if not isinstance(items, list):
+            return None
+        seen = set()
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            msg = str(it.get("msgId") or it.get("internetMessageId") or "").strip()
+            inv = str(it.get("invNo") or "").strip()
+            key = ("m:" + msg) if msg else (("i:" + inv + "|" + str(it.get("serial") or "").strip()) if inv else "")
+            if not key:
+                continue                                  # unidentifiable row (still being captured) — don't block
+            if key in seen:
+                return ("Duplicate invoice in the register: %s. Each tax invoice may appear only once."
+                        % (inv or msg))
+            seen.add(key)
+        return None
+
     def _payperiod_finalised(self, period):
         """True once a COMPANY pay run for this period has been finalised (Director-e-signed). A finalised
         month is closed — its manual payroll adjustments (payadjust) must not be added, edited or deleted
@@ -5228,6 +5256,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
+        if name == "invtrack":
+            _dup = self._invtrack_dup_error(body)
+            if _dup:
+                return self._err(_dup, 400)
         item = dict(body or {})
         # SECURITY: a create must CREATE. put_collection_item is a blind upsert (INSERT ... ON CONFLICT
         # DO UPDATE), so a client-supplied `id` that already exists would OVERWRITE that row wholesale —
@@ -5475,6 +5507,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
+        if name == "invtrack":
+            _dup = self._invtrack_dup_error(body)
+            if _dup:
+                return self._err(_dup, 400)
         # Travel/claim/payment write scope: a LEADER (manager) may only edit records they own or that
         # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
         # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
