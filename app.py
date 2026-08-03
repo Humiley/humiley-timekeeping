@@ -4692,6 +4692,29 @@ class Handler(BaseHTTPRequestHandler):
                 n = num(it.get("amount"))
                 if it.get("amount") not in (None, "") and (n is None or n < 0 or n > self._MONEY_MAX):
                     return "Each line amount must be a valid non-negative number."
+        # Payroll records use their own money field names (no amount/cost/total). Every run total,
+        # salary component and statutory deduction is an absolute value and must be a non-negative
+        # number within the ceiling — a fat-fingered salary/override otherwise flows straight into
+        # gross/net/employer-cost with nothing to reject it (these were previously unvalidated).
+        if name in ("payruns", "payadjust"):
+            pay_keys = ("gross", "net", "ee", "er", "pit", "erCost",
+                        "basic", "posAllow", "responsibility", "skillSen", "P3",
+                        "lunch", "phone", "transport", "eeBhxh", "eeBhyt", "eeBhtn")
+            for k in pay_keys:
+                if k in item and item.get(k) not in (None, ""):
+                    n = num(item.get(k))
+                    if n is None:
+                        return "%s must be a number." % k
+                    if n < 0:
+                        return "%s cannot be negative." % k
+                    if n > self._MONEY_MAX:
+                        return "%s exceeds the allowed maximum." % k
+            for arr in ("extraEarn", "extraDeduct"):
+                for it in (item.get(arr) or []):
+                    if isinstance(it, dict) and it.get("amt") not in (None, ""):
+                        n = num(it.get("amt"))
+                        if n is None or n < 0 or n > self._MONEY_MAX:
+                            return "A payroll %s amount is invalid." % ("earning" if arr == "extraEarn" else "deduction")
         return None
 
     def _admin_errors(self, u):
@@ -5021,7 +5044,7 @@ class Handler(BaseHTTPRequestHandler):
         # id). Strip any incoming id so a fresh one is always minted; genuine edits go through PATCH.
         item.pop("id", None)
         # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
-        if name in ("claims", "travel", "payments"):
+        if name in ("claims", "travel", "payments", "payruns", "payadjust"):
             _err = self._validate_money_item(name, item)
             if _err:
                 return self._err(_err, 400)
@@ -5324,7 +5347,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not _owner:
                     return self._err("You can only edit your own pending request.", 403)
             # Validate money on the incoming edit too (add-time validation alone was insufficient).
-            if name in ("claims", "travel", "payments"):
+            if name in ("claims", "travel", "payments", "payruns", "payadjust"):
                 _merr = self._validate_money_item(name, item)
                 if _merr:
                     return self._err(_merr, 400)
