@@ -192,6 +192,93 @@ def _alert_webhook(text):
         pass
 
 
+# ── Readiness probe ───────────────────────────────────────────────────────────
+# /api/health gates the container healthcheck AND Caddy's `depends_on: service_healthy`, so it has to
+# prove the app can actually SERVE — not merely that SQLite answers SELECT 1 (which succeeds against an
+# empty file with no tables at all). It checks the HTML shell is present and whole, and that the DB is
+# usable (core tables exist and a real read path answers).
+#
+# DELIBERATELY CONSERVATIVE: the same Caddy fronts BOTH the portal and /procurement, so a false
+# "unhealthy" would take the edge down for both apps. Only unambiguously-broken states fail — a missing
+# or truncated shell, a missing core table, an unusable DB. Anything softer stays "ok".
+#
+# Kept cheap: it is an unauthenticated, un-rate-limited GET polled every 30s by Docker and by external
+# monitors. The shell check is one stat() in steady state, the DB half is ~1ms, and the whole result is
+# memoised for a few seconds so a probe flood can't amplify. READ-ONLY — it never writes.
+_HEALTH_CORE_TABLES = ("employees", "attendance", "leave", "settings", "collections")
+_SHELL_MIN_BYTES = 100_000        # the real shell is ~2 MB; below this it is truncated (same floor as tests/test_shell.py)
+_HEALTH_TTL = 5.0                 # seconds a probe result is reused
+_HEALTH_CACHE = {"until": 0.0, "res": None}
+_SHELL_CACHE = {"sig": None, "ok": False}
+_HEALTH_STATE = {"ok": True}      # last reported state — log on TRANSITION only, never every poll
+
+
+def _shell_ok():
+    """True when templates/index.html is readable and looks whole: a size floor plus the closing
+    </html> in the tail. Memoised on (size, mtime), so steady state is a single stat()."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", "index.html")
+    try:
+        st = os.stat(path)
+    except OSError:
+        _SHELL_CACHE["sig"], _SHELL_CACHE["ok"] = None, False
+        return False
+    sig = (st.st_size, st.st_mtime)
+    if _SHELL_CACHE["sig"] == sig:
+        return _SHELL_CACHE["ok"]
+    ok = st.st_size >= _SHELL_MIN_BYTES
+    if ok:
+        try:
+            with open(path, "rb") as f:                 # only re-read when the file actually changed
+                f.seek(max(0, st.st_size - 256))
+                ok = b"</html>" in f.read()
+        except OSError:
+            ok = False
+    _SHELL_CACHE["sig"], _SHELL_CACHE["ok"] = sig, ok
+    return ok
+
+
+def _health_probe():
+    """{ok, db, shell, detail} — the real readiness answer, memoised for _HEALTH_TTL seconds."""
+    now = time.time()
+    if _HEALTH_CACHE["res"] is not None and now < _HEALTH_CACHE["until"]:
+        return _HEALTH_CACHE["res"]
+    detail = ""
+    shell = _shell_ok()
+    if not shell:
+        detail = "app shell missing or truncated"
+    db_ok = True
+    try:
+        c = db.get_conn()
+        try:
+            have = {r[0] for r in c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            missing = [t for t in _HEALTH_CORE_TABLES if t not in have]
+            if missing:
+                db_ok = False
+                detail = detail or ("core table(s) missing: " + ", ".join(missing))
+            else:
+                c.execute("SELECT id FROM employees LIMIT 1").fetchone()   # a real read path, not SELECT 1
+        finally:
+            c.close()
+    except Exception as e:
+        db_ok = False
+        detail = detail or ("database unusable: " + type(e).__name__)
+    res = {"ok": bool(db_ok and shell), "db": db_ok, "shell": shell, "detail": detail}
+    _HEALTH_CACHE["res"], _HEALTH_CACHE["until"] = res, now + _HEALTH_TTL
+    # Log only when readiness CHANGES — a degraded app polled every 30s must not spam the log/webhook.
+    if res["ok"] != _HEALTH_STATE["ok"]:
+        _HEALTH_STATE["ok"] = res["ok"]
+        try:
+            if res["ok"]:
+                print("  health: READY again")
+            else:
+                print("  \033[1;31m✖ health: NOT READY\033[0m — %s" % (detail or "unknown"))
+                _alert_webhook("Humiley Portal is NOT READY", detail or "health probe failed")
+        except Exception:
+            pass
+    return res
+
+
 # ── Approval-lifecycle EMAIL (branded, Graph app-only sendMail) ────────────────
 # Emails the right people at each step of the 3-level approval flow. Decisions are still made IN THE
 # PORTAL with an e-signature (21 CFR Part 11) — the email carries the request detail + a deep-link, never
@@ -2997,15 +3084,15 @@ class Handler(BaseHTTPRequestHandler):
 
         # Public health probe for uptime monitors (UptimeRobot/Pingdom/etc.) — no auth, cheap DB ping.
         if path == "/api/health":
-            db_ok = True
-            try:
-                c = db.get_conn(); c.execute("SELECT 1").fetchone(); c.close()
-            except Exception:
-                db_ok = False
-            return self._json({"status": "ok" if db_ok else "degraded", "db": db_ok,
+            # Real readiness (shell whole + DB usable), not just "SQLite answered". Body is purely
+            # ADDITIVE — status/db/version/uptime_s/time keep their meaning for existing monitors,
+            # tests and the runbooks; `shell` and `detail` are new.
+            h = _health_probe()
+            return self._json({"status": "ok" if h["ok"] else "degraded", "db": h["db"],
+                               "shell": h["shell"], "detail": h["detail"],
                                "version": _app_version(), "uptime_s": int(time.time() - _STARTED_AT),
                                "time": datetime.utcnow().isoformat() + "Z"},
-                              200 if db_ok else 503)
+                              200 if h["ok"] else 503)
         if path == "/api/admin/errors":   # admin-only review of recent unhandled errors
             return self._guard(lambda u: self._admin_errors(u))
         if path == "/api/admin/metrics":  # admin-only request telemetry (latency / error-rate / per-route)
@@ -4347,7 +4434,27 @@ class Handler(BaseHTTPRequestHandler):
         # not just any manager-tier (Contributor) account.
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             return self._err("Management access required to delete an employee.", 403)
+        emp = db.get_employee(eid)
+        if not emp:
+            return self._err("Employee not found.", 404)
+        # REFERENTIAL INTEGRITY. attendance/leave/esign_pin cascade ON DELETE, so a hard delete does not
+        # just orphan history — it DESTROYS it; and the JSON store has no FKs, so claims/payments/payruns
+        # would be left pointing at an id that no longer resolves (and could later be recycled). An
+        # employee who has any history is DEACTIVATED, never deleted — the roster already filters on
+        # status, so deactivation is the intended way to remove someone from the active org.
+        refs = db.employee_references(eid)
+        if refs:
+            what = ", ".join("%d %s%s" % (n, k, "" if n == 1 else "s") for k, n in sorted(refs.items()))
+            return self._err(
+                "%s has history in the system (%s) and cannot be deleted — deleting would destroy or "
+                "orphan those records. Set their status to Inactive instead; they stay out of the active "
+                "roster and their history remains intact." % (emp.get("name") or eid, what), 409)
         db.delete_employee(eid)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Employee deleted", "target": "employees/" + str(eid),
+            "detail": "%s <%s> — no history on record" % (emp.get("name") or "", emp.get("email") or ""),
+            "ts": self._utc_now()})
         return self._json({"ok": True})
 
     def _emp_update(self, u, eid, body):

@@ -755,6 +755,62 @@ def update_employee(emp_id, data):
     conn.close()
 
 
+# Collections in the generic JSON store that reference an employee by id. There are no foreign keys
+# there, so a hard-delete silently ORPHANS these rows (and the id could later be recycled onto them).
+# `audit` is deliberately EXCLUDED: it is append-only evidence that must SURVIVE the delete, it carries
+# its own actor-name snapshot, and every account accumulates audit rows — blocking on it would make
+# deletion impossible rather than exceptional.
+EMP_REF_COLLS = ("claims", "travel", "payments", "payruns", "payadjust", "padr", "acks", "devices",
+                 "handovers", "exits", "onboarding", "enrollments", "reviews", "goals", "talent",
+                 "competency", "pip")
+_EMP_REF_KEYS = ("empId", "preparedById", "createdById", "reviewedById", "approvedById", "userId")
+
+
+def _refs_employee(node, emp_id):
+    """True if any id-bearing key ANYWHERE in the record equals this employee id — including nested
+    devices[].assignments[].empId and Part 11 signatures[].userId."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k in _EMP_REF_KEYS and v == emp_id:
+                return True
+            if isinstance(v, (dict, list)) and _refs_employee(v, emp_id):
+                return True
+    elif isinstance(node, list):
+        return any(_refs_employee(x, emp_id) for x in node)
+    return False
+
+
+def employee_references(emp_id):
+    """Everything in the DB that points at this employee, as {label: count}; empty == safe to delete.
+
+    attendance / leave / esign_pin matter MOST: their FKs are ON DELETE CASCADE (and foreign_keys is
+    ON), so deleting the employee DESTROYS that history outright rather than merely orphaning it."""
+    refs = {}
+    conn = get_conn()
+    try:
+        for tbl, label in (("attendance", "attendance record"), ("leave", "leave request")):
+            n = conn.execute("SELECT COUNT(*) FROM %s WHERE emp_id = ?" % tbl, (emp_id,)).fetchone()[0]
+            if n:
+                refs[label] = n
+        if conn.execute("SELECT 1 FROM esign_pin WHERE emp_id = ?", (emp_id,)).fetchone():
+            refs["e-signature PIN"] = 1
+        n = conn.execute("SELECT COUNT(*) FROM employees WHERE managerEmail IS NOT NULL AND managerEmail != '' "
+                         "AND managerEmail = (SELECT email FROM employees WHERE id = ?)", (emp_id,)).fetchone()[0]
+        if n:
+            refs["direct report"] = n
+        rows = conn.execute("SELECT coll, data FROM collections WHERE coll IN (%s)"
+                            % ",".join("?" * len(EMP_REF_COLLS)), EMP_REF_COLLS).fetchall()
+    finally:
+        conn.close()
+    for r in rows:
+        try:
+            if _refs_employee(json.loads(r["data"]), emp_id):
+                refs[r["coll"]] = refs.get(r["coll"], 0) + 1
+        except (ValueError, TypeError):
+            pass
+    return refs
+
+
 def delete_employee(emp_id):
     conn = get_conn()
     conn.execute("DELETE FROM employees WHERE id = ?", (emp_id,))
