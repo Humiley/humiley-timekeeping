@@ -309,6 +309,44 @@ def _idem_key(uid, name, item, header_key):
     return "%s|%s|h:%s" % (uid, name, hashlib.sha256(blob.encode("utf-8", "replace")).hexdigest())
 
 
+# ── Lightweight request telemetry ─────────────────────────────────────────────────────────────
+# The app was metric-blind (no latency / error-rate / per-endpoint counts). Aggregate them in
+# process and expose at /api/admin/metrics. Path ids are collapsed to ":id" so cardinality is bound.
+_METRICS = {}                      # "METHOD /route" -> {"n","err","ms","max"}
+_METRICS_LOCK = threading.Lock()
+_ID_SEG_RE = re.compile(r"^\d+$|^[0-9a-fA-F]{6,}$|^[0-9a-fA-F-]{16,}$")
+
+# Persist unhandled errors to a JSONL in the DB volume so the in-memory ring buffer isn't lost on
+# every auto-deploy (exactly when you're investigating a deploy regression). Rotated at ~2 MB.
+_ERR_FILE = os.path.join(os.path.dirname(os.path.abspath(db.DB_PATH)), "portal_errors.jsonl")
+_ERR_FILE_LOCK = threading.Lock()
+
+
+def _metrics_route(method, path):
+    out = []
+    for seg in (path or "/").split("?")[0].split("/"):
+        out.append(":id" if seg and _ID_SEG_RE.match(seg) else seg)
+    return method + " " + ("/".join(out) or "/")
+
+
+def _metrics_record(route, status, ms):
+    try:
+        with _METRICS_LOCK:
+            m = _METRICS.get(route)
+            if m is None:
+                if len(_METRICS) >= 400:          # bound cardinality — ignore brand-new routes past the cap
+                    return
+                m = _METRICS[route] = {"n": 0, "err": 0, "ms": 0.0, "max": 0.0}
+            m["n"] += 1
+            if status and status >= 500:
+                m["err"] += 1
+            m["ms"] += ms
+            if ms > m["max"]:
+                m["max"] = ms
+    except Exception:
+        pass
+
+
 def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0, escalate_to=None):
     """Send the branded lifecycle email for ONE request. event ∈ submitted/reviewed/approved/rejected/paid.
        reminder=True reframes it as an overdue nudge to whoever must act next; escalate_to (an email)
@@ -951,10 +989,23 @@ def _record_error(method, path, exc, email=None):
         "trace": traceback.format_exc()[-4000:],
     }
     _ERR_LOG.append(entry)
+    line = {k: v for k, v in entry.items() if k != "trace"}
     try:
-        line = {k: v for k, v in entry.items() if k != "trace"}
         sys.stderr.write("PORTAL_ERROR " + json.dumps(line) + "\n")
         sys.stderr.flush()
+    except Exception:
+        pass
+    # Persist to a JSONL in the DB volume so errors survive the next auto-deploy (which wipes the
+    # in-memory ring buffer — exactly when you're investigating a deploy regression). Rotated at ~2 MB.
+    try:
+        with _ERR_FILE_LOCK:
+            if os.path.exists(_ERR_FILE) and os.path.getsize(_ERR_FILE) > 2_000_000:
+                try:
+                    os.replace(_ERR_FILE, _ERR_FILE + ".1")
+                except Exception:
+                    pass
+            with open(_ERR_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(line) + "\n")
     except Exception:
         pass
     _alert_webhook("🚨 Portal error: %s %s → %s: %s" % (entry["method"], entry["path"], entry["error"], entry["message"]))
@@ -2877,7 +2928,13 @@ class Handler(BaseHTTPRequestHandler):
             pass
         return False
 
+    def send_response_only(self, code, message=None):
+        self._resp_status = code    # stash the status for the per-request metrics recorder
+        return super().send_response_only(code, message)
+
     def _serve_request(self, method, fn):
+        _t0 = time.time()
+        self._resp_status = 0
         try:
             if method != "GET" and not self._rate_check("write", 240, 60):
                 return   # write flood / cheap DoS guard (per real client IP, ~4/sec sustained)
@@ -2885,6 +2942,7 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             return   # client hung up mid-response — not an application error
         except Exception as e:
+            self._resp_status = 500
             email = None
             try:
                 u = self._user()
@@ -2899,6 +2957,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._err("Something went wrong. The team has been notified.", 500)
             except Exception:
                 pass   # headers may already be on the wire; nothing more we can do
+        finally:
+            try:
+                _metrics_record(_metrics_route(method, getattr(self, "path", "/")),
+                                self._resp_status or 200, (time.time() - _t0) * 1000.0)
+            except Exception:
+                pass
 
     def _do_get(self):
         p = urlparse(self.path)
@@ -2917,6 +2981,8 @@ class Handler(BaseHTTPRequestHandler):
                               200 if db_ok else 503)
         if path == "/api/admin/errors":   # admin-only review of recent unhandled errors
             return self._guard(lambda u: self._admin_errors(u))
+        if path == "/api/admin/metrics":  # admin-only request telemetry (latency / error-rate / per-route)
+            return self._guard(lambda u: self._metrics_report(u))
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
@@ -4748,6 +4814,32 @@ class Handler(BaseHTTPRequestHandler):
             "version": _app_version(),
             "alerting": bool(os.environ.get("TK_ALERT_WEBHOOK")),
             "errors": list(_ERR_LOG)[-100:],   # newest last
+        })
+
+    def _metrics_report(self, u):
+        """Request telemetry — admin only. Per-route counts, error count, avg + max latency, so the
+        platform is diagnosable ('what is my p-ish latency / error rate') instead of guesswork."""
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access required.", 403)
+        rows = []
+        tot_n = tot_err = 0
+        tot_ms = 0.0
+        with _METRICS_LOCK:
+            for route, m in _METRICS.items():
+                tot_n += m["n"]; tot_err += m["err"]; tot_ms += m["ms"]
+                rows.append({"route": route, "n": m["n"], "err": m["err"],
+                             "avgMs": round(m["ms"] / m["n"], 1) if m["n"] else 0,
+                             "maxMs": round(m["max"], 1)})
+        rows.sort(key=lambda r: r["n"], reverse=True)
+        return self._json({
+            "uptime_s": int(time.time() - _STARTED_AT),
+            "version": _app_version(),
+            "totalRequests": tot_n,
+            "errorRequests": tot_err,
+            "errorRate": round(tot_err / tot_n, 4) if tot_n else 0,
+            "avgMs": round(tot_ms / tot_n, 1) if tot_n else 0,
+            "routeCount": len(rows),
+            "routes": rows[:200],
         })
 
     def _invtrack_status(self, u):
