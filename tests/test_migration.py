@@ -46,6 +46,19 @@ def test_migration_dedupes_open_attendance_adds_columns_and_stamps_version():
         db.DB_PATH = saved   # restore so the shared session DB keeps working for the rest of the suite
 
 
+def test_get_collection_item_matches_the_old_scan(base_url):
+    # The indexed single-item lookup must be exactly equivalent to the list-and-scan it replaced.
+    db.put_collection_item("gcitest", {"id": "gc-1", "x": 1})
+    db.put_collection_item("gcitest", {"id": "gc-2", "x": 2})
+    assert db.get_collection_item("gcitest", "gc-1") == {"id": "gc-1", "x": 1}
+    assert db.get_collection_item("gcitest", "gc-2") == {"id": "gc-2", "x": 2}
+    assert db.get_collection_item("gcitest", "nope") is None            # missing -> None (like next(..., None))
+    assert db.get_collection_item("no-such-coll", "gc-1") is None
+    # equivalence with the old scan for a present id
+    scan = next((x for x in db.list_collection("gcitest") if x.get("id") == "gc-2"), None)
+    assert db.get_collection_item("gcitest", "gc-2") == scan
+
+
 def test_unique_index_blocks_a_second_open_row_after_migration():
     saved = db.DB_PATH
     tmp = os.path.join(tempfile.mkdtemp(prefix="tk-mig2-"), "fresh.db")
