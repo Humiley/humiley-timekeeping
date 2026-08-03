@@ -1280,6 +1280,14 @@ def list_collection(coll):
     return [json.loads(r["data"]) for r in rows]
 
 
+def get_collection_item(coll, item_id):
+    """Fetch ONE item by id via the (coll,id) primary key — an indexed lookup, instead of loading and
+    json.loads-ing the WHOLE collection just to find one row (the hot single-record path on every
+    claim/payment/device edit). Returns the item dict or None. Mirrors list_collection's shape."""
+    row = _row("SELECT data FROM collections WHERE coll = ? AND id = ?", (coll, item_id))
+    return json.loads(row["data"]) if row else None
+
+
 def collection_count(coll):
     row = _row("SELECT COUNT(*) AS n FROM collections WHERE coll = ?", (coll,))
     return row["n"] if row else 0

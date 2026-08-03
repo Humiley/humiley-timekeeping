@@ -3665,7 +3665,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "item": {k: v for k, v in (row or {}).items() if k != "token"}})
         if coll not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
-        item = next((x for x in db.list_collection(coll) if x.get("id") == iid), None)
+        item = db.get_collection_item(coll, iid)
         if not item:
             return self._err("Record not found.", 404)
         # A non-manager may only sign a record they OWN. The old gate only checked empId, which is
@@ -5308,7 +5308,7 @@ class Handler(BaseHTTPRequestHandler):
         # signature is added; no other field is touched, so it can't rewrite the asset register. Handled
         # up here so it's uniform for staff (who otherwise can't PATCH devices) and managers alike.
         if name == "devices" and isinstance(body, dict) and "ackSignature" in body:
-            existing = next((x for x in db.list_collection("devices") if x.get("id") == iid), None)
+            existing = db.get_collection_item("devices", iid)
             if not existing:
                 return self._err("You can only sign for a device assigned to you.", 403)
             _sig = body.get("ackSignature")
@@ -5357,7 +5357,7 @@ class Handler(BaseHTTPRequestHandler):
         # belong to a direct report — mirrors the read scope so a manager can't rewrite another team's
         # finance record via a guessed id. Management+ (Finance/Editor/Admin) edit any.
         if name in self.TEAM_SCOPED and u.get("role") == "manager" and not self._is_mgmt(u):
-            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            existing = db.get_collection_item(name, iid)
             if existing is not None:
                 myemail = (u.get("email") or "").strip().lower()
                 is_own = (existing.get("empId") and existing.get("empId") == u.get("id")) \
@@ -5376,7 +5376,7 @@ class Handler(BaseHTTPRequestHandler):
         # manager, in their department), and only management+ may reassign the 'owner' field —
         # the generic overwrite otherwise lets anyone who learns an id rewrite/steal a deal.
         if name.startswith("crm_") and not self._is_mgmt(u):
-            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            existing = db.get_collection_item(name, iid)
             if existing is not None:
                 owner = existing.get("owner") or ""
                 mine = owner == u.get("name")
@@ -5395,7 +5395,7 @@ class Handler(BaseHTTPRequestHandler):
         if (u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_")
                 and name not in ("claims", "travel", "payments")):
             if name == "enrollments":
-                existing = next((x for x in db.list_collection("enrollments") if x.get("id") == iid), None)
+                existing = db.get_collection_item("enrollments", iid)
                 if not existing or existing.get("empId") != u.get("id"):
                     return self._err("Not allowed.", 403)
                 # staff may only update their own progress / status / rating / feedback / completion date
@@ -5405,7 +5405,7 @@ class Handler(BaseHTTPRequestHandler):
                 existing["id"] = iid
                 return self._json({"ok": True, "item": db.put_collection_item("enrollments", existing)})
             if name == "onboarding":
-                existing = next((x for x in db.list_collection("onboarding") if x.get("id") == iid), None)
+                existing = db.get_collection_item("onboarding", iid)
                 # Owner check: prefer empId (unique); only fall back to name when the record has no empId
                 _own = (existing.get("empId") == u.get("id")) if (existing and existing.get("empId")) else (existing and existing.get("name") == u.get("name"))
                 if not existing or not _own:
@@ -5422,7 +5422,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, "item": db.put_collection_item("onboarding", existing)})
             if name != "padr":
                 return self._err("Manager access required.", 403)
-            existing = next((x for x in db.list_collection("padr") if x.get("id") == iid), None)
+            existing = db.get_collection_item("padr", iid)
             if not existing or existing.get("empId") != u.get("id"):
                 return self._err("Not allowed.", 403)
             # Merge: staff may edit self-goals fully, and only selfScore/progress/status/note on
@@ -5462,7 +5462,7 @@ class Handler(BaseHTTPRequestHandler):
         item = dict(body or {})
         item["id"] = iid
         if name.startswith("pm_"):
-            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            existing = db.get_collection_item(name, iid)
             if existing:
                 if existing.get("createdBy") is not None:
                     item["createdBy"] = existing.get("createdBy")
@@ -5471,7 +5471,7 @@ class Handler(BaseHTTPRequestHandler):
         # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
         # must not be able to rewrite who a claim/travel/exit belongs to).
         if name in ("claims", "travel", "payments", "acks"):
-            existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            existing = db.get_collection_item(name, iid)
             if existing:
                 item["empId"] = existing.get("empId", item.get("empId"))
                 if existing.get("name"):
@@ -5481,7 +5481,7 @@ class Handler(BaseHTTPRequestHandler):
         # fresh re-auth). Preserve the server-held values and drop any client attempt to change
         # them — this closes the "PATCH status=Approved / forge signatures" bypass.
         if name in ("claims", "travel", "payments", "leave"):
-            existing = existing if name in ("claims", "travel", "payments", "acks") else next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+            existing = existing if name in ("claims", "travel", "payments", "acks") else db.get_collection_item(name, iid)
             _st = str((existing or {}).get("status") or "").strip().lower()
             # A money record's CONTENT is immutable signed evidence ONCE it is finally DECIDED
             # (approved / paid / rejected). While still pending (submitted / reviewed) the OWNER may
@@ -5567,7 +5567,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
-        existing = next((x for x in db.list_collection(name) if x.get("id") == iid), None)
+        existing = db.get_collection_item(name, iid)
         if not existing:
             return self._err("Not found.", 404)
         is_admin = self._caller_level(u) == "admin"
