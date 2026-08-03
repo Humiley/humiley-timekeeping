@@ -9,6 +9,25 @@ Ordered by severity. **P0 = do this week.**
 
 ---
 
+## P0‑0 · Ship the pending release (this session's commits) — blocked on you
+`main` is ~25 commits ahead of `origin/main` (scrollbar fix → ERP‑maturity + security hardening → payroll
+dual‑control → optimistic concurrency → the tamper‑evident audit hash chain), full suite **268 passing**.
+The push is blocked **only** by a GitHub credential‑scope rule, not by the code:
+
+1. **Grant the `workflow` scope, then push.** The commit that adds `.github/workflows/*.yml` (the CI files)
+   is rejected because the current push credential lacks the `workflow` scope. Fix once, then push:
+   ```bash
+   gh auth refresh -h github.com -s workflow    # or just: git push origin main  (from your own creds)
+   ```
+   The zero‑click auto‑deploy runs on push (see [production deploy notes]).
+2. **Back up BEFORE the deploy.** This release runs one‑way DB migrations on the live SQLite (the audit‑chain
+   backfill adds seq/hash to every audit row; `PRAGMA user_version → 2`; session tokens re‑hash). Confirm a
+   fresh `backup.sh` snapshot exists first (see P0‑2).
+3. **Set `TK_AUDIT_PEPPER` in the VPS `.env` BEFORE this deploy** (`openssl rand -hex 32`). If it's set first,
+   the audit history seals **tamper‑evident (keyed)** on the first run. If you deploy without it, the chain
+   forms **unkeyed** (amber "Chain intact (unkeyed)" badge) — then set the pepper and restart **once** with
+   `TK_AUDIT_RESEAL=1` to seal it, and unset that flag afterward. Escrow the pepper off‑box (P0‑3).
+
 ## P0‑1 · Turn on the CI gate (GitHub)
 The workflows are now committed, but nothing enforces them yet.
 1. GitHub → repo **Settings → Branches → Add branch protection rule** for `main`:
