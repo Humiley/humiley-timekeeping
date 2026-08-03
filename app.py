@@ -335,7 +335,12 @@ def _idem_key(uid, name, item, header_key):
 # process and expose at /api/admin/metrics. Path ids are collapsed to ":id" so cardinality is bound.
 _METRICS = {}                      # "METHOD /route" -> {"n","err","ms","max"}
 _METRICS_LOCK = threading.Lock()
-_ID_SEG_RE = re.compile(r"^\d+$|^[0-9a-fA-F]{6,}$|^[0-9a-fA-F-]{16,}$")
+_ID_SEG_RE = re.compile(
+    r"^\d+$"                          # numeric ids (leave rows)
+    r"|^[0-9a-fA-F]{6,}$"             # bare hex ids
+    r"|^[0-9a-fA-F-]{16,}$"           # uuid / long hex-dash
+    r"|^[A-Za-z]{2,6}-[A-Za-z0-9]{3,}$"   # app item + employee ids: pay-1a2b3c4d, HML-001 (the real id shape)
+    r"|^[A-Za-z0-9_-]{20,}$")         # long opaque tokens
 
 # Persist unhandled errors to a JSONL in the DB volume so the in-memory ring buffer isn't lost on
 # every auto-deploy (exactly when you're investigating a deploy regression). Rotated at ~2 MB.
@@ -355,7 +360,7 @@ def _metrics_record(route, status, ms):
         with _METRICS_LOCK:
             m = _METRICS.get(route)
             if m is None:
-                if len(_METRICS) >= 400:          # bound cardinality — ignore brand-new routes past the cap
+                if len(_METRICS) >= 800:          # bound cardinality — ignore brand-new routes past the cap
                     return
                 m = _METRICS[route] = {"n": 0, "err": 0, "ms": 0.0, "max": 0.0}
             m["n"] += 1
@@ -5216,22 +5221,23 @@ class Handler(BaseHTTPRequestHandler):
             item.setdefault("createdById", u.get("id"))
         # Idempotency: a retried identical financial submit within the window returns the record the
         # first attempt already created, instead of a duplicate (transport-retry double-pay guard).
-        _ik = None
+        # For financial collections the check + create + store all run under ONE lock, so a CONCURRENT
+        # identical submit (this is a ThreadingHTTPServer) cannot slip a second row in between the
+        # check and the store. Financial creates are low-volume, so serialising them here is fine.
         if name in _IDEM_COLLS:
             _ik = _idem_key(u.get("id"), name, item, self.headers.get("Idempotency-Key"))
             with _IDEM_LOCK:
                 _prev = _IDEM.get(_ik)
                 if _prev and time.time() - _prev[1] < _IDEM_WINDOW:
                     return self._json({"ok": True, "item": _prev[0], "idempotent": True})
-        created = db.put_collection_item(name, item)
-        if _ik is not None:
-            with _IDEM_LOCK:
+                created = db.put_collection_item(name, item)
                 _IDEM[_ik] = (created, time.time())
                 if len(_IDEM) > 2000:                                  # bound memory: drop entries past the window
                     _cut = time.time() - _IDEM_WINDOW
                     for _k in [k for k, v in list(_IDEM.items()) if v[1] < _cut]:
                         _IDEM.pop(_k, None)
-        return self._json({"ok": True, "item": created})
+            return self._json({"ok": True, "item": created})
+        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
 
     def _device_ack_backfill_ep(self, u):
         # One-time migration (admin): every CURRENTLY-ASSIGNED asset/assignment with no acknowledgment is
