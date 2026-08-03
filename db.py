@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 import seed_data
 
 DB_PATH = os.environ.get("TK_DB_PATH", os.path.join(os.path.dirname(__file__), "timekeeping.db"))
+SCHEMA_VERSION = 1   # bumped when init_db's migrations change; written to PRAGMA user_version
 
 
 def get_conn():
@@ -211,6 +212,10 @@ def init_db():
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL")
     except sqlite3.OperationalError:
         pass   # a residual duplicate must never abort startup — the app-level guard still applies
+    # Schema version marker (PRAGMA user_version): lets ops/tests read the applied schema version and
+    # gives future ordered migrations a value to branch on. The ALTERs above are idempotent, so this
+    # is a marker today, not a gate.
+    conn.execute("PRAGMA user_version = %d" % SCHEMA_VERSION)
     conn.commit()
     conn.close()
 
