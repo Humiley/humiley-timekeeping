@@ -4122,7 +4122,21 @@ function _wireNativeAuth() {
 let _esignPending = null;
 /* Small string translator for dynamically-built UI (mirrors _pmT): returns the VN string when the
    language is Vietnamese and a mapping exists, else the English source. */
-function _t(x) { try { return (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && _VI[x] && _VI[x] !== x) ? _VI[x] : x; } catch (e) { return x; } }
+const _tMissWarned = new Set();
+const _isDevHost = (typeof location !== 'undefined') && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+function _t(x) {
+  try {
+    if (typeof _LANG === 'undefined' || _LANG.cur !== 'vi') return x;
+    if (_VI[x] && _VI[x] !== x) return _VI[x];
+    // DEV-ONLY (localhost): surface strings shown to VN users with no translation, so coverage gaps
+    // are visible during development instead of silently rendering the English key. Deduped; skips
+    // pure punctuation/number strings. Never runs in production.
+    if (_isDevHost && x && typeof x === 'string' && x.trim() && !_tMissWarned.has(x) && !/^[\s\d.,:;/#%+()·—-]*$/.test(x)) {
+      _tMissWarned.add(x); console.warn('[i18n] missing VN translation:', JSON.stringify(x));
+    }
+    return x;
+  } catch (e) { return x; }
+}
 /* Inline bilingual pair — returns the Vietnamese line when the UI is in VN, else English. */
 function _t2(en, vn) { try { return (typeof _LANG !== 'undefined' && _LANG.cur === 'vi') ? (vn || en) : en; } catch (e) { return en; } }
 /* Signature-PIN status cache + refresh (populated on first sign / profile view / after set-remove). */
