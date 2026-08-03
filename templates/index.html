@@ -6920,6 +6920,10 @@ async function tkAuditChainCheck() {
       } else {
         el.innerHTML = pill('#E7F7EF', '#067A46', '#067A4633', '✓ ' + _t2('Chain verified · ', 'Đã xác minh chuỗi · ') + n);
       }
+    } else if (r && r.keyChanged) {
+      // A changed/newly-set pepper is an operator action, not tampering — show a distinct amber state.
+      el.innerHTML = pill('#FEF3C7', '#92400E', '#92400E33', '↻ ' + _t2('Reseal required', 'Cần niêm phong lại'));
+      el.title = (r && r.reason) || '';
     } else {
       const at = (r && r.brokenAtSeq != null) ? (' #' + r.brokenAtSeq) : '';
       el.innerHTML = pill('#FDECEC', '#B91C1C', '#B91C1C33', '⚠ ' + _t2('Chain broken', 'Chuỗi bị phá vỡ') + at);

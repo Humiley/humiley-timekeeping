@@ -5246,6 +5246,7 @@ class Handler(BaseHTTPRequestHandler):
         if name == "audit":
             item["actor"] = u.get("name") or "System"
             item["actorId"] = u.get("id") or ""
+            item["ts"] = self._utc_now()   # server-stamp the time — a client-supplied ts could backdate an event
         if name.startswith("pm_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
@@ -5706,7 +5707,10 @@ def main():
     if not DEMO_MODE and not os.environ.get("TK_AUDIT_PEPPER"):
         print("  \033[1;33m⚠  TK_AUDIT_PEPPER is NOT set.\033[0m Set it (openssl rand -hex 32) to make the")
         print("     audit trail tamper-EVIDENT. Set it once and keep it stable — changing it later")
-        print("     invalidates verification of all existing audit links.")
+        print("     invalidates verification of all existing audit links (then reseal, see below).")
+    if os.environ.get("TK_AUDIT_RESEAL") == "1":
+        print("  \033[1;33m↻  TK_AUDIT_RESEAL=1\033[0m — the audit chain was re-sealed under the current")
+        print("     TK_AUDIT_PEPPER on this start. UNSET this flag now so normal restarts don't reseal.")
     # Part 11 signing tokens: without this flag, JWKS signature verification SOFT-FAILS if the crypto
     # lib / JWKS endpoint is unavailable (a structurally-valid but unverified token would be accepted).
     if not DEMO_MODE and os.environ.get("TK_ESIGN_REQUIRE_VERIFIED_TOKEN") != "1":

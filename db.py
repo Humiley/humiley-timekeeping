@@ -151,7 +151,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS audit_chain (
             id        INTEGER PRIMARY KEY,           -- always 1 (singleton)
             seq       INTEGER NOT NULL DEFAULT 0,    -- number of chained audit rows
-            head_hash TEXT    NOT NULL DEFAULT ''    -- hash of the most recent link
+            head_hash TEXT    NOT NULL DEFAULT '',   -- hash of the most recent link
+            head_mac  TEXT,                          -- HMAC(key, seq|head_hash) — authenticates the checkpoint
+            key_fp    TEXT                           -- fingerprint of the sealing key (key-change ≠ tamper)
         );
 
         -- 21 CFR Part 11 signature PIN (second signing component). Salted PBKDF2 hash only;
@@ -231,6 +233,12 @@ def init_db():
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_att_open ON attendance (emp_id, date) WHERE clock_out IS NULL")
     except sqlite3.OperationalError:
         pass   # a residual duplicate must never abort startup — the app-level guard still applies
+    # audit_chain gained head_mac + key_fp after the first release — add them to older chain tables.
+    for col in ("head_mac TEXT", "key_fp TEXT"):
+        try:
+            conn.execute("ALTER TABLE audit_chain ADD COLUMN " + col)
+        except sqlite3.OperationalError:
+            pass  # column already exists
     # Audit hash chain: establish (or continue) the tamper-evident keyed-HMAC chain over the audit log.
     # On a DB that predates the chain, backfill links over the existing rows in insertion (rowid) order
     # so the whole history becomes verifiable from one trusted checkpoint. Runs ONCE — gated on the
@@ -238,7 +246,8 @@ def init_db():
     # in put_collection_item). If TK_AUDIT_PEPPER is unset the chain still forms (empty key); it just
     # isn't cryptographically unforgeable until a real pepper is set — hence the startup warning in app.py.
     try:
-        if not conn.execute("SELECT 1 FROM audit_chain WHERE id=1").fetchone():
+        head = conn.execute("SELECT seq, head_hash, head_mac, key_fp FROM audit_chain WHERE id=1").fetchone()
+        if not head:
             prev, seq = "", 0
             for r in conn.execute("SELECT id, data FROM collections WHERE coll='audit' ORDER BY rowid").fetchall():
                 item = json.loads(r["data"])
@@ -249,9 +258,23 @@ def init_db():
                 item["hash"] = _audit_link_hash(prev, item)
                 conn.execute("UPDATE collections SET data=? WHERE coll='audit' AND id=?", (json.dumps(item), r["id"]))
                 prev = item["hash"]
-            conn.execute("INSERT INTO audit_chain (id, seq, head_hash) VALUES (1, ?, ?)", (seq, prev))
+            conn.execute("INSERT INTO audit_chain (id, seq, head_hash, head_mac, key_fp) VALUES (1, ?, ?, ?, ?)",
+                         (seq, prev, _audit_head_mac(seq, prev), _audit_key_fp()))
+        elif head["key_fp"] is None:
+            # A first-release chain (sealed with THIS key, before head_mac/key_fp existed): stamp them in.
+            conn.execute("UPDATE audit_chain SET head_mac=?, key_fp=? WHERE id=1",
+                         (_audit_head_mac(head["seq"], head["head_hash"] or ""), _audit_key_fp()))
     except sqlite3.OperationalError:
         pass   # never let the chain backfill abort startup
+    # Deliberate operator recovery: TK_AUDIT_RESEAL=1 re-seals the whole chain under the CURRENT pepper
+    # (for first-time keying or a key rotation, which otherwise makes verify report every link altered).
+    if os.environ.get("TK_AUDIT_RESEAL") == "1":
+        try:
+            conn.commit(); conn.close()
+            reseal_audit_chain()
+            conn = get_conn()
+        except Exception:
+            conn = get_conn()
     # Schema version marker (PRAGMA user_version): lets ops/tests read the applied schema version and
     # gives future ordered migrations a value to branch on. The ALTERs above are idempotent, so this
     # is a marker today, not a gate.
@@ -1371,16 +1394,39 @@ def _audit_link_hash(prev_hash, item):
     return hmac.new(AUDIT_KEY, ((prev_hash or "") + "|" + canonical).encode("utf-8"), hashlib.sha256).hexdigest()
 
 
+def _audit_head_mac(seq, head_hash):
+    """Authenticate the checkpoint itself. Without this, an attacker with DB write access could delete
+    the newest rows and rewind the singleton to an earlier (seq, head_hash) — both values they can read
+    in the clear — and verification would pass. Keying (seq | head_hash) means they cannot mint a valid
+    checkpoint for a truncated prefix (or a wiped/genesis chain) without TK_AUDIT_PEPPER."""
+    return hmac.new(AUDIT_KEY, ("%d|%s" % (seq, head_hash or "")).encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def _audit_key_fp():
+    """A non-secret fingerprint of the current key, so verify can tell 'the chain was sealed with a
+    DIFFERENT TK_AUDIT_PEPPER' (→ reseal) apart from 'content was tampered'. Constant for a given key."""
+    return hmac.new(AUDIT_KEY, b"audit-chain-key-fingerprint-v1", hashlib.sha256).hexdigest()[:16]
+
+
+def _mint_audit_id(conn):
+    """A fresh, unused audit id. 64 bits + a uniqueness check so a birthday collision can never silently
+    drop an event via the id-already-exists path (audit ids are always server-minted, never client-set)."""
+    for _ in range(12):
+        cand = "aud-" + uuid.uuid4().hex[:16]
+        if not conn.execute("SELECT 1 FROM collections WHERE coll='audit' AND id=?", (cand,)).fetchone():
+            return cand
+    raise RuntimeError("could not mint a unique audit id")   # 12 collisions is astronomically impossible
+
+
 def _put_audit_chained(item):
     """Append one audit row as the next link in the hash chain. Under a lock so a concurrent writer can't
-    read the same head and fork the chain. APPEND-ONLY: an existing audit id is never rewritten (its
-    link is immutable), so an internal re-put can't silently rewrite history."""
+    read the same head and fork the chain. The row id is always freshly minted here (with a collision
+    check), so an event is never silently dropped by an id clash; the append-only INSERT never rewrites
+    an existing link. The checkpoint stores an authenticated head MAC + the sealing key's fingerprint."""
     with _AUDIT_LOCK:
         conn = get_conn()
         try:
-            existing = conn.execute("SELECT data FROM collections WHERE coll='audit' AND id=?", (item["id"],)).fetchone()
-            if existing:
-                return json.loads(existing["data"])     # append-only: never rewrite a chained link
+            item["id"] = _mint_audit_id(conn)
             head = conn.execute("SELECT seq, head_hash FROM audit_chain WHERE id=1").fetchone()
             seq0, prev_hash = (head["seq"], head["head_hash"]) if head else (0, "")
             item["_rev"] = 1
@@ -1389,11 +1435,43 @@ def _put_audit_chained(item):
             item["hash"] = _audit_link_hash(item["prevHash"], item)
             conn.execute("INSERT INTO collections (coll,id,data) VALUES ('audit',?,?)",
                          (item["id"], json.dumps(item)))
-            conn.execute("INSERT INTO audit_chain (id, seq, head_hash) VALUES (1, ?, ?) "
-                         "ON CONFLICT(id) DO UPDATE SET seq = excluded.seq, head_hash = excluded.head_hash",
-                         (item["seq"], item["hash"]))
+            conn.execute("INSERT INTO audit_chain (id, seq, head_hash, head_mac, key_fp) VALUES (1, ?, ?, ?, ?) "
+                         "ON CONFLICT(id) DO UPDATE SET seq=excluded.seq, head_hash=excluded.head_hash, "
+                         "head_mac=excluded.head_mac, key_fp=excluded.key_fp",
+                         (item["seq"], item["hash"], _audit_head_mac(item["seq"], item["hash"]), _audit_key_fp()))
             conn.commit()
             return item
+        finally:
+            conn.close()
+
+
+def reseal_audit_chain():
+    """Re-seal the entire audit chain under the CURRENT TK_AUDIT_PEPPER: re-walk every row in seq order,
+    recompute prevHash/hash and the checkpoint, and rewrite them. This is the deliberate recovery path
+    for setting the pepper for the first time or rotating it (which otherwise makes verify report every
+    pre-existing link as 'altered'). It re-hashes existing content as-is; it cannot un-tamper history."""
+    with _AUDIT_LOCK:
+        conn = get_conn()
+        try:
+            rows = [json.loads(r["data"]) for r in conn.execute(
+                "SELECT data FROM collections WHERE coll='audit'").fetchall()]
+            rows = [r for r in rows if isinstance(r.get("seq"), int)]
+            rows.sort(key=lambda r: r["seq"])
+            prev, seq = "", 0
+            for r in rows:
+                seq += 1
+                r["seq"] = seq
+                r["prevHash"] = prev
+                r["hash"] = _audit_link_hash(prev, r)
+                conn.execute("UPDATE collections SET data=? WHERE coll='audit' AND id=?",
+                             (json.dumps(r), r["id"]))
+                prev = r["hash"]
+            conn.execute("INSERT INTO audit_chain (id, seq, head_hash, head_mac, key_fp) VALUES (1, ?, ?, ?, ?) "
+                         "ON CONFLICT(id) DO UPDATE SET seq=excluded.seq, head_hash=excluded.head_hash, "
+                         "head_mac=excluded.head_mac, key_fp=excluded.key_fp",
+                         (seq, prev, _audit_head_mac(seq, prev), _audit_key_fp()))
+            conn.commit()
+            return {"resealed": seq, "keyed": bool(AUDIT_KEY)}
         finally:
             conn.close()
 
@@ -1401,15 +1479,26 @@ def _put_audit_chained(item):
 def verify_audit_chain():
     """Recompute the audit hash chain from genesis and report the first break. Detects: edited content
     (hash mismatch), reordering / a deleted middle row (seq gap or prevHash mismatch), a row inserted
-    out-of-band with no link (unchained), and — via the persisted head checkpoint — deletion/truncation
-    of the newest rows. Returns {ok, count, brokenAtSeq, reason, ...}."""
-    conn = get_conn()
-    try:
-        rows = [json.loads(r["data"]) for r in conn.execute("SELECT data FROM collections WHERE coll='audit'").fetchall()]
-        head = conn.execute("SELECT seq, head_hash FROM audit_chain WHERE id=1").fetchone()
-    finally:
-        conn.close()
-    chained = [r for r in rows if isinstance(r.get("seq"), int) and r.get("hash")]
+    out-of-band with no link (unchained), and — via the AUTHENTICATED head checkpoint (head_mac) —
+    deletion/truncation of the newest rows or a wipe-to-genesis, which a keyless attacker cannot forge.
+    A changed sealing key is reported distinctly (keyChanged → reseal) rather than as tampering.
+
+    Residual limit (documented, needs an off-box anchor to close): an attacker who holds TK_AUDIT_PEPPER,
+    or who can delete BOTH all rows AND the checkpoint singleton (letting init_db re-genesis a fresh empty
+    chain), is not detected here — a co-located checkpoint cannot outrank an attacker who owns the file.
+    Returns {ok, count, brokenAtSeq, reason, ...}."""
+    with _AUDIT_LOCK:   # read rows + checkpoint under the same lock the writer holds → one consistent pair
+        conn = get_conn()
+        try:
+            rows = [json.loads(r["data"]) for r in conn.execute("SELECT data FROM collections WHERE coll='audit'").fetchall()]
+            head = conn.execute("SELECT seq, head_hash, head_mac, key_fp FROM audit_chain WHERE id=1").fetchone()
+        finally:
+            conn.close()
+    # A different sealing key is an operational event (set/rotated pepper), not tampering — say so clearly.
+    if head is not None and head["key_fp"] and head["key_fp"] != _audit_key_fp():
+        return {"ok": False, "keyChanged": True, "count": None, "brokenAtSeq": None, "keyed": bool(AUDIT_KEY),
+                "reason": "the audit chain was sealed with a different TK_AUDIT_PEPPER — reseal required (or restore the original key)"}
+    chained = [r for r in rows if type(r.get("seq")) is int and r.get("hash")]   # bool is an int subclass — exclude it
     unchained = len(rows) - len(chained)
     chained.sort(key=lambda r: r["seq"])
     prev = ""
@@ -1430,6 +1519,15 @@ def verify_audit_chain():
     if len(chained) != exp_seq or prev != exp_head:
         return {"ok": False, "count": len(chained), "brokenAtSeq": exp_seq,
                 "reason": "chain head mismatch — %d entries present but the checkpoint records %d (newest rows may have been deleted)" % (len(chained), exp_seq)}
+    # The checkpoint MAC must recompute — this is what makes a tail-truncation-plus-rewind (or a
+    # wipe-to-genesis) detectable, since a keyless attacker cannot mint a valid MAC for the shorter head.
+    # On a keyed chain the MAC is REQUIRED (a missing head_mac would otherwise be a bypass — an attacker
+    # could NULL it to skip this check); on an unkeyed chain it carries no security value, so skip it.
+    if head is not None and AUDIT_KEY:
+        exp_mac = head["head_mac"]
+        if not exp_mac or exp_mac != _audit_head_mac(exp_seq, exp_head):
+            return {"ok": False, "count": len(chained), "brokenAtSeq": exp_seq,
+                    "reason": "checkpoint authentication failed — the chain head was rewritten (truncation/rollback)"}
     if unchained:
         return {"ok": False, "count": len(chained), "brokenAtSeq": None,
                 "reason": "%d audit row(s) are not part of the hash chain (inserted out-of-band?)" % unchained}

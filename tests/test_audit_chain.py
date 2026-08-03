@@ -15,6 +15,8 @@ import pytest
 import app
 import db
 
+ALT_KEY = b"a-different-audit-pepper-000000"   # for simulating a pepper change / rotation
+
 
 @pytest.fixture
 def iso_db():
@@ -99,15 +101,63 @@ def test_out_of_band_insert_is_detected(iso_db):
     assert v["ok"] is False and "not part of the hash chain" in v["reason"]
 
 
-# ── append-only at the sink ──────────────────────────────────────────────────
+# ── checkpoint authentication (truncation + rewind) ──────────────────────────
 
-def test_reput_of_an_existing_audit_id_never_rewrites_the_link(iso_db):
+def test_tail_truncation_with_checkpoint_rewind_is_detected(iso_db):
+    _mk(1); r2 = _mk(2); tail = _mk(3)
+    conn = _raw(iso_db)
+    # sophisticated attacker: delete the newest row AND rewind the checkpoint to an EARLIER real head
+    # (seq/head_hash are both readable) — this defeated the plain equality check; the head MAC catches it.
+    conn.execute("DELETE FROM collections WHERE coll='audit' AND id=?", (tail["id"],))
+    conn.execute("UPDATE audit_chain SET seq=2, head_hash=? WHERE id=1", (r2["hash"],))
+    conn.commit(); conn.close()
+    v = db.verify_audit_chain()
+    assert v["ok"] is False and "checkpoint authentication" in v["reason"]
+
+
+def test_nulling_the_head_mac_does_not_bypass_the_check(iso_db):
+    _mk(1); r2 = _mk(2); tail = _mk(3)
+    conn = _raw(iso_db)
+    conn.execute("DELETE FROM collections WHERE coll='audit' AND id=?", (tail["id"],))
+    conn.execute("UPDATE audit_chain SET seq=2, head_hash=?, head_mac=NULL WHERE id=1", (r2["hash"],))
+    conn.commit(); conn.close()
+    v = db.verify_audit_chain()
+    assert v["ok"] is False and "checkpoint authentication" in v["reason"]   # a missing MAC on a keyed chain fails closed
+
+
+# ── append-only: an event is never silently dropped ──────────────────────────
+
+def test_repeated_put_never_drops_an_event(iso_db):
     a = _mk(1)
-    again = db.put_collection_item("audit", dict(a, detail="rewrite attempt", action="Forged"))
-    assert again["detail"] == a["detail"] and again["hash"] == a["hash"]        # original returned unchanged
-    stored = db.get_collection_item("audit", a["id"])
-    assert stored["detail"] == a["detail"] and stored["action"] == a["action"]  # DB untouched
+    # even handed an item carrying an existing id, the sink mints a FRESH id and stores a NEW row —
+    # so a random id collision can never silently swallow a distinct event (it also never rewrites a link)
+    b = db.put_collection_item("audit", dict(a, detail="second event"))
+    assert b["id"] != a["id"] and b["seq"] == 2
+    rows = db.list_collection("audit")
+    assert len(rows) == 2 and db.verify_audit_chain()["ok"] is True
+
+
+def test_bool_seq_is_treated_as_out_of_band(iso_db):
+    _mk(1); _mk(2)
+    conn = _raw(iso_db)
+    conn.execute("INSERT INTO collections (coll,id,data) VALUES ('audit','aud-boolseq',?)",
+                 (json.dumps({"id": "aud-boolseq", "seq": True, "hash": "x", "actor": "a"}),))  # bool is an int subclass
+    conn.commit(); conn.close()
+    v = db.verify_audit_chain()
+    assert v["ok"] is False and "not part of the hash chain" in v["reason"]   # counted as unchained, not a seq gap
+
+
+# ── key change (set/rotate pepper) is reseal, not tamper ─────────────────────
+
+def test_key_change_is_reported_as_reseal_and_reseal_recovers(iso_db, monkeypatch):
+    _mk(1); _mk(2); _mk(3)
     assert db.verify_audit_chain()["ok"] is True
+    monkeypatch.setattr(db, "AUDIT_KEY", ALT_KEY)   # operator sets/rotates TK_AUDIT_PEPPER
+    v = db.verify_audit_chain()
+    assert v["ok"] is False and v.get("keyChanged") is True and "reseal" in v["reason"].lower()
+    db.reseal_audit_chain()                          # the deliberate recovery
+    v2 = db.verify_audit_chain()
+    assert v2["ok"] is True and v2["count"] == 3
 
 
 # ── migration: chain a DB that predates the feature ──────────────────────────
