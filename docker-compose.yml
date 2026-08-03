@@ -8,12 +8,32 @@
 #     humiley-procurement/               ← git clone of the procurement repo (gitignored here)
 #     docker-compose.yml  Caddyfile  .env  update.sh
 # Deploy / update EVERYTHING with one command:  ./update.sh   (see that script)
+
+# Bounded container logs — WITHOUT this, Docker's default json-file driver grows unbounded and can
+# silently fill the single VPS disk, which stops SQLite writes and takes the whole platform down.
+# 10 MB × 5 files per service is plenty for debugging while capping total log disk.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   # ── Portal (the Python timekeeping app) ──────────────────────────────────────────────────────
   app:
     build: .
     container_name: humiley_portal
     restart: unless-stopped
+    logging: *default-logging
+    # Health = the app serves /api/health with a live DB. Enables Caddy's service_healthy gating below
+    # (so the edge never routes to a not-yet-booted app) and lets the deploy / an external monitor see a
+    # hung or DB-broken app instead of it silently accepting traffic. urllib is always in the image.
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\" || exit 1"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
     environment:
       - TK_ADMIN_EMAIL=${TK_ADMIN_EMAIL:-tony.nguyen@humiley.com}
       - TK_ADMIN_NAME=${TK_ADMIN_NAME:-Tony Nguyen}
@@ -48,6 +68,7 @@ services:
         BASE_PATH: "/procurement"
     container_name: humiley_proc_app
     restart: unless-stopped
+    logging: *default-logging
     depends_on:
       procdb:
         condition: service_healthy
@@ -74,6 +95,7 @@ services:
     image: postgres:16-alpine
     container_name: humiley_proc_db
     restart: unless-stopped
+    logging: *default-logging
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-procurement}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
@@ -120,6 +142,7 @@ services:
     image: caddy:2
     container_name: humiley_caddy
     restart: unless-stopped
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"
@@ -130,8 +153,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - app
-      - procurement
+      app:
+        condition: service_healthy   # don't route the edge to the portal until it actually serves /api/health
+      procurement:
+        condition: service_started
 
 # All services share this one network, so Caddy reaches app:8000 and humiley_proc_app:3000 by name.
 networks:
