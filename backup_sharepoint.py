@@ -25,7 +25,8 @@ Configure in /opt/humiley-timekeeping/.env:
       in the tenant, not one library. Prefer BACKUP_SP_URL unless you have a reason not to.
   BACKUP_SP_RETAIN=90                             delete off-box copies older than N days (0 = keep)
 
-Reads TK_M365_TENANT_ID / TK_M365_CLIENT_ID / TK_M365_CLIENT_SECRET from the same .env.
+Needs only TK_M365_CLIENT_SECRET in .env — the tenant and client IDs fall back to the same values
+app.py bakes in, so a correctly configured server needs nothing extra.
 """
 import json
 import os
@@ -98,13 +99,22 @@ def _err(e):
     return str(e)
 
 
+# app.py bakes the tenant and client IDs in as defaults (they are public SPA identifiers), so a real
+# deployment only carries the SECRET in .env. Mirror that exactly — demanding all three in .env made
+# this script refuse to run on a correctly configured server.
+DEF_TENANT = "2a586c8f-fc2f-4c59-be46-938adfa3579c"
+DEF_CLIENT = "8810a31e-788a-4f96-881c-c522fdc5b338"
+
+
 def token(env):
-    tid = env.get("TK_M365_TENANT_ID", "")
-    cid = env.get("TK_M365_CLIENT_ID", "")
+    tid = env.get("TK_M365_TENANT_ID") or DEF_TENANT
+    cid = env.get("TK_M365_CLIENT_ID") or DEF_CLIENT
     sec = env.get("TK_M365_CLIENT_SECRET", "")
-    if not (tid and cid and sec):
-        die("TK_M365_TENANT_ID / TK_M365_CLIENT_ID / TK_M365_CLIENT_SECRET must all be set in .env.\n"
-            "   These are the same credentials the portal already uses to file invoices in SharePoint.")
+    if not sec:
+        die("TK_M365_CLIENT_SECRET is not set in .env.\n"
+            "   That is the same secret the portal uses to send approval mail and file invoices into\n"
+            "   SharePoint, so if those work it should already be there — check with:\n"
+            "     grep -c TK_M365_CLIENT_SECRET /opt/humiley-timekeeping/.env")
     body = urllib.parse.urlencode({
         "client_id": cid, "client_secret": sec,
         "scope": "https://graph.microsoft.com/.default", "grant_type": "client_credentials",

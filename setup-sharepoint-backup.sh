@@ -18,13 +18,16 @@ green() { printf '\033[1;32m%s\033[0m\n' "$*"; }
 red()   { printf '\033[1;31m%s\033[0m\n' "$*"; }
 say()   { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 
-for v in TK_M365_TENANT_ID TK_M365_CLIENT_ID TK_M365_CLIENT_SECRET; do
-  if ! grep -qs "^$v=." .env; then
-    red "✖ $v is not set in .env — the portal's Microsoft 365 credentials are missing."
-    echo "    These are the same ones that file invoices into SharePoint. Fix those first."
-    exit 1
-  fi
-done
+# ONLY the secret is required. app.py bakes the tenant and client IDs in as defaults (public SPA
+# identifiers), so a correctly configured server has just TK_M365_CLIENT_SECRET in .env — demanding
+# all three made this refuse to run on exactly the servers where it should work.
+if ! grep -qs "^TK_M365_CLIENT_SECRET=." .env; then
+  red "✖ TK_M365_CLIENT_SECRET is not set in .env."
+  echo "    That is the secret the portal uses to send approval mail and file invoices into SharePoint."
+  echo "    If those already work, it should be there — check with:"
+  echo "        grep -c TK_M365_CLIENT_SECRET /opt/humiley-timekeeping/.env"
+  exit 1
+fi
 
 say "SharePoint folder for the backups"
 cat <<'EOF'
