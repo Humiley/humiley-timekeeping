@@ -1796,6 +1796,13 @@ def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
         token = _graph_app_token()
         tgt = _invtrack_sp_resolve(token)
         if not tgt:
+            # Could be a genuinely bad link — or a token minted before consent was granted, which is
+            # indistinguishable from here. Bust the cache and try once with a fresh one so the archive
+            # starts working the moment consent lands, instead of an hour later.
+            _invtrack_sp_reset()
+            token = _graph_app_token(force=True)   # rebind: the UPLOAD below must use the fresh token
+            tgt = _invtrack_sp_resolve(token)      # too, or resolve succeeds and the PUT then 403s
+        if not tgt:
             raise ValueError("could not resolve the SharePoint folder — check the link and Sites.ReadWrite.All consent")
         ym = (iso or "")[:7]
         y = ym[:4] or "0000"; mo = ym[5:7] or "00"
@@ -1841,7 +1848,11 @@ def _invtrack_sp_diagnose():
 
     _invtrack_sp_reset()          # a test must never be answered from a stale negative cache
     try:
-        token = _graph_app_token()
+        # force=True is the whole point of this button. An app-only token carries the roles that
+        # existed WHEN IT WAS MINTED, and it lives ~1h. Right after an admin grants Sites.ReadWrite.All
+        # the cached token still has no Sites role, so Graph keeps returning 403 and the test reports
+        # "not working" on a tenant that is now correct — with a restart as the only apparent cure.
+        token = _graph_app_token(force=True)
         add("token", "Signed in to Microsoft (app-only)", True)
     except Exception as e:
         add("token", "Signed in to Microsoft (app-only)", False, _graph_err_text(e))
