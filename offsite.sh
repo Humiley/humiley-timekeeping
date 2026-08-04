@@ -56,18 +56,71 @@ if [ -z "${OFFSITE_REMOTE:-}" ]; then
   exit 1
 fi
 
+RCONF="${RCLONE_CONFIG:-$HOME/.config/rclone/rclone.conf}"
+
+# An ENCRYPTED rclone config prompts for a password on every single call. Interactively that is a
+# mild nuisance; from cron there is no terminal, so the nightly copy blocks or fails forever with
+# nobody watching. Catch it here with an explanation rather than at 02:00 in silence.
+if [ -f "$RCONF" ] && grep -q 'RCLONE_ENCRYPT_V0' "$RCONF" 2>/dev/null && [ -z "${RCLONE_CONFIG_PASS:-}" ]; then
+  red "✖ Your rclone config is password-encrypted and no RCLONE_CONFIG_PASS is set."
+  echo "    Every rclone call will stop and ask for that password — which cron cannot answer, so the"
+  echo "    nightly off-box copy would hang or fail every night unnoticed."
+  echo
+  echo "    Recommended — remove the config password (the file is root-only on a root-only box, and"
+  echo "    file permissions are the protection that actually works unattended):"
+  echo "        rclone config   ->   s) Set configuration password   ->   u) Unencrypt configuration"
+  echo "        chmod 600 $RCONF"
+  echo
+  echo "    Or, if you want to keep it encrypted, put the password in .env (it then sits in plaintext"
+  echo "    on the same box, which is why the above is recommended):"
+  echo "        echo 'RCLONE_CONFIG_PASS=your-password' >> $(pwd)/.env"
+  exit 1
+fi
+
+# A remote that does not exist fails with rclone's own cryptic "didn't find section in config file".
+# Name the problem instead: setting a config password is NOT the same as creating a remote, and it is
+# an easy pair to conflate because both live behind `rclone config`.
+REMOTE_NAME="${OFFSITE_REMOTE%%:*}"
+if ! rclone listremotes 2>/dev/null | grep -qx "$REMOTE_NAME:"; then
+  red "✖ rclone has no remote called '$REMOTE_NAME'."
+  FOUND="$(rclone listremotes 2>/dev/null | tr '\n' ' ')"
+  echo "    Remotes that DO exist: ${FOUND:-（none）}"
+  echo
+  echo "    Create it — this is the 'n) New remote' path, not 's) Set configuration password':"
+  echo "        rclone config"
+  echo "          n) New remote"
+  echo "          name> $REMOTE_NAME"
+  echo "          Storage> onedrive          (type the number for Microsoft OneDrive)"
+  echo "          client_id / client_secret> just press Enter for both"
+  echo "          Edit advanced config> n    Use auto config> y   -> sign in in the browser"
+  echo "          Choose 'OneDrive Personal or Business' -> pick your drive -> y) Yes this is OK"
+  echo "          q) Quit config"
+  echo "    Then check it:  rclone lsd $REMOTE_NAME:"
+  exit 1
+fi
+
 # ── THE SAFETY RULE ──────────────────────────────────────────────────────────────────────────────
 # Only ever upload ENCRYPTED artefacts, and never the key. Shipping .backup-key to the same cloud as
 # the ciphertext would make the encryption purely decorative — one compromised account would hand over
 # payroll, national IDs, bank details and GPS history in the clear. Equally, a plaintext .gz or .db
 # would be exactly the unencrypted PII dump that backup.sh fail-closes to prevent, so we refuse to
 # carry one off-box even if somebody produced it with BACKUP_ALLOW_PLAINTEXT=1.
-INCLUDE=( --include 'timekeeping-*.db.gz.enc'
-          --include 'procurement-*.sql.gz.enc'
-          --include 'proc-storage-*.tgz.enc' )
-# Belt and braces: even if an --include were ever loosened, these can never be transferred.
-EXCLUDE=( --exclude '.backup-key' --exclude '*.key' --exclude '*.db' --exclude '*.db.gz'
-          --exclude '*.sql.gz'    --exclude '*.tgz' --exclude '.env*' )
+# --filter, NOT --include + --exclude. rclone itself warns that mixing the two parses in an
+# INDETERMINATE order ("Using --filter is recommended instead of both --include and --exclude") — which
+# for this script means the deny rules protecting the key might or might not win. Filter rules are
+# evaluated top-to-bottom, FIRST MATCH WINS, so ordering the denies first makes the guarantee real
+# instead of hopeful.
+FILTER=( --filter '- .backup-key'      # the key must NEVER travel with the ciphertext
+         --filter '- *.key'
+         --filter '- .env*'
+         --filter '- *.db'             # plaintext forms: exactly the PII dump backup.sh fail-closes on
+         --filter '- *.db.gz'
+         --filter '- *.sql.gz'
+         --filter '- *.tgz'
+         --filter '+ timekeeping-*.db.gz.enc'
+         --filter '+ procurement-*.sql.gz.enc'
+         --filter '+ proc-storage-*.tgz.enc'
+         --filter '- *' )              # deny-by-default: anything not named above stays put
 
 if [ "$MODE" = "--status" ]; then
   say "Remote: $OFFSITE_REMOTE"
@@ -103,12 +156,12 @@ say "Copying $LOCAL_N encrypted snapshot(s) -> $OFFSITE_REMOTE"
 # retention is handled separately and explicitly below.
 # shellcheck disable=SC2086
 if [ "$DRY" -eq 1 ]; then
-  rclone copy "$BACKUP_DIR" "$OFFSITE_REMOTE" "${INCLUDE[@]}" "${EXCLUDE[@]}" --dry-run \
+  rclone copy "$BACKUP_DIR" "$OFFSITE_REMOTE" "${FILTER[@]}" --dry-run \
     --transfers 2 --checkers 4 --retries 3 --stats-one-line --stats 30s ${RCLONE_FLAGS:-}
   say "--dry-run: nothing was uploaded."
   exit 0
 fi
-rclone copy "$BACKUP_DIR" "$OFFSITE_REMOTE" "${INCLUDE[@]}" "${EXCLUDE[@]}" \
+rclone copy "$BACKUP_DIR" "$OFFSITE_REMOTE" "${FILTER[@]}" \
   --transfers 2 --checkers 4 --retries 3 --stats-one-line --stats 30s ${RCLONE_FLAGS:-}
 
 # A copy that reports success but did not land is the whole failure mode of off-box backups. Verify
@@ -127,7 +180,7 @@ fi
 # somebody else's files, and skipped entirely when OFFSITE_RETAIN=0.
 if [ "$OFFSITE_RETAIN" -gt 0 ]; then
   say "Pruning off-box copies older than ${OFFSITE_RETAIN}d…"
-  rclone delete "$OFFSITE_REMOTE" "${INCLUDE[@]}" --min-age "${OFFSITE_RETAIN}d" --rmdirs 2>/dev/null || true
+  rclone delete "$OFFSITE_REMOTE" "${FILTER[@]}" --min-age "${OFFSITE_RETAIN}d" --rmdirs 2>/dev/null || true
 fi
 
 REMOTE_N="$(rclone lsf "$OFFSITE_REMOTE" 2>/dev/null | wc -l | tr -d ' ')"

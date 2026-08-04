@@ -19,7 +19,13 @@ MARK="$STATE_DIR/autodeploy-last"              # "portalHEAD:procHEAD" ACTUALLY 
 FAIL="$STATE_DIR/autodeploy-fail"              # "TARGET COUNT LASTEPOCH" for the currently-failing target
 ALERT="$STATE_DIR/autodeploy-ALERT"            # present => auto-deploy is stuck; monitoring can watch for it
 PROC_DIR="humiley-procurement"
-DEPLOY_TIMEOUT="${AUTODEPLOY_TIMEOUT:-1200}"   # kill a wedged deploy after 20 min so the lock frees
+# Kill a WEDGED deploy so the lock frees — but only a wedged one. This was 1200s (20 min), which is
+# less than a real cold deploy on this VPS takes: the very first poller run timed out mid-build at
+# exactly 1200s. Left alone that is fatal rather than annoying, because five timed-out tries trip the
+# give-up guard below and auto-deploy then stops until the NEXT push — so a slow build silently
+# disables the whole mechanism. 45 min comfortably clears a cold build (npm ci + prisma generate +
+# two images) while still bounding a genuine hang.
+DEPLOY_TIMEOUT="${AUTODEPLOY_TIMEOUT:-2700}"
 FETCH_TIMEOUT="${AUTODEPLOY_FETCH_TIMEOUT:-120}"
 MAX_TRIES="${AUTODEPLOY_MAX_TRIES:-5}"         # stop hammering a broken commit after N tries (until next push)
 mkdir -p "$STATE_DIR"
