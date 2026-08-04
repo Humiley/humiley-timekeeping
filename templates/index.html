@@ -1410,7 +1410,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="tkExportElementPDF('fin-export','Humiley_Finance_Control.pdf',{title:'FINANCE CONTROL — COMPANY',docCode:'HML-FIN-CTL'})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export PDF</button>
       <button class="btn btn-outline btn-sm" onclick="tkFinExportXLS()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Export Excel</button>
-      <button class="btn btn-primary btn-sm" onclick="tkRenderFinance()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="tkRenderFinance(true)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>Refresh</button>
     </div>
   </div>
   <div id="finance-root"></div>
@@ -3695,7 +3695,7 @@ function _tkApprovalEmailHtml(o) {
         '</td></tr>' +
         '<tr><td style="border-top:1px solid ' + line + ';padding:16px 26px">' +
           '<div style="font:700 13px Segoe UI,Arial,sans-serif;color:' + navy + '">Humiley Group Inc.</div>' +
-          '<div style="font:11px Segoe UI,Arial,sans-serif;color:' + grey + ';margin-top:2px">Engineering &amp; Solutions That Move Air, Smartly. · People &amp; Workplace Portal</div>' +
+          '<div style="font:11px Segoe UI,Arial,sans-serif;color:' + grey + ';margin-top:2px">Creating Sustainable Value · People &amp; Workplace Portal</div>' +
         '</td></tr>' +
       '</table>' +
     '</td></tr></table>' +
@@ -3935,10 +3935,7 @@ function tkApprove(id, btn) {
     onDone: async () => {
       const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
       tkAudit('Leave ' + a.to, _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
-      const subj = isReview ? 'Your leave request was reviewed' : 'Your leave request was approved';
-      const msg = isReview ? ('has been REVIEWED by ' + ((TK.user || {}).name || 'your manager') + ' and is now awaiting Director approval')
-        : ('has been APPROVED by ' + ((TK.user || {}).name || 'the Director'));
-      tkMailRequester(_e.email, _e.name || _l.emp_name, subj, 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') ' + msg + '.\n\nBest regards,\nHumiley Group Inc. — People & Workplace');
+      // No mail from here — /api/esign already sent the branded decision email (_appr_notify → leave).
       if (isReview) _notifyApprovers('Leave awaiting your approval', (_e.name || _l.emp_name || 'An employee') + '’s ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' → ' + _l.endDate : '') + ') is reviewed and awaiting Director approval.');
       try { await tkBootstrap(); } catch (e) {}
       tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); tkRenderInbox(); } catch (e) {}
@@ -3956,7 +3953,7 @@ function tkReject(id, btn) {
     onDone: async () => {
       const card = btn && btn.closest('.approval-card'); if (card) card.style.opacity = '.5';
       tkAudit('Leave rejected', _l.emp_name || _e.name || '', (_l.type || '') + ' ' + (_l.startDate || ''));
-      tkMailRequester(_e.email, _e.name || _l.emp_name, 'Your leave request was rejected', 'Dear ' + (_e.name || '') + ',\n\nYour ' + (_l.type || 'leave') + ' request (' + (_l.startDate || '') + (_l.endDate ? ' to ' + _l.endDate : '') + ') has been REJECTED by ' + ((TK.user || {}).name || 'your manager') + '. Please speak with your manager for details.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      // No mail from here — /api/esign already sent the branded decision email (_appr_notify → leave).
       try { await tkBootstrap(); } catch (e) {}
       tkRenderApprovals(); try { tkRenderDashboard(); tkUpdateNotifications(); tkUpdateInboxBadge(); } catch (e) {}
       if (typeof toast === 'function') toast('<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Leave rejected & signed');
@@ -4919,7 +4916,8 @@ async function tkExportAccounting() {
   const pays = (_HR.payments || []).filter(p => done(p.status));
   const payRows = pays.map(p => {
     const cur = p.currency || 'VND', d = p.paidOn || p.approvedOn || p.submittedOn || '';
-    return { 'No.': p.reqNo || '', Period: per(d), Date: d, Payee: p.payee || '', 'Tax code': p.payeeMst || p.taxCode || '',
+    return { 'No.': p.reqNo || '', Period: per(d), Date: d, Payee: p.payee || '', Company: p.payeeCompany || '', 'Tax code': p.payeeMst || p.taxCode || '',
+      Bank: p.bankName || '', 'Account number': p.bankAcc || '', 'Account holder': p.bankHolder || '', Branch: p.bankBranch || '',
       Department: p.department || '', 'Cost centre': p.costCentre || p.department || '', 'Account code': p.accountCode || '',
       Category: p.category || '', Purpose: p.purpose || '', Currency: cur, 'FX rate': +p.fxRate || 1, Amount: +p.amount || 0,
       'Amount (VND)': vndOf(p), 'Invoice/PO': p.invoiceNo || '', Status: p.status || '', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' };
@@ -5680,7 +5678,7 @@ function tkCollInvalidate(name) { if (name) _COLL_TS[name] = 0; else for (const 
    records come from the per-user collection cache (_HR), already scoped by the backend. ══ */
 let _gsSel = -1, _gsRows = [], _gsPrefetched = false, _gsBound = false;
 const _GS_REC = {
-  payments:    { view: 'payments',     title: 'Payment Requests', fields: ['reqNo', 'vendor', 'payee', 'desc', 'purpose', 'amount', 'status'], label: r => r.reqNo || r.payee || r.vendor || ('Payment #' + r.id) },
+  payments:    { view: 'payments',     title: 'Payment Requests', fields: ['reqNo', 'vendor', 'payee', 'payeeCompany', 'desc', 'purpose', 'amount', 'status'], label: r => r.reqNo || r.payee || r.vendor || ('Payment #' + r.id) },
   invtrack:    { view: 'invtrack',     title: 'Invoice Tracking', fields: ['invNo', 'serial', 'sellerName', 'buyerName', 'seller', 'total'],    label: r => (r.invNo || r.serial || 'Invoice') + (r.sellerName ? (' · ' + r.sellerName) : '') },
   pm_projects: { view: 'pm-projects',  title: 'Projects',         fields: ['name', 'code', 'client', 'pm', 'status'],                          label: r => r.name || r.code || ('Project #' + r.id) },
   devices:     { view: 'devices',      title: 'Devices & Assets', fields: ['name', 'serial', 'assetTag', 'model', 'assignedTo', 'category'],   label: r => r.name || r.assetTag || r.serial || ('Asset #' + r.id) },
@@ -8072,28 +8070,16 @@ async function tkFinFlowMail(item, kindLabel, ref, amountLabel, newStatus, reque
   const dateStr = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const badge = '<span style="display:inline-block;background:' + S.color + ';color:#fff;font-weight:700;font-size:14px;padding:8px 20px;border-radius:24px;letter-spacing:.02em">' + S.glyph + '&nbsp; ' + S.label.toUpperCase() + '</span>';
   const row = (k, v, c) => '<tr><td style="color:#5c6470;padding:5px 0;font-size:13px">' + k + '</td><td style="text-align:right;font-weight:600;font-size:13px' + (c ? ';color:' + c : '') + '">' + v + '</td></tr>';
-  const html =
-    '<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;color:#1c2740;padding:8px">' +
-    '<div style="border-bottom:3px solid #205090;padding-bottom:10px;margin-bottom:16px"><span style="font-weight:800;letter-spacing:.14em;color:#205090;font-size:14px">HUMILEY</span> <span style="color:#5c6470;font-size:12px">&middot; Finance</span></div>' +
-    '<div style="text-align:center;margin:6px 0 18px">' + badge + '</div>' +
-    '<p style="font-size:15px;margin:0 0 6px">Dear ' + esc(who) + ',</p>' +
-    '<p style="font-size:14px;line-height:1.6;margin:0 0 12px">Your <b>' + esc(kindLabel) + '</b>' + (ref ? ' &ldquo;' + esc(ref) + '&rdquo;' : '') + ' has been <b style="color:' + S.color + '">' + S.verb + '</b> by <b>' + esc(actor) + '</b>' + esc(S.extra) + '.' + (S.note ? ' ' + esc(S.note) : '') + '</p>' +
-    '<table style="width:100%;border-collapse:collapse;margin:8px 0 14px">' +
-    row('Reference', esc(ref || '—')) +
-    (amountLabel ? row('Amount', esc(amountLabel)) : '') +
-    row('Status', S.glyph + ' ' + esc(S.label), S.color) +
-    row('Decided by', esc(actor)) +
-    row('Date', esc(dateStr)) +
-    '</table>' +
-    '<p style="font-size:12px;color:#5c6470;margin:0 0 14px">Open the Humiley Portal to view the full request, the bill and the approval trail.</p>' +
-    '<p style="font-size:13px;color:#5c6470;border-top:1px solid #dbe1ee;padding-top:10px;margin:0">Best regards,<br>Humiley Group Inc. &mdash; Finance</p></div>';
-  const text = 'Dear ' + who + ',\n\nYour ' + line + ' has been ' + S.verb + ' by ' + actor + '.' + (S.extra ? ' ' + S.extra.trim() : '') + (S.note ? '\n' + S.note : '') +
-    '\n\nStatus: ' + S.glyph + ' ' + S.label + '\nDecided by: ' + actor + '\nDate: ' + dateStr + '\n\nBest regards,\nHumiley Group Inc. — Finance';
-  // TO the requester; CC finance + the approver (so YOU get a copy of the status) + signers when paid.
-  let cc = [FINANCE_CC, approver];
-  if (st === 'paid') cc = cc.concat(_sigEmails(item));
-  const subject = (S.glyph + ' Your ' + kindLabel + ' ' + S.subj + (ref ? ' — ' + ref : '')).replace(/[\r\n\t]+/g, ' ').slice(0, 200);  // strip CR/LF → no header injection in the .eml fallback
-  return tkMailRequester(requesterEmail, who, subject, text, cc, html);
+  // NO EMAIL IS SENT FROM HERE ANY MORE.
+  // The BACKEND already mails every decision from finance@ via _appr_notify/_appr_email_html (app.py),
+  // using the branded navy-header template. This function used to ALSO send its own differently-designed
+  // "HUMILEY · Finance" mail from the approver's own mailbox, so one approval produced TWO emails in two
+  // layouts (and finance@ received two copies, being both the app-only sender and FINANCE_CC). The
+  // backend template is now the single source of truth for approval/decision mail.
+  // What still belongs here: the in-app/OS push, and pinging the next-level approvers on 'reviewed'.
+  const subject = (S.glyph + ' Your ' + kindLabel + ' ' + S.subj + (ref ? ' — ' + ref : '')).replace(/[\r\n\t]+/g, ' ').slice(0, 200);
+  try { _pushNotify(requesterEmail, subject, 'Status: ' + S.label + (ref ? ' · ' + ref : '')); } catch (e) {}
+  return true;
 }
 
 /* Build an A4 PDF payslip on the Humiley letterhead (jsPDF). Returns the doc or null. */
@@ -8948,7 +8934,7 @@ async function tkRenderInbox() {
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
   const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
-  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; const did = 'inbox-pay-' + p.id; const chev = '<svg id="fin-chev-' + did + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'; const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + did + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; const detail = '<tr id="fin-det-' + did + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment', did) + '<div style="margin-top:10px;font-size:12px;color:var(--text-light)">' + _crmEsc(p.method || '') + (p.dueDate ? ' · ' + tkFmtDate(p.dueDate) : '') + (p.department ? ' · ' + _crmEsc(p.department) : '') + '</div>' + (p.purpose ? '<div style="font-size:12px;margin-top:4px">' + _crmEsc(p.purpose) + '</div>' : '') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>'; return summary + detail; }).join('') + '</tbody>';
+  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; const did = 'inbox-pay-' + p.id; const chev = '<svg id="fin-chev-' + did + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'; const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + did + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; const detail = '<tr id="fin-det-' + did + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment', did) + '<div style="margin-top:10px;font-size:12px;color:var(--text-light)">' + _crmEsc(p.method || '') + (p.dueDate ? ' · ' + tkFmtDate(p.dueDate) : '') + (p.department ? ' · ' + _crmEsc(p.department) : '') + '</div>' + (p.purpose ? '<div style="font-size:12px;margin-top:4px">' + _crmEsc(p.purpose) + '</div>' : '') + _payBankHtml(p) + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>'; return summary + detail; }).join('') + '</tbody>';
   const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
     sec('Travel Requests', travel.length, travelRows) +
@@ -8970,7 +8956,7 @@ function tkInboxLeave(id, status) {
     coll: 'leave', id: id, setStatus: status,
     meaning: (status.charAt(0).toUpperCase() + status.slice(1)) + ' — Leave ' + (l.type || '') + ' · ' + (l.startDate || '') + ' → ' + (l.endDate || ''),
     onDone: async () => {
-      tkMailRequester(emp.email, emp.name || l.emp_name, 'Your leave request was ' + status, 'Dear ' + (emp.name || '') + ',\n\nYour ' + (l.type || 'leave') + ' request (' + (l.startDate || '') + ' to ' + (l.endDate || '') + ') has been ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      // No mail from here — /api/esign already sent the branded decision email (_appr_notify → leave).
       try { await tkBootstrap(); } catch (e) {}
       toast('Leave ' + status); tkRenderInbox(); try { tkRenderApprovals(); tkUpdateNotifications(); tkRenderDashboard(); } catch (e) {}
     }
@@ -9112,7 +9098,7 @@ function tkInboxClaimItem(claimId, itemId, status) {
     meaning: verb + ' — Claim item: ' + (it.category || 'item') + ' · ' + _PAY_FMT(it.amount || 0),
     onDone: (item) => {
       if (item) { const i = (_HR.claims || []).findIndex(x => x.id === claimId); if (i >= 0) _HR.claims[i] = item; }
-      const emp = _hrEmp(c.empId) || {}; tkMailRequester(emp.email, emp.name || c.name, 'Expense claim item ' + status.toLowerCase(), 'Dear ' + (c.name || '') + ',\n\nYour claim item "' + (it.category || '') + '" (' + _PAY_FMT(it.amount || 0) + ') was ' + status.toUpperCase() + ' by ' + ((TK.user || {}).name || 'your manager') + '.\n\nBest regards,\n' + ((TK.user || {}).name || 'Manager') + '\nHumiley Group Inc. — People & Workplace');
+      // No mail from here — /api/esign already sent the branded decision email (_appr_notify → claims).
       if (item && _claimRollup(item) === 'Approved') { try { _finSpArchiveApproved(item, 'claim'); } catch (x) {} }   // last line approved → whole claim approved → archive
       try { tkRenderInbox(); } catch (x) {} try { tkRenderTravelClaims(); } catch (x) {} try { if (_currentView === 'finance') tkRenderFinance(); } catch (x) {}
     }
@@ -9341,7 +9327,7 @@ function payFillTable() {
   const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '', period = _crmLF['pay-period-f'] || '';
   const list = (_HR.payments || []).filter(p => {
     if (_payMine && !_payIsMine(p, _payMe)) return false;
-    const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
+    const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.payeeCompany || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
     return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriodLF(p.dueDate || p.ts, 'pay-period-f');
   }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
   /* the same filtered list drives the KPI cards + both donuts, so every filter updates everything */
@@ -9391,6 +9377,14 @@ function tkNewPayment(editId) {
     '<div class="form-group"><label class="form-label">Purpose / description</label><input class="form-control" id="pay-purpose" placeholder="e.g. Office supplies" value="' + V('purpose') + '"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Category</label><select class="form-control" id="pay-cat-new">' + catOpts + '</select></div><div class="form-group"><label class="form-label">Payment method</label><select class="form-control" id="pay-method">' + methOpts + '</select></div></div>' +
     '<div class="form-group"><label class="form-label">Payee / Vendor</label><input class="form-control" id="pay-payee" placeholder="Who gets paid" value="' + V('payee') + '"></div>' +
+    // Beneficiary company + bank details. Finance cannot actually release a transfer without these, so they
+    // belong ON the request rather than being chased over email after approval; they also print onto the
+    // request PDF and the bank slip, and feed the accounting export (payeeMst was already read there).
+    '<div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin:14px 0 8px;padding-top:12px;border-top:1px solid var(--border)">' + _t2('Beneficiary company &amp; bank details', 'Thông tin công ty &amp; ngân hàng thụ hưởng') + '</div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Company (legal name)', 'Tên công ty (pháp nhân)') + '</label><input class="form-control" id="pay-company" placeholder="' + _t2('Registered company name', 'Tên công ty đăng ký') + '" value="' + V('payeeCompany') + '"></div><div class="form-group"><label class="form-label">' + _t2('Tax code (MST)', 'Mã số thuế (MST)') + '</label><input class="form-control" id="pay-mst" inputmode="numeric" value="' + V('payeeMst') + '"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Bank name', 'Ngân hàng') + '</label><input class="form-control" id="pay-bank" placeholder="e.g. Vietcombank" value="' + V('bankName') + '"></div><div class="form-group"><label class="form-label">' + _t2('Account number', 'Số tài khoản') + '</label><input class="form-control" id="pay-bankacc" inputmode="numeric" value="' + V('bankAcc') + '"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Account holder', 'Chủ tài khoản') + '</label><input class="form-control" id="pay-bankholder" value="' + V('bankHolder') + '"></div><div class="form-group"><label class="form-label">' + _t2('Branch', 'Chi nhánh') + '</label><input class="form-control" id="pay-bankbranch" value="' + V('bankBranch') + '"></div></div>' +
+    '<div style="height:12px;border-top:1px solid var(--border);margin-bottom:12px"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Amount (VND)</label><input type="number" inputmode="numeric" class="form-control" id="pay-amount" value="' + (p ? (p.amount || '') : '') + '"></div><div class="form-group"><label class="form-label">Due date</label><input type="date" class="form-control" id="pay-due" value="' + V('dueDate') + '"></div></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Department</label><input class="form-control" id="pay-dept" value="' + V('department') + '"></div><div class="form-group"><label class="form-label">Invoice / PO No.</label><input class="form-control" id="pay-inv" value="' + V('invoiceNo') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">' + _t2('Approver', 'Người phê duyệt') + '</label><select class="form-control" id="pay-approver"></select></div>' +
@@ -9406,6 +9400,26 @@ function tkNewPayment(editId) {
         : '<option value="">' + _t2('No approver available — ask HR to assign one', 'Chưa có người phê duyệt — nhờ HR chỉ định') + '</option>';
     }
   } catch (e) {}
+}
+/* Beneficiary company + bank details — read once, printed once. Kept as two helpers so the new-request
+   path, the edit path and the signed request PDF can never drift apart on which fields exist. */
+function _payBankFields(g) {
+  return { payeeCompany: g('pay-company'), payeeMst: g('pay-mst'), bankName: g('pay-bank'),
+    bankAcc: g('pay-bankacc'), bankHolder: g('pay-bankholder'), bankBranch: g('pay-bankbranch') };
+}
+/* PDF/e-sign rows. Blank fields are dropped so a cash request doesn't print six empty bank lines. */
+function _payBankRows(b) {
+  return [['Company (legal name)', b.payeeCompany], ['Tax code (MST)', b.payeeMst], ['Bank', b.bankName],
+    ['Account number', b.bankAcc], ['Account holder', b.bankHolder], ['Branch', b.bankBranch]]
+    .filter(r => String(r[1] || '').trim());
+}
+/* Same block as an inline card, for the approver's expandable row in the Approvals inbox. '' when empty. */
+function _payBankHtml(p) {
+  const rows = _payBankRows(p || {});
+  if (!rows.length) return '';
+  return '<div style="margin-top:10px;padding:9px 11px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">' +
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:5px">' + _t('Pay to') + '</div>' +
+    rows.map(r => '<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:1.5px 0"><span style="color:var(--text-light)">' + _crmEsc(r[0]) + '</span><span style="font-weight:600;font-variant-numeric:tabular-nums;text-align:right">' + _crmEsc(r[1]) + '</span></div>').join('') + '</div>';
 }
 async function tkPaymentSave(editId) {
   const g = id => (document.getElementById(id) || {}).value || '';
@@ -9426,9 +9440,9 @@ async function tkPaymentSave(editId) {
     const existing = (_HR.payments || []).find(x => x.id === editId);
     if (!existing) { toast('Payment not found', 'warn'); return; }
     if (_aprState(existing.status) !== 'submit' && _aprState(existing.status) !== 'review') { toast(_t('This request is already decided — it can no longer be edited.'), 'warn', 5000); return; }
-    const body = Object.assign({}, existing, { department: g('pay-dept'), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), note: g('pay-note'), approverEmail: g('pay-approver') });
+    const body = Object.assign({}, existing, { department: g('pay-dept'), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), note: g('pay-note'), approverEmail: g('pay-approver') }, _payBankFields(g));
     if (_files.length) {
-      const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
+      const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
       const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
       if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; } else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }
       try { await _finSpUploadAttachment(body, 'payment'); } catch (e) {}
@@ -9448,10 +9462,10 @@ async function tkPaymentSave(editId) {
     });
     return;
   }
-  const body = { reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), approverEmail: g('pay-approver'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) };
+  const body = Object.assign({ reqNo: _payNextNo(), empId: me ? me.id : '', name: (TK.user || {}).name || '', department: g('pay-dept') || (me ? me.dept : ''), payee: g('pay-payee'), category: g('pay-cat-new'), method: g('pay-method'), purpose: g('pay-purpose'), amount: amount, dueDate: g('pay-due'), invoiceNo: g('pay-inv'), attachment: '', attachmentName: '', note: g('pay-note'), approverEmail: g('pay-approver'), status: 'Submitted', ts: tkFmtDate(new Date().toISOString().slice(0, 10)) }, _payBankFields(g));
   {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
-    const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee], ['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]];
+    const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
     else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }   // combiner unavailable → keep the raw invoice so the request is never submitted without its bill
@@ -9943,7 +9957,13 @@ async function tkRenderMySpaceOverview() {
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
 function _finItems() {
   const out = [];
-  (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.dueDate || '', hasFile: !!p.attachment }));
+  // Period date = the SUBMIT date first, due date only as a fallback. `dueDate` is optional on a payment
+  // request, and _inPeriod() is fail-closed (a blank/unparseable date is DROPPED, not kept) — so filtering
+  // on dueDate alone made every payment without a due date vanish from Finance the moment any period was
+  // selected, approved ones included. It also filtered on the DUE month while the table's own column shows
+  // the REQUESTED date (rec.ts), so the register contradicted itself. Claims already use c.ts and travel
+  // t.from||t.ts; payments were the only kind with a single optional date source.
+  (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.ts || p.dueDate || '', hasFile: !!p.attachment }));
   (_HR.claims || []).forEach(c => out.push({ kind: 'Claim', coll: 'claims', id: c.id, ref: c.title || c.type || '', who: c.name || '', dept: c.dept || '', category: c.claimType || 'Claim', amount: _claimTotal(c), status: _claimRollup(c), date: c.ts || c.date || c.submittedDate || '', hasFile: !!(Array.isArray(c.items) && c.items.some(i => i.attachment)) }));
   (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || t.ts || '', hasFile: !!t.attachment }));
   return out;
@@ -9989,10 +10009,13 @@ function tkFinDecide(kind, id, status) {
   else if (kind === 'Travel') tkTravelDecision(id, status);
   else tkInboxClaim(id, status);
 }
-async function tkRenderFinance() {
+async function tkRenderFinance(force) {
   const root = document.getElementById('finance-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
-  await Promise.all([tkLoadColl('payments'), tkLoadColl('claims'), tkLoadColl('travel')]);
+  // force:true bypasses the 45s collection cache — otherwise the page's own Refresh button was a no-op
+  // within 45s of the last load, which is exactly when someone hits it ("I approved it, why isn't it here").
+  const o = force ? { force: true } : undefined;
+  await Promise.all([tkLoadColl('payments', o), tkLoadColl('claims', o), tkLoadColl('travel', o)]);
   const items = _finItems();
   const done = items.filter(i => i.status === 'Approved' || i.status === 'Paid');
   const outflow = done.reduce((s, i) => s + i.amount, 0);
@@ -10141,6 +10164,9 @@ function _finVoucherDoc(kind, rec) {
   } else {
     row('Requested on', tkFmtDate(rec.ts)); row('Requested by', rec.name); row('Department', rec.department);
     row('Payee / Vendor', rec.payee); row('Category', rec.category);
+    // Beneficiary company + bank block — the approver has to be able to check WHERE the money goes
+    // before signing, not just how much. Only rows that were filled in are shown.
+    _payBankRows(rec).forEach(r => row(r[0], r[1]));
     row('Payment method', rec.method); row('Invoice / PO No.', rec.invoiceNo);
     if (rec.purpose) row('Purpose', rec.purpose);
     row('Amount', fmt(rec.amount), true);
@@ -10216,8 +10242,8 @@ function tkPaymentVoucherPDF(id) {
 function tkPayExportXLS() {
   if (!window.XLSX) { toast('Excel engine not loaded', 'warn'); return; }
   const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '';
-  const list = (_HR.payments || []).filter(p => { const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase(); return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept); });
-  const rows = list.map(p => ({ 'No.': p.reqNo || '', 'Requested by': p.name || '', Department: p.department || '', Payee: p.payee || '', Category: p.category || '', Method: p.method || '', Purpose: p.purpose || '', Amount: +p.amount || 0, 'Due date': p.dueDate || '', 'Invoice/PO': p.invoiceNo || '', Status: p.status || 'Submitted', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' }));
+  const list = (_HR.payments || []).filter(p => { const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.payeeCompany || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase(); return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept); });
+  const rows = list.map(p => ({ 'No.': p.reqNo || '', 'Requested by': p.name || '', Department: p.department || '', Payee: p.payee || '', Company: p.payeeCompany || '', 'Tax code': p.payeeMst || '', Bank: p.bankName || '', 'Account number': p.bankAcc || '', 'Account holder': p.bankHolder || '', Branch: p.bankBranch || '', Category: p.category || '', Method: p.method || '', Purpose: p.purpose || '', Amount: +p.amount || 0, 'Due date': p.dueDate || '', 'Invoice/PO': p.invoiceNo || '', Status: p.status || 'Submitted', 'Approved by': p.approvedBy || '', 'Paid on': p.paidOn || '' }));
   const ws = XLSX.utils.json_to_sheet(rows, { header: ['No.', 'Requested by', 'Department', 'Payee', 'Category', 'Method', 'Purpose', 'Amount', 'Due date', 'Invoice/PO', 'Status', 'Approved by', 'Paid on'] });
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Payments');
   XLSX.writeFile(wb, 'Humiley_Payments_' + new Date().toISOString().slice(0, 10) + '.xlsx');

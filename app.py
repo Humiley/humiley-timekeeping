@@ -369,7 +369,7 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
         "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
         "<img src='" + _portal_base() + "/static/brand/Humiley_Logo_White.png' alt='Humiley' height='30' "
         "style='height:30px;width:auto;display:block;border:0;margin:0 0 6px'>"
-        "<div style='font-size:12px;opacity:.85'>Engineering &amp; Solutions That Move Air, Smartly.</div></div>"
+        "<div style='font-size:12px;opacity:.85'>Creating Sustainable Value</div></div>"
         "<div style='padding:24px'>"
         "<span style='display:inline-block;background:" + scolor + "22;color:" + scolor + ";font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.5px'>" + esc(str(status).upper()) + "</span>"
         "<h1 style='font-size:19px;color:" + INK + ";margin:14px 0 6px'>" + esc(title) + "</h1>"
@@ -482,6 +482,13 @@ def _appr_notify(coll, rec, event, actor_name="", reminder=False, age_days=0, es
             rows.append(("Dates", (rec.get("startDate", "") + " → " + rec.get("endDate", "")).strip(" →")))
             if rec.get("leaveType") or rec.get("type"):
                 rows.append(("Leave type", rec.get("leaveType") or rec.get("type")))
+        if coll == "payments":
+            # Same beneficiary block the requester filled in and the request PDF prints, so the decision
+            # email matches the request form field-for-field. Blank fields are skipped (cash requests).
+            for _lbl, _k in (("Company", "payeeCompany"), ("Tax code (MST)", "payeeMst"), ("Bank", "bankName"),
+                             ("Account number", "bankAcc"), ("Account holder", "bankHolder"), ("Branch", "bankBranch")):
+                if str(rec.get(_k) or "").strip():
+                    rows.append((_lbl, str(rec[_k]).strip()))
         amt = rec.get("amount") or rec.get("total")
         if amt:
             rows.append(("Amount", _money_vnd(amt)))
@@ -760,7 +767,7 @@ def _digest_html(title, intro, sections, summary):
         "<div style='max-width:620px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
         "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
         "<img src='" + _portal_base() + "/static/brand/Humiley_Logo_White.png' alt='Humiley' height='28' style='height:28px;width:auto;display:block;border:0;margin:0 0 6px'>"
-        "<div style='font-size:12px;opacity:.85'>Weekly digest &middot; Engineering &amp; Solutions That Move Air, Smartly.</div></div>"
+        "<div style='font-size:12px;opacity:.85'>Weekly digest &middot; Creating Sustainable Value</div></div>"
         "<div style='padding:22px 24px'>"
         "<h1 style='font-size:19px;color:" + INK + ";margin:0 0 6px'>" + esc(title) + "</h1>"
         "<p style='font-size:14px;color:" + MUT + ";line-height:1.6;margin:0 0 6px'>" + esc(intro) + "</p>"
