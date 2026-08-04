@@ -7788,9 +7788,13 @@ async function _payRenderRuns() {
 function payRunsFillTable() {
   const tb = document.getElementById('payrun-tbody'); if (!tb) return;
   const q = (_crmLF['payrun-q'] || '').toLowerCase();
+  const _RUN_BY_PERIOD = _cmpNewest('period'), _RUN_BY_CREATED = _cmpNewest('created');
   const runs = (_HR.payruns || []).filter(r =>
     (!q || ((r.period || '') + ' ' + (r.empName || '')).toLowerCase().includes(q)) && _inPeriodLF(r.created, 'payrun-period-f')
-  ).sort((a, b) => (a.period < b.period ? 1 : -1));
+  // WAS (a.period < b.period ? 1 : -1) on 'August 2026' — alphabetical (Aug, Dec, Jul…), newest run at
+  // the BOTTOM, and it never returned 0, an inconsistent comparator when a company run and individual
+  // runs share a month. created is the tiebreak.
+  ).sort((a, b) => _RUN_BY_PERIOD(a, b) || _RUN_BY_CREATED(a, b));
   tb.innerHTML = (runs.length ? runs.map(r => { const indiv = r.scope === 'individual'; const scopeCell = indiv ? (r.empName || 'Individual') + ' <span class="badge b-info" style="font-size:9px">Individual</span>' : (r.count || 0) + ' staff <span class="badge b-navy" style="font-size:9px">Company</span>'; return '<tr><td style="font-weight:600">' + (r.period || '') + '</td><td style="font-size:12px">' + scopeCell + '</td><td style="text-align:right">' + _PAY_FMT(r.gross) + '</td><td style="text-align:right">' + _PAY_FMT(r.net) + '</td><td style="text-align:right">' + _PAY_FMT(r.erCost) + '</td><td><span class="badge ' + (String(r.status || '').toLowerCase().indexOf('final') >= 0 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + (r.status || 'Pending Approval') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + tkFmtDate(r.created) + '</td><td>' + (indiv && r.empId ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkPayslip(\'' + r.empId + '\')">Payslip</button>' : '') + (!indiv && (r.lines || []).length ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkExportPayrun(\'' + r.id + '\')" title="' + _tkEscA(_t('Export this run\'s frozen payslip snapshot')) + '">' + _t('Export') + '</button>' : '') + (String(r.status || '').toLowerCase().indexOf('final') < 0 && ['management', 'admin'].indexOf(_userLevel) >= 0 ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px;margin-left:4px" onclick="tkPayrunFinalise(\'' + r.id + '\')">' + _t('Finalize (Director e-sign)') + '</button>' : '') + '</td></tr>'; }).join('') : '<tr><td colspan="8" style="text-align:center;color:var(--text-light);padding:18px">' + ((_HR.payruns || []).length ? 'No pay runs match your filters.' : 'No pay runs yet — use Create Pay Run or Individual Pay Run.') + '</td></tr>');
 }
 /* Individual monthly pay run for one employee (A15). */
@@ -9347,11 +9351,15 @@ function payFillTable() {
   const _payMe = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
   const isMgr = !_payMine && (typeof _userRole !== 'undefined' && _userRole === 'manager');
   const q = (_crmLF['pay-q'] || '').toLowerCase(), st = _crmLF['pay-status-f'] || '', cat = _crmLF['pay-cat-f'] || '', dept = _crmLF['pay-dept-f'] || '', period = _crmLF['pay-period-f'] || '';
+  const _PAY_BY_DATE = _cmpNewest(p => p.ts || p.dueDate);
   const list = (_HR.payments || []).filter(p => {
     if (_payMine && !_payIsMine(p, _payMe)) return false;
     const hay = ((p.reqNo || '') + ' ' + (p.payee || '') + ' ' + (p.payeeCompany || '') + ' ' + (p.purpose || '') + ' ' + (p.name || '')).toLowerCase();
     return (!q || hay.includes(q)) && (!st || (p.status || 'Submitted') === st) && (!cat || (p.category || '') === cat) && (!dept || (p.department || '') === dept) && _inPeriodLF(p.dueDate || p.ts, 'pay-period-f');
-  }).sort((a, b) => (b.ts || '').localeCompare(a.ts || '') || (b.reqNo || '').localeCompare(a.reqNo || ''));
+  // WAS localeCompare on p.ts — but p.ts is tkFmtDate ('Aug-04-26'), so this sorted by MONTH NAME and
+  // ignored the year entirely: a Dec-2025 payment rendered ABOVE today's. reqNo stays as the same-day
+  // tiebreak. (_payBankLastFor further down already handled this correctly; only the sort was missed.)
+  }).sort((a, b) => _PAY_BY_DATE(a, b) || (b.reqNo || '').localeCompare(a.reqNo || ''));
   /* the same filtered list drives the KPI cards + both donuts, so every filter updates everything */
   const kp = document.getElementById('pay-kpis'); if (kp) kp.innerHTML = _payKpisHtml(list);
   try { _payCharts(list); } catch (e) {}
@@ -10113,6 +10121,57 @@ function _isoDay(v) {
   const d = new Date(s); if (isNaN(d.getTime())) return '';
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
+/* ── Newest-first: ONE date key + ONE comparator for every list in the app ──────────────────────
+   Record dates are stored in several incompatible shapes and none of them sort together:
+     ISO day        '2026-08-04'                 (date inputs, server stamps: paidOn / approvedOn)
+     ISO timestamp  '2026-08-04T10:22:31.123Z'   (tkAudit, e-signature trails)
+     tkFmtDate      'Aug-04-26'                  (payments.ts, claims.ts, payruns.created …)
+     month label    'August 2026' / '2026-08'    (pay-run period, cost period)
+     Excel serial   46123                        (XLSX-imported CRM rows)
+   Comparing tkFmtDate strings directly sorts by MONTH ABBREVIATION and ignores the year entirely —
+   'Dec-15-25' > 'Aug-04-26' — which is why a December-2025 payment sat above today's in the
+   register. _dateKey maps every shape onto one string that sorts chronologically. Anything blank,
+   '—' or unparseable becomes '' and _cmpNewest sorts those LAST. Neither ever throws. */
+function _dateKey(v) {
+  try {
+    if (v == null || v === '' || v === '—') return '';
+    if (v instanceof Date) return isNaN(v.getTime()) ? '' : v.toISOString();
+    if (typeof v === 'number') {
+      if (!isFinite(v) || v <= 0) return '';
+      if (v > 1e11) return new Date(v).toISOString();                      // epoch milliseconds
+      if (v > 1e9) return new Date(v * 1000).toISOString();                // epoch seconds
+      if (v > 20000 && v < 80000)                                          // Excel serial day
+        return new Date(Date.UTC(1899, 11, 30) + v * 86400000).toISOString().slice(0, 10);
+      return '';
+    }
+    const s = String(v).trim();
+    if (!s) return '';
+    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) return s;                           // full ISO — keep the time
+    let m = s.match(/^(\d{4})-(\d{2})$/);                                  // 'YYYY-MM'
+    if (m) return m[1] + '-' + m[2] + '-01';
+    m = s.match(/^([A-Za-z]{3,})\s+(\d{4})$/);                             // 'August 2026'
+    if (m) { const mm = _MON3[m[1].slice(0, 3).toLowerCase()]; if (mm) return m[2] + '-' + mm + '-01'; }
+    m = s.match(/^Year\s+(\d{4})$/i);                                      // a whole-year run sits after Dec
+    if (m) return m[1] + '-12-31';
+    if (/^\d+(\.\d+)?$/.test(s)) return _dateKey(+s);                      // numeric string = Excel serial
+    return _isoDay(s);
+  } catch (e) { return ''; }
+}
+/* Descending (newest-first) comparator. `get` is a field name OR a function. Rows with no usable
+   date always sort LAST, never first. Uses < / > rather than localeCompare so ICU collation can
+   never treat the '-' separators as ignorable punctuation. */
+function _cmpNewest(get) {
+  const k = typeof get === 'function' ? get : (r => (r || {})[get]);
+  return (a, b) => {
+    let ka = '', kb = '';
+    try { ka = _dateKey(k(a)); } catch (e) {}
+    try { kb = _dateKey(k(b)); } catch (e) {}
+    if (ka === kb) return 0;
+    if (!ka) return 1;
+    if (!kb) return -1;
+    return ka < kb ? 1 : -1;
+  };
+}
 /* ONE period predicate for every toolbar: presets (Today / This week / This month / Last month /
    This quarter / This year) + a custom day-to-day range. from/to are optional ISO bounds. */
 function _inPeriod(dateStr, period, from, to) {
@@ -10215,11 +10274,14 @@ function _finRedrawAggs(list) {
 }
 function finFillTable() {
   const tb = document.getElementById('fin-tbody'); if (!tb) return;
+  const _FIN_BY_DATE = _cmpNewest('date');
   const q = (_crmLF['fin-q'] || '').toLowerCase(), kind = _crmLF['fin-kind'] || '', st = _crmLF['fin-status'] || '', dept = _crmLF['fin-dept'] || '', period = _crmLF['fin-period'] || '';
   const list = _finItems().filter(i => {
     const hay = ((i.ref || '') + ' ' + (i.who || '') + ' ' + (i.category || '')).toLowerCase();
     return (!q || hay.includes(q)) && (!kind || i.kind === kind) && (!st || i.status === st) && (!dept || i.dept === dept) && _inPeriodLF(i.date, 'fin-period');
-  }).sort((a, b) => b.amount - a.amount);
+  // WAS biggest-amount first, so a recent small payment sat far below an old large one. Date leads;
+  // amount is only the same-day tiebreak.
+  }).sort((a, b) => _FIN_BY_DATE(a, b) || (+b.amount || 0) - (+a.amount || 0));
   const fileCell = i => i.hasFile ? '<a href="javascript:void(0)" onclick="tkFinShow(\'' + i.coll + '\',\'' + i.id + '\')" style="display:inline-flex;align-items:center;gap:4px;color:var(--navy);font-weight:600;font-size:12px;text-decoration:none"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>Show</a>' : '<span style="color:var(--text-light)">—</span>';
   const kindKey = { Payment: 'payment', Claim: 'claim', Travel: 'travel' };
   tb.innerHTML = list.length ? list.map(i => {
@@ -14849,8 +14911,19 @@ function _pmCell(col, r) { if (col.sk) return r[col.sk]; if (col.k) return r[col
 function _pmSortRows(coll, cols, rows) {
   const so = _pmSort[coll]; if (!so || !so.key) return rows;
   const col = cols.find((c, i) => (c.sk || c.k || ('col' + i)) === so.key); if (!col) return rows;
-  const numify = v => { const t = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); return (t === '' || t === '-') ? null : +t; };
+  // numify must never hand back NaN. It used to: 'Aug-04-26' strips to '-04-26' and +'-04-26' is NaN,
+  // and '2026-08-04' likewise — but the `!== null` guard below accepted NaN as "numeric", so allNum
+  // passed on DATE columns and every comparison became (NaN||0)-(NaN||0) === 0. Clicking a date header
+  // flipped the arrow and reordered nothing at all, on both tkFmtDate and ISO columns.
+  const numify = v => { const t = String(v == null ? '' : v).replace(/[^0-9.\-]/g, ''); if (t === '' || t === '-') return null; const n = +t; return isFinite(n) ? n : null; };
   const vals = rows.map(r => _pmCell(col, r));
+  // Date columns get a real chronological sort, checked BEFORE the numeric branch. Detected with
+  // explicit patterns rather than _dateKey truthiness, so a plain number column is never mistaken for
+  // dates. _cmpNewest is descending, hence * -so.dir to keep dir=1 meaning ascending like every
+  // other column.
+  const _dOK = v => /^\d{4}-\d{2}-\d{2}/.test(String(v)) || /^[A-Za-z]{3}-\d{1,2}-\d{2}$/.test(String(v));
+  const allDate = vals.some(_dOK) && vals.every(v => !v || v === '—' || _dOK(v));
+  if (allDate) { const byDate = _cmpNewest(r => _pmCell(col, r)); return rows.slice().sort((a, b) => byDate(a, b) * -so.dir); }
   const allNum = vals.length > 0 && vals.every(v => v === '' || v == null || numify(v) !== null);
   return rows.slice().sort((a, b) => { const x = _pmCell(col, a), y = _pmCell(col, b); if (allNum) return ((numify(x) || 0) - (numify(y) || 0)) * so.dir; return String(x == null ? '' : x).localeCompare(String(y == null ? '' : y)) * so.dir; });
 }
@@ -16385,12 +16458,16 @@ const _PM_FILE_SRC = [
   ['pm_rfis', 'RFI / Submittal', r => r.raisedDate, r => (r.number ? r.number + ' · ' : '') + (r.subject || '')],
   ['pm_quality', 'Quality / ITP item', r => r.raisedDate, r => (r.refNo ? r.refNo + ' · ' : '') + (r.title || '')],
   ['pm_quality_itp', 'ITP plan', r => r.plannedStart, r => (r.itpNo ? r.itpNo + ' · ' : '') + (r.title || '')],
-  ['pm_changes', 'Change / ECN', r => r.date || r.raisedDate, r => r.title || ''],
+  // The schema field is requestedDate — r.date / r.raisedDate never existed on a change request, so
+  // every CR attachment showed '—' and was stranded at the bottom of the register forever.
+  ['pm_changes', 'Change / ECN', r => r.requestedDate || r.date, r => r.title || ''],
   ['pm_comms', 'Minutes / correspondence', r => r.date, r => r.subject || r.title || ''],
-  ['pm_issues', 'Issue', r => r.raisedDate || r.date, r => r.title || ''],
+  ['pm_issues', 'Issue', r => r.due || r.raisedDate || r.date, r => r.title || ''],   // schema has `due`
+  // pm_risks genuinely has NO date field in its schema. Left reading r.date so it still works if one
+  // is ever added; until then risk attachments knowingly sort last rather than pretending to a date.
   ['pm_risks', 'Risk', r => r.date || r.raisedDate, r => r.title || ''],
   ['pm_lessons', 'Lesson learned', r => r.date, r => r.title || ''],
-  ['pm_procurement', 'Procurement', r => r.date, r => r.title || r.package || '']
+  ['pm_procurement', 'Procurement', r => r.awardDate || r.startDate || r.date, r => r.title || r.package || '']
 ];
 function _pmFileRegisterRows() {
   const rows = [];
