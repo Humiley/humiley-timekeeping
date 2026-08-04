@@ -1578,6 +1578,23 @@ def _invtrack_fetch_linked(url):
         return None
 
 
+def _graph_granted_roles(force=False):
+    """The APPLICATION permissions the app-only token actually carries (its `roles` claim).
+
+    Worth the few lines: the health panel used to print fixed advice like "Grant Mail.Send consent"
+    whether or not it was granted, which is actively misleading — an admin who HAS granted it goes
+    looking in the wrong place, and one who has not gets no confirmation when they do. Reading the
+    claim turns guesses into facts. Decoded WITHOUT verification on purpose: this is our own token,
+    read for diagnosis, never trusted for authorisation."""
+    try:
+        tok = _graph_app_token(force=force)
+        payload = tok.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return sorted(json.loads(base64.urlsafe_b64decode(payload)).get("roles") or [])
+    except Exception:
+        return []
+
+
 def _graph_app_token(force=False):
     # force=True busts the cache — needed right after a NEW application permission is consented, because
     # the cached token was minted before consent and still lacks the new role (Graph would 403 it).
@@ -5264,6 +5281,7 @@ class Handler(BaseHTTPRequestHandler):
             (str(cnt) + " invoices · last sync " + (ls or "never")),
             "" if ls else "Open Invoice Tracking → Get all tracks (needs the M365 connection above).")
 
+        _roles = _graph_granted_roles() if ready else []
         ae_on = (db.get_setting("portal_apprEmail", "1") or "1").lower() in ("1", "true", "on", "yes")
         h = _APPR_EMAIL_HEALTH
         if not ae_on:
@@ -5274,8 +5292,14 @@ class Handler(BaseHTTPRequestHandler):
             st, det = "ok", str(h.get("ok")) + " sent · last " + (h.get("at") or "")
         else:
             st, det = "warn", "On, but nothing sent yet — send a test"
-        add("apprmail", "Approval emails (Mail.Send)", st, det,
-            "" if st == "ok" else "Grant Mail.Send consent, then use 'Send a test email' in Settings.")
+        if st != "ok" and "Mail.Send" not in _roles:
+            _fix = ("Mail.Send is NOT granted to this app. Entra → App registrations → API permissions "
+                    "→ Microsoft Graph → Application permissions → Mail.Send → Grant admin consent.")
+        elif st != "ok":
+            _fix = "Mail.Send IS granted — just press 'Send a test email' above to prove it end to end."
+        else:
+            _fix = ""
+        add("apprmail", "Approval emails (Mail.Send)", st, det, _fix)
 
         sp_conf = bool((db.get_setting("portal_invtrackSpUrl", "") or "").strip())
         sh = _INVTRACK_SP_HEALTH
@@ -5287,8 +5311,45 @@ class Handler(BaseHTTPRequestHandler):
             sst, sdet = "ok", str(sh.get("ok")) + " archived · last " + (sh.get("at") or "")
         else:
             sst, sdet = "warn", "Configured, nothing archived yet"
-        add("sharepoint", "SharePoint invoice archive", sst, sdet,
-            "" if sst != "down" else "Check the folder link + Sites.ReadWrite consent (Invoice Tracking → Settings → Test).")
+        _site_ok = any(r.startswith("Sites.") for r in _roles)
+        if sp_conf and not _site_ok:
+            _spfix = ("No Sites.* permission is granted, so every archive attempt will 403. Entra → "
+                      "App registrations → API permissions → Microsoft Graph → Application "
+                      "permissions → Sites.Selected (or Sites.ReadWrite.All) → Grant admin consent.")
+        elif sst == "warn" and sp_conf:
+            _spfix = "Press 'Archive existing files' on Invoice Tracking → Settings to file what is already captured."
+        elif sst == "down":
+            _spfix = "Check the folder link, then Invoice Tracking → Settings → Test connection."
+        else:
+            _spfix = ""
+        add("sharepoint", "SharePoint invoice archive", sst, sdet, _spfix)
+
+        # The FINANCE archive (payments / claims / travel) had no health row at all, so the exact
+        # failure the owner hit — configured, permitted, and silently filing nothing — was invisible.
+        fin_conf = bool((db.get_setting("portal_financeSpUrl", "") or "").strip())
+        fh = _FINSP_HEALTH
+        if not fin_conf:
+            fst, fdet = "warn", "Not configured (files stay inside the portal)"
+        elif fh.get("lastError"):
+            fst, fdet = "down", "Last error: " + fh.get("lastError", "")
+        elif fh.get("ok"):
+            fst, fdet = "ok", str(fh.get("ok")) + " filed · last " + (fh.get("at") or "")
+        else:
+            fst, fdet = "warn", "Configured, nothing filed yet"
+        add("finsp", "SharePoint finance archive (payments/claims/travel)", fst, fdet,
+            ("No Sites.* permission is granted — see the row above." if (fin_conf and not _site_ok)
+             else ("Press 'Archive existing files' under Access & Permissions → System Integrations."
+                   if fst == "warn" and fin_conf else "")))
+
+        # And say plainly what Microsoft has actually granted, so nobody has to guess again.
+        _need = [("Mail.Read", "invoice inbox sync"), ("Mail.Send", "approval email")]
+        _missing = [n for n, _ in _need if n not in _roles] + ([] if _site_ok else ["Sites.*"])
+        add("graphperms", "Microsoft Graph permissions",
+            "ok" if not _missing else "warn",
+            ("Granted: " + (", ".join(_roles) if _roles else "(none)")),
+            "" if not _missing else ("Missing: " + ", ".join(_missing) +
+                                     " — add under Entra → App registrations → API permissions "
+                                     "(Application), then Grant admin consent."))
 
         pdfok = _pdf_engine_ok()
         add("pdf", "Invoice PDF reader", "ok" if pdfok else "warn",
