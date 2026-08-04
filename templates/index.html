@@ -1431,12 +1431,20 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Access &amp; Permissions</h1><p>Grant each employee their access level — User · Contributor · Approver · Editor · Admin</p></div>
   </div>
-  <div id="permissions-root"></div>
+  <div class="tabs" id="perm-tabs" style="margin-bottom:16px">
+    <button class="tab active" data-perm="portal" onclick="tkPermTab('portal', this)">Portal access</button>
+    <button class="tab" data-perm="procurement" onclick="tkPermTab('procurement', this)">Procurement</button>
+    <button class="tab" data-perm="integrations" onclick="tkPermTab('integrations', this)">Integrations &amp; health</button>
+  </div>
+  <div id="perm-pane-portal"><div id="permissions-root"></div></div>
+  <div id="perm-pane-procurement" style="display:none">
   <div id="proc-admin-wrap" style="margin-top:18px;display:none">
     <div class="card-hdr" style="margin-bottom:6px"><div class="card-title">Procurement Administration</div></div>
     <div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Master data &amp; governance for the Procurement app — administered here, alongside access &amp; permissions.</div>
     <div id="proc-admin-host"></div>
   </div>
+  </div>
+  <div id="perm-pane-integrations" style="display:none">
   <div id="perm-integrations" class="card" style="margin-top:18px">
     <div class="card-hdr" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
       <div><div class="card-title">System Integrations</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">Microsoft 365, approval email, SharePoint &amp; the Procurement launcher. Admin only — these control where data is sent.</div></div>
@@ -1484,6 +1492,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div id="portal-health"></div>
     </div>
     <div class="form-group"><label class="form-label">Procurement app (URL)</label><input class="form-control" id="portal-procurl" placeholder="https://portal.humiley.com/procurement"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Where the Procurement Portal is served — an app of this portal at <b>portal.humiley.com/procurement</b>. The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access &amp; Permissions. Leave blank to use the default (localhost:3000/procurement in development).</div></div>
+  </div>
   </div>
 </div>
 
@@ -11801,6 +11810,37 @@ function _permRowRefresh(id) {
   nu.style.transition = 'background-color 1s ease'; nu.style.backgroundColor = 'rgba(0,176,96,.16)';
   setTimeout(() => { nu.style.backgroundColor = ''; }, 1000);
 }
+/* Access & Permissions is three unrelated jobs on one page: who can use the PORTAL, who administers
+   PROCUREMENT, and the tenant-wide INTEGRATIONS. Stacked vertically they were one long scroll where
+   the integrations — the part you touch least and can break most — sat below a table that grows with
+   headcount. Three tabs instead, each loaded ON DEMAND: opening the page no longer builds the
+   Procurement admin embed or fetches integration settings unless you ask for them. */
+let _permTab = 'portal';
+function tkPermTab(key, el) {
+  _permTab = key;
+  ['portal', 'procurement', 'integrations'].forEach(k => {
+    const pane = document.getElementById('perm-pane-' + k);
+    if (pane) pane.style.display = (k === key) ? '' : 'none';
+  });
+  document.querySelectorAll('#perm-tabs .tab').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  else { const b = document.querySelector('#perm-tabs .tab[data-perm="' + key + '"]'); if (b) b.classList.add('active'); }
+  // Build each section the first time it is opened, not on page load.
+  try {
+    if (key === 'procurement') _tkProcAdminOpen();
+    if (key === 'integrations') tkLoadIntegrations();
+  } catch (e) { console.warn('perm tab ' + key + ':', e.message); }
+}
+/* Procurement admin and the integrations are ADMIN-only; hide those tabs entirely for everyone else
+   rather than showing a tab that opens an empty or refusing pane. */
+function _tkPermTabsGate() {
+  const isAdmin = (typeof _lvlRank === 'function') && _lvlRank(_userLevel) >= _lvlRank('admin');
+  ['procurement', 'integrations'].forEach(k => {
+    const b = document.querySelector('#perm-tabs .tab[data-perm="' + k + '"]');
+    if (b) b.style.display = isAdmin ? '' : 'none';
+  });
+  if (!isAdmin && _permTab !== 'portal') tkPermTab('portal');
+}
 function tkRenderPermissions() {
   const root = document.getElementById('permissions-root'); if (!root) return;
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive').slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -16745,7 +16785,13 @@ function showView(id, navEl, title) {
   if (id === 'checkin') { try { tkRenderCheckin(); } catch (e) { console.warn('checkin:', e.message); } }
   if (id === 'mygoals') { try { tkRenderMyGoals(); } catch (e) { console.warn('mygoals:', e.message); } }
   if (id === 'mytraining') { try { tkRenderMyTraining(); } catch (e) { console.warn('mytraining:', e.message); } }
-  if (id === 'permissions') { try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); } try { _tkProcAdminOpen(); } catch (e) {} try { tkLoadIntegrations(); } catch (e) {} }
+  if (id === 'permissions') {
+    try { tkRenderPermissions(); } catch (e) { console.warn('perms:', e.message); }
+    // Procurement + Integrations now load when their TAB is opened, so arriving here no longer
+    // builds an iframe embed and fetches settings nobody asked for.
+    try { _tkPermTabsGate(); } catch (e) {}
+    try { tkPermTab(_permTab || 'portal'); } catch (e) {}
+  }
   /* attendance view: adapt UI for staff vs manager */
   if (id === 'attendance') {
     const isStaff = _userRole === 'staff';
@@ -18451,6 +18497,8 @@ const _VI = {
   'Backfill failed': 'Lưu trữ bổ sung thất bại',
   'Archived': 'Đã lưu trữ',
   'remaining (run again)': 'còn lại (chạy lại)',
+  'Portal access': 'Phân quyền Portal',
+  'Integrations & health': 'Tích hợp & tình trạng',
   'Folder reachable': 'Thư mục truy cập được',
   'Archiving… this can take a minute.': 'Đang lưu trữ… có thể mất một phút.',
   'Uploaded': 'Đã tải lên',
