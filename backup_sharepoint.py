@@ -131,6 +131,58 @@ def token(env):
     return j["access_token"]
 
 
+def granted_roles(tok):
+    """The application permissions this token actually carries.
+
+    An app-only access token lists its granted roles in the `roles` claim. Reading them turns
+    "403 Forbidden" — which tells you nothing about WHICH permission is missing — into a definite
+    answer. Decoded locally without verification: we are reading our own token for diagnosis, not
+    trusting it for authorisation."""
+    try:
+        import base64
+        payload = tok.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return sorted(json.loads(base64.urlsafe_b64decode(payload)).get("roles") or [])
+    except Exception:
+        return []
+
+
+SITE_ROLES = ("Sites.ReadWrite.All", "Sites.Manage.All", "Sites.FullControl.All", "Sites.Selected")
+
+
+def _permission_help(tok, kind="SharePoint"):
+    roles = granted_roles(tok)
+    need = SITE_ROLES if kind == "SharePoint" else ("Files.ReadWrite.All",)
+    msg = ["", "  This app's granted application permissions are:",
+           "      " + (", ".join(roles) if roles else "(none)")]
+    if not any(r in roles for r in need):
+        msg += ["",
+                "  None of these is present: " + ", ".join(need),
+                "  That is why Graph returns 403 — the permission simply is not granted.", ""]
+        if kind == "SharePoint":
+            msg += [
+                "  Fix it in Entra → App registrations → (the portal app) → API permissions →",
+                "  Add a permission → Microsoft Graph → APPLICATION permissions. Two options:",
+                "",
+                "    Sites.Selected      RECOMMENDED. Grants nothing by itself; an admin then",
+                "                        authorises this app on ONE site only. Least privilege.",
+                "    Sites.ReadWrite.All Simpler, but grants read/write to EVERY SharePoint site",
+                "                        in the tenant. Only choose this if that is acceptable.",
+                "",
+                "  Then click 'Grant admin consent for <tenant>'. Consent is what actually applies it —",
+                "  adding the permission without granting is the most common reason this stays 403.",
+                "",
+                "  If you pick Sites.Selected, an admin must also authorise this specific site once:",
+                "    PATCH https://graph.microsoft.com/v1.0/sites/{siteId}/permissions",
+                "  or via the SharePoint admin PowerShell (Grant-PnPAzureADAppSitePermission).",
+            ]
+    else:
+        msg += ["", "  The needed permission IS granted, so a 403 here usually means either the consent",
+                "  was added but never granted (check for the warning triangle in Entra), or the token",
+                "  was minted before consent — this script gets a fresh token each run, so re-run it."]
+    return "\n".join(msg)
+
+
 def _parse_sp_folder(url):
     """SharePoint folder URL → (host, /sites/<Site>, folder-relative-path). Accepts the clean path
        and the browser's ?id=… view URL, which is what an admin usually copies."""
@@ -238,7 +290,14 @@ def main():
         die("unknown flag %s (use --dry-run or --status)" % mode, 2)
     env = _env()
     tok = token(env)
-    drive_id, rel, label = target(env, tok)
+    try:
+        drive_id, rel, label = target(env, tok)
+    except SystemExit:
+        raise
+    except Exception as e:
+        # A raw Python traceback here tells the operator nothing. Say which permission is missing.
+        kind = "OneDrive" if (env.get("BACKUP_SP_USER") and not env.get("BACKUP_SP_URL")) else "SharePoint"
+        die("Could not reach that folder: %s\n%s" % (_err(e), _permission_help(tok, kind)))
 
     if mode == "--status":
         say("Off-box target: %s" % label)
