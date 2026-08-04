@@ -55,7 +55,10 @@ if [ "$SKIP_BACKUP" -eq 0 ] && docker ps --format '{{.Names}}' | grep -q "^$APP$
       echo "    ⚠️  UNENCRYPTED — no key at $KEYFILE. Create one so snapshots aren't plaintext HR/finance data:" >&2
       echo "        openssl rand -base64 48 > $KEYFILE && chmod 600 $KEYFILE" >&2
     fi
-    ls -1t "$BACKUP_DIR"/portal-*.db.gz "$BACKUP_DIR"/portal-*.db.gz.enc 2>/dev/null | tail -n +15 | xargs -r rm -f
+    # Keep the 14 newest snapshots. `|| true` is REQUIRED: an unmatched glob is passed to ls literally,
+    # ls then exits 1, and under `set -euo pipefail` that would abort the whole deploy. That is exactly
+    # what happened once the .enc glob was added while no key (and so no .enc file) existed yet.
+    ls -1t "$BACKUP_DIR"/portal-*.db.gz "$BACKUP_DIR"/portal-*.db.gz.enc 2>/dev/null | tail -n +15 | xargs -r rm -f || true
   else echo "    WARNING: portal backup failed — aborting (use --no-backup to override)." >&2; exit 1; fi
 fi
 
