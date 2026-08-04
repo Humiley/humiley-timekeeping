@@ -3350,6 +3350,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_sptest_ep(u))
         if path == "/api/invtrack/spbackfill":
             return self._guard(lambda u: self._invtrack_spbackfill_ep(u))
+        if path == "/api/finsp/backfill":
+            return self._guard(lambda u: self._finsp_backfill_ep(u))
+        if path == "/api/finsp/test":
+            return self._guard(lambda u: self._finsp_test_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
@@ -5832,6 +5836,62 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"},
                            "changed": [c[0] for c in changes]})
+
+    def _finsp_test_ep(self, u):
+        """Prove the Finance folder is reachable, without uploading anything. Mirrors Invoice
+           Tracking's Test connection — including forcing a FRESH token, since this is exactly the
+           button an admin presses right after granting consent."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Finance (Editor) access is required.", 403)
+        folder = (db.get_setting("portal_financeSpUrl", "") or "").strip()
+        if not folder:
+            return self._json({"ok": False, "error": "No Finance SharePoint folder URL is set."})
+        try:
+            _finsp_reset()
+            tok = _graph_app_token(force=True)
+            tgt = _finsp_resolve(tok)
+            if not tgt:
+                raise ValueError("could not resolve that folder — check the link and Sites consent")
+            return self._json({"ok": True, "folder": folder, "rel": tgt["rel"],
+                               "health": _FINSP_HEALTH})
+        except Exception as e:
+            return self._json({"ok": False, "error": _graph_err_text(e)[:300], "health": _FINSP_HEALTH})
+
+    def _finsp_backfill_ep(self, u):
+        """File EXISTING payment/claim/travel PDFs that were never archived.
+
+        The browser-side uploader only ever ran when the submitter happened to have a live Microsoft
+        session, so most historical requests were never filed at all. This walks the records and
+        uploads the ones still missing a SharePoint link, newest first — that is the direction anyone
+        checking the folder looks. Bounded per call so one request cannot run for minutes; the
+        response reports what is left so it can simply be pressed again."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Finance (Editor) access is required.", 403)
+        if not (db.get_setting("portal_financeSpUrl", "") or "").strip():
+            return self._err("No Finance SharePoint folder URL is set.", 400)
+        limit = 40
+        done, failed, todo = 0, 0, 0
+        for coll, kind in (("payments", "payment"), ("claims", "claim"), ("travel", "travel")):
+            rows = [r for r in db.list_collection(coll)
+                    if isinstance(r.get("attachment"), str) and r["attachment"].startswith("data:")
+                    and not r.get("spUrl")]
+            rows.sort(key=lambda r: str(r.get("ts") or ""), reverse=True)
+            for r in rows:
+                if done + failed >= limit:
+                    todo += 1
+                    continue
+                url = _finsp_archive(r, kind)
+                if url:
+                    r["spUrl"] = url                      # remember, so a re-run skips it
+                    try:
+                        db.put_collection_item(coll, r)
+                    except Exception:
+                        pass
+                    done += 1
+                else:
+                    failed += 1
+        return self._json({"ok": failed == 0, "uploaded": done, "failed": failed, "remaining": todo,
+                           "health": _FINSP_HEALTH})
 
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:

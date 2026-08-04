@@ -1443,7 +1443,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="btn btn-emerald btn-sm" type="button" onclick="tkSaveIntegrations()">Save integrations</button>
     </div>
     <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
-    <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
+    <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into &lt;Payments|Claims|Travel&gt;/&lt;year&gt;/&lt;month&gt;/&lt;reference&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkFinSpTest()">Test connection</button><button class="btn btn-outline btn-sm" onclick="tkFinSpBackfill()">Archive existing files</button></div><div id="finsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
@@ -5260,6 +5260,32 @@ async function tkRenderPortalEditor() {
 // Load their live values when that view opens. We fetch FRESH from the server (not the boot cache)
 // because the editor echoes these inputs back on save — a stale value would silently revert a change
 // another admin made after this browser loaded.
+/* Finance SharePoint: prove the folder is reachable, and back-fill requests that were never filed.
+   The old browser-side uploader only ran when the submitter had a live Microsoft session, so most
+   historical requests never reached SharePoint at all — this fills that gap. */
+async function tkFinSpTest() {
+  const box = document.getElementById('finsp-result'); if (box) box.textContent = 'Testing…';
+  try {
+    const r = await tkApi('/api/finsp/test', { method: 'POST', body: {} });
+    if (box) box.innerHTML = r && r.ok
+      ? '<span style="color:var(--emerald)">✓ ' + _crmEsc(_t('Folder reachable')) + ' — ' + _crmEsc(r.rel || '/') + '</span>'
+      : '<span style="color:#C00000">✗ ' + _crmEsc((r && r.error) || 'failed') + '</span>';
+  } catch (e) { if (box) box.innerHTML = '<span style="color:#C00000">✗ ' + _crmEsc(e.message || 'failed') + '</span>'; }
+}
+async function tkFinSpBackfill() {
+  const box = document.getElementById('finsp-result');
+  if (box) box.textContent = _t('Archiving… this can take a minute.');
+  try {
+    const r = await tkApi('/api/finsp/backfill', { method: 'POST', body: {} });
+    const parts = [_t('Uploaded') + ': ' + (r.uploaded || 0)];
+    if (r.failed) parts.push(_t('failed') + ': ' + r.failed);
+    if (r.remaining) parts.push(r.remaining + ' ' + _t('remaining (run again)'));
+    if (box) box.innerHTML = '<span style="color:' + (r.failed ? '#C00000' : 'var(--emerald)') + '">' +
+      _crmEsc(parts.join(' · ')) + '</span>' +
+      ((r.health && r.health.lastError) ? '<div style="color:#C00000;margin-top:4px">' + _crmEsc(r.health.lastError) + '</div>' : '');
+    toast(parts.join(' · '));
+  } catch (e) { if (box) box.innerHTML = '<span style="color:#C00000">✗ ' + _crmEsc(e.message || 'failed') + '</span>'; }
+}
 async function tkLoadIntegrations() {
   if (!document.getElementById('portal-teams')) return;   // integrations card absent (non-admin / other view)
   let live = null;
@@ -18425,6 +18451,9 @@ const _VI = {
   'Backfill failed': 'Lưu trữ bổ sung thất bại',
   'Archived': 'Đã lưu trữ',
   'remaining (run again)': 'còn lại (chạy lại)',
+  'Folder reachable': 'Thư mục truy cập được',
+  'Archiving… this can take a minute.': 'Đang lưu trữ… có thể mất một phút.',
+  'Uploaded': 'Đã tải lên',
 
   // ── Payments: beneficiary bank-detail backfill ──
   'Bank details': 'Thông tin ngân hàng',
