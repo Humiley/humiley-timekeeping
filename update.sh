@@ -10,10 +10,15 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-DO_BOOTSTRAP=0; SKIP_BACKUP=0
+DO_BOOTSTRAP=0; SKIP_BACKUP=0; PORTAL_ONLY=0
 for a in "$@"; do case "$a" in
   --bootstrap) DO_BOOTSTRAP=1 ;;
   --no-backup) SKIP_BACKUP=1 ;;
+  # Only portal files changed (app.py / templates / static / …). Skip the entire Procurement half:
+  # its repo pull, its image build, its migrations and its reference-data seed. Those cost MINUTES
+  # on every deploy and cannot possibly be affected by a change to the portal's HTML. autodeploy.sh
+  # passes this automatically when the commit range touches nothing outside the portal.
+  --portal-only) PORTAL_ONLY=1 ;;
   *) echo "unknown flag: $a" >&2; exit 2 ;;
 esac; done
 
@@ -64,7 +69,8 @@ fi
 
 # 2) Latest code — this repo + the Procurement repo cloned INTO ./humiley-procurement
 say "Pulling latest Portal code…"; git pull
-if [ -d "$PROC_DIR/.git" ]; then say "Pulling latest Procurement code…"; git -C "$PROC_DIR" pull
+if [ "$PORTAL_ONLY" -eq 1 ]; then say "Portal-only update — leaving Procurement untouched."
+elif [ -d "$PROC_DIR/.git" ]; then say "Pulling latest Procurement code…"; git -C "$PROC_DIR" pull
 else say "Cloning Procurement into ./$PROC_DIR…"; git clone "$PROC_REPO" "$PROC_DIR"; fi
 
 # 3) Secrets — all generated ONCE into the single shared .env
@@ -75,9 +81,14 @@ gen_secret ESIGN_SIGNING_SECRET "Procurement e-signature chain HMAC key. Do NOT 
 gen_secret POSTGRES_PASSWORD "Procurement database password."
 
 # 4) Build everything
-say "Building images (Portal + Procurement)…"; docker compose build
+if [ "$PORTAL_ONLY" -eq 1 ]; then
+  say "Building the Portal image…"; docker compose build app
+else
+  say "Building images (Portal + Procurement)…"; docker compose build
+fi
 
 # 5) Bring up the Procurement database, then apply its migrations
+if [ "$PORTAL_ONLY" -eq 0 ]; then
 say "Starting the Procurement database…"; docker compose up -d procdb
 say "Applying Procurement migrations…"; docker compose --profile setup run --rm proc-migrate
 # proc-bootstrap is fully idempotent — the approval matrix is left untouched if present, the HS
@@ -90,9 +101,16 @@ export BOOTSTRAP_ADMIN_EMAIL="${BOOTSTRAP_ADMIN_EMAIL:-tony.nguyen@humiley.com}"
 export BOOTSTRAP_ADMIN_NAME="${BOOTSTRAP_ADMIN_NAME:-$(grep -E '^TK_ADMIN_NAME=' .env 2>/dev/null | cut -d= -f2- || true)}"
 export BOOTSTRAP_ADMIN_NAME="${BOOTSTRAP_ADMIN_NAME:-Tony Nguyen}"
 say "Seeding Procurement reference data (+ admin ${BOOTSTRAP_ADMIN_EMAIL} on first run)…"; docker compose --profile setup run --rm proc-bootstrap
+fi
 
 # 6) Start / restart the whole stack (data volumes persist)
-say "Starting the whole stack…"; docker compose up -d --build
+if [ "$PORTAL_ONLY" -eq 1 ]; then
+  # No --build: step 4 already built it. The old `up -d --build` here meant EVERY deploy built the
+  # images twice over.
+  say "Restarting the Portal…"; docker compose up -d --no-deps app
+else
+  say "Starting the whole stack…"; docker compose up -d --build
+fi
 
 # The Caddyfile is bind-mounted, so `compose up` does NOT reload it (compose only sees image/config
 # changes). Gracefully reload Caddy so edits (gzip/zstd compression, framing headers) take effect on

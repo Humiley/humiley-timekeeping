@@ -69,8 +69,24 @@ else
   FC=0                                                     # different (newer) target -> fresh start
 fi
 
-say "change detected (portal=$REMOTE proc=${PROC_REMOTE:-none}) - deploying (try $((FC+1))/$MAX_TRIES)"
-if timeout "$DEPLOY_TIMEOUT" ./deploy.sh >>"$LOG" 2>&1; then
+# Is this a PORTAL-ONLY change? If every file in the range is portal code, we can skip the entire
+# Procurement half of the deploy (its repo pull, image build, migrations and reference-data seed),
+# which is minutes of work that a change to the portal's HTML cannot possibly affect. Anything
+# outside that list — compose file, Caddyfile, the deploy scripts themselves, a Procurement move —
+# falls back to the full deploy. Fail SAFE: if we cannot work out the diff, do the full one.
+FAST=""
+OLD_PORTAL="${LAST%%:*}"
+if [ -n "$OLD_PORTAL" ] && [ "$PROC_REMOTE" = "${LAST#*:}" ]; then
+  if CHANGED="$(git diff --name-only "$OLD_PORTAL" "$REMOTE" 2>/dev/null)" && [ -n "$CHANGED" ]; then
+    if ! printf '%s\n' "$CHANGED" | grep -qvE '^(app|db|tkutil|einv|ratelimit|payroll_calc)\.py$|^templates/|^static/|^requirements\.txt$|^tests/|^docs/|^[^/]*\.md$'; then
+      FAST="--portal-only"
+      say "portal-only change ($(printf '%s\n' "$CHANGED" | wc -l | tr -d ' ') file(s)) - skipping the Procurement build"
+    fi
+  fi
+fi
+
+say "change detected (portal=$REMOTE proc=${PROC_REMOTE:-none}) - deploying${FAST:+ (fast)} (try $((FC+1))/$MAX_TRIES)"
+if timeout "$DEPLOY_TIMEOUT" ./deploy.sh $FAST >>"$LOG" 2>&1; then
   # Record what we ACTUALLY built (post-pull/clone HEADs), not the pre-build remote refs.
   NEW="$(git rev-parse HEAD 2>/dev/null || echo "$REMOTE"):"
   [ -d "$PROC_DIR/.git" ] && NEW="$NEW$(git -C "$PROC_DIR" rev-parse HEAD 2>/dev/null || echo "$PROC_REMOTE")"
