@@ -79,8 +79,20 @@ snapshot, `--dry-run` to check a snapshot changes nothing).
    ( crontab -l 2>/dev/null | grep -v 'backup.sh'; \
      echo '0 2 * * * /opt/humiley-timekeeping/backup.sh >> /var/log/humiley-backup.log 2>&1' ) | crontab - && crontab -l
    ```
-2. **Copy the snapshots off‑box** (rclone to OneDrive/S3) — a backup on the same disk as the data is
-   not a backup.
+2. ✅ **Off‑box copy is built** — `offsite.sh`, called automatically at the end of every `backup.sh`.
+   It uploads ONLY the encrypted artefacts and can never carry `.backup-key` or a plaintext snapshot
+   off the box, verifies by hash that the newest one actually landed, and prunes remote copies by age.
+   **Your remaining action** (needs your browser — the sign‑in cannot be scripted):
+   ```bash
+   apt-get install -y rclone
+   rclone config                     # create a remote, e.g. "humiley-onedrive"
+   rclone lsd humiley-onedrive:      # confirm it sees your drive
+   echo 'OFFSITE_REMOTE=humiley-onedrive:Backups/Portal' >> /opt/humiley-timekeeping/.env
+   ./offsite.sh --dry-run            # see exactly what would move
+   ./offsite.sh                      # do it
+   ```
+   ⚠️ Keep `.backup-key` OUT of that same cloud account — ciphertext plus key in one place is no
+   encryption at all. Password manager, not OneDrive.
 3. **Rehearse the restore once**, into a throwaway target:
    `./restore-procurement.sh --db <snap> --files <snap> --dry-run`
 

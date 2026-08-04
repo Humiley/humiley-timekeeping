@@ -176,11 +176,33 @@ find "$BACKUP_DIR" -type f \
      -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
 echo "[$(date +%F\ %T)] kept $(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'timekeeping-*' -o -name 'procurement-*' -o -name 'proc-storage-*' \) | wc -l | tr -d ' ') file(s); pruned older than ${RETAIN_DAYS}d"
 
-# A Procurement failure is reported AFTER the portal snapshot is safely written, and exits non-zero so
+# ── 6) Off-box copy ───────────────────────────────────────────────────────────────────────────────
+# Everything above still lives on the same disk as the data it protects — it survives a bad deploy or
+# a dropped table and nothing else. offsite.sh ships the ENCRYPTED snapshots to an rclone remote.
+# Opt-in: it does nothing until OFFSITE_REMOTE is configured, so an install without rclone is unaffected.
+OFFSITE_RC=0
+if [ -x "$(dirname "$0")/offsite.sh" ]; then
+  if "$(dirname "$0")/offsite.sh"; then :; else
+    OFFSITE_RC=$?
+    # Only complain when it was actually configured. Exit 1 with no OFFSITE_REMOTE just means
+    # "off-box copying isn't set up yet", which is not a backup failure.
+    if grep -qs '^OFFSITE_REMOTE=' "$(dirname "$0")/.env" || [ -n "${OFFSITE_REMOTE:-}" ]; then
+      echo "[$(date +%F\ %T)] ✖ off-box copy FAILED — the snapshots are still only on this server." >&2
+    else
+      OFFSITE_RC=0   # not configured; stay quiet
+    fi
+  fi
+fi
+
+# Failures are reported AFTER the portal snapshot is safely written, and exit non-zero so
 # cron/healthchecks.io sees a red run instead of a silent half-backup.
 if [ "$PROC_RC" -ne 0 ]; then
   echo "[$(date +%F\ %T)] ✖ PORTAL backup succeeded but PROCUREMENT did not — see errors above." >&2
   exit "$PROC_RC"
+fi
+if [ "$OFFSITE_RC" -ne 0 ]; then
+  echo "[$(date +%F\ %T)] ✖ Both databases were backed up, but the OFF-BOX copy failed." >&2
+  exit "$OFFSITE_RC"
 fi
 
 # TIP: copy the newest snapshot off-box (OneDrive/SharePoint) so a lost VPS is recoverable:
