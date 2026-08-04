@@ -9422,9 +9422,16 @@ function tkNewPayment(editId) {
   try { const me = _tkMe && _tkMe(); if (!p && me && me.dept) { const d = document.getElementById('pay-dept'); if (d) d.value = me.dept; }
     const sel = document.getElementById('pay-approver');
     if (sel) { const elig = _payEligibleApprovers(me); const preEmail = ((p && p.approverEmail) || (me && me.managerEmail) || '').toLowerCase();
+      // You are never your own approver — nobody approves their own request, and the server enforces
+      // it regardless. Silently omitting yourself reads as "my access level is wrong" though, so if
+      // you WOULD otherwise qualify, show yourself as a disabled row that says why. Explaining an
+      // absence costs one line; leaving it unexplained cost two rounds of confusion.
+      const selfRow = (me && _canFinalApprove(me.level))
+        ? '<option value="" disabled>' + _crmEsc(me.name || 'You') + ' — ' + _t2('you cannot approve your own request', 'bạn không thể tự duyệt yêu cầu của mình') + '</option>'
+        : '';
       sel.innerHTML = elig.length
-        ? elig.map(e => '<option value="' + _tkEscA(e.email || '') + '"' + ((e.email || '').toLowerCase() === preEmail ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.title ? ' — ' + _crmEsc(e.title) : '') + '</option>').join('')
-        : '<option value="">' + _t2('No approver available — ask HR to assign one', 'Chưa có người phê duyệt — nhờ HR chỉ định') + '</option>';
+        ? selfRow + elig.map(e => '<option value="' + _tkEscA(e.email || '') + '"' + ((e.email || '').toLowerCase() === preEmail ? ' selected' : '') + '>' + _crmEsc(e.name || '') + (e.title ? ' — ' + _crmEsc(e.title) : '') + '</option>').join('')
+        : (selfRow || '') + '<option value="">' + _t2('No approver available — ask HR to assign one', 'Chưa có người phê duyệt — nhờ HR chỉ định') + '</option>';
     }
   } catch (e) {}
 }
