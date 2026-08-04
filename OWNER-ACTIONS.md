@@ -28,16 +28,19 @@ The push is blocked **only** by a GitHub credential‑scope rule, not by the cod
    forms **unkeyed** (amber "Chain intact (unkeyed)" badge) — then set the pepper and restart **once** with
    `TK_AUDIT_RESEAL=1` to seal it, and unset that flag afterward. Escrow the pepper off‑box (P0‑3).
 
-## P0‑1 · Turn on the CI gate (GitHub)
-The workflows are now committed, but nothing enforces them yet.
-1. GitHub → repo **Settings → Branches → Add branch protection rule** for `main`:
-   - ✅ *Require status checks to pass before merging* → select **Backend tests (py3.9)** and **(py3.12)**.
-   - ✅ *Require a pull request before merging* (so nothing lands on `main` unreviewed).
-2. Make `autodeploy.sh` refuse a SHA whose CI isn't green before deploying (query the GitHub checks API for
-   the commit status; only `docker compose up` when it's `success`). Today it deploys any `origin/main` ref
-   and `update.sh` only *warns* on an unhealthy boot.
-3. GitHub → **Settings → Code security → enable Secret scanning + Push protection** (this repo is public and
-   auto‑deploys — one committed secret is both a permanent leak and instantly live).
+## P0‑1 · Turn on the CI gate (GitHub) — ✅ DONE 2026‑08‑04
+1. ✅ **Branch ruleset "main protection"** is active on `main` (id 20347314): requires the **`CI`** status
+   check, blocks force‑pushes (`non_fast_forward`) and deletion. **Repository admin is on the bypass list**
+   so your direct pushes and the auto‑deploy still work — verified with a real push. Remove that bypass if
+   you ever want strict PR‑only merges.
+   *Only `CI` is required — the Accessibility and Lighthouse jobs drive a real browser and are prone to
+   runner‑image drift (they failed on day one for exactly that reason), so they report without gating.*
+2. ✅ **Secret scanning + Push protection** enabled (confirmed via the API).
+3. ⏳ **STILL OPEN:** make `autodeploy.sh` refuse a SHA whose CI isn't green before deploying (query the
+   GitHub checks API; only `docker compose up` when it's `success`). Today it deploys any `origin/main` ref
+   and `update.sh` only *warns* on an unhealthy boot. The ruleset gates **merges**, not the deploy poller.
+4. Optional: **Settings → Advanced Security → CodeQL analysis → Set up → Default** — free on public repos,
+   and worth having on an app holding payroll, national IDs and bank details. Leave it unrequired at first.
 
 ## P0‑2 · Make backups real, verified, and off‑box (VPS)
 `backup.sh`/`restore.sh` are correct but **not installed** (the cron line is a comment) and fail open to
