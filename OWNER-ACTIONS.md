@@ -63,17 +63,26 @@ tamper‑evident audit hash chain — set it once in the VPS `.env` with `openss
 change it → the audit trail can no longer be verified), `POSTGRES_PASSWORD` (lose it → the restored
 Procurement DB is locked), `TK_SSO_SECRET`, and the `TK_M365_CLIENT_SECRET`.
 
-## P0‑4 · Back up the **Procurement Postgres** + uploads (VPS) — currently 100% unbacked
-`backup.sh` snapshots only the portal SQLite. `docker-compose.yml` also runs `procdb` (all PO/GRN, the
-approval matrix, and Procurement's own Part‑11 e‑signature chain) and `proc_storage` (uploaded invoices/bills).
-Add to your nightly job (encrypt + copy off‑box + restore‑test one):
-```bash
-docker exec humiley_proc_db pg_dump -U "${POSTGRES_USER:-procurement}" "${POSTGRES_DB:-humiley_procurement}" \
-  | gzip | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/opt/humiley/.backup-key \
-  > /opt/humiley/backups/proc_$(date +%F).sql.gz.enc
-docker run --rm -v proc_storage:/data -v /opt/humiley/backups:/out alpine \
-  tar czf /out/proc_storage_$(date +%F).tgz -C /data .
-```
+## P0‑4 · Back up the **Procurement Postgres** + uploads — ✅ DONE (code side)
+`backup.sh` now covers **both** databases. It `pg_dump`s `procdb` (all PO/GRN, the approval matrix and
+Procurement's own Part‑11 e‑signature chain) using the container's own credentials, and tars
+`proc_storage` (uploaded invoices/bills) — resolving the volume from the running container rather than
+guessing its compose‑prefixed name. Both are encrypted with the same key and **decrypt‑verified**
+before the plaintext is deleted. A `pg_dump` that succeeds but contains no tables is discarded and the
+run exits non‑zero; a portal‑only install with no `procdb` skips it and still exits 0.
+Restore with **`./restore-procurement.sh`** (validates before touching anything, keeps a pre‑restore
+snapshot, `--dry-run` to check a snapshot changes nothing).
+
+**Your remaining actions:**
+1. **Install the nightly job** — this is still just a script on disk until cron runs it:
+   ```bash
+   ( crontab -l 2>/dev/null | grep -v 'backup.sh'; \
+     echo '0 2 * * * /opt/humiley-timekeeping/backup.sh >> /var/log/humiley-backup.log 2>&1' ) | crontab - && crontab -l
+   ```
+2. **Copy the snapshots off‑box** (rclone to OneDrive/S3) — a backup on the same disk as the data is
+   not a backup.
+3. **Rehearse the restore once**, into a throwaway target:
+   `./restore-procurement.sh --db <snap> --files <snap> --dry-run`
 
 ## P0‑5 · Move the live DB out of the OneDrive‑synced tree
 `*.db`/`.env` are gitignored (good, not in git), but the working tree is under `OneDrive‑Humiley/…`. Any
@@ -132,7 +141,8 @@ checklist, the DNSSEC gotcha, and a quarterly drill. Stated **RTO 4 h / RPO 24 h
 backup interval).
 **Your remaining actions:** (1) **rehearse it once** — an unrehearsed recovery path is a hypothesis, not a
 plan, and the RTO above is only credible after a real run; (2) close the honest gap it documents — the
-Procurement Postgres + uploads are still unbacked (P0‑4), so today a full host loss loses that data.
+Procurement Postgres + uploads are now covered by backup.sh / restore-procurement.sh (P0‑4) — but the
+nightly job still has to be INSTALLED on the VPS, and the restore still has to be rehearsed once.
 
 ---
 

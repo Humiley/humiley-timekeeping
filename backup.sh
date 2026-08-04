@@ -96,9 +96,92 @@ else
   echo "[$(date +%F\ %T)] backup OK (⚠️ UNENCRYPTED — BACKUP_ALLOW_PLAINTEXT=1) -> $FINAL ($(du -h "$FINAL" | cut -f1))" >&2
 fi
 
-# 4) Retention: prune old snapshots (both encrypted + plaintext forms).
-find "$BACKUP_DIR" -name 'timekeeping-*.db.gz' -o -name 'timekeeping-*.db.gz.enc' -type f -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
-echo "[$(date +%F\ %T)] kept $(ls -1 "$BACKUP_DIR"/timekeeping-*.db.gz* 2>/dev/null | wc -l | tr -d ' ') snapshot(s); pruned older than ${RETAIN_DAYS}d"
+# ── 4) PROCUREMENT: Postgres + the uploads volume ────────────────────────────────────────────────
+# The portal SQLite above is only half the company's data. `procdb` holds every PO, GRN, the approval
+# matrix and Procurement's own Part-11 e-signature chain; `proc_storage` holds the uploaded invoices
+# and bills. Both were previously backed up by NOTHING — a lost host lost them outright.
+#
+# Best-effort by design: a portal-only install has no procdb, and the portal snapshot above (already
+# written and verified) must not be thrown away because Procurement isn't deployed. A real FAILURE of
+# a procdb that IS running is loud and sets a non-zero exit at the end.
+PROC_DB_CONTAINER="${PROC_DB_CONTAINER:-humiley_proc_db}"
+PROC_APP_CONTAINER="${PROC_APP_CONTAINER:-humiley_proc_app}"
+PROC_RC=0
+
+if docker ps --format '{{.Names}}' | grep -qx "$PROC_DB_CONTAINER"; then
+  PGOUT="$BACKUP_DIR/procurement-$STAMP.sql.gz"
+  # Run pg_dump INSIDE the container using the container's OWN env, so credentials are never parsed
+  # out of .env on the host and never appear in the host process list.
+  if docker exec "$PROC_DB_CONTAINER" sh -c \
+        'pg_dump --clean --if-exists -U "$POSTGRES_USER" "$POSTGRES_DB"' 2>/dev/null | gzip -c > "$PGOUT"; then
+    # A pg_dump that "succeeds" but emits a stub is the failure mode that matters — it restores
+    # cleanly and silently loses everything. Require the schema to actually be in there.
+    if gzip -t "$PGOUT" 2>/dev/null && [ "$(gzip -dc "$PGOUT" | grep -c 'CREATE TABLE')" -ge 1 ]; then
+      echo "[$(date +%F\ %T)] procurement pg_dump OK ($(gzip -dc "$PGOUT" | grep -c 'CREATE TABLE') tables, $(du -h "$PGOUT" | cut -f1))"
+    else
+      echo "[$(date +%F\ %T)] ✖ procurement pg_dump produced no tables — discarding it." >&2
+      rm -f "$PGOUT"; PROC_RC=1
+    fi
+  else
+    echo "[$(date +%F\ %T)] ✖ procurement pg_dump FAILED." >&2
+    rm -f "$PGOUT"; PROC_RC=1
+  fi
+
+  # Uploaded invoices/bills. Resolve the volume from the RUNNING container rather than hardcoding a
+  # name — compose prefixes volumes with the project directory, which differs per install.
+  STOR_VOL="$(docker inspect "$PROC_APP_CONTAINER" \
+      --format '{{range .Mounts}}{{if eq .Destination "/app/storage"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true)"
+  if [ -n "$STOR_VOL" ]; then
+    STOROUT="$BACKUP_DIR/proc-storage-$STAMP.tgz"
+    if docker run --rm -v "$STOR_VOL":/data:ro -v "$BACKUP_DIR":/out alpine \
+         tar czf "/out/$(basename "$STOROUT")" -C /data . 2>/dev/null && tar tzf "$STOROUT" >/dev/null 2>&1; then
+      echo "[$(date +%F\ %T)] procurement uploads OK ($(du -h "$STOROUT" | cut -f1), volume $STOR_VOL)"
+    else
+      echo "[$(date +%F\ %T)] ✖ procurement uploads archive FAILED or is unreadable." >&2
+      rm -f "$STOROUT"; PROC_RC=1
+    fi
+  else
+    echo "[$(date +%F\ %T)] ⚠️  could not resolve the proc_storage volume — uploads NOT backed up." >&2
+    PROC_RC=1
+  fi
+
+  # Encrypt both with the SAME key, and decrypt-verify before discarding the plaintext. Procurement
+  # invoices and vendor bank details are exactly as sensitive as the portal's payroll data.
+  if [ -f "$KEYFILE" ]; then
+    for f in "$BACKUP_DIR/procurement-$STAMP.sql.gz" "$BACKUP_DIR/proc-storage-$STAMP.tgz"; do
+      [ -f "$f" ] || continue
+      if openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$f" -out "$f.enc" -pass "file:$KEYFILE" 2>/dev/null \
+         && openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$f.enc" -pass "file:$KEYFILE" 2>/dev/null | gzip -t 2>/dev/null; then
+        rm -f "$f"
+        echo "[$(date +%F\ %T)] encrypted + decrypt-verified -> $f.enc"
+      else
+        echo "[$(date +%F\ %T)] ✖ could not encrypt/verify $f — keeping nothing for it." >&2
+        rm -f "$f.enc" "$f"; PROC_RC=1
+      fi
+    done
+  fi
+else
+  echo "[$(date +%F\ %T)] procurement: container '$PROC_DB_CONTAINER' not running — skipping (portal-only install?)"
+fi
+
+# ── 5) Retention: prune old snapshots (encrypted + plaintext, portal + procurement) ───────────────
+# The parentheses are REQUIRED. Without them find parses this as
+#   ( -name A ) OR ( -name B AND -type f AND -mtime +N AND -delete )
+# because the implicit AND binds tighter than -o — so -delete applied to only the LAST name pattern
+# and plaintext snapshots were never pruned at all. Verified with a real find before/after.
+find "$BACKUP_DIR" -type f \
+     \( -name 'timekeeping-*.db.gz'    -o -name 'timekeeping-*.db.gz.enc' \
+     -o -name 'procurement-*.sql.gz'   -o -name 'procurement-*.sql.gz.enc' \
+     -o -name 'proc-storage-*.tgz'     -o -name 'proc-storage-*.tgz.enc' \) \
+     -mtime +"$RETAIN_DAYS" -delete 2>/dev/null || true
+echo "[$(date +%F\ %T)] kept $(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name 'timekeeping-*' -o -name 'procurement-*' -o -name 'proc-storage-*' \) | wc -l | tr -d ' ') file(s); pruned older than ${RETAIN_DAYS}d"
+
+# A Procurement failure is reported AFTER the portal snapshot is safely written, and exits non-zero so
+# cron/healthchecks.io sees a red run instead of a silent half-backup.
+if [ "$PROC_RC" -ne 0 ]; then
+  echo "[$(date +%F\ %T)] ✖ PORTAL backup succeeded but PROCUREMENT did not — see errors above." >&2
+  exit "$PROC_RC"
+fi
 
 # TIP: copy the newest snapshot off-box (OneDrive/SharePoint) so a lost VPS is recoverable:
 #   rclone copy "$BACKUP_DIR" humiley-onedrive:Backups/Portal --max-age 25h

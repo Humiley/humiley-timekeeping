@@ -3715,7 +3715,13 @@ class Handler(BaseHTTPRequestHandler):
                                 if str(s.get("setStatus") or "").lower() == "approved"          # server-applied (authoritative)
                                 or "approv" in str(s.get("meaning", "")).lower()]               # legacy sigs fallback
                 if u.get("id") in approver_ids:
-                    return "A different person must release payment than the one who gave final approval."
+                    # Name the setting. Hitting this mid-signature with no idea what to do next is
+                    # the single most confusing refusal in the app — you have the access, you are
+                    # simply the wrong person for this one request.
+                    return ("A different person must release payment than the one who gave final "
+                            "approval. Either have another authorised payer release it, or an admin "
+                            "can switch off ‘Disbursement segregation of duties’ in Company Portal → "
+                            "Approvals. (Paying your own request stays blocked either way.)")
             return None
         # Any other status is NOT a valid approval transition on a three-level record. Deny it — a
         # requester could otherwise self-sign their OWN record with an intermediate status such as

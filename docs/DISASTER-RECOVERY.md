@@ -15,10 +15,16 @@ repo (public on GitHub) and your off-box secret/backup escrow.
 | **RTO** (time to be back online) | **4 hours** | Mostly the Docker build (~25–30 min on a 2-core VPS) + DNS/TLS propagation. A practised run with secrets at hand is ~2 h; 4 h is the committed target with buffer. |
 | **RPO** (acceptable data loss) | **24 hours** | The portal SQLite backup is **nightly**. Anything entered after the last successful snapshot is lost. Tighten by running `backup.sh` more often. |
 
-⚠️ **Known gap — Procurement Postgres.** `backup.sh` snapshots only the portal SQLite. The `proc_db`
-(all PO/GRN, approval matrix, Procurement's own e-signature chain) and `proc_storage` (uploaded
-invoices) volumes are **not yet backed up** — see `OWNER-ACTIONS.md` P0-4. Until that is installed, a
-full-host loss means **Procurement data is unrecoverable**. Fix that before relying on this runbook.
+✅ **Procurement is now covered.** `backup.sh` snapshots the portal SQLite **and** the Procurement
+side: `procdb` (all PO/GRN, the approval matrix, Procurement's own e-signature chain) via `pg_dump`,
+and `proc_storage` (uploaded invoices and bills) as a tarball. Both are encrypted with the same key
+and decrypt-verified before the plaintext is discarded. A dump that succeeds but contains no tables
+is **discarded and the run exits non-zero** — that is the failure that would otherwise restore
+cleanly and silently lose everything.
+
+A portal-only install (no `procdb` container) skips this and still exits 0. If Procurement IS running
+and its backup fails, the portal snapshot is still kept and the script exits **1**, so cron or a
+dead-man's-switch sees a red run rather than a silent half-backup.
 
 ---
 
@@ -85,12 +91,27 @@ docker compose restart app
 ```
 `restore.sh` auto-decrypts `.enc` and decompresses `.gz`. It needs the backup key from escrow.
 
-### 6 · Restore Procurement Postgres (~10 min) — *only once P0-4 backups exist*
+### 6 · Restore Procurement — database + uploaded files (~10 min)
+Use `restore-procurement.sh`. It decrypts, **validates before touching anything** (refuses a dump with
+no `CREATE TABLE`, refuses an unreadable tarball), takes a pre-restore snapshot of the current
+database so a wrong-snapshot restore is undoable, and runs `psql` with `ON_ERROR_STOP=1` so a partial
+restore fails loudly instead of limping through.
+
 ```bash
-gunzip -c proc_<DATE>.sql.gz.enc | openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass file:/opt/humiley/.backup-key \
-  | docker exec -i humiley_proc_db psql -U procurement -d humiley_procurement
-docker restart humiley_proc_app
+docker compose stop procurement          # stop the APP; leave procdb running
+
+# Check the snapshots first — changes nothing:
+./restore-procurement.sh --db procurement-<DATE>.sql.gz.enc \
+                         --files proc-storage-<DATE>.tgz.enc --dry-run
+
+# Then do it:
+./restore-procurement.sh --db procurement-<DATE>.sql.gz.enc \
+                         --files proc-storage-<DATE>.tgz.enc
+
+docker compose start procurement
 ```
+Verify in the UI: open a PO and a GRN, and download one uploaded invoice.
+The key comes from escrow (`BACKUP_KEYFILE`, default `<snapshot-dir>/.backup-key`).
 
 ### 7 · Re-point DNS (~10 min + propagation)
 Mat Bao DNS → `portal.humiley.com` **A record** → the new IP.
