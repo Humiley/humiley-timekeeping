@@ -15636,7 +15636,24 @@ function pmSchedRange() { const f = (document.getElementById('pm-sched-from') ||
 /* Critical Path Method — forward/backward pass over task predecessors (referenced by WBS code).
    Duration = the `duration` field, else days(start→finish)+1, else 1 (0 for milestones). Cycle-guarded.
    Returns a map by task id → {es,ef,ls,lf,float,critical} plus projEnd + whether any dependencies exist. */
+/* The SAME critical-path pass runs up to THREE times on one Schedule render — the activities table,
+   the Gantt and the calendar each derive their own task array and each call _pmCPM. Memoise on a
+   cheap content signature: building the signature is one O(n) walk over the six fields CPM actually
+   reads, while CPM itself walks the whole dependency graph. Keyed on CONTENT, not array identity,
+   because each caller builds a fresh array from _pmScope. */
+let _pmCpmMemo = { sig: '', out: null };
 function _pmCPM(tasks) {
+  let sig = '';
+  try {
+    sig = (tasks || []).map(t => [t.id, t.wbs, t.duration, t.isMilestone, t.start, t.finish,
+                                  t.predecessors].join('\u0001')).join('\u0002');
+  } catch (e) { sig = ''; }
+  if (sig && _pmCpmMemo.sig === sig) return _pmCpmMemo.out;
+  const out = _pmCPMCompute(tasks);
+  if (sig) _pmCpmMemo = { sig: sig, out: out };
+  return out;
+}
+function _pmCPMCompute(tasks) {
   const byKey = {}, nodes = tasks.map(t => {
     let dur;
     if (+t.duration) dur = +t.duration;                       // explicit duration wins
