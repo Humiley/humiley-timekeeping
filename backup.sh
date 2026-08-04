@@ -181,6 +181,15 @@ echo "[$(date +%F\ %T)] kept $(find "$BACKUP_DIR" -maxdepth 1 -type f \( -name '
 # a dropped table and nothing else. offsite.sh ships the ENCRYPTED snapshots to an rclone remote.
 # Opt-in: it does nothing until OFFSITE_REMOTE is configured, so an install without rclone is unaffected.
 OFFSITE_RC=0
+# SharePoint / OneDrive via Microsoft Graph. Preferred over rclone here because the portal ALREADY
+# holds an app-only Graph secret (that is how invoices reach the Finance folder), so there is no
+# browser sign-in to complete on a headless box — which is exactly where the rclone route stalled.
+if [ -n "$(grep -Es '^(BACKUP_SP_URL|BACKUP_SP_USER)=.' "$(dirname "$0")/.env" 2>/dev/null)" ]; then
+  if python3 "$(dirname "$0")/backup_sharepoint.py"; then :; else
+    OFFSITE_RC=$?
+    echo "[$(date +%F\ %T)] ✖ SharePoint off-box copy FAILED — snapshots are still only on this server." >&2
+  fi
+fi
 if [ -x "$(dirname "$0")/offsite.sh" ]; then
   if "$(dirname "$0")/offsite.sh"; then :; else
     OFFSITE_RC=$?

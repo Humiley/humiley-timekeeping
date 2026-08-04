@@ -82,23 +82,33 @@ snapshot, `--dry-run` to check a snapshot changes nothing).
 2. ✅ **Off‑box copy is built** — `offsite.sh`, called automatically at the end of every `backup.sh`.
    It uploads ONLY the encrypted artefacts and can never carry `.backup-key` or a plaintext snapshot
    off the box, verifies by hash that the newest one actually landed, and prunes remote copies by age.
-   **Your remaining action** — use **Backblaze B2**, not OneDrive: B2 authenticates with two values
-   you paste, so there is no browser sign‑in to complete on a headless server (which is exactly where
-   the OneDrive attempt stalled).
-   1. At backblaze.com → B2: create a **Private** bucket `humiley-backups`, then an Application Key
-      restricted to that bucket with Read+Write. Copy the **keyID** and **applicationKey** — the key
-      is shown once.
-   2. On the VPS, one command; it prompts for those two values and hides the key as you type:
+   **Your remaining action** — back up into **your own SharePoint**, which needs no new consent and
+   no browser sign‑in. The portal already holds an app‑only Graph secret (that is how approved
+   invoices reach the Finance folder), and `Sites.ReadWrite.All` is already granted.
+   1. In SharePoint, make a folder for it — e.g. `Finance → Shared Documents → Portal Backups`.
+      Restrict who can open it: it holds encrypted payroll and HR data.
+   2. Copy the folder link from the browser address bar and add it to `/opt/humiley-timekeeping/.env`:
    ```bash
-   cd /opt/humiley-timekeeping && ./setup-b2.sh
+   BACKUP_SP_URL=https://humiley.sharepoint.com/sites/Finance/Shared Documents/Portal Backups
    ```
-   It verifies the credentials, creates the bucket if needed, records OFFSITE_REMOTE in .env and
-   dry‑runs. Then `./offsite.sh` to copy for real, and `./offsite.sh --status` any time to see how
-   old the newest off‑box copy is.
-   ⚠️ Keep `.backup-key` OUT of that same cloud account — ciphertext plus key in one place is no
-   encryption at all. Password manager, not OneDrive.
-3. **Rehearse the restore once**, into a throwaway target:
-   `./restore-procurement.sh --db <snap> --files <snap> --dry-run`
+   3. Test it, then let the nightly job take over:
+   ```bash
+   cd /opt/humiley-timekeeping && python3 backup_sharepoint.py --dry-run
+   cd /opt/humiley-timekeeping && python3 backup_sharepoint.py
+   cd /opt/humiley-timekeeping && python3 backup_sharepoint.py --status
+   ```
+   To use Tony's OneDrive instead, set `BACKUP_SP_USER=tony.nguyen@humiley.com` — but note that route
+   needs `Files.ReadWrite.All`, a **broader** grant reaching every user's OneDrive. Prefer the
+   SharePoint folder.
+
+   ⚠️ Two things this does NOT protect against, worth knowing rather than discovering later:
+   the `.backup-key` must live in a password manager, never in that same SharePoint — ciphertext plus
+   key in one place is not encryption; and because the uploader uses the portal's own Graph secret, a
+   full compromise of the VPS could also reach and delete these copies. That is still vastly better
+   than no off‑box copy, but it is why a periodic manual download to somewhere the server cannot
+   touch is worth doing.
+
+   (`setup-b2.sh` + `offsite.sh` remain available if you ever want a provider outside M365.)
 
 ## P0‑5 · Move the live DB out of the OneDrive‑synced tree
 `*.db`/`.env` are gitignored (good, not in git), but the working tree is under `OneDrive‑Humiley/…`. Any
