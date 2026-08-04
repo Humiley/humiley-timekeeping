@@ -27,8 +27,16 @@ jobs:
           python app.py &
           for i in $(seq 1 30); do curl -sf http://localhost:8000/api/health && break; sleep 1; done
 
-      - name: Install scanner
-        run: npm i -g @axe-core/cli
+      # @axe-core/cli pulls whatever ChromeDriver is newest, which drifts ahead of the Chrome that ships
+      # on the runner image ("This version of ChromeDriver only supports Chrome version 151 / current
+      # browser version is 150..."). Pin ChromeDriver to the runner's ACTUAL Chrome major so the pair
+      # always matches, and hand axe that binary explicitly.
+      - name: Install scanner (ChromeDriver matched to the runner's Chrome)
+        run: |
+          CHROME_MAJOR="$(google-chrome --version | grep -oE '[0-9]+' | head -1)"
+          echo "runner Chrome major: $CHROME_MAJOR"
+          npm i -g @axe-core/cli "chromedriver@^${CHROME_MAJOR}.0.0"
+          chromedriver --version
 
       - name: Scan (login page)
-        run: axe http://localhost:8000/ --exit --tags wcag2a,wcag2aa --stdout
+        run: axe http://localhost:8000/ --exit --tags wcag2a,wcag2aa --stdout --chromedriver-path "$(which chromedriver)"
