@@ -1446,7 +1446,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Leave blank to keep files inside the portal.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
-      <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the Editor/Admin who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> Editor/Admin users. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
+      <label class="form-label" style="margin-top:12px">Authorised payers — who may mark a request paid</label>
+      <input class="form-control" id="portal-apprPayers" placeholder="tony.nguyen@humiley.com, nancy.duong@humiley.com">
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">Releasing money is a <b>named</b> duty, not something everyone with an access level inherits. Only these people see <b>Mark paid</b>. Being listed is the grant, so a payer does not need Editor/Admin — but they do need access to the Finance page. Leave blank to fall back to “any Editor or Admin”. The rules above still apply on top: never your own request, and never one you approved.</div>
     </div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-apprEmail" style="width:auto">Approval emails — branded, sent per department</label>
@@ -5212,9 +5215,20 @@ async function tkLoadPortal() {
       learning: Array.isArray(j.learning) ? j.learning : null,
       resources: Array.isArray(j.resources) ? j.resources : null,
       teamsWebhook: j.teamsWebhook || '',
-      financeSpUrl: j.financeSpUrl || ''
+      financeSpUrl: j.financeSpUrl || '',
+      // Whether THIS user may release money, computed by the server with the same helper the
+      // e-signature gate uses — so the Mark-paid button can't appear for someone the server refuses.
+      canPay: typeof j.canPay === 'boolean' ? j.canPay : undefined
     };
   } catch (e) {}
+}
+
+/* May the signed-in user mark a request PAID? Mirrors the server's _is_payer. Falls back to the
+   historical Editor/Admin rule only when the flag hasn't loaded (boot race / older backend) —
+   app.py is the real boundary either way, so a wrong guess here only costs a refused click. */
+function _tkCanPay() {
+  const c = (window._TK_PORTAL || {}).canPay;
+  return typeof c === 'boolean' ? c : _lvlRank(_userLevel) >= _lvlRank('editor');
 }
 
 /* ── HR Admin: Company Portal content editor ── */
@@ -5248,6 +5262,7 @@ async function tkLoadIntegrations() {
   const _ed = document.getElementById('portal-apprEscalateDays'); if (_ed) _ed.value = g('apprEscalateDays', '0');
   const _et = document.getElementById('portal-apprEscalateTo'); if (_et) _et.value = g('apprEscalateTo', '');
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
+  const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
   const _dlt = document.getElementById('portal-digestLeadTo'); if (_dlt) _dlt.value = g('digestLeadTo', '');
@@ -5403,6 +5418,7 @@ async function tkSaveIntegrations() {
     apprEscalateDays: String(parseInt(V('portal-apprEscalateDays'), 10) || 0),
     apprEscalateTo: V('portal-apprEscalateTo'),
     payerSeparation: C('portal-payerSeparation') ? '1' : '0',
+    apprPayers: V('portal-apprPayers'),   // the server ignores this key entirely unless the caller is an admin
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
     digestLeadTo: V('portal-digestLeadTo'),
@@ -9335,7 +9351,7 @@ function payFillTable() {
   try { _payCharts(list); } catch (e) {}
   tb.innerHTML = list.length ? list.map(p => {
     const s = p.status || 'Submitted';
-    const canPay = _lvlRank(_userLevel) >= _lvlRank('editor');   // Mark paid (disbursement): Editor + Admin only
+    const canPay = _tkCanPay();   // Mark paid (disbursement): a NAMED authorised payer only
     const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
     const _peEdit = (typeof _payIsMine === 'function' && _payIsMine(p, _payMe) && (_aprState(s) === 'submit' || _aprState(s) === 'review')) ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkNewPayment(\'' + p.id + '\')">' + tkIcon('edit', 11) + 'Edit</button> ' : '';

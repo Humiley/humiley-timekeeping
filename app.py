@@ -392,8 +392,43 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           "digestEnabled": "0", "digestDay": "0", "digestLeadTo": "",
                           "tkNudges": "0", "tkCheckinHour": "10", "tkCheckoutHour": "19",
                           "monthlyReports": "0", "monthlyDay": "1", "monthlyTo": "",
-                          "payerSeparation": "1"}   # require a 2nd Editor/Admin to pay a request they approved (disbursement SoD)
+                          "payerSeparation": "1",   # require a 2nd Editor/Admin to pay a request they approved (disbursement SoD)
+                          # Named authorised payers (comma/newline separated emails). Releasing money is a
+                          # NAMED duty, not a side effect of holding an access level: with this list set,
+                          # only these people can mark a request paid, whatever their level — and everyone
+                          # else with Editor/Admin loses that one power while keeping the rest.
+                          # The DEFAULT IS DELIBERATELY BLANK = "any Editor/Admin", the pre-existing
+                          # behaviour. Never bake real names into the authorization path: a shipped default
+                          # would lock every other install out of paying anything (the test suite caught
+                          # exactly that). The company's actual payers are SEEDED into the database once at
+                          # first boot — see _seed_default_payers — and are editable from then on.
+                          # The hard rules always still apply on top: never your own request, and never one
+                          # you approved (unless payerSeparation is off).
+                          "apprPayers": ""}
 _APPR_REMIND_LOCK = threading.Lock()
+
+# Seeded ONCE into the DB on first boot (not used as a code default — see the note above). Clearing the
+# list in the UI afterwards is honoured: the seed marker stops it from being re-applied.
+_APPR_PAYERS_SEED = "tony.nguyen@humiley.com,nancy.duong@humiley.com"
+
+
+def _seed_default_payers():
+    """Write the company's authorised payers once, on an install that has never had the setting."""
+    try:
+        if db.get_setting("portal_apprPayersSeeded", ""):
+            return
+        if not (db.get_setting("portal_apprPayers", "") or "").strip():
+            db.set_setting("portal_apprPayers", _APPR_PAYERS_SEED)
+        db.set_setting("portal_apprPayersSeeded", "1")
+    except Exception:
+        pass
+
+
+def _payer_emails():
+    """The configured authorised payers, lower-cased. Empty set = no allow-list, so any Editor/Admin
+       may pay (the historical rule). Accepts commas, semicolons or whitespace as separators."""
+    raw = db.get_setting("portal_apprPayers", "") or ""
+    return {e.strip().lower() for e in re.split(r"[,;\s]+", str(raw)) if e.strip()}
 
 # ── Idempotency for financial submits ─────────────────────────────────────────────────────────
 # A retried identical financial POST over a flaky field connection must not create a DUPLICATE
@@ -3566,6 +3601,18 @@ class Handler(BaseHTTPRequestHandler):
         # Editor/Admin approves in ONE step (request #5) — see the "approved" branch below.
         return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["editor"]
 
+    def _is_payer(self, u):
+        """May this caller RELEASE money (mark a request paid)?
+
+        Disbursement is a named duty. When authorised payers are configured, membership of that list
+        IS the grant — it both admits someone who is not an Editor/Admin and excludes an Editor/Admin
+        who is not on it. With no list configured we fall back to the historical rule (any Editor or
+        Admin) so an unconfigured install never locks itself out of paying anything."""
+        payers = _payer_emails()
+        if payers:
+            return (u.get("email") or "").strip().lower() in payers
+        return self._is_approver(u)
+
     @staticmethod
     def _appr_state(status):
         s = str(status or "").strip().lower()
@@ -3642,10 +3689,13 @@ class Handler(BaseHTTPRequestHandler):
                 return "You cannot reject your own request."
             return None
         if t == "paid":
-            # Disbursement (Mark paid) is restricted to Editor + Admin only — an Approver (management)
-            # can approve a request but must not release the money.
-            if not self._is_approver(u):
-                return "Editor or Admin access is required to mark a request paid."
+            # Disbursement (Mark paid) is restricted to the NAMED authorised payers (portal_apprPayers).
+            # An Approver (management) can approve a request but must not release the money; and an
+            # Editor/Admin who is not a named payer no longer can either. With no list configured this
+            # falls back to the historical "any Editor or Admin".
+            if not self._is_payer(u):
+                return ("You are not an authorised payer. Only a named payer may release payment — "
+                        "an admin can change the list in Company Portal → Approvals.")
             if cur != "approved":
                 return "Only an approved request can be marked paid."
             # Disbursement segregation of duties. Paying your OWN request is never allowed (hard rule).
@@ -4580,6 +4630,14 @@ class Handler(BaseHTTPRequestHandler):
         out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
         out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
         out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
+        # The payer ALLOW-LIST is an authorization list, so only an admin (who can edit it) reads it
+        # back. Everyone gets `canPay` instead — their OWN capability, computed by the same helper the
+        # e-signature gate uses, so the Mark-paid button can never appear for someone the server will
+        # refuse. (It reflects the list + level only; the per-request rules — not your own request, not
+        # one you approved — are still decided per request at signing time.)
+        out["apprPayers"] = (db.get_setting("portal_apprPayers", "") or "") \
+            if self._caller_level(u) == "admin" else ""
+        out["canPay"] = self._is_payer(u)
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -4767,9 +4825,16 @@ class Handler(BaseHTTPRequestHandler):
                       ("monthlyReports", "portal_monthlyReports"),
                       ("monthlyDay", "portal_monthlyDay"),
                       ("monthlyTo", "portal_monthlyTo"),
-                      ("payerSeparation", "portal_payerSeparation")):
+                      ("payerSeparation", "portal_payerSeparation"),
+                      ("apprPayers", "portal_apprPayers")):   # who may release money — admin-only to change
             v = body.get(k)
             if not isinstance(v, str):
+                continue
+            # The payer allow-list is only READ BACK to an admin (it is an authorization list), so a
+            # manager saving this same form echoes a BLANK for it. Without this skip that blank would
+            # read as "clear the payer list" and 403 the entire save for every non-admin. Ignore the
+            # key outright unless the caller is an admin — they are the only one allowed to change it.
+            if k == "apprPayers" and not is_admin:
                 continue
             if k != "teamsWebhook":
                 v = v.strip()
@@ -5873,6 +5938,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     db.init_db()
     _load_sessions()
+    _seed_default_payers()   # one-time: name the company's authorised payers (editable in the UI after)
     seeded = False
     att_added = 0
     # Fresh deploy on a host without a persistent disk (e.g. Render free): start
