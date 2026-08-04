@@ -82,15 +82,19 @@ snapshot, `--dry-run` to check a snapshot changes nothing).
 2. ✅ **Off‑box copy is built** — `offsite.sh`, called automatically at the end of every `backup.sh`.
    It uploads ONLY the encrypted artefacts and can never carry `.backup-key` or a plaintext snapshot
    off the box, verifies by hash that the newest one actually landed, and prunes remote copies by age.
-   **Your remaining action** (needs your browser — the sign‑in cannot be scripted):
+   **Your remaining action** — use **Backblaze B2**, not OneDrive: B2 authenticates with two values
+   you paste, so there is no browser sign‑in to complete on a headless server (which is exactly where
+   the OneDrive attempt stalled).
+   1. At backblaze.com → B2: create a **Private** bucket `humiley-backups`, then an Application Key
+      restricted to that bucket with Read+Write. Copy the **keyID** and **applicationKey** — the key
+      is shown once.
+   2. On the VPS, one command; it prompts for those two values and hides the key as you type:
    ```bash
-   apt-get install -y rclone
-   rclone config                     # create a remote, e.g. "humiley-onedrive"
-   rclone lsd humiley-onedrive:      # confirm it sees your drive
-   echo 'OFFSITE_REMOTE=humiley-onedrive:Backups/Portal' >> /opt/humiley-timekeeping/.env
-   ./offsite.sh --dry-run            # see exactly what would move
-   ./offsite.sh                      # do it
+   cd /opt/humiley-timekeeping && ./setup-b2.sh
    ```
+   It verifies the credentials, creates the bucket if needed, records OFFSITE_REMOTE in .env and
+   dry‑runs. Then `./offsite.sh` to copy for real, and `./offsite.sh --status` any time to see how
+   old the newest off‑box copy is.
    ⚠️ Keep `.backup-key` OUT of that same cloud account — ciphertext plus key in one place is no
    encryption at all. Password manager, not OneDrive.
 3. **Rehearse the restore once**, into a throwaway target:
