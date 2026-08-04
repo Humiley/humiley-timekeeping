@@ -87,13 +87,14 @@ snapshot, `--dry-run` to check a snapshot changes nothing).
    invoices reach the Finance folder), and `Sites.ReadWrite.All` is already granted.
    1. In SharePoint, make a folder for it — e.g. `Finance → Shared Documents → Portal Backups`.
       Restrict who can open it: it holds encrypted payroll and HR data.
-   2. Copy the folder link from the browser address bar and add it to `/opt/humiley-timekeeping/.env`:
+   2. On the VPS, run this — it asks for the folder link and writes it into `.env` for you:
    ```bash
-   BACKUP_SP_URL=https://humiley.sharepoint.com/sites/Finance/Shared Documents/Portal Backups
+   cd /opt/humiley-timekeeping && ./setup-sharepoint-backup.sh
    ```
-   3. Test it, then let the nightly job take over:
+      Do **not** try to add the line by hand: the URL contains a space ("Shared Documents"), so
+      pasting it as a shell command makes the shell split it in half.
+   3. It finishes with a dry run. To copy for real, then check on it later:
    ```bash
-   cd /opt/humiley-timekeeping && python3 backup_sharepoint.py --dry-run
    cd /opt/humiley-timekeeping && python3 backup_sharepoint.py
    cd /opt/humiley-timekeeping && python3 backup_sharepoint.py --status
    ```
