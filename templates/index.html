@@ -5947,6 +5947,9 @@ async function tkCollDelete(coll, id, reload) {
    result defaults to Pass when still open — no manual date entry needed. */
 async function pmCloseToday(coll, id) {
   const ex = (_HR[coll] || []).find(x => x.id === id); if (!ex) return;
+  // A nonconformance must never be closed as "Pass" by a button. It closes through pmNcrClose —
+  // recorded disposition, signed verification.
+  if (coll === 'pm_quality' && ex.type === 'NCR') { pmNcrClose(id); return; }
   const body = { ...ex, status: 'Closed', closedDate: _pmToday() };
   if (!body.result || body.result === 'Open') body.result = 'Pass';
   try {
@@ -12673,6 +12676,12 @@ const _QA_SPECS = {
     { k: 'rag', label: 'Health (auto if blank)', type: 'select', options: ['', 'Green', 'Amber', 'Red'] },
     { k: 'percentComplete', label: 'Overall % complete', type: 'number' },
     { k: 'objectives', label: 'Objectives', type: 'textarea' }, { k: 'scopeStatement', label: 'Scope summary', type: 'textarea' },
+    /* Inclusions / exclusions / assumptions / constraints are the paragraphs you quote back when
+       defending a variation claim or an extension-of-time notice. The Charter PDF has always had a
+       section for them — until now nothing could fill it, so every charter went out with a dash. */
+    { k: 'scopeInclusions', label: 'Scope inclusions (what IS in scope)', type: 'textarea' },
+    { k: 'scopeExclusions', label: 'Scope exclusions (what is NOT in scope)', type: 'textarea' },
+    { k: 'scopeAssumptions', label: 'Assumptions', type: 'textarea' }, { k: 'constraints', label: 'Constraints', type: 'textarea' },
     { k: 'successCriteria', label: 'Success criteria', type: 'textarea' }, { k: 'note', label: 'Notes', type: 'textarea' }, { k: 'image', label: 'Project image (photo / render)', type: 'file' }, { k: 'sharepointUrl', label: 'SharePoint docs folder (URL)', type: 'url' }] },
   pm_changes: { title: 'Change Request', coll: 'pm_changes', reload: 'pm_changes', fields: [
     { k: 'title', label: 'Change title' },
@@ -12716,7 +12725,13 @@ const _QA_SPECS = {
     { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' }, { k: 'assignedTo', label: 'Assigned to', type: 'select', options: 'employees' },
     { k: 'raisedDate', label: 'Raised date', type: 'date' }, { k: 'due', label: 'Due', type: 'date' },
     { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] }, { k: 'closedDate', label: 'Closed on', type: 'date' },
-    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
+    /* NCR close-out (ISO 9001 §8.7.2 disposition + §10.2 root-cause evaluation). The disposition is
+       the commercially meaningful decision — rework, repair, use-as-is or reject — and it is what a
+       consultant or a GMP client's QA audit asks to see next to the signature that closed it. */
+    { k: 'disposition', label: 'Disposition (NCR)', type: 'select', options: ['', 'Rework', 'Repair', 'Use as is (concession)', 'Reject / Replace'] },
+    { k: 'rootCause', label: 'Root cause', type: 'textarea' },
+    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' }, { k: 'preventiveAction', label: 'Preventive action (stop it recurring)', type: 'textarea' },
+    { k: 'description', label: 'Description', type: 'textarea' }, { k: 'attachment', label: 'Attachment (image or PDF)', type: 'file' }] },
   pm_quality_itp: { title: 'Inspection & Test Plan', coll: 'pm_quality_itp', reload: 'pm_quality_itp', fields: [
     { k: 'title', label: 'ITP title' }, { k: 'itpNo', label: 'ITP No.' }, { k: 'contractor', label: 'Contractor / Subcontractor', type: 'combo', dyn: 'pm_contractors' },
     { k: 'discipline', label: 'Package (Discipline)', type: 'select', options: ['Civil', 'Structural', 'Architectural', 'MEP', 'Mechanical', 'Electrical', 'Process / Piping', 'Geotechnical', 'HSE', 'QA/QC', 'Commissioning', 'General / Multi'] },
@@ -14635,21 +14650,70 @@ async function _pmReady() {
 }
 
 /* ---- Earned Value Management ---- */
-function _pmTimeElapsedPct(p) { const s = p.startPlanned || p.startBaseline, e = p.endPlanned || p.endBaseline; if (!s || !e) return null; const t0 = new Date(s), t1 = new Date(e), now = new Date(); if (isNaN(t0) || isNaN(t1) || t1 <= t0) return null; return Math.max(0, Math.min(1, (now - t0) / (t1 - t0))); }
+/* Measured against the BASELINE, not the live plan. If elapsed time were read off startPlanned /
+   endPlanned, a PM who pushes the finish date out two months would reset SPI back towards 1.00 and
+   the slip would quietly vanish from the KPI strip, the status PDF and the portfolio tile — the
+   schedule would heal itself by being re-typed. Falls back to the live dates when no baseline has
+   been set, so an un-baselined project behaves exactly as before. */
+function _pmTimeElapsedPct(p) {
+  const bl = _pmBaseline(p);
+  const s = (bl && bl.start) || p.startBaseline || p.startPlanned, e = (bl && bl.finish) || p.endBaseline || p.endPlanned;
+  if (!s || !e) return null;
+  const t0 = new Date(s), t1 = new Date(e), now = new Date();
+  if (isNaN(t0) || isNaN(t1) || t1 <= t0) return null;
+  return Math.max(0, Math.min(1, (now - t0) / (t1 - t0)));
+}
+/* ---- Time-phased Planned Value (BCWS) ----
+   PV is what the PLAN said should have been spent by now. The cost register already carries a
+   budget AND a period on every line, so the plan's real shape is sitting right there — a
+   mobilisation-heavy or Q3-heavy job is not a straight line. Spreading BAC evenly across the
+   calendar (what this used to do everywhere) draws every project the same diagonal and reads a
+   perfectly healthy job as Red during mobilisation, when little is planned but time is passing.
+   Only trusted when the register is essentially fully phased: a half-tagged register would end the
+   planned curve below BAC and INFLATE SPI, which is worse than the honest straight line. Above that
+   bar the shape is scaled onto BAC, since by definition the time-phased budget totals BAC. */
+function _pmPhasedPlan(costs, bac) {
+  const byMonth = {}; let tagged = 0;
+  (costs || []).forEach(c => {
+    const b = +c.budget || 0; if (!b) return;
+    const per = String(c.period || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(per)) return;
+    byMonth[per] = (byMonth[per] || 0) + b; tagged += b;
+  });
+  const months = Object.keys(byMonth).sort();
+  const phased = bac > 0 && months.length > 0 && tagged >= bac * 0.95;
+  return { byMonth: byMonth, months: months, phased: phased, scale: phased ? bac / tagged : 1 };
+}
+/* Cumulative planned spend as at `asOf` ('YYYY-MM-DD'), prorated through the current month so SPI
+   creeps rather than stepping on the 1st. Returns null when the register isn't phased. */
+function _pmPlannedTo(plan, asOf) {
+  if (!plan || !plan.phased) return null;
+  const m = String(asOf || '').slice(0, 7); let cum = 0;
+  plan.months.forEach(k => { if (k < m) cum += plan.byMonth[k]; });
+  const cur = plan.byMonth[m] || 0;
+  if (cur) {
+    const d = new Date(m + '-01');
+    const dim = isNaN(d) ? 30 : new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    cum += cur * Math.max(0, Math.min(1, (+String(asOf).slice(8, 10) || 1) / dim));
+  }
+  return cum * plan.scale;
+}
 function _pmEvm(p) {
-  if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0, measurable: false };
+  if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0, measurable: false, phasedPv: false };
   const costs = _pmScopeFor('pm_costs', p.id);
   const bac = +p.budget || costs.reduce((s, c) => s + (+c.budget || 0), 0);
   const ac = costs.reduce((s, c) => s + (+c.actual || 0), 0) || (+p.actualCost || 0);
   const sr = pmScopeRollup(p.id);
   const ratio = (sr.total ? sr.pctRaw : Math.max(0, Math.min(100, +p.percentComplete || 0))) / 100;
   const ev = bac * ratio;
-  const tp = _pmTimeElapsedPct(p); const pv = tp != null ? bac * tp : ev;
-  const measurable = bac > 0 && (ac > 0 || tp != null);
+  const tp = _pmTimeElapsedPct(p);
+  const phased = _pmPlannedTo(_pmPhasedPlan(costs, bac), _pmToday());
+  const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
+  const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
   const spi = (pv > 0 && bac > 0) ? ev / pv : 1;
   const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable };
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
 function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
@@ -14664,7 +14728,13 @@ function _pmDerive(coll, data) {
   if (coll === 'pm_risks') { data.score = (+data.probability || 0) * (+data.impact || 0); data.exposureBand = _pmRiskBand(data.score).band; data.residualScore = (+data.residualProbability || 0) * (+data.residualImpact || 0); }
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
   if (coll === 'pm_tasks') {
-    const d = _pmDateDiff(data.start, data.finish); if (d != null) data.duration = d;
+    /* Duration is INCLUSIVE of both end days — 01→05 Jan is a 5-day task, and a task that starts
+       and finishes the same day is 1 day, not 0. Everything else already counts it that way (the
+       Gantt DUR column, the weighted roll-up, the CPM engine); only this line used to store the
+       raw exclusive difference, so the engine scheduled 9 days where the screen printed "10d" and
+       float / the critical path came out wrong. A milestone stays a zero-duration event. */
+    const d = _pmDateDiff(data.start, data.finish);
+    if (d != null) data.duration = String(data.isMilestone) === 'Yes' ? 0 : d + 1;
     /* The day you mark a task complete IS its actual finish (today's date), and that's
        what we compare against the target (finish) → early / on-time / late. A PM can still
        override with the editable "Actual finish" field. Re-opening a task clears it so it
@@ -14713,7 +14783,14 @@ function pmCharterPDF(pid) {
   const ev = _pmEvm(p);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Sponsor', p.sponsor], ['Project Manager', p.manager], ['Department', p.dept], ['Location', p.location], ['Contract Type', p.contractType], ['Contract Value', p.contractValue ? _pmMoney(p.contractValue) : ''], ['Approved Budget', p.budget ? _pmMoney(p.budget) : ''], ['Planned Start → Finish', (_pmFmt(p.startPlanned) + '  →  ' + _pmFmt(p.endPlanned))], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Health', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 3; const M = 15;
-  [['Objectives', p.objectives], ['Scope Summary', p.scopeSummary || p.scopeStatement], ['Success Criteria', p.successCriteria || p.acceptanceCriteriaProject], ['Assumptions & Constraints', p.assumptions]].forEach(b => {
+  /* `assumptions` is the legacy name the PDF was written against; the form writes `scopeAssumptions`,
+     which is also what the on-screen Scope Statement card reads. Accept either so an older project
+     that already has text keeps printing it. Inclusions / exclusions / constraints print only when
+     filled — the four originals always print, so an omission on a charter stays visible. */
+  [['Objectives', p.objectives, 1], ['Scope Summary', p.scopeSummary || p.scopeStatement, 1],
+  ['Inclusions', p.scopeInclusions, 0], ['Exclusions', p.scopeExclusions, 0],
+  ['Success Criteria', p.successCriteria || p.acceptanceCriteriaProject, 1],
+  ['Assumptions', p.scopeAssumptions || p.assumptions, 1], ['Constraints', p.constraints, 0]].filter(b => b[2] || b[1]).forEach(b => {
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(b[0], M, y); y += 5;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt(b[1] || '-'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
     if (y > 250) { _brandFooter(doc, 1, 1, 'HML-PMC-CHR'); doc.addPage(); y = _brandHeader(doc, { title: 'Project Charter (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CHR' }); }
@@ -15094,7 +15171,7 @@ function pmGoto(id, tabK) {
 /* ── "My PM Actions" cockpit — everything across all my projects that needs me: tasks due, RFIs in my
    court, risks/issues I own, change requests to decide, ITPs to approve. Rendered at the top of the
    Projects list; its extra collections load in the background so the list itself stays fast. ── */
-const _PM_ACTION_COLLS = ['pm_tasks', 'pm_rfis', 'pm_risks', 'pm_issues', 'pm_changes', 'pm_quality_itp'];
+const _PM_ACTION_COLLS = ['pm_tasks', 'pm_rfis', 'pm_risks', 'pm_issues', 'pm_changes', 'pm_quality_itp', 'pm_quality'];
 async function _pmMyActionsLoad() {
   try {
     await Promise.all(_PM_ACTION_COLLS.map(c => tkLoadColl(c).catch(() => { })));
@@ -15119,12 +15196,14 @@ function _pmMyActionsHtml() {
   const issues = inScope(_HR.pm_issues).filter(i => isMe(i.owner) && i.status !== 'Closed' && i.status !== 'Resolved');
   const changes = inScope(_HR.pm_changes).filter(c => (c.decision || 'Pending') === 'Pending' && (isMe(c.requestedBy) || seeAll || isMe((pById[c.projectId] || {}).manager)));
   const itps = inScope(_HR.pm_quality_itp).filter(q => (q.status || '') === 'Draft' && (isMe(q.approvedBy) || isMe(q.preparedBy)));
-  const total = tasks.length + rfis.length + risks.length + issues.length + changes.length + itps.length;
+  // An NCR assigned to you and due Tuesday used to reach you nowhere at all.
+  const ncrs = inScope(_HR.pm_quality).filter(x => x.type === 'NCR' && x.status !== 'Closed' && (isMe(x.assignedTo) || isMe(x.raisedBy)));
+  const total = tasks.length + rfis.length + risks.length + issues.length + changes.length + itps.length + ncrs.length;
   const dd = d => { if (!d) return null; const t = new Date(String(d).slice(0, 10)), n = new Date(today); const v = Math.round((t - n) / 86400000); return isNaN(v) ? null : v; };
   const soon = d => { const n = dd(d); return n != null && n >= 0 && n <= 7; };
   const od = d => { const n = dd(d); return n != null && n < 0; };
-  const overdueN = tasks.filter(t => od(t.finish)).length + rfis.filter(r => od(r.requiredBy)).length + risks.filter(r => od(r.due)).length + issues.filter(i => od(i.due)).length;
-  const dueWeekN = tasks.filter(t => soon(t.finish)).length + rfis.filter(r => soon(r.requiredBy)).length + risks.filter(r => soon(r.due)).length + issues.filter(i => soon(i.due)).length;
+  const overdueN = tasks.filter(t => od(t.finish)).length + rfis.filter(r => od(r.requiredBy)).length + risks.filter(r => od(r.due)).length + issues.filter(i => od(i.due)).length + ncrs.filter(n => od(n.due)).length;
+  const dueWeekN = tasks.filter(t => soon(t.finish)).length + rfis.filter(r => soon(r.requiredBy)).length + risks.filter(r => soon(r.due)).length + issues.filter(i => soon(i.due)).length + ncrs.filter(n => soon(n.due)).length;
   const awaitingN = changes.length + itps.length;
   window._pmMaCounts = { overdue: overdueN, dueWeek: dueWeekN, awaiting: awaitingN };
   const dueChip = d => { const n = dd(d); if (n == null) return ''; if (n < 0) return '<span class="badge b-danger" style="font-size:10px;flex-shrink:0">Overdue ' + (-n) + 'd</span>'; if (n <= 7) return '<span class="badge b-warn" style="font-size:10px;flex-shrink:0">Due ' + (n === 0 ? 'today' : 'in ' + n + 'd') + '</span>'; return '<span style="font-size:11px;color:var(--text-light);flex-shrink:0">' + tkFmtDate(d) + '</span>'; };
@@ -15135,7 +15214,7 @@ function _pmMyActionsHtml() {
   const sec = (label, color, icon, items, rowFn) => { if (!items.length) return ''; const shown = items.slice(0, 6); return '<div style="margin-top:12px"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><span style="display:inline-flex;width:24px;height:24px;border-radius:7px;background:' + color + '22;color:' + color + ';align-items:center;justify-content:center;flex-shrink:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></span><span style="font-weight:700;font-size:13px">' + label + '</span><span class="badge b-navy" style="font-size:10px">' + items.length + '</span></div><div class="card" style="padding:0;overflow:hidden">' + shown.map(rowFn).join('') + (items.length > 6 ? '<div style="padding:8px 14px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line-soft,#eef2f8)">+' + (items.length - 6) + ' more…</div>' : '') + '</div></div>'; };
   if (total === 0) return '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;gap:11px;border-left:3px solid var(--emerald)"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--emerald)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><div><div style="font-weight:700;font-size:14px">My Project Actions</div><div style="font-size:12.5px;color:var(--text-light)">You’re all caught up — no tasks, RFIs, risks, issues or approvals are waiting on you.</div></div></div>';
   const kpi = (n, label, color) => '<div style="flex:1;min-width:90px;text-align:center;padding:6px 4px"><div style="font-size:22px;font-weight:800;color:' + color + '">' + n + '</div><div style="font-size:11px;color:var(--text-light)">' + label + '</div></div>';
-  const IC = { task: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', rfi: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', risk: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', issue: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>', cr: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>', itp: '<path d="M9 11l3 3L22 4"/><path d="M22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/>' };
+  const IC = { task: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>', rfi: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', risk: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>', issue: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>', cr: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>', itp: '<path d="M9 11l3 3L22 4"/><path d="M22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h11"/>', ncr: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>' };
   return '<div class="card" style="padding:16px 18px;margin-bottom:16px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div style="font-weight:800;color:var(--navy);font-size:15px">My Project Actions</div><div style="font-size:11px;color:var(--text-light)">' + _pmEsc(me) + ' · across ' + projs.length + ' project' + (projs.length === 1 ? '' : 's') + '</div></div>' +
     '<div style="display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line-soft,#eef2f8);padding-bottom:6px;margin-top:8px">' + kpi(overdueN, 'Overdue', overdueN ? '#C00000' : 'var(--text-light)') + kpi(dueWeekN, 'Due this week', dueWeekN ? '#E0912A' : 'var(--text-light)') + kpi(awaitingN, 'Awaiting me', awaitingN ? 'var(--navy)' : 'var(--text-light)') + '</div>' +
@@ -15145,6 +15224,7 @@ function _pmMyActionsHtml() {
     sec('Issues I own', '#F59E0B', IC.issue, byDue(issues, i => i.due), i => row((i.issueNo ? i.issueNo + ' — ' : '') + (i.title || ''), pcode(i.projectId) + ' · ' + (i.priority || ''), i.due, i.projectId, 'comms')) +
     sec('Change requests to decide', '#3168A8', IC.cr, changes, c => row((c.crNo ? c.crNo + ' — ' : '') + (c.title || ''), pcode(c.projectId) + ' · ' + (c.priority || '') + (c.requestedDate ? ' · raised ' + tkFmtDate(c.requestedDate) : ''), null, c.projectId, 'overview')) +
     sec('ITPs to approve', '#00B060', IC.itp, itps, q => row((q.itpNo ? q.itpNo + ' — ' : '') + (q.title || ''), pcode(q.projectId) + ' · ' + (q.discipline || '') + (q.plannedStart ? ' · planned ' + tkFmtDate(q.plannedStart) : ''), null, q.projectId, 'quality')) +
+    sec('NCRs to close out', '#DC2626', IC.ncr, byDue(ncrs, n => n.due), n => row((n.refNo ? n.refNo + ' — ' : '') + (n.title || ''), pcode(n.projectId) + ' · ' + [n.contractor, n.severity, n.disposition || 'no disposition yet'].filter(Boolean).join(' · '), n.due, n.projectId, 'quality')) +
     '</div>';
 }
 
@@ -15411,8 +15491,8 @@ function pmRenderScope(pid) {
   const sr = pmScopeRollup(pid);
   const ds = _pmScope(_HR.pm_deliverables).slice().sort((a, b) => _pmWbsCmp(a.wbsCode, b.wbsCode));
   const kpis = _hrKpiRow([_hrKpi('Deliverables', ds.length), _hrKpi('Accepted', sr.accepted + ' / ' + ds.length, 'var(--emerald)'), _hrKpi('Weighted progress', sr.pct + '%', 'var(--navy)')]);
-  const scopeStmt = (p.scopeStatement || p.scopeSummary || p.scopeInclusions || p.scopeExclusions) ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Scope Statement</div>' +
-    [['Statement', p.scopeStatement || p.scopeSummary], ['Inclusions', p.scopeInclusions], ['Exclusions', p.scopeExclusions], ['Assumptions', p.scopeAssumptions]].filter(r => r[1]).map(r => '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light)">' + r[0] + '</span><div style="font-size:13px;white-space:pre-wrap">' + _pmEsc(r[1]) + '</div></div>').join('') + '<div style="font-size:11px;color:var(--text-light);margin-top:4px">Edit scope text via the project <b>Edit</b> button.</div></div>' : '';
+  const scopeStmt = (p.scopeStatement || p.scopeSummary || p.scopeInclusions || p.scopeExclusions || p.scopeAssumptions || p.assumptions || p.constraints) ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Scope Statement</div>' +
+    [['Statement', p.scopeStatement || p.scopeSummary], ['Inclusions', p.scopeInclusions], ['Exclusions', p.scopeExclusions], ['Assumptions', p.scopeAssumptions || p.assumptions], ['Constraints', p.constraints]].filter(r => r[1]).map(r => '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light)">' + r[0] + '</span><div style="font-size:13px;white-space:pre-wrap">' + _pmEsc(r[1]) + '</div></div>').join('') + '<div style="font-size:11px;color:var(--text-light);margin-top:4px">Edit scope text via the project <b>Edit</b> button.</div></div>' : '';
   const tbl = _pmCard('Work Breakdown Structure (Deliverables)', 'pm_deliverables', 'Add deliverable', _pmTable('pm_deliverables', [
     { label: 'WBS', sk: 'wbsCode', render: r => '<span style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
     { label: 'Deliverable', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
@@ -15917,7 +15997,10 @@ function pmRenderCosts(pid) {
     '<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
     (bl ? '<div style="font-size:12px;color:var(--text-light)">Baseline set ' + _pmFmt(bl.setOn) + (bl.setBy ? ' by ' + _pmEsc(bl.setBy) : '') + ' · Budget ' + _pmMoney(bl.budget) + ' · ' + _pmFmt(bl.start) + ' → ' + _pmFmt(bl.finish) + (budget !== bl.budget ? '  ·  <b style="color:' + ((budget - bl.budget) < 0 ? '#EF4444' : '#00B060') + '">Δ ' + _pmMoney(budget - bl.budget) + '</b>' : '') + '</div>' : '<div style="font-size:12px;color:var(--text-light)">No baseline set yet — snapshot the approved budget &amp; dates to measure variance against it.</div>') +
     (_pmSeeAll() ? '<button class="btn btn-outline btn-sm" onclick="pmSetBaseline(\'' + p.id + '\')">' + tkIcon('check', 12) + (bl ? ' Update baseline' : ' Set baseline') + '</button>' : '') + '</div></div>';
-  const scurveCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Cost S-curve — planned vs actual</div><div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
+  const _splan = _pmPhasedPlan(costs, ev.bac || 0);
+  const scurveCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:' + (_splan.phased ? '10' : '4') + 'px">Cost S-curve — planned vs actual</div>' +
+    (_splan.phased ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _t('Planned is spread evenly — put a Period on each cost line to draw the real plan curve.') + '</div>') +
+    '<div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
   const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
     [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
@@ -15931,13 +16014,17 @@ function pmRenderCosts(pid) {
   _pmSet(kpis + reservesCard + evmCard + scurveCard + chart + tbl);
   const cats = {}; costs.forEach(c => { const k = c.category || 'Other'; (cats[k] = cats[k] || { b: 0, a: 0 }); cats[k].b += +c.budget || 0; cats[k].a += +c.actual || 0; });
   if (Object.keys(cats).length) try { _mkChart('pm-cost-chart', { type: 'bar', data: { labels: Object.keys(cats), datasets: [{ label: 'Budget', data: Object.values(cats).map(x => x.b), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: Object.values(cats).map(x => x.a), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) }); } catch (e) { }
-  // S-curve: cumulative Planned Value (BAC spread linearly over the baseline months) vs Actual (cost periods)
+  // S-curve: cumulative Planned Value (time-phased from the cost register's own budget × period) vs Actual (cost periods)
   const _costPers = costs.map(c => String(c.period || '').slice(0, 7)).filter(Boolean).sort();   // include cost periods outside the baseline window so the S-curve Actual reconciles with the AC KPI
   const _scLo = [((bl && bl.start) || p.startPlanned || '').slice(0, 7), _costPers[0]].filter(Boolean).sort()[0];
   const _scHi = [((bl && bl.finish) || p.endPlanned || '').slice(0, 7), _costPers[_costPers.length - 1]].filter(Boolean).sort().slice(-1)[0];
   const scMonths = _pmMonths(_scLo, _scHi);
   if (scMonths.length && typeof Chart !== 'undefined') {
-    const bac = ev.bac || 0, planned = scMonths.map((m, i) => Math.round(bac * (i + 1) / scMonths.length));
+    const bac = ev.bac || 0;
+    let _pcum = 0;
+    const planned = _splan.phased
+      ? scMonths.map(m => { _pcum += (_splan.byMonth[m] || 0); return Math.round(_pcum * _splan.scale); })   // the plan the PM actually typed
+      : scMonths.map((m, i) => Math.round(bac * (i + 1) / scMonths.length));                                 // nothing phased → even spread, as before
     const actByM = {}; costs.forEach(c => { const per = String(c.period || '').slice(0, 7); if (per) actByM[per] = (actByM[per] || 0) + (+c.actual || 0); });
     let cum = 0; const nowM = _pmToday().slice(0, 7);
     const actual = scMonths.map(m => { cum += (actByM[m] || 0); return m <= nowM ? cum : null; });
@@ -15994,8 +16081,12 @@ function pmRenderQuality(pid) {
     _crmFiltPeriod('pmq-period-f', 'pmQRefresh') +
     ((_pmQF.contractor || _crmLF['pmq-period-f']) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
   const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
+  // An NCR past its due date gates retention release and handover — it belongs on the KPI strip, the
+  // way the RFI register already surfaces its overdue count.
+  const _qToday = _pmToday();
+  const ncrOverdue = q.filter(x => x.type === 'NCR' && x.status !== 'Closed' && x.due && x.due < _qToday).length;
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
-  const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
+  const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('NCRs overdue', ncrOverdue, ncrOverdue ? '#C00000' : 'var(--text-light)'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
   const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
     { label: 'Ref', sk: 'refNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
     { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
@@ -16003,11 +16094,20 @@ function pmRenderQuality(pid) {
     { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
     { label: 'Discipline', k: 'discipline' },
     { label: 'Raised', sk: 'raisedDate', render: r => _pmFmt(r.raisedDate) },
+    // Owner and due date were captured all along and shown in no column, so nobody could see who owed
+    // an NCR or when — the register's most actionable fact was invisible.
+    { label: 'Owner / Due', sk: 'assignedTo', render: r => (r.assignedTo ? '<span style="font-size:11.5px">' + _pmEsc(r.assignedTo) + '</span>' : '<span style="color:var(--text-light)">—</span>') + (r.due ? '<div style="font-size:10px;margin-top:2px;color:' + ((r.status !== 'Closed' && r.due < _qToday) ? '#C00000' : 'var(--text-light)') + '">' + _pmFmt(r.due) + ((r.status !== 'Closed' && r.due < _qToday) ? ' · overdue' : '') + '</div>' : '') },
     { label: 'Result', sk: 'result', render: r => r.result ? _pmBadge(r.result, r.result === 'Pass' || r.result === 'Closed' ? '#00B060' : r.result === 'Fail' ? '#EF4444' : '#F59E0B') : '—' },
     { label: 'Severity', sk: 'severity', render: r => r.severity ? _pmBadge(r.severity, r.severity === 'Critical' ? '#DC2626' : r.severity === 'Major' ? '#EA580C' : '#94a3b8') : '—' },
+    { label: 'Disposition', sk: 'disposition', render: r => r.type !== 'NCR' ? '—' : (r.disposition ? _pmBadge(r.disposition, r.disposition === 'Reject / Replace' ? '#DC2626' : r.disposition === 'Use as is (concession)' ? '#EA580C' : '#3168A8') : '<span style="color:#F59E0B;font-size:11px">not decided</span>') },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' ? '#00B060' : '#F59E0B') + (r.status === 'Closed' && r.closedDate ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _pmFmt(r.closedDate) + '</div>' : '') },
+    { label: 'Verified', sk: 'verifiedBy', render: r => r.verifiedBy ? '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">✍ ' + _pmEsc(r.verifiedBy) + (r.verifiedOn ? ' · ' + _pmFmt(r.verifiedOn) : '') + '</span>' : '<span style="color:var(--text-light)">—</span>' },
     { label: 'File', render: r => _pmFileCell('pm_quality', r) },
-    { label: '', render: r => r.status === 'Closed' ? '' : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>' }
+    // A nonconformance is not something you close in one click as "Pass" — it takes a recorded
+    // disposition and a signed verification. Inspections, tests and audits keep the one-click close.
+    { label: '', render: r => r.status === 'Closed' ? '' : (r.type === 'NCR'
+      ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--navy);white-space:nowrap" onclick="pmNcrClose(\'' + r.id + '\')" title="Record the disposition, then sign the verification of closure">✍ Verify &amp; close</button>'
+      : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>') }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
@@ -16086,28 +16186,81 @@ function pmSignDecision(coll, id) {
   const el = document.createElement('div'); el.id = 'pmSignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">' + (isCR ? _t('Decide & sign') : _t('Certify & sign')) + '</div><button class="modal-close" onclick="document.getElementById(\'pmSignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-weight:700;margin-bottom:4px">' + _pmEsc(title) + '</div><div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + summary + '</div>' + decisionRow +
-    '<div class="form-group" style="margin-bottom:6px"><label class="form-label">' + _t('Your signature') + '</label><div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden"><canvas id="pmsd-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas><div id="pmsd-sig-hint" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9aa4b2;font-size:12px;pointer-events:none">' + _t('Sign here') + '</div></div><div style="text-align:right;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_sigPadClear(\'pmsd-sigpad\',\'pmsd-sig-hint\')">' + _t('Clear') + '</button></div></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pmSignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" onclick="pmSignDecisionSave(\'' + coll + '\',\'' + id + '\')">' + tkIcon('check') + (isCR ? _t('Sign decision') : _t('Sign & certify')) + '</button></div></div>';
+    '<div style="font-size:11.5px;color:var(--text-light);margin:2px 2px 0">' + _t('You will sign this on the next step. Once signed, the record is locked.') + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pmSignOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" onclick="pmSignDecisionSave(\'' + coll + '\',\'' + id + '\')">' + tkIcon('check') + _t('Continue to sign') + '</button></div></div>';
   document.body.appendChild(el);
-  setTimeout(() => _sigPadWire('pmsd-sigpad', 'pmsd-sig-hint'), 40);
 }
-async function pmSignDecisionSave(coll, id) {
+/* The decision itself goes through /api/esign — the same Part 11 path as a claim or a payment.
+   It used to be written with a plain PATCH carrying a signature object the BROWSER built, which meant
+   the signer name was whatever the client sent, the manager gate existed only on screen, and the
+   figures could be edited afterwards while the ✍ kept rendering. Now the server re-authenticates the
+   signer, stamps their identity, and freezes the record. */
+function pmSignDecisionSave(coll, id) {
   const item = (_HR[coll] || []).find(x => x.id === id); if (!item) return;
-  const img = _sigPadImage('pmsd-sigpad'); if (!img) { toast(_t('Please draw your signature.'), 'warn'); return; }
-  const me = (TK.user || {}).name || '', today = _today(), isCR = coll === 'pm_changes';
+  const isCR = coll === 'pm_changes';
   const decision = isCR ? ((document.getElementById('pmsd-dec') || {}).value || 'Approved') : 'Certified';
-  const sig = { name: me, meaning: (isCR ? 'Change Request ' + decision : 'Payment Certificate certified'), ts: new Date().toISOString(), method: 'signature', image: img, by: me };
-  const patch = Object.assign({}, item, { signatures: (item.signatures || []).concat([sig]) });
-  if (isCR) { patch.decision = decision; patch.decidedBy = me; patch.decidedOn = today; }
-  else { patch.status = 'Certified'; patch.certifiedBy = me; patch.certDate = today; }
+  const ref = (item.crNo || item.certNo || '') + (item.title ? ' · ' + item.title : '');
+  document.getElementById('pmSignOverlay')?.remove();
+  tkESign({
+    coll: coll, id: id, setStatus: decision,
+    meaning: (isCR ? 'Change Request ' + decision : 'Payment Certificate certified') + (ref ? ' — ' + ref : ''),
+    onDone: (saved) => {
+      if (saved) Object.assign(item, saved);
+      tkAudit(isCR ? 'CR ' + decision + ' & signed' : 'IPC certified & signed', (TK.user || {}).name || '', ref);
+      toast(isCR ? _t('Change request') + ' ' + decision.toLowerCase() : _t('Certificate certified'));
+      try { _pmReload(); } catch (e) { }
+    }
+  });
+}
+/* ---- NCR close-out: disposition + root cause, then a signed verification of closure ----
+   Closing a nonconformance is a contractual act — it gates retention release and handover, and it is
+   the first register a consultant or a GMP client's QA audit asks to see. It used to be a one-click
+   button that quietly set the result to "Pass" with nothing recorded about who decided that. */
+function pmNcrClose(id) {
+  const item = (_HR.pm_quality || []).find(x => x.id === id); if (!item) { toast(_t('Not found'), 'warn'); return; }
+  document.getElementById('pmNcrOverlay')?.remove();
+  const DISP = ['Rework', 'Repair', 'Use as is (concession)', 'Reject / Replace'];
+  const ta = (id2, label, val, ph) => '<div class="form-group"><label class="form-label">' + _t(label) + '</label><textarea class="form-control" id="' + id2 + '" rows="2" placeholder="' + _pmEsc(_t(ph)) + '">' + _pmEsc(val || '') + '</textarea></div>';
+  const el = document.createElement('div'); el.id = 'pmNcrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:520px"><div class="modal-header"><div class="modal-title">' + _t('Verify & close NCR') + '</div><button class="modal-close" onclick="document.getElementById(\'pmNcrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-weight:700;margin-bottom:2px">' + _pmEsc((item.refNo ? item.refNo + ' — ' : '') + (item.title || 'NCR')) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + _pmEsc([item.contractor, item.discipline, item.severity].filter(Boolean).join(' · ') || '—') + (item.due ? ' · ' + _t('due') + ' ' + _pmFmt(item.due) : '') + '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Disposition') + '</label><select class="form-control" id="pmncr-disp"><option value="">' + _t('Choose…') + '</option>' + DISP.map(d => '<option' + (item.disposition === d ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
+    ta('pmncr-rc', 'Root cause', item.rootCause, 'Why did it happen?') +
+    ta('pmncr-ca', 'Corrective action', item.correctiveAction, 'What was done to fix this instance?') +
+    ta('pmncr-pa', 'Preventive action', item.preventiveAction, 'What stops it recurring?') +
+    '<div id="pmncr-err" style="display:none;color:var(--danger);font-size:12px;margin:2px 2px 6px"></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin:2px 2px 0">' + _t('You will sign the verification of closure on the next step.') + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pmNcrOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-primary" onclick="pmNcrCloseSave(\'' + id + '\')">' + tkIcon('check') + _t('Continue to sign') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+async function pmNcrCloseSave(id) {
+  const item = (_HR.pm_quality || []).find(x => x.id === id); if (!item) return;
+  const v = k => ((document.getElementById(k) || {}).value || '').trim();
+  const disp = v('pmncr-disp'), rc = v('pmncr-rc'), ca = v('pmncr-ca');
+  const err = document.getElementById('pmncr-err');
+  const fail = m => { if (err) { err.textContent = _t(m); err.style.display = 'block'; } };
+  if (!disp) return fail('Choose a disposition — it is the decision the record exists to capture.');
+  if (!rc) return fail('Record the root cause before closing.');
+  if (!ca) return fail('Record the corrective action before closing.');
+  // Save the close-out content first, then sign the closure itself. Splitting them keeps the write
+  // path ordinary (this is still an editable, unsigned record) while the CLOSURE carries the signature.
   try {
-    await tkApi('/api/coll/' + coll + '/' + id, { method: 'PATCH', body: patch });
-    Object.assign(item, patch);
-    tkAudit(isCR ? 'CR ' + decision + ' & signed' : 'IPC certified & signed', me, (item.crNo || item.certNo || '') + ' · ' + (item.title || ''));
-    document.getElementById('pmSignOverlay')?.remove();
-    toast(isCR ? _t('Change request') + ' ' + decision.toLowerCase() : _t('Certificate certified'));
-    try { _pmReload(); } catch (e) { }
-  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
+    const body = Object.assign({}, item, { disposition: disp, rootCause: rc, correctiveAction: ca, preventiveAction: v('pmncr-pa') });
+    const res = await tkApi('/api/coll/pm_quality/' + id, { method: 'PATCH', body: body });
+    Object.assign(item, res.item || body);
+  } catch (e) { return fail(_t('Could not save') + ': ' + _errMsg(e)); }
+  document.getElementById('pmNcrOverlay')?.remove();
+  tkESign({
+    coll: 'pm_quality', id: id, setStatus: 'Closed',
+    meaning: 'NCR verified & closed — ' + disp + ((item.refNo || item.title) ? ' · ' + (item.refNo || item.title) : ''),
+    onDone: (saved) => {
+      if (saved) Object.assign(item, saved);
+      tkAudit('NCR verified & closed', (TK.user || {}).name || '', (item.refNo || '') + ' · ' + disp);
+      toast(_t('NCR closed — verification signed'));
+      try { _pmReload(); } catch (e) { }
+    }
+  });
 }
 /* Sign-off cell shared by the CR + IPC tables. */
 function _pmSignCell(coll, r) {
@@ -17389,6 +17542,37 @@ const _VI = {
   'Open risks (High+)': 'Rủi ro mở (Cao+)',
   'Milestones (overdue)': 'Cột mốc (trễ hạn)',
   'Overdue milestones': 'Cột mốc trễ hạn',
+  /* PMBOK integrity pass — time-phased PV, signed variations/certificates, NCR close-out. */
+  'Planned is spread evenly — put a Period on each cost line to draw the real plan curve.': 'Kế hoạch đang chia đều — nhập Kỳ cho từng dòng chi phí để vẽ đúng đường kế hoạch.',
+  'You will sign this on the next step. Once signed, the record is locked.': 'Bạn sẽ ký ở bước tiếp theo. Sau khi ký, hồ sơ sẽ bị khoá.',
+  'Continue to sign': 'Tiếp tục để ký',
+  'Verify & close NCR': 'Xác minh & đóng NCR',
+  'Disposition': 'Hướng xử lý',
+  'Disposition (NCR)': 'Hướng xử lý (NCR)',
+  'Root cause': 'Nguyên nhân gốc',
+  'Preventive action': 'Hành động phòng ngừa',
+  'Preventive action (stop it recurring)': 'Hành động phòng ngừa (ngăn tái diễn)',
+  'Why did it happen?': 'Vì sao xảy ra?',
+  'What was done to fix this instance?': 'Đã làm gì để khắc phục lần này?',
+  'What stops it recurring?': 'Điều gì ngăn việc tái diễn?',
+  'You will sign the verification of closure on the next step.': 'Bạn sẽ ký xác minh đóng hồ sơ ở bước tiếp theo.',
+  'Choose a disposition — it is the decision the record exists to capture.': 'Hãy chọn hướng xử lý — đây chính là quyết định mà hồ sơ này cần ghi nhận.',
+  'Record the root cause before closing.': 'Ghi nhận nguyên nhân gốc trước khi đóng.',
+  'Record the corrective action before closing.': 'Ghi nhận hành động khắc phục trước khi đóng.',
+  'NCR closed — verification signed': 'Đã đóng NCR — đã ký xác minh',
+  'Verify & close': 'Xác minh & đóng',
+  'Owner / Due': 'Phụ trách / Hạn',
+  'Verified': 'Đã xác minh',
+  'NCRs overdue': 'NCR trễ hạn',
+  'NCRs to close out': 'NCR cần đóng',
+  'not decided': 'chưa quyết định',
+  'no disposition yet': 'chưa có hướng xử lý',
+  'Scope inclusions (what IS in scope)': 'Phạm vi bao gồm (thuộc phạm vi)',
+  'Scope exclusions (what is NOT in scope)': 'Phạm vi loại trừ (ngoài phạm vi)',
+  'Assumptions': 'Giả định',
+  'Constraints': 'Ràng buộc',
+  'Inclusions': 'Bao gồm',
+  'Exclusions': 'Loại trừ',
   'Budget (BAC)': 'Ngân sách (BAC)',
   'Actual (AC)': 'Thực tế (AC)',
   'Earned (EV)': 'Giá trị thu được (EV)',

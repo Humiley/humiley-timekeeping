@@ -3797,6 +3797,15 @@ class Handler(BaseHTTPRequestHandler):
                     return "Only a pending payroll run can be finalised."
                 return None
             return "A payroll run can only be finalised, via a Director e-signature."
+        # Deciding a variation order or certifying an interim payment certificate is a manager act.
+        # It used to be gated only in the browser, so any staff account with PM access could PATCH a
+        # decision — and an arbitrary signer name — onto any CR. Gated on LEVEL (what the sign button
+        # itself checks) rather than the coarse `role` flag, so the two agree.
+        if coll in ("pm_changes", "pm_procurement_payments"):
+            if t in ("approved", "rejected", "certified") and \
+                    self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+                return "Manager access is required to decide a change request or certify a payment certificate."
+            return None
         if coll not in self.THREE_LEVEL_COLLS:
             if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
                 return "Manager access required to approve, reject or mark paid."
@@ -4004,6 +4013,12 @@ class Handler(BaseHTTPRequestHandler):
                 or (item.get("createdById") and item.get("createdById") == u.get("id")) \
                 or (item.get("owner") and item.get("owner") == u.get("name")) \
                 or ((not item.get("empId")) and item.get("name") and item.get("name") == u.get("name"))
+            # A quality record is "owned" by the people the register itself names: whoever raised it
+            # and whoever it is assigned to. Without this a QA engineer could never sign the closure
+            # of an NCR they were assigned but did not personally raise — which is the normal case.
+            if not _owns and coll == "pm_quality":
+                _owns = (item.get("assignedTo") and item.get("assignedTo") == u.get("name")) \
+                    or (item.get("raisedBy") and item.get("raisedBy") == u.get("name"))
             if not _owns:
                 return self._err("You can only sign your own record.", 403)
         # Per-line-item signed decision on a claim (itemId present): review / approve / reject one line.
@@ -4064,6 +4079,24 @@ class Handler(BaseHTTPRequestHandler):
             if set_status == "Approved":
                 item["approvedBy"] = signer_name
                 item.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
+            # PMC variation order / interim payment certificate. The signer's name comes from the
+            # re-authenticated identity on THIS request, never from the browser — that is the whole
+            # difference between this path and the generic PATCH it replaced.
+            if coll == "pm_changes" and set_status in ("Approved", "Rejected"):
+                item["decision"] = set_status
+                item["decidedBy"] = signer_name
+                item.setdefault("decidedOn", time.strftime("%Y-%m-%d"))
+            if coll == "pm_procurement_payments" and set_status == "Certified":
+                item["certifiedBy"] = signer_name
+                item.setdefault("certDate", time.strftime("%Y-%m-%d"))
+            # Verification of closure on a nonconformance (ISO 9001 §8.7.2) — the authority who
+            # accepted the close-out, on the record, rather than a one-click "Pass" by nobody.
+            if coll == "pm_quality" and set_status == "Closed":
+                item["verifiedBy"] = signer_name
+                item["verifiedOn"] = time.strftime("%Y-%m-%d")
+                item.setdefault("closedDate", time.strftime("%Y-%m-%d"))
+                if not str(item.get("result") or "").strip():
+                    item["result"] = "Closed"
             if set_status in ("Finalised", "Finalized") and coll == "payruns":
                 item["finalisedBy"] = signer_name                       # the Director who signed off payroll
                 item["approvedBy"] = signer_name
@@ -6186,6 +6219,42 @@ class Handler(BaseHTTPRequestHandler):
                     item["createdBy"] = existing.get("createdBy")
                 if existing.get("createdById") is not None:
                     item["createdById"] = existing.get("createdById")
+            # A variation order and an interim payment certificate are the two documents where money
+            # and time actually move on a construction contract, and the classic dispute surface. They
+            # were the LEAST protected records in the system: signer name and signature rode through
+            # from the browser, and a CR signed for "+500M / +30 days" could afterwards be edited to
+            # different figures while the signature kept rendering. Now the signature chain and signer
+            # identity are e-sign-only on every write, and a signed record is frozen — the single
+            # exception being that a certified certificate may still be recorded as PAID, which is a
+            # later fact about the document rather than a change to it.
+            # Signer identity on a quality record is stamped by /api/esign, never sent by the browser.
+            # The record itself stays editable — a QA register legitimately gains photos and notes
+            # after closure — but who verified it, and when, cannot be rewritten.
+            if name == "pm_quality" and existing:
+                for _k in ("signatures", "verifiedBy", "verifiedOn"):
+                    if _k in existing:
+                        item[_k] = existing[_k]
+                    else:
+                        item.pop(_k, None)
+            if name in ("pm_changes", "pm_procurement_payments") and existing:
+                for _k in ("signatures", "decidedBy", "decidedOn", "certifiedBy", "certDate"):
+                    if _k in existing:
+                        item[_k] = existing[_k]
+                    else:
+                        item.pop(_k, None)
+                _signed = bool(existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"))
+                if _signed and self._caller_level(u) != "admin":
+                    _old = str(existing.get("status") or "").strip().lower()
+                    _new = str(item.get("status") or "").strip().lower()
+                    if name == "pm_procurement_payments" and _old == "certified" and _new == "paid":
+                        item = dict(existing)
+                        item["status"] = "Paid"
+                        item["id"] = iid
+                    else:
+                        return self._err("This record has been signed and can no longer be edited. "
+                                         "Raise a superseding one instead.", 403)
+            elif name in ("pm_changes", "pm_procurement_payments"):
+                item.pop("signatures", None)      # never create an already-signed record via PATCH
         # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
         # must not be able to rewrite who a claim/travel/exit belongs to).
         if name in ("claims", "travel", "payments", "acks"):
@@ -6296,6 +6365,14 @@ class Handler(BaseHTTPRequestHandler):
         # A payroll adjustment in a FINALISED (closed) month is locked — it can't be deleted either.
         if name == "payadjust" and self._payperiod_finalised(existing.get("period")):
             return self._err("That pay period is finalised and locked — its payroll adjustments can no longer be deleted.", 403)
+        # A signed variation order and a certified interim payment certificate are contract evidence —
+        # exactly what a dispute or an audit asks to see. They used to be deletable outright by their
+        # creator behind one confirm dialog, because the guard below only ever covered the three
+        # finance collections.
+        if name in ("pm_changes", "pm_procurement_payments"):
+            if existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"):
+                return self._err("This record has been signed and cannot be deleted. "
+                                 "Raise a superseding change request instead.", 403)
         # Approved / paid financial records are immutable evidence — block deletion (admin included).
         if name in ("claims", "travel", "payments"):
             st = str(existing.get("status") or "").strip().lower()
