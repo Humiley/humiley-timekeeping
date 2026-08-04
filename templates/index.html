@@ -3766,7 +3766,9 @@ function tkRenderDashboard() {
 
   const feed = document.getElementById('activity-feed');
   if (feed) {
-    const items = checkedIn.slice().sort((a, b) => ((a.in || a.clock_in) > (b.in || b.clock_in) ? 1 : -1));
+    // WAS ascending (returned 1 when a > b), so the EARLIEST arrival sat on top of a live feed and the
+    // most recent check-in was buried at the bottom. One day's rows, zero-padded HH:MM — no _dateKey needed.
+    const items = checkedIn.slice().sort((a, b) => String(b.in || b.clock_in || '').localeCompare(String(a.in || a.clock_in || '')));
     _tkSet('activity-count', items.length + ' check-ins');
     feed.innerHTML = items.length ? items.map(r => {
       const cls = r.status === 'on-time' ? 'em' : (r.status === 'late' ? 'warn' : 'danger');
@@ -3858,7 +3860,9 @@ function tkRenderLeaveView() {
   // ── Approved / Rejected tabs (backend already scoped the data) ──
   const scoped = isMgr ? all : all.filter(isMine);
   const nm = l => _pmEsc((_hrEmp(l.emp_id) || {}).name || l.emp_name || meName || '');
-  const ap = scoped.filter(l => stat(l) === 'approved'), rj = scoped.filter(l => stat(l) === 'rejected');
+  // Correct today only because of the server's ORDER BY startDate DESC; nothing client-side guaranteed it.
+  const _lvByStart = _cmpNewest('startDate');
+  const ap = scoped.filter(l => stat(l) === 'approved').sort(_lvByStart), rj = scoped.filter(l => stat(l) === 'rejected').sort(_lvByStart);
   const apEl = document.getElementById('leave-approved');
   if (apEl) apEl.innerHTML = ap.length
     ? '<div class="card"><div class="table-wrap"><table><thead><tr>' + (isMgr ? '<th>Employee</th>' : '') + '<th>Leave Type</th><th>From</th><th>To</th><th>Days</th></tr></thead><tbody>' + ap.map(l => '<tr>' + (isMgr ? '<td style="font-weight:600">' + nm(l) + '</td>' : '') + '<td>' + _pmEsc(l.type || '') + '</td><td>' + fmt(l.startDate) + '</td><td>' + fmt(l.endDate) + '</td><td>' + (l.days || '') + '</td></tr>').join('') + '</tbody></table></div></div>'
@@ -3881,15 +3885,18 @@ function tkRenderLeaveView() {
    Unread state is shared with the inbox seen-set, so the two can never disagree. */
 function _tkBellItems() {
   const out = [];
-  const push = (key, title, sub, view) => out.push({ key: key, title: title, sub: sub, view: view || 'inbox' });
+  // `d` = the record's date, so the whole bell can be ordered newest-first across ALL kinds. Without
+  // it the feed was leave (in SQL order) followed by claims/travel/payments/jobs/padr each in random
+  // uuid order — a request filed this morning could sit below a stale one.
+  const push = (key, title, sub, view, d) => out.push({ key: key, title: title, sub: sub, view: view || 'inbox', d: d || '' });
   const _me = TK.user && TK.user.id;
-  (_DEMO_LEAVE || []).forEach(l => { if (l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name)) push('lv:' + l.id, (l.type || 'Leave') + ' — ' + (l.emp_name || 'Employee'), (l.startDate || '') + ' – ' + (l.endDate || '') + ' · awaiting approval', 'manager'); });
-  (_HR.claims || []).forEach(c => { if (_aprCanSee(_claimRollup(c), c.empId, c.name)) push('cl:' + c.id, 'Claim — ' + (c.name || ''), (c.title || c.type || '') + ' · ' + _PAY_FMT(_claimTotal(c))); });
-  (_HR.travel || []).forEach(t2 => { if (_aprCanSee(t2.status, t2.empId, t2.name)) push('tv:' + t2.id, 'Travel — ' + (t2.name || ''), (t2.dest || '') + ' · ' + _PAY_FMT(t2.cost || 0)); });
-  (_HR.payments || []).forEach(p => { if (_aprCanSee(p.status, p.empId, p.name)) push('pay:' + p.id, 'Payment — ' + (p.name || ''), (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0)); });
-  (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') push('jb:' + j.id, 'Requisition — ' + (j.title || ''), 'awaiting approval', 'recruitment'); });
+  (_DEMO_LEAVE || []).forEach(l => { if (l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name)) push('lv:' + l.id, (l.type || 'Leave') + ' — ' + (l.emp_name || 'Employee'), (l.startDate || '') + ' – ' + (l.endDate || '') + ' · awaiting approval', 'manager', l.startDate); });
+  (_HR.claims || []).forEach(c => { if (_aprCanSee(_claimRollup(c), c.empId, c.name)) push('cl:' + c.id, 'Claim — ' + (c.name || ''), (c.title || c.type || '') + ' · ' + _PAY_FMT(_claimTotal(c)), null, c.ts || c.date || c.submittedDate); });
+  (_HR.travel || []).forEach(t2 => { if (_aprCanSee(t2.status, t2.empId, t2.name)) push('tv:' + t2.id, 'Travel — ' + (t2.name || ''), (t2.dest || '') + ' · ' + _PAY_FMT(t2.cost || 0), null, t2.from || t2.ts); });
+  (_HR.payments || []).forEach(p => { if (_aprCanSee(p.status, p.empId, p.name)) push('pay:' + p.id, 'Payment — ' + (p.name || ''), (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0), null, p.ts || p.dueDate); });
+  (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') push('jb:' + j.id, 'Requisition — ' + (j.title || ''), 'awaiting approval', 'recruitment', ''); });   // jobs carry no date -> sort last
   (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment') push('pa:' + p.id, 'PADR — ' + (p.name || ''), 'self-assessment submitted'); });
-  return out;
+  return out.sort(_cmpNewest('d'));   // jobs + PADR have no date, so they fall last by design
 }
 function tkUpdateNotifications() {
   // The bell is a manager approval feed — staff have nothing to approve, so keep it clear for them.
@@ -4971,15 +4978,16 @@ async function _myActionsRender() {
   try { awaiting = _tkBellItems() || []; } catch (e) {}
   const mine = [];
   try {
-    (_HR.claims || []).forEach(c => { const st = (typeof _claimRollup === 'function') ? _claimRollup(c) : c.status; if (isMine(c) && infl(st)) mine.push({ ic: '₫', t: 'Expense claim' + (c.title ? ' — ' + c.title : ''), s: _PAY_FMT((typeof _claimTotal === 'function') ? _claimTotal(c) : (c.amount || 0)) + ' · ' + st, view: 'travelclaims' }); });
-    (_HR.travel || []).forEach(t2 => { if (isMine(t2) && infl(t2.status)) mine.push({ ic: '✈', t: 'Travel — ' + (t2.dest || t2.title || 'request'), s: _PAY_FMT(t2.cost || 0) + ' · ' + t2.status, view: 'travelclaims' }); });
-    (_HR.payments || []).forEach(p => { if (isMine(p) && infl(p.status)) mine.push({ ic: '₫', t: 'Payment — ' + (p.payee || p.reqNo || ''), s: _PAY_FMT(p.amount || 0) + ' · ' + p.status, view: 'payments' }); });
-    (_DEMO_LEAVE || []).forEach(l => { if (meId && l.emp_id === meId && infl(l.status)) mine.push({ ic: '⏱', t: 'Leave — ' + (l.type || ''), s: (l.startDate || '') + ' → ' + (l.endDate || '') + ' · ' + l.status, view: 'leave' }); });
+    (_HR.claims || []).forEach(c => { const st = (typeof _claimRollup === 'function') ? _claimRollup(c) : c.status; if (isMine(c) && infl(st)) mine.push({ d: c.ts || c.date || c.submittedDate, ic: '₫', t: 'Expense claim' + (c.title ? ' — ' + c.title : ''), s: _PAY_FMT((typeof _claimTotal === 'function') ? _claimTotal(c) : (c.amount || 0)) + ' · ' + st, view: 'travelclaims' }); });
+    (_HR.travel || []).forEach(t2 => { if (isMine(t2) && infl(t2.status)) mine.push({ d: t2.from || t2.ts, ic: '✈', t: 'Travel — ' + (t2.dest || t2.title || 'request'), s: _PAY_FMT(t2.cost || 0) + ' · ' + t2.status, view: 'travelclaims' }); });
+    (_HR.payments || []).forEach(p => { if (isMine(p) && infl(p.status)) mine.push({ d: p.ts || p.dueDate, ic: '₫', t: 'Payment — ' + (p.payee || p.reqNo || ''), s: _PAY_FMT(p.amount || 0) + ' · ' + p.status, view: 'payments' }); });
+    (_DEMO_LEAVE || []).forEach(l => { if (meId && l.emp_id === meId && infl(l.status)) mine.push({ d: l.startDate, ic: '⏱', t: 'Leave — ' + (l.type || ''), s: (l.startDate || '') + ' → ' + (l.endDate || '') + ' · ' + l.status, view: 'leave' }); });
   } catch (e) {}
   const row = it => '<div class="ma-row" onclick="showView(\'' + (it.view || 'inbox') + '\')"><div class="ma-ic">' + _tkEscT(it.ic || '•') + '</div><div class="ma-tx"><div class="ma-t">' + _crmEsc(it.title || it.t || '') + '</div><div class="ma-s">' + _crmEsc(it.sub || it.s || '') + '</div></div><div class="ma-go">&rarr;</div></div>';
   let html = '';
   if (awaiting.length) html += '<div class="ma-grp">Awaiting your action <span class="ma-n">' + awaiting.length + '</span></div>' + awaiting.slice(0, 6).map(row).join('');
-  if (mine.length) html += '<div class="ma-grp">Your requests in flight <span class="ma-n">' + mine.length + '</span></div>' + mine.slice(0, 6).map(row).join('');
+  if (mine.length) html += '<div class="ma-grp">Your requests in flight <span class="ma-n">' + mine.length + '</span></div>' + mine.slice().sort(_cmpNewest('d')).slice(0, 6).map(row).join('');   // sort BEFORE the cap of 6, or a
+    // request filed this morning simply never appears in the list
   if (!html) html = '<div class="ma-empty"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:6px"><polyline points="20 6 9 17 4 12"/></svg>You&rsquo;re all caught up — nothing needs your action.</div>';
   box.innerHTML = '<div class="card" style="margin-bottom:20px"><div class="card-hdr"><div class="card-title">My Actions</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="showView(\'checkin\',null,\'Check In / Out\')">Check in / out</button>' +
@@ -5079,7 +5087,7 @@ function _initStaffDashboard() {
   /* recent attendance rows */
   const tbody = document.getElementById('staff-recent-att-body');
   if (tbody) {
-    const recent = myRecs.slice(0, 6);
+    const recent = myRecs.slice().sort(_cmpNewest('date')).slice(0, 6);   // was the first 6 of an unsorted array
     tbody.innerHTML = recent.map(r => {
       const sColor = r.status === 'on-time' ? 'var(--emerald)' : r.status === 'late' ? 'var(--warning)' : 'var(--danger)';
       const sLabel = r.status === 'on-time' ? 'On Time' : r.status === 'late' ? 'Late' : 'Absent';
@@ -5097,7 +5105,7 @@ function _initStaffDashboard() {
   if (leaveList) {
     const meId = (TK.user || {}).id;
     const mine = (_DEMO_LEAVE || []).filter(l => (meId && (l.emp_id === meId)) || l.emp_name === _staffName);
-    const myLeave = mine.slice(0, 4);   // only the signed-in user's own leave (never fall back to the whole company)
+    const myLeave = mine.slice().sort(_cmpNewest('startDate')).slice(0, 4);   // ditto   // only the signed-in user's own leave (never fall back to the whole company)
     leaveList.innerHTML = myLeave.map(l => {
       const sColor = l.status === 'approved' ? 'var(--emerald)' : l.status === 'pending' ? 'var(--warning)' : 'var(--danger)';
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;background:var(--soft-bg);border-radius:8px;font-size:12px">
@@ -5699,6 +5707,15 @@ function tkCollInvalidate(name) { if (name) _COLL_TS[name] = 0; else for (const 
    Pages come from the VISIBLE sidebar nav items, so results respect each user's access;
    records come from the per-user collection cache (_HR), already scoped by the backend. ══ */
 let _gsSel = -1, _gsRows = [], _gsPrefetched = false, _gsBound = false;
+/* Which field carries "when" for each searchable collection, so results can be newest-first. */
+const _GS_DATE = {
+  payments:    r => r.ts || r.dueDate,
+  invtrack:    r => r.dateISO,
+  pm_projects: r => r.startPlanned || r.startBaseline,
+  devices:     r => r.purchaseDate,
+  claims:      r => r.ts || r.date || r.submittedDate,
+  travel:      r => r.from || r.ts
+};
 const _GS_REC = {
   payments:    { view: 'payments',     title: 'Payment Requests', fields: ['reqNo', 'vendor', 'payee', 'payeeCompany', 'desc', 'purpose', 'amount', 'status'], label: r => r.reqNo || r.payee || r.vendor || ('Payment #' + r.id) },
   invtrack:    { view: 'invtrack',     title: 'Invoice Tracking', fields: ['invNo', 'serial', 'sellerName', 'buyerName', 'seller', 'total'],    label: r => (r.invNo || r.serial || 'Invoice') + (r.sellerName ? (' · ' + r.sellerName) : '') },
@@ -5745,12 +5762,16 @@ function _gsRecords(q) {
   Object.keys(_GS_REC).forEach(name => {
     const cfg = _GS_REC[name], items = _HR[name];
     if (!Array.isArray(items)) return;
-    let hit = 0;
+    // Collect ALL matches, order them newest-first, THEN take four. Breaking at four over an
+    // unordered array meant a search could show four stale records and hide last week's.
+    const _hits = [];
     for (const r of items) {
-      if (hit >= 4) break;
       const hay = cfg.fields.map(f => r[f]).filter(v => v != null).join(' ');
       if (!hay || !_gsMatch(hay, q)) continue;
-      hit++;
+      _hits.push(r);
+    }
+    _hits.sort(_cmpNewest(_GS_DATE[name] || (() => '')));
+    for (const r of _hits.slice(0, 4)) {
       const _v = cfg.view, _tt = cfg.title;
       out.push({ ic: cfg.title[0], t: String(cfg.label(r)), s: cfg.title + (r.status ? (' · ' + r.status) : ''),
         go: () => { _gsClose(); if (document.getElementById('view-' + _v)) { try { showView(_v, null, _tt); } catch (e) {} } else { try { toast(_tt, 'info', 3000); } catch (e) {} } } });
@@ -6229,7 +6250,7 @@ async function tkRenderOnboarding() {
     _hrKpi('Tasks Done', doneTasks + ' / ' + totalTasks, 'var(--emerald)'),
     _hrKpi('Avg. Progress', (totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0) + '%', '#8B5CF6')
   ]);
-  const cards = items.length ? items.map(o => {
+  const cards = items.length ? items.slice().sort(_cmpNewest('startDate')).map(o => {   // slice(): items is the live cache
     if (!o.milestones) o.milestones = _onboardMilestones();
     const tk = o.tasks || []; const dn = tk.filter(t => t.done).length; const pct = Math.round(dn / Math.max(tk.length, 1) * 100);
     const e = _hrEmp(o.empId) || { name: o.name, ini: (o.name || '?').slice(0, 2).toUpperCase() };
@@ -7072,6 +7093,7 @@ async function tkRenderMyDevices() {
   const me = _tkMe() || {};
   const mine = [];
   (_HR.devices || []).forEach(x => _devHeldBy(x, me).forEach(a => mine.push({ x: x, a: a })));
+  mine.sort(_cmpNewest(m => m.a.assignedOn));   // newest assignment first — the one awaiting a signature
   const value = mine.reduce((s, m) => s + (+m.a.qty || 1) * (+m.x.unitPrice || 0), 0);
   const units = mine.reduce((s, m) => s + (+m.a.qty || 1), 0);
   const toAck = mine.filter(m => !_devAckSigned(m.a)).length;
@@ -14980,7 +15002,7 @@ async function pmRenderProjects() {
 function pmFillProjects() {
   const tb = document.getElementById('pm-proj-tbody'); if (!tb) return;
   const q = (_crmLF['pm-pq'] || '').toLowerCase(), st = _crmLF['pm-pstatus'] || '', dp = _crmLF['pm-pdept'] || '';
-  const rows = _pmMine(_HR.pm_projects || []).filter(p => (!q || ((p.code || '') + ' ' + (p.name || '') + ' ' + (p.account || p.client || '') + ' ' + (p.manager || '')).toLowerCase().indexOf(q) >= 0) && (!st || (p.status || '') === st) && (!dp || (p.dept || '') === dp) && _inPeriodLF(p.startPlanned || p.startBaseline || p.created, 'pm-pperiod-f'));
+  const rows = _pmMine(_HR.pm_projects || []).filter(p => (!q || ((p.code || '') + ' ' + (p.name || '') + ' ' + (p.account || p.client || '') + ' ' + (p.manager || '')).toLowerCase().indexOf(q) >= 0) && (!st || (p.status || '') === st) && (!dp || (p.dept || '') === dp) && _inPeriodLF(p.startPlanned || p.startBaseline || p.created, 'pm-pperiod-f')).sort(_cmpNewest(p => p.startPlanned || p.startBaseline));
   tb.innerHTML = rows.length ? rows.map(p => {
     const rag = _pmEffectiveRag(p), sr = pmScopeRollup(p.id);
     const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
@@ -15265,7 +15287,7 @@ function pmRenderOverview() {
     { label: 'File', render: r => _pmFileCell('pm_changes', r) }
   ], ch));
   // lessons
-  const ls = _pmScope(_HR.pm_lessons);
+  const ls = _pmScope(_HR.pm_lessons).sort(_cmpNewest('date'));
   const lessonsTbl = _pmCard('Lessons Learned', 'pm_lessons', 'Add lesson', _pmTable('pm_lessons', [
     { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Category', k: 'category' }, { label: 'Phase', k: 'phase' },
@@ -15882,7 +15904,7 @@ function pmRenderQuality(pid) {
   const _qcons = [...new Set(all.map(x => x.contractor).filter(Boolean))].sort();
   const _qpers = [...new Set(all.map(x => (x.raisedDate || '').slice(0, 7)).filter(Boolean))].sort().reverse();
   const _mmYY = ym => { const a = String(ym).split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + ' ' + (a[0] || '').slice(-2); };
-  const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && _inPeriodLF(x.raisedDate, 'pmq-period-f'));
+  const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && _inPeriodLF(x.raisedDate, 'pmq-period-f')).sort(_cmpNewest('raisedDate'));
   const filterBar = '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' +
     '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
     _crmFiltPeriod('pmq-period-f', 'pmQRefresh') +
@@ -15907,7 +15929,7 @@ function pmRenderQuality(pid) {
     { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
     { label: 'Standard', k: 'standardRef' }, { label: 'Planned', sk: 'plannedStart', render: r => (r.plannedStart || r.plannedFinish) ? _pmFmt(r.plannedStart) + (r.plannedFinish && r.plannedFinish !== r.plannedStart ? ' → ' + _pmFmt(r.plannedFinish) : '') : '—' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
-  ], itp));
+  ], itp.slice().sort(_cmpNewest('plannedStart'))));   // a COPY: the timeline below must stay ascending
   _pmSet(kpis + tbl + _pmItpTimeline(itp) + itpTbl);
 }
 
@@ -16033,13 +16055,15 @@ function _pmFiltBar(coll, rows, specs) {
 }
 function pmRenderComms(pid) {
   const comms = _pmScope(_HR.pm_comms).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  const issues = _pmScope(_HR.pm_issues);
+  // pm_issues has no raised/created date in its schema — only `due`. Sorting by due date is a proxy
+  // for "newest", not the real thing; worth adding a raisedDate field later.
+  const issues = _pmScope(_HR.pm_issues).sort(_cmpNewest('due'));
   const openIss = issues.filter(i => i.status !== 'Closed' && i.status !== 'Resolved').length;
   const kpis = _hrKpiRow([_hrKpi('Communications', comms.length), _hrKpi('Issues', issues.length, '#3168A8'), _hrKpi('Open issues', openIss, '#EF4444')]);
   const _cSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'audience', label: 'Audience' }];
   const _cBar = _pmFiltBar('pm_comms', comms, _cSpecs), _cRows = _pmFiltApply('pm_comms', comms, _cSpecs);
   const commsTbl = _pmCard('Communications Log', 'pm_comms', 'Log comm', _cBar + _pmTable('pm_comms', [
-    { label: 'Date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
+    { label: 'Date', sk: 'date', render: r => _pmFmt(r.date) }, { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Audience', k: 'audience' },
     { label: 'Status', render: r => _pmBadge(r.status || '—', r.status === 'Closed' ? '#00B060' : '#94a3b8') },
     { label: 'File', render: r => _pmFileCell('pm_comms', r) }
@@ -16050,7 +16074,7 @@ function pmRenderComms(pid) {
     { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
-    { label: 'Owner', k: 'owner' }, { label: 'Due', render: r => _pmFmt(r.due) },
+    { label: 'Owner', k: 'owner' }, { label: 'Due', sk: 'due', render: r => _pmFmt(r.due) },
     { label: 'Status', render: r => _pmBadge(r.status || 'Open', r.status === 'Closed' || r.status === 'Resolved' ? '#00B060' : '#F59E0B') },
     { label: 'File', render: r => _pmFileCell('pm_issues', r) }
   ], _iRows));
@@ -16094,7 +16118,7 @@ function pmRenderRisks(pid) {
 
 /* ---------- 9. Procurement ---------- */
 function pmRenderProcurement(pid) {
-  const ps = _pmScope(_HR.pm_procurement);
+  const ps = _pmScope(_HR.pm_procurement).sort(_cmpNewest('awardDate'));
   const committed = ps.reduce((s, x) => s + (+x.value || 0), 0);
   const active = ps.filter(x => x.status === 'Active' || x.status === 'Awarded').length;
   const kpis = _hrKpiRow([_hrKpi('Packages', ps.length), _hrKpi('Committed value', _pmMoneyShort(committed), '#F59E0B'), _hrKpi('Active / Awarded', active, 'var(--emerald)')]);
@@ -16422,7 +16446,7 @@ function pmSpUploadPick(pid) {
 
 function pmRenderRfis(pid) {
   const p = _pmProj(pid);
-  const rfis = _pmScope(_HR.pm_rfis);
+  const rfis = _pmScope(_HR.pm_rfis).sort(_cmpNewest('raisedDate'));
   const open = rfis.filter(r => r.status === 'Open').length;
   const overdue = rfis.filter(r => r.status === 'Open' && r.requiredBy && r.requiredBy < _pmToday()).length;
   const turns = rfis.filter(r => r.raisedDate && r.responseDate).map(r => _pmDateDiff(r.raisedDate, r.responseDate)).filter(d => d != null && d >= 0);
@@ -16438,7 +16462,7 @@ function pmRenderRfis(pid) {
   ], rfis), _pmSpBtn(p));
   const sdr = _pmScope(_HR.pm_sitereports).sort((a, b) => (b.reportDate || '').localeCompare(a.reportDate || ''));
   const sdrTbl = _pmCard('Site Daily Reports', 'pm_sitereports', 'Add report', _pmTable('pm_sitereports', [
-    { label: 'Date', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
+    { label: 'Date', sk: 'reportDate', render: r => _pmFmt(r.reportDate) }, { label: 'Area', k: 'area' }, { label: 'Weather', render: r => _pmEsc((r.weatherAm || '') + (r.weatherPm ? ' / ' + r.weatherPm : '')) },
     { label: 'Manpower', align: 'right', k: 'manpower' }, { label: 'Work performed', render: r => _pmEsc((r.workPerformed || '').slice(0, 60)) }, { label: 'Delays', k: 'delays' }, { label: 'Files', render: r => _pmFileCell('pm_sitereports', r) }
   ], sdr));
   const wkr = _pmScope(_HR.pm_weekreports).sort((a, b) => (b.weekEnding || '').localeCompare(a.weekEnding || ''));
@@ -20022,7 +20046,7 @@ function renderLeaveReport() {
     const matchT = typeF === 'All Types' || (l.type || '') === typeF;
     const matchS = statF === 'All Status' || (l.status || '').toLowerCase() === statF.toLowerCase();
     return matchD && matchT && matchS;
-  });
+  }).sort(_cmpNewest('startDate'));
   // stat boxes
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('lr-total', rows.length);
@@ -20111,6 +20135,10 @@ function renderInOutReport() {
     const matchMonth = !monthF || (r.date||'').slice(0,7) === monthF;      // month filter
     return matchS && matchD && matchT && matchDate && matchMonth && _inPeriodLF(r.date, 'io-period-f');
   });   // full filtered set — KPIs below count ALL matches (was silently capped at 60, undercounting)
+  // Sort BEFORE the cap: with no sort, array order silently decided which 200 of thousands of rows
+  // the user ever saw.
+  const _ioByDay = _cmpNewest('date');
+  rows.sort((a, b) => _ioByDay(a, b) || String(b.in || b.clock_in || '').localeCompare(String(a.in || a.clock_in || '')));
   const IO_CAP = 200;   // render only this many rows for speed; "Show all" reveals the rest
   const capped = window._ioShowAll ? rows : rows.slice(0, IO_CAP);
   const empMap = {};
@@ -20701,6 +20729,11 @@ function filterTable() {
     (!dateF  || r.date === dateF) &&
     (isStaff || _inPeriodLF(r.date, 'att-period-f'))
   );
+  // Newest day first. The apparent order used to come from SQL (ORDER BY date DESC) and was undone by
+  // _tkMergeAttendance, which prepends un-synced local rows after the background history hydrate. The
+  // table PAGINATES, so array order decides which 25 rows page 1 shows.
+  const _attByDay = _cmpNewest('date');
+  rows.sort((a, b) => _attByDay(a, b) || String(b.in || b.clock_in || '').localeCompare(String(a.in || a.clock_in || '')));
   // Clamp the current page to the (possibly shrunken) result set — otherwise applying a filter while
   // on a later page leaves _attPage out of range and the table renders empty even though rows match.
   const _totalPages = Math.max(1, Math.ceil(rows.length / _attPageSize));
