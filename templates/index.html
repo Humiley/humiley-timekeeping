@@ -14442,8 +14442,31 @@ const _PM_CORE_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_risks'
 async function _pmLoadCore() {
   await Promise.all(_PM_CORE_COLLS.map(c => tkLoadColl(c).catch(() => { })));
 }
+// Opening a project used to BLOCK its first paint on all 18 collections. Five of them are read by no
+// tab the workspace lands on, and they are also the ones that can carry uploaded files: when a project
+// has no SharePoint link the quick-add forms fall back to storing an in-DB base64 data URL, and base64
+// is near-incompressible so gzip doesn't rescue it. A few site/week reports with PDFs attached can
+// outweigh thousands of task rows — which is exactly the "it got slower the more we used it" shape.
+//
+// They are NOT deferred (a deferred collection reads as an empty [] with NO error — the closeout PDF
+// and the Document Control register both span these, and would silently export nothing). They are
+// merely taken OFF the critical path: the paint waits for the rest, these keep loading behind it, and
+// anything that needs them awaits _pmReady() first. Worst case that is exactly today's behaviour.
+const _PM_LATE_COLLS = ['pm_comms', 'pm_procurement', 'pm_procurement_payments', 'pm_sitereports', 'pm_weekreports'];
+// The tabs that read them: Comms & Issues (pm_comms), Procurement (both procurement colls),
+// Documents (site/week reports) and Docs Control (the file register spans all of them).
+const _PM_LATE_TABS = ['comms', 'procure', 'documents', 'docs'];
+let _pmLatePromise = null;
 async function _pmLoadAll() {
-  await Promise.all(_PM_ALL_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+  const early = _PM_ALL_COLLS.filter(c => _PM_LATE_COLLS.indexOf(c) < 0);
+  const late = Promise.all(_PM_LATE_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+  _pmLatePromise = late;
+  late.catch(() => { });                       // never an unhandled rejection while it runs detached
+  await Promise.all(early.map(c => tkLoadColl(c).catch(() => { })));
+}
+/* Await the off-critical-path collections. Cheap once they have landed. */
+async function _pmReady() {
+  if (_pmLatePromise) { try { await _pmLatePromise; } catch (e) { } }
 }
 
 /* ---- Earned Value Management ---- */
@@ -14566,7 +14589,11 @@ function pmStatusPDF(pid) {
 }
 /* Formal Project Closeout Report (PMBOK Closing) — financial closeout, deliverables acceptance,
    contract/retention, open-item check, lessons learned, and a sign-off block. */
-function pmCloseoutPDF(pid) {
+async function pmCloseoutPDF(pid) {
+  // The closeout report spans pm_procurement / pm_comms / the site+week reports, which load
+  // BEHIND the first paint. Without this await an export fired seconds after opening a project
+  // would silently print empty sections — a missing collection reads as [] with no error.
+  await _pmReady();
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
   const M = 15;
   let y = _brandHeader(doc, { title: 'Project Closeout Report', subtitle: _pmPdfTxt((p.code || p.name) + '  -  ' + _pmFmt(_pmToday())), docCode: 'HML-PMC-CLO', confidential: true });
@@ -14983,9 +15010,16 @@ async function pmRenderWorkspace() {
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
   pmTab(_pmTabK);
 }
-function pmTab(k) {
+async function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
   document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
+  // ONLY the tabs that actually read an off-critical-path collection wait for it. Awaiting here
+  // unconditionally would put the late collections straight back in front of Overview's paint and
+  // undo the whole point. 'docs' is the Document Control register, which spans site/week reports.
+  if (_PM_LATE_TABS.indexOf(k) >= 0) {
+    await _pmReady();
+    if (_pmTabK !== k) return;                 // the user moved on while we waited — don't clobber
+  }
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
 }
 
@@ -15603,6 +15637,7 @@ function _pmGanttHtml(pid) {
     '</div>' + legend +
     '<div id="pm-gtip" data-html2canvas-ignore="true" style="position:fixed;z-index:900;display:none;pointer-events:none;background:#1f2937;color:#fff;padding:9px 12px;border-radius:9px;box-shadow:0 10px 26px rgba(0,0,0,.30);min-width:150px;max-width:270px"></div></div>';
 }
+let _pmSchedBuild = null;   // per-render pane builders, closing over that render's tasks + CPM
 function pmRenderSchedule(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   if (_pmCalPid !== pid) { _pmCalMonth = ''; _pmCalPid = pid; _pmGanttCol = {}; }   // re-center calendar + reset collapsed Gantt phases on project switch
@@ -15610,8 +15645,13 @@ function pmRenderSchedule(pid) {
   const tr = _pmTaskRollup(pid);
   const cpm = _pmCPM(allTasks);
   const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', tr.done, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
-  const gantt = _pmGanttHtml(pid);
-  const tbl = _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
+  // Build ONLY the pane being shown. All four used to be built on every Schedule render and three
+  // inserted hidden — parsed, styled and laid out for nothing. These are thunks closing over this
+  // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
+  // had; pmSchedTab() builds a pane the first time it is shown.
+  _pmSchedBuild = {};
+  _pmSchedBuild.gantt = () => _pmGanttHtml(pid);
+  _pmSchedBuild.activities = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
@@ -15620,13 +15660,12 @@ function pmRenderSchedule(pid) {
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
-  const board = '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  _pmSchedBuild.board = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  _pmSchedBuild.calendar = () => _pmCalendarHtml(pid);
   const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
-  _pmSet(kpis + subtabs +
-    '<div id="psch-gantt"' + (_pmSchedTab === 'gantt' ? '' : ' style="display:none"') + '>' + gantt + '</div>' +
-    '<div id="psch-activities"' + (_pmSchedTab === 'activities' ? '' : ' style="display:none"') + '>' + tbl + '</div>' +
-    '<div id="psch-board"' + (_pmSchedTab === 'board' ? '' : ' style="display:none"') + '>' + board + '</div>' +
-    '<div id="psch-calendar"' + (_pmSchedTab === 'calendar' ? '' : ' style="display:none"') + '>' + _pmCalendarHtml(pid) + '</div>');
+  const _pane = k => '<div id="psch-' + k + '"' + (_pmSchedTab === k ? ' data-built="1"' : ' style="display:none"') + '>' +
+    (_pmSchedTab === k ? _pmSchedBuild[k]() : '') + '</div>';
+  _pmSet(kpis + subtabs + ['gantt', 'activities', 'board', 'calendar'].map(_pane).join(''));
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
@@ -15634,6 +15673,13 @@ function _pmSchedTabBtn(key, label) {
 }
 function pmSchedTab(name) {
   _pmSchedTab = name;
+  // Build this pane the first time it is shown. pmRenderSchedule re-creates the hosts on every
+  // reload, so data-built resets naturally and a pane can never show stale rows.
+  const host = document.getElementById('psch-' + name);
+  if (host && !host.dataset.built && _pmSchedBuild && _pmSchedBuild[name]) {
+    try { host.innerHTML = _pmSchedBuild[name](); } catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Could not render: ' + _pmEsc(e.message) + '</div>'; }
+    host.dataset.built = '1';
+  }
   ['gantt', 'activities', 'board', 'calendar'].forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
     const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
