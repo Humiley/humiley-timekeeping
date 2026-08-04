@@ -3272,6 +3272,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._push_send(u, body))
         if path == "/api/devices/ack-backfill":
             return self._guard(lambda u: self._device_ack_backfill_ep(u), manager=True)
+        # Narrow, Finance-only backfill of beneficiary bank details on a DECIDED payment. Deliberately
+        # NOT `manager=True`: that tests the raw role column, which both admits every dept manager and
+        # would exclude an Editor whose role is 'staff'. The level check inside the handler is the gate.
+        if path == "/api/payments/bankdetails":
+            return self._guard(lambda u: self._pay_bank_backfill(u, body))
         if path == "/api/employees":
             return self._guard(lambda u: self._emp_create(u, body), manager=True)
         if path == "/api/zones":
@@ -5572,6 +5577,105 @@ class Handler(BaseHTTPRequestHandler):
                 "action": "Asset acknowledgment backfill", "target": "devices",
                 "detail": "%d assignment(s) marked acknowledged-on-record" % n, "ts": now})
         return self._json({"ok": True, "count": n})
+
+    # The ONLY fields the backfill endpoint may touch. Everything else in the request is ignored — the
+    # whole point of a narrow endpoint is that it can never become a second full-document PATCH.
+    PAY_BANK_FIELDS = ("payeeCompany", "payeeMst", "bankName", "bankAcc", "bankHolder", "bankBranch")
+
+    def _pay_bank_backfill(self, u, body):
+        """Finance fills in the beneficiary bank details of an ALREADY-DECIDED payment.
+
+        The generic PATCH path correctly refuses to edit a decided money record (signed evidence), but
+        payments created before these fields existed have no beneficiary details at all, and Finance
+        needs them to release a transfer and to file the accounting export. So: a separate endpoint
+        that can change nothing else — not the amount, the payee, the status, the signatures or the
+        attachment — and that audits every change with its before and after value.
+
+        Once a payment has been PAID, recorded details become the historical record of where the money
+        actually went: blanks may still be filled in, but an existing value can no longer be altered.
+        Before payment Finance may also correct a typo, since the people who can do this are the same
+        people who execute the transfer — restricting them further would not prevent anything."""
+        if not self._rate_check("paybank", 30, 60):
+            return
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Finance (Editor) access is required to update beneficiary bank details.", 403)
+        # _body() is fail-soft: a malformed or oversized payload arrives as {}. Without these checks
+        # a truncated request would read as "blank out every beneficiary field".
+        if not isinstance(body, dict):
+            return self._err("Invalid request.", 400)
+        pid = str(body.get("id") or "").strip()
+        if not pid:
+            return self._err("A payment id is required.", 400)
+        raw = body.get("fields")
+        if not isinstance(raw, dict):
+            return self._err("No bank details were supplied.", 400)
+        # Build from the WHITELIST, never from the body. _crm_sanitize strips angle brackets — these
+        # values are rendered into approval emails, the request PDF and the Excel export, so skipping
+        # it on a new write path would reopen the stored-XSS hole the QA pass closed.
+        clean = self._crm_sanitize({k: raw.get(k) for k in self.PAY_BANK_FIELDS if k in raw})
+        incoming = {}
+        for k in self.PAY_BANK_FIELDS:
+            if k not in clean or clean.get(k) is None:
+                continue
+            incoming[k] = str(clean[k]).strip()[:120]
+        if not incoming:
+            return self._err("No bank details were supplied.", 400)
+        try:
+            want_rev = int(body.get("_rev")) if body.get("_rev") is not None else None
+        except (TypeError, ValueError):
+            want_rev = None
+        # Same lock /api/esign takes, so a signature append and a backfill can't each read the record
+        # and then clobber the other's write.
+        with self._ESIGN_LOCK:
+            return self._pay_bank_backfill_locked(u, pid, incoming, want_rev)
+
+    def _pay_bank_backfill_locked(self, u, pid, incoming, want_rev):
+        item = db.get_collection_item("payments", pid)
+        if not item:
+            return self._err("Payment not found.", 404)
+        if want_rev is not None and int(item.get("_rev") or 0) != want_rev:
+            # _json, not _err: _err emits only {"error": …} and would drop the fields the frontend's
+            # 409 branch reads.
+            return self._json({"error": "This record was just changed by someone else. Reload the "
+                                        "latest version and re-apply your change.",
+                               "conflict": True, "currentRev": int(item.get("_rev") or 0)}, 409)
+        paid = str(item.get("status") or "").strip().lower() == "paid"
+        changes = []
+        for k, new in incoming.items():
+            old = str(item.get(k) or "").strip()
+            if old == new:
+                continue                      # no-op: a retried request must not 403
+            if paid and old:
+                return self._err("This payment has already been released. A recorded beneficiary "
+                                 "detail is the historical record of where the money went and cannot "
+                                 "be changed — only blank fields can be filled in.", 403)
+            changes.append((k, old, new))
+        # Validate the WHOLE batch before mutating anything, so a partially-rejected request never
+        # half-applies.
+        if not changes:
+            return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"},
+                               "changed": []})
+        for k, _old, new in changes:
+            item[k] = new
+        db.put_collection_item("payments", item)
+
+        def _mask(field, v):
+            # The audit trail is append-only and un-redactable, and admins read it wholesale — keeping
+            # full beneficiary account numbers in it forever is the wrong trade.
+            if field == "bankAcc" and len(v) > 4:
+                return "••••" + v[-4:]
+            return v or "—"
+        detail = " · ".join("%s: %s → %s" % (k, _mask(k, old), _mask(k, new))
+                                 for k, old, new in changes)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Payment beneficiary bank details updated",
+            "target": "payments/" + str(pid),
+            "detail": (str(item.get("reqNo") or pid) + " · " + str(item.get("status") or "-")
+                       + " · " + detail),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"},
+                           "changed": [c[0] for c in changes]})
 
     def _coll_update(self, u, name, iid, body):
         if name not in self.COLLECTIONS or not iid:

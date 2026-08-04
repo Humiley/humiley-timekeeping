@@ -9355,8 +9355,12 @@ function payFillTable() {
     const act = _aprBtns(s, 'tkPaymentDecision', p.id, { small: true }) || (canPay && _aprState(s) === 'approved'
       ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Paid\')">Mark paid</button>' : '');
     const _peEdit = (typeof _payIsMine === 'function' && _payIsMine(p, _payMe) && (_aprState(s) === 'submit' || _aprState(s) === 'review')) ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" onclick="event.stopPropagation();tkNewPayment(\'' + p.id + '\')">' + tkIcon('edit', 11) + 'Edit</button> ' : '';
+    // Finance-only backfill of the beneficiary details, incl. on already-decided payments. Gated on
+    // Finance LEVEL — not _tkCanPay(), which is the narrower named-payer disbursement permission.
+    const _peBank = (_lvlRank(_userLevel) >= _lvlRank('editor') && _payBankMissing(p))
+      ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" title="' + _tkEscA(_t('Add the beneficiary bank details Finance needs to release this payment')) + '" onclick="event.stopPropagation();tkPayBankFill(\'' + p.id + '\')">' + tkIcon('edit', 11) + _t('Bank details') + '</button> ' : '';
     const chev = '<svg id="fin-chev-pay-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + tkFmtDate(p.ts) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peEdit + act + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + tkFmtDate(p.ts) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peBank + _peEdit + act + '</td></tr>';
     const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="11" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
@@ -9436,6 +9440,103 @@ function _payBankHtml(p) {
   return '<div style="margin-top:10px;padding:9px 11px;background:var(--card-bg);border:1px solid var(--border);border-radius:8px">' +
     '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:5px">' + _t('Pay to') + '</div>' +
     rows.map(r => '<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:1.5px 0"><span style="color:var(--text-light)">' + _crmEsc(r[0]) + '</span><span style="font-weight:600;font-variant-numeric:tabular-nums;text-align:right">' + _crmEsc(r[1]) + '</span></div>').join('') + '</div>';
+}
+/* ONE definition of "missing bank details", shared by the row action and the Finance KPI so the two
+   can never disagree. Cash and company-card requests have no beneficiary account by design and are
+   excluded. The three fields Finance actually needs to release a transfer are bank / account number /
+   holder; company, MST and branch are useful but optional. */
+function _payBankMissing(p) {
+  if (!p) return false;
+  const m = String(p.method || 'Bank transfer');
+  if (m === 'Cash' || m === 'Company card') return false;
+  return !(String(p.bankName || '').trim() && String(p.bankAcc || '').trim() && String(p.bankHolder || '').trim());
+}
+/* Loose company-name match, so "ACME Co., Ltd" and "CÔNG TY TNHH ACME" resolve to the same vendor. */
+function _payNorm(s) {
+  return String(s == null ? '' : s).toLowerCase()
+    .replace(/công ty|cong ty|tnhh|cổ phần|co phan|mtv|một thành viên|\bcp\b|\bltd\b|\bjsc\b|\bco\b|\binc\b/g, ' ')
+    .replace(/[^a-z0-9]/g, '');
+}
+/* Vendor memory: the most recent payment to the SAME payee that already carries details. A
+   SUGGESTION only — it prefills the form, Finance still reviews and signs. Sorted on _isoDay because
+   p.ts is tkFmtDate output ('Aug-04-26'), which does NOT sort lexicographically. */
+function _payBankLastFor(payee, excludeId) {
+  // Guard the NORMALISED key at 3, not 6. _payNorm deliberately strips the company suffixes, so a
+  // perfectly normal vendor ("ACME Co", "CÔNG TY TNHH ACME") collapses to a 4-char key — a 6-char
+  // floor silently disabled vendor memory for exactly the names it was built to match.
+  const key = _payNorm(payee);
+  if (key.length < 3) return null;
+  return (_HR.payments || [])
+    .filter(x => x.id !== excludeId && _payNorm(x.payee) === key && !_payBankMissing(x))
+    .sort((a, b) => _isoDay(b.ts).localeCompare(_isoDay(a.ts)))[0] || null;
+}
+
+/* Finance backfills the beneficiary details of an already-decided payment. The six input ids are
+   REUSED from tkNewPayment so _payBankFields(g) is shared verbatim and the two forms cannot drift. */
+function tkPayBankFill(id) {
+  const p = (_HR.payments || []).find(x => x.id === id);
+  if (!p) { toast('Payment not found', 'warn'); return; }
+  if (_lvlRank(_userLevel) < _lvlRank('editor')) { toast(_t('Finance access is required.'), 'warn'); return; }
+  document.getElementById('paymentOverlay')?.remove();     // keep the shared input ids unique
+  document.getElementById('payBankOverlay')?.remove();
+  const paid = String(p.status || '').toLowerCase() === 'paid';
+  const sugg = _payBankLastFor(p.payee, p.id);
+  const V = k => _tkEscA(p[k] == null ? '' : String(p[k]));
+  // On a PAID payment an already-recorded value is history — the server refuses to change it, so
+  // lock those inputs here rather than letting Finance discover the 403 after typing.
+  const RO = k => (paid && String(p[k] || '').trim()) ? ' readonly style="background:var(--soft-bg);cursor:not-allowed"' : '';
+  const el = document.createElement('div'); el.id = 'payBankOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:540px;max-height:90vh;max-height:90dvh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _t2('Beneficiary bank details', 'Thông tin ngân hàng thụ hưởng') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' + _crmEsc(p.reqNo || '') + ' · ' + _crmEsc(p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0) + '</div></div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'payBankOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    (paid ? '<div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:14px;color:#92400E">' + _t('This payment has already been released. You can fill in blank fields, but a value that is already recorded cannot be changed.') + '</div>' : '') +
+    (sugg ? '<div style="border:1px dashed var(--border);border-radius:8px;padding:11px 13px;margin-bottom:14px">' +
+      '<div style="font-size:11px;color:var(--text-light);margin-bottom:7px">' + _t('Suggested from an earlier payment to the same payee — check it before saving.') + '</div>' +
+      _payBankRows(sugg).map(r => '<div style="display:flex;justify-content:space-between;gap:12px;font-size:12px;padding:1.5px 0"><span style="color:var(--text-light)">' + _crmEsc(r[0]) + '</span><span style="font-weight:600;font-variant-numeric:tabular-nums;text-align:right">' + _crmEsc(r[1]) + '</span></div>').join('') +
+      '<button class="btn btn-outline btn-sm" style="margin-top:9px;font-size:11px" onclick="_payBankApplySuggestion(\'' + _tkEscA(sugg.id) + '\')">' + _t('Use details from') + ' ' + _crmEsc(sugg.reqNo || '') + '</button></div>' : '') +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Company (legal name)', 'Tên công ty (pháp nhân)') + '</label><input class="form-control" id="pay-company" value="' + V('payeeCompany') + '"' + RO('payeeCompany') + '></div><div class="form-group"><label class="form-label">' + _t2('Tax code (MST)', 'Mã số thuế (MST)') + '</label><input class="form-control" id="pay-mst" inputmode="numeric" value="' + V('payeeMst') + '"' + RO('payeeMst') + '></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Bank name', 'Ngân hàng') + '</label><input class="form-control" id="pay-bank" value="' + V('bankName') + '"' + RO('bankName') + '></div><div class="form-group"><label class="form-label">' + _t2('Account number', 'Số tài khoản') + '</label><input class="form-control" id="pay-bankacc" inputmode="numeric" value="' + V('bankAcc') + '"' + RO('bankAcc') + '></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t2('Account holder', 'Chủ tài khoản') + '</label><input class="form-control" id="pay-bankholder" value="' + V('bankHolder') + '"' + RO('bankHolder') + '></div><div class="form-group"><label class="form-label">' + _t2('Branch', 'Chi nhánh') + '</label><input class="form-control" id="pay-bankbranch" value="' + V('bankBranch') + '"' + RO('bankBranch') + '></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'payBankOverlay\').remove()">Cancel</button>' +
+    '<button class="btn btn-emerald" onclick="tkPayBankSave(\'' + _tkEscA(id) + '\')">' + tkIcon('send') + _t('Save & sign') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+/* Fill the form from a previous payment to the same payee. Never overwrites a locked (readonly)
+   input — on a paid record those hold the historical destination. */
+function _payBankApplySuggestion(sid) {
+  const s = (_HR.payments || []).find(x => x.id === sid); if (!s) return;
+  [['pay-company', 'payeeCompany'], ['pay-mst', 'payeeMst'], ['pay-bank', 'bankName'],
+   ['pay-bankacc', 'bankAcc'], ['pay-bankholder', 'bankHolder'], ['pay-bankbranch', 'bankBranch']]
+    .forEach(([el, k]) => { const n = document.getElementById(el); if (n && !n.readOnly) n.value = s[k] || ''; });
+  toast(_t('Details copied — please check them before saving'));
+}
+async function tkPayBankSave(id) {
+  const g = idd => (document.getElementById(idd) || {}).value || '';
+  const existing = (_HR.payments || []).find(x => x.id === id);
+  if (!existing) { toast('Payment not found', 'warn'); return; }
+  const fields = _payBankFields(g);
+  if (!Object.keys(fields).some(k => String(fields[k] || '').trim())) {
+    toast(_t('Please fill in at least one bank detail'), 'warn'); return;
+  }
+  // Signed like every other change to a signed money record. It also solves an audit-VISIBILITY
+  // problem: the backend's own audit row isn't an 'e-signature' row, and the Audit Log filters
+  // non-admins down to those — so the e-sign call writes a second row Finance can actually see.
+  tkESign({
+    coll: 'payments', id: id,
+    updateFn: async () => {
+      await tkApi('/api/payments/bankdetails', { method: 'POST', body: { id: id, _rev: existing._rev, fields: fields } });
+      tkCollInvalidate('payments');   // custom endpoint — tkApi only auto-invalidates /api/coll/…
+    },
+    meaning: 'Bank details — Payment ' + (existing.reqNo || '') + ' · ' + (existing.payee || ''),
+    onDone: (item) => {
+      if (item) { const i = (_HR.payments || []).findIndex(x => x.id === id); if (i >= 0) _HR.payments[i] = item; }
+      document.getElementById('payBankOverlay')?.remove();
+      toast(_t('Bank details saved & signed'));
+      try { payFillTable(); } catch (e) {}
+      try { if (document.getElementById('finance-root')) tkRenderFinance(true); } catch (e) {}
+    }
+  });
 }
 async function tkPaymentSave(editId) {
   const g = id => (document.getElementById(id) || {}).value || '';
@@ -9979,7 +10080,7 @@ function _finItems() {
   // selected, approved ones included. It also filtered on the DUE month while the table's own column shows
   // the REQUESTED date (rec.ts), so the register contradicted itself. Claims already use c.ts and travel
   // t.from||t.ts; payments were the only kind with a single optional date source.
-  (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.ts || p.dueDate || '', hasFile: !!p.attachment }));
+  (_HR.payments || []).forEach(p => out.push({ kind: 'Payment', coll: 'payments', id: p.id, ref: p.reqNo || '', who: p.name || '', dept: p.department || '', category: p.category || 'Payment', amount: +p.amount || 0, status: p.status || 'Submitted', date: p.ts || p.dueDate || '', hasFile: !!p.attachment, bankMissing: _payBankMissing(p) }));
   (_HR.claims || []).forEach(c => out.push({ kind: 'Claim', coll: 'claims', id: c.id, ref: c.title || c.type || '', who: c.name || '', dept: c.dept || '', category: c.claimType || 'Claim', amount: _claimTotal(c), status: _claimRollup(c), date: c.ts || c.date || c.submittedDate || '', hasFile: !!(Array.isArray(c.items) && c.items.some(i => i.attachment)) }));
   (_HR.travel || []).forEach(t => out.push({ kind: 'Travel', coll: 'travel', id: t.id, ref: t.dest || '', who: t.name || '', dept: t.dept || '', category: 'Travel', amount: +t.cost || 0, status: t.status || 'Submitted', date: t.from || t.ts || '', hasFile: !!t.attachment }));
   return out;
@@ -10042,7 +10143,13 @@ async function tkRenderFinance(force) {
     _kpiTile('Approved outflow', _PAY_FMT(outflow), '#205090', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('Pending approvals', pend.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
     _kpiTile('Pending value', _PAY_FMT(pendVal), '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
-    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>')
+    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    // Finance-only: how many payments still can't be transferred because nobody recorded
+    // the beneficiary account. Computed from the FILTERED list, so it follows the toolbar.
+    (_lvlRank(_userLevel) >= _lvlRank('editor')
+      ? _kpiTile(_t('Missing bank details'), items.filter(i => i.bankMissing).length, '#EF4444',
+        '<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>')
+      : '')
   ]);
   const byCat = {}, byDept = {}, byKind = {};
   done.forEach(i => { byCat[i.category || 'Other'] = (byCat[i.category || 'Other'] || 0) + i.amount; byDept[i.dept || '—'] = (byDept[i.dept || '—'] || 0) + i.amount; byKind[i.kind] = (byKind[i.kind] || 0) + i.amount; });
@@ -10076,7 +10183,13 @@ function _finRedrawAggs(list) {
     _kpiTile('Approved outflow', _PAY_FMT(outflow), '#205090', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('Pending approvals', pend.length, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
     _kpiTile('Pending value', _PAY_FMT(pendVal), '#EF4444', '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'),
-    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>')
+    _kpiTile('Paid', _PAY_FMT(paid), '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+    // Finance-only: how many payments still can't be transferred because nobody recorded
+    // the beneficiary account. Computed from the FILTERED list, so it follows the toolbar.
+    (_lvlRank(_userLevel) >= _lvlRank('editor')
+      ? _kpiTile(_t('Missing bank details'), list.filter(i => i.bankMissing).length, '#EF4444',
+        '<rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/>')
+      : '')
   ]);
   if (typeof Chart === 'undefined') return;
   const byCat = {}, byDept = {}, byKind = {};
@@ -18150,6 +18263,19 @@ const _VI = {
   'Backfill failed': 'Lưu trữ bổ sung thất bại',
   'Archived': 'Đã lưu trữ',
   'remaining (run again)': 'còn lại (chạy lại)',
+
+  // ── Payments: beneficiary bank-detail backfill ──
+  'Bank details': 'Thông tin ngân hàng',
+  'Missing bank details': 'Thiếu thông tin ngân hàng',
+  'Add the beneficiary bank details Finance needs to release this payment': 'Bổ sung thông tin ngân hàng thụ hưởng để Kế toán có thể chi trả',
+  'This payment has already been released. You can fill in blank fields, but a value that is already recorded cannot be changed.': 'Khoản này đã được chi. Bạn có thể điền các ô còn trống, nhưng giá trị đã ghi nhận thì không thể thay đổi.',
+  'Suggested from an earlier payment to the same payee — check it before saving.': 'Gợi ý từ lần chi trước cho cùng người thụ hưởng — vui lòng kiểm tra trước khi lưu.',
+  'Use details from': 'Dùng thông tin từ',
+  'Details copied — please check them before saving': 'Đã sao chép thông tin — vui lòng kiểm tra trước khi lưu',
+  'Please fill in at least one bank detail': 'Vui lòng điền ít nhất một thông tin ngân hàng',
+  'Bank details saved & signed': 'Đã lưu và ký thông tin ngân hàng',
+  'Save & sign': 'Lưu và ký',
+  'Finance access is required.': 'Cần quyền Kế toán.',
   'Confirm & sync': 'Xác nhận & đồng bộ',
   'Select all': 'Chọn tất cả',
   'Clear all': 'Bỏ chọn tất cả',
