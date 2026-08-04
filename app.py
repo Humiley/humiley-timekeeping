@@ -1827,6 +1827,110 @@ def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
         return None
 
 
+# ── Finance SharePoint archive — SERVER-SIDE ─────────────────────────────────────────────────────
+# The Finance archive used to run ENTIRELY in the browser (_finSpUploadAttachment), through the
+# signed-in user's delegated MSAL token. That meant it only worked while somebody happened to be
+# signed in to Microsoft in that tab, and it swallowed every error — so the Year/Month folders often
+# simply never appeared, while Invoice Tracking (server-side, app-only) filed reliably. Same tenant,
+# same library, completely different reliability.
+#
+# Now that the app has app-only SharePoint access, the request's PDF is filed by the SERVER on submit,
+# exactly like an invoice: <library>/<Payments|Claims|Travel>/<YYYY>/<MM>/<ref>/. Best-effort — the
+# in-portal copy stays canonical and a failure never blocks a submission — but it is RECORDED so a
+# silent failure is visible rather than invisible.
+_FINSP = {"url": "", "site": "", "drive": "", "rel": ""}
+_FINSP_FAIL = {"url": "", "until": 0.0}
+_FINSP_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": "", "lastUrl": ""}
+
+
+def _finsp_reset():
+    _FINSP.update({"url": "", "site": "", "drive": "", "rel": ""})
+    _FINSP_FAIL.update({"url": "", "until": 0.0})
+
+
+def _finsp_resolve(token):
+    """Resolve the Finance folder URL → cache dict, or None. Mirrors _invtrack_sp_resolve."""
+    folder = (db.get_setting("portal_financeSpUrl", "") or "").strip()
+    if not folder:
+        return None
+    if _FINSP["url"] == folder and _FINSP["site"] and _FINSP["drive"]:
+        return _FINSP
+    if _FINSP_FAIL["url"] == folder and _FINSP_FAIL["until"] > time.time():
+        return None
+    try:
+        host, site_path, folder_rel = _sp_parse_folder(folder)
+        site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+        site_id = site.get("id")
+        drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive", token) if site_id else {}
+        if not (site_id and drive.get("id")):
+            raise ValueError("could not resolve site/drive")
+        _FINSP.update({"url": folder, "site": site_id, "drive": drive["id"], "rel": folder_rel})
+        return _FINSP
+    except Exception:
+        _FINSP_FAIL.update({"url": folder, "until": time.time() + 300})
+        return None
+
+
+def _finsp_ref(item, kind):
+    """Folder-safe reference — mirrors the frontend _finSpRef so both produce the SAME folder name
+       (Hà Nội → Ha_Noi), otherwise the server and the browser would file into two different trees."""
+    raw = str(item.get("reqNo") or item.get("title") or item.get("dest") or item.get("name") or kind or "request")
+    raw = unicodedata.normalize("NFD", raw)
+    raw = "".join(c for c in raw if unicodedata.category(c) != "Mn")
+    raw = raw.replace("đ", "d").replace("Đ", "D")
+    return re.sub(r"[^\w.\-]+", "_", raw)[:60] or "request"
+
+
+def _finsp_archive(item, kind):
+    """File one request's combined PDF into the Finance library. NEVER raises."""
+    try:
+        folder = (db.get_setting("portal_financeSpUrl", "") or "").strip()
+        if not folder or not _invtrack_app_ready():
+            return None
+        att = item.get("attachment") or ""
+        if not isinstance(att, str) or not att.startswith("data:"):
+            return None                                   # nothing to file (or a URL, already elsewhere)
+        head, _, b64 = att.partition(",")
+        raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        if not raw or len(raw) > _INVTRACK_FILE_MAX:
+            return None
+        ct = head[5:].split(";")[0] or "application/pdf"
+        token = _graph_app_token()
+        tgt = _finsp_resolve(token)
+        if not tgt:
+            # Same trap as Invoice Tracking: the cached token may predate a fresh consent grant.
+            _finsp_reset()
+            token = _graph_app_token(force=True)
+            tgt = _finsp_resolve(token)
+        if not tgt:
+            raise ValueError("could not resolve the Finance SharePoint folder — check the link and Sites consent")
+        label = {"claim": "Claims", "travel": "Travel"}.get(kind, "Payments")
+        base = [x for x in (tgt["rel"].split("/") if tgt["rel"] else []) if x]
+        # Don't create Payments/Payments. Admins usually point the setting straight at the folder for
+        # the dominant kind ("…/Shared Documents/Payments"), so if the configured folder is ALREADY
+        # named for this kind, use it rather than nesting an identically named child inside it.
+        if base and base[-1].strip().lower() == label.lower():
+            segs = base + time.strftime("%Y/%m").split("/") + [_finsp_ref(item, kind)]
+        else:
+            segs = base + [label] + time.strftime("%Y/%m").split("/") + [_finsp_ref(item, kind)]
+        rel = "/".join(segs)
+        _invtrack_sp_ensure_dir(tgt["drive"], rel, token)   # creates every missing level, like invoices
+        name = _sp_safe_leaf(item.get("attachmentName") or (_finsp_ref(item, kind) + ".pdf"), "")
+        path = "/".join(urllib.parse.quote(x) for x in (rel.split("/") + [name]))
+        if len(raw) > 4 * 1024 * 1024:
+            it = _graph_upload_session(tgt["drive"], path, token, raw, ct)
+        else:
+            url = "https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path + ":/content"
+            it = _graph_put_bytes(url, token, raw, ct)
+        _FINSP_HEALTH.update({"at": _now_iso(), "ok": _FINSP_HEALTH["ok"] + 1,
+                              "lastError": "", "lastUrl": (it or {}).get("webUrl", "")})
+        return (it or {}).get("webUrl") or None
+    except Exception as e:
+        _FINSP_HEALTH.update({"at": _now_iso(), "failed": _FINSP_HEALTH["failed"] + 1,
+                              "lastError": _graph_err_text(e)[:300]})
+        return None
+
+
 def _invtrack_sp_diagnose():
     """Run the WHOLE SharePoint archive path end-to-end and report exactly which stage fails, so an
        admin configuring the folder link gets a real answer instead of silence. Writes (and then
@@ -5554,8 +5658,26 @@ class Handler(BaseHTTPRequestHandler):
                     _cut = time.time() - _IDEM_WINDOW
                     for _k in [k for k, v in list(_IDEM.items()) if v[1] < _cut]:
                         _IDEM.pop(_k, None)
+            self._finsp_file(name, created)
             return self._json({"ok": True, "item": created})
-        return self._json({"ok": True, "item": db.put_collection_item(name, item)})
+        _created = db.put_collection_item(name, item)
+        self._finsp_file(name, _created)
+        return self._json({"ok": True, "item": _created})
+
+    @staticmethod
+    def _finsp_file(name, created):
+        """File a newly submitted payment/claim/travel into the Finance SharePoint library, server-side.
+
+        Runs in a thread so a slow SharePoint never delays the submit response — the in-portal copy is
+        canonical and this is an archive. Failures are recorded in _FINSP_HEALTH, never raised: a
+        request must not fail to submit because SharePoint is unreachable."""
+        kind = {"payments": "payment", "claims": "claim", "travel": "travel"}.get(name)
+        if not kind or not isinstance(created, dict) or not created.get("attachment"):
+            return
+        try:
+            threading.Thread(target=_finsp_archive, args=(created, kind), daemon=True).start()
+        except Exception:
+            pass
 
     def _device_ack_backfill_ep(self, u):
         # One-time migration (admin): every CURRENTLY-ASSIGNED asset/assignment with no acknowledgment is

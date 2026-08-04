@@ -8934,7 +8934,8 @@ async function tkClaimSave() {
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Expense Claim', rows, title + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _billFiles);
     if (pdf) { body.attachment = pdf; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
   }
-  await _finSpUploadAttachment(body, 'claim');
+  // Filed by the SERVER now (app-only Graph), so it works whether or not anyone is signed in to
+  // Microsoft in this tab — the browser path silently did nothing without an MSAL session.
   tkESign({
     createColl: 'claims', createBody: body,
     meaning: 'Submission — Claim ' + title + ' · ' + items.length + ' item(s) · ' + _PAY_FMT(total),
@@ -9277,7 +9278,7 @@ async function tkTravelSave() {
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Travel Request', rows, (body.dest || '') + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = 'Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf'; }
   }
-  await _finSpUploadAttachment(body, 'travel');
+  // Filed server-side — see the note on the claim submit above.
   tkESign({
     createColl: 'travel', createBody: body,
     meaning: 'Submission — Travel ' + (body.dest || '') + ' · ' + _PAY_FMT(body.cost),
@@ -9606,7 +9607,7 @@ async function tkPaymentSave(editId) {
       const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
       const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
       if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; } else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }
-      try { await _finSpUploadAttachment(body, 'payment'); } catch (e) {}
+      // Filed server-side — see the note on the claim submit above.
     }
     tkESign({
       coll: 'payments', id: editId,
@@ -9631,7 +9632,7 @@ async function tkPaymentSave(editId) {
     if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
     else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }   // combiner unavailable → keep the raw invoice so the request is never submitted without its bill
   }
-  await _finSpUploadAttachment(body, 'payment');
+  // Filed server-side — see the note on the claim submit above.
   tkESign({
     createColl: 'payments', createBody: body,
     meaning: 'Submission — Payment ' + body.reqNo + ' · ' + body.payee + ' · ' + _PAY_FMT(amount),
