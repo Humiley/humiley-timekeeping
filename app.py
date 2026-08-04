@@ -3602,9 +3602,23 @@ class Handler(BaseHTTPRequestHandler):
         return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["management"]
 
     def _is_approver(self, u):
-        # Final approval is reserved for Editor + Admin (request #6). A direct manager who is an
-        # Editor/Admin approves in ONE step (request #5) — see the "approved" branch below.
+        # Editor + Admin. This is the FINANCE/PAYROLL tier, NOT "may approve" — see _can_approve.
+        # It still gates the one-step review collapse, the payer fallback and payroll.
         return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["editor"]
+
+    def _can_approve(self, u):
+        """May this caller give FINAL APPROVAL on a request?
+
+        Deliberately a lower bar than _is_approver. The access level literally labelled
+        "Approver (Management)" could not approve anything — final approval demanded Editor
+        (Payroll) or Admin — so promoting somebody to Approver did nothing, and they never even
+        appeared in the requester's approver dropdown. The label now means what it says.
+
+        This widens who may APPROVE. It does not widen who may PAY: disbursement is gated
+        separately by _is_payer (the named authorised-payers list), so approving and releasing
+        money remain two different duties held by different people. Approving your own request,
+        and approving one you reviewed yourself, both stay blocked."""
+        return self._lvl_rank(self._caller_level(u)) >= self._LEVEL_RANK["management"]
 
     def _is_payer(self, u):
         """May this caller RELEASE money (mark a request paid)?
@@ -3663,16 +3677,19 @@ class Handler(BaseHTTPRequestHandler):
             if same_person:
                 return "You cannot review your own request."
             # Review must come from the requester's DIRECT manager (request #6) when one is on
-            # record. Editors/Admins skip this — they approve directly (one step).
-            if not self._is_approver(u):
+            # record. Anyone who can APPROVE skips this — they can act directly (one step). Using
+            # _can_approve rather than _is_approver here keeps the two consistent: it would be
+            # nonsense for a Director to be allowed to give final approval but refused the lesser
+            # act of reviewing.
+            if not self._can_approve(u):
                 owner = db.get_employee(owner_id) if owner_id else None
                 mgr_email = ((owner or {}).get("managerEmail") or "").lower()
                 if mgr_email and mgr_email != (u.get("email") or "").lower():
                     return "Only the requester's direct manager can review this request."
             return None
         if t == "approved":
-            if not self._is_approver(u):
-                return "Editor or Admin access is required for final approval."
+            if not self._can_approve(u):
+                return "Approver access or above is required for final approval."
             # One-step collapse (request #5): an Editor/Admin can approve straight from the
             # submitted state, so a direct manager who is Editor/Admin reviews+approves in one go.
             if cur not in ("submit", "review"):

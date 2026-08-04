@@ -4560,6 +4560,12 @@ async function tkRenderESignGov() {
 let _userRole = null;   // 'manager' | 'staff'
 let _userLevel = 'staff'; // 'staff' | 'manager' | 'management' | 'admin'
 const _LEVELS = ['staff', 'manager', 'management', 'editor', 'admin'];
+/* May this LEVEL give final approval? Mirrors the backend's _can_approve. Deliberately a lower
+   bar than Editor: the level labelled 'Approver (Management)' could not approve anything, so
+   promoting someone to Approver did nothing and they never appeared in the approver dropdown.
+   Widening approval does NOT widen payment — releasing money is the separate payer list. */
+const _APPROVE_MIN = 'management';
+function _canFinalApprove(level) { return _lvlRank(level || '') >= _lvlRank(_APPROVE_MIN); }
 const _LEVEL_LABEL = { staff: 'User', manager: 'Contributor', management: 'Approver', editor: 'Editor', admin: 'Admin' };
 function _lvlRank(l) { const i = _LEVELS.indexOf(l); return i < 0 ? 1 : i + 1; }
 function _requireLevel(min) { if (_lvlRank(_userLevel) < _lvlRank(min)) { toast('This action requires ' + (_LEVEL_LABEL[min] || min) + ' level.', 'warn', 5000); return false; } return true; }
@@ -8993,7 +8999,7 @@ function _aprState(status) {
 function _aprAction(status) {
   const st = _aprState(status);
   const isMgr = (typeof _userRole !== 'undefined' && _userRole === 'manager');
-  const isApprover = _lvlRank(_userLevel) >= _lvlRank('editor');   // Editor + Admin give final approval (#6)
+  const isApprover = _canFinalApprove(_userLevel);   // Approver (Management) and above give final approval
   if (st === 'submit') {
     // One step (#5): a direct manager who is Editor/Admin approves directly; a plain manager reviews.
     if (isApprover) return { to: 'Approved', label: 'Approve', hex: '#00B060' };
@@ -9014,7 +9020,7 @@ function _aprCanSee(status, empId, name) {
   if (_lvlRank(_userLevel) < _lvlRank('manager')) return false;
   const a = _aprAction(status);
   if (!a) return false;
-  if (_lvlRank(_userLevel) >= _lvlRank('editor')) return true;  // Editor/Admin approvers see every pending request
+  if (_canFinalApprove(_userLevel)) return true;  // anyone who can approve must be able to SEE what to approve
   const meEmail = ((TK.user || {}).email || '').toLowerCase();  // else only the direct manager reviews
   const e = (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || (_DEMO_EMPLOYEES || []).find(x => x.name === name);
   if (!e) return true;
@@ -9371,9 +9377,10 @@ function payFillTable() {
 function _payEligibleApprovers(me) {
   const mgrEmail = ((me && me.managerEmail) || '').toLowerCase();
   // Only people who can ACTUALLY complete an approval under the backend _appr_check: the requester's
-  // direct manager (review step) OR an Editor/Admin (final approval). Listing anyone else would offer an
-  // "approver" the backend then rejects. (QA #2/#4)
-  const _canApprove = e => (typeof _lvlRank === 'function') && _lvlRank(e.level || '') >= _lvlRank('editor');
+  // direct manager (review step) OR anyone at Approver (Management) level and above (final approval).
+  // Listing anyone else would offer an "approver" the backend then rejects. (QA #2/#4)
+  // The bar MUST stay identical to app.py's _can_approve — that is what _canFinalApprove exists for.
+  const _canApprove = e => (typeof _lvlRank === 'function') && _canFinalApprove(e.level);
   return (_DEMO_EMPLOYEES || []).filter(e => {
     if (!e || (e.status || 'Active').toLowerCase() === 'inactive') return false;
     if (me && e.id === me.id) return false;

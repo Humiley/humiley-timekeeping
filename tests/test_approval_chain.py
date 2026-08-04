@@ -51,10 +51,18 @@ def test_cannot_review_an_already_reviewed_request(base_url):
 
 
 # ---- Approve (level 3: Editor/Admin only — a plain manager or a Director cannot) -----------------
-def test_final_approval_requires_editor_or_admin(base_url):
-    for who in (DIRECT_MGR, DIRECTOR):   # manager (2) and management/Director (3) are below editor (4)
-        err = _h()._appr_check(who, "claims", "Reviewed", "approved", [], "HML-STF")
-        assert err and ("editor" in err.lower() or "admin" in err.lower()), (who["level"], err)
+def test_final_approval_requires_approver_level_or_above(base_url):
+    """POLICY CHANGE (owner decision): the bar for final approval moved from Editor down to
+    Approver (Management). It used to be that the access level literally labelled
+    "Approver (Management)" could not approve anything — promoting someone to Approver did nothing
+    and they never appeared in the requester's approver dropdown. A Director now approves; a
+    Contributor still cannot. See tests/test_approver_level.py for the separation this must not
+    break — above all, approving still confers no ability to RELEASE money."""
+    err = _h()._appr_check(DIRECT_MGR, "claims", "Reviewed", "approved", [], "HML-STF")
+    assert err and "approver" in err.lower(), ("contributor must still be refused", err)
+
+    assert _h()._appr_check(DIRECTOR, "claims", "Reviewed", "approved", [], "HML-STF") is None, \
+        "Approver (Management) must now be able to give final approval"
 
 
 def test_cannot_approve_own_request(base_url):
