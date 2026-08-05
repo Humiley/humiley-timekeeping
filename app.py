@@ -1444,7 +1444,18 @@ _CSP = (
     # PDF inline in an <iframe> — attachments are held client-side as base64/blob, so the src is a
     # blob:/data: URL, not a same-origin path. These framed docs are opaque-origin (same-origin policy
     # still blocks them from reading the parent's tokens); without this the PDF pane renders blank.
-    "worker-src 'self' blob: https://cdnjs.cloudflare.com; frame-src 'self' blob: data:"
+    # frame-src MUST also allow Microsoft's login origin. MSAL renews access tokens SILENTLY by
+    # navigating a HIDDEN IFRAME to login.microsoftonline.com/.../authorize?prompt=none. That origin
+    # was allow-listed in script-src and connect-src but never here, so the browser blocked the frame
+    # outright (verified: securitypolicyviolation fires with violatedDirective=frame-src). No hash
+    # ever came back, MSAL waited out iframeHashTimeout and threw `monitor_window_timeout` — which is
+    # what a site engineer saw instead of their PDF reaching SharePoint, and why 12 MB contractor
+    # reports have been landing in the database. Entra SPA refresh tokens are 24-hour and single-use,
+    # so this path is reached routinely: every morning, and the first time anyone needs the SharePoint
+    # scope. Self-inflicted, by the CSP hardening pass. Microsoft's interactive pages set their own
+    # frame-ancestors and still refuse to be framed, so only the prompt=none flow benefits.
+    "worker-src 'self' blob: https://cdnjs.cloudflare.com; "
+    "frame-src 'self' blob: data: https://login.microsoftonline.com https://*.msftauth.net"
 )
 
 
