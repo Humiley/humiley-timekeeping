@@ -14766,6 +14766,41 @@ function _pmStatusColor(s) {
 /* PM visibility: User = only assigned projects (PM or Team member); Manager and above = ALL. */
 function _pmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('manager'); }
 function _pmMembers(p) { return Array.isArray(p.members) ? p.members : String(p.members || '').split(',').map(s => s.trim()).filter(Boolean); }
+/* People are not reliably identified by a typed name, and this module kept trying.
+   Real data from the Team & RACI tab: the rows read "Trung Nguyen", "Giang Nguyen", "Dung Nguyen"
+   while the employee records are "Nguyen Van Trung", "Nguyen Anh Giang", "Nguyen An Dung" — short
+   Western order against full Vietnamese order. The Member picker offers the full employee name, so
+   those rows were typed or imported (or the employee was renamed afterwards). Either way an exact
+   string comparison never matches, and the person sits on the team seeing nothing.
+
+   So: fold to ASCII, lowercase, split into tokens, compare as SETS in either direction. "trung
+   nguyen" ⊆ "nguyen van trung" matches whichever way round it was written. Two guards keep that from
+   becoming a skeleton key — at least two tokens must be shared (a bare "Nguyen" matches half the
+   company), and if the row could equally be somebody ELSE in the directory it is refused rather than
+   guessed. Access is never granted on an ambiguous name. */
+function _pmNameTokens(v) {
+  return String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[đĐ]/g, 'd')
+    .toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+}
+function _pmSamePerson(a, b) {
+  const A = _pmNameTokens(a), B = _pmNameTokens(b);
+  if (A.length < 2 || B.length < 2) return false;          // one token is a family name, not a person
+  const setA = new Set(A), setB = new Set(B);
+  const shared = A.filter(t => setB.has(t)).length;
+  if (shared < 2) return false;
+  return shared === setA.size || shared === setB.size;      // one name is contained in the other
+}
+/* Does this Team row refer to ME? empId is exact and is what new rows carry (_pmDerive stamps it).
+   Older rows only have a name, so fall back to the tolerant match — but only when nobody else in the
+   directory answers to it too. */
+function _pmRowIsMe(r) {
+  const meName = (TK.user && TK.user.name) || '', meId = (TK.user && TK.user.id) || '';
+  if (r.empId) return !!meId && r.empId === meId;
+  if (String(r.name || '').trim().toLowerCase() === String(meName).trim().toLowerCase()) return true;
+  if (!_pmSamePerson(r.name, meName)) return false;
+  const rivals = (_DEMO_EMPLOYEES || []).filter(e => e.id !== meId && _pmSamePerson(r.name, e.name));
+  return rivals.length === 0;
+}
 /* Is this project MINE, as somebody below manager level?
    Three routes in, and the third is the one that was missing. Being the Project Manager works. A name
    in `p.members` works — except nothing can ever put one there: `members` is not a field on the
@@ -14779,10 +14814,10 @@ function _pmMembers(p) { return Array.isArray(p.members) ? p.members : String(p.
 function _pmAssigned(p) {
   const me = ((TK.user && TK.user.name) || '').trim().toLowerCase();
   if (!me || !p) return false;
-  if (String(p.manager || '').trim().toLowerCase() === me) return true;
-  if (_pmMembers(p).some(m => String(m).trim().toLowerCase() === me)) return true;
-  return (_HR.pm_resources || []).some(r => r && r.projectId === p.id
-    && String(r.name || '').trim().toLowerCase() === me);
+  if (_pmSamePerson(p.manager, (TK.user && TK.user.name) || '')
+      || String(p.manager || '').trim().toLowerCase() === me) return true;
+  if (_pmMembers(p).some(m => String(m).trim().toLowerCase() === me || _pmSamePerson(m, (TK.user && TK.user.name) || ''))) return true;
+  return (_HR.pm_resources || []).some(r => r && r.projectId === p.id && _pmRowIsMe(r));
 }
 function _pmMine(arr) {
   arr = arr || [];
@@ -14912,6 +14947,15 @@ function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms 
 function _pmDerive(coll, data) {
   if (coll === 'pm_risks') { data.score = (+data.probability || 0) * (+data.impact || 0); data.exposureBand = _pmRiskBand(data.score).band; data.residualScore = (+data.residualProbability || 0) * (+data.residualImpact || 0); }
   if (coll === 'pm_stakeholders') { data.quadrant = _pmQuadrant(data.influence, data.interest); }
+  // Pin the team member to an EMPLOYEE, not to the spelling of their name. The Member field is a
+  // picker over employee names, so this resolves cleanly on save — and from then on visibility no
+  // longer depends on whether somebody typed "Trung Nguyen" or "Nguyen Van Trung". Rows that predate
+  // this fall back to tolerant name matching in _pmRowIsMe.
+  if (coll === 'pm_resources' && data.name) {
+    const _hit = (_DEMO_EMPLOYEES || []).filter(e => _pmSamePerson(e.name, data.name)
+      || String(e.name || '').trim().toLowerCase() === String(data.name).trim().toLowerCase());
+    if (_hit.length === 1) data.empId = _hit[0].id;      // exactly one match, or leave it to the name
+  }
   if (coll === 'pm_tasks') {
     /* Duration is INCLUSIVE of both end days — 01→05 Jan is a 5-day task, and a task that starts
        and finishes the same day is 1 day, not 0. Everything else already counts it that way (the

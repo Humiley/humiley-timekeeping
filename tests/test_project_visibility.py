@@ -62,8 +62,12 @@ def _run(js, level="staff", me="Nguyen Van Trung"):
         "function _lvlRank(l){const i=_LEVELS.indexOf(l);return i<0?1:i+1;}\n"
         "let _userLevel = %s;\n"
         "const TK = { user: { id: 'HML-TRUNG', name: %s, email: 'trung.nguyen@humiley.com' } };\n"
-        "const _HR = { pm_projects: [], pm_resources: [] };\n" % (json.dumps(level), json.dumps(me))
-        + "\n".join(_fn(src, n) for n in ("_pmSeeAll", "_pmMembers", "_pmAssigned", "_pmMine"))
+        "const _HR = { pm_projects: [], pm_resources: [] };\n"
+        "let _DEMO_EMPLOYEES = [{ id: 'HML-TRUNG', name: 'Nguyen Van Trung' },\n"
+        "                       { id: 'E-GIANG', name: 'Nguyen Anh Giang' },\n"
+        "                       { id: 'E-SON', name: 'Son Nguyen' }];\n" % (json.dumps(level), json.dumps(me))
+        + "\n".join(_fn(src, n) for n in ("_pmNameTokens", "_pmSamePerson", "_pmRowIsMe",
+                                          "_pmSeeAll", "_pmMembers", "_pmAssigned", "_pmMine"))
         + "\n" + js
     )
     p = os.path.join(tempfile.mkdtemp(prefix="tk-pmvis-"), "t.js")
@@ -187,3 +191,103 @@ def test_the_empty_state_still_describes_a_route_that_works():
     assert "Resources tab" in src, "the empty state's instruction disappeared"
     assert "pm_resources" in _fn(src, "_pmAssigned"), \
         "the empty state promises the Resources tab works, and it does not"
+
+
+# ── the name-form trap: how it actually failed in production ──────────────────────────────────────
+
+def test_a_short_name_on_the_team_matches_the_full_employee_name():
+    """THE real case. Team & RACI reads "Trung Nguyen"; the employee record is "Nguyen Van Trung" —
+       short Western order against full Vietnamese order. The Member field is a picker over employee
+       names, so these rows were typed or imported, and an exact comparison never matched. The person
+       sat on the team, on screen, seeing nothing."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Trung Nguyen',
+                            projectRole: 'PM', discipline: 'Civil', allocationPct: 80 }];
+    """ + OUT)
+    assert "PMC-004" in out, "the short-form team name still does not resolve to the employee"
+
+
+def test_it_works_in_either_direction():
+    """Whichever way round the two names were written."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Nguyen Van Trung' }];
+    """ + OUT, me="Trung Nguyen")
+    assert "PMC-004" in out
+
+
+def test_vietnamese_diacritics_do_not_break_it():
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Nguyễn Văn Trung' }];
+    """ + OUT)
+    assert "PMC-004" in out
+
+
+def test_an_empid_beats_the_name_entirely():
+    """New rows carry the employee id, so visibility stops depending on spelling at all — even if the
+       name on the row is somebody else's, or the person is later renamed."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', empId: 'HML-TRUNG', name: 'Whatever Was Typed' }];
+    """ + OUT)
+    assert "PMC-004" in out
+
+
+def test_an_empid_for_somebody_else_grants_nothing():
+    """The id is authoritative in BOTH directions — a row pinned to another employee must not fall
+       back to a name that happens to look similar."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', empId: 'E-SON', name: 'Trung Nguyen' }];
+    """ + OUT)
+    assert out == ["PMC-014"]
+
+
+def test_a_bare_family_name_matches_nobody():
+    """Half of this company is a Nguyen. One token is a family name, not a person."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Nguyen' }];
+    """ + OUT)
+    assert out == ["PMC-014"], "a bare surname opened a project"
+
+
+def test_an_ambiguous_name_is_refused_not_guessed():
+    """If the row could equally be somebody else in the directory, nobody gets in. Access is never
+       granted on a guess."""
+    out = _run(PROJECTS + """
+      _DEMO_EMPLOYEES.push({ id: 'E-OTHER', name: 'Trung Nguyen Van' });
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Trung Nguyen' }];
+    """ + OUT)
+    assert out == ["PMC-014"], "an ambiguous name was resolved by guessing"
+
+
+def test_a_different_person_entirely_is_not_matched():
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Son Nguyen' }];
+    """ + OUT)
+    assert out == ["PMC-014"]
+
+
+def test_a_near_miss_name_is_not_matched():
+    """Trung vs Trang is a different person, not a typo to be forgiven."""
+    out = _run(PROJECTS + """
+      _HR.pm_resources = [{ id: 'r1', projectId: 'P1', name: 'Nguyen Van Trang' }];
+    """ + OUT)
+    assert out == ["PMC-014"]
+
+
+def test_the_project_manager_field_tolerates_the_same_name_forms():
+    """The PM is stored as a typed name too, and hits the identical trap."""
+    out = _run("""
+      _HR.pm_projects = [{ id: 'P1', code: 'PMC-PM', manager: 'Trung Nguyen' }];
+      _HR.pm_resources = [];
+    """ + OUT)
+    assert out == ["PMC-PM"]
+
+
+def test_new_team_rows_are_pinned_to_an_employee_id():
+    """_pmDerive resolves the picked name to an employee on save, so future rows never depend on a
+       name at all. Guarded to a single unambiguous match."""
+    with open(IDX, encoding="utf-8") as fh:
+        src = fh.read()
+    derive = _fn(src, "_pmDerive")
+    assert "coll === 'pm_resources'" in derive and "data.empId" in derive, \
+        "team rows are no longer pinned to an employee id on save"
+    assert "_hit.length === 1" in derive, "an ambiguous name must not be pinned to a guess"
