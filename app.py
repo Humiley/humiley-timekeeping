@@ -26,6 +26,7 @@ import urllib.parse
 import io
 import sys
 import collections
+import calendar
 import traceback
 from tkutil import (_money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv_xml_num,   # pure leaf utilities (extracted from this file)
                     _appr_state_of, _appr_epoch, _claim_items, _claim_rollup)
@@ -3728,6 +3729,38 @@ class Handler(BaseHTTPRequestHandler):
     _LEVEL_RANK = {"staff": 1, "manager": 2, "management": 3, "editor": 4, "admin": 5}
     THREE_LEVEL_COLLS = ("claims", "travel", "payments", "leave")
 
+    # ── Undo window ──────────────────────────────────────────────────────────────────────────────
+    # People misclick. For a short time after you sign a DECISION you may sign one reversal of it.
+    # The window is measured from the SERVER's own stamp on your signature and from nothing else —
+    # a window keyed on a browser clock is defeated by changing the browser clock.
+    UNDO_WINDOW_SEC = max(0, int(os.environ.get("TK_UNDO_WINDOW_SEC", "900") or "900"))   # 15 minutes
+    # Leave lives in its own table with its own signature store and is handled separately; payruns are
+    # deliberately absent — a finalised payroll run stays immutable.
+    UNDOABLE_COLLS = ("claims", "travel", "payments",
+                      "pm_changes", "pm_procurement_payments", "pm_quality")
+    # Which record fields each decision OWNS, and therefore restores. Keyed on setStatus.lower().
+    # "paid" carries no "status" on purpose: reversing a disbursement does not rewind the record to
+    # Approved, because that would present it to the next payer as though it had never been released.
+    _UNDO_FIELDS = {
+        "reviewed":  ("status", "reviewedBy", "reviewedById", "reviewedAt", "reviewedOn"),
+        "approved":  ("status", "approvedBy", "approvedById", "approvedAt", "approvedOn",
+                      "decision", "decidedBy", "decidedOn"),
+        "rejected":  ("status", "rejectedBy", "rejectedAt", "decision", "decidedBy", "decidedOn"),
+        "certified": ("status", "certifiedBy", "certDate"),
+        "closed":    ("status", "verifiedBy", "verifiedOn", "closedDate", "result"),
+        "paid":      ("paidOn", "paidBy"),
+    }
+    # Reversing a disbursement demands a reason, and both accepted reasons assert the money did NOT
+    # move. There is deliberately no third option: this feature corrects the record, never the bank.
+    UNDO_PAID_REASONS = {
+        "wrong-record": "Recorded against the wrong request — no money moved.",
+        "not-executed": "The transfer was not executed, or it failed.",
+    }
+    UNDO_CLOSED_MSG = ("The window to undo this has closed. Nothing was changed. "
+                       "File a corrected request — a decided request cannot be reopened.")
+    UNDO_MOVED_MSG = ("This record has changed since you signed it, so it can no longer be undone. "
+                      "Nothing was changed.")
+
     def _lvl_rank(self, lvl):
         return self._LEVEL_RANK.get((lvl or "staff"), 1)
 
@@ -3779,7 +3812,87 @@ class Handler(BaseHTTPRequestHandler):
             return "paid"
         if s == "rejected":
             return "rejected"
+        if s == "payment reversed":
+            return "reversed"
         return "submit"   # submitted / pending / partially approved / empty
+
+    @staticmethod
+    def _epoch_of(ts):
+        """Parse a server _utc_now() stamp back to epoch seconds. UTC, never local."""
+        try:
+            return calendar.timegm(time.strptime(str(ts), "%Y-%m-%dT%H:%M:%SZ"))
+        except (ValueError, TypeError):
+            return None
+
+    def _undo_snapshot(self, holder, t):
+        """Capture the fields a decision is about to overwrite, so the reversal can put them back.
+        `unset` records fields that were ABSENT — restoring those means deleting, not blanking."""
+        snap = {"set": {}, "unset": []}
+        for k in (self._UNDO_FIELDS.get(t) or ()):
+            if k in holder:
+                snap["set"][k] = holder[k]
+            else:
+                snap["unset"].append(k)
+        return snap
+
+    @staticmethod
+    def _undo_restore(holder, snap):
+        for k, v in (snap.get("set") or {}).items():
+            holder[k] = v
+        for k in (snap.get("unset") or []):
+            holder.pop(k, None)
+
+    def _undo_check(self, u, coll, item, sigs):
+        """None if this caller may reverse the last signature, else the reason they may not."""
+        if coll not in self.UNDOABLE_COLLS:
+            return "This kind of record cannot be undone."
+        if not sigs:
+            return "There is nothing to undo on this record."
+        last = sigs[-1]
+        # 1. It must be YOUR OWN signature. No admin override and no delegate: undoing is un-saying
+        #    something you personally attested to, and nobody else can un-say it for you.
+        if not last.get("userId") or last.get("userId") != u.get("id"):
+            return self.UNDO_CLOSED_MSG
+        # 2. It must be a DECISION, marked as such by the server on the way in — never by the client.
+        #    This also refuses undoing an undo, and refuses submissions and amendments.
+        if last.get("undo") or last.get("undoKind") != "decision":
+            return self.UNDO_CLOSED_MSG
+        t = str(last.get("setStatus") or "").strip().lower()
+        if t not in self._UNDO_FIELDS or not isinstance(last.get("undoRestore"), dict):
+            return self.UNDO_CLOSED_MSG
+        # 3. The clock, from the server stamp only, bounded at BOTH ends — a signature dated in the
+        #    future is a broken clock, not an open window.
+        ts = self._epoch_of(last.get("ts"))
+        if ts is None:
+            return self.UNDO_CLOSED_MSG
+        age = time.time() - ts
+        if age < 0 or age > self.UNDO_WINDOW_SEC:
+            return self.UNDO_CLOSED_MSG
+        # 4. NOTHING may have happened since, on two independent anchors. Status equality catches a
+        #    later transition; the revision counter catches a content-only edit that left the status
+        #    alone (an admin PATCH, for instance) which status equality cannot see.
+        line = None
+        if last.get("itemId"):
+            lines = item.get("items") if isinstance(item.get("items"), list) else []
+            line = next((x for x in lines if x.get("id") == last["itemId"]), None)
+            if not line or str(line.get("status") or "").strip().lower() != t:
+                return self.UNDO_MOVED_MSG
+        elif str(item.get("status") or "").strip().lower() != t:
+            return self.UNDO_MOVED_MSG
+        if int(item.get("_rev") or 0) != int(last.get("undoRev") or -1):
+            return self.UNDO_MOVED_MSG
+        # 5. The authority you exercised must still be yours TODAY. Somebody demoted since signing
+        #    does not get to keep reaching back into the record.
+        if t == "paid" and not self._is_payer(u):
+            return "Your authority to release payment has changed — you can no longer reverse this."
+        if coll in self.THREE_LEVEL_COLLS:
+            if t == "approved" and not self._can_approve(u):
+                return "Your approval authority has changed — you can no longer reverse this."
+            if t in ("reviewed", "rejected") and u.get("role") != "manager":
+                return "Your authority for this step has changed — you can no longer reverse this."
+        elif self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return "Your authority for this step has changed — you can no longer reverse this."
+        return None
 
     def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
@@ -3881,8 +3994,15 @@ class Handler(BaseHTTPRequestHandler):
             if not self._is_payer(u):
                 return ("You are not an authorised payer. Only a named payer may release payment — "
                         "an admin can change the list in Company Portal → Approvals.")
-            if cur != "approved":
+            if cur not in ("approved", "reversed"):
                 return "Only an approved request can be marked paid."
+            if cur == "reversed":
+                # This payment was released once and reversed. Releasing it again is a NEW decision,
+                # and the person who mis-attested the first one does not get to make it alone.
+                _revs = [x.get("userId") for x in (sigs or []) if x.get("undo")]
+                if u.get("id") in _revs:
+                    return ("You reversed this payment — a different authorised payer must release it. "
+                            "Ask a second payer, or raise a fresh payment request.")
             # Disbursement segregation of duties. Paying your OWN request is never allowed (hard rule).
             if same_person:
                 return "You cannot release payment on your own request."
@@ -4042,6 +4162,92 @@ class Handler(BaseHTTPRequestHandler):
                 or (item.get("raisedBy") and item.get("raisedBy") == u.get("name")))
         if u.get("role") != "manager" and not _owns_rec:
             return self._err("You can only sign your own record.", 403)
+        # ── Undo ─────────────────────────────────────────────────────────────────────────────────
+        # Placed BEFORE the claim-line branch so a request carrying undo:true can never be absorbed
+        # by it. An undo reverses exactly one thing — the caller's own last signature — and it does
+        # so by APPENDING a reversal, never by touching what is already there.
+        if body.get("undo"):
+            if body.get("setStatus"):
+                return self._err("An undo does not carry a status.", 400)
+            if body.get("itemId"):
+                # The line an undo addresses comes from the stored signature, which the server wrote.
+                # Accepting it from the client would let somebody reverse a line they never signed.
+                return self._err("An undo does not carry an item id.", 400)
+            _sigs = item.get("signatures") or []
+            _err = self._undo_check(u, coll, item, _sigs)
+            if _err:
+                return self._err(_err, 403)
+            last = _sigs[-1]
+            t = str(last.get("setStatus") or "").strip().lower()
+            reason_code = str(body.get("undoReason") or "").strip()
+            if t == "paid":
+                if reason_code not in self.UNDO_PAID_REASONS:
+                    return self._err("Choose why this payment is being reversed.", 400)
+            elif reason_code:
+                return self._err("A reason is only recorded when reversing a payment.", 400)
+
+            if last.get("itemId"):
+                # Per-line: restore the line, then RE-DERIVE the header. The header status is a
+                # rollup, never a snapshot — restoring it verbatim would let it drift from its lines.
+                _lines = item.get("items") if isinstance(item.get("items"), list) else []
+                _ln = next((x for x in _lines if x.get("id") == last["itemId"]), None)
+                self._undo_restore(_ln, last["undoRestore"])
+                item["status"] = self._claim_rollup(_lines)
+            elif t == "paid":
+                # Reversing a disbursement. The slip is EVIDENCE, not decision metadata: it is moved
+                # into an append-only list of withdrawn slips rather than deleted, so the system never
+                # loses the only proof of payment it holds. paidOn/paidBy are renamed rather than
+                # dropped, so the record can still say "was marked paid on X, reversed by Y".
+                if item.get("bankSlip"):
+                    item.setdefault("voidedBankSlips", []).append({
+                        "slip": item.pop("bankSlip"),
+                        "name": item.pop("bankSlipName", ""),
+                        "reason": reason_code,
+                        "note": self.UNDO_PAID_REASONS[reason_code],
+                        "sigTs": last.get("ts"),
+                        "reversedBy": signer_name,
+                        "reversedAt": self._utc_now()})
+                if item.get("paidOn"):
+                    item["reversedPaidOn"] = item.pop("paidOn")
+                if item.get("paidBy"):
+                    item["reversedPaidBy"] = item.pop("paidBy")
+                self._undo_restore(item, last["undoRestore"])
+                # NOT back to Approved. A payment that was once released and reversed must never
+                # present to the next payer as though it had never been released.
+                item["status"] = "Payment reversed"
+            else:
+                self._undo_restore(item, last["undoRestore"])
+
+            _restored = str(item.get("status") or "")
+            # The reversal carries NO setStatus key. Segregation-of-duties reads setStatus, so a
+            # reversal must not enrol its signer as a reviewer or an approver of this record.
+            rsig = {"name": signer_name, "email": signer_email, "userId": u.get("id"),
+                    "ts": self._utc_now(),
+                    "meaning": "Reversal — " + str(last.get("meaning") or ""),
+                    "method": method,
+                    "undo": True, "undoKind": "reversal",
+                    "voidsIndex": len(_sigs) - 1,
+                    "voidsTs": last.get("ts"),
+                    "voidsSetStatus": last.get("setStatus") or "",
+                    "restoredStatus": _restored}
+            if last.get("itemId"):
+                rsig["itemId"] = last["itemId"]
+            if reason_code:
+                rsig["undoReason"] = reason_code
+            if auth_time:
+                rsig["authTime"] = auth_time
+            item["signatures"].append(rsig)          # pure append — nothing existing is touched
+            saved = db.put_collection_item(coll, item)
+            db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
+                "action": "E-signature reversed — " + rsig["meaning"],
+                "target": coll + "/" + str(iid) + (("/item/" + str(last["itemId"])) if last.get("itemId") else ""),
+                "detail": ("undo · was " + (last.get("setStatus") or "-") + " · restored " + _restored
+                           + " · reversed sig ts=" + str(last.get("ts")) + " · " + method
+                           + (" · reason=" + reason_code if reason_code else "")),
+                "ts": self._utc_now()})
+            return self._json({"ok": True, "undone": True,
+                               "item": {k: v for k, v in saved.items() if k != "token"}})
+
         # Per-line-item signed decision on a claim (itemId present): review / approve / reject one line.
         item_id = body.get("itemId")
         if coll == "claims" and item_id:
@@ -4055,6 +4261,16 @@ class Handler(BaseHTTPRequestHandler):
             if _err:
                 return self._err(_err, 403)
             _prev_roll = self._claim_rollup(lines)   # rolled-up status BEFORE this line's change (for one-email-per-transition)
+            # Same snapshot, taken against the LINE rather than the header — the header status is
+            # derived by _claim_rollup and is never restored from a snapshot (see the undo branch).
+            _tl = str(set_status or "").strip().lower()
+            if set_status and _tl in self._UNDO_FIELDS:
+                sig["undoKind"] = "decision"
+                sig["undoRestore"] = self._undo_snapshot(line, _tl)
+                sig["undoRev"] = int(item.get("_rev") or 0) + 1
+                sig["itemId"] = item_id
+            elif not set_status:
+                sig["undoKind"] = "submission" if not (item.get("signatures") or []) else "amendment"
             item.setdefault("signatures", []).append(sig)
             if set_status:
                 line["status"] = set_status
@@ -4089,6 +4305,17 @@ class Handler(BaseHTTPRequestHandler):
             _has_slip = (isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 8_000_000) or bool(item.get("bankSlip"))
             if not _has_slip:
                 return self._err("A bank payment slip is required to mark a payment paid.", 400)
+        # Everything a reversal will need, captured BEFORE the decision overwrites it, and stamped by
+        # the server. `undoRev` is the revision this write is about to produce (put_collection_item
+        # sets cur_rev + 1, and we hold _ESIGN_LOCK) — so any other write landing in between makes the
+        # anchors disagree and the window closes, which is the safe direction to fail.
+        _t_low = str(set_status or "").strip().lower()
+        if set_status and coll in self.UNDOABLE_COLLS and _t_low in self._UNDO_FIELDS:
+            sig["undoKind"] = "decision"
+            sig["undoRestore"] = self._undo_snapshot(item, _t_low)
+            sig["undoRev"] = int(item.get("_rev") or 0) + 1
+        elif not set_status:
+            sig["undoKind"] = "submission" if not (item.get("signatures") or []) else "amendment"
         item.setdefault("signatures", []).append(sig)
         if set_status:
             item["status"] = set_status
@@ -4142,13 +4369,27 @@ class Handler(BaseHTTPRequestHandler):
             "target": coll + "/" + str(iid),
             "detail": (set_status or "signed") + " · " + method + (" · auth_time=" + str(auth_time) if auth_time else ""),
             "ts": self._utc_now()})
+        # The client cannot compute this itself — its clock is not the one the window is measured
+        # against. Hand it the exact deadline the server will enforce.
+        _undo_hint = None
+        if sig.get("undoKind") == "decision" and self.UNDO_WINDOW_SEC > 0:
+            _ts = self._epoch_of(sig.get("ts"))
+            if _ts is not None:
+                _undo_hint = {"can": True, "coll": coll, "id": iid, "sigTs": sig.get("ts"),
+                              "label": set_status, "seconds": self.UNDO_WINDOW_SEC,
+                              "until": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                                     time.gmtime(_ts + self.UNDO_WINDOW_SEC)),
+                              "needsReason": (str(set_status or "").lower() == "paid")}
         if coll in self.THREE_LEVEL_COLLS:                        # branded lifecycle email (best-effort)
             _ev = _APPR_EVENT.get(str(set_status or "").strip().lower())
             if not _ev and not set_status and item.get("empId") == u.get("id"):
                 _ev = "submitted"
             if _ev:
                 _appr_notify(coll, item, _ev, signer_name)
-        return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"}})
+        _resp = {"ok": True, "item": {k: v for k, v in item.items() if k != "token"}}
+        if _undo_hint:
+            _resp["undo"] = _undo_hint
+        return self._json(_resp)
 
     # Freshness window for PIN-lifecycle M365 tokens (enroll/change/reset/remove). Relaxed vs the
     # 600s signing window because the token is acquired SILENTLY (no popup/redirect — reliable in
@@ -6265,7 +6506,12 @@ class Handler(BaseHTTPRequestHandler):
                         item[_k] = existing[_k]
                     else:
                         item.pop(_k, None)
-                _signed = bool(existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"))
+                # A record is frozen by a LIVE decision, not by the mere presence of signatures.
+                # `signatures` never shrinks — an undo appends a reversal rather than deleting — so
+                # testing it would leave a reversed record frozen forever, which defeats the whole
+                # point of being able to take a decision back. The decision stamps below are exactly
+                # what the undo clears, so they are the honest test.
+                _signed = bool(existing.get("decidedBy") or existing.get("certifiedBy"))
                 if _signed and self._caller_level(u) != "admin":
                     _old = str(existing.get("status") or "").strip().lower()
                     _new = str(item.get("status") or "").strip().lower()
@@ -6301,7 +6547,7 @@ class Handler(BaseHTTPRequestHandler):
             # record (the previous blanket "has signatures" guard rejected EVERY edit, because the
             # submission e-signature is always present — which killed the edit feature entirely).
             if existing and name in ("claims", "travel", "payments") and self._caller_level(u) != "admin":
-                if _st in ("approved", "paid", "rejected"):
+                if _st in ("approved", "paid", "rejected", "payment reversed"):
                     return self._err("This request has been decided and can no longer be edited.", 403)
                 _en = str(existing.get("name") or "").strip().lower()
                 _owner = (existing.get("empId") and existing.get("empId") == u.get("id")) or \

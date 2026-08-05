@@ -4281,6 +4281,85 @@ function _esignSigUseSaved() {
   im.src = img;
 }
 
+/* ── Undo bar ────────────────────────────────────────────────────────────────────────────────────
+   People misclick. For a while after you sign a decision, a bar sits at the bottom of the screen
+   offering to take it back, counting down against the SERVER's deadline — `until` comes back on the
+   sign response, so a browser with a wrong clock still gets the right answer.
+
+   Taking a decision back is itself a signature (it appends a reversal; it never edits the original),
+   so the Undo button re-opens the signing modal rather than firing silently. That is the honest
+   behaviour under Part 11, and it also means a misclick on Undo cannot cascade. */
+let _tkUndoState = null, _tkUndoTimer = null;
+function tkUndoBarHide() {
+  if (_tkUndoTimer) { clearInterval(_tkUndoTimer); _tkUndoTimer = null; }
+  _tkUndoState = null;
+  document.getElementById('tk-undo-bar')?.remove();
+}
+function tkUndoBarShow(hint, what) {
+  tkUndoBarHide();
+  const until = Date.parse(String(hint.until || '').replace(' ', 'T'));
+  if (!until || isNaN(until)) return;
+  _tkUndoState = { coll: hint.coll, id: hint.id, label: hint.label || '', what: what || '',
+                   until: until, needsReason: !!hint.needsReason };
+  const el = document.createElement('div');
+  el.id = 'tk-undo-bar';
+  el.setAttribute('role', 'status');
+  el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:9500;display:flex;align-items:center;gap:14px;background:var(--navy-deep,#163866);color:#fff;border-radius:var(--r-pill,999px);padding:10px 12px 10px 18px;box-shadow:0 12px 32px rgba(0,0,0,.28);font-size:13px;max-width:calc(100vw - 24px)';
+  el.innerHTML =
+    '<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      _crmEsc(_t('Signed') + ' — ' + (what || hint.label || '')) +
+    '</span>' +
+    '<span id="tk-undo-left" style="font-variant-numeric:tabular-nums;opacity:.75;flex:0 0 auto"></span>' +
+    '<button type="button" onclick="tkUndoNow()" style="flex:0 0 auto;background:#fff;color:var(--navy,#205090);border:none;border-radius:var(--r-pill,999px);padding:6px 15px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit">' + _t('Undo') + '</button>' +
+    '<button type="button" aria-label="' + _tkEscA(_t('Dismiss')) + '" onclick="tkUndoBarHide()" style="flex:0 0 auto;background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:16px;line-height:1;padding:2px 6px">×</button>';
+  document.body.appendChild(el);
+  const tick = () => {
+    if (!_tkUndoState) return;
+    const left = Math.round((_tkUndoState.until - Date.now()) / 1000);
+    if (left <= 0) { tkUndoBarHide(); return; }
+    const m = Math.floor(left / 60), sec = left % 60;
+    const lbl = document.getElementById('tk-undo-left');
+    if (lbl) lbl.textContent = m + ':' + String(sec).padStart(2, '0');
+  };
+  tick(); _tkUndoTimer = setInterval(tick, 1000);
+}
+function tkUndoNow() {
+  const st = _tkUndoState; if (!st) return;
+  // Reversing a disbursement needs a recorded reason, and both choices assert the money did not
+  // move — this feature corrects the record, never the bank.
+  if (st.needsReason) { tkUndoReasonPrompt(st); return; }
+  _tkUndoSign(st, '');
+}
+function tkUndoReasonPrompt(st) {
+  document.getElementById('tkUndoReasonOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'tkUndoReasonOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">' + _t('Reverse this payment') + '</div><button class="modal-close" onclick="document.getElementById(\'tkUndoReasonOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6;margin-bottom:12px">' + _t('This corrects the record. It does not recall a transfer that has already left the bank — if money did move, reverse it with your bank first.') + '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Why is this being reversed?') + '</label>' +
+    '<select class="form-control" id="tk-undo-reason">' +
+      '<option value="wrong-record">' + _t('Recorded against the wrong request — no money moved') + '</option>' +
+      '<option value="not-executed">' + _t('The transfer was not executed, or it failed') + '</option>' +
+    '</select></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'tkUndoReasonOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="_tkUndoReasonGo()">' + tkIcon('check') + _t('Continue to sign') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+function _tkUndoReasonGo() {
+  const r = (document.getElementById('tk-undo-reason') || {}).value || '';
+  document.getElementById('tkUndoReasonOverlay')?.remove();
+  if (_tkUndoState) _tkUndoSign(_tkUndoState, r);
+}
+function _tkUndoSign(st, reason) {
+  tkESign({
+    coll: st.coll, id: st.id, undo: true, undoReason: reason,
+    meaning: 'Undo — ' + (st.what || st.label || ''),
+    onDone: () => {
+      tkUndoBarHide();
+      toast(_t('Taken back. The original signature stays on the record, marked reversed.'), undefined, 5000);
+      try { tkBootstrap().then(() => { try { tkRenderApprovals(); } catch (e) {} }); } catch (e) {}
+    }
+  });
+}
 function tkESign(opts) {
   document.getElementById('esignOverlay')?.remove();
   _esignPending = opts || {};
@@ -4392,10 +4471,14 @@ async function _esignGo() {
     } else if (opts.updateFn) {
       await opts.updateFn();   // persist the record first, then stamp the signature onto it
     }
-    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '', sigImage: _sigImage, attach: opts.attach || null }, signAuth) });
+    const res = await tkApi('/api/esign', { method: 'POST', body: Object.assign({ coll: coll, id: id, meaning: opts.meaning, setStatus: opts.setStatus || '', itemId: opts.itemId || '', sigImage: _sigImage, attach: opts.attach || null, undo: !!opts.undo, undoReason: opts.undoReason || '' }, signAuth) });
     const pe = document.getElementById('esign-pin'); if (pe) pe.value = '';   // never leave the PIN in the DOM
     document.getElementById('esignOverlay')?.remove();
-    toast('Signed ✓ — ' + (opts.meaning || ''), undefined, 4000);
+    toast((opts.undo ? _t('Reversed ✓ — ') : 'Signed ✓ — ') + (opts.meaning || ''), undefined, 4000);
+    // The server decides whether this act can be taken back, and until exactly when. The browser is
+    // never asked to work that out — its clock is not the one the window is measured against.
+    if (res && res.undo && res.undo.can) { try { tkUndoBarShow(res.undo, opts.meaning || ''); } catch (e) {} }
+    if (opts.undo) { try { tkUndoBarHide(); } catch (e) {} }
     if (opts.onDone) { try { opts.onDone((res && res.item) || null, created); } catch (e) {} }
   } catch (e) {
     const msg = e.message || 'Could not sign';
@@ -17542,6 +17625,16 @@ const _VI = {
   'Open risks (High+)': 'Rủi ro mở (Cao+)',
   'Milestones (overdue)': 'Cột mốc (trễ hạn)',
   'Overdue milestones': 'Cột mốc trễ hạn',
+  /* Undo window — taking back a decision within the grace period. */
+  'Undo': 'Hoàn tác',
+  'Dismiss': 'Bỏ qua',
+  'Reversed ✓ — ': 'Đã hoàn tác ✓ — ',
+  'Taken back. The original signature stays on the record, marked reversed.': 'Đã hoàn tác. Chữ ký gốc vẫn nằm trên hồ sơ, được đánh dấu là đã đảo.',
+  'Reverse this payment': 'Hoàn tác thanh toán này',
+  'This corrects the record. It does not recall a transfer that has already left the bank — if money did move, reverse it with your bank first.': 'Thao tác này sửa hồ sơ. Nó KHÔNG thu hồi khoản tiền đã rời khỏi ngân hàng — nếu tiền đã chuyển, hãy làm việc với ngân hàng trước.',
+  'Why is this being reversed?': 'Vì sao hoàn tác?',
+  'Recorded against the wrong request — no money moved': 'Ghi nhầm sang yêu cầu khác — chưa chuyển tiền',
+  'The transfer was not executed, or it failed': 'Chưa thực hiện chuyển khoản, hoặc chuyển khoản thất bại',
   /* PMBOK integrity pass — time-phased PV, signed variations/certificates, NCR close-out. */
   'Planned is spread evenly — put a Period on each cost line to draw the real plan curve.': 'Kế hoạch đang chia đều — nhập Kỳ cho từng dòng chi phí để vẽ đúng đường kế hoạch.',
   'You will sign this on the next step. Once signed, the record is locked.': 'Bạn sẽ ký ở bước tiếp theo. Sau khi ký, hồ sơ sẽ bị khoá.',
