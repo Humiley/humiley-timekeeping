@@ -14766,7 +14766,24 @@ function _pmStatusColor(s) {
 /* PM visibility: User = only assigned projects (PM or Team member); Manager and above = ALL. */
 function _pmSeeAll() { return _lvlRank(_userLevel) >= _lvlRank('manager'); }
 function _pmMembers(p) { return Array.isArray(p.members) ? p.members : String(p.members || '').split(',').map(s => s.trim()).filter(Boolean); }
-function _pmAssigned(p) { const me = ((TK.user && TK.user.name) || '').toLowerCase(); return (p.manager || '').toLowerCase() === me || _pmMembers(p).map(m => m.toLowerCase()).includes(me); }
+/* Is this project MINE, as somebody below manager level?
+   Three routes in, and the third is the one that was missing. Being the Project Manager works. A name
+   in `p.members` works — except nothing can ever put one there: `members` is not a field on the
+   project form (grep for "k: 'members'" returns nothing), so it only exists on records seeded or
+   imported with it.
+   That left the Resources tab, which is what the empty state on this very screen tells a manager to
+   use — "A manager can add you to a project Team (Resources tab)". It writes pm_resources rows, which
+   this function never looked at. So following the app's own instructions changed nothing, and a
+   Senior Civil Engineer sat on a project team seeing an empty Projects screen with no way for anyone
+   to fix it short of making them the PM. */
+function _pmAssigned(p) {
+  const me = ((TK.user && TK.user.name) || '').trim().toLowerCase();
+  if (!me || !p) return false;
+  if (String(p.manager || '').trim().toLowerCase() === me) return true;
+  if (_pmMembers(p).some(m => String(m).trim().toLowerCase() === me)) return true;
+  return (_HR.pm_resources || []).some(r => r && r.projectId === p.id
+    && String(r.name || '').trim().toLowerCase() === me);
+}
 function _pmMine(arr) {
   arr = arr || [];
   if (_pmSeeAll()) return arr;            // Manager and above see every project
@@ -14783,7 +14800,12 @@ const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs',
 // caches, so nothing is fetched twice within the freshness window.
 const _PM_CORE_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_costs'];
 async function _pmLoadCore() {
-  await Promise.all(_PM_CORE_COLLS.map(c => tkLoadColl(c).catch(() => { })));
+  // Below manager level, visibility depends on the project Team — so pm_resources has to be here or
+  // _pmAssigned reads an empty array and every project looks unassigned. Managers see everything
+  // regardless, so their list still paints after the same five requests. pm_resources is one row per
+  // person per project: by far the smallest of the eighteen.
+  const need = _pmSeeAll() ? _PM_CORE_COLLS : _PM_CORE_COLLS.concat(['pm_resources']);
+  await Promise.all(need.map(c => tkLoadColl(c).catch(() => { })));
 }
 // Opening a project used to BLOCK its first paint on all 18 collections. Five of them are read by no
 // tab the workspace lands on, and they are also the ones that can carry uploaded files: when a project
