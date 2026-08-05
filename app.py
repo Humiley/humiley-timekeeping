@@ -3027,7 +3027,12 @@ def _web_push(endpoint, sub, payload):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "HumileyTimekeeping/2.0"
-    MAX_BODY = 30 * 1024 * 1024   # reject request bodies larger than 30 MB (memory-safety)
+    # Site-report PDFs from contractors run to 10-15 MB, and base64 inflates them by a third, so a
+    # single 15 MB attachment arrives as ~20 MB and a daily report may carry one per contractor. The
+    # body is read into memory, so this is a real memory ceiling, not a formality — the browser
+    # refuses anything over 45 MB of attachments first, which keeps the rejection somewhere the user
+    # can act on it. Files stored in SharePoint never come through here at all.
+    MAX_BODY = 64 * 1024 * 1024   # reject request bodies larger than 64 MB (memory-safety)
 
     # -- io helpers ---------------------------------------------------------
     # gzip text responses: the single-file app HTML is ~1.6 MB raw — uncompressed it took
@@ -4302,7 +4307,7 @@ class Handler(BaseHTTPRequestHandler):
         if set_status == "Paid" and coll == "payments":
             _att = body.get("attach") or {}
             _slip = _att.get("bankSlip") if isinstance(_att, dict) else ""
-            _has_slip = (isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 8_000_000) or bool(item.get("bankSlip"))
+            _has_slip = (isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 21_000_000) or bool(item.get("bankSlip"))
             if not _has_slip:
                 return self._err("A bank payment slip is required to mark a payment paid.", 400)
         # Everything a reversal will need, captured BEFORE the decision overwrites it, and stamped by
@@ -4360,7 +4365,7 @@ class Handler(BaseHTTPRequestHandler):
                 # the record; must be a data: URI (an uploaded file, never a URL/script).
                 _att = body.get("attach") or {}
                 _slip = _att.get("bankSlip") if isinstance(_att, dict) else ""
-                if coll == "payments" and isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 8_000_000:
+                if coll == "payments" and isinstance(_slip, str) and _slip.startswith("data:") and len(_slip) <= 21_000_000:
                     item["bankSlip"] = _slip
                     item["bankSlipName"] = str(_att.get("bankSlipName") or "bank-payment-slip")[:120]
         db.put_collection_item(coll, item)

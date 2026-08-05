@@ -8861,7 +8861,7 @@ async function tkReadAttachMulti(input, hid) {
   const files = [...(input.files || [])];
   _multiAttachStore[hid] = _multiAttachStore[hid] || [];
   for (const f of files) {
-    if (f.size > 8 * 1024 * 1024) { toast(f.name + ' — over 8 MB, skipped', 'warn', 4000); continue; }
+    if (f.size > TK_MAX_INLINE) { toast(f.name + ' — over ' + TK_MAX_INLINE_MB + ' MB, skipped', 'warn', 4000); continue; }
     const url = await new Promise(res => { const r = new FileReader(); r.onload = e => res(e.target.result); r.onerror = () => res(''); r.readAsDataURL(f); });
     if (url) _multiAttachStore[hid].push({ name: f.name, url: url, type: f.type || '' });
   }
@@ -9794,7 +9794,7 @@ function _promptBankSlip(label) {
     const fi = ov.querySelector('#bs-file');
     fi.onchange = () => {
       const f = fi.files && fi.files[0]; if (!f) return;
-      if (f.size > 8 * 1024 * 1024) { toast(_t('File too large — the bank slip must be under 8 MB.'), 'warn', 5000); fi.value = ''; return; }
+      if (f.size > TK_MAX_INLINE) { toast(_t('File too large — the bank slip must be under 15 MB.'), 'warn', 5000); fi.value = ''; return; }
       const r = new FileReader();
       r.onload = () => { picked = { bankSlip: String(r.result), bankSlipName: f.name }; const nm = ov.querySelector('#bs-name'); nm.textContent = '✓ ' + f.name; nm.style.display = 'block'; ov.querySelector('#bs-go').disabled = false; };
       r.onerror = () => toast(_t('Could not read the file.'), 'warn');
@@ -11154,7 +11154,7 @@ function _invAttachFile(idx) {
   inp.type = 'file'; inp.accept = '.xml,.pdf,.zip,application/pdf,application/xml,text/xml,application/zip';
   inp.onchange = async () => {
     const f = inp.files && inp.files[0]; if (!f) return;
-    if (f.size > 8 * 1024 * 1024) { toast(_t('File too large (max 8 MB)'), 'warn', 5000); return; }
+    if (f.size > TK_MAX_INLINE) { toast(_t('File too large (max 15 MB)'), 'warn', 5000); return; }
     toast(_t('Attaching and reading the invoice…'), 'info', 3000);
     try {
       const b64 = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(f); });
@@ -11872,6 +11872,22 @@ function _applyAppAccess() { document.querySelectorAll('[data-app]').forEach(el 
 /* One access-level row. Extracted so a single edit can re-render JUST that row (keeps search +
    scroll) and its dependent controls (the procurement-role dropdown appears the moment Procurement
    is enabled). data-perm-id lets _permRowRefresh find it. */
+/* Which apps a person can actually open. CRM and Projects are opt-OUT (an unticked box means
+   explicitly denied); HR, Finance and Procurement are opt-IN, with admins always holding everything.
+   Kept as one function so the row, the warning banner and any future report can never disagree. */
+function _permApps(e) {
+  const denied = String(e.appsDenied || '').split(',').map(x => x.trim());
+  const allowed = String(e.appsAllowed || '').split(',').map(x => x.trim());
+  const isAdmin = _deriveLevel(e) === 'admin';
+  return {
+    crm: denied.indexOf('crm') < 0,
+    pm: denied.indexOf('pm') < 0,
+    hr: isAdmin || allowed.indexOf('hr') >= 0,
+    finance: isAdmin || allowed.indexOf('finance') >= 0,
+    procurement: isAdmin || allowed.indexOf('procurement') >= 0
+  };
+}
+function _permAppCount(e) { const a = _permApps(e); return ['crm','pm','hr','finance','procurement'].filter(k => a[k]).length; }
 function _permRowHtml(e) {
   const cur = _deriveLevel(e);
   const sel = '<select class="form-control" style="width:150px;font-size:12px" onchange="tkSetLevel(\'' + e.id + '\',this.value)">' + _LEVELS.map(l => '<option value="' + l + '"' + (l === cur ? ' selected' : '') + '>' + _LEVEL_LABEL[l] + '</option>').join('') + '</select>';
@@ -11884,7 +11900,12 @@ function _permRowHtml(e) {
   const _appChk = (on, app, label, dis) => '<label ' + (dis ? 'title="Admins always have every app" ' : '') + 'style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:' + (dis ? 'not-allowed' : 'pointer') + ';margin-left:8px' + (dis ? ';opacity:.55' : '') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (dis ? ' disabled' : '') + ' onchange="tkSetApp(\'' + e.id + '\',\'' + app + '\',this.checked)" style="width:15px;height:15px;accent-color:var(--navy)"> ' + label + '</label>';
   const appCell = _appChk(crmOn, 'crm', 'CRM').replace(';margin-left:8px', '') + _appChk(pmOn, 'pm', 'Projects') + _appChk(hrOn, 'hr', 'HR', isAdminRow) + _appChk(financeOn, 'finance', 'Finance', isAdminRow) + _appChk(procOn, 'procurement', 'Procurement', isAdminRow) + _procRoleSelect(e, procOn);
   const _q = _tkEscA(((e.name || '') + ' ' + (e.email || '') + ' ' + (e.title || '') + ' ' + (e.dept || '')).toLowerCase());
-  return '<tr data-perm-id="' + e.id + '" data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div></div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
+  // Somebody with no app at all can still sign in, check in and use My Space — but every module is
+  // shut to them. That is occasionally deliberate (factory floor staff who only clock in) and often
+  // just an account nobody finished setting up, so it is surfaced rather than assumed either way.
+  const _none = _permAppCount(e) === 0;
+  const _flag = _none ? '<div style="font-size:10.5px;color:var(--warning);font-weight:700;margin-top:2px" title="' + _tkEscA(_t('This person can sign in and use timekeeping, but cannot open any module.')) + '">' + _t('No app access') + '</div>' : '';
+  return '<tr data-perm-id="' + e.id + '" data-perm-search="' + _q + '"><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (e.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.email || '') + '</div>' + _flag + '</div></div></td><td>' + (e.title || '—') + '</td><td>' + (e.dept || '—') + '</td><td>' + sel + '</td><td>' + appCell + '</td></tr>';
 }
 /* Re-render one row after a save + flash it green so the change visibly confirms. */
 function _permRowRefresh(id) {
@@ -11970,7 +11991,14 @@ function tkRenderPermissions() {
   // The "Permission Levels" reference + its intro note go BELOW it (the note's "the table below" still
   // points at the matrix). Fixes: user had to scroll far down a tall page to reach the Assign table.
   const assignCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px"><div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><div style="font-weight:800;color:var(--navy);font-size:15px">Assign Access Levels</div><div style="font-size:11.5px;color:var(--text-light);margin-top:2px">Only active employees are shown here. Changes are saved automatically the moment you edit an access level or an app.</div></div><input type="text" id="perm-search" oninput="tkPermFilter(this.value)" placeholder="Search name, email, position or department…" style="flex:1;min-width:200px;max-width:300px;font-size:13px;padding:8px 12px;border:1px solid var(--line);border-radius:8px"></div><div class="table-wrap"><table style="min-width:760px"><thead><tr><th>Employee</th><th>Position</th><th>Department</th><th>Access Level</th><th>App access</th></tr></thead><tbody>' + rows + '</tbody></table></div><div id="perm-noresult" style="display:none;padding:18px;text-align:center;color:var(--text-light);font-size:13px">No employees match your search.</div></div>';
-  root.innerHTML = kpis + assignCard + note + matrix;
+  // Answer "is everyone set up?" at the top, instead of making an admin read every row.
+  const _gapList = emps.filter(e => _permAppCount(e) === 0);
+  const _gapCard = _gapList.length ? '<div class="card" style="padding:13px 16px;margin-bottom:14px;border-left:3px solid var(--warning);display:flex;align-items:flex-start;gap:11px;flex-wrap:wrap">' +
+    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2.2" stroke-linecap="round" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>' +
+    '<div style="flex:1;min-width:220px"><div style="font-weight:700;font-size:13.5px">' + _gapList.length + ' ' + _t(_gapList.length === 1 ? 'person has no app access' : 'people have no app access') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px;line-height:1.55">' + _t('They can sign in, check in and use My Space, but Projects, HR, Finance, CRM and Procurement are all closed to them. That is right for staff who only clock in — and wrong for anyone who needs a module.') + '</div>' +
+    '<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap">' + _gapList.map(e => '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px" onclick="tkPermFilter(\'' + _tkEscA(e.name || '') + '\');var i=document.getElementById(\'perm-search\');if(i)i.value=' + JSON.stringify(e.name || '') + '">' + _pmEsc(e.name || '—') + '</button>').join('') + '</div></div></div>' : '';
+  root.innerHTML = kpis + _gapCard + assignCard + note + matrix;
 }
 /* Live filter for the Assign Access Levels table — matches name, email, position or department. */
 function tkPermFilter(q) {
@@ -12967,7 +12995,7 @@ async function _qaReadFile(input, k) {
       }
     }
   }
-  if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB). Tip: link the project to SharePoint to store large files there.', 'warn'); input.value = ''; return; }
+  if (f.size > TK_MAX_INLINE) { toast(_t('File too large') + ' (' + _t('max') + ' ' + TK_MAX_INLINE_MB + ' MB). ' + _t('Tip: link the project to SharePoint to store large files there.'), 'warn', 7000); input.value = ''; return; }
   const r = new FileReader();
   r.onload = async e => {
     let url = e.target.result;
@@ -12991,6 +13019,21 @@ function _qaRenderFiles(k) {
     '<button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 7px;color:#C00000" onclick="_qaRemoveFile(\'' + k + '\',' + i + ')">✕</button></div>').join('') : '';
 }
 function _qaRemoveFile(k, i) { (_qaFilesStore[k] || []).splice(i, 1); _qaRenderFiles(k); }
+/* Biggest file we will hold INSIDE the database, as base64. Site-report PDFs from contractors are
+   routinely 10-15 MB, so 8 MB was rejecting real work.
+
+   Two things make 15 MB safe that did not apply at 8:
+     * base64 inflates a file by ~33%, so 15 MB on disk is ~20 MB in the request — the server's
+       MAX_BODY was raised to match, with headroom for several files in one save;
+     * tkQuickAddSave used to ALSO mirror the first file's whole data URL into the legacy single-file
+       field, storing every attachment twice. At 15 MB that alone would have blown the request.
+   The real answer is still SharePoint: link the project and the ceiling is 100 MB, the bytes never
+   touch the database, and every user stops downloading them with the register. */
+const TK_MAX_INLINE_MB = 15;
+const TK_MAX_INLINE = TK_MAX_INLINE_MB * 1024 * 1024;
+/* Total base64 a single save may carry. Comfortably under the server's MAX_BODY so the user gets a
+   clear message here rather than a bare rejection from the server. */
+const TK_MAX_SAVE_BYTES = 45 * 1024 * 1024;
 async function _qaReadFiles(input, k) {
   const files = Array.prototype.slice.call(input.files || []); if (!files.length) return;
   const coll = (_QA_SPECS[_qaType] || {}).coll || '';
@@ -13007,7 +13050,14 @@ async function _qaReadFiles(input, k) {
         continue;
       } catch (e) { toast('SharePoint upload failed (' + (e.message || e) + ') — storing in app instead.', 'warn', 6000); }
     }
-    if (f.size > 8 * 1024 * 1024) { toast('File too large (max 8 MB): ' + f.name, 'warn'); continue; }
+    if (f.size > TK_MAX_INLINE) {
+      // Say WHY the small ceiling applies — the user can usually fix it themselves in a minute.
+      const why = !p ? '' : (!_pmSpBase(p)
+        ? ' ' + _t('This project has no SharePoint folder linked — link one and the limit becomes 100 MB.')
+        : ((!_msalApp || !_account) ? ' ' + _t('Sign in to Microsoft 365 to upload straight to SharePoint (limit 100 MB).') : ''));
+      toast(_t('File too large') + ' (' + _t('max') + ' ' + TK_MAX_INLINE_MB + ' MB): ' + f.name + why, 'warn', 8000);
+      continue;
+    }
     await new Promise(done => {
       const r = new FileReader();
       r.onload = e => { (_qaFilesStore[k] = _qaFilesStore[k] || []).push({ name: f.name, url: e.target.result }); done(); };
@@ -13026,7 +13076,14 @@ async function tkQuickAddSave() {
       const arr = (_qaFilesStore[f.k] || []).slice();
       const legacy = f.k.replace(/s$/, '');
       data[f.k] = arr;
-      data[legacy] = arr.length ? (arr[0].url || '') : '';
+      // Mirror the first file into the legacy single-file field for records written before
+      // attachments[] existed — but ONLY when the mirror is cheap. A SharePoint link is a short URL;
+      // an inline file is the entire base64 payload, and copying that here stored every attachment
+      // in the record TWICE. Nothing reads the mirror when attachments[] is present: _pmFileCell
+      // always passes an index and _pmOpenFile then reads attachments[idx], falling back to the
+      // legacy field only for records that have no array at all.
+      const _first = arr.length ? (arr[0].url || '') : '';
+      data[legacy] = /^https?:/i.test(_first) ? _first : '';
       data[legacy + 'Name'] = arr.length ? (arr[0].name || '') : '';
       return;
     }
@@ -13042,6 +13099,19 @@ async function tkQuickAddSave() {
   }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   const _prevSpUrl = (_qaType === 'pm_projects' && _qaEditId) ? (((_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {}).sharepointUrl || '') : '';
+  // Several 15 MB files in one save can exceed what the server will accept. Catch it here, where we
+  // can say something useful, rather than letting the request be rejected with nothing to act on.
+  let _inline = 0;
+  Object.keys(data).forEach(k => {
+    const v = data[k];
+    if (typeof v === 'string' && v.indexOf('data:') === 0) _inline += v.length;
+    else if (Array.isArray(v)) v.forEach(x => { if (x && typeof x.url === 'string' && x.url.indexOf('data:') === 0) _inline += x.url.length; });
+  });
+  if (_inline > TK_MAX_SAVE_BYTES) {
+    toast(_t('These attachments are too large to save together') + ' (' + Math.round(_inline / 1048576) + ' MB). ' +
+          _t('Remove one, or link the project to SharePoint so the files are stored there instead.'), 'warn', 9000);
+    return;
+  }
   try {
     let item;
     if (_qaEditId) {
@@ -17625,6 +17695,22 @@ const _VI = {
   'Open risks (High+)': 'Rủi ro mở (Cao+)',
   'Milestones (overdue)': 'Cột mốc (trễ hạn)',
   'Overdue milestones': 'Cột mốc trễ hạn',
+  /* Access & Permissions — the "nobody is half-configured" check. */
+  'No app access': 'Chưa có quyền ứng dụng',
+  'This person can sign in and use timekeeping, but cannot open any module.': 'Người này đăng nhập và chấm công được, nhưng không mở được phân hệ nào.',
+  'person has no app access': 'người chưa có quyền ứng dụng nào',
+  'people have no app access': 'người chưa có quyền ứng dụng nào',
+  'They can sign in, check in and use My Space, but Projects, HR, Finance, CRM and Procurement are all closed to them. That is right for staff who only clock in — and wrong for anyone who needs a module.': 'Họ đăng nhập, chấm công và dùng Không gian của tôi được, nhưng Dự án, Nhân sự, Tài chính, CRM và Mua hàng đều đóng. Điều này đúng với nhân viên chỉ chấm công — và sai với bất kỳ ai cần dùng phân hệ.',
+  /* Uploads — 15 MB inline ceiling. */
+  'File too large': 'Tệp quá lớn',
+  'max': 'tối đa',
+  'File too large (max 15 MB)': 'Tệp quá lớn (tối đa 15 MB)',
+  'File too large — the bank slip must be under 15 MB.': 'Tệp quá lớn — uỷ nhiệm chi phải dưới 15 MB.',
+  'Tip: link the project to SharePoint to store large files there.': 'Mẹo: liên kết dự án với SharePoint để lưu tệp lớn ở đó.',
+  'This project has no SharePoint folder linked — link one and the limit becomes 100 MB.': 'Dự án này chưa liên kết thư mục SharePoint — liên kết vào thì giới hạn thành 100 MB.',
+  'Sign in to Microsoft 365 to upload straight to SharePoint (limit 100 MB).': 'Đăng nhập Microsoft 365 để tải thẳng lên SharePoint (giới hạn 100 MB).',
+  'These attachments are too large to save together': 'Các tệp đính kèm quá lớn để lưu cùng lúc',
+  'Remove one, or link the project to SharePoint so the files are stored there instead.': 'Hãy bớt một tệp, hoặc liên kết dự án với SharePoint để lưu tệp ở đó.',
   /* Undo window — taking back a decision within the grace period. */
   'Undo': 'Hoàn tác',
   'Dismiss': 'Bỏ qua',
