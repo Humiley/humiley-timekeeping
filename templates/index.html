@@ -13001,7 +13001,9 @@ async function _qaReadFile(input, k) {
         return;
       } catch (e) {
         if (info) info.textContent = '';
-        toast('SharePoint upload failed (' + (e.message || e) + ') — storing in app instead.', 'warn', 8000);
+        // Same treatment as the multi-file path: a raw MSAL code helps nobody standing on a site.
+        try { console.warn('SharePoint upload:', e && (e.errorCode || e.message)); } catch (_) {}
+        toast(_t('Saved in the app, not SharePoint') + ' — ' + _pmSpWhy(e), 'warn', 9000);
       }
     }
   }
@@ -13058,7 +13060,13 @@ async function _qaReadFiles(input, k) {
         (_qaFilesStore[k] = _qaFilesStore[k] || []).push({ name: f.name, url: res.webUrl });
         _qaRenderFiles(k);
         continue;
-      } catch (e) { toast('SharePoint upload failed (' + (e.message || e) + ') — storing in app instead.', 'warn', 6000); }
+      } catch (e) {
+        // The raw MSAL code ("monitor_window_timeout: Token acquisition in iframe failed due to
+        // timeout. For more visit: aka.ms/msaljs/browser-errors.") told a site engineer nothing they
+        // could act on. Say what happened and what to do — the code goes to the console for us.
+        try { console.warn('SharePoint upload:', e && (e.errorCode || e.message)); } catch (_) {}
+        toast(_t('Saved in the app, not SharePoint') + ' — ' + _pmSpWhy(e), 'warn', 9000);
+      }
     }
     if (f.size > TK_MAX_INLINE) {
       // Say WHY the small ceiling applies — the user can usually fix it themselves in a minute.
@@ -13467,7 +13475,14 @@ async function initAuth() {
      already restore one — so a returning user is never prompted. */
   _msalApp = new msal.PublicClientApplication({
     auth: { clientId: SP_CONFIG.clientId, authority: `https://login.microsoftonline.com/${SP_CONFIG.tenantId}`, redirectUri: _isNative() ? _NATIVE_REDIRECT : window.location.origin },
-    cache: { cacheLocation: 'localStorage' }   /* persist sign-in across app/tab restarts (web + native) — one login lasts until sign-out or cache clear */
+    cache: { cacheLocation: 'localStorage' },   /* persist sign-in across app/tab restarts (web + native) — one login lasts until sign-out or cache clear */
+    /* Silent token renewal runs in a HIDDEN IFRAME against login.microsoftonline.com. MSAL's stock
+       6-second budget is tight for a phone on 4G at a site, and when it expires the error surfaces as
+       `monitor_window_timeout` — which is what a site engineer saw instead of their PDF reaching
+       SharePoint. More headroom does not fix the other cause (a browser blocking third-party cookies
+       kills the iframe outright, whatever the timeout), so it is paired with a real interactive
+       fallback in _pmSpToken rather than relied on alone. */
+    system: { iframeHashTimeout: 12000, loadFrameTimeout: 12000, windowHashTimeout: 60000 }
   });
   _wireNativeAuth();
   let _pendingNative = null;
@@ -16816,10 +16831,43 @@ async function pmSpCreateFoldersGraph(pid) {
    Files are stored in SharePoint, not the app database — only the returned webUrl is kept.
    Mirrors the resolve + token logic of pmSpCreateFoldersGraph. Returns {webUrl,name,size,id}. */
 const _GRAPH = 'https://graph.microsoft.com/v1.0';
-async function _pmSpToken() {
+/* A SharePoint token, with a route back when the silent path fails.
+   It used to be acquireTokenSilent and nothing else — one throw and the caller gave up, dropping a
+   12 MB contractor PDF into the database instead. Silent renewal fails routinely and for reasons the
+   user cannot see: the hidden iframe is blocked by third-party-cookie restrictions (Safari always,
+   Chrome increasingly), the cached refresh token has aged out, or the network is slow enough to hit
+   the timeout.
+
+   The fallback is a POPUP, deliberately not a redirect. Every caller here runs while the user is part
+   way through a form — a Daily Report with weather, manpower and work-performed already typed — and
+   acquireTokenRedirect navigates the page away, losing all of it. A popup keeps the page alive.
+
+   `interactive` is opt-in because not every caller is inside a user gesture: a popup opened outside
+   one is blocked, and a blocked popup is a worse experience than a clear message. */
+async function _pmSpToken(interactive) {
+  const SCOPES = ['Sites.ReadWrite.All'];
   const acct = _account || (_msalApp && _msalApp.getAllAccounts()[0]);
-  const r = await _msalApp.acquireTokenSilent({ scopes: ['Sites.ReadWrite.All'], account: acct });
-  return r.accessToken;
+  try {
+    return (await _msalApp.acquireTokenSilent({ scopes: SCOPES, account: acct })).accessToken;
+  } catch (e) {
+    const code = (e && (e.errorCode || e.name)) || '';
+    try { console.warn('SharePoint token (silent):', code, e && e.message); } catch (_) {}
+    // The installed PWA and the Capacitor wrapper cannot host a popup reliably — this codebase
+    // already notes that popups fail there and used to strand users on the login screen. Do not try.
+    if (!interactive || _isNative()) throw e;
+    return (await _msalApp.acquireTokenPopup({ scopes: SCOPES, account: acct })).accessToken;
+  }
+}
+/* Why an upload fell back, in words a site engineer can act on rather than an MSAL error code. */
+function _pmSpWhy(e) {
+  const code = String((e && (e.errorCode || e.name)) || '').toLowerCase();
+  if (code.indexOf('popup_window_error') >= 0 || code.indexOf('user_cancelled') >= 0 || code.indexOf('popup') >= 0)
+    return _t('The Microsoft sign-in window did not open — allow pop-ups for this site, then re-attach the file.');
+  if (code.indexOf('monitor_window_timeout') >= 0 || code.indexOf('timeout') >= 0)
+    return _t('Microsoft sign-in timed out. Check your connection, or open the portal in Chrome, then re-attach the file.');
+  if (code.indexOf('interaction_required') >= 0 || code.indexOf('login_required') >= 0 || code.indexOf('consent') >= 0)
+    return _t('Your Microsoft session expired — sign in to Microsoft 365 again, then re-attach the file.');
+  return _t('Microsoft 365 could not be reached, so the file is stored in the app instead.');
 }
 /* Resolve a project's SharePoint link to { driveId, baseRef, projRel } (same logic as the folder builder). */
 async function _pmSpResolve(base, ctx, token) {
@@ -16863,7 +16911,9 @@ async function _graphUploadFile(file, project, subPath) {
   if (!_msalApp || !_account) throw new Error('not signed in to Microsoft 365');
   const base = _pmSpBase(project), ctx = base ? _pmSpCtx(base) : null;
   if (!ctx || ctx.mode === 'none') throw new Error('no SharePoint link on project');
-  const token = await _pmSpToken();
+  // interactive: this runs immediately after the user chose a file, so a popup is still allowed by
+  // the browser. Silently giving up here is what put 12 MB PDFs in the database.
+  const token = await _pmSpToken(true);
   const { driveId, baseRef, projRel } = await _pmSpResolve(base, ctx, token);
   let dir = [projRel, subPath].filter(Boolean).join('/');
   if (dir) { const ensured = await _pmSpEnsureDir(driveId, baseRef, dir, token); if (!ensured) dir = projRel || ''; }   // fall back to project root
@@ -17771,6 +17821,12 @@ const _VI = {
   'Open risks (High+)': 'Rủi ro mở (Cao+)',
   'Milestones (overdue)': 'Cột mốc (trễ hạn)',
   'Overdue milestones': 'Cột mốc trễ hạn',
+  /* SharePoint upload — what to do when Microsoft sign-in gets in the way. */
+  'Saved in the app, not SharePoint': 'Đã lưu trong ứng dụng, chưa lên SharePoint',
+  'Microsoft sign-in timed out. Check your connection, or open the portal in Chrome, then re-attach the file.': 'Đăng nhập Microsoft quá thời gian. Kiểm tra kết nối, hoặc mở cổng thông tin bằng Chrome, rồi đính kèm lại tệp.',
+  'The Microsoft sign-in window did not open — allow pop-ups for this site, then re-attach the file.': 'Cửa sổ đăng nhập Microsoft không mở được — hãy cho phép pop-up cho trang này, rồi đính kèm lại tệp.',
+  'Your Microsoft session expired — sign in to Microsoft 365 again, then re-attach the file.': 'Phiên Microsoft đã hết hạn — hãy đăng nhập lại Microsoft 365, rồi đính kèm lại tệp.',
+  'Microsoft 365 could not be reached, so the file is stored in the app instead.': 'Không kết nối được Microsoft 365, nên tệp được lưu trong ứng dụng.',
   /* Access & Permissions — the "nobody is half-configured" check. */
   'No app access': 'Chưa có quyền ứng dụng',
   'This person can sign in and use timekeeping, but cannot open any module.': 'Người này đăng nhập và chấm công được, nhưng không mở được phân hệ nào.',
