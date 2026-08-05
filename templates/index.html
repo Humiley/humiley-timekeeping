@@ -3036,7 +3036,14 @@ const _today = () => { const d = new Date(); return d.getFullYear() + '-' + Stri
 function tkRenderApprovals() {
   const pending = document.getElementById('leave-pending');
   if (!pending) return;
-  const host = pending.querySelector('div') || pending;
+  // Render straight into the container. This used to be `pending.querySelector('div') || pending`,
+  // which took the FIRST CHILD DIV as the host — and after any previous render that child is a card
+  // this function itself created. So the clear-up matched only that card's own children (nothing) and
+  // the next render was appended INSIDE it: an approval nested in the "All caught up" card, or the
+  // empty state nested inside a leftover approval. Either way the inbox showed both states at once
+  // and never let go of the first. #leave-pending is empty in the markup, so there was never a
+  // wrapper to find — the indirection only ever picked up this function's own output.
+  const host = pending;
   host.querySelectorAll('.approval-card, .tk-empty').forEach(c => c.remove());
   const _me = TK.user && TK.user.id;
   const items = (_DEMO_LEAVE || []).filter(l => l.id && l.emp_id !== _me && _aprCanSee(l.status, l.emp_id, l.emp_name));
@@ -3813,8 +3820,11 @@ function tkRenderDashboard() {
 
 /* Notifications reflect real pending approvals; clear when none remain. */
 /* Role-scoped "Leave Management" / "My Leave" view — replaces the old static demo tables.
-   Staff: only their OWN requests + balance. Manager: team approvals (Pending) + the leave
-   they can see (backend already scopes _DEMO_LEAVE to self + direct reports). */
+   Staff: only their OWN requests + balance. Manager: team approvals (Pending) + the leave they can
+   see. The backend scopes _DEMO_LEAVE to self + direct reports, PLUS — for anyone who can give final
+   approval — every request still awaiting a decision. Without that last part the reminder mail and
+   this screen disagreed: the sweep nags company-wide, so an approver who was not somebody's line
+   manager was told to review a request that never arrived here. */
 function _leaveEmptyCard(msg) { return '<div class="card" style="padding:22px;text-align:center;color:var(--text-light);font-size:13px">' + msg + '</div>'; }
 /* Real leave calendar — current month, dots for the signed-in user's (or, for a manager, the team's)
    approved/pending leave from the live data. Replaces the old hard-coded demo grid. */

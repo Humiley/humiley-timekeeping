@@ -4706,6 +4706,29 @@ class Handler(BaseHTTPRequestHandler):
         # Strip the one-click approval `token` from every row — it must never be readable on a list
         # fetch (a requester could otherwise pull their own leave's token and self-approve via /approve).
         rows = [{k: v for k, v in r.items() if k != "token"} for r in db.list_leave(emp_ids=ids, status=status)]
+        # Anyone who can give FINAL APPROVAL must be able to see what they are being asked to approve.
+        #
+        # Without this the reminder mail and the Approval Inbox disagreed, and the system asked for an
+        # action it then gave you nowhere to take: _appr_reminders scans EVERY pending leave company-
+        # wide and mails the requester's manager, while this endpoint returned only your own leave plus
+        # your direct reports' — for everyone, admins included. So a Director who is not somebody's
+        # line manager got "this request has been waiting 39 days for your review" and an empty inbox.
+        # Claims, travel and payments never had the problem: _coll_list scopes to own records only at
+        # STAFF level and shows the whole company to every manager. Leave was the odd one out.
+        #
+        # Scoped to rows that are actually AWAITING A DECISION, not to everyone's leave history — an
+        # approver needs the queue, not the archive. Their own and their reports' rows above still come
+        # through in full whatever the status.
+        if self._can_approve(u):
+            have = {r.get("id") for r in rows}
+            for st in ("pending", "reviewed"):
+                if status and status != st:
+                    continue
+                for r in (db.list_leave(status=st) or []):
+                    if r.get("id") in have:
+                        continue
+                    have.add(r.get("id"))
+                    rows.append({k: v for k, v in r.items() if k != "token"})
         return self._json({"leave": rows})
 
     def _leave_create(self, u, body):
