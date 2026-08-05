@@ -3344,6 +3344,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"zones": db.list_zones()}))
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_get(u))
+        if path == "/api/pm/chat/summary":
+            return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/exec/summary":
@@ -3398,6 +3400,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._appr_email_test(u))
         if path == "/api/appr/remind":
             return self._guard(lambda u: self._appr_remind_ep(u))
+        if path == "/api/pm/chat/read":
+            return self._guard(lambda u: self._pm_chat_read(u, body))
         if path == "/api/appr/digesttest":
             return self._guard(lambda u: self._appr_digest_test(u))
         if path == "/api/tk/nudgetest":
@@ -5437,6 +5441,56 @@ class Handler(BaseHTTPRequestHandler):
                 ids.add(r.get("projectId"))
         return ids
 
+    def _pm_chat_summary(self, u):
+        """Unread counts per project, and how many of them name you.
+
+        Counting happens HERE rather than by shipping messages to the browser: the Projects list on a
+        4G phone must not download every message of every project to draw a badge."""
+        vis = self._pm_visible_projects(u)
+        me = u.get("id") or ""
+        read = (db.get_collection_item("pm_chat_read", me) or {}).get("read") or {}
+        out, mentions = {}, {}
+        for m in db.list_collection("pm_chat"):
+            pid = m.get("projectId")
+            if not pid or (vis is not None and pid not in vis):
+                continue
+            if (m.get("authorId") or "") == me:
+                continue                                    # your own words are not unread
+            if str(m.get("ts") or "") <= str(read.get(pid) or ""):
+                continue
+            out[pid] = out.get(pid, 0) + 1
+            if any((x or {}).get("empId") == me for x in (m.get("mentions") or [])):
+                mentions[pid] = mentions.get(pid, 0) + 1
+        # A label per project that has something waiting, so the notification bell can name the job
+        # without the dashboard having to load the whole portfolio. Only projects already counted
+        # above appear here, so this adds no visibility the caller did not already have.
+        names = {}
+        if out:
+            for p in db.list_collection("pm_projects"):
+                if p.get("id") in out:
+                    names[p["id"]] = p.get("code") or p.get("name") or ""
+        return self._json({"ok": True, "unread": out, "mentions": mentions, "names": names,
+                           "total": sum(out.values()), "totalMentions": sum(mentions.values())})
+
+    def _pm_chat_read(self, u, body):
+        """Mark one project's conversation read up to now. One small row per employee."""
+        pid = str((body or {}).get("projectId") or "")
+        if not pid:
+            return self._err("projectId is required.", 400)
+        vis = self._pm_visible_projects(u)
+        if vis is not None and pid not in vis:
+            return self._err("Not your project.", 403)
+        me = u.get("id") or ""
+        if not me:
+            return self._err("Unknown user.", 403)
+        row = db.get_collection_item("pm_chat_read", me) or {"id": me, "empId": me, "read": {}}
+        rd = row.get("read") if isinstance(row.get("read"), dict) else {}
+        rd[pid] = self._utc_now_ms()
+        row["read"] = rd
+        row["id"] = me
+        db.put_collection_item("pm_chat_read", row)
+        return self._json({"ok": True})
+
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -6116,6 +6170,37 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
             ][:6]
             item["reactions"] = {}                     # never born with reactions
+            # Mentions are {empId, name} and are checked against the project, not taken on trust. A
+            # mention is the only thing here that buzzes somebody's phone, so an unchecked list would
+            # be a way to make the portal ring anyone in the company from a project they cannot see.
+            _vis_ids = set()
+            for _r in db.list_collection("pm_resources"):
+                if _r.get("projectId") == item.get("projectId") and _r.get("empId"):
+                    _vis_ids.add(_r.get("empId"))
+            _proj = next((x for x in db.list_collection("pm_projects") if x.get("id") == item.get("projectId")), {})
+            _men, _seen = [], set()
+            for _m in (item.get("mentions") if isinstance(item.get("mentions"), list) else [])[:20]:
+                if not isinstance(_m, dict):
+                    continue
+                _eid = str(_m.get("empId") or "")
+                if not _eid or _eid in _seen:
+                    continue
+                _emp = db.get_employee(_eid)
+                if not _emp:
+                    continue
+                # On the team by id, or named as the manager, or a manager-level reader who can see
+                # every project anyway — the same three routes _pm_visible_projects uses.
+                _ok = _eid in _vis_ids or self._pm_same_person(_proj.get("manager"), _emp.get("name")) \
+                    or self._level_rank(self._caller_level(_emp)) >= self._level_rank("manager")
+                if not _ok:
+                    for _r in db.list_collection("pm_resources"):
+                        if _r.get("projectId") == item.get("projectId") and self._pm_same_person(_r.get("name"), _emp.get("name")):
+                            _ok = True
+                            break
+                if _ok:
+                    _seen.add(_eid)
+                    _men.append({"empId": _eid, "name": _emp.get("name") or ""})
+            item["mentions"] = _men
             for k in ("editedAt", "deletedAt", "deletedBy"):
                 item.pop(k, None)                      # a message is never born edited or deleted
         # Payroll dual-control: a run is PREPARED here (never born finalised, even if the client says so)
@@ -6153,6 +6238,28 @@ class Handler(BaseHTTPRequestHandler):
             self._finsp_file(name, created)
             return self._json({"ok": True, "item": created})
         _created = db.put_collection_item(name, item)
+        # A mention is the ONLY thing in the conversation that reaches somebody's phone. Not every
+        # message, not a reply — a direct mention. An engineer standing on a site who gets one false
+        # alarm mutes the app, and then the approval reminders stop reaching them too, so the bar for
+        # buzzing a pocket is deliberately high. Fan-out runs server-side off a caller whose project
+        # membership was proved a few lines above, so no new client-callable broadcast exists.
+        if name == "pm_chat" and _created.get("mentions"):
+            try:
+                _ids = {m.get("empId") for m in _created["mentions"] if m.get("empId")}
+                _me = (u.get("email") or "").lower()
+                _to = [(e.get("email") or "").lower() for e in db.list_employees()
+                       if e.get("id") in _ids and e.get("email")
+                       and str(e.get("status") or "Active").lower() != "inactive"]
+                _to = [e for e in _to if e and e != _me][:20]          # never buzz yourself
+                if _to:
+                    _pj = next((x for x in db.list_collection("pm_projects")
+                                if x.get("id") == _created.get("projectId")), {})
+                    _label = (_pj.get("code") or _pj.get("name") or "Project")
+                    _txt = (_created.get("body") or "").strip() or "(attachment)"
+                    _tk_push(_to, (_created.get("authorName") or "Someone") + " · " + _label,
+                             _txt[:160], "/", "pmchat-" + str(_created.get("projectId") or ""))
+            except Exception:
+                pass                                                   # a chat post must never fail on a push
         self._finsp_file(name, _created)
         return self._json({"ok": True, "item": _created})
 

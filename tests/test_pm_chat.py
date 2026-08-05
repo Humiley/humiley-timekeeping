@@ -15,6 +15,8 @@ written authorName, authorId, ts and projectId straight from the browser. That i
 colleague's mouth, backdate a message into the middle of an argument, or move a message into another
 project and out of the read scoping. The same hole closed in /api/esign the week before.
 """
+import json
+
 import app
 import db
 
@@ -323,3 +325,297 @@ def test_someone_off_the_project_cannot_react(api, tokens):
     st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"],
                 dict(m, reactions={"\U0001F44D": ["HML-OTH"]}))
     assert st == 403, (st, b)
+
+
+# ── mentions ──────────────────────────────────────────────────────────────────────────────────────
+#
+# A mention is the only thing in this module that makes somebody's phone ring. So it is the one field
+# the browser is least trusted about: the server rebuilds the list from employees who are actually on
+# the project, and pushes to nobody else. An unchecked list would be a way to page anyone in the
+# company from a project they cannot even open.
+
+def _mention(api, token, pid, body, mentions):
+    return api("POST", "/api/coll/pm_chat", token,
+               {"projectId": pid, "body": body, "mentions": mentions})
+
+
+def test_you_can_mention_a_colleague_on_the_project(api, tokens):
+    pid = _project(api, tokens, "MEN-A")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _mention(api, tokens["staff"], pid, "@Other Staff please check the riser",
+                     [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert st == 200, b
+    assert b["item"]["mentions"] == [{"empId": "HML-OTH", "name": "Other Staff"}]
+
+
+def test_you_cannot_mention_somebody_who_is_not_on_the_project(api, tokens):
+    """The point of the check. Otherwise the @ field is a company-wide paging system."""
+    pid = _project(api, tokens, "MEN-B")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _mention(api, tokens["staff"], pid, "@Other Person look at this",
+                     [{"empId": "HML-OTH", "name": "Other Person"}])
+    assert st == 200, b
+    assert b["item"]["mentions"] == [], "an off-project person was left in the mention list"
+
+
+def test_a_made_up_person_is_dropped(api, tokens):
+    pid = _project(api, tokens, "MEN-C")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _mention(api, tokens["staff"], pid, "@Nobody Here hello",
+                     [{"empId": "NOPE-1", "name": "Nobody Here"}])
+    assert b["item"]["mentions"] == []
+
+
+def test_the_mentioned_name_comes_from_the_employee_record(api, tokens):
+    """So the highlighted name in the message is the person's real name, not a label the sender chose
+       — '@Finance Director' pointing at a junior engineer would be a nasty little forgery."""
+    pid = _project(api, tokens, "MEN-D")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _mention(api, tokens["staff"], pid, "@Finance Director sign this",
+                     [{"empId": "HML-OTH", "name": "Finance Director"}])
+    assert b["item"]["mentions"] == [{"empId": "HML-OTH", "name": "Other Staff"}]
+
+
+def test_a_manager_can_be_mentioned_on_any_project(api, tokens):
+    """Managers can open every project, so mentioning one is never a way to reach somebody who could
+       not already read the conversation."""
+    pid = _project(api, tokens, "MEN-E")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _mention(api, tokens["staff"], pid, "@Dept Manager can you approve",
+                     [{"empId": "HML-MGR", "name": "Dept Manager"}])
+    assert [m["empId"] for m in b["item"]["mentions"]] == ["HML-MGR"]
+
+
+def test_the_mention_list_is_deduped_and_bounded(api, tokens):
+    pid = _project(api, tokens, "MEN-F")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _mention(api, tokens["staff"], pid, "hey",
+                     [{"empId": "HML-OTH", "name": "Other Person"}] * 60)
+    ms = b["item"]["mentions"]
+    assert len(ms) == 1, "the same person was mentioned repeatedly"
+
+
+def test_a_message_is_never_born_mentioning_anybody(api, tokens):
+    pid = _project(api, tokens, "MEN-G")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    assert _post(api, tokens["staff"], pid, "no mentions here")[1]["item"]["mentions"] == []
+
+
+def test_an_edit_cannot_add_a_mention_later(api, tokens):
+    """Otherwise a quiet PATCH is a silent way to page someone — or to make it look, days later, like
+       a colleague was called into a decision they were never in."""
+    pid = _project(api, tokens, "MEN-H")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    m = _post(api, tokens["staff"], pid, "original")[1]["item"]
+    m["mentions"] = [{"empId": "HML-OTH", "name": "Other Person"}]
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["staff"], m)
+    after = [x for x in _list(api, tokens["staff"]) if x["id"] == m["id"]][0]
+    assert after.get("mentions") == [], "a mention was smuggled in through an edit"
+
+
+# ── unread ────────────────────────────────────────────────────────────────────────────────────────
+#
+# Counted on the server. The Projects list on a phone at a site must not download every message of
+# every project just to draw a badge.
+
+def _summary(api, token):
+    st, b = api("GET", "/api/pm/chat/summary", token)
+    assert st == 200, b
+    return b
+
+
+def _read(api, token, pid):
+    return api("POST", "/api/pm/chat/read", token, {"projectId": pid})
+
+
+def test_a_new_message_shows_as_unread(api, tokens):
+    pid = _project(api, tokens, "UNR-A")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "site is flooded")
+    s = _summary(api, tokens["staff"])
+    assert s["unread"].get(pid) == 1
+    assert s["names"].get(pid) == "UNR-A", "the bell cannot name the job this came from"
+
+
+def test_your_own_message_is_not_unread_to_you(api, tokens):
+    pid = _project(api, tokens, "UNR-B")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _post(api, tokens["staff"], pid, "typing to myself")
+    assert _summary(api, tokens["staff"])["unread"].get(pid) is None
+
+
+def test_opening_the_conversation_clears_it(api, tokens):
+    pid = _project(api, tokens, "UNR-C")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "one")
+    assert _read(api, tokens["staff"], pid)[0] == 200
+    assert _summary(api, tokens["staff"])["unread"].get(pid) is None
+
+
+def test_a_message_posted_after_you_read_counts_again(api, tokens):
+    pid = _project(api, tokens, "UNR-D")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "one")
+    _read(api, tokens["staff"], pid)
+    _post(api, tokens["other"], pid, "two")
+    assert _summary(api, tokens["staff"])["unread"].get(pid) == 1
+
+
+def test_reading_one_project_does_not_clear_another(api, tokens):
+    a = _project(api, tokens, "UNR-E1")
+    c = _project(api, tokens, "UNR-E2")
+    for pid in (a, c):
+        _team(api, tokens, pid, "Staff One", "HML-STF")
+        _team(api, tokens, pid, "Other Staff", "HML-OTH")
+        _post(api, tokens["other"], pid, "hello")
+    _read(api, tokens["staff"], a)
+    s = _summary(api, tokens["staff"])
+    assert s["unread"].get(a) is None and s["unread"].get(c) == 1
+
+
+def test_mentions_are_counted_separately(api, tokens):
+    """A badge that says '@2' is louder than one that says '5', because it is the one aimed at you."""
+    pid = _project(api, tokens, "UNR-F")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "general chatter")
+    _mention(api, tokens["other"], pid, "@Staff One the valve is stuck",
+             [{"empId": "HML-STF", "name": "Staff One"}])
+    s = _summary(api, tokens["staff"])
+    assert s["unread"][pid] == 2 and s["mentions"][pid] == 1
+
+
+def test_you_are_never_told_about_a_project_you_cannot_open(api, tokens):
+    """The summary is a count, but a count of a conversation you cannot read still leaks that a job
+       exists and that it is busy."""
+    pid = _project(api, tokens, "UNR-G")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "confidential client call")
+    assert _summary(api, tokens["staff"])["unread"].get(pid) is None
+
+
+def test_you_cannot_mark_a_conversation_you_cannot_read(api, tokens):
+    pid = _project(api, tokens, "UNR-H")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _read(api, tokens["staff"], pid)
+    assert st == 403, (st, b)
+
+
+def test_the_summary_never_ships_the_messages_themselves(api, tokens):
+    """It is called from the Projects LIST. Returning bodies would put every project's conversation on
+       the wire on a screen that shows none of them."""
+    pid = _project(api, tokens, "UNR-I")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["other"], pid, "SECRET-MARKER-TEXT")
+    s = _summary(api, tokens["staff"])
+    assert "SECRET-MARKER-TEXT" not in json.dumps(s)
+    assert set(s) <= {"ok", "unread", "mentions", "names", "total", "totalMentions"}
+
+
+def test_reading_twice_keeps_one_row_per_person(api, tokens):
+    """It is written on every tab paint. One row per employee, updated — not a new row each time."""
+    pid = _project(api, tokens, "UNR-J")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    for _ in range(4):
+        _read(api, tokens["staff"], pid)
+    rows = [r for r in db.list_collection("pm_chat_read") if r.get("empId") == "HML-STF"]
+    assert len(rows) == 1, "the read marker is accumulating rows on every paint"
+
+
+# ── what actually buzzes a phone ──────────────────────────────────────────────────────────────────
+#
+# Only a direct mention pushes. Every other message is a badge you find when you look — an engineer on
+# five jobs cannot have their evening interrupted by every line anybody types.
+
+def _pushes(monkeypatch):
+    sent = []
+    monkeypatch.setattr(app, "_tk_push",
+                        lambda emails, title, body, url="/", tag="":
+                        sent.append({"to": {str(e).lower() for e in emails}, "title": title,
+                                     "body": body, "url": url, "tag": tag}) or len(emails))
+    return sent
+
+
+def test_a_mention_pushes_to_the_person_named(api, tokens, monkeypatch):
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-A")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _mention(api, tokens["staff"], pid, "@Other Staff the crane is booked",
+             [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert len(sent) == 1 and sent[0]["to"] == {"other@humiley.com"}
+    assert "Staff One" in sent[0]["title"] and "PSH-A" in sent[0]["title"]
+    assert "crane is booked" in sent[0]["body"]
+
+
+def test_an_ordinary_message_pushes_to_nobody(api, tokens, monkeypatch):
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-B")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _post(api, tokens["staff"], pid, "morning all")
+    assert sent == [], "a plain message rang somebody's phone"
+
+
+def test_mentioning_yourself_does_not_buzz_you(api, tokens, monkeypatch):
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-C")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _mention(api, tokens["staff"], pid, "@Staff One note to self",
+             [{"empId": "HML-STF", "name": "Staff One"}])
+    assert sent == []
+
+
+def test_a_rejected_mention_does_not_push(api, tokens, monkeypatch):
+    """The validation and the push must agree — a name the server threw out must not still ring."""
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-D")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _mention(api, tokens["staff"], pid, "@Other Staff you are not on this job",
+             [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert sent == []
+
+
+def test_the_push_opens_the_app_not_an_outside_link(api, tokens, monkeypatch):
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-E")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _mention(api, tokens["staff"], pid, "@Other Staff see this",
+             [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert sent[0]["url"].startswith("/") and not sent[0]["url"].startswith("//")
+    assert sent[0]["tag"] == "pmchat-" + pid, "without a per-project tag every mention stacks up"
+
+
+def test_a_photo_only_mention_still_says_something(api, tokens, monkeypatch):
+    """An empty push body shows as a blank notification on the lock screen."""
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-F")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    api("POST", "/api/coll/pm_chat", tokens["staff"],
+        {"projectId": pid, "body": "", "mentions": [{"empId": "HML-OTH", "name": "Other Staff"}],
+         "attachments": [{"name": "riser.jpg", "type": "image/jpeg", "data": "data:image/jpeg;base64,AAA"}]})
+    assert sent and sent[0]["body"].strip(), "a blank notification went out"
+
+
+def test_a_failing_push_never_loses_the_message(api, tokens, monkeypatch):
+    """The words matter more than the buzz. If the push service is down the post still lands."""
+    def _boom(*a, **k):
+        raise RuntimeError("push service down")
+    monkeypatch.setattr(app, "_tk_push", _boom)
+    pid = _project(api, tokens, "PSH-G")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _mention(api, tokens["staff"], pid, "@Other Staff urgent",
+                     [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert st == 200, b
+    assert any(m["body"] == "@Other Staff urgent" for m in _list(api, tokens["staff"]))

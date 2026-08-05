@@ -3915,13 +3915,43 @@ function _tkBellItems() {
   (_HR.payments || []).forEach(p => { if (_aprCanSee(p.status, p.empId, p.name)) push('pay:' + p.id, 'Payment — ' + (p.name || ''), (p.payee || '') + ' · ' + _PAY_FMT(p.amount || 0), null, p.ts || p.dueDate); });
   (_HR.jobs || []).forEach(j => { if ((j.status || '').startsWith('Pending') || j.status === 'Draft') push('jb:' + j.id, 'Requisition — ' + (j.title || ''), 'awaiting approval', 'recruitment', ''); });   // jobs carry no date -> sort last
   (_HR.padr || []).forEach(p => { if (p.status === 'Self-assessment') push('pa:' + p.id, 'PADR — ' + (p.name || ''), 'self-assessment submitted'); });
+  out.push(..._tkBellChat());
   return out.sort(_cmpNewest('d'));   // jobs + PADR have no date, so they fall last by design
+}
+/* Being named in a conversation is aimed at a PERSON, not at a role — the site engineer who was
+   asked a direct question is exactly who needs to see it, and they have no approval queue at all.
+   So this is the one bell source that is not manager-only. */
+/* One notification row. A mention gets the emerald @ mark; everything else keeps the amber clock,
+   so an approval and a message aimed at you never look like the same thing at a glance. */
+function _tkNotifRow(x, isNew) {
+  const at = String(x.key || '').indexOf('chat:') === 0;
+  const icon = at
+    ? '<div class="notif-icon" style="background:var(--light-tint);color:var(--emerald-deep);font-weight:800;font-size:14px">@</div>'
+    : '<div class="notif-icon" style="background:#FEF3C7;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>';
+  return '<div class="notif-item" onclick="showView(\'' + x.view + '\');toggleNotifications()" style="' + (isNew ? '' : 'opacity:.62') + '">' + icon +
+    '<div class="notif-body"><strong>' + _crmEsc(x.title) +
+    (isNew ? ' <span style="display:inline-block;background:var(--emerald);color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:1px 5px;vertical-align:1px">' + _t('NEW') + '</span>' : '') +
+    '</strong><span>' + _crmEsc(x.sub) + '</span></div></div>';
+}
+function _tkBellChat() {
+  const m = (_pmChatUnread || {}).mentions || {}, nm = (_pmChatUnread || {}).names || {};
+  return Object.keys(m).filter(pid => m[pid]).map(pid => ({
+    key: 'chat:' + pid + ':' + m[pid],           // count is in the key, so a new mention re-lights it
+    title: _t('Mentioned in') + ' ' + (nm[pid] || _t('a project')),
+    sub: m[pid] + ' ' + _t(m[pid] === 1 ? 'message names you' : 'messages name you'),
+    view: 'pm-projects', d: ''
+  }));
 }
 function tkUpdateNotifications() {
   // The bell is a manager approval feed — staff have nothing to approve, so keep it clear for them.
   if (_userRole !== 'manager') {
-    const d = document.getElementById('notif-dot'); if (d) d.style.display = 'none';
-    const l = document.getElementById('notif-list'); if (l) l.innerHTML = '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px">All caught up.</div>';
+    const mine = _tkBellChat();       // staff have no approval queue, but they do get mentioned
+    const seenS = (typeof _inboxSeenSet === 'function') ? _inboxSeenSet() : new Set();
+    const d = document.getElementById('notif-dot');
+    if (d) d.style.display = mine.some(x => !seenS.has(x.key)) ? 'block' : 'none';
+    const l = document.getElementById('notif-list');
+    if (l) l.innerHTML = mine.length ? mine.map(x => _tkNotifRow(x, !seenS.has(x.key))).join('')
+      : '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px">' + _t('All caught up.') + '</div>';
     return;
   }
   const _me = TK.user && TK.user.id;
@@ -3937,16 +3967,16 @@ function tkUpdateNotifications() {
   if (dot) dot.style.display = fresh.length ? 'block' : 'none';
   const list = document.getElementById('notif-list');
   if (list) {
-    list.innerHTML = items.length ? items.map(x => {
-      const isNew = !seen.has(x.key);
-      return '<div class="notif-item" onclick="showView(\'' + x.view + '\');toggleNotifications()" style="' + (isNew ? '' : 'opacity:.62') + '"><div class="notif-icon" style="background:#FEF3C7;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div><div class="notif-body"><strong>' + _crmEsc(x.title) + (isNew ? ' <span style="display:inline-block;background:var(--emerald);color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:1px 5px;vertical-align:1px">NEW</span>' : '') + '</strong><span>' + _crmEsc(x.sub) + '</span></div></div>';
-    }).join('') : '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>All caught up — no new notifications.</div>';
+    list.innerHTML = items.length ? items.map(x => _tkNotifRow(x, !seen.has(x.key))).join('') : '<div style="padding:18px 16px;text-align:center;color:var(--text-light);font-size:13px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#00B060" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg>All caught up — no new notifications.</div>';
   }
 }
 
 function tkMarkAllRead() {
   /* Persist the seen-state through the SAME store as the Approvals-Inbox badge. */
-  try { if (typeof _inboxMarkSeen === 'function' && typeof _inboxPendingIds === 'function') { _inboxMarkSeen(_inboxPendingIds()); tkUpdateInboxBadge(); } } catch (e) {}
+  // Chat mentions have to go in too, or the dot re-lights the moment the bell redraws. Dismissing
+  // the notification is NOT reading the conversation, so the project's unread badge deliberately
+  // stays — only opening the Team Conversation clears that.
+  try { if (typeof _inboxMarkSeen === 'function' && typeof _inboxPendingIds === 'function') { _inboxMarkSeen(_inboxPendingIds().concat(_tkBellChat().map(x => x.key))); tkUpdateInboxBadge(); } } catch (e) {}
   const dot = document.getElementById('notif-dot'); if (dot) dot.style.display = 'none';
   try { tkUpdateNotifications(); } catch (e) {}
   const p = document.getElementById('notif-panel'); if (p) p.classList.remove('open');
@@ -4723,6 +4753,9 @@ async function doLogin(role, opts = {}) {
   try { tkRenderZones(); } catch (e) {}
   try { tkRenderDashboard(); } catch (e) {}
   try { tkUpdateNotifications(); } catch (e) {}
+  // The bell counts @mentions too, and it is on every screen — so the counts load at boot, not only
+  // when somebody opens Projects. One small call that returns numbers, never messages.
+  if (!_appDeniedCurrent('pm')) { try { pmChatUnreadLoad(); } catch (e) {} }
   try { tkUpdateViewToggle(); } catch (e) {}
   try { _renderEmployeeTable(); } catch (e) {}
   try { tkRenderBalances(); } catch (e) {}
@@ -15386,6 +15419,7 @@ async function pmRenderProjects() {
   root.innerHTML = kpis + '<div id="pm-myactions-slot"></div>' + _pmPortfolioCard(all) + _pmPortfolioCalCard(all) + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Projects</div><div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">' + _pmHealthLegend() + addBtn + '</div></div>' + fbar + '<div class="table-wrap"><table style="min-width:880px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Client</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:right">Contract value</th><th>Status</th><th></th></tr></thead><tbody id="pm-proj-tbody"></tbody></table></div></div>';
   pmFillProjects();
   _pmMyActionsLoad();   // fills the "My Project Actions" slot in the background — keeps the list fast
+  pmChatUnreadLoad();   // "which of my jobs is talking to me?" — counts only, never messages
 }
 function pmFillProjects() {
   const tb = document.getElementById('pm-proj-tbody'); if (!tb) return;
@@ -15396,7 +15430,7 @@ function pmFillProjects() {
     const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
     return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')">' +
       '<td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
-      '<td style="font-weight:600">' + _pmEsc(p.name || '(untitled)') + (p.phase ? '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(p.phase) + '</div>' : '') + '</td>' +
+      '<td style="font-weight:600">' + _pmEsc(p.name || '(untitled)') + '<span data-pm-chat-badge="' + p.id + '"></span>' + (p.phase ? '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(p.phase) + '</div>' : '') + '</td>' +
       '<td>' + _pmEsc(p.account || p.client || '—') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span title="' + rag + '" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:7px">' + _pmBar(pct) + '<span style="font-size:11px;color:var(--text-light)">' + pct + '%</span></div></td>' +
@@ -15404,6 +15438,7 @@ function pmFillProjects() {
       '<td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td>' +
       '<td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Open" style="font-size:10px;padding:4px 9px" onclick="pmOpenProject(\'' + p.id + '\')">Open</button>' + _hrEditDel('pm_projects', p.id, 'pm_projects') + '</td></tr>';
   }).join('') : tkEmptyRow(9, _pmSeeAll() ? 'No projects yet' : 'You are not assigned to any projects yet', { icon: 'folder', sub: _pmSeeAll() ? 'Click New Project to create a Charter — or convert a Won deal from the CRM pipeline.' : 'A manager can add you to a project Team (Resources tab) or set you as its Project Manager.', cta: _pmSeeAll() ? { label: 'New Project', onclick: "tkQuickAdd('pm_projects')" } : null });
+  try { _pmChatPaintBadges(); } catch (e) { }   // rows are re-rendered on every keystroke of the filter
 }
 /* Open a project directly on a chosen workspace tab (mirrors pmOpenProject but honours the tab). */
 function pmGoto(id, tabK) {
@@ -15507,9 +15542,10 @@ async function pmRenderWorkspace() {
     pmReportBtns(p.id) + _pmSpBtn(p) +
     (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
     '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + '</button>').join('') + '</div></div>';
+    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + (t.k === 'chat' ? '<span data-pm-chat-badge="' + _pmPid() + '"></span>' : '') + '</button>').join('') + '</div></div>';
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
   pmTab(_pmTabK);
+  pmChatUnreadLoad();      // one small call; never downloads messages to draw a badge
 }
 async function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
@@ -16544,8 +16580,16 @@ function _pmChatDay(ts) {
 }
 /* Body text is user input and is rendered as TEXT — escaped, with newlines preserved and bare links
    made clickable. Never innerHTML from a message. */
-function _pmChatBody(txt) {
-  const esc = _pmEsc(String(txt || ''));
+function _pmChatBody(txt, mentions) {
+  let esc = _pmEsc(String(txt || ''));
+  // Highlight the people actually named on the record — never a bare @word, so a typed "@someone"
+  // that resolved to nobody stays plain text instead of pretending to be a real mention.
+  (mentions || []).forEach(m => {
+    const nm = _pmEsc(String((m || {}).name || '')); if (!nm) return;
+    const me = ((TK.user || {}).id || '') === m.empId;
+    esc = esc.split('@' + nm).join('<span style="background:' + (me ? 'rgba(0,176,96,.18)' : 'var(--light-tint)') +
+      ';color:' + (me ? 'var(--emerald-deep)' : 'var(--navy)') + ';border-radius:5px;padding:0 4px;font-weight:600">@' + nm + '</span>');
+  });
   return esc.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g,
     '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--navy);word-break:break-all">$1</a>');
 }
@@ -16599,9 +16643,12 @@ function pmRenderChat(pid) {
   const lastAct = r => [r.ts].concat((kids[r.id] || []).map(k => k.ts)).sort().slice(-1)[0] || r.ts;
   roots.sort((a, b) => String(lastAct(a)).localeCompare(String(lastAct(b))));
 
+  const meId = (TK.user || {}).id || '';
   const msg = (m, isReply) => {
     const nm = m.authorName || 'Someone';
-    return '<div style="display:flex;gap:10px;padding:' + (isReply ? '7px 0 7px 0' : '10px 0') + '">' +
+    const atMe = (m.mentions || []).some(x => (x || {}).empId === meId);
+    return '<div style="display:flex;gap:10px;padding:' + (isReply ? '7px 0 7px 0' : '10px 0') + '' +
+      (atMe ? ';border-left:3px solid var(--emerald);padding-left:9px;margin-left:-12px;background:rgba(0,176,96,.045);border-radius:0 8px 8px 0' : '') + '">' +
       '<span style="flex:0 0 auto;margin-top:2px">' + _pmMiniAvatar(nm) + '</span>' +
       '<div style="min-width:0;flex:1">' +
         '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
@@ -16610,7 +16657,7 @@ function pmRenderChat(pid) {
           (m.editedAt ? '<span style="font-size:10.5px;color:var(--text-light)">· ' + _t('edited') + '</span>' : '') +
           (_pmChatMine(m) ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:1px 7px;margin-left:auto" onclick="pmChatEdit(\'' + m.id + '\')">' + _t('Edit') + '</button>' : '') +
         '</div>' +
-        (m.body ? '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body) + '</div>' : '') +
+        (m.body ? '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body, m.mentions) + '</div>' : '') +
         _pmChatFiles(m) + _pmChatReacts(m) +
       '</div></div>';
   };
@@ -16651,15 +16698,16 @@ function pmRenderChat(pid) {
         '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Attach a file or photo')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="document.getElementById(\'pm-chat-file\').click()">\uD83D\uDCCE</button>' +
         '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Emoji')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="pmChatEmoji(this)">\u263A</button>' +
         '<textarea id="pm-chat-input" rows="1" placeholder="' + _tkEscA(_t('Write a message…')) + '" ' +
-          'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\'" ' +
+          'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\';_pmChatAtKey(event)" ' +
           'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey&&!event.altKey){event.preventDefault();pmChatSend()}" ' +
           'style="flex:1;min-width:0;resize:none;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);font-family:inherit;font-size:14px;line-height:1.5;background:var(--card);color:var(--text-dark)"></textarea>' +
         '<button class="btn btn-primary" style="flex:0 0 auto" onclick="pmChatSend()">' + tkIcon('check', 13) + ' ' + _t('Send') + '</button>' +
       '</div>' +
-      '<div style="font-size:11px;color:var(--text-light);margin-top:5px">' + _t('Enter to send · Shift+Enter for a new line') + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:5px">' + _t('Enter to send · Shift+Enter for a new line') + ' · <strong style="font-weight:700">@</strong> ' + _t('Mention someone').toLowerCase() + '</div>' +
     '</div>');
   _pmChatCtx();
   const sc = document.getElementById('pm-chat-scroll'); if (sc) sc.scrollTop = sc.scrollHeight;   // land on the newest
+  pmChatMarkRead(pid);      // opening the tab IS reading it
 }
 function _pmChatCtx() {
   const el = document.getElementById('pm-chat-ctx'); if (!el) return;
@@ -16673,13 +16721,98 @@ function _pmChatCtx() {
   } else { el.style.display = 'none'; el.innerHTML = ''; }
 }
 function pmChatReply(id) { _pmChatEditId = ''; _pmChatReplyTo = id; _pmChatCtx(); const i = document.getElementById('pm-chat-input'); if (i) i.focus(); }
-function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
+function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatMentions = []; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
 function pmChatEdit(id) {
   const m = (_HR.pm_chat || []).find(x => x.id === id); if (!m) return;
   _pmChatReplyTo = ''; _pmChatEditId = id;
   const i = document.getElementById('pm-chat-input');
   if (i) { i.value = m.body || ''; i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; i.focus(); }
   _pmChatCtx();
+}
+let _pmChatMentions = [];   // {empId,name} actually picked for the next message
+/* Who can be mentioned on this project: the Team, the Project Manager, and managers (who can open
+   every project anyway). Resolved to EMPLOYEE RECORDS, never to a typed string — the server checks
+   the same list, and a mention is the one thing here that rings somebody's phone. */
+function _pmChatPeople(pid) {
+  const out = {}, add = e => { if (e && e.id && e.name) out[e.id] = { empId: e.id, name: e.name }; };
+  const emps = _DEMO_EMPLOYEES || [];
+  (_HR.pm_resources || []).filter(r => r.projectId === pid).forEach(r => {
+    let e = r.empId ? emps.find(x => x.id === r.empId) : null;
+    if (!e) { const hit = emps.filter(x => _pmSamePerson(x.name, r.name)); if (hit.length === 1) e = hit[0]; }
+    add(e);
+  });
+  const p = _pmProj(pid);
+  if (p && p.manager) { const hit = emps.filter(x => _pmSamePerson(x.name, p.manager)); if (hit.length === 1) add(hit[0]); }
+  emps.forEach(e => { if (_lvlRank(_deriveLevel(e)) >= _lvlRank('manager')) add(e); });
+  return Object.values(out).sort((a, b) => a.name.localeCompare(b.name));
+}
+/* The @ menu. Opens on "@" and filters as you type, like Teams. */
+function _pmChatAtKey(ev) {
+  const i = ev.target, v = i.value || '', pos = i.selectionStart || 0;
+  const upto = v.slice(0, pos), at = upto.lastIndexOf('@');
+  if (at < 0 || /\s/.test(upto.slice(at + 1))) { document.getElementById('pm-at-pop')?.remove(); return; }
+  const q = upto.slice(at + 1).toLowerCase();
+  const list = _pmChatPeople(_pmPid()).filter(x => !q || x.name.toLowerCase().indexOf(q) >= 0).slice(0, 6);
+  document.getElementById('pm-at-pop')?.remove();
+  if (!list.length) return;
+  const pop = document.createElement('div');
+  pop.id = 'pm-at-pop';
+  // FIXED, not absolute: the coordinates below come from getBoundingClientRect, which is
+  // viewport-relative. On a layout where the page itself scrolls (phones do) absolute would offset
+  // the menu by the scroll position and drift away from the box it belongs to.
+  pop.style.cssText = 'position:fixed;z-index:9600;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-card);padding:5px;min-width:210px;max-width:280px';
+  pop.innerHTML = list.map(x =>
+    '<button type="button" onclick="pmChatPickAt(\'' + x.empId + '\')" style="display:flex;align-items:center;gap:9px;width:100%;border:none;background:none;cursor:pointer;padding:7px 9px;border-radius:8px;font-family:inherit;text-align:left" ' +
+    'onmouseover="this.style.background=\'var(--soft-bg)\'" onmouseout="this.style.background=\'none\'">' +
+    _pmMiniAvatar(x.name) + '<span style="font-size:13px;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(x.name) + '</span></button>').join('');
+  document.body.appendChild(pop);
+  const r = i.getBoundingClientRect(), h = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  // Above the box by default; below it when there is no room above — otherwise the list clamps to
+  // y=8 and sits ON TOP of the words you are typing.
+  pop.style.top = (r.top - h - 6 >= 8 ? r.top - h - 6 : Math.min(r.bottom + 6, window.innerHeight - h - 8)) + 'px';
+}
+function pmChatPickAt(empId) {
+  const person = _pmChatPeople(_pmPid()).find(x => x.empId === empId);
+  const i = document.getElementById('pm-chat-input');
+  if (!person || !i) return;
+  const v = i.value || '', pos = i.selectionStart || 0, upto = v.slice(0, pos), at = upto.lastIndexOf('@');
+  if (at >= 0) {
+    i.value = v.slice(0, at) + '@' + person.name + ' ' + v.slice(pos);
+    const caret = at + person.name.length + 2;
+    i.focus(); i.selectionStart = i.selectionEnd = caret;
+  }
+  if (!_pmChatMentions.some(x => x.empId === empId)) _pmChatMentions.push(person);
+  document.getElementById('pm-at-pop')?.remove();
+}
+/* Unread. Counted on the SERVER — the Projects list on a 4G phone must not download every message of
+   every project just to draw a badge. */
+let _pmChatUnread = { unread: {}, mentions: {} };
+async function pmChatUnreadLoad() {
+  try { _pmChatUnread = await tkApi('/api/pm/chat/summary'); } catch (e) { }
+  try { _pmChatPaintBadges(); } catch (e) { }
+  try { tkUpdateNotifications(); } catch (e) { }   // the bell counts mentions too
+}
+function _pmChatBadge(pid) {
+  const n = (_pmChatUnread.unread || {})[pid] || 0, at = (_pmChatUnread.mentions || {})[pid] || 0;
+  if (!n) return '';
+  // A mention is louder than a message, because it is the one that was actually aimed at you.
+  return '<span title="' + _tkEscA(at ? at + ' ' + _t('mentioning you') : n + ' ' + _t('unread')) + '" ' +
+    'style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:10.5px;font-weight:800;color:#fff;background:' +
+    (at ? 'var(--emerald-deep)' : 'var(--navy)') + ';margin-left:6px;font-variant-numeric:tabular-nums">' + (at ? '@' + at : n) + '</span>';
+}
+function _pmChatPaintBadges() {
+  document.querySelectorAll('[data-pm-chat-badge]').forEach(el => {
+    el.innerHTML = _pmChatBadge(el.getAttribute('data-pm-chat-badge'));
+  });
+}
+async function pmChatMarkRead(pid) {
+  try {
+    await tkApi('/api/pm/chat/read', { method: 'POST', body: { projectId: pid } });
+    if (_pmChatUnread.unread) delete _pmChatUnread.unread[pid];
+    if (_pmChatUnread.mentions) delete _pmChatUnread.mentions[pid];
+    _pmChatPaintBadges();
+  } catch (e) { }
 }
 let _pmChatFiles_ = [];    // files staged for the next message
 function _pmChatTray() {
@@ -16795,7 +16928,7 @@ async function pmChatSend() {
       let parent = _pmChatReplyTo;
       const pm = parent ? (_HR.pm_chat || []).find(x => x.id === parent) : null;
       if (pm && pm.parentId) parent = pm.parentId;
-      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text, attachments: _pmChatFiles_.slice() } });
+      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text, attachments: _pmChatFiles_.slice(), mentions: _pmChatMentions.filter(x => text.indexOf('@' + x.name) >= 0) } });
       (_HR.pm_chat = _HR.pm_chat || []).push(res.item);
     }
     pmChatCancel();
@@ -18112,6 +18245,11 @@ const _VI = {
   /* Project Chat. */
   'Chat': 'Trao đổi',
   'Team Conversation': 'Trao đổi nhóm',
+  'unread': 'chưa đọc', 'mentioning you': 'nhắc đến bạn',
+  'Mentioned in': 'Được nhắc đến trong', 'a project': 'một dự án',
+  'message names you': 'tin nhắn nhắc đến bạn', 'messages name you': 'tin nhắn nhắc đến bạn',
+  'Mention someone': 'Nhắc đến ai đó',
+  'NEW': 'MỚI',
   'Attach a file or photo': 'Đính kèm tệp hoặc ảnh',
   'Emoji': 'Biểu tượng cảm xúc',
   'Add a reaction': 'Thêm cảm xúc',
