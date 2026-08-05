@@ -3758,6 +3758,10 @@ class Handler(BaseHTTPRequestHandler):
     # The window is measured from the SERVER's own stamp on your signature and from nothing else —
     # a window keyed on a browser clock is defeated by changing the browser clock.
     UNDO_WINDOW_SEC = max(0, int(os.environ.get("TK_UNDO_WINDOW_SEC", "900") or "900"))   # 15 minutes
+    # Reacting touches SOMEBODY ELSE'S message, so it is the one edit a non-author may make — and it
+    # is confined to a fixed set. An open emoji field would be a free-text write onto another person's
+    # record, which is exactly what the author guard exists to prevent.
+    CHAT_REACTIONS = ("\U0001F44D", "\u2764\uFE0F", "\U0001F389", "\u2705", "\U0001F440", "\U0001F602")
     # Leave lives in its own table with its own signature store and is handled separately; payruns are
     # deliberately absent — a finalised payroll run stays immutable.
     UNDOABLE_COLLS = ("claims", "travel", "payments",
@@ -6101,6 +6105,17 @@ class Handler(BaseHTTPRequestHandler):
             item["createdById"] = u.get("id")          # above would let a client pre-claim somebody
             item["ts"] = self._utc_now_ms()            # else's id and inherit their delete rights
             item["body"] = str(item.get("body") or "")[:8000]
+            # Attachments are {name, url} and nothing else — a SharePoint webUrl, or an inline data:
+            # URI when the project has no SharePoint folder. Bounded so a message cannot become a
+            # payload, and the shape is rebuilt rather than accepted, so no extra keys ride along.
+            _att = item.get("attachments")
+            item["attachments"] = [
+                {"name": str((a or {}).get("name") or "file")[:160],
+                 "url": str((a or {}).get("url") or "")}
+                for a in (_att if isinstance(_att, list) else [])[:6]
+                if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
+            ][:6]
+            item["reactions"] = {}                     # never born with reactions
             for k in ("editedAt", "deletedAt", "deletedBy"):
                 item.pop(k, None)                      # a message is never born edited or deleted
         # Payroll dual-control: a run is PREPARED here (never born finalised, even if the client says so)
@@ -6614,14 +6629,38 @@ class Handler(BaseHTTPRequestHandler):
                 if vis is not None and existing.get("projectId") not in vis:
                     return self._err("You can only edit a message in a project you are on.", 403)
                 is_admin = self._caller_level(u) == "admin"
-                if not is_admin and (existing.get("authorId") or "") != (u.get("id") or ""):
-                    return self._err("You can only edit your own message.", 403)
-                body_txt = str(item.get("body") or "")[:8000]
-                item = dict(existing)                       # nothing but the words may move
+                is_author = (existing.get("authorId") or "") == (u.get("id") or "")
+                # A reaction is the one change anybody on the project may make to a message that is
+                # not theirs. It is rebuilt from the stored row, so a client can only ever add or
+                # remove ITS OWN id, and only against an emoji from the fixed set — it cannot stuff
+                # somebody else into a reaction or invent a new one.
+                want = item.get("reactions") if isinstance(item.get("reactions"), dict) else None
+                item = dict(existing)
+                item["id"] = iid
+                if want is not None:
+                    me = u.get("id") or ""
+                    cur = existing.get("reactions") if isinstance(existing.get("reactions"), dict) else {}
+                    out = {}
+                    for emo in self.CHAT_REACTIONS:
+                        others = [x for x in (cur.get(emo) or []) if x and x != me]
+                        mine_now = me and me in (want.get(emo) or [])
+                        who = others + ([me] if mine_now else [])
+                        if who:
+                            out[emo] = who
+                    item["reactions"] = out
+                if not is_author and not is_admin:
+                    # A non-author may send reactions and NOTHING else. Every client echoes the whole
+                    # object back, and a message now always carries a reactions field — so merely
+                    # seeing one is not consent to an edit. If the words differ too, this is somebody
+                    # trying to rewrite a colleague's message, and it is refused rather than quietly
+                    # succeeding as a no-op.
+                    if want is None or str(body.get("body") or "") != str(existing.get("body") or ""):
+                        return self._err("You can only edit your own message.", 403)
+                    return self._json({"ok": True, "item": db.put_collection_item(name, item)})
+                body_txt = str(body.get("body") or "")[:8000]
                 if body_txt != str(existing.get("body") or ""):
                     item["body"] = body_txt
                     item["editedAt"] = self._utc_now_ms()   # so the UI can show it was changed
-                item["id"] = iid
             # A variation order and an interim payment certificate are the two documents where money
             # and time actually move on a construction contract, and the classic dispute surface. They
             # were the LEAST protected records in the system: signer name and signature rode through

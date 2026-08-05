@@ -202,3 +202,124 @@ def test_a_very_long_message_is_clamped(api, tokens):
     st, b = _post(api, tokens["staff"], pid, "x" * 20000)
     assert st == 200, b
     assert len(b["item"]["body"]) == 8000
+
+
+# ── attachments ───────────────────────────────────────────────────────────────────────────────────
+
+def test_a_message_can_carry_files(api, tokens):
+    pid = _project(api, tokens, "CHAT-FILES")
+    _team(api, tokens, pid, "Staff One")
+    st, b = api("POST", "/api/coll/pm_chat", tokens["staff"],
+                {"projectId": pid, "body": "site photo",
+                 "attachments": [{"name": "clash.jpg", "url": "data:image/jpeg;base64,QQ=="},
+                                 {"name": "RFI-42.pdf", "url": "https://sp/RFI-42.pdf"}]})
+    assert st == 200, b
+    assert [a["name"] for a in b["item"]["attachments"]] == ["clash.jpg", "RFI-42.pdf"]
+
+
+def test_a_photo_on_its_own_is_a_valid_message(api, tokens):
+    """On a site the picture IS the message."""
+    pid = _project(api, tokens, "CHAT-PHOTOONLY")
+    _team(api, tokens, pid, "Staff One")
+    st, b = api("POST", "/api/coll/pm_chat", tokens["staff"],
+                {"projectId": pid, "body": "",
+                 "attachments": [{"name": "p.jpg", "url": "data:image/jpeg;base64,QQ=="}]})
+    assert st == 200 and len(b["item"]["attachments"]) == 1
+
+
+def test_the_attachment_shape_is_rebuilt_not_accepted(api, tokens):
+    """Only name and url survive — no extra keys ride in on a message, and the count is bounded so a
+       message cannot become a payload."""
+    pid = _project(api, tokens, "CHAT-SHAPE")
+    _team(api, tokens, pid, "Staff One")
+    st, b = api("POST", "/api/coll/pm_chat", tokens["staff"],
+                {"projectId": pid, "body": "x",
+                 "attachments": [{"name": "a", "url": "https://x/a", "evil": "payload"}] * 12
+                                 + [{"name": "no url"}]})
+    assert st == 200, b
+    files = b["item"]["attachments"]
+    assert len(files) == 6, "the attachment count is not bounded"
+    assert all(set(f) == {"name", "url"} for f in files), files
+
+
+# ── reactions ─────────────────────────────────────────────────────────────────────────────────────
+
+def _msg(api, tokens, pid, who="staff"):
+    return api("POST", "/api/coll/pm_chat", tokens[who], {"projectId": pid, "body": "hi"})[1]["item"]
+
+
+def test_anyone_on_the_project_can_react_to_anyone_elses_message(api, tokens):
+    """The ONE change a non-author may make. Reacting to your own messages only would be pointless."""
+    pid = _project(api, tokens, "CHAT-REACT")
+    _team(api, tokens, pid, "Staff One")
+    _team(api, tokens, pid, "Other Staff")
+    m = _msg(api, tokens, pid)
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"],
+                dict(m, reactions={"\U0001F44D": ["HML-OTH"]}))
+    assert st == 200, b
+    assert b["item"]["reactions"]["\U0001F44D"] == ["HML-OTH"]
+
+
+def test_a_reaction_toggles_off(api, tokens):
+    pid = _project(api, tokens, "CHAT-TOGGLE")
+    _team(api, tokens, pid, "Staff One")
+    m = _msg(api, tokens, pid)
+    on = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["staff"],
+             dict(m, reactions={"\u2705": ["HML-STF"]}))[1]["item"]
+    assert on["reactions"]["\u2705"] == ["HML-STF"]
+    off = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["staff"],
+              dict(on, reactions={"\u2705": []}))[1]["item"]
+    assert off["reactions"] == {}, "an empty reaction should disappear, not linger"
+
+
+def test_you_cannot_react_on_somebody_elses_behalf(api, tokens):
+    """The map is rebuilt from the stored row and only ever gains or loses YOUR id."""
+    pid = _project(api, tokens, "CHAT-FAKEREACT")
+    _team(api, tokens, pid, "Staff One")
+    m = _msg(api, tokens, pid)
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["staff"],
+                dict(m, reactions={"\U0001F44D": ["HML-ADM", "HML-MGR"]}))
+    assert st == 200, b
+    assert b["item"]["reactions"] == {}, "a client put other people's reactions on a message"
+
+
+def test_an_emoji_off_the_list_is_dropped(api, tokens):
+    """Otherwise the reaction field is a free-text write onto somebody else's record."""
+    pid = _project(api, tokens, "CHAT-EMOJI")
+    _team(api, tokens, pid, "Staff One")
+    m = _msg(api, tokens, pid)
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["staff"],
+                dict(m, reactions={"\U0001F480": ["HML-STF"], "<script>": ["HML-STF"]}))
+    assert st == 200, b
+    assert b["item"]["reactions"] == {}
+
+
+def test_reacting_is_not_a_way_to_edit_the_words(api, tokens):
+    """THE hole this guard exists for: every client echoes the whole object back, and a message always
+       carries a reactions field — so seeing one is not consent to an edit."""
+    pid = _project(api, tokens, "CHAT-SNEAK")
+    _team(api, tokens, pid, "Staff One")
+    _team(api, tokens, pid, "Other Staff")
+    m = _msg(api, tokens, pid)
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"],
+                dict(m, body="rewritten", reactions={"\U0001F44D": ["HML-OTH"]}))
+    assert st == 403, (st, b)
+    row = next(x for x in db.list_collection("pm_chat") if x["id"] == m["id"])
+    assert row["body"] == "hi" and not row.get("reactions")
+
+
+def test_a_message_is_never_born_with_reactions(api, tokens):
+    pid = _project(api, tokens, "CHAT-BORNREACT")
+    _team(api, tokens, pid, "Staff One")
+    st, b = api("POST", "/api/coll/pm_chat", tokens["staff"],
+                {"projectId": pid, "body": "x", "reactions": {"\U0001F44D": ["HML-ADM"]}})
+    assert st == 200 and b["item"]["reactions"] == {}
+
+
+def test_someone_off_the_project_cannot_react(api, tokens):
+    pid = _project(api, tokens, "CHAT-OUTSIDER")
+    _team(api, tokens, pid, "Staff One")
+    m = _msg(api, tokens, pid)
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"],
+                dict(m, reactions={"\U0001F44D": ["HML-OTH"]}))
+    assert st == 403, (st, b)

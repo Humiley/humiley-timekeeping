@@ -15480,13 +15480,13 @@ const _PM_TABS = [
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts' },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality' },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources' },
-  { k: 'chat', label: 'Chat', fn: 'pmRenderChat' },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms' },
   { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
   { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
   { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders' },
   { k: 'docs', label: 'Docs Control', fn: 'pmRenderRfis' },
-  { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments' }
+  { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments' },
+  { k: 'chat', label: 'Team Conversation', fn: 'pmRenderChat' }
 ];
 function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
 async function pmRenderWorkspace() {
@@ -16549,6 +16549,42 @@ function _pmChatBody(txt) {
   return esc.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g,
     '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--navy);word-break:break-all">$1</a>');
 }
+const _PM_CHAT_EMOJI = ['\uD83D\uDC4D', '\u2764\uFE0F', '\uD83C\uDF89', '\u2705', '\uD83D\uDC40', '\uD83D\uDE02'];
+/* Attached files. Photos render inline — on a construction project the picture IS the message, and
+   making somebody tap through to see a duct clash defeats the point. Everything else is a chip. */
+function _pmChatFiles(m) {
+  const files = Array.isArray(m.attachments) ? m.attachments : [];
+  if (!files.length) return '';
+  const isImg = u => /^data:image\//i.test(u) || /\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(u);
+  return '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:7px">' + files.map((f, i) => {
+    const url = String(f.url || ''), nm = String(f.name || 'file');
+    if (isImg(url)) {
+      return '<img src="' + _tkEscA(url) + '" alt="' + _tkEscA(nm) + '" loading="lazy" ' +
+        'onclick="tkFilePreview(' + "'" + _tkEscA(url) + "','" + _tkEscA(nm) + "',''" + ')" ' +
+        'style="max-width:230px;max-height:190px;border-radius:var(--r-md);border:1px solid var(--line);cursor:zoom-in;display:block;object-fit:cover">';
+    }
+    return '<a href="' + _tkEscA(url) + '" target="_blank" rel="noopener noreferrer" download="' + _tkEscA(nm) + '" ' +
+      'style="display:inline-flex;align-self:flex-start;align-items:center;gap:6px;font-size:12px;color:var(--navy);background:var(--light-tint);border-radius:var(--r-pill);padding:6px 12px;text-decoration:none;max-width:260px">' +
+      '\uD83D\uDCCE <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(nm) + '</span></a>';
+  }).join('') + '</div>';
+}
+/* Reactions. Yours are outlined; the row only appears once somebody has reacted, plus a quiet
+   add-reaction button, so a quiet thread stays quiet. */
+function _pmChatReacts(m) {
+  const r = (m.reactions && typeof m.reactions === 'object') ? m.reactions : {};
+  const me = (TK.user || {}).id || '';
+  const pills = _PM_CHAT_EMOJI.filter(e => (r[e] || []).length).map(e => {
+    const who = r[e] || [], mine = me && who.indexOf(me) >= 0;
+    return '<button type="button" onclick="pmChatReact(\'' + m.id + '\',\'' + encodeURIComponent(e) + '\')" ' +
+      'title="' + _tkEscA(who.length + ' ' + _t(who.length === 1 ? 'person' : 'people')) + '" ' +
+      'style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;line-height:1;padding:3px 9px;border-radius:var(--r-pill);cursor:pointer;font-family:inherit;' +
+      'border:1px solid ' + (mine ? 'var(--emerald)' : 'var(--line)') + ';background:' + (mine ? 'rgba(0,176,96,.10)' : 'var(--card)') + ';color:var(--text-dark)">' +
+      e + '<span style="font-variant-numeric:tabular-nums;font-weight:600">' + who.length + '</span></button>';
+  }).join('');
+  return '<div class="pm-chat-react" style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">' + pills +
+    '<button type="button" onclick="pmChatReactPick(\'' + m.id + '\',this)" title="' + _tkEscA(_t('Add a reaction')) + '" ' +
+    'style="font-size:12px;line-height:1;padding:3px 8px;border-radius:var(--r-pill);border:1px dashed var(--line);background:none;cursor:pointer;color:var(--text-light);font-family:inherit">\u263A+</button></div>';
+}
 function _pmChatMine(m) {
   const meId = (TK.user || {}).id || '';
   return !!meId && m.authorId === meId;
@@ -16574,7 +16610,8 @@ function pmRenderChat(pid) {
           (m.editedAt ? '<span style="font-size:10.5px;color:var(--text-light)">· ' + _t('edited') + '</span>' : '') +
           (_pmChatMine(m) ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:1px 7px;margin-left:auto" onclick="pmChatEdit(\'' + m.id + '\')">' + _t('Edit') + '</button>' : '') +
         '</div>' +
-        '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body) + '</div>' +
+        (m.body ? '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body) + '</div>' : '') +
+        _pmChatFiles(m) + _pmChatReacts(m) +
       '</div></div>';
   };
 
@@ -16603,12 +16640,16 @@ function pmRenderChat(pid) {
 
   _pmSet(
     '<div class="card" style="padding:11px 15px;margin-bottom:12px;border-left:3px solid var(--emerald);font-size:12.5px;color:var(--text-light);line-height:1.55">' +
-      '<b style="color:var(--text-dark)">' + _t('Chat') + '</b> — ' + _t('the working conversation for this project. Only people on this project can read it.') +
+      '<b style="color:var(--text-dark)">' + _t('Team Conversation') + '</b> — ' + _t('the working conversation for this project. Only people on this project can read it.') +
     '</div>' +
     '<div id="pm-chat-scroll" style="max-height:calc(100vh - 330px);overflow-y:auto;padding-right:2px">' + (roots.length ? body : empty) + '</div>' +
     '<div class="card" style="padding:11px 13px;margin-top:12px;position:sticky;bottom:0">' +
       '<div id="pm-chat-ctx" style="display:none;font-size:11.5px;color:var(--text-light);margin-bottom:6px"></div>' +
+      '<div id="pm-chat-tray" style="display:none;gap:7px;flex-wrap:wrap;margin-bottom:8px"></div>' +
       '<div style="display:flex;gap:9px;align-items:flex-end">' +
+        '<input type="file" id="pm-chat-file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="pmChatPick(this)">' +
+        '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Attach a file or photo')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="document.getElementById(\'pm-chat-file\').click()">\uD83D\uDCCE</button>' +
+        '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Emoji')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="pmChatEmoji(this)">\u263A</button>' +
         '<textarea id="pm-chat-input" rows="1" placeholder="' + _tkEscA(_t('Write a message…')) + '" ' +
           'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\'" ' +
           'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey&&!event.altKey){event.preventDefault();pmChatSend()}" ' +
@@ -16632,7 +16673,7 @@ function _pmChatCtx() {
   } else { el.style.display = 'none'; el.innerHTML = ''; }
 }
 function pmChatReply(id) { _pmChatEditId = ''; _pmChatReplyTo = id; _pmChatCtx(); const i = document.getElementById('pm-chat-input'); if (i) i.focus(); }
-function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
+function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
 function pmChatEdit(id) {
   const m = (_HR.pm_chat || []).find(x => x.id === id); if (!m) return;
   _pmChatReplyTo = ''; _pmChatEditId = id;
@@ -16640,9 +16681,106 @@ function pmChatEdit(id) {
   if (i) { i.value = m.body || ''; i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; i.focus(); }
   _pmChatCtx();
 }
+let _pmChatFiles_ = [];    // files staged for the next message
+function _pmChatTray() {
+  const t = document.getElementById('pm-chat-tray'); if (!t) return;
+  if (!_pmChatFiles_.length) { t.style.display = 'none'; t.innerHTML = ''; return; }
+  t.style.display = 'flex';
+  t.innerHTML = _pmChatFiles_.map((f, i) =>
+    '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;background:var(--soft-bg);border:1px solid var(--line);border-radius:var(--r-pill);padding:4px 6px 4px 10px;max-width:220px">' +
+    (/^data:image\//.test(f.url) ? '<img src="' + _tkEscA(f.url) + '" alt="" style="width:20px;height:20px;object-fit:cover;border-radius:4px">' : '\uD83D\uDCCE') +
+    '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(f.name) + '</span>' +
+    '<button type="button" onclick="pmChatDrop(' + i + ')" style="border:none;background:none;color:#C00000;cursor:pointer;font-size:14px;line-height:1;padding:0 2px">\u00D7</button></span>').join('');
+}
+function pmChatDrop(i) { _pmChatFiles_.splice(i, 1); _pmChatTray(); }
+/* Staging an attachment. SharePoint first when the project is linked — the bytes never touch the
+   database and everyone stops downloading them with the register. Otherwise inline, and photos are
+   downscaled on the way in: a phone camera shot is 3-8 MB and becomes ~40-120 KB, which is the
+   difference between a chat that stays quick and one that slowly poisons the project. */
+async function pmChatPick(input) {
+  const files = Array.prototype.slice.call(input.files || []); input.value = '';
+  if (!files.length) return;
+  const p = _pmProj();
+  const canSP = p && _pmSpBase(p) && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
+  for (const f of files) {
+    if (_pmChatFiles_.length >= 6) { toast(_t('Up to 6 files per message.'), 'warn'); break; }
+    if (canSP) {
+      try {
+        toast(_t('Uploading') + ' ' + f.name + '…', 'info', 2000);
+        const res = await _graphUploadFile(f, p, 'Chat');
+        _pmChatFiles_.push({ name: f.name, url: res.webUrl }); _pmChatTray();
+        continue;
+      } catch (e) { toast(_t('Saved in the app, not SharePoint') + ' — ' + _pmSpWhy(e), 'warn', 8000); }
+    }
+    if (f.size > TK_MAX_INLINE) { toast(_t('File too large') + ' (' + _t('max') + ' ' + TK_MAX_INLINE_MB + ' MB): ' + f.name, 'warn', 7000); continue; }
+    await new Promise(done => {
+      const r = new FileReader();
+      r.onload = async e => {
+        let url = e.target.result;
+        if (/^data:image\//i.test(url)) { try { url = await _imgDownscale(url, 1400, 0.75); } catch (x) {} }
+        _pmChatFiles_.push({ name: f.name, url: url }); _pmChatTray(); done();
+      };
+      r.onerror = () => done();
+      r.readAsDataURL(f);
+    });
+  }
+}
+/* Emoji into the message, at the cursor. A short list on purpose — a full picker is a lot of weight
+   for a phone, and these are the ones a site team actually uses. */
+const _PM_EMOJI_PICK = ['\uD83D\uDC4D','\uD83D\uDC4C','\uD83D\uDE42','\uD83D\uDE02','\uD83C\uDF89','\u2705','\u274C','\u26A0\uFE0F','\uD83D\uDD25','\uD83D\uDE4F','\uD83D\uDCAA','\uD83D\uDC40','\u2764\uFE0F','\uD83D\uDE80','\uD83D\uDCCC','\uD83D\uDD27'];
+function pmChatEmoji(btn) {
+  document.getElementById('pm-emoji-pop')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'pm-emoji-pop';
+  pop.style.cssText = 'position:absolute;z-index:9600;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-card);padding:8px;display:grid;grid-template-columns:repeat(8,1fr);gap:2px';
+  pop.innerHTML = _PM_EMOJI_PICK.map(e => '<button type="button" onclick="pmChatIns(\'' + encodeURIComponent(e) + '\')" style="font-size:18px;line-height:1;padding:5px;border:none;background:none;cursor:pointer;border-radius:6px">' + e + '</button>').join('');
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  pop.style.top = (r.top - pop.offsetHeight - 8) + 'px';
+  setTimeout(() => document.addEventListener('click', function off(ev) {
+    if (!pop.contains(ev.target) && ev.target !== btn) { pop.remove(); document.removeEventListener('click', off); }
+  }), 0);
+}
+function pmChatIns(enc) {
+  const e = decodeURIComponent(enc), i = document.getElementById('pm-chat-input'); if (!i) return;
+  const a = i.selectionStart || 0, b = i.selectionEnd || 0, v = i.value || '';
+  i.value = v.slice(0, a) + e + v.slice(b);
+  i.focus(); i.selectionStart = i.selectionEnd = a + e.length;
+  document.getElementById('pm-emoji-pop')?.remove();
+}
+/* Reacting. The server rebuilds the map from the stored row and only ever adds or removes YOUR id,
+   so this can send the whole object safely. */
+async function pmChatReact(id, enc) {
+  const e = decodeURIComponent(enc), m = (_HR.pm_chat || []).find(x => x.id === id); if (!m) return;
+  const me = (TK.user || {}).id || ''; if (!me) return;
+  const r = JSON.parse(JSON.stringify(m.reactions && typeof m.reactions === 'object' ? m.reactions : {}));
+  const who = r[e] || [];
+  r[e] = who.indexOf(me) >= 0 ? who.filter(x => x !== me) : who.concat([me]);
+  try {
+    const res = await tkApi('/api/coll/pm_chat/' + id, { method: 'PATCH', body: { ...m, reactions: r } });
+    const k = (_HR.pm_chat || []).findIndex(x => x.id === id); if (k >= 0) _HR.pm_chat[k] = res.item;
+    pmRenderChat(_pmPid());
+  } catch (err) { toast(_errMsg(err), 'error', 4000); }
+}
+function pmChatReactPick(id, btn) {
+  document.getElementById('pm-emoji-pop')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'pm-emoji-pop';
+  pop.style.cssText = 'position:absolute;z-index:9600;background:var(--card);border:1px solid var(--line);border-radius:var(--r-pill);box-shadow:var(--shadow-card);padding:5px;display:flex;gap:2px';
+  pop.innerHTML = _PM_CHAT_EMOJI.map(e => '<button type="button" onclick="pmChatReact(\'' + id + '\',\'' + encodeURIComponent(e) + '\');document.getElementById(\'pm-emoji-pop\')?.remove()" style="font-size:17px;line-height:1;padding:5px 6px;border:none;background:none;cursor:pointer;border-radius:50%">' + e + '</button>').join('');
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+  pop.style.top = (r.top - pop.offsetHeight - 6) + 'px';
+  setTimeout(() => document.addEventListener('click', function off(ev) {
+    if (!pop.contains(ev.target) && ev.target !== btn) { pop.remove(); document.removeEventListener('click', off); }
+  }), 0);
+}
 async function pmChatSend() {
   const i = document.getElementById('pm-chat-input'); if (!i) return;
-  const text = (i.value || '').trim(); if (!text) return;
+  const text = (i.value || '').trim();
+  if (!text && !_pmChatFiles_.length) return;      // a photo on its own is a perfectly good message
   const pid = _pmPid(); if (!pid) return;
   i.disabled = true;
   try {
@@ -16657,7 +16795,7 @@ async function pmChatSend() {
       let parent = _pmChatReplyTo;
       const pm = parent ? (_HR.pm_chat || []).find(x => x.id === parent) : null;
       if (pm && pm.parentId) parent = pm.parentId;
-      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text } });
+      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text, attachments: _pmChatFiles_.slice() } });
       (_HR.pm_chat = _HR.pm_chat || []).push(res.item);
     }
     pmChatCancel();
@@ -17973,6 +18111,13 @@ const _VI = {
   'Overdue milestones': 'Cột mốc trễ hạn',
   /* Project Chat. */
   'Chat': 'Trao đổi',
+  'Team Conversation': 'Trao đổi nhóm',
+  'Attach a file or photo': 'Đính kèm tệp hoặc ảnh',
+  'Emoji': 'Biểu tượng cảm xúc',
+  'Add a reaction': 'Thêm cảm xúc',
+  'Uploading': 'Đang tải lên',
+  'Up to 6 files per message.': 'Tối đa 6 tệp mỗi tin nhắn.',
+  'person': 'người', 'people': 'người',
   'No messages yet': 'Chưa có tin nhắn',
   'Write a message…': 'Nhập tin nhắn…',
   'Send': 'Gửi',
