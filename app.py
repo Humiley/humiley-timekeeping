@@ -3781,9 +3781,14 @@ class Handler(BaseHTTPRequestHandler):
             return "rejected"
         return "submit"   # submitted / pending / partially approved / empty
 
-    def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id):
+    def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
-        Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage."""
+        Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage.
+
+        `owns` — whether the caller owns the record, as computed by the caller (ownership is spelled
+        differently per collection: empId, createdById, owner, name). Only the STATUS-LESS branch uses
+        it; every status transition below is gated on authority, not ownership. Pass None to fall back
+        to the empId comparison."""
         t = str(set_status or "").strip().lower()
         # Payroll runs are dual-controlled (owner_id here is the PREPARER, preparedById): only a
         # Director (Management or Admin level) may finalise, and never the person who prepared the run.
@@ -3810,10 +3815,23 @@ class Handler(BaseHTTPRequestHandler):
             if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
                 return "Manager access required to approve, reject or mark paid."
             return None
-        if not t:
-            return None   # requester's own submit signing (no status change)
         cur = self._appr_state(cur_status)
         same_person = owner_id and owner_id == u.get("id")
+        if not t:
+            # A status-less signature is a SUBMISSION or an AMENDMENT of your OWN still-pending
+            # request. It used to `return None` unconditionally, which — combined with the record gate
+            # waiving ownership for anyone whose role is "manager", i.e. every level above plain staff
+            # — let any non-staff user append their own signature, carrying arbitrary `meaning` text,
+            # to ANY claim / travel / payment / leave record, in ANY status, including ones already
+            # approved or paid and belonging to somebody else. It could not forge a name (the signer
+            # comes from the session) or move money, but it polluted the Part 11 signature
+            # manifestation that renders on the record and on the archived PDF, which is precisely the
+            # evidence this system exists to keep clean.
+            if not (same_person if owns is None else owns):
+                return "You can only sign your own request."
+            if cur not in ("submit", "review"):
+                return "This request has been decided and can no longer be signed. Raise a new one."
+            return None
         if t == "reviewed":
             if u.get("role") != "manager":
                 return "Manager access required to review this request."
@@ -3979,7 +3997,8 @@ class Handler(BaseHTTPRequestHandler):
                 _lsigs = json.loads(lv.get("signatures") or "[]")
             except Exception:
                 _lsigs = []
-            _err = self._appr_check(u, "leave", lv.get("status"), set_status, _lsigs, lv.get("emp_id"))
+            _err = self._appr_check(u, "leave", lv.get("status"), set_status, _lsigs, lv.get("emp_id"),
+                                    owns=(lv.get("emp_id") == u.get("id")))
             if _err:
                 return self._err(_err, 403)
             row = db.append_leave_signature(int(iid), sig, new_status=(set_status or None))
@@ -4008,19 +4027,21 @@ class Handler(BaseHTTPRequestHandler):
         # never set on crm_/pm_ records — so `... and item.get("empId") ...` short-circuited to False
         # and let a plain staff user sign/tamper with ANY CRM or PM record they don't own. Now ownership
         # is checked across empId / createdById / owner / name, so a missing empId no longer opens it up.
-        if u.get("role") != "manager":
-            _owns = (item.get("empId") and item.get("empId") == u.get("id")) \
-                or (item.get("createdById") and item.get("createdById") == u.get("id")) \
-                or (item.get("owner") and item.get("owner") == u.get("name")) \
-                or ((not item.get("empId")) and item.get("name") and item.get("name") == u.get("name"))
-            # A quality record is "owned" by the people the register itself names: whoever raised it
-            # and whoever it is assigned to. Without this a QA engineer could never sign the closure
-            # of an NCR they were assigned but did not personally raise — which is the normal case.
-            if not _owns and coll == "pm_quality":
-                _owns = (item.get("assignedTo") and item.get("assignedTo") == u.get("name")) \
-                    or (item.get("raisedBy") and item.get("raisedBy") == u.get("name"))
-            if not _owns:
-                return self._err("You can only sign your own record.", 403)
+        # Computed for EVERYONE, not just non-managers: a manager legitimately signs other people's
+        # records to approve them, but a signature that carries NO status change is a submission or an
+        # amendment, and that is only ever your own. _appr_check needs to know which this is.
+        _owns_rec = bool((item.get("empId") and item.get("empId") == u.get("id"))
+            or (item.get("createdById") and item.get("createdById") == u.get("id"))
+            or (item.get("owner") and item.get("owner") == u.get("name"))
+            or ((not item.get("empId")) and item.get("name") and item.get("name") == u.get("name")))
+        # A quality record is "owned" by the people the register itself names: whoever raised it
+        # and whoever it is assigned to. Without this a QA engineer could never sign the closure
+        # of an NCR they were assigned but did not personally raise — which is the normal case.
+        if not _owns_rec and coll == "pm_quality":
+            _owns_rec = bool((item.get("assignedTo") and item.get("assignedTo") == u.get("name"))
+                or (item.get("raisedBy") and item.get("raisedBy") == u.get("name")))
+        if u.get("role") != "manager" and not _owns_rec:
+            return self._err("You can only sign your own record.", 403)
         # Per-line-item signed decision on a claim (itemId present): review / approve / reject one line.
         item_id = body.get("itemId")
         if coll == "claims" and item_id:
@@ -4029,7 +4050,8 @@ class Handler(BaseHTTPRequestHandler):
             if not line:
                 return self._err("Claim item not found.", 404)
             synth = [{"meaning": "review", "userId": line.get("reviewedById")}] if line.get("reviewedById") else []
-            _err = self._appr_check(u, "claims", line.get("status") or "Submitted", set_status, synth, item.get("empId"))
+            _err = self._appr_check(u, "claims", line.get("status") or "Submitted", set_status, synth, item.get("empId"),
+                                    owns=_owns_rec)
             if _err:
                 return self._err(_err, 403)
             _prev_roll = self._claim_rollup(lines)   # rolled-up status BEFORE this line's change (for one-email-per-transition)
@@ -4054,7 +4076,8 @@ class Handler(BaseHTTPRequestHandler):
         # For payroll runs the segregation-of-duties owner is the PREPARER (preparedById), not empId
         # (empId on an individual run is the employee the run is FOR).
         _appr_owner = item.get("preparedById") if coll == "payruns" else item.get("empId")
-        _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), _appr_owner)
+        _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), _appr_owner,
+                                owns=_owns_rec)
         if _err:
             return self._err(_err, 403)
         # A payment disbursement MUST carry the bank transfer slip (proof of payment). Enforce it BEFORE
