@@ -3613,6 +3613,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # -- 21 CFR Part 11 electronic signatures -------------------------------
     @staticmethod
+    def _utc_now_ms():
+        """UTC to the millisecond. Chat needs it: _utc_now() is 1-second resolution, and rows come back
+        ordered by a random uuid id, so two messages posted in the same second would swap places
+        between page loads."""
+        t = time.time()
+        return time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + (".%03dZ" % int((t % 1) * 1000))
+
+    @staticmethod
     def _utc_now():
         return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
@@ -5349,9 +5357,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
+    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports"}
+    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -5384,6 +5392,47 @@ class Handler(BaseHTTPRequestHandler):
     PAY_SENSITIVE = {"salary", "grade", "bank", "taxId"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
+    @staticmethod
+    def _pm_name_tokens(v):
+        """Fold a name to comparable ASCII tokens. Mirrors _pmNameTokens in the frontend."""
+        t = unicodedata.normalize("NFD", str(v or ""))
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        t = t.replace("\u0111", "d").replace("\u0110", "D").lower()
+        return [w for w in re.split(r"[^a-z0-9]+", t) if w]
+
+    def _pm_same_person(self, a, b):
+        """Two spellings of one person. The Team & RACI tab holds "Trung Nguyen" while the employee
+        record says "Nguyen Van Trung" — short Western order against full Vietnamese order — so an
+        exact comparison locks people out of their own projects. Requires two shared tokens (half this
+        company is a Nguyen) and containment one way or the other."""
+        A, B = self._pm_name_tokens(a), self._pm_name_tokens(b)
+        if len(A) < 2 or len(B) < 2:
+            return False
+        sa, sb = set(A), set(B)
+        shared = len(sa & sb)
+        return shared >= 2 and (shared == len(sa) or shared == len(sb))
+
+    def _pm_visible_projects(self, u):
+        """Ids of the projects this caller may see, or None meaning "all of them".
+
+        Manager level and above see the whole portfolio, which is what the frontend already does
+        (_pmSeeAll). Below that it is the projects you MANAGE plus the ones you are on the Team of —
+        the same two routes the Projects list uses, evaluated here so the rule cannot be bypassed by
+        calling the API directly."""
+        if self._level_rank(self._caller_level(u)) >= self._level_rank("manager"):
+            return None
+        me_id, me_name = u.get("id"), u.get("name") or ""
+        ids = set()
+        for p in db.list_collection("pm_projects"):
+            if p.get("manager") and self._pm_same_person(p.get("manager"), me_name):
+                ids.add(p.get("id"))
+        for r in db.list_collection("pm_resources"):
+            if not r.get("projectId"):
+                continue
+            if (r.get("empId") and r.get("empId") == me_id) or self._pm_same_person(r.get("name"), me_name):
+                ids.add(r.get("projectId"))
+        return ids
+
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -5404,6 +5453,15 @@ class Handler(BaseHTTPRequestHandler):
         # API by a manager/management/editor account whose UI hides the Audit Log.
         if name == "audit" and lvl != "admin":
             items = [it for it in items if "e-signature" in str(it.get("action") or "").lower()]
+        # A project conversation is scoped to the projects you can actually open. Every other pm_
+        # collection ships the whole portfolio to anyone with the Projects app and lets the browser
+        # filter — tolerable for a task list, not for a channel where people write candidly about
+        # contractors, clients and each other. Enforced here so it cannot be stepped around by calling
+        # /api/coll/pm_chat directly. Manager level and above get everything, matching _pmSeeAll.
+        if name == "pm_chat":
+            vis = self._pm_visible_projects(u)
+            if vis is not None:
+                items = [it for it in items if it.get("projectId") in vis]
         # staff see ONLY their own records in self-service collections (no cross-employee read)
         if lvl == "staff" and name in self.SELF_OWNED:
             myid, myname = u.get("id"), u.get("name")
@@ -6027,6 +6085,24 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        # A chat message says who said it, so authorship is stamped from the SESSION and the client's
+        # version is discarded — setdefault would let a browser claim to be somebody else. Same for the
+        # time: a client-supplied ts could backdate a message into the middle of an argument. Posting
+        # is also refused outright on a project the caller cannot see, so the read scoping above
+        # cannot be sidestepped by writing instead.
+        if name == "pm_chat":
+            vis = self._pm_visible_projects(u)
+            if vis is not None and item.get("projectId") not in vis:
+                return self._err("You can only post in a project you are on.", 403)
+            item["authorName"] = u.get("name") or "User"
+            item["authorId"] = u.get("id") or ""
+            item["authorEmail"] = (u.get("email") or "").lower()
+            item["createdBy"] = u.get("name")          # plain assignment, not setdefault: the pm_ block
+            item["createdById"] = u.get("id")          # above would let a client pre-claim somebody
+            item["ts"] = self._utc_now_ms()            # else's id and inherit their delete rights
+            item["body"] = str(item.get("body") or "")[:8000]
+            for k in ("editedAt", "deletedAt", "deletedBy"):
+                item.pop(k, None)                      # a message is never born edited or deleted
         # Payroll dual-control: a run is PREPARED here (never born finalised, even if the client says so)
         # and only a Director e-signature (/api/esign, preparer != approver) can finalise it. Stamp the
         # preparer so segregation of duties can exclude them.
@@ -6522,6 +6598,30 @@ class Handler(BaseHTTPRequestHandler):
                     item["createdBy"] = existing.get("createdBy")
                 if existing.get("createdById") is not None:
                     item["createdById"] = existing.get("createdById")
+            # A chat message is a statement somebody made. The ONLY thing an edit may change is the
+            # words, and only the person who said them may change those.
+            #
+            # Without this the generic PATCH — a blind full-document overwrite (`item = dict(body)`)
+            # whose pm_ guard pins only createdBy/createdById — would happily write authorName,
+            # authorId, ts and projectId straight from the browser. That is: put words in a colleague's
+            # mouth, backdate a message into the middle of an argument, or move a message into another
+            # project and out of the read scoping above. Exactly the hole closed in /api/esign last
+            # week, and it would have shipped again here.
+            if name == "pm_chat":
+                if not existing:
+                    return self._err("Message not found.", 404)
+                vis = self._pm_visible_projects(u)
+                if vis is not None and existing.get("projectId") not in vis:
+                    return self._err("You can only edit a message in a project you are on.", 403)
+                is_admin = self._caller_level(u) == "admin"
+                if not is_admin and (existing.get("authorId") or "") != (u.get("id") or ""):
+                    return self._err("You can only edit your own message.", 403)
+                body_txt = str(item.get("body") or "")[:8000]
+                item = dict(existing)                       # nothing but the words may move
+                if body_txt != str(existing.get("body") or ""):
+                    item["body"] = body_txt
+                    item["editedAt"] = self._utc_now_ms()   # so the UI can show it was changed
+                item["id"] = iid
             # A variation order and an interim payment certificate are the two documents where money
             # and time actually move on a construction contract, and the classic dispute surface. They
             # were the LEAST protected records in the system: signer name and signature rode through

@@ -14843,7 +14843,7 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'];
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
 // after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
@@ -14867,7 +14867,7 @@ async function _pmLoadCore() {
 // and the Document Control register both span these, and would silently export nothing). They are
 // merely taken OFF the critical path: the paint waits for the rest, these keep loading behind it, and
 // anything that needs them awaits _pmReady() first. Worst case that is exactly today's behaviour.
-const _PM_LATE_COLLS = ['pm_comms', 'pm_procurement', 'pm_procurement_payments', 'pm_sitereports', 'pm_weekreports'];
+const _PM_LATE_COLLS = ['pm_chat', 'pm_comms', 'pm_procurement', 'pm_procurement_payments', 'pm_sitereports', 'pm_weekreports'];
 // The tabs that read them: Comms & Issues (pm_comms), Procurement (both procurement colls),
 // Documents (site/week reports) and Docs Control (the file register spans all of them).
 const _PM_LATE_TABS = ['comms', 'procure', 'documents', 'docs'];
@@ -15480,6 +15480,7 @@ const _PM_TABS = [
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts' },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality' },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources' },
+  { k: 'chat', label: 'Chat', fn: 'pmRenderChat' },
   { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms' },
   { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
   { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
@@ -16516,6 +16517,155 @@ function _pmSignCell(coll, r) {
   return '<span style="font-size:11px;color:var(--text-light);white-space:nowrap">✍ ' + _pmEsc(who) + (when ? ' · ' + _pmFmt(when) : '') + '</span>';
 }
 
+/* ---------- Project Chat ----------
+   The working conversation for a project, as a Teams-style channel: posts oldest-first so the newest
+   sits at the bottom where you are already looking, replies tucked under the post they answer, one
+   level deep. Deliberately NOT the Comms register next door — that is the controlled record you hand
+   a client or an auditor (minutes, notices, letters, with an audience and a status). Roughly: if it
+   has to be FILED it goes in Comms; if it has to be SAID it goes here.
+
+   Replies are one level on purpose. A reply to a reply is re-pointed at the thread root, because a
+   construction team needs "which post is this about", not an arbitrarily deep tree nobody can follow
+   on a phone. */
+let _pmChatReplyTo = '';           // which thread the composer is currently answering
+let _pmChatEditId = '';            // message being edited, if any
+function _pmChatFmt(ts) {
+  const d = new Date(String(ts || ''));
+  if (isNaN(d)) return '';
+  return d.toLocaleTimeString(_LANG.cur === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+function _pmChatDay(ts) {
+  const d = new Date(String(ts || '')); if (isNaN(d)) return '';
+  const today = new Date(), y = new Date(Date.now() - 86400000);
+  const same = (a, b) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return _t('Today');
+  if (same(d, y)) return _t('Yesterday');
+  return d.toLocaleDateString(_LANG.cur === 'vi' ? 'vi-VN' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+/* Body text is user input and is rendered as TEXT — escaped, with newlines preserved and bare links
+   made clickable. Never innerHTML from a message. */
+function _pmChatBody(txt) {
+  const esc = _pmEsc(String(txt || ''));
+  return esc.replace(/\n/g, '<br>').replace(/(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer" style="color:var(--navy);word-break:break-all">$1</a>');
+}
+function _pmChatMine(m) {
+  const meId = (TK.user || {}).id || '';
+  return !!meId && m.authorId === meId;
+}
+function pmRenderChat(pid) {
+  const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
+  const all = _pmScopeFor('pm_chat', pid).slice().sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
+  const roots = all.filter(m => !m.parentId);
+  const kids = {}; all.forEach(m => { if (m.parentId) (kids[m.parentId] = kids[m.parentId] || []).push(m); });
+  // A thread with a fresh reply belongs at the bottom, like a Teams channel. Computed here rather
+  // than stored on the root, so a reply never has to write to somebody else's message.
+  const lastAct = r => [r.ts].concat((kids[r.id] || []).map(k => k.ts)).sort().slice(-1)[0] || r.ts;
+  roots.sort((a, b) => String(lastAct(a)).localeCompare(String(lastAct(b))));
+
+  const msg = (m, isReply) => {
+    const nm = m.authorName || 'Someone';
+    return '<div style="display:flex;gap:10px;padding:' + (isReply ? '7px 0 7px 0' : '10px 0') + '">' +
+      '<span style="flex:0 0 auto;margin-top:2px">' + _pmMiniAvatar(nm) + '</span>' +
+      '<div style="min-width:0;flex:1">' +
+        '<div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">' +
+          '<span style="font-weight:700;font-size:13px;color:var(--text-dark)">' + _pmEsc(nm) + '</span>' +
+          '<span style="font-size:11px;color:var(--text-light);font-variant-numeric:tabular-nums">' + _pmChatFmt(m.ts) + '</span>' +
+          (m.editedAt ? '<span style="font-size:10.5px;color:var(--text-light)">· ' + _t('edited') + '</span>' : '') +
+          (_pmChatMine(m) ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:1px 7px;margin-left:auto" onclick="pmChatEdit(\'' + m.id + '\')">' + _t('Edit') + '</button>' : '') +
+        '</div>' +
+        '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body) + '</div>' +
+      '</div></div>';
+  };
+
+  let body = '', lastDay = '';
+  roots.forEach(r => {
+    const d = _pmChatDay(r.ts);
+    if (d !== lastDay) {
+      lastDay = d;
+      body += '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 2px"><span style="flex:1;height:1px;background:var(--line)"></span>' +
+        '<span style="font-size:11px;color:var(--text-light);font-weight:600">' + _pmEsc(d) + '</span>' +
+        '<span style="flex:1;height:1px;background:var(--line)"></span></div>';
+    }
+    const rep = (kids[r.id] || []).sort((a, b) => String(a.ts || '').localeCompare(String(b.ts || '')));
+    body += '<div class="card" style="padding:12px 15px;margin-bottom:10px">' + msg(r, false) +
+      (rep.length ? '<div style="margin-left:16px;padding-left:14px;border-left:2px solid var(--line)">' + rep.map(k => msg(k, true)).join('') + '</div>' : '') +
+      '<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:7px">' +
+        '<button class="btn btn-ghost btn-sm" style="font-size:11.5px;padding:3px 9px;color:var(--navy)" onclick="pmChatReply(\'' + r.id + '\')">' +
+        tkIcon('message', 12) + ' ' + _t(rep.length ? 'Reply' : 'Reply to this') + '</button>' +
+      '</div></div>';
+  });
+
+  const empty = '<div class="card" style="padding:34px 20px;text-align:center">' +
+    '<div style="font-size:15px;font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('No messages yet') + '</div>' +
+    '<div style="font-size:13px;color:var(--text-light);max-width:38em;margin:0 auto;line-height:1.6">' +
+      _t('The working conversation for this project — say it here first. Anything that has to be filed for the client or an auditor belongs in Comms & Issues instead.') + '</div></div>';
+
+  _pmSet(
+    '<div class="card" style="padding:11px 15px;margin-bottom:12px;border-left:3px solid var(--emerald);font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+      '<b style="color:var(--text-dark)">' + _t('Chat') + '</b> — ' + _t('the working conversation for this project. Only people on this project can read it.') +
+    '</div>' +
+    '<div id="pm-chat-scroll" style="max-height:calc(100vh - 330px);overflow-y:auto;padding-right:2px">' + (roots.length ? body : empty) + '</div>' +
+    '<div class="card" style="padding:11px 13px;margin-top:12px;position:sticky;bottom:0">' +
+      '<div id="pm-chat-ctx" style="display:none;font-size:11.5px;color:var(--text-light);margin-bottom:6px"></div>' +
+      '<div style="display:flex;gap:9px;align-items:flex-end">' +
+        '<textarea id="pm-chat-input" rows="1" placeholder="' + _tkEscA(_t('Write a message…')) + '" ' +
+          'oninput="this.style.height=\'auto\';this.style.height=Math.min(this.scrollHeight,140)+\'px\'" ' +
+          'onkeydown="if(event.key===\'Enter\'&&!event.shiftKey&&!event.altKey){event.preventDefault();pmChatSend()}" ' +
+          'style="flex:1;min-width:0;resize:none;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-md);font-family:inherit;font-size:14px;line-height:1.5;background:var(--card);color:var(--text-dark)"></textarea>' +
+        '<button class="btn btn-primary" style="flex:0 0 auto" onclick="pmChatSend()">' + tkIcon('check', 13) + ' ' + _t('Send') + '</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:5px">' + _t('Enter to send · Shift+Enter for a new line') + '</div>' +
+    '</div>');
+  _pmChatCtx();
+  const sc = document.getElementById('pm-chat-scroll'); if (sc) sc.scrollTop = sc.scrollHeight;   // land on the newest
+}
+function _pmChatCtx() {
+  const el = document.getElementById('pm-chat-ctx'); if (!el) return;
+  if (_pmChatEditId) {
+    el.style.display = ''; el.innerHTML = _t('Editing your message') +
+      ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
+  } else if (_pmChatReplyTo) {
+    const r = (_HR.pm_chat || []).find(x => x.id === _pmChatReplyTo);
+    el.style.display = ''; el.innerHTML = _t('Replying to') + ' <b>' + _pmEsc((r && r.authorName) || '') + '</b>' +
+      ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
+  } else { el.style.display = 'none'; el.innerHTML = ''; }
+}
+function pmChatReply(id) { _pmChatEditId = ''; _pmChatReplyTo = id; _pmChatCtx(); const i = document.getElementById('pm-chat-input'); if (i) i.focus(); }
+function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
+function pmChatEdit(id) {
+  const m = (_HR.pm_chat || []).find(x => x.id === id); if (!m) return;
+  _pmChatReplyTo = ''; _pmChatEditId = id;
+  const i = document.getElementById('pm-chat-input');
+  if (i) { i.value = m.body || ''; i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; i.focus(); }
+  _pmChatCtx();
+}
+async function pmChatSend() {
+  const i = document.getElementById('pm-chat-input'); if (!i) return;
+  const text = (i.value || '').trim(); if (!text) return;
+  const pid = _pmPid(); if (!pid) return;
+  i.disabled = true;
+  try {
+    if (_pmChatEditId) {
+      const ex = (_HR.pm_chat || []).find(x => x.id === _pmChatEditId) || {};
+      // The server accepts nothing but the words — author, time and project are pinned from the
+      // stored row — so sending the whole object back is safe and keeps _rev for the If-Match check.
+      const res = await tkApi('/api/coll/pm_chat/' + _pmChatEditId, { method: 'PATCH', body: { ...ex, body: text } });
+      const k = (_HR.pm_chat || []).findIndex(x => x.id === _pmChatEditId); if (k >= 0) _HR.pm_chat[k] = res.item;
+    } else {
+      // A reply to a reply is re-pointed at the thread root: one level, so it stays readable on a phone.
+      let parent = _pmChatReplyTo;
+      const pm = parent ? (_HR.pm_chat || []).find(x => x.id === parent) : null;
+      if (pm && pm.parentId) parent = pm.parentId;
+      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text } });
+      (_HR.pm_chat = _HR.pm_chat || []).push(res.item);
+    }
+    pmChatCancel();
+    pmRenderChat(pid);
+  } catch (e) {
+    toast(_t('Could not send') + ': ' + _errMsg(e), 'error', 5000);
+  } finally { const el = document.getElementById('pm-chat-input'); if (el) el.disabled = false; }
+}
 /* ---------- 7. Communications & Issues ---------- */
 let _pmFilt = {};
 function pmFiltSet(coll, k, v) { (_pmFilt[coll] = _pmFilt[coll] || {})[k] = v; _pmReload(); }
@@ -17821,6 +17971,18 @@ const _VI = {
   'Open risks (High+)': 'Rủi ro mở (Cao+)',
   'Milestones (overdue)': 'Cột mốc (trễ hạn)',
   'Overdue milestones': 'Cột mốc trễ hạn',
+  /* Project Chat. */
+  'Chat': 'Trao đổi',
+  'No messages yet': 'Chưa có tin nhắn',
+  'Write a message…': 'Nhập tin nhắn…',
+  'Send': 'Gửi',
+  'Reply': 'Trả lời', 'Reply to this': 'Trả lời',
+  'Replying to': 'Đang trả lời', 'Editing your message': 'Đang sửa tin nhắn của bạn',
+  'edited': 'đã sửa', 'Today': 'Hôm nay', 'Yesterday': 'Hôm qua',
+  'Could not send': 'Không gửi được',
+  'Enter to send · Shift+Enter for a new line': 'Enter để gửi · Shift+Enter để xuống dòng',
+  'the working conversation for this project. Only people on this project can read it.': 'trao đổi công việc của dự án. Chỉ người thuộc dự án này mới đọc được.',
+  'The working conversation for this project — say it here first. Anything that has to be filed for the client or an auditor belongs in Comms & Issues instead.': 'Trao đổi công việc của dự án — nói ở đây trước. Những gì cần lưu hồ sơ cho khách hàng hoặc kiểm toán thì đưa vào Comms & Issues.',
   /* SharePoint upload — what to do when Microsoft sign-in gets in the way. */
   'Saved in the app, not SharePoint': 'Đã lưu trong ứng dụng, chưa lên SharePoint',
   'Microsoft sign-in timed out. Check your connection, or open the portal in Chrome, then re-attach the file.': 'Đăng nhập Microsoft quá thời gian. Kiểm tra kết nối, hoặc mở cổng thông tin bằng Chrome, rồi đính kèm lại tệp.',
