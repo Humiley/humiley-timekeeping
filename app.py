@@ -6188,10 +6188,11 @@ class Handler(BaseHTTPRequestHandler):
                 _emp = db.get_employee(_eid)
                 if not _emp:
                     continue
-                # On the team by id, or named as the manager, or a manager-level reader who can see
-                # every project anyway — the same three routes _pm_visible_projects uses.
-                _ok = _eid in _vis_ids or self._pm_same_person(_proj.get("manager"), _emp.get("name")) \
-                    or self._level_rank(self._caller_level(_emp)) >= self._level_rank("manager")
+                # ON THIS PROJECT ONLY: a row on its Team, or its Project Manager. Being a manager
+                # is NOT a route in — a manager can READ every conversation, but @ is a summons, and
+                # summoning somebody to a job they are not on is how a channel turns into a paging
+                # system for the whole company. If they are needed, put them on the Team.
+                _ok = _eid in _vis_ids or self._pm_same_person(_proj.get("manager"), _emp.get("name"))
                 if not _ok:
                     for _r in db.list_collection("pm_resources"):
                         if _r.get("projectId") == item.get("projectId") and self._pm_same_person(_r.get("name"), _emp.get("name")):

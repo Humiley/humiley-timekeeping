@@ -378,14 +378,48 @@ def test_the_mentioned_name_comes_from_the_employee_record(api, tokens):
     assert b["item"]["mentions"] == [{"empId": "HML-OTH", "name": "Other Staff"}]
 
 
-def test_a_manager_can_be_mentioned_on_any_project(api, tokens):
-    """Managers can open every project, so mentioning one is never a way to reach somebody who could
-       not already read the conversation."""
-    pid = _project(api, tokens, "MEN-E")
+def test_a_manager_who_is_not_on_the_project_cannot_be_mentioned(api, tokens):
+    """Managers can READ every conversation, but @ is a summons. Being senior is not a reason to be
+       summonable to a job you are not on — otherwise the @ field is a company-wide paging system and
+       the Managing Director's phone buzzes for every project in the portfolio."""
+    pid = _project(api, tokens, "MEN-E", manager="Someone Else")   # NOT the Dept Manager
     _team(api, tokens, pid, "Staff One", "HML-STF")
     st, b = _mention(api, tokens["staff"], pid, "@Dept Manager can you approve",
                      [{"empId": "HML-MGR", "name": "Dept Manager"}])
+    assert b["item"]["mentions"] == [], "seniority was a way onto the mention list"
+
+
+def test_a_manager_put_on_the_team_can_be_mentioned(api, tokens):
+    """The way to reach somebody is to put them on the project. Then they are mentionable like anyone."""
+    pid = _project(api, tokens, "MEN-E2", manager="Someone Else")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Dept Manager", "HML-MGR")
+    st, b = _mention(api, tokens["staff"], pid, "@Dept Manager can you approve",
+                     [{"empId": "HML-MGR", "name": "Dept Manager"}])
     assert [m["empId"] for m in b["item"]["mentions"]] == ["HML-MGR"]
+
+
+def test_the_project_manager_is_mentionable_without_a_team_row(api, tokens):
+    """A PM is on the project by definition — the Charter names them — so they should not have to be
+       added to their own Team to be reachable."""
+    pid = _project(api, tokens, "MEN-E3", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _mention(api, tokens["staff"], pid, "@Dept Manager please review",
+                     [{"empId": "HML-MGR", "name": "Dept Manager"}])
+    assert [m["empId"] for m in b["item"]["mentions"]] == ["HML-MGR"]
+
+
+def test_being_mentionable_does_not_follow_you_to_another_project(api, tokens):
+    """On the job: yes. The next job along: no."""
+    a = _project(api, tokens, "MEN-E4", manager="Someone Else")
+    c = _project(api, tokens, "MEN-E5", manager="Someone Else")
+    _team(api, tokens, a, "Staff One", "HML-STF")
+    _team(api, tokens, a, "Other Staff", "HML-OTH")
+    _team(api, tokens, c, "Staff One", "HML-STF")
+    on = _mention(api, tokens["staff"], a, "@Other Staff here", [{"empId": "HML-OTH", "name": "Other Staff"}])
+    off = _mention(api, tokens["staff"], c, "@Other Staff here", [{"empId": "HML-OTH", "name": "Other Staff"}])
+    assert [m["empId"] for m in on[1]["item"]["mentions"]] == ["HML-OTH"]
+    assert off[1]["item"]["mentions"] == []
 
 
 def test_the_mention_list_is_deduped_and_bounded(api, tokens):

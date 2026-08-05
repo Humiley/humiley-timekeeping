@@ -16781,9 +16781,10 @@ function pmChatEdit(id) {
   _pmChatCtx();
 }
 let _pmChatMentions = [];   // {empId,name} actually picked for the next message
-/* Who can be mentioned on this project: the Team, the Project Manager, and managers (who can open
-   every project anyway). Resolved to EMPLOYEE RECORDS, never to a typed string — the server checks
-   the same list, and a mention is the one thing here that rings somebody's phone. */
+/* Who can be mentioned: the people ON THIS PROJECT — its Team rows and its Project Manager. Nobody
+   else, managers included. A manager can read every conversation, but @ is a summons, and summoning
+   somebody to a job they are not on turns a project channel into a company-wide paging system.
+   Resolved to EMPLOYEE RECORDS, never to a typed string; the server re-checks the same list. */
 function _pmChatPeople(pid) {
   const out = {}, add = e => { if (e && e.id && e.name) out[e.id] = { empId: e.id, name: e.name }; };
   const emps = _DEMO_EMPLOYEES || [];
@@ -16794,7 +16795,6 @@ function _pmChatPeople(pid) {
   });
   const p = _pmProj(pid);
   if (p && p.manager) { const hit = emps.filter(x => _pmSamePerson(x.name, p.manager)); if (hit.length === 1) add(hit[0]); }
-  emps.forEach(e => { if (_lvlRank(_deriveLevel(e)) >= _lvlRank('manager')) add(e); });
   return Object.values(out).sort((a, b) => a.name.localeCompare(b.name));
 }
 /* The @ menu. Opens on "@" and filters as you type, like Teams. */
@@ -16805,14 +16805,19 @@ function _pmChatAtKey(ev) {
   const q = upto.slice(at + 1).toLowerCase();
   const list = _pmChatPeople(_pmPid()).filter(x => !q || x.name.toLowerCase().indexOf(q) >= 0).slice(0, 6);
   document.getElementById('pm-at-pop')?.remove();
-  if (!list.length) return;
+  // Only people ON the project can be mentioned, so a project with an empty Team has nobody. Saying
+  // so beats a menu that silently refuses to open and leaves you retyping the name.
+  const empty = !_pmChatPeople(_pmPid()).length;
+  if (!list.length && !(empty && !q)) return;
   const pop = document.createElement('div');
   pop.id = 'pm-at-pop';
   // FIXED, not absolute: the coordinates below come from getBoundingClientRect, which is
   // viewport-relative. On a layout where the page itself scrolls (phones do) absolute would offset
   // the menu by the scroll position and drift away from the box it belongs to.
   pop.style.cssText = 'position:fixed;z-index:9600;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-card);padding:5px;min-width:210px;max-width:280px';
-  pop.innerHTML = list.map(x =>
+  pop.innerHTML = (empty ? '<div style="padding:8px 10px;font-size:12px;color:var(--text-light);line-height:1.5">' +
+      _pmEsc(_t('Nobody is on this project yet.')) + '<br><span style="font-size:11px">' +
+      _pmEsc(_t('Add them under Resources to mention them.')) + '</span></div>' : '') + list.map(x =>
     '<button type="button" onclick="pmChatPickAt(\'' + x.empId + '\')" style="display:flex;align-items:center;gap:9px;width:100%;border:none;background:none;cursor:pointer;padding:7px 9px;border-radius:8px;font-family:inherit;text-align:left" ' +
     'onmouseover="this.style.background=\'var(--soft-bg)\'" onmouseout="this.style.background=\'none\'">' +
     _pmMiniAvatar(x.name) + '<span style="font-size:13px;color:var(--text-dark);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _pmEsc(x.name) + '</span></button>').join('');
@@ -18304,6 +18309,8 @@ const _VI = {
   'Mentioned in': 'Được nhắc đến trong', 'a project': 'một dự án',
   'message names you': 'tin nhắn nhắc đến bạn', 'messages name you': 'tin nhắn nhắc đến bạn',
   'Mention someone': 'Nhắc đến ai đó',
+  'Nobody is on this project yet.': 'Chưa có ai trong dự án này.',
+  'Add them under Resources to mention them.': 'Thêm họ ở tab Nhân sự để có thể nhắc đến.',
   'That message is no longer here.': 'Tin nhắn này không còn nữa.',
   'NEW': 'MỚI',
   'Attach a file or photo': 'Đính kèm tệp hoặc ảnh',
