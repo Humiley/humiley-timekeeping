@@ -6256,8 +6256,13 @@ class Handler(BaseHTTPRequestHandler):
                                 if x.get("id") == _created.get("projectId")), {})
                     _label = (_pj.get("code") or _pj.get("name") or "Project")
                     _txt = (_created.get("body") or "").strip() or "(attachment)"
-                    _tk_push(_to, (_created.get("authorName") or "Someone") + " · " + _label,
-                             _txt[:160], "/", "pmchat-" + str(_created.get("projectId") or ""))
+                    # Deep-link to the message, not the front door: being told you were named and
+                    # then having to find the job, the tab and the line yourself is most of the work
+                    # of answering. Same-origin path only — the service worker refuses anything else.
+                    _url = "/?chat=" + urllib.parse.quote(str(_created.get("projectId") or "")) + \
+                           "&msg=" + urllib.parse.quote(str(_created.get("id") or ""))
+                    _tk_push(_to, (_created.get("authorName") or "Someone") + " \u00b7 " + _label,
+                             _txt[:160], _url, "pmchat-" + str(_created.get("projectId") or ""))
             except Exception:
                 pass                                                   # a chat post must never fail on a push
         self._finsp_file(name, _created)

@@ -3928,7 +3928,8 @@ function _tkNotifRow(x, isNew) {
   const icon = at
     ? '<div class="notif-icon" style="background:var(--light-tint);color:var(--emerald-deep);font-weight:800;font-size:14px">@</div>'
     : '<div class="notif-icon" style="background:#FEF3C7;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>';
-  return '<div class="notif-item" onclick="showView(\'' + x.view + '\');toggleNotifications()" style="' + (isNew ? '' : 'opacity:.62') + '">' + icon +
+  // `go` wins when the item knows exactly where it lives; `view` is the plain-section fallback.
+  return '<div class="notif-item" onclick="' + (x.go || ('showView(\'' + x.view + '\')')) + ';toggleNotifications()" style="' + (isNew ? '' : 'opacity:.62') + '">' + icon +
     '<div class="notif-body"><strong>' + _crmEsc(x.title) +
     (isNew ? ' <span style="display:inline-block;background:var(--emerald);color:#fff;font-size:9px;font-weight:800;border-radius:6px;padding:1px 5px;vertical-align:1px">' + _t('NEW') + '</span>' : '') +
     '</strong><span>' + _crmEsc(x.sub) + '</span></div></div>';
@@ -3939,7 +3940,7 @@ function _tkBellChat() {
     key: 'chat:' + pid + ':' + m[pid],           // count is in the key, so a new mention re-lights it
     title: _t('Mentioned in') + ' ' + (nm[pid] || _t('a project')),
     sub: m[pid] + ' ' + _t(m[pid] === 1 ? 'message names you' : 'messages name you'),
-    view: 'pm-projects', d: ''
+    go: 'pmChatGoto(\'' + pid + '\')', view: 'pm-projects', d: ''
   }));
 }
 function tkUpdateNotifications() {
@@ -4981,6 +4982,19 @@ function _applyRole(role) {
     try { history.replaceState(null, '', location.pathname); } catch (e) {}   // drop the param
     return;
   }
+  /* Deep-link: a mention notification opens /?chat=<projectId>&msg=<messageId>. Tapping "X mentioned
+     you" on a phone used to land on the dashboard, leaving you to find the job, the tab and the
+     message yourself — which is most of the work of answering. */
+  try {
+    const _q = new URLSearchParams(location.search), _cp = _q.get('chat');
+    if (_cp && !_appDeniedCurrent('pm')) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      // The project list has to be in memory before we can tell a project you lost access to from
+      // one that simply has not loaded yet.
+      _pmLoadCore().then(() => pmChatGoto(_cp, _q.get('msg') || '')).catch(() => showView('pm-projects', null, 'Projects'));
+      return;
+    }
+  } catch (e) {}
   /* navigate to correct home — Company Dashboard is Management (Approver) level and above only */
   if (isManager && _lvlRank(_userLevel) >= _lvlRank('management')) {
     showView('dashboard', document.getElementById('nav-company-dash'), 'Company Dashboard');
@@ -14903,7 +14917,7 @@ async function _pmLoadCore() {
 const _PM_LATE_COLLS = ['pm_chat', 'pm_comms', 'pm_procurement', 'pm_procurement_payments', 'pm_sitereports', 'pm_weekreports'];
 // The tabs that read them: Comms & Issues (pm_comms), Procurement (both procurement colls),
 // Documents (site/week reports) and Docs Control (the file register spans all of them).
-const _PM_LATE_TABS = ['comms', 'procure', 'documents', 'docs'];
+const _PM_LATE_TABS = ['comms', 'procure', 'documents', 'docs', 'chat'];
 let _pmLatePromise = null;
 async function _pmLoadAll() {
   const early = _PM_ALL_COLLS.filter(c => _PM_LATE_COLLS.indexOf(c) < 0);
@@ -15528,8 +15542,10 @@ async function pmRenderWorkspace() {
   const root = document.getElementById('pm-project-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
   await _pmLoadAll();
-  const p = _pmProj(); if (!p) { root.innerHTML = '<div class="card" style="padding:20px">Project not found. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
-  if (!_pmSeeAll() && !_pmVisIds().has(p.id)) { root.innerHTML = '<div class="card" style="padding:20px">You do not have access to this project. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
+  // Both bail-outs below return BEFORE pmTab(), so pmRenderChat never runs to consume a pending
+  // jump. Left set, it would latch and fire on the next conversation opened.
+  const p = _pmProj(); if (!p) { _pmChatJumpTo = ''; root.innerHTML = '<div class="card" style="padding:20px">Project not found. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
+  if (!_pmSeeAll() && !_pmVisIds().has(p.id)) { _pmChatJumpTo = ''; root.innerHTML = '<div class="card" style="padding:20px">You do not have access to this project. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
   const rag = _pmEffectiveRag(p);
   const back = '<button class="btn btn-ghost btn-sm" onclick="showView(\'pm-projects\',null,\'Projects\')" style="font-size:12px">' + tkIcon('arrowLeft', 13) + ' Projects</button>';
   const hdr = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
@@ -16647,7 +16663,7 @@ function pmRenderChat(pid) {
   const msg = (m, isReply) => {
     const nm = m.authorName || 'Someone';
     const atMe = (m.mentions || []).some(x => (x || {}).empId === meId);
-    return '<div style="display:flex;gap:10px;padding:' + (isReply ? '7px 0 7px 0' : '10px 0') + '' +
+    return '<div id="pmmsg-' + m.id + '" style="display:flex;gap:10px;padding:' + (isReply ? '7px 0 7px 0' : '10px 0') + '' +
       (atMe ? ';border-left:3px solid var(--emerald);padding-left:9px;margin-left:-12px;background:rgba(0,176,96,.045);border-radius:0 8px 8px 0' : '') + '">' +
       '<span style="flex:0 0 auto;margin-top:2px">' + _pmMiniAvatar(nm) + '</span>' +
       '<div style="min-width:0;flex:1">' +
@@ -16708,6 +16724,7 @@ function pmRenderChat(pid) {
   _pmChatCtx();
   const sc = document.getElementById('pm-chat-scroll'); if (sc) sc.scrollTop = sc.scrollHeight;   // land on the newest
   pmChatMarkRead(pid);      // opening the tab IS reading it
+  if (_pmChatJumpTo) { const t = _pmChatJumpTo; _pmChatJumpTo = ''; _pmChatLandOn(t); }
 }
 function _pmChatCtx() {
   const el = document.getElementById('pm-chat-ctx'); if (!el) return;
@@ -16719,6 +16736,40 @@ function _pmChatCtx() {
     el.style.display = ''; el.innerHTML = _t('Replying to') + ' <b>' + _pmEsc((r && r.authorName) || '') + '</b>' +
       ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
   } else { el.style.display = 'none'; el.innerHTML = ''; }
+}
+let _pmChatJumpTo = '';            // a message a notification sent us to, consumed on the next paint
+/* Being told you were named, then having to hunt for the message, is most of the work of answering.
+   Land ON it, mark it, and open the reply box — the notification and the response are one move. */
+function _pmChatLandOn(id) {
+  const el = document.getElementById('pmmsg-' + id);
+  if (!el) { toast(_t('That message is no longer here.'), 'warn'); return; }
+  try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { el.scrollIntoView(); }
+  // A brief marker, not a permanent one: it says "this is the one" and then gets out of the way.
+  // Restore ALL of them: a message that mentions you already carries an inline border-radius of
+  // '0 8px 8px 0', and leaving the marker's 8px behind squares off its emerald rail for good.
+  const was = { s: el.style.boxShadow, b: el.style.background, r: el.style.borderRadius, t: el.style.transition };
+  el.style.transition = 'box-shadow .4s ease, background .4s ease';
+  el.style.boxShadow = '0 0 0 2px var(--emerald)';
+  el.style.background = 'rgba(0,176,96,.10)';
+  el.style.borderRadius = '8px';
+  setTimeout(() => {
+    el.style.boxShadow = was.s; el.style.background = was.b;
+    el.style.borderRadius = was.r; el.style.transition = was.t;
+  }, 2600);
+  pmChatReply(id);            // composer is already answering it
+}
+/* Open a project's conversation straight at one message. Used by the bell, the row badges, and the
+   ?chat=/&msg= deep link a push notification opens. */
+function pmChatGoto(pid, msgId) {
+  if (!pid) return;
+  _pmChatJumpTo = msgId || '';
+  // Deliberately NO access check here. An earlier version refused when the project was missing from
+  // _HR.pm_projects, which was wrong twice over: that array is not loaded until the Projects section
+  // has been opened, so the first bell tap of a session accused people of losing access to a job they
+  // were on; and pm_projects is not scoped server-side (only pm_chat is), so somebody genuinely taken
+  // off the job still had it in the array and sailed through. pmRenderWorkspace loads the data first
+  // and then makes the real call — "You do not have access to this project" — so let it.
+  pmGoto(pid, 'chat');
 }
 function pmChatReply(id) { _pmChatEditId = ''; _pmChatReplyTo = id; _pmChatCtx(); const i = document.getElementById('pm-chat-input'); if (i) i.focus(); }
 function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatMentions = []; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
@@ -16797,8 +16848,12 @@ function _pmChatBadge(pid) {
   const n = (_pmChatUnread.unread || {})[pid] || 0, at = (_pmChatUnread.mentions || {})[pid] || 0;
   if (!n) return '';
   // A mention is louder than a message, because it is the one that was actually aimed at you.
-  return '<span title="' + _tkEscA(at ? at + ' ' + _t('mentioning you') : n + ' ' + _t('unread')) + '" ' +
-    'style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:10.5px;font-weight:800;color:#fff;background:' +
+  // The badge is the shortcut: on a project row it opens the CONVERSATION, not the overview tab the
+  // row itself opens. stopPropagation so the row's own click does not win.
+  return '<span role="button" tabindex="0" title="' + _tkEscA(at ? at + ' ' + _t('mentioning you') : n + ' ' + _t('unread')) + '" ' +
+    'onclick="event.stopPropagation();pmChatGoto(\'' + pid + '\')" ' +
+    'onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();event.stopPropagation();pmChatGoto(\'' + pid + '\')}" ' +
+    'style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;font-size:10.5px;font-weight:800;color:#fff;cursor:pointer;background:' +
     (at ? 'var(--emerald-deep)' : 'var(--navy)') + ';margin-left:6px;font-variant-numeric:tabular-nums">' + (at ? '@' + at : n) + '</span>';
 }
 function _pmChatPaintBadges() {
@@ -18249,6 +18304,7 @@ const _VI = {
   'Mentioned in': 'Được nhắc đến trong', 'a project': 'một dự án',
   'message names you': 'tin nhắn nhắc đến bạn', 'messages name you': 'tin nhắn nhắc đến bạn',
   'Mention someone': 'Nhắc đến ai đó',
+  'That message is no longer here.': 'Tin nhắn này không còn nữa.',
   'NEW': 'MỚI',
   'Attach a file or photo': 'Đính kèm tệp hoặc ảnh',
   'Emoji': 'Biểu tượng cảm xúc',

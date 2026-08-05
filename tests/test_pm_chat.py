@@ -595,6 +595,33 @@ def test_the_push_opens_the_app_not_an_outside_link(api, tokens, monkeypatch):
     assert sent[0]["tag"] == "pmchat-" + pid, "without a per-project tag every mention stacks up"
 
 
+def test_the_push_lands_on_the_message_not_the_front_door(api, tokens, monkeypatch):
+    """Tapping "X mentioned you" used to open the dashboard, leaving the engineer to find the job, the
+       tab and the line themselves — which is most of the work of answering."""
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-H")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    st, b = _mention(api, tokens["staff"], pid, "@Other Staff which riser?",
+                     [{"empId": "HML-OTH", "name": "Other Staff"}])
+    url = sent[0]["url"]
+    assert "chat=" + pid in url, "the notification does not say which project"
+    assert "msg=" + b["item"]["id"] in url, "the notification does not say which message"
+
+
+def test_the_push_link_stays_inside_the_app(api, tokens, monkeypatch):
+    """The service worker refuses anything that is not a same-origin path, and '//host' is not one."""
+    sent = _pushes(monkeypatch)
+    pid = _project(api, tokens, "PSH-I")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    _mention(api, tokens["staff"], pid, "@Other Staff check",
+             [{"empId": "HML-OTH", "name": "Other Staff"}])
+    url = sent[0]["url"]
+    assert url.startswith("/?") and not url.startswith("//")
+    assert "://" not in url
+
+
 def test_a_photo_only_mention_still_says_something(api, tokens, monkeypatch):
     """An empty push body shows as a blank notification on the lock screen."""
     sent = _pushes(monkeypatch)
