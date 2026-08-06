@@ -1472,6 +1472,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into &lt;Payments|Claims|Travel&gt;/&lt;year&gt;/&lt;month&gt;/&lt;reference&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkFinSpTest()">Test connection</button><button class="btn btn-outline btn-sm" onclick="tkFinSpBackfill()">Archive existing files</button></div><div id="finsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
+    <div class="form-group"><label class="form-label">HR SharePoint folder (URL)</label><input class="form-control" id="portal-hrsp" placeholder="https://humiley.sharepoint.com/sites/HR/Shared Documents"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link for HR documents. Job Descriptions attached to a requisition are filed by the SERVER into JD/&lt;year&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank and JDs stay inside the portal.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
@@ -5462,6 +5463,7 @@ async function tkLoadIntegrations() {
   const g = (k, fb) => (live && typeof live[k] === 'string') ? live[k] : fb;
   const tw = document.getElementById('portal-teams'); if (tw) tw.value = g('teamsWebhook', (window._TK_PORTAL && window._TK_PORTAL.teamsWebhook) || '');
   const fs = document.getElementById('portal-finsp'); if (fs) fs.value = g('financeSpUrl', (window._TK_PORTAL && window._TK_PORTAL.financeSpUrl) || (TK.cfg && TK.cfg.financeSpUrl) || '');
+  const hs = document.getElementById('portal-hrsp'); if (hs) hs.value = g('hrSpUrl', (window._TK_PORTAL && window._TK_PORTAL.hrSpUrl) || (TK.cfg && TK.cfg.hrSpUrl) || '');
   const _ae = document.getElementById('portal-apprEmail'); if (_ae) _ae.checked = String(g('apprEmail', '1')) !== '0';
   const _ah = document.getElementById('portal-apprHr'); if (_ah) _ah.value = g('apprSenderHr', 'hr@humiley.com');
   const _af = document.getElementById('portal-apprFin'); if (_af) _af.value = g('apprSenderFinance', 'finance@humiley.com');
@@ -5617,6 +5619,7 @@ async function tkSaveIntegrations() {
   const payload = {
     teamsWebhook: V('portal-teams'),
     financeSpUrl: V('portal-finsp'),
+    hrSpUrl: V('portal-hrsp'),
     procurementUrl: V('portal-procurl'),
     apprEmail: C('portal-apprEmail') ? '1' : '0',
     apprSenderHr: V('portal-apprHr'),
@@ -6357,8 +6360,8 @@ async function tkRenderRecruitment() {
         return '<div class="card" style="padding:10px;margin-bottom:8px"><div style="font-weight:700;font-size:13px;cursor:pointer" title="View details" onclick="tkCandidateDetail(\'' + c.id + '\')">' + c.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (c.role || '') + '</div>' + (c.rating ? ('<div style="font-size:11px;margin-top:3px">' + _hrStars(c.rating) + '</div>') : '') + '<div style="display:flex;gap:4px;margin-top:7px;flex-wrap:wrap">' + hire + adv + _hrEditDel('candidates', c.id, 'recruitment') + '</div></div>';
       }).join('') || '<div style="font-size:11px;color:var(--text-light);text-align:center;padding:8px 0">—</div>') + '</div>';
   }).join('');
-  const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>Status</th><th></th></tr></thead><tbody>' +
-    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + (j.grade ? ' <span class="badge b-navy" style="font-size:9px">' + j.grade + '</span>' : '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td><span class="badge ' + (j.status === 'Open' || j.status === 'Approved' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" title="Approval routing" style="font-size:10px;padding:4px 7px" onclick="tkReqRouting(\'' + j.id + '\')">Route</button>' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : tkEmptyRow(7, 'No jobs posted yet', { icon: 'inbox' })) + '</tbody></table></div></div>';
+  const jt = '<div class="card" style="margin-top:20px;padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Open Positions</div></div><div class="table-wrap"><table><thead><tr><th>Position</th><th>Department</th><th>Location</th><th>Type</th><th>Openings</th><th>JD</th><th>Status</th><th></th></tr></thead><tbody>' +
+    (jobs.length ? jobs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + (j.grade ? ' <span class="badge b-navy" style="font-size:9px">' + j.grade + '</span>' : '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.location || '') + '</td><td>' + (j.type || '') + '</td><td>' + (j.openings || 0) + '</td><td style="white-space:nowrap">' + _hrJdCell(j) + '</td><td><span class="badge ' + (j.status === 'Open' || j.status === 'Approved' ? 'b-ok' : j.status === 'Closed' ? 'b-danger' : 'b-warn') + '" style="font-size:10px">' + (j.status || '') + '</span></td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" title="Approval routing" style="font-size:10px;padding:4px 7px" onclick="tkReqRouting(\'' + j.id + '\')">Route</button>' + _hrEditDel('jobs', j.id, 'recruitment') + '</td></tr>').join('') : tkEmptyRow(7, 'No jobs posted yet', { icon: 'inbox' })) + '</tbody></table></div></div>';
   // Monthly dashboard (funnel conversion, SLA tiers, source mix) per QĐ.HR-01
   const funnelStages = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
   const fcount = funnelStages.map(s => cands.filter(c => c.stage === s).length);
@@ -8208,6 +8211,187 @@ function _lhLogoWarm() {
 function _lhLogo() { return _lhLogoSmall || _LH.logo; }
 setTimeout(_lhLogoWarm, 1800);                    // warm shortly after boot so even the FIRST click is fast
 /* Draw the letterhead header on the current page (native jsPDF). Deterministic height. */
+/* ── Job Descriptions ──────────────────────────────────────────────────────────────────────────────
+   A requisition without a JD is a requisition nobody can advertise, brief an interviewer from, or
+   defend at audit. So every Open Position carries one: attach the real document if HR has written it,
+   or generate a first draft from the requisition and edit it later.
+
+   The document lives in HR SharePoint, not in the portal database. The portal keeps the LINK, and
+   only falls back to storing the bytes when SharePoint has not been configured — a JD is a file
+   people send to candidates, and it belongs where the rest of HR's files are. */
+
+function _hrJdCell(j) {
+  const jd = j && j.jd;
+  if (!jd || !jd.name) {
+    return '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 9px" ' +
+      'onclick="hrJdGenerate(\'' + j.id + '\')" title="' + _tkEscA(_t('Generate a first-draft JD from this requisition')) + '">' +
+      _t('Generate') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 7px" ' +
+      'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Attach an existing JD file')) + '">' + _t('Attach') + '</button>';
+  }
+  // A generated draft is labelled as one. Somebody briefing an interviewer should be able to see at a
+  // glance whether a human has actually written this yet.
+  const tag = jd.generated
+    ? '<span class="badge b-warn" style="font-size:9px;margin-left:5px">' + _t('Draft') + '</span>' : '';
+  const where = jd.webUrl ? _t('Open in SharePoint') : _t('Stored in the portal');
+  return '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:4px 7px;color:var(--navy);font-weight:600" ' +
+    'onclick="hrJdOpen(\'' + j.id + '\')" title="' + _tkEscA(where) + '">' + tkIcon('file', 12) + ' ' + _t('Show') + '</button>' + tag +
+    '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 6px;color:var(--text-light)" ' +
+    'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Replace the JD')) + '">' + _t('Replace') + '</button>';
+}
+
+function hrJdOpen(id) {
+  const j = (_HR.jobs || []).find(x => x.id === id), jd = j && j.jd;
+  if (!jd) return;
+  if (jd.webUrl) { window.open(jd.webUrl, '_blank', 'noopener'); return; }
+  if (jd.data) { _tkPreviewUrl(jd.data, jd.name); return; }
+  toast(_t('That JD file is no longer available.'), 'warn');
+}
+
+/* Attach a JD somebody has already written. */
+function hrJdPick(id) {
+  let el = document.getElementById('hr-jd-file');
+  if (!el) {
+    el = document.createElement('input');
+    el.type = 'file'; el.id = 'hr-jd-file'; el.style.display = 'none';
+    el.accept = '.pdf,.doc,.docx,application/pdf';
+    document.body.appendChild(el);
+  }
+  el.onchange = async () => {
+    const f = el.files && el.files[0]; el.value = '';
+    if (!f) return;
+    if (f.size > TK_MAX_INLINE) { toast(_t('That file is too large.') + ' ' + TK_MAX_INLINE_MB + ' MB max.', 'warn'); return; }
+    const data = await new Promise((res, rej) => {
+      const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f);
+    });
+    await _hrJdSave(id, f.name, data, false);
+  };
+  el.click();
+}
+
+/* Build a first draft from the requisition, on the Humiley letterhead like every other portal
+   document. It is explicitly a DRAFT: the portal knows the role, the grade and the department, and
+   nothing about what the job actually involves, so it writes the frame and says so. */
+async function hrJdGenerate(id) {
+  const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
+  try {
+    const ready = () => (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!ready()) {
+      if (typeof tkEnsureExportLibs === 'function') tkEnsureExportLibs();
+      toast(_t('Loading PDF engine…'), 'info', 2500);
+      for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150));
+    }
+    const J = ready();
+    if (!J) { toast(_t('PDF engine not ready — try again in a moment'), 'warn'); return; }
+    const doc = new J({ unit: 'mm', format: 'a4' });
+    const W = 210, M = 16, RIGHT = W - M;
+    const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK;
+    const D = v => (v && String(v).trim()) ? String(v).trim() : '—';
+    let y = _brandHeader(doc, { title: 'JOB DESCRIPTION', subtitle: D(j.title) + '  ·  ' + D(j.dept), docCode: 'BM.HR-01-01' });
+
+    // ── the facts the requisition actually knows ──
+    doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
+    doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
+    const cX = [M + 4, M + 64, M + 124];
+    const field = (x, yy, lab, val) => {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
+    };
+    field(cX[0], y + 6, 'Position / Vi tri', j.title);
+    field(cX[1], y + 6, 'Department / Bo phan', j.dept);
+    field(cX[2], y + 6, 'Grade / Bac luong', j.grade);
+    field(cX[0], y + 14.5, 'Location / Dia diem', j.location);
+    field(cX[1], y + 14.5, 'Employment type / Loai HD', j.type);
+    field(cX[2], y + 14.5, 'Openings / So luong', String(j.openings || 1));
+    y += 27;
+
+    const H = t => { doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY); doc.text(t, M, y); y += 5; };
+    const P = t => {
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK);
+      doc.splitTextToSize(t, W - 2 * M).forEach(line => {
+        if (y > 268) { doc.addPage(); y = _brandHeader(doc, { title: 'JOB DESCRIPTION', subtitle: D(j.title), docCode: 'BM.HR-01-01' }); }
+        doc.text(line, M, y); y += 4.6;
+      });
+      y += 2.5;
+    };
+    const BULLETS = arr => arr.forEach(t => P('\u2022  ' + t));
+
+    H('1.  PURPOSE OF THE ROLE  ·  Muc dich cong viec');
+    P(D(j.title) + ' reports into ' + D(j.dept) + ' and is based at ' + D(j.location) + '. ' +
+      (j.reason ? 'This position arises from: ' + j.reason + '. ' : '') +
+      'Humiley designs, manufactures and installs HVAC and cleanroom systems, so the holder is ' +
+      'expected to work to the project programme, the contract specification and the applicable ' +
+      'standards (EN 1886, ISO 14644, EU-GMP) as they apply to the works in hand.');
+
+    H('2.  KEY RESPONSIBILITIES  ·  Trach nhiem chinh');
+    BULLETS([
+      'Deliver the assigned scope to the agreed programme, budget and quality standard.',
+      'Work to the approved drawings, method statements and inspection & test plans; raise an RFI ' +
+        'rather than proceed on an assumption.',
+      'Record progress, issues and site instructions in the Humiley Portal on the day they happen.',
+      'Comply with site HSE rules and the cleanroom protocols applying to the area of work.',
+      'Support handover: as-built information, test records and O&M content for the assigned scope.'
+    ]);
+
+    H('3.  REQUIREMENTS  ·  Yeu cau');
+    BULLETS([
+      'Qualification appropriate to grade ' + D(j.grade) + ' in a relevant engineering discipline.',
+      'Experience in HVAC, mechanical or cleanroom fit-out works of comparable scale.',
+      'Working knowledge of the standards relevant to the scope, and of reading construction drawings.',
+      'Vietnamese fluent; working English for specifications and client correspondence.'
+    ]);
+
+    H('4.  TO BE COMPLETED BY THE HIRING MANAGER  ·  Truong bo phan hoan thien');
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, GREY);
+    doc.splitTextToSize(
+      'This draft was generated from the requisition record. It states what the portal knows — the ' +
+      'role, grade, department and location — and a standard frame for the rest. Before it is used ' +
+      'to advertise, brief an interviewer or agree a package, the hiring manager should replace ' +
+      'sections 2 and 3 with the duties and requirements that are actually specific to this post, ' +
+      'and re-attach the finished version.', W - 2 * M).forEach(l => { doc.text(l, M, y); y += 4.3; });
+    y += 8;
+
+    // ── sign-off ──
+    doc.setDrawColor(225, 228, 232); doc.line(M, y, RIGHT, y); y += 6;
+    const sign = (x, lab) => {
+      doc.setDrawColor(180, 186, 196); doc.line(x, y + 12, x + 52, y + 12);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
+      doc.text(lab, x, y + 16);
+    };
+    sign(M, 'Prepared by / Nguoi lap'); sign(M + 62, 'Hiring manager / Truong bo phan'); sign(M + 124, 'HR / Nhan su');
+
+    const name = 'JD_' + String(j.title || 'Position').replace(/[^\w\u00C0-\u1EF9 -]/g, '').trim().replace(/\s+/g, '_') +
+      (j.grade ? '_' + j.grade : '') + '.pdf';
+    // jsPDF emits data:application/pdf;filename=generated.pdf;base64,… — that extra ;filename=
+    // segment breaks the plain /^data:([^;]+);base64,/ parser the file's previewer uses, which is
+    // how a freshly generated JD ends up opening as a blank page. Normalise it once, here, rather
+    // than teaching every consumer about jsPDF.
+    const out = doc.output('datauristring');
+    const data = 'data:application/pdf;base64,' + out.slice(out.indexOf(',') + 1);
+    await _hrJdSave(id, name, data, true);
+  } catch (e) {
+    toast(_t('Could not generate the JD') + ': ' + _errMsg(e), 'error', 5000);
+  }
+}
+
+/* One save path for both routes, so a generated JD and an uploaded one are filed identically. */
+async function _hrJdSave(id, name, data, generated) {
+  try {
+    toast(_t('Filing the JD…'));
+    const r = await tkApi('/api/hr/jd', { method: 'POST', body: { jobId: id, name: name, data: data, generated: !!generated } });
+    const k = (_HR.jobs || []).findIndex(x => x.id === id);
+    if (k >= 0 && r.item) _HR.jobs[k] = r.item;
+    try { tkCollInvalidate('jobs'); } catch (e) { }
+    if (r.filed) toast(_t('JD filed in HR SharePoint.'));
+    // Not configured, or SharePoint refused: the document is still safe in the portal, and the
+    // message says which so an admin knows there is a folder link to set.
+    else toast(_t('JD saved in the portal.') + (r.error ? ' ' + r.error : ' ' + _t('Set the HR SharePoint folder in Company Portal settings to file it there.')), 'warn', 7000);
+    try { tkRenderRecruitment(); } catch (e) { }
+  } catch (e) {
+    toast(_t('Could not save the JD') + ': ' + _errMsg(e), 'error', 5000);
+  }
+}
+
 function _brandHeader(doc, opts) {
   opts = opts || {}; const W = 210, M = 15;
   _lhCur = { title: opts.title || '', code: opts.docCode || '' };
@@ -14924,32 +15108,12 @@ async function _pmLoadCore() {
   const need = _pmSeeAll() ? _PM_CORE_COLLS : _PM_CORE_COLLS.concat(['pm_resources']);
   await Promise.all(need.map(c => tkLoadColl(c).catch(() => { })));
 }
-// Opening a project used to BLOCK its first paint on all 18 collections. Five of them are read by no
-// tab the workspace lands on, and they are also the ones that can carry uploaded files: when a project
-// has no SharePoint link the quick-add forms fall back to storing an in-DB base64 data URL, and base64
-// is near-incompressible so gzip doesn't rescue it. A few site/week reports with PDFs attached can
-// outweigh thousands of task rows — which is exactly the "it got slower the more we used it" shape.
-//
-// They are NOT deferred (a deferred collection reads as an empty [] with NO error — the closeout PDF
-// and the Document Control register both span these, and would silently export nothing). They are
-// merely taken OFF the critical path: the paint waits for the rest, these keep loading behind it, and
-// anything that needs them awaits _pmReady() first. Worst case that is exactly today's behaviour.
+// The collections that can carry an uploaded file: with no SharePoint link on a project, the quick-add
+// forms fall back to an in-DB base64 data URL, and base64 is near-incompressible so gzip does not
+// rescue it. A few site reports with PDFs attached outweigh thousands of task rows — which is exactly
+// the "it got slower the more we used it" shape. Now that each tab loads its own data these are only
+// fetched by the tabs that actually show them; the list survives so a re-seed can invalidate them.
 const _PM_LATE_COLLS = ['pm_chat', 'pm_comms', 'pm_procurement', 'pm_procurement_payments', 'pm_sitereports', 'pm_weekreports'];
-// The tabs that read them: Comms & Issues (pm_comms), Procurement (both procurement colls),
-// Documents (site/week reports) and Docs Control (the file register spans all of them).
-const _PM_LATE_TABS = ['comms', 'procure', 'documents', 'docs', 'chat'];
-let _pmLatePromise = null;
-async function _pmLoadAll() {
-  const early = _PM_ALL_COLLS.filter(c => _PM_LATE_COLLS.indexOf(c) < 0);
-  const late = Promise.all(_PM_LATE_COLLS.map(c => tkLoadColl(c).catch(() => { })));
-  _pmLatePromise = late;
-  late.catch(() => { });                       // never an unhandled rejection while it runs detached
-  await Promise.all(early.map(c => tkLoadColl(c).catch(() => { })));
-}
-/* Await the off-critical-path collections. Cheap once they have landed. */
-async function _pmReady() {
-  if (_pmLatePromise) { try { await _pmLatePromise; } catch (e) { } }
-}
 
 /* ---- Earned Value Management ---- */
 /* Measured against the BASELINE, not the live plan. If elapsed time were read off startPlanned /
@@ -15146,7 +15310,7 @@ async function pmCloseoutPDF(pid) {
   // The closeout report spans pm_procurement / pm_comms / the site+week reports, which load
   // BEHIND the first paint. Without this await an export fired seconds after opening a project
   // would silently print empty sections — a missing collection reads as [] with no error.
-  await _pmReady();
+  await _pmNeed(_PM_ALL_COLLS);          // a closeout pack spans the whole workspace
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
   const M = 15;
   let y = _brandHeader(doc, { title: 'Project Closeout Report', subtitle: _pmPdfTxt((p.code || p.name) + '  -  ' + _pmFmt(_pmToday())), docCode: 'HML-PMC-CLO', confidential: true });
@@ -15542,26 +15706,48 @@ function _pmMyActionsHtml() {
 }
 
 /* ---------- open + Workspace shell ---------- */
+/* Opening a project used to fetch NINETEEN collections before anything painted, because every tab's
+   data was loaded whether or not you were looking at that tab. On a small VPS those 19 requests queue
+   behind each other and the screen sits on a skeleton. Each tab now says what IT reads, the shell
+   paints on one collection, and a tab fetches its own on the way in.
+   `need` is what the tab CANNOT render without — including what its helpers reach for. Miss one and
+   the tab renders empty, so this list is the contract; there is a test that walks it. */
 const _PM_TABS = [
-  { k: 'overview', label: 'Overview', fn: 'pmRenderOverview' },
-  { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope' },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule' },
-  { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts' },
-  { k: 'quality', label: 'Quality', fn: 'pmRenderQuality' },
-  { k: 'resources', label: 'Resources', fn: 'pmRenderResources' },
-  { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms' },
-  { k: 'risk', label: 'Risk', fn: 'pmRenderRisks' },
-  { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement' },
-  { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders' },
-  { k: 'docs', label: 'Docs Control', fn: 'pmRenderRfis' },
-  { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments' },
-  { k: 'chat', label: 'Team Conversation', fn: 'pmRenderChat' }
+  { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
+  { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables'] },
+  { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
+  { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
+  { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
+  { k: 'comms', label: 'Comms & Issues', fn: 'pmRenderComms', need: ['pm_comms', 'pm_issues'] },
+  { k: 'risk', label: 'Risk', fn: 'pmRenderRisks', need: ['pm_risks'] },
+  { k: 'procure', label: 'Procurement', fn: 'pmRenderProcurement', need: ['pm_procurement', 'pm_procurement_payments'] },
+  { k: 'stake', label: 'Stakeholders', fn: 'pmRenderStakeholders', need: ['pm_stakeholders'] },
+  { k: 'docs', label: 'Docs Control', fn: 'pmRenderRfis', need: ['pm_projects', 'pm_rfis', 'pm_sitereports', 'pm_weekreports'] },
+  // The file register harvests attachment metadata out of every register that can carry a file.
+  { k: 'documents', label: 'Documents', fn: 'pmRenderDocuments', need: ['pm_projects', 'pm_sitereports', 'pm_weekreports', 'pm_rfis', 'pm_quality', 'pm_quality_itp', 'pm_changes', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_lessons', 'pm_procurement'] },
+  // pm_resources is the @-mention roster: without it the picker silently says nobody is here.
+  { k: 'chat', label: 'Team Conversation', fn: 'pmRenderChat', need: ['pm_chat', 'pm_projects', 'pm_resources'] }
 ];
+/* What a one-click document needs. These read across tabs, and used to work only because opening the
+   project had already loaded everything — so they must ask for their own data now. */
+const _PM_CLICK_COLLS = {
+  status: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_rfis', 'pm_changes'],
+  charter: ['pm_projects', 'pm_deliverables', 'pm_risks', 'pm_stakeholders']
+};
+/* Load a set of collections, and report which ones did not arrive. tkLoadColl swallows its errors so
+   a failure would otherwise be indistinguishable from an empty register. */
+async function _pmNeed(colls) {
+  await Promise.all((colls || []).map(c => tkLoadColl(c).catch(() => { })));
+  return (colls || []).filter(c => !_COLL_TS[c]);
+}
 function pmOpenProject(id) { _pmCurrentProject = id; try { sessionStorage.setItem('pm_proj', id); } catch (e) { } _pmTabK = 'overview'; showView('pm-project', null, 'Project Workspace'); }
 async function pmRenderWorkspace() {
   const root = document.getElementById('pm-project-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
-  await _pmLoadAll();
+  // The shell needs the project record and — below manager — the team rows the access check reads.
+  // Everything else belongs to a tab and is fetched when that tab is opened.
+  await _pmNeed(_pmSeeAll() ? ['pm_projects'] : ['pm_projects', 'pm_resources']);
   // Both bail-outs below return BEFORE pmTab(), so pmRenderChat never runs to consume a pending
   // jump. Left set, it would latch and fire on the next conversation opened.
   const p = _pmProj(); if (!p) { _pmChatJumpTo = ''; root.innerHTML = '<div class="card" style="padding:20px">Project not found. <a href="#" onclick="showView(\'pm-projects\',null,\'Projects\');return false">Back to Projects</a></div>'; return; }
@@ -15588,12 +15774,20 @@ async function pmRenderWorkspace() {
 async function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
   document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
-  // ONLY the tabs that actually read an off-critical-path collection wait for it. Awaiting here
-  // unconditionally would put the late collections straight back in front of Overview's paint and
-  // undo the whole point. 'docs' is the Document Control register, which spans site/week reports.
-  if (_PM_LATE_TABS.indexOf(k) >= 0) {
-    await _pmReady();
-    if (_pmTabK !== k) return;                 // the user moved on while we waited — don't clobber
+  // A tab loads what IT reads, and nothing else. Anything already resident is free (tkLoadColl
+   // caches for 45s), so moving between tabs that share data costs no request at all.
+  const _body = document.getElementById('pm-tab-body');
+  const _missing = (t.need || []).filter(c => !Array.isArray(_HR[c]));
+  if (_missing.length && _body) _body.innerHTML = tkSkeleton();
+  const _failed = await _pmNeed(t.need);
+  if (_pmTabK !== k) return;                   // the user moved on while we waited — don't clobber
+  if (_failed.length) {
+    // An empty register and a failed fetch look identical once rendered, so say which this was.
+    if (_body) _body.innerHTML = '<div class="card" style="padding:18px;color:var(--text-light)">' +
+      '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Could not load this tab') + '</div>' +
+      '<div style="font-size:12.5px">' + _t('Check your connection and try again.') + '</div>' +
+      '<button class="btn btn-outline btn-sm" style="margin-top:10px" onclick="pmTab(\'' + k + '\')">' + _t('Retry') + '</button></div>';
+    return;
   }
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
 }
@@ -15670,7 +15864,7 @@ async function pmApplyTemplateSave(pid) {
   for (const q of (t.itps || [])) await post('pm_quality_itp', Object.assign({ status: 'Draft' }, q));
   for (const s of (t.stakeholders || [])) await post('pm_stakeholders', s);
   toast(n + ' item(s) seeded from “' + key + '”.');
-  try { await _pmLoadAll(); pmTab(_pmTabK); } catch (e) { }
+  try { _PM_ALL_COLLS.forEach(c => tkCollInvalidate(c)); pmTab(_pmTabK); } catch (e) { }
 }
 /* Setup-readiness — a guided checklist so a new project is easy to stand up the PMBOK way. */
 function _pmReadiness(p) {
@@ -18807,6 +19001,21 @@ const _VI = {
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
   'My Devices': 'Thiết bị của tôi', 'My Training': 'Đào tạo của tôi', 'Open Positions': 'Vị trí tuyển dụng',
+  'JD': 'MTCV', 'Generate': 'Tạo bản nháp', 'Attach': 'Đính kèm', 'Show': 'Xem', 'Replace': 'Thay thế', 'Draft': 'Bản nháp',
+  'Generate a first-draft JD from this requisition': 'Tạo bản mô tả công việc nháp từ phiếu tuyển dụng này',
+  'Attach an existing JD file': 'Đính kèm tệp mô tả công việc có sẵn',
+  'Replace the JD': 'Thay thế bản mô tả công việc',
+  'Open in SharePoint': 'Mở trong SharePoint', 'Stored in the portal': 'Lưu trong cổng thông tin',
+  'That JD file is no longer available.': 'Tệp mô tả công việc này không còn nữa.',
+  'That file is too large.': 'Tệp này quá lớn.',
+  'Filing the JD…': 'Đang lưu bản mô tả công việc…',
+  'JD filed in HR SharePoint.': 'Đã lưu bản mô tả công việc vào SharePoint HR.',
+  'JD saved in the portal.': 'Đã lưu bản mô tả công việc trong cổng thông tin.',
+  'Set the HR SharePoint folder in Company Portal settings to file it there.': 'Đặt thư mục SharePoint HR trong Cài đặt cổng thông tin để lưu tại đó.',
+  'Could not generate the JD': 'Không tạo được bản mô tả công việc',
+  'Could not save the JD': 'Không lưu được bản mô tả công việc',
+  'Loading PDF engine…': 'Đang tải bộ tạo PDF…',
+  'PDF engine not ready — try again in a moment': 'Bộ tạo PDF chưa sẵn sàng — vui lòng thử lại',
   'Goals assigned by my manager': 'Mục tiêu quản lý giao', 'My own development goals': 'Mục tiêu phát triển của tôi', 'Add my own goal': 'Thêm mục tiêu của tôi',
   'Accept': 'Chấp nhận',
   'Accepted — Legitimate reason': 'Đã chấp nhận — Lý do chính đáng',

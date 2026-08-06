@@ -1867,6 +1867,8 @@ def _invtrack_sp_upload(raw, filename, ct, iso, fid=""):
 # exactly like an invoice: <library>/<Payments|Claims|Travel>/<YYYY>/<MM>/<ref>/. Best-effort — the
 # in-portal copy stays canonical and a failure never blocks a submission — but it is RECORDED so a
 # silent failure is visible rather than invisible.
+_HRSP = {"url": "", "site": "", "drive": "", "rel": ""}
+_HRSP_FAIL = {"url": "", "until": 0.0}
 _FINSP = {"url": "", "site": "", "drive": "", "rel": ""}
 _FINSP_FAIL = {"url": "", "until": 0.0}
 _FINSP_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": "", "lastUrl": ""}
@@ -1898,6 +1900,69 @@ def _finsp_resolve(token):
     except Exception:
         _FINSP_FAIL.update({"url": folder, "until": time.time() + 300})
         return None
+
+
+def _hrsp_reset():
+    _HRSP.update({"url": "", "site": "", "drive": "", "rel": ""})
+    _HRSP_FAIL.update({"url": "", "until": 0.0})
+
+
+def _hrsp_resolve(token):
+    """Resolve the HR folder URL -> cache dict, or None. Mirrors _finsp_resolve deliberately."""
+    folder = (db.get_setting("portal_hrSpUrl", "") or "").strip()
+    if not folder:
+        return None
+    if _HRSP["url"] == folder and _HRSP["site"] and _HRSP["drive"]:
+        return _HRSP
+    if _HRSP_FAIL["url"] == folder and _HRSP_FAIL["until"] > time.time():
+        return None
+    try:
+        host, site_path, folder_rel = _sp_parse_folder(folder)
+        site = _graph_get("https://graph.microsoft.com/v1.0/sites/" + host + ":" + site_path, token)
+        site_id = site.get("id")
+        drive = _graph_get("https://graph.microsoft.com/v1.0/sites/" + site_id + "/drive", token) if site_id else {}
+        if not (site_id and drive.get("id")):
+            raise ValueError("could not resolve site/drive")
+        _HRSP.update({"url": folder, "site": site_id, "drive": drive["id"], "rel": folder_rel})
+        return _HRSP
+    except Exception:
+        _HRSP_FAIL.update({"url": folder, "until": time.time() + 300})
+        return None
+
+
+def _hrsp_put(sub_dirs, filename, raw, ctype):
+    """Put one file into <configured HR folder>/<sub_dirs...>/<filename>. Returns its webUrl.
+
+    Raises with a sentence an HR admin can act on — unlike the Finance archiver this one runs while
+    somebody is watching, so a silent failure would just look broken."""
+    if not _invtrack_app_ready():
+        raise ValueError("Microsoft 365 is not connected for the server — ask IT to grant Sites consent.")
+    token = _graph_app_token()
+    tgt = _hrsp_resolve(token)
+    if not tgt:
+        # The cached token can predate a fresh consent grant; retry once with a forced token.
+        _hrsp_reset()
+        token = _graph_app_token(force=True)
+        tgt = _hrsp_resolve(token)
+    if not tgt:
+        raise ValueError("Could not open the HR SharePoint folder - check the link in Company Portal settings.")
+    parts = [x for x in (tgt["rel"].split("/") if tgt["rel"] else []) if x]
+    for d in sub_dirs:
+        d = _sp_safe_leaf(str(d or ""), "")
+        # Don't create JD/JD: an admin who already pointed the setting at the JD folder should get
+        # their files in it, not in a second one nested inside.
+        if d and (not parts or parts[-1].strip().lower() != d.lower()):
+            parts.append(d)
+    rel = "/".join(parts)
+    _invtrack_sp_ensure_dir(tgt["drive"], rel, token)      # creates every missing level
+    name = _sp_safe_leaf(str(filename or "JD.pdf"), "")
+    path = "/".join(urllib.parse.quote(x) for x in (parts + [name]))
+    if len(raw) > 4 * 1024 * 1024:
+        it = _graph_upload_session(tgt["drive"], path, token, raw, ctype)
+    else:
+        url = "https://graph.microsoft.com/v1.0/drives/" + tgt["drive"] + "/root:/" + path + ":/content"
+        it = _graph_put_bytes(url, token, raw, ctype)
+    return (it or {}).get("webUrl") or ""
 
 
 def _finsp_ref(item, kind):
@@ -3077,7 +3142,10 @@ class Handler(BaseHTTPRequestHandler):
             and any(ctype.startswith(t) for t in self.GZIP_TYPES)
         )
         if gz:
-            body = gzip.compress(body, 6)
+            # Level 1, not 6. This runs on the request thread holding the GIL, so on a small VPS
+            # a multi-MB portfolio JSON at level 6 blocks every other in-flight request. Level 1
+            # gives most of the saving for a fraction of the CPU.
+            body = gzip.compress(body, 1)
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         if gz:
@@ -3321,6 +3389,7 @@ class Handler(BaseHTTPRequestHandler):
                                # Finance SharePoint folder for payment/claim/travel attachments (request #4).
                                # Public in config so every requester (incl. staff) can upload on submit.
                                "financeSpUrl": db.get_setting("portal_financeSpUrl", "") or "",
+                               "hrSpUrl": db.get_setting("portal_hrSpUrl", "") or "",
                                # Procurement app URL (the separate procurement portal — an app of
                                # this portal, opened from the sidebar for granted users).
                                "procurementUrl": db.get_setting("portal_procurementUrl", "") or "",
@@ -3390,6 +3459,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._finsp_backfill_ep(u))
         if path == "/api/finsp/test":
             return self._guard(lambda u: self._finsp_test_ep(u))
+        if path == "/api/hr/jd":
+            return self._guard(lambda u: self._hr_jd_ep(u, body))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
@@ -5132,6 +5203,7 @@ class Handler(BaseHTTPRequestHandler):
         # bills in SharePoint and launch the granted Procurement app with them.
         out["teamsWebhook"] = (db.get_setting("portal_teamsWebhook") or "") if rank >= self._level_rank("manager") else ""
         out["financeSpUrl"] = db.get_setting("portal_financeSpUrl", "") or ""
+        out["hrSpUrl"] = db.get_setting("portal_hrSpUrl", "") or ""
         out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
         # Approval-lifecycle email (department senders + on/off + last-send health for managers+).
@@ -5329,6 +5401,7 @@ class Handler(BaseHTTPRequestHandler):
         is_admin = self._caller_level(u) == "admin"
         for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
                       ("financeSpUrl", "portal_financeSpUrl"),
+                      ("hrSpUrl", "portal_hrSpUrl"),
                       ("invtrackSpUrl", "portal_invtrackSpUrl"),
                       ("procurementUrl", "portal_procurementUrl"),
                       ("apprEmail", "portal_apprEmail"),
@@ -6469,6 +6542,63 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"},
                            "changed": [c[0] for c in changes]})
+
+    def _hr_jd_ep(self, u, body):
+        """Attach a Job Description to a requisition and file it in HR SharePoint.
+
+        The SharePoint copy is the one HR and a candidate get sent, so unlike the Finance archiver
+        this runs while somebody is watching and reports what happened instead of failing quietly.
+        If SharePoint is not configured the JD is still kept in the portal — losing the document
+        because a folder link is blank would be the worse outcome."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Only a manager can attach a Job Description.", 403)
+        jid = str((body or {}).get("jobId") or "")
+        job = db.get_collection_item("jobs", jid) if jid else None
+        if not job:
+            return self._err("Requisition not found.", 404)
+        data = str((body or {}).get("data") or "")
+        if not data.startswith("data:"):
+            return self._err("No file received.", 400)
+        head, _, b64 = data.partition(",")
+        try:
+            raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        except Exception:
+            return self._err("That file could not be read.", 400)
+        if not raw:
+            return self._err("That file is empty.", 400)
+        if len(raw) > _INVTRACK_FILE_MAX:
+            return self._err("That file is too large (limit %d MB)." % (_INVTRACK_FILE_MAX // (1024 * 1024)), 400)
+        ctype = head[5:].split(";")[0] or "application/pdf"
+        name = str((body or {}).get("name") or "").strip() or (
+            (job.get("title") or "Job Description") + ".pdf")
+
+        jd = {"name": name, "size": len(raw), "type": ctype,
+              "ts": self._utc_now_ms(), "by": u.get("name") or "",
+              "generated": bool((body or {}).get("generated"))}
+        # Year folder so a library does not become one flat list of every JD ever written.
+        sub = ["JD", time.strftime("%Y")]
+        try:
+            web = _hrsp_put(sub, name, raw, ctype)
+            if web:
+                jd["webUrl"] = web
+        except Exception as e:
+            jd["fileError"] = _graph_err_text(e)[:200]
+        if not jd.get("webUrl"):
+            jd["data"] = data                       # no SharePoint copy -> keep it in the portal
+        job["jd"] = jd
+        saved = db.put_collection_item("jobs", job)
+        try:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "", "actorId": u.get("id") or "", "action": "hr.jd",
+                "detail": "Job Description attached to '%s'%s%s" % (
+                    job.get("title") or jid,
+                    " (auto-generated draft)" if jd["generated"] else "",
+                    " — filed to SharePoint" if jd.get("webUrl") else " — kept in the portal"),
+                "ts": self._utc_now()})
+        except Exception:
+            pass
+        return self._json({"ok": True, "item": saved, "jd": jd,
+                           "filed": bool(jd.get("webUrl")), "error": jd.get("fileError", "")})
 
     def _finsp_test_ep(self, u):
         """Prove the Finance folder is reachable, without uploading anything. Mirrors Invoice

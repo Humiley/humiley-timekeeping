@@ -40,10 +40,22 @@ def get_conn():
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA busy_timeout = 5000")
     conn.execute("PRAGMA synchronous = NORMAL")
+    # journal_mode is DELIBERATELY not here. It is persisted in the database header, so it survives
+    # every connection — but re-asserting it takes a lock, and this function runs once per query.
+    # Opening a project fires a dozen collection reads at once; that is a dozen needless lock waits
+    # on the hot path. _enable_wal() sets it once, at startup.
     return conn
+
+
+def _enable_wal():
+    """Set the journal mode once, at startup, instead of on every connection."""
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    finally:
+        conn.close()
 
 
 def now_iso():
@@ -55,6 +67,7 @@ def now_iso():
 # ---------------------------------------------------------------------------
 
 def init_db():
+    _enable_wal()
     conn = get_conn()
     conn.executescript(
         """
