@@ -406,7 +406,18 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           # first boot — see _seed_default_payers — and are editable from then on.
                           # The hard rules always still apply on top: never your own request, and never one
                           # you approved (unless payerSeparation is off).
-                          "apprPayers": ""}
+                          "apprPayers": "",
+                          # Who is HR (comma/newline separated emails). Publishing a company document
+                          # commits everyone to signing it and starts chasing them, so it is a NAMED
+                          # duty like paying — it belongs to the people who actually run HR, not to
+                          # whoever happens to sit high enough in the approval chain. Requiring an
+                          # approval LEVEL for it was the wrong axis: it locked out the HR officer who
+                          # writes the policies and let in a site manager who does not.
+                          # DEFAULT BLANK on purpose = fall back to Approver (Management) or above,
+                          # so an install that never sets this keeps working. Never bake real names in
+                          # here — a shipped default would grant strangers HR on every other install.
+                          # An admin can always publish, listed or not, so nobody is ever locked out.
+                          "hrAdmins": ""}
 _APPR_REMIND_LOCK = threading.Lock()
 
 # Seeded ONCE into the DB on first boot (not used as a code default — see the note above). Clearing the
@@ -430,6 +441,13 @@ def _payer_emails():
     """The configured authorised payers, lower-cased. Empty set = no allow-list, so any Editor/Admin
        may pay (the historical rule). Accepts commas, semicolons or whitespace as separators."""
     raw = db.get_setting("portal_apprPayers", "") or ""
+    return {e.strip().lower() for e in re.split(r"[,;\s]+", str(raw)) if e.strip()}
+
+
+def _hr_admin_emails():
+    """The people named as HR, lower-cased. Empty set = nobody named, so the fallback level rule
+       applies. Same separators as the payer list."""
+    raw = db.get_setting("portal_hrAdmins", "") or ""
     return {e.strip().lower() for e in re.split(r"[,;\s]+", str(raw)) if e.strip()}
 
 # ── Idempotency for financial submits ─────────────────────────────────────────────────────────
@@ -3690,7 +3708,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._json({"id": db.create_zone(body)}), manager=True)
         if path.startswith("/api/coll/"):
             name = path[len("/api/coll/"):].split("/")[0]
-            return self._guard(lambda u: self._coll_add(u, name, body), manager=(name not in self.STAFF_WRITE))
+            # `hrdocs` is exempt from the blunt role=="manager" door so it can reach _coll_add, where
+            # _is_hr_admin is the real gate. Being NAMED as HR is the grant, and the HR officer who
+            # writes the policies is often plain staff — this guard would refuse her at the route
+            # before the grant was ever consulted. Same reason `devices` is exempt on PATCH.
+            return self._guard(lambda u: self._coll_add(u, name, body),
+                               manager=(name not in self.STAFF_WRITE and name != "hrdocs"))
         return self._err("Not found.", 404)
 
     def _do_patch(self):
@@ -3705,7 +3728,7 @@ class Handler(BaseHTTPRequestHandler):
             nm = seg[0]
             # devices: let it reach _coll_update so the OWNER can append a receipt-acknowledgment
             # signature (staff self-service); _coll_update still blocks every other staff device write.
-            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in self.STAFF_WRITE and nm not in ("onboarding", "devices") and not nm.startswith("crm_")))
+            return self._guard(lambda u: self._coll_update(u, nm, seg[1] if len(seg) > 1 else "", body), manager=(nm not in self.STAFF_WRITE and nm not in ("onboarding", "devices", "hrdocs") and not nm.startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_update(u, eid, body), manager=True)
@@ -3725,7 +3748,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path.startswith("/api/coll/"):
             seg = path[len("/api/coll/"):].split("/")
-            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(seg[0] not in self.STAFF_WRITE and not seg[0].startswith("crm_")))
+            return self._guard(lambda u: self._coll_delete(u, seg[0], seg[1] if len(seg) > 1 else ""), manager=(seg[0] not in self.STAFF_WRITE and seg[0] != "hrdocs" and not seg[0].startswith("crm_")))
         if path.startswith("/api/employees/"):
             eid = path.rsplit("/", 1)[1]
             return self._guard(lambda u: self._emp_delete(u, eid), manager=True)
@@ -4089,6 +4112,25 @@ class Handler(BaseHTTPRequestHandler):
         if payers:
             return (u.get("email") or "").strip().lower() in payers
         return self._is_approver(u)
+
+    def _is_hr_admin(self, u):
+        """May this caller publish, edit, archive or withdraw a COMPANY DOCUMENT?
+
+        Running HR is a named duty, the same shape as disbursement. Being named IS the grant: it
+        admits the HR officer who actually writes the policies without making them an Approver, and
+        it excludes a site manager who happens to hold the level but has no business publishing
+        something the whole company is then chased to sign.
+
+        An ADMIN always qualifies, listed or not — so there is no configuration that can lock the
+        company out of its own documents, and an admin can step in whenever HR is away. With nobody
+        named we fall back to Approver (Management) or above, so an install that never sets this
+        keeps working exactly as before."""
+        if self._caller_level(u) == "admin":
+            return True
+        hr = _hr_admin_emails()
+        if hr:
+            return (u.get("email") or "").strip().lower() in hr
+        return self._level_rank(self._caller_level(u)) >= self._level_rank(self.HRDOC_MIN)
 
     @staticmethod
     def _appr_state(status):
@@ -5412,6 +5454,12 @@ class Handler(BaseHTTPRequestHandler):
         out["apprPayers"] = (db.get_setting("portal_apprPayers", "") or "") \
             if self._caller_level(u) == "admin" else ""
         out["canPay"] = self._is_payer(u)
+        # Same treatment for the HR list: it is an authorization list, so only an admin reads it
+        # back. Everyone gets `canPublishDocs` — their OWN capability, from the same helper the write
+        # gate uses, so the Publish button can never appear for somebody the server will refuse.
+        out["hrAdmins"] = (db.get_setting("portal_hrAdmins", "") or "") \
+            if self._caller_level(u) == "admin" else ""
+        out["canPublishDocs"] = self._is_hr_admin(u)
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -5601,7 +5649,8 @@ class Handler(BaseHTTPRequestHandler):
                       ("monthlyDay", "portal_monthlyDay"),
                       ("monthlyTo", "portal_monthlyTo"),
                       ("payerSeparation", "portal_payerSeparation"),
-                      ("apprPayers", "portal_apprPayers")):   # who may release money — admin-only to change
+                      ("apprPayers", "portal_apprPayers"),   # who may release money — admin-only to change
+                      ("hrAdmins", "portal_hrAdmins")):      # who is HR — admin-only to change
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -6397,8 +6446,9 @@ class Handler(BaseHTTPRequestHandler):
         # A company policy is chased from every employee and signed against. The only gate used to be
         # `role == "manager"`, which let any line manager publish an audience=All document — and
         # locked out an Admin whose employee role is not literally "manager".
-        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
-            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
+        if name == "hrdocs" and not self._is_hr_admin(u):
+            return self._err("Only HR (or an administrator) can publish or change a company document. "
+                             "An administrator can add you under Access & Permissions.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -7307,8 +7357,9 @@ class Handler(BaseHTTPRequestHandler):
         # A company policy is chased from every employee and signed against. The only gate used to be
         # `role == "manager"`, which let any line manager publish an audience=All document — and
         # locked out an Admin whose employee role is not literally "manager".
-        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
-            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
+        if name == "hrdocs" and not self._is_hr_admin(u):
+            return self._err("Only HR (or an administrator) can publish or change a company document. "
+                             "An administrator can add you under Access & Permissions.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -7352,8 +7403,11 @@ class Handler(BaseHTTPRequestHandler):
         # pending claims/travel/payments, which fall through to the owner-scoped money block below
         # (a STAFF requester must be able to amend their own request before it's approved; the owner
         # check at "You can only edit your own pending request" is the real gate there).
+        # `hrdocs` is excluded because its own gate ran above: _is_hr_admin already decided, and being
+        # NAMED as HR is the grant. Leaving it here would let this blunt role check overrule that and
+        # refuse an HR officer who is plain staff — which is most of them.
         if (u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_")
-                and name not in ("claims", "travel", "payments")):
+                and name not in ("claims", "travel", "payments", "hrdocs")):
             if name == "enrollments":
                 existing = db.get_collection_item("enrollments", iid)
                 if not existing or existing.get("empId") != u.get("id"):
@@ -7670,8 +7724,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
-        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
-            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
+        if name == "hrdocs" and not self._is_hr_admin(u):
+            return self._err("Only HR (or an administrator) can publish or change a company document. "
+                             "An administrator can add you under Access & Permissions.", 403)
         # A signed acknowledgement is the artefact this whole feature exists to produce — the thing an
         # inspector asks for. hrdoc_acks is staff-writable and self-owned, so until now the signer
         # could simply delete their own signature and the compliance matrix would show them as

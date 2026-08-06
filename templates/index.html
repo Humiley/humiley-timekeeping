@@ -1474,6 +1474,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="form-group"><label class="form-label">Microsoft Teams — Incoming Webhook URL (optional)</label><input class="form-control" id="portal-teams" placeholder="https://outlook.office.com/webhook/…"><div style="font-size:11px;color:var(--text-light);margin-top:4px">When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.</div></div>
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into &lt;Payments|Claims|Travel&gt;/&lt;year&gt;/&lt;month&gt;/&lt;reference&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkFinSpTest()">Test connection</button><button class="btn btn-outline btn-sm" onclick="tkFinSpBackfill()">Archive existing files</button></div><div id="finsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group"><label class="form-label">HR SharePoint folder (URL)</label><input class="form-control" id="portal-hrsp" placeholder="https://humiley.sharepoint.com/sites/HR/Shared Documents"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link for HR documents. Job Descriptions attached to a requisition are filed by the SERVER into JD/&lt;year&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank and JDs stay inside the portal, and signed policy acknowledgements stay in the portal too.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkHrFolders()">Create employee folders</button></div><div id="hrsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
+    <div class="form-group"><label class="form-label">Who is HR — who may publish company documents</label><input class="form-control" id="portal-hrAdmins" placeholder="tran.doan@humiley.com"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Publishing a policy commits every employee to signing it and starts chasing them, so it is a <b>named</b> duty rather than something an access level carries. Only these people see <b>+ Publish a document</b> and the Edit / Re-issue / Archive controls on the register. Being listed is the grant — HR does not need to be an Approver or an Editor. An <b>administrator can always publish</b>, listed or not, so nobody is ever locked out and you can step in when HR is away. Leave blank to fall back to “Approver (Management) or above”.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
@@ -5403,7 +5404,11 @@ async function tkLoadPortal() {
       financeSpUrl: j.financeSpUrl || '',
       // Whether THIS user may release money, computed by the server with the same helper the
       // e-signature gate uses — so the Mark-paid button can't appear for someone the server refuses.
-      canPay: typeof j.canPay === 'boolean' ? j.canPay : undefined
+      canPay: typeof j.canPay === 'boolean' ? j.canPay : undefined,
+      // Same for publishing a company document. It has to ride on /api/portal, which every user
+      // fetches at boot — the integrations loader only runs when an ADMIN opens that settings tab,
+      // so HR would never have received it there.
+      canPublishDocs: typeof j.canPublishDocs === 'boolean' ? j.canPublishDocs : undefined
     };
   } catch (e) {}
 }
@@ -5414,6 +5419,14 @@ async function tkLoadPortal() {
 function _tkCanPay() {
   const c = (window._TK_PORTAL || {}).canPay;
   return typeof c === 'boolean' ? c : _lvlRank(_userLevel) >= _lvlRank('editor');
+}
+
+/* May the signed-in user publish or change a COMPANY DOCUMENT? Mirrors the server's _is_hr_admin.
+   Falls back to the level rule only when the flag hasn't loaded (boot race / older backend); app.py
+   is the real boundary either way, so a wrong guess here only costs a refused click. */
+function _tkCanPublishDocs() {
+  const c = (window._TK_PORTAL || {}).canPublishDocs;
+  return typeof c === 'boolean' ? c : _lvlRank(_userLevel) >= _lvlRank('management');
 }
 
 /* ── HR Admin: Company Portal content editor ── */
@@ -5496,6 +5509,7 @@ async function tkLoadIntegrations() {
   const _et = document.getElementById('portal-apprEscalateTo'); if (_et) _et.value = g('apprEscalateTo', '');
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
+  const _hra = document.getElementById('portal-hrAdmins'); if (_hra) _hra.value = g('hrAdmins', '');    // admin-only; blank for everyone else
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
   const _dlt = document.getElementById('portal-digestLeadTo'); if (_dlt) _dlt.value = g('digestLeadTo', '');
@@ -5653,6 +5667,7 @@ async function tkSaveIntegrations() {
     apprEscalateTo: V('portal-apprEscalateTo'),
     payerSeparation: C('portal-payerSeparation') ? '1' : '0',
     apprPayers: V('portal-apprPayers'),   // the server ignores this key entirely unless the caller is an admin
+    hrAdmins: V('portal-hrAdmins'),       // ditto — who is HR is an authorization list
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
     digestLeadTo: V('portal-digestLeadTo'),
@@ -6635,7 +6650,7 @@ function tkRenderDocRegister() {
   const docs = all.filter(d => _hrDocsShowArchived ? d.archived : !d.archived);
   const nArch = all.filter(d => d.archived).length;
   const noFile = all.filter(d => !d.archived && !_hrDocHasFile(d)).length;
-  const canEdit = _lvlRank(_userLevel) >= _lvlRank('management');
+  const canEdit = _tkCanPublishDocs();   // the server's answer, not a level re-derived here
 
   const row = d => {
     const has = _hrDocHasFile(d);
@@ -6768,10 +6783,10 @@ async function tkRenderOnboarding() {
       // Showing this to a manager who will be refused means they fill the whole form, attach the PDF,
       // press Save and lose all of it to a 403. Hiding it silently is its own trap, though — HR opens
       // the page, the button is gone, and the feature looks broken. So say which it is.
-      (_lvlRank(_userLevel) >= _lvlRank('management')
+      (_tkCanPublishDocs()
         ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
         : '<span style="font-size:11.5px;color:var(--text-light)">' +
-            _t('Publishing a company document needs Approver (Management) level — ask an administrator.') + '</span>') +
+            _t('Only HR can publish a company document — an administrator can add you under Access & Permissions.') + '</span>') +
     '</div><div id="hr-docreg"></div><div id="hr-compliance"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
@@ -19788,7 +19803,7 @@ const _VI = {
   'That assignment is no longer there.': 'Bàn giao này không còn nữa.',
   'Returned': 'Đã trả', 'returned': 'đã trả', 'of': 'trong',
   'Exit sign-off record': 'Biên bản ký xác nhận nghỉ việc',
-  'Publishing a company document needs Approver (Management) level — ask an administrator.': 'Ban hành tài liệu công ty cần quyền Phê duyệt (Ban giám đốc) — vui lòng liên hệ quản trị viên.',
+  'Only HR can publish a company document — an administrator can add you under Access & Permissions.': 'Chỉ Nhân sự mới ban hành được tài liệu công ty — quản trị viên có thể thêm bạn ở mục Phân quyền.',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
