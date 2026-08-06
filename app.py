@@ -34,6 +34,7 @@ from tkutil import (_money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv
 from einv import (_einv_safe_xml, _zip_read_bounded, _einv_parse_xml, _einv_from_zip, _einv_all_from_zip, _inv_ident, _inv_ident_str, _einv_parse_text, _pdf_engine_ok, _einv_pdf_items)   # e-invoice parsers (extracted)
 from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate limiter (extracted); _RATE/_RATE_LOCK re-exported (same objects) so callers/tests keep the app.* surface
 import overtime          # Labour Code Art. 98/106/107 overtime rates, night premium and caps (pure)
+import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3666,6 +3667,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path == "/api/hr/leave-entitlement":
+            return self._guard(lambda u: self._leave_entitlement_ep(u, qs))
         if path == "/api/hr/overtime":
             return self._guard(lambda u: self._ot_summary_ep(u, qs))
         if path.startswith("/api/employees/") and path.endswith("/history"):
@@ -3722,6 +3725,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_jd_ep(u, body))
         if path == "/api/hr/onboarding/file":
             return self._guard(lambda u: self._hr_onb_file_ep(u, body))
+        if path == "/api/hr/leave-entitlement/apply":
+            return self._guard(lambda u: self._leave_entitlement_apply_ep(u, body), manager=True)
+        if path == "/api/hr/history-repair":
+            return self._guard(lambda u: self._emp_history_repair_ep(u), manager=True)
         if path == "/api/hr/history-backfill":
             return self._guard(lambda u: self._emp_history_backfill_ep(u), manager=True)
         if path == "/api/hr/employee-folders":
@@ -7460,6 +7467,90 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "period": period, "annualCap": cap_y,
                            "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out})
 
+    def _leave_entitlement_ep(self, u, qs):
+        """What annual leave the law requires for each employee this year, beside what is on record.
+
+        `annualTotal` is a number somebody typed and nothing has ever checked it. This does not
+        overwrite it — a company may lawfully give MORE than the statutory minimum, and plenty do —
+        it computes the minimum and reports the difference where the record falls short. Art. 113(1)
+        for the base, Art. 114 for the seniority day, Decree 145/2020 Art. 66 for the proration of a
+        first or final year, and its round-half-UP rule.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access required.", 403)
+        try:
+            year = int(str(qs.get("year", [""])[0] or "")[:4])
+        except (TypeError, ValueError):
+            year = 0
+        if not (2000 <= year <= 2100):
+            year = int(self._vn_day()[:4])
+
+        rows, short = [], 0
+        for e in db.list_employees():
+            if str(e.get("status") or "Active").strip().lower() == "inactive" and not e.get("endDate"):
+                continue
+            r = leave_entitlement.entitlement(
+                e.get("startDate"), year,
+                conditions=e.get("workConditions") or "normal",
+                dob=e.get("dob"), disabled=bool(e.get("disabled")),
+                end=e.get("endDate") or None)
+            gap = leave_entitlement.shortfall(e.get("annualTotal"), r["days"])
+            if gap:
+                short += 1
+            rows.append({"empId": e.get("id"), "name": e.get("name") or "",
+                         "dept": e.get("dept") or "", "startDate": e.get("startDate") or "",
+                         "conditions": e.get("workConditions") or "normal",
+                         "onRecord": e.get("annualTotal"), "required": r["days"],
+                         "base": r["base"], "seniority": r["seniority"], "months": r["months"],
+                         "prorated": r["prorated"], "why": r["reason"], "shortfall": gap})
+        rows.sort(key=lambda x: (-x["shortfall"], x["name"]))
+        return self._json({"ok": True, "year": year, "rows": rows, "short": short})
+
+    def _leave_entitlement_apply_ep(self, u, body):
+        """Raise every entitlement that is below the statutory minimum to the minimum.
+
+        Only ever UPWARDS. Somebody on 15 days keeps 15 — that is a term of their employment, not an
+        error to be normalised away — and a company that has agreed better terms must not have them
+        quietly reduced by a compliance tool. Each change goes through the same path as an HR edit, so
+        it lands in the audit chain and in the dated history.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Editor access required to change leave entitlements.", 403)
+        try:
+            year = int(str(body.get("year") or "")[:4])
+        except (TypeError, ValueError):
+            year = 0
+        if not (2000 <= year <= 2100):
+            year = int(self._vn_day()[:4])
+        only = body.get("empIds") if isinstance(body.get("empIds"), list) else None
+
+        changed = []
+        for e in db.list_employees():
+            if only is not None and e.get("id") not in only:
+                continue
+            if str(e.get("status") or "Active").strip().lower() == "inactive":
+                continue
+            r = leave_entitlement.entitlement(
+                e.get("startDate"), year,
+                conditions=e.get("workConditions") or "normal",
+                dob=e.get("dob"), disabled=bool(e.get("disabled")),
+                end=e.get("endDate") or None)
+            gap = leave_entitlement.shortfall(e.get("annualTotal"), r["days"])
+            if not gap:
+                continue
+            was = e.get("annualTotal")
+            db.update_employee(e.get("id"), {"annualTotal": r["days"]})
+            db.put_collection_item("audit", {
+                "actor": u.get("name"), "actorId": u.get("id"),
+                "action": "Leave entitlement raised to the statutory minimum",
+                "target": "employee/" + str(e.get("id")),
+                "detail": "%s · %s → %s days for %d (%s)" % (e.get("name") or "", was, r["days"],
+                                                             year, r["reason"]),
+                "ts": self._utc_now()})
+            changed.append({"empId": e.get("id"), "name": e.get("name") or "",
+                            "from": was, "to": r["days"]})
+        return self._json({"ok": True, "year": year, "changed": changed, "count": len(changed)})
+
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.
 
@@ -7487,14 +7578,55 @@ class Handler(BaseHTTPRequestHandler):
     def _emp_history_backfill_ep(self, u):
         """Seed the history from the pay runs already finalised.
 
-        Every finalised run froze a line per employee carrying dept, title, grade and gross as they
-        stood that month — so the history for those months already exists, it was just never queryable.
-        This reads them oldest-first and writes a dated event wherever a value differs from the
-        previous month, marked source='backfill' so an inferred row is never mistaken for a recorded
-        one. Idempotent: re-running adds nothing, because the events it would write already exist."""
+        Every finalised run froze a line per employee carrying dept, title, grade and the contractual
+        salary as they stood that month — so the history for those months already exists, it was just
+        never queryable. This reads them oldest-first and writes a dated event wherever a value
+        differs from the previous month, marked source='backfill' so an inferred row is never mistaken
+        for a recorded one. Idempotent: re-running adds nothing, because the events it would write
+        already exist."""
         if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
             return self._err("Admin access required.", 403)
+        return self._json(dict({"ok": True}, **self._emp_history_backfill(u)))
 
+    def _emp_history_repair_ep(self, u):
+        """Rebuild every inferred history row, because the first version of the inference was wrong.
+
+        Two defects wrote permanent rows: the salary field was read from the pay-run line's `gross`,
+        which is the payslip TOTAL (P1+P2+P3+welfare, plus any one-off bonus) rather than the
+        contractual salary; and unsigned runs were ingested, so a draft a Director had refused became
+        record. Both are fixed, but the rows they already wrote are still there, and the table has no
+        delete — which is right for something somebody recorded, and wrong for a reconstruction that
+        was never true.
+
+        So: every source='backfill' row is snapshotted into the tamper-evident audit chain, removed,
+        and rebuilt under the corrected rules. Rows somebody actually recorded (source='edit') are
+        never touched. Safe to run when the old backfill was never run at all — it removes nothing
+        and rebuilds from the same runs.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
+            return self._err("Admin access required.", 403)
+        removed = db.drop_inferred_emp_events()
+        if removed:
+            # The removal is itself a record. Keep enough of each row to reconstruct what the bad
+            # inference had claimed, so "why did his March salary change in the portal" is answerable.
+            _detail = "; ".join("%s %s@%s %s\u2192%s" % (r.get("emp_id"), r.get("field"),
+                                                     r.get("effective"), r.get("old_value"),
+                                                     r.get("new_value")) for r in removed)
+            db.put_collection_item("audit", {
+                "actor": u.get("name"), "actorId": u.get("id"),
+                "action": "Employment history rebuilt",
+                "target": "emp_events",
+                "detail": ("Removed %d INFERRED row(s) written by the earlier backfill, which read "
+                           "the payslip total as salary and ingested unsigned pay runs, and rebuilt "
+                           "them under the corrected rules. Removed: " % len(removed))
+                          + _detail[:3000],
+                "ts": self._utc_now()})
+        out = self._emp_history_backfill(u)
+        return self._json(dict({"ok": True, "removed": len(removed),
+                                "employeesAffected": len({r.get("emp_id") for r in removed})}, **out))
+
+    def _emp_history_backfill(self, u):
+        """The backfill itself, so the repair endpoint can rebuild with exactly the same rules."""
         def _period_key(p):
             parts = str(p or "").split()
             if len(parts) == 2 and parts[0] in self._PAY_MONTHS:
@@ -7546,8 +7678,8 @@ class Handler(BaseHTTPRequestHandler):
                         existing.add((eid, field, eff))
                         made += 1
                     seen[(eid, field)] = val
-        return self._json({"ok": True, "runs": len(runs), "events": made,
-                           "salaryUnavailable": skipped, "total": db.emp_events_count()})
+        return {"runs": len(runs), "events": made,
+                "salaryUnavailable": skipped, "total": db.emp_events_count()}
 
     def _hr_remind_ep(self, u):
         """Send the outstanding-signature reminders now, instead of waiting for tomorrow."""

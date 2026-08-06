@@ -280,7 +280,10 @@ def init_db():
                 # Collected on the employee form, accepted by the Excel importer and shown on the
                 # profile — and, until now, in neither EMP_FIELDS nor this list, so every save threw
                 # it away and reported success. Uniform sizes matter on a site: PPE is issued by size.
-                "shirtSize TEXT"):
+                "shirtSize TEXT",
+                # Annual-leave entitlement drivers (Art. 113(1)): the working-condition class and
+                # whether the employee is a person with disabilities. Both raise the statutory base.
+                "workConditions TEXT", "disabled INTEGER"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -775,6 +778,10 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
               "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
               "role", "level", "salary", "grade", "dependents", "shirtSize", "appsDenied", "appsAllowed", "schedule",
+              # Labour Code Art. 113(1): 'normal' (12 days), 'heavy' (14) or 'especially_heavy' (16).
+              # Site and factory duty is not automatically heavy work — it is a classification the
+              # company makes against the MOLISA list, so it is recorded, not inferred from a title.
+              "workConditions", "disabled",
               "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
@@ -804,6 +811,29 @@ def add_emp_event(emp_id, field, old_value, new_value, effective=None, reason=""
         conn.commit()
     finally:
         conn.close()
+
+
+def drop_inferred_emp_events():
+    """Remove every INFERRED (source='backfill') row, returning what was removed.
+
+    The one deletion this table allows, and only for rows nobody recorded. A backfilled row is not
+    evidence of a decision — it is a reconstruction from the pay runs, and the first version of that
+    reconstruction read a payslip TOTAL as somebody's salary and ingested runs no Director had
+    signed. Those rows assert things that were never true, so correcting them would leave two
+    contradictory events on the same date rather than one right one; they are removed and rebuilt.
+
+    Rows somebody actually recorded (source='edit') are never touched. The caller writes the removed
+    rows into the audit chain before this returns them to the void.
+    """
+    conn = get_conn()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM emp_events WHERE source = 'backfill' ORDER BY emp_id, effective")]
+        conn.execute("DELETE FROM emp_events WHERE source = 'backfill'")
+        conn.commit()
+    finally:
+        conn.close()
+    return rows
 
 
 def list_emp_events(emp_id=None, field=None, since=None, until=None):

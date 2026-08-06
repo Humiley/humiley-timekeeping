@@ -1475,6 +1475,12 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into &lt;Payments|Claims|Travel&gt;/&lt;year&gt;/&lt;month&gt;/&lt;reference&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkFinSpTest()">Test connection</button><button class="btn btn-outline btn-sm" onclick="tkFinSpBackfill()">Archive existing files</button></div><div id="finsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group"><label class="form-label">HR SharePoint folder (URL)</label><input class="form-control" id="portal-hrsp" placeholder="https://humiley.sharepoint.com/sites/HR/Shared Documents"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link for HR documents. Job Descriptions attached to a requisition are filed by the SERVER into JD/&lt;year&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank and JDs stay inside the portal, and signed policy acknowledgements stay in the portal too.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkHrFolders()">Create employee folders</button></div><div id="hrsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group"><label class="form-label">Who is HR — who may publish company documents</label><input class="form-control" id="portal-hrAdmins" placeholder="tran.doan@humiley.com"><div style="font-size:11px;color:var(--text-light);margin-top:4px"><b>Editor and Admin can already publish.</b> Naming somebody here <b>adds</b> to that — use it for the HR officer who writes the policies, so she gets <b>+ Publish a document</b> and the Edit / Re-issue / Archive controls without being promoted to Editor. Several addresses may be listed, separated by commas. A department manager still cannot publish: committing every employee to signing something is not something you inherit by running a department. Leave blank and it falls back to “Approver (Management) or above”.</div></div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label">Employment history</label>
+      <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Reconstructs each employee's dated salary, grade, title and department history from the pay runs a Director has <b>signed</b>. Rows somebody recorded by hand are never touched — only the reconstruction is rebuilt, and what it removes is written to the audit trail. Safe to run more than once. Run this if the portal's employment history was ever built by an earlier version, which read the payslip total as salary.</div>
+      <button class="btn btn-outline btn-sm" onclick="tkRebuildEmpHistory()">Rebuild from signed pay runs</button>
+      <div id="emphist-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div>
+    </div>
     <div class="form-group"><label class="form-label">Annual overtime ceiling (hours)</label><input class="form-control" id="portal-otAnnualCap" placeholder="200" inputmode="numeric"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 107 allows <b>200 hours a year</b>, and <b>300</b> only for the industries Art. 107(3) lists, after notifying the labour authority. Leave blank for 200 — the answer for any company that has not taken and recorded that decision. The daily (4h) and monthly (40h) limits are fixed by the article and are not editable. Approving beyond a limit is still possible, but only with a reason, and it is written into the audit trail under the approver's name.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
@@ -1856,7 +1862,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchLeaveTab('rejected',this)">Rejected</button>
     <button class="tab" onclick="switchLeaveTab('balance',this)">My Balance</button>
     <button class="tab" onclick="switchLeaveTab('calendar',this)">Calendar</button>
+    <button class="tab" id="leave-tab-entitlement" style="display:none" onclick="switchLeaveTab('entitlement',this)">Entitlements</button>
   </div>
+
+  <!-- ENTITLEMENTS (manager+) -->
+  <div id="leave-entitlement" style="display:none"></div>
 
   <!-- PENDING -->
   <div id="leave-pending"></div>
@@ -3902,6 +3912,9 @@ function _tkLeaveCal() {
 }
 function tkRenderLeaveView() {
   const isMgr = _userRole === 'manager';
+  // The entitlement review is a company-wide compliance list, so it is a manager-and-above tab.
+  const et = document.getElementById('leave-tab-entitlement');
+  if (et) et.style.display = isMgr ? '' : 'none';
   const me = (typeof _tkMe === 'function' ? _tkMe() : null) || (TK.user || {});
   const meId = me.id || (TK.user || {}).id, meName = me.name || _staffName;
   const fmt = d => { try { return tkFmtDate(d); } catch (e) { return d || ''; } };
@@ -8815,6 +8828,33 @@ async function tkPayAdjReset(empId) {
     document.getElementById('payAdjOverlay').remove(); toast('Reset to formula');
     _payBuild(); _payRenderReg(); _payRenderDash();
   } catch (e) { toast('Could not reset: ' + _errMsg(e), 'error', 5000); }
+}
+/* Rebuild the inferred employment history from the signed pay runs.
+
+   The first version of that inference recorded the pay-run line's `gross` — the payslip TOTAL — as
+   somebody's contractual salary, and ingested runs no Director had signed. Both are fixed, but rows
+   already written are still there and the table has no delete. This removes every INFERRED row,
+   writes what it removed into the audit chain, and rebuilds under the corrected rules. Rows a person
+   recorded by hand (a raise entered with its effective date) are never touched. */
+async function tkRebuildEmpHistory() {
+  const out = document.getElementById('emphist-result');
+  if (!(await tkConfirm(_t('Rebuild the employment history from the pay runs a Director has signed?') + '\n\n' +
+                        _t('Reconstructed rows are removed and rebuilt. Anything recorded by hand is kept, and what is removed is written to the audit trail.')))) return;
+  if (out) out.textContent = _t('Rebuilding…');
+  try {
+    const r = await tkApi('/api/hr/history-repair', { method: 'POST', body: {} });
+    const parts = [
+      _t('Rebuilt from') + ' ' + (r.runs || 0) + ' ' + _t('signed pay run(s)') + '.',
+      (r.removed ? (_t('Removed') + ' ' + r.removed + ' ' + _t('reconstructed row(s) across') + ' ' + (r.employeesAffected || 0) + ' ' + _t('employee(s)') + '.') : _t('Nothing needed removing.')),
+      _t('Wrote') + ' ' + (r.events || 0) + ' ' + _t('dated event(s)') + '; ' + (r.total || 0) + ' ' + _t('in the history in total') + '.',
+      (r.salaryUnavailable ? (_t('Note:') + ' ' + r.salaryUnavailable + ' ' + _t('line(s) predate the contractual salary being recorded, so they contributed no salary row — a gap is honest, a wrong figure is not.')) : '')
+    ].filter(Boolean);
+    if (out) out.textContent = parts.join('\n');
+    toast(_t('Employment history rebuilt'), 'success', 5000);
+  } catch (e) {
+    if (out) out.textContent = '';
+    toast(_errMsg(e), 'error', 6000);
+  }
 }
 /* Nobody gets paid a guess.
 
@@ -20416,6 +20456,41 @@ const _VI = {
   'Approve anyway': 'Vẫn duyệt', 'Please give a reason': 'Vui lòng nhập lý do',
   'recorded as over the statutory cap': 'đã ghi nhận là vượt trần luật định',
   'No salary on record': 'Chưa có lương trên hồ sơ',
+  // ── Rebuilding the employment history ──
+  'Rebuild the employment history from the pay runs a Director has signed?': 'Xây dựng lại lịch sử nhân sự từ các bảng lương đã được Giám đốc ký?',
+  'Reconstructed rows are removed and rebuilt. Anything recorded by hand is kept, and what is removed is written to the audit trail.': 'Các dòng suy luận sẽ được xoá và dựng lại. Những dòng do người dùng tự nhập vẫn được giữ nguyên, và phần bị xoá sẽ được ghi vào nhật ký kiểm toán.',
+  'Rebuilding…': 'Đang dựng lại…', 'Rebuilt from': 'Đã dựng lại từ',
+  'signed pay run(s)': 'bảng lương đã ký', 'Removed': 'Đã xoá',
+  'reconstructed row(s) across': 'dòng suy luận, thuộc', 'employee(s)': 'nhân viên',
+  'Nothing needed removing.': 'Không có dòng nào cần xoá.',
+  'Wrote': 'Đã ghi', 'dated event(s)': 'sự kiện có ngày hiệu lực',
+  'in the history in total': 'tổng số trong lịch sử', 'Note:': 'Lưu ý:',
+  'line(s) predate the contractual salary being recorded, so they contributed no salary row — a gap is honest, a wrong figure is not.': 'dòng có trước khi mức lương hợp đồng được ghi nhận nên không tạo dòng lương — thiếu dữ liệu là trung thực, còn số liệu sai thì không.',
+  'Employment history rebuilt': 'Đã dựng lại lịch sử nhân sự',
+  // ── Annual leave entitlement (Art. 113/114) ──
+  'Annual leave entitlement': 'Số ngày phép năm theo luật',
+  'Labour Code Art. 113 — 12 days, 14 for hazardous work, 16 for especially hazardous · Art. 114 — one more day every 5 years · a first or final year is prorated (Decree 145/2020 Art. 66).':
+    'Bộ luật Lao động Đ.113 — 12 ngày, 14 ngày với công việc nặng nhọc/độc hại, 16 ngày với đặc biệt nặng nhọc/độc hại · Đ.114 — thêm 1 ngày sau mỗi 5 năm · năm đầu hoặc năm cuối được tính theo tỷ lệ (NĐ 145/2020 Đ.66).',
+  'Raise the': 'Nâng', 'short record(s)': 'hồ sơ còn thiếu',
+  'Every record meets the statutory minimum.': 'Tất cả hồ sơ đều đạt mức tối thiểu luật định.',
+  'employee(s) checked for': 'nhân viên đã kiểm tra cho năm',
+  'record(s) below the statutory minimum': 'hồ sơ thấp hơn mức tối thiểu luật định',
+  'These employees are entitled to more annual leave than their record gives them. Raising a record does not change any leave already taken.':
+    'Những nhân viên này được hưởng số ngày phép nhiều hơn mức ghi trên hồ sơ. Việc nâng hồ sơ không làm thay đổi số ngày phép đã sử dụng.',
+  'On record': 'Trên hồ sơ', 'Required by law': 'Luật yêu cầu', 'How it is made up': 'Cách tính',
+  'short by': 'thiếu', 'base': 'cơ bản', 'seniority': 'thâm niên', 'joined': 'vào làm',
+  'Raise every record that is below the statutory minimum for': 'Nâng tất cả hồ sơ thấp hơn mức tối thiểu luật định cho năm',
+  'Records that already meet or exceed the minimum are left alone. Each change is written to the audit trail.':
+    'Các hồ sơ đã đạt hoặc vượt mức tối thiểu sẽ được giữ nguyên. Mỗi thay đổi đều được ghi vào nhật ký kiểm toán.',
+  'Raised': 'Đã nâng', 'entitlement(s)': 'hồ sơ ngày phép',
+  'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
+  'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
+  'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
+  'Overtime &amp; statutory limits': 'Tăng ca &amp; giới hạn luật định',
+  'Labour Code Art. 107 — 4h a day · 40h a month · ': 'Bộ luật Lao động Đ.107 — 4h/ngày · 40h/tháng · ',
+  'h a year': 'h/năm', 'over the limit': 'vượt giới hạn',
+  'This month': 'Tháng này', 'This year': 'Năm nay', 'Of which at night': 'Trong đó ban đêm',
+  'Breakdown': 'Chi tiết',
   'No overtime': 'Không tăng ca',
   'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Gửi yêu cầu tăng ca để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
   'e.g. urgent site work': 'ví dụ: công việc khẩn tại công trường',
@@ -21807,13 +21882,83 @@ function tkSetLang(lang) {
 ────────────────────────────────────────────────────────── */
 function switchLeaveTab(tab, el) {
   document.querySelectorAll('#leave-tabs .tab').forEach(b => b.classList.remove('active'));
-  ['pending','approved','rejected','balance','calendar'].forEach(id => {
+  ['pending','approved','rejected','balance','calendar','entitlement'].forEach(id => {
     const p = document.getElementById('leave-' + id);
     if (p) p.style.display = 'none';
   });
   if (el) el.classList.add('active');
   const panel = document.getElementById('leave-' + tab);
   if (panel) panel.style.display = 'block';
+  if (tab === 'entitlement') tkRenderEntitlements();
+}
+
+/* What annual leave the law requires, beside what is on each record.
+
+   `annualTotal` is a number somebody typed, and until now nothing compared it with anything. The
+   figure that matters is Art. 113(1) plus the Art. 114 seniority day, prorated for a first or final
+   year under Decree 145/2020 Art. 66 — so somebody who passed five years last March has been a day
+   short ever since, and nobody could have known. This shows the gap and offers to close it.
+
+   It only ever raises. A company that agreed 18 days agreed 18 days; normalising that down to the
+   statutory 12 would not be fixing a problem, it would be taking six days off somebody. */
+let _entYear = null;
+async function tkRenderEntitlements() {
+  const el = document.getElementById('leave-entitlement'); if (!el) return;
+  if (!_entYear) _entYear = new Date().getFullYear();
+  el.innerHTML = tkSkeleton();
+  let r;
+  try { r = await tkApi('/api/hr/leave-entitlement?year=' + _entYear); }
+  catch (e) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  const rows = r.rows || [];
+  const short = rows.filter(x => x.shortfall > 0);
+  const canApply = _lvlRank(_userLevel) >= _lvlRank('editor');
+  const yearSel = '<select class="sel-filter" onchange="_entYear=+this.value;tkRenderEntitlements()">' +
+    [_entYear - 1, _entYear, _entYear + 1].map(y => '<option' + (y === _entYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
+    '<div><div style="font-weight:700;color:var(--navy)">' + _t('Annual leave entitlement') + ' — ' + _entYear + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light)">' + _t('Labour Code Art. 113 — 12 days, 14 for hazardous work, 16 for especially hazardous · Art. 114 — one more day every 5 years · a first or final year is prorated (Decree 145/2020 Art. 66).') + '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:center">' + yearSel +
+    (short.length && canApply ? '<button class="btn btn-emerald btn-sm" onclick="tkApplyEntitlements()">' + tkIcon('check') + _t('Raise the') + ' ' + short.length + ' ' + _t('short record(s)') + '</button>' : '') +
+    '</div></div>';
+
+  if (!short.length) {
+    el.innerHTML = head + '<div class="card" style="padding:28px;text-align:center">' +
+      '<div style="font-weight:700;color:var(--emerald)">' + _t('Every record meets the statutory minimum.') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + rows.length + ' ' + _t('employee(s) checked for') + ' ' + _entYear + '.</div></div>' +
+      _entTable(rows);
+    return;
+  }
+  el.innerHTML = head +
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid var(--danger)">' +
+    '<div style="font-weight:700;color:var(--danger)">' + short.length + ' ' + _t('record(s) below the statutory minimum') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + _t('These employees are entitled to more annual leave than their record gives them. Raising a record does not change any leave already taken.') + '</div></div>' +
+    _entTable(rows);
+}
+function _entTable(rows) {
+  const cell = x => {
+    const gap = x.shortfall > 0;
+    return '<tr' + (gap ? ' style="background:rgba(220,38,38,.04)"' : '') + '>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + ' · ' + _t('joined') + ' ' + _crmEsc(x.startDate || '—') + '</div></td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.onRecord == null || x.onRecord === '' ? '—' : x.onRecord) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700">' + x.required + '</td>' +
+      '<td style="text-align:right">' + (gap ? '<span class="badge b-warn" style="font-size:10px">' + _t('short by') + ' ' + x.shortfall + '</span>' : '<span style="color:var(--emerald)">✓</span>') + '</td>' +
+      '<td style="font-size:11px;color:var(--text-light)">' + x.base + ' ' + _t('base') + (x.seniority ? ' + ' + x.seniority + ' ' + _t('seniority') : '') + (x.prorated ? ' · ' + _crmEsc(x.why) : '') + '</td></tr>';
+  };
+  return '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th style="text-align:right">' + _t('On record') + '</th>' +
+    '<th style="text-align:right">' + _t('Required by law') + '</th><th style="text-align:right"></th>' +
+    '<th>' + _t('How it is made up') + '</th></tr></thead><tbody>' + rows.map(cell).join('') + '</tbody></table></div></div>';
+}
+async function tkApplyEntitlements() {
+  if (!(await tkConfirm(_t('Raise every record that is below the statutory minimum for') + ' ' + _entYear + '?\n\n' +
+                        _t('Records that already meet or exceed the minimum are left alone. Each change is written to the audit trail.')))) return;
+  try {
+    const r = await tkApi('/api/hr/leave-entitlement/apply', { method: 'POST', body: { year: _entYear } });
+    toast(_t('Raised') + ' ' + (r.count || 0) + ' ' + _t('entitlement(s)'), 'success', 5000);
+    try { await tkBootstrap(); } catch (e) {}
+    tkRenderEntitlements();
+  } catch (e) { toast(_errMsg(e), 'error', 6000); }
 }
 
 function switchMgrTab(tab, el) {
@@ -24676,6 +24821,19 @@ function viewCertificate(btn) {
         <select class="form-control" id="ee-status"><option>Active</option><option>Inactive</option><option>On Leave</option></select>
       </div>
     </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Working conditions</label>
+        <select class="form-control" id="ee-workConditions">
+          <option value="normal">Normal — 12 days annual leave</option>
+          <option value="heavy">Heavy / hazardous / dangerous — 14 days</option>
+          <option value="especially_heavy">Especially heavy / hazardous / dangerous — 16 days</option>
+        </select>
+        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 113(1). This is a classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties.</div>
+      </div>
+      <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ee-disabled" style="width:auto">Person with disabilities</label>
+        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.</div>
+      </div>
+    </div>
     <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-control" id="ee-email" placeholder="name@humiley.com.vn"></div>
     <div class="form-group"><label class="form-label">Direct Manager (approves their leave)</label><select class="form-control" id="ee-manager"><option value="">— None (top of org) —</option></select></div>
     <div class="modal-footer">
@@ -24946,6 +25104,8 @@ function editEmployeeProfile(btn) {
   document.getElementById('ee-title').value = emp.title || '';
   document.getElementById('ee-email').value = emp.email || '';
   try { tkFillSchedSelects(); } catch (e) {}   // custom (persisted) schedules become assignable, not just the 5 hardcoded ones
+  const wcSel = document.getElementById('ee-workConditions'); if (wcSel) wcSel.value = emp.workConditions || 'normal';
+  const disCb = document.getElementById('ee-disabled'); if (disCb) disCb.checked = !!emp.disabled;
   const schedSel = document.getElementById('ee-schedule'); if (schedSel) { if (emp.schedule && !Array.from(schedSel.options).some(o => o.value === emp.schedule)) { const o = document.createElement('option'); o.textContent = emp.schedule; schedSel.appendChild(o); } schedSel.value = emp.schedule || 'Standard 08:00 – 17:00'; }
   tkPopulateManagerSelect(emp.managerEmail, emp.id);
   openModal('editEmpModal');
@@ -24958,8 +25118,10 @@ function saveEmployeeProfile() {
   const email = document.getElementById('ee-email')?.value?.trim() || '';
   const managerEmail = document.getElementById('ee-manager')?.value || '';
   const schedule = document.getElementById('ee-schedule')?.value || '';
+  const workConditions = document.getElementById('ee-workConditions')?.value || 'normal';
+  const disabled = document.getElementById('ee-disabled')?.checked ? 1 : 0;
   if (id) {
-    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule }, 'PATCH')
+    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule, workConditions, disabled }, 'PATCH')
       .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
   }
   closeModal('editEmpModal');

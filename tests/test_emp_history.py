@@ -271,3 +271,69 @@ def test_a_backfilled_row_says_it_was_inferred(api, tokens):
 def test_only_an_admin_may_backfill(api, tokens):
     st, _ = api("POST", "/api/hr/history-backfill", tokens["mgr"], {})
     assert st == 403
+
+
+# ── repairing the rows the first, wrong backfill wrote ───────────────────────────────────────────
+
+def _bad_backfill_row(emp_id, field, value, effective):
+    """A row exactly as the defective backfill left it: inferred, and asserting a payslip TOTAL as
+    somebody's salary."""
+    db.add_emp_event(emp_id, field, None, value, effective=effective,
+                     reason="Backfilled from the March 2026 pay run", source="backfill")
+
+
+def test_the_repair_removes_the_wrong_inferred_rows_and_rebuilds_them(api, tokens):
+    """The production scenario: an earlier backfill already wrote 18,530,000 — the payslip total —
+    as this employee's March salary. The corrected pay-run line says 20,000,000."""
+    _bad_backfill_row("HML-STF", "salary", 18_530_000, "2026-03-01")
+    assert db.emp_value_asof("HML-STF", "salary", "2026-03-15") == "18530000"
+    _run(api, tokens, "March 2026", salary=20_000_000, gross=18_530_000)
+    st, b = api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    assert st == 200, b
+    assert b["removed"] == 1
+    assert db.emp_value_asof("HML-STF", "salary", "2026-03-15") == "20000000"
+
+
+def test_the_repair_never_touches_a_row_somebody_recorded(api, tokens):
+    """source='edit' rows are evidence of a decision. Only the reconstruction is rebuilt."""
+    api("PATCH", "/api/employees/HML-STF", tokens["admin"],
+        {"salary": 31_000_000, "_effective": "2026-05-01", "_reason": "annual review"})
+    _bad_backfill_row("HML-STF", "salary", 18_530_000, "2026-03-01")
+    api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    kept = db.list_emp_events(emp_id="HML-STF", field="salary")
+    assert [e["new_value"] for e in kept] == ["31000000"]
+    assert kept[0]["source"] == "edit"
+
+
+def test_the_removal_is_itself_written_into_the_audit_chain(api, tokens):
+    """Somebody will ask why a figure on their profile changed. The answer has to exist."""
+    _bad_backfill_row("HML-STF", "salary", 18_530_000, "2026-03-01")
+    api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    trail = [a for a in db.list_collection("audit")
+             if a.get("action") == "Employment history rebuilt"]
+    assert trail, "the rebuild must leave a record"
+    assert "18530000" in trail[-1]["detail"]
+    assert "HML-STF" in trail[-1]["detail"]
+
+
+def test_the_repair_is_safe_when_the_bad_backfill_was_never_run(api, tokens):
+    """Most likely case for this install. It must remove nothing and still rebuild cleanly."""
+    _run(api, tokens, "March 2026", salary=20_000_000)
+    st, b = api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    assert st == 200 and b["removed"] == 0
+    assert db.emp_value_asof("HML-STF", "salary", "2026-03-15") == "20000000"
+
+
+def test_the_repair_is_idempotent(api, tokens):
+    _bad_backfill_row("HML-STF", "salary", 18_530_000, "2026-03-01")
+    _run(api, tokens, "March 2026", salary=20_000_000)
+    api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    n = db.emp_events_count()
+    st, b = api("POST", "/api/hr/history-repair", tokens["admin"], {})
+    assert st == 200
+    assert db.emp_events_count() == n
+
+
+def test_only_an_admin_may_repair(api, tokens):
+    st, _ = api("POST", "/api/hr/history-repair", tokens["mgr"], {})
+    assert st == 403

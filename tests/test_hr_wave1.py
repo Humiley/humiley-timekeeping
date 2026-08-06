@@ -28,6 +28,11 @@ def _audit_for(target_id):
 
 def test_a_salary_change_is_written_to_the_audit_trail(api, tokens):
     """A ₫50,000 payroll override was HMAC-chained; a salary rise wrote nothing at all."""
+    # Set a known baseline directly (db writes no audit row), so this asserts a real CHANGE rather
+    # than depending on whatever another test file happened to leave the salary at. Without it, a
+    # test elsewhere that sets 31,000,000 makes this a no-op edit — correctly writing no audit row,
+    # and failing here for a reason that has nothing to do with the audit trail.
+    db.update_employee("HML-STF", {"salary": 21_000_000})
     before = len(_audit_for("HML-STF"))
     st, b = api("PATCH", "/api/employees/HML-STF", tokens["admin"], {"salary": 31_000_000})
     assert st == 200, b
