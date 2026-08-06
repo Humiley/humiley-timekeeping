@@ -3551,7 +3551,24 @@ function tkReadPhoto(input) {
 }
 
 /* export the employee roster to CSV */
-function tkExportEmployees() {
+/* Exporting the roster takes the whole staff file — CCCD, date of birth, home address, next-of-kin —
+   out of the portal's access controls and onto somebody's laptop. That is the moment a personal-data
+   incident becomes possible, and it happened with no record at all. It is confirmed first and logged
+   always: under Decree 13 the difference between an answer and no answer, if the file ever leaks, is
+   knowing who took a copy and when. */
+async function tkExportEmployees() {
+  if (!(await tkConfirm({
+    title: _t('Export the full employee list?'),
+    body: _t('The file includes personal data — ID numbers, dates of birth, addresses and emergency contacts. It leaves the portal’s access controls, so keep it on company storage and delete it when you are done. This export is recorded in the audit log.'),
+    confirmText: _t('Export')
+  }))) return;
+  try {
+    tkAudit('Employee roster exported', (TK.user || {}).name || '',
+      ((_DEMO_EMPLOYEES || []).length) + ' employee record(s) incl. personal data');
+  } catch (e) { }
+  return _tkExportEmployeesCsv();
+}
+function _tkExportEmployeesCsv() {
   const cols = ['ID','Name','Email','Gender','DOB','Position','Job Level','Department','Type','Direct Manager','Phone','ID/Passport','Education','Family','Emergency','Address','Status'];
   const byEmail = {}; (_DEMO_EMPLOYEES || []).forEach(x => byEmail[(x.email || '').toLowerCase()] = x);
   const data = [cols].concat((_DEMO_EMPLOYEES || []).map(e => {
@@ -5898,17 +5915,36 @@ const _ONBOARD_TEMPLATE = [
   { phase: '30-60-90 Days', label: 'Draft 30-60-90 day plan + PADR objectives' },
   { phase: '30-60-90 Days', label: 'Day 30 — first check-in with Manager' },
   { phase: '30-60-90 Days', label: 'Day 60 — HR check-in & risk review' },
-  { phase: '30-60-90 Days', label: 'Day 90 — probation review (confirm / extend / end)' },
-  { phase: '30-60-90 Days', label: 'Confirm benefits start & health top-up (Day 91)' }
+  { phase: 'Probation', label: 'Probation decision before the statutory cap (confirm or end — never extend past it)' },
+  { phase: 'Probation', label: 'Confirm benefits start & health top-up on confirmation' }
 ];
 const _onboardTasks = () => _ONBOARD_TEMPLATE.map(t => ({ label: t.label, phase: t.phase, done: false }));
-/* Probation milestones (A11) — due dates computed from startDate; email reminder when approaching. */
-const _PROBATION_MILESTONES = [
-  { day: 30, label: 'Day 30 — Manager first check-in' },
-  { day: 60, label: 'Day 60 — HR check-in & risk review' },
-  { day: 90, label: 'Day 90 — Probation review (confirm / extend / end)' }
-];
-const _onboardMilestones = () => _PROBATION_MILESTONES.map(m => ({ day: m.day, label: m.label, status: 'Pending', reviewedOn: '', remindedAt: '' }));
+/* Probation milestones — due dates computed from startDate; email reminder when approaching.
+
+   Labour Code Art. 25 CAPS probation, and the cap depends on the role: 180 days for an enterprise
+   manager, 60 for a role needing a college degree or above, 30 for an intermediate/technical role,
+   6 working days for everything else. The old timetable ran to Day 90 for everyone — 30 days over
+   for our engineers and 60 over for technicians. Time worked past the cap is deemed regular
+   employment: probation pay becomes back-pay, and one dismissed probationer turns it into an
+   unlawful-termination claim. The review must land ON or BEFORE the cap, never after. */
+const _PROBATION_CAP_DAYS = { manager: 180, degree: 60, technical: 30, other: 6 };
+function _probationCapFor(role) {
+  const t = String(role || '').toLowerCase();
+  if (/director|manager|head|chief|truong phong|giam doc/.test(t)) return _PROBATION_CAP_DAYS.manager;
+  if (/engineer|officer|specialist|supervisor|accountant|ky su|chuyen vien/.test(t)) return _PROBATION_CAP_DAYS.degree;
+  if (/technician|operator|foreman|cong nhan|ky thuat vien/.test(t)) return _PROBATION_CAP_DAYS.technical;
+  return _PROBATION_CAP_DAYS.degree;   // safest default for an office hire: 60, never 90
+}
+function _probationMilestonesFor(role) {
+  const cap = _probationCapFor(role);
+  const out = [];
+  if (cap >= 60) out.push({ day: Math.round(cap / 2), label: 'Day ' + Math.round(cap / 2) + ' — Manager first check-in' });
+  if (cap >= 30) out.push({ day: Math.max(1, cap - 10), label: 'Day ' + Math.max(1, cap - 10) + ' — HR check-in & risk review' });
+  out.push({ day: cap, label: 'Day ' + cap + ' — Probation decision (confirm or end) · statutory cap' });
+  return out;
+}
+const _PROBATION_MILESTONES = _probationMilestonesFor('engineer');
+const _onboardMilestones = (role) => _probationMilestonesFor(role).map(m => ({ day: m.day, label: m.label, status: 'Pending', reviewedOn: '', remindedAt: '' }));
 const _addDays = (iso, n) => { const p = _tkDateParts(iso); if (!p) return ''; const d = new Date(p.y, p.m - 1, p.d); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
 const _daysUntil = iso => { const p = _tkDateParts(iso); if (!p) return null; return Math.round((new Date(p.y, p.m - 1, p.d) - new Date(_today())) / 86400000); };
 /* Collection load cache. Views (esp. Projects) used to re-fetch every collection on every render —
@@ -6178,7 +6214,7 @@ async function tkHireCandidate(id) {
     } });
     await tkApi('/api/coll/onboarding', { method: 'POST', body: {
       empId: emp.id, name: c.name, role: c.role || '', startDate: _today(),
-      tasks: _onboardTasks(), milestones: _onboardMilestones()
+      tasks: _onboardTasks(), milestones: _onboardMilestones(c.role || '')
     } });
     await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: { ...c, stage: 'Hired' } });
     c.stage = 'Hired';
@@ -6468,7 +6504,7 @@ async function tkAddNewHireGo() {
   const tasks = _ONBOARD_TEMPLATE.filter((t, i) => picked.includes(i)).map(t => ({ label: t.label, phase: t.phase, done: false }));
   try {
     const _ex = (_DEMO_EMPLOYEES || []).find(e => (e.name || '').trim().toLowerCase() === name.toLowerCase());
-    const _body = { name: name, role: g('nh-role'), startDate: g('nh-start'), tasks: tasks, milestones: _onboardMilestones() };
+    const _body = { name: name, role: g('nh-role'), startDate: g('nh-start'), tasks: tasks, milestones: _onboardMilestones(g('nh-role')) };
     if (_ex) { _body.empId = _ex.id; if (_ex.email) _body.email = _ex.email; }   // link to roster so the user reliably sees their checklist (avoids homonym mismatch)
     const r = await tkApi('/api/coll/onboarding', { method: 'POST', body: _body });
     if (r && r.item) (_HR.onboarding = _HR.onboarding || []).push(r.item);
@@ -6763,7 +6799,7 @@ async function tkRenderOnboarding() {
     _hrKpi('Avg. Progress', (totalTasks ? Math.round(doneTasks / totalTasks * 100) : 0) + '%', '#8B5CF6')
   ]);
   const cards = items.length ? items.slice().sort(_cmpNewest('startDate')).map(o => {   // slice(): items is the live cache
-    if (!o.milestones) o.milestones = _onboardMilestones();
+    if (!o.milestones) o.milestones = _onboardMilestones(o.role || '');
     const tk = o.tasks || []; const dn = tk.filter(t => t.done).length; const pct = Math.round(dn / Math.max(tk.length, 1) * 100);
     const e = _hrEmp(o.empId) || { name: o.name, ini: (o.name || '?').slice(0, 2).toUpperCase() };
     return '<div class="card" style="padding:16px 18px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">' + _hrAv(e) + '<div style="flex:1"><div style="font-weight:700">' + (o.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (o.role || '') + (o.startDate ? (' · starts ' + tkFmtDate(o.startDate)) : '') + '</div></div><span class="badge ' + (pct === 100 ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + pct + '%</span>' + _hrEditDel('onboarding', o.id, 'onboarding') + '</div>' +
@@ -14176,7 +14212,7 @@ async function tkQuickAddSave() {
       const res = await tkApi('/api/coll/' + spec.coll + '/' + _qaEditId, { method: 'PATCH', body: { ...ex, ...data } });
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
-      if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(); }
+      if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(data.role || ''); }
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
