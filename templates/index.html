@@ -6499,8 +6499,12 @@ async function tkRenderCompliance() {
       (docs.length && people.length
         ? '<div class="table-wrap"><table style="min-width:' + (320 + docs.length * 70) + 'px"><thead><tr>' +
             '<th>' + _t('Employee') + '</th><th>' + _t('Department') + '</th>' +
-            docs.map(d => '<th style="text-align:center;font-size:10px" title="' + _tkEscA(d.title + (d.version ? ' v' + d.version : '')) + '">' +
-              _crmEsc(d.code || d.title || '') + '<div style="font-weight:400;color:var(--text-light)">' + d.pct + '%</div></th>').join('') +
+            docs.map(d => { const _full = (_HR.hrdocs || []).find(x => x.id === d.id) || {};
+              const _nr = _onbNextReview(_full), _due = _nr && _nr < _today();
+              return '<th style="text-align:center;font-size:10px" title="' + _tkEscA(d.title + (d.version ? ' v' + d.version : '') +
+                (_nr ? ' — ' + (_due ? _t('review overdue since') : _t('next review')) + ' ' + _nr : '')) + '">' +
+              (_due ? '<span title="' + _tkEscA(_t('This document is past its review date.')) + '" style="color:var(--danger,#C0392B)">\u26A0 </span>' : '') +
+              _crmEsc(d.code || d.title || '') + '<div style="font-weight:400;color:var(--text-light)">' + d.pct + '%</div></th>'; }).join('') +
           '</tr></thead><tbody>' +
           people.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name) + '</td><td>' + _crmEsc(p.dept || '—') + '</td>' +
             docs.map(d => { const c = p.cells.find(x => x.docId === d.id);
@@ -9065,6 +9069,17 @@ function _onbForMe(e) {
 }
 /* My signature on a document, matched on the VERSION: re-issuing a policy asks for a fresh signature
    rather than silently carrying the old one forward. */
+/* Contract grade means the PIN e-signature and the hash chain. Anything else is an acknowledgement. */
+function _onbIsContract(d) { return String((d || {}).signMethod || '').indexOf('Contract') === 0; }
+/* When this document is next due for review, or '' if it is not on a cycle. */
+function _onbNextReview(d) {
+  const m = parseInt((d || {}).reviewMonths, 10) || 0;
+  const from = String((d || {}).effectiveFrom || (d || {}).ts || '').slice(0, 10);
+  if (!m || from.length !== 10) return '';
+  const dt = new Date(from + 'T00:00:00'); if (isNaN(dt.getTime())) return '';
+  dt.setMonth(dt.getMonth() + m);
+  return dt.toISOString().slice(0, 10);
+}
 function _onbAck(docId, version) {
   const me = _tkMe() || {};
   return (_HR.hrdoc_acks || []).find(a => a.docId === docId && a.empId === me.id &&
@@ -9092,6 +9107,7 @@ async function tkRenderMyOnboarding() {
           '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' +
             [d.code, d.version ? 'v' + d.version : '', d.category, d.effectiveFrom ? _t('Effective') + ' ' + tkFmtDate(d.effectiveFrom) : '']
               .filter(Boolean).map(_crmEsc).join('  ·  ') + '</div>' +
+          (_onbIsContract(d) ? ' <span class="badge b-navy" style="font-size:9px">' + _t('Contract — PIN e-signature') + '</span>' : '') +
           (d.summary ? '<div style="font-size:12.5px;color:var(--text-dark);margin-top:6px;line-height:1.5">' + _crmEsc(d.summary) + '</div>' : '') +
         '</div>' +
         '<div style="flex:0 0 auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
@@ -9147,7 +9163,9 @@ function tkOnbSign(id) {
       : '') +
     (d.summary ? '<div style="font-size:13px;line-height:1.6;color:var(--text-dark);margin-bottom:12px">' + _crmEsc(d.summary) + '</div>' : '') +
     '<div style="font-size:12.5px;color:var(--text-dark);background:var(--soft-bg);padding:10px 12px;border-radius:8px;margin-bottom:12px;line-height:1.55">' +
-      _t('By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.') + '</div>' +
+      _t('By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.') +
+      (_onbIsContract(d) ? '<div style="margin-top:8px;font-weight:600;color:var(--navy)">' +
+        _t('This document also needs your e-signature PIN, which records it in the tamper-evident signature log.') + '</div>' : '') + '</div>' +
     '<div class="form-group"><label class="form-label">' + _t('Your signature') + '</label>' +
       '<div style="position:relative;border:1px dashed var(--line);border-radius:10px;background:#fff">' +
         '<canvas id="onb-sigpad" width="440" height="150" style="width:100%;height:150px;touch-action:none;border-radius:10px"></canvas>' +
@@ -9178,6 +9196,15 @@ async function tkOnbSignSave(id) {
     const ack = res.item;
     (_HR.hrdoc_acks = _HR.hrdoc_acks || []).push(ack);
     document.getElementById('onbSignOverlay')?.remove();
+    // Contract grade is signed AGAIN through the PIN path so it lands in the tamper-evident chain.
+    // The drawn signature stays on the record too: one is what it looked like, the other is what
+    // makes it provable.
+    if (_onbIsContract(d)) {
+      tkESign({ coll: 'hrdoc_acks', id: ack.id,
+        meaning: 'Signed and agreed — ' + (d.title || '') + (d.version ? ' v' + d.version : ''),
+        onDone: () => { toast(_t('Signed') + ' — ' + (d.title || '')); tkRenderMyOnboarding(); } });
+      return;
+    }
     toast(_t('Signed') + ' — ' + (d.title || ''));
     // File it into this person's own HR folder. Best-effort and reported: the signature already
     // stands in the portal, so a SharePoint problem must not look like a failed signing.
@@ -13214,6 +13241,15 @@ const _QA_SPECS = {
     { k: 'audience', label: 'Who must sign', type: 'select', options: ['All', 'Department', 'Selected'] },
     { k: 'dept', label: 'Department (if "Department")' },
     { k: 'empIds', label: 'Employee IDs, comma separated (if "Selected")' },
+    // Document control. The company already works to BM./QĐ. codes; a policy with no owner and no
+    // review date is a file, not a controlled document — and an out-of-date one ages quietly.
+    { k: 'owner', label: 'Document owner (who keeps it current)' },
+    { k: 'reviewMonths', label: 'Review every (months)', type: 'number' },
+    { k: 'supersedes', label: 'Supersedes (code + version it replaces)' },
+    // Two grades on purpose. A drawn signature is right for "I read the handbook". It is not right
+    // for a contract or an NDA — those go through the PIN e-signature so they land in the
+    // tamper-evident chain and can be proved unaltered later.
+    { k: 'signMethod', label: 'Signature required', type: 'select', options: ['Acknowledge (drawn signature)', 'Contract (PIN e-signature)'] },
     { k: 'summary', label: 'Short summary shown to the employee', type: 'textarea' },
     { k: 'file', label: 'The document file (PDF / Word)', type: 'file' }] },
   jobs: { title: 'Post a Job / Requisition', coll: 'jobs', reload: 'recruitment', fields: [
@@ -19278,6 +19314,10 @@ const _VI = {
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
   /* Onboarding & policy compliance */
+  'Contract — PIN e-signature': 'Hợp đồng — ký bằng mã PIN',
+  'This document also needs your e-signature PIN, which records it in the tamper-evident signature log.': 'Tài liệu này còn cần mã PIN chữ ký điện tử của bạn, được ghi vào nhật ký chữ ký chống sửa đổi.',
+  'next review': 'rà soát tiếp theo', 'review overdue since': 'quá hạn rà soát từ',
+  'This document is past its review date.': 'Tài liệu này đã quá hạn rà soát.',
   'All signed': 'Đã ký đủ', 'Open Onboarding': 'Mở mục Hội nhập', 'Import old policies': 'Nhập chính sách cũ',
   'Documents & Policies': 'Tài liệu & Chính sách', 'Imported': 'Đã nhập', 'documents': 'tài liệu',
   'acknowledgements': 'xác nhận', 'Could not import': 'Không nhập được', 'Import': 'Nhập',
