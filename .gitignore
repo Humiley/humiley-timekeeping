@@ -1,6 +1,10 @@
 # Database (runtime data — do not commit)
 *.db
 timekeeping.db
+# WAL sidecars. journal_mode=WAL leaves these next to the database; they hold committed pages that
+# have not been checkpointed yet, so they are live data — and *.db above does not match them.
+*.db-wal
+*.db-shm
 
 # Deploy secrets / per-server config
 .env

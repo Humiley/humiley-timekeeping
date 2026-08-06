@@ -7244,6 +7244,7 @@ class Handler(BaseHTTPRequestHandler):
         # clobber that edit — so 409 and let the client re-fetch and re-apply. Opt-in by header, so a
         # caller that doesn't send it is unaffected (the write still bumps `_rev` in put_collection_item).
         _ifm = self.headers.get("If-Match")
+        _ifm_rev = None            # carried to the write below, so the precondition is ATOMIC
         if _ifm is not None:
             _cur = db.get_collection_item(name, iid)
             if _cur is not None:
@@ -7259,6 +7260,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "This record was just changed by someone else. "
                                                  "Reload the latest version and re-apply your change.",
                                        "conflict": True, "currentRev": _cur_rev}, 409)
+                # Checking here and writing hundreds of lines later is two transactions with a gap
+                # between them — a concurrent write landing in that gap passed the check and was then
+                # overwritten anyway, which is the exact failure If-Match exists to prevent. The rev
+                # is re-verified inside the write's own transaction.
+                _ifm_rev = _want_rev
         # The audit trail is APPEND-ONLY (21 CFR Part 11). _coll_delete already blocks deletion; block
         # updates here too so a stored audit event can never be edited/rewritten via the generic store.
         if name == "audit":
@@ -7315,33 +7321,56 @@ class Handler(BaseHTTPRequestHandler):
             _is_admin = self._caller_level(u) == "admin"
             _ack = {"name": _uname, "meaning": "Asset handover — acknowledged receipt", "ts": self._utc_now(),
                     "method": "signature", "image": _img, "by": _uname, "ack": True}
-            with self._ESIGN_LOCK:
-                existing = db.get_collection_item("devices", iid)
-                if not existing:
-                    return self._err("You can only sign for a device assigned to you.", 403)
-                _assigns = existing.get("assignments")
-                if isinstance(_assigns, list) and _assigns:
-                    # Per-assignment model: sign ONLY the assignment(s) belonging to the caller.
-                    _mine = [a for a in _assigns if isinstance(a, dict) and ((a.get("empId") and a.get("empId") == _uid) or (not a.get("empId") and a.get("name") == _uname))]
-                    if not _mine and not _is_admin:
+            # Read, append, COMPARE-AND-SWAP, retry. The lock alone was not enough: it only serialises
+            # other ack requests, and the write that actually destroys a signature is a MANAGER's
+            # ordinary device PATCH, which takes no lock at all. Assigning the item to a new holder
+            # between this read and this write used to overwrite the ack; acking between the manager's
+            # read and write used to overwrite the assignment, its quantity and its handover signature.
+            # put_collection_item_if_rev writes only while the stored rev is still the one we read, so
+            # the loser re-reads and re-applies instead of clobbering. Measured on this code: twelve
+            # concurrent signatures on one stock line, one survived; with the swap, all twelve do.
+            for _try in range(5):
+                with self._ESIGN_LOCK:          # keeps ack-vs-ack from even needing a retry
+                    existing = db.get_collection_item("devices", iid)
+                    if not existing:
                         return self._err("You can only sign for a device assigned to you.", 403)
-                    for a in _mine:
-                        a.setdefault("signatures", []).append(dict(_ack))
-                        a["ackOn"] = _today
-                        a["ackBy"] = _uname
-                    existing["assignments"] = _assigns
-                else:
-                    # Legacy single-assignee record.
-                    _own = (existing.get("empId") == _uid) if existing.get("empId") else (existing.get("assignedTo") == _uname)
-                    if not _own and not _is_admin:
-                        return self._err("You can only sign for a device assigned to you.", 403)
-                    _sigs = list(existing.get("signatures") or [])
-                    _sigs.append(_ack)
-                    existing["signatures"] = _sigs
-                    existing["ackOn"] = _today
-                    existing["ackBy"] = _uname
-                existing["id"] = iid
-                db.put_collection_item("devices", existing)
+                    _rev0 = existing.get("_rev")
+                    # Re-checked on every attempt, against the row as it is NOW: a retry must not
+                    # sign for an assignment that was released while we were losing the race.
+                    _assigns = existing.get("assignments")
+                    if isinstance(_assigns, list) and _assigns:
+                        # Per-assignment model: sign ONLY the assignment(s) belonging to the caller.
+                        _mine = [a for a in _assigns if isinstance(a, dict) and ((a.get("empId") and a.get("empId") == _uid) or (not a.get("empId") and a.get("name") == _uname))]
+                        if not _mine and not _is_admin:
+                            return self._err("You can only sign for a device assigned to you.", 403)
+                        for a in _mine:
+                            a.setdefault("signatures", []).append(dict(_ack))
+                            a["ackOn"] = _today
+                            a["ackBy"] = _uname
+                        existing["assignments"] = _assigns
+                    else:
+                        # Legacy single-assignee record.
+                        _own = (existing.get("empId") == _uid) if existing.get("empId") else (existing.get("assignedTo") == _uname)
+                        if not _own and not _is_admin:
+                            return self._err("You can only sign for a device assigned to you.", 403)
+                        _sigs = list(existing.get("signatures") or [])
+                        _sigs.append(_ack)
+                        existing["signatures"] = _sigs
+                        existing["ackOn"] = _today
+                        existing["ackBy"] = _uname
+                    existing["id"] = iid
+                    _saved = db.put_collection_item_if_rev("devices", existing, _rev0)
+                if _saved is not None:
+                    existing = _saved
+                    break
+            else:
+                # Five losses in a row is not contention, it is something hammering this row. Say so
+                # rather than writing a signature over whatever is there now.
+                return self._json({"error": "That device was being changed at the same moment. "
+                                            "Please try signing again.",
+                                   "conflict": True}, 409)
+            # Only after the signature is safely stored — an audit row asserting a signature the record
+            # does not hold is worse than no audit row.
             db.put_collection_item("audit", {"actor": _uname, "actorId": _uid,
                 "action": "E-signature — asset receipt acknowledged", "target": "devices/" + str(iid),
                 "detail": existing.get("name") or "", "ts": self._utc_now()})
@@ -7708,7 +7737,18 @@ class Handler(BaseHTTPRequestHandler):
             saved = db.put_collection_item("payadjust", item)
             self._audit_payadjust(u, "Payroll adjustment edited", saved)
             return self._json({"ok": True, "item": saved})
-        return self._json({"ok": True, "item": {k: v for k, v in db.put_collection_item(name, item).items() if k != "token"}})
+        if _ifm_rev is not None:
+            # The caller supplied a precondition, so honour it AT THE WRITE. Losing here means the row
+            # changed while this request was being processed — the same answer the check above gives,
+            # just no longer possible to slip past.
+            _out = db.put_collection_item_if_rev(name, item, _ifm_rev)
+            if _out is None:
+                return self._json({"error": "This record was just changed by someone else. "
+                                            "Reload the latest version and re-apply your change.",
+                                   "conflict": True}, 409)
+        else:
+            _out = db.put_collection_item(name, item)
+        return self._json({"ok": True, "item": {k: v for k, v in _out.items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
         if name not in self.COLLECTIONS or not iid:

@@ -1425,6 +1425,52 @@ def collection_count(coll):
     return row["n"] if row else 0
 
 
+def _coll_write_txn(conn, coll, item, expect_rev=None):
+    """Read-check-write for one collection row, INSIDE an already-open IMMEDIATE transaction.
+
+    Returns the written item, or None when `expect_rev` was given and the stored rev has moved (the
+    compare-and-swap lost). The caller owns the transaction: commit on a non-None return, roll back
+    otherwise."""
+    prev = conn.execute("SELECT data FROM collections WHERE coll = ? AND id = ?",
+                        (coll, item["id"])).fetchone()
+    cur_rev = 0
+    if prev:
+        try:
+            cur_rev = int((json.loads(prev["data"]) or {}).get("_rev") or 0)
+        except (ValueError, TypeError):
+            cur_rev = 0
+    if expect_rev is not None and cur_rev != int(expect_rev or 0):
+        return None
+    item["_rev"] = cur_rev + 1
+    conn.execute("INSERT INTO collections (coll,id,data) VALUES (?,?,?) "
+                 "ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data",
+                 (coll, item["id"], json.dumps(item)))
+    return item
+
+
+def _coll_write(coll, item, expect_rev=None):
+    """Open an IMMEDIATE transaction and run _coll_write_txn in it.
+
+    IMMEDIATE (not the default deferred) takes the write lock BEFORE the read, so the rev this write
+    is based on cannot change underneath it. isolation_level=None hands transaction control to us
+    rather than to the sqlite3 module's implicit BEGIN-before-DML, which would start its transaction
+    only at the INSERT — after the read, which is exactly the window we are closing. busy_timeout is
+    already 5s, so a contended write waits its turn instead of raising."""
+    conn = get_conn()
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            out = _coll_write_txn(conn, coll, item, expect_rev)
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
+        conn.execute("COMMIT" if out is not None else "ROLLBACK")
+        return out
+    finally:
+        conn.close()
+
+
 def put_collection_item(coll, item):
     """Insert or update one item (a dict). Generates an id if missing. Returns the item.
 
@@ -1433,26 +1479,34 @@ def put_collection_item(coll, item):
     is only ever a PRECONDITION checked in the API layer (If-Match), never the source of truth. This
     is how the blind full-document PATCH stops silently clobbering a concurrent edit: the record's rev
     moves on each save, so a second writer holding a stale rev is detected.
+
+    That promise of "monotonically" used to be false. The rev was read in one statement and written in
+    another with no transaction around them, so two concurrent writers both read rev N and both wrote
+    N+1 — twelve concurrent writes landed on rev 8, not 13. A counter that repeats is not a version,
+    and every If-Match check in the API rests on it. The write is now atomic.
     """
     if not item.get("id"):
         item["id"] = coll[:3] + "-" + uuid.uuid4().hex[:8]
     if coll == "audit":
         return _put_audit_chained(item)          # append-only + tamper-evident hash chain
-    conn = get_conn()
-    prev = conn.execute("SELECT data FROM collections WHERE coll = ? AND id = ?", (coll, item["id"])).fetchone()
-    cur_rev = 0
-    if prev:
-        try:
-            cur_rev = int((json.loads(prev["data"]) or {}).get("_rev") or 0)
-        except (ValueError, TypeError):
-            cur_rev = 0
-    item["_rev"] = cur_rev + 1
-    conn.execute("INSERT INTO collections (coll,id,data) VALUES (?,?,?) "
-                 "ON CONFLICT(coll,id) DO UPDATE SET data = excluded.data",
-                 (coll, item["id"], json.dumps(item)))
-    conn.commit()
-    conn.close()
-    return item
+    return _coll_write(coll, item)
+
+
+def put_collection_item_if_rev(coll, item, expect_rev):
+    """Compare-and-swap: write ONLY if the stored `_rev` is still `expect_rev`. Returns the written
+    item, or None if the row moved and the caller must re-read and re-apply.
+
+    This is the honest version of read-modify-write on a shared row. A Python-level "get the rev, check
+    it, then call put_collection_item" has the same race it claims to fix — the check and the write are
+    two transactions, and anything can land between them. Here the comparison happens inside the same
+    IMMEDIATE transaction as the write, so nothing can.
+
+    Not for `audit`: that collection is an append-only hash chain with its own writer."""
+    if coll == "audit":
+        raise ValueError("audit is append-only — use put_collection_item")
+    if not item.get("id"):
+        raise ValueError("compare-and-swap needs an existing id")
+    return _coll_write(coll, item, expect_rev=expect_rev)
 
 
 def _audit_link_hash(prev_hash, item):
