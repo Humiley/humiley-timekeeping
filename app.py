@@ -5087,8 +5087,26 @@ class Handler(BaseHTTPRequestHandler):
                 span = (d1 - d0).days + 1
                 if span < 1:
                     return self._err("The leave end date can't be before the start date.", 400)
-                if dv > span:
-                    return self._err("The number of leave days exceeds the selected date range.", 400)
+                # Bound by WORKING days, not the calendar span. A public holiday is not annual leave
+                # (Labour Code Art. 112) and neither is a rest day, so the browser now excludes both —
+                # this is the same rule enforced where it cannot be edited. Falls back to the calendar
+                # span if the holiday register is unreadable, which can only ever be more generous.
+                _bound = span
+                try:
+                    _hol = {str((h or {}).get("date") or "")[:10]
+                            for h in (json.loads(db.get_setting("portal_holidays", "") or "[]") or [])}
+                    _work = 0
+                    _c = d0
+                    while _c <= d1:
+                        if _c.weekday() < 5 and _c.strftime("%Y-%m-%d") not in _hol:
+                            _work += 1
+                        _c += timedelta(days=1)
+                    _bound = max(_work, 0.5) if _work else span
+                except Exception:
+                    pass
+                if dv > _bound:
+                    return self._err("The number of leave days exceeds the working days in that range "
+                                     "(weekends and public holidays are not annual leave).", 400)
             except (TypeError, ValueError):
                 pass
         data = dict(body, emp_id=u["id"], status="pending")
@@ -5276,8 +5294,24 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(lvl) >= self._level_rank("management"):
             return rows
         me = u.get("id")
-        strip = self.EMP_SENSITIVE if lvl == "staff" else self.PAY_SENSITIVE
-        return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in strip} for e in rows]
+        if lvl == "staff":
+            return [e if e.get("id") == me else {k: v for k, v in e.items() if k not in self.EMP_SENSITIVE}
+                    for e in rows]
+        # A Contributor-level manager needs the personal file of the people they actually manage — and
+        # of nobody else. Until now they lost only PAY_SENSITIVE, so every line manager could read the
+        # whole company's CCCD, home address, date of birth and next-of-kin. That is a purpose-limitation
+        # problem under Decree 13 before it is anything else: needing Nguyen's emergency contact because
+        # he reports to you is not a reason to hold everyone's.
+        my_email = (u.get("email") or "").strip().lower()
+        def _mine(e):
+            return e.get("id") == me or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)
+        # Two different questions, so two different rules. Compensation: never, for anybody. Identity
+        # PII: only for the people they manage. Leave counters stay visible company-wide, because a
+        # manager approving a request has to see the balance it comes out of — stripping those broke
+        # leave approval, which is what the payroll-access test correctly caught.
+        return [{k: v for k, v in e.items() if k not in self.PAY_SENSITIVE} if _mine(e)
+                else {k: v for k, v in e.items() if k not in (self.PAY_SENSITIVE | self.PII_SENSITIVE)}
+                for e in rows]
 
     ADMIN_EMAILS = {"tony.nguyen@humiley.com", "huy.nguyen@humiley.com"}
 
@@ -5375,8 +5409,43 @@ class Handler(BaseHTTPRequestHandler):
             if isinstance(body.get(_f), str):
                 body[_f] = body[_f].replace("<", "").replace(">", "")
         if body:
+            self._audit_emp_change(u, eid, ex, body)
             db.update_employee(eid, body)
         return self._json({"ok": True})
+
+    # The employee-record fields worth a line in the permanent trail: the ones that move money,
+    # route approvals, or decide what somebody can see.
+    EMP_AUDITED = ("salary", "grade", "title", "dept", "department", "managerEmail",
+                   "status", "level", "role", "employmentType", "endDate", "dependents", "bank")
+    # Never write the VALUE of these into the audit trail — the log is readable by admins and would
+    # otherwise quietly become a second, unprotected compensation database.
+    EMP_AUDIT_MASKED = ("salary", "bank")
+
+    def _audit_emp_change(self, u, eid, before, after):
+        """One audit row per changed employee field.
+
+        A ₫50,000 payroll adjustment lands in a tamper-evident HMAC chain; a salary rise, a promotion,
+        a transfer or an access-level change wrote nothing at all. That was the loudest inconsistency
+        in the platform — the controls were guarding a record that did not exist."""
+        try:
+            _name = (before or {}).get("name") or eid
+            for f in self.EMP_AUDITED:
+                if f not in (after or {}):
+                    continue
+                old, new = (before or {}).get(f), (after or {}).get(f)
+                if str(old if old is not None else "") == str(new if new is not None else ""):
+                    continue
+                if f in self.EMP_AUDIT_MASKED:
+                    detail = "%s changed" % f            # that it moved, never to what
+                else:
+                    detail = "%s: %s -> %s" % (f, old if old not in (None, "") else "(blank)",
+                                               new if new not in (None, "") else "(blank)")
+                db.put_collection_item("audit", {
+                    "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                    "action": "Employee record changed", "target": "employees/" + str(eid),
+                    "detail": _name + " · " + detail, "ts": self._utc_now()})
+        except Exception:
+            pass          # the change is legitimate; a failed audit write must not block it
 
     # Fields an employee may update on their OWN profile (self-service).
     SELF_FIELDS = {"phone", "address", "emergency", "dob", "gender",
@@ -5690,6 +5759,10 @@ class Handler(BaseHTTPRequestHandler):
     # (management) account may run Payroll + Finance Control but must NOT see Invoice Tracking.
     # Every invtrack gate — read, status/sync/import, and coll add/update/delete — references this
     # single constant so the enforcement can never drift apart between sites.
+    # HR records that are EVIDENCE about a person — the ones a labour inspector, an ISO auditor or a
+    # former employee's lawyer would ask to see. Deleting one snapshots it into the audit chain first.
+    HR_EVIDENCE_COLLS = {"exits", "padr", "reviews", "pip", "hrdoc_acks", "acks",
+                         "onboarding", "handovers", "enrollments", "payadjust", "candidates"}
     INVTRACK_MIN = "editor"
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
@@ -5702,7 +5775,10 @@ class Handler(BaseHTTPRequestHandler):
                 # manager-gated, so this makes read match write.
                 "pm_costs": "manager", "pm_procurement_payments": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
-    SELF_OWNED = {"hrdoc_acks", "claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
+    # `benefits` is deliberately NOT here. It is the per-GRADE benefits CATALOGUE — a policy table, not
+    # personal data — so scoping it to "your own rows" matched nothing and every employee's Benefits
+    # card was permanently empty while HR maintained a table nobody could see.
+    SELF_OWNED = {"hrdoc_acks", "claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "devices", "handovers"}
     # Travel / claim / payment: a staff user sees only their OWN; a LEADER (manager) sees only their
     # TEAM (direct reports + self); management/editor/admin (Finance-level and above) see the whole
     # company. Scoped below in _coll_list.
@@ -5714,6 +5790,9 @@ class Handler(BaseHTTPRequestHandler):
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
     # (manager) can approve leave etc. but must NOT see anyone's pay; leave balances stay visible to them.
     PAY_SENSITIVE = {"salary", "grade", "bank", "taxId"}
+    # Identity PII a line manager may see for their OWN reports and for nobody else. Deliberately
+    # excludes the leave counters — a manager must see the balance a request draws down, whoever it is.
+    PII_SENSITIVE = {"personalId", "address", "emergency", "dob", "familyStatus", "dependents"}
     LEVEL_ORDER = ["staff", "manager", "management", "editor", "admin"]
 
     @staticmethod
@@ -7509,6 +7588,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "item": db.put_collection_item("padr", existing)})
         item = dict(body or {})
         item["id"] = iid
+        # WHOSE enrolment this is can never come from the request body. The self-service branch that
+        # re-stamps empId/name only runs for a non-manager, so a MANAGER saving somebody's course
+        # progress hit the blind whole-document replace and wiped the enrolment's owner, name and
+        # course — 200 OK, success toast, record orphaned. Identity is preserved from the stored row
+        # for every caller; progress and status stay editable.
+        if name == "enrollments":
+            _prev_en = db.get_collection_item("enrollments", iid) or {}
+            for _k in ("empId", "name", "course", "courseId", "enrolledOn"):
+                if _prev_en.get(_k) is not None:
+                    item[_k] = _prev_en.get(_k)
         # PATCH here is a blind full overwrite, so the publication facts have to be carried across by
         # hand or the first edit erases who published the document and when — and the due date, which
         # is derived from that date, silently moves.
@@ -7818,10 +7907,26 @@ class Handler(BaseHTTPRequestHandler):
             if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
+        # A completed exit is the file you produce if a former employee disputes their settlement:
+        # the figure, the signed asset return, the SI book handover. It is not deletable.
+        if name == "exits" and str(existing.get("status") or "").strip().lower() == "completed":
+            return self._err("A completed exit record is the company's evidence of final settlement "
+                             "and cannot be deleted.", 403)
         db.delete_collection_item(name, iid)
+        # Snapshot the record INTO the trail, not just the fact that it went. An appraisal, a PIP or an
+        # exit could be destroyed with one click and the audit row proved only that a deletion had
+        # happened — useless in the argument it exists for. The document is already in hand here.
+        _snap = ""
+        if name in self.HR_EVIDENCE_COLLS:
+            try:
+                _clean = {k: v for k, v in (existing or {}).items()
+                          if k != "token" and not (isinstance(v, str) and v.startswith("data:"))}
+                _snap = " · record=" + json.dumps(_clean, ensure_ascii=False, sort_keys=True)[:3000]
+            except Exception:
+                _snap = " · record=(could not be serialised)"
         db.put_collection_item("audit", {"actor": u.get("name") or "System", "actorId": u.get("id") or "",
             "action": "Deleted " + name, "target": name + "/" + str(iid),
-            "detail": "status=" + str(existing.get("status") or "-"), "ts": self._utc_now()})
+            "detail": "status=" + str(existing.get("status") or "-") + _snap, "ts": self._utc_now()})
         return self._json({"ok": True})
 
 

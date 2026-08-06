@@ -1992,11 +1992,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="card">
       <div class="card-hdr"><div class="card-title">Compliance &amp; Policy Configuration</div></div>
       <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Vietnamese Labour Code &mdash; leave entitlements configured</span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Overtime rate 1.5&times; applied for hours &gt; 8/day</span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Annual leave balance reset scheduled 1 January</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Leave entitlement &mdash; flat 12 days; statutory seniority accrual and carry-over <b>not yet implemented</b></span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Overtime premium (150 / 200 / 300%) &mdash; captured and approved, but <b>not yet carried into payroll</b></span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Annual leave year-end roll-over &mdash; <b>not yet automated</b>; balances are adjusted manually</span></div>
         <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>21 CFR Part&nbsp;11 e-signatures enforced on every submission &amp; approval</span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Attendance &amp; leave records retained in the system database</span></div>
+        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Public holidays and rest days are excluded from annual leave (Art.&nbsp;112)</span></div>
       </div>
     </div>
   </div>
@@ -8382,7 +8382,13 @@ function _payUnpaidDays(empId, y, m) {
 function _payComputed(e, rating, opts) {
   opts = opts || {};
   const gi = _payGradeIdx(e), gr = _PAY_GRADES[gi];
-  const gross = e.salary ? +e.salary : gr.mid;
+  // A missing salary is NOT a grade mid-point. It used to be: a hire created from the recruitment
+  // pipeline with no salary entered was silently priced at the band mid — a full gross, PIT and
+  // statutory footprint invented for a number nobody agreed — and appeared inside a run the Director
+  // e-signs. `salaryMissing` is carried through so the payroll screen can exclude the person by name
+  // rather than pay them a guess. The mid is still used for the on-screen band preview only.
+  const salaryMissing = !(+e.salary > 0);
+  const gross = salaryMissing ? gr.mid : +e.salary;
   const sp = _tkDateParts(e.startDate); const yrs = sp ? Math.max(0, new Date().getFullYear() - sp.y) : 0;
   const basic = gross * 0.65;
   const posAllow = gi >= 4 ? gross * 0.05 : 0;
@@ -8407,7 +8413,7 @@ function _payComputed(e, rating, opts) {
   const grossPay = P1 + P2 + P3 + welfare;
   const net = grossPay - ee.total - pit - unpaidDeduction;
   const R = Math.round;
-  return { gi, grade: gr.g, gradeLabel: gr.label, yrs, rating: r, pf,
+  return { gi, grade: gr.g, gradeLabel: gr.label, yrs, rating: r, pf, salaryMissing,
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
     siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
@@ -8674,6 +8680,20 @@ async function tkRollOutPayroll() {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual')) { toast(period + ' is already rolled out', 'warn'); return; }
+  // Nobody gets paid a guess. An employee with no salary on file used to be silently priced at their
+  // grade's mid-point and folded into the total the Director signs. Name them and stop.
+  const _noSalary = (_DEMO_EMPLOYEES || [])
+    .filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
+    .filter(e => !(+e.salary > 0));
+  if (_noSalary.length) {
+    await tkAlert({
+      title: _t('Payroll cannot be rolled out yet'),
+      body: _t('These employees have no salary on file, so the system has no figure to pay them:') +
+        '\n\n• ' + _noSalary.map(e => (e.name || e.id) + ' — ' + (e.title || '—')).join('\n• ') +
+        '\n\n' + _t('Set each one’s monthly gross on their employee record, then roll out again.')
+    });
+    return;
+  }
   const t = _payTotals;
   if (!(await tkConfirm('Roll out ' + period + ' payroll?\n\n' + t.count + ' employees · gross ' + _PAY_FMT(t.gross) + ' · net ' + _PAY_FMT(t.net) + '\n\nThis finalises the month and records the pay run.'))) return;
   try {
@@ -8689,7 +8709,11 @@ async function tkRollOutPayroll() {
    salary change or a constant change can never retroactively rewrite a closed month's payslips. */
 function _paySnapshotLine(e, c) {
   return { empId: e.id, name: e.name, dept: e.dept || '', title: e.title || '', grade: c.grade,
-    P1: c.P1, P2: c.P2, P3: c.P3, welfare: c.welfare, gross: c.grossPay, ee: c.si, pit: c.pit, net: c.net, erCost: c.employerCost };
+    P1: c.P1, P2: c.P2, P3: c.P3, welfare: c.welfare, gross: c.grossPay, ee: c.si, pit: c.pit, net: c.net, erCost: c.employerCost,
+    // The full calculation, so a payslip reprinted years later is the ONE that was signed — every
+    // allowance, every statutory component, the working days and the rating that produced it. The
+    // summary fields above stay for the CSV exporter and the run totals that already read them.
+    calc: Object.assign({}, c) };
 }
 function _paySnapshotLines() {
   return (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
@@ -9019,7 +9043,27 @@ async function tkDownloadPayslipPDF(empId) {
   doc.save(_payslipFilename(e, _payslipPeriod()));
   toast('Payslip PDF downloaded');
 }
+/* The payslip for a FINALISED month is the frozen line stored on that pay run — never a fresh
+   calculation. It used to recompute from the live employee record, so a March payslip reprinted in
+   September showed September's salary: a defective record under a PIT or SI audit, and it silently
+   defeated the Director's e-signature on the run. An open month still computes live, and says so. */
+function _payslipFrozen(empId) {
+  if (!_payYM || _payYM.m === -1) return null;
+  const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
+  const runs = (_HR.payruns || []).filter(r => r.period === period && (r.lines || []).length);
+  // An individual run for this person beats the company run — it is the more specific record.
+  const run = runs.find(r => r.scope === 'individual' && r.empId === empId) || runs.find(r => r.scope !== 'individual');
+  const line = run && (run.lines || []).find(l => l.empId === empId);
+  if (!line) return null;
+  return { line: line, run: run, frozen: true };
+}
 function _payslipComputed(empId) {
+  const f = _payslipFrozen(empId);
+  // `calc` is the WHOLE computed payslip as it stood at finalisation — the renderers read 29 fields,
+  // so storing only the 14 summary numbers would hand the employee a payslip with the statutory
+  // breakdown blank. Runs finalised before this change have no `calc`; those still compute live and
+  // are badged, because a reconstructed breakdown would be a guess wearing the authority of a record.
+  if (f && f.line.calc) return Object.assign({}, f.line.calc, { frozen: true, runStatus: f.run.status || '' });
   const e = _hrEmp(empId); let c = _payCache[empId];
   if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
   return c;
@@ -9031,7 +9075,13 @@ function _payslipHTML(e, c, period) {
   return '<div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:12px">' +
     '<img src="' + (_LH.logo || (document.querySelector('.sidebar-logo img') || {}).src || '') + '" alt="Humiley" onerror="this.style.display=\'none\'" style="height:30px">' +
     '<div><div style="font-weight:800;color:var(--navy);font-size:15px">HUMILEY ENGINEERING &amp; SOLUTIONS</div><div style="font-size:10px;color:var(--text-light)">' + _LH.addr + ' · Confidential Payslip</div></div>' +
-    '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period + '</div></div>' + _payslipBody(e, c, period);
+    '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period +
+      // Say which kind of document this is. A signed month is the record; an open month is a preview
+      // that will still move, and an employee must never mistake one for the other.
+      (c && c.frozen
+        ? '<div style="font-size:9.5px;font-weight:700;color:var(--emerald-deep,#008548);letter-spacing:.04em">' + _t('FINAL — as signed') + '</div>'
+        : '<div style="font-size:9.5px;font-weight:700;color:#B7791F;letter-spacing:.04em">' + _t('PROVISIONAL — month not closed') + '</div>') +
+    '</div></div>' + _payslipBody(e, c, period);
 }
 function _payslipBody(e, c, period) {
   const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
@@ -14755,12 +14805,34 @@ function _getAttendanceStatus(checkInTime, graceMins = 15) {
   return mins <= cutoff ? 'on-time' : 'late';
 }
 
-function _calcWorkingDays(startDate, endDate) {
+/* The set of public-holiday dates (YYYY-MM-DD) from the company holiday register. Vietnam's statutory
+   holidays run to ~11 days and Tết alone is 5 consecutive ones. */
+function _publicHolidaySet() {
+  const out = new Set();
+  ((window._TK_PORTAL && window._TK_PORTAL.holidays) || []).forEach(h => {
+    const d = h && (h.date || h.d);
+    if (d) out.add(String(d).slice(0, 10));
+  });
+  return out;
+}
+/* Which weekdays this person does NOT work. Factory runs Mon–Sat, the office Mon–Fri, so a Saturday
+   is a working day for one and not the other. Falls back to Sat+Sun. */
+function _restDaysFor(emp) {
+  const sch = emp && emp.schedule;
+  if (sch && typeof sch === 'string' && /mon.*sat|t2.*t7/i.test(sch)) return new Set([0]);   // Mon–Sat
+  return new Set([0, 6]);
+}
+/* Leave days actually consumed between two dates.
+   Public holidays are NOT annual leave. Counting only Saturday and Sunday meant anyone taking leave
+   across Tết lost up to five days of a twelve-day entitlement — unlawful under Labour Code Art. 112,
+   and roughly 140 employee-days a year quietly taken from staff. */
+function _calcWorkingDays(startDate, endDate, emp) {
+  const hol = _publicHolidaySet(), rest = _restDaysFor(emp);
   let count = 0, cur = new Date(startDate);
   const end = new Date(endDate);
   while (cur <= end) {
-    const d = cur.getDay();
-    if (d !== 0 && d !== 6) count++;
+    const iso = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-' + String(cur.getDate()).padStart(2, '0');
+    if (!rest.has(cur.getDay()) && !hol.has(iso)) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
@@ -22482,8 +22554,8 @@ async function submitLeave() {
   if (!end)    { toast('Pick an end date', 'warn'); return; }
   if (!reason) { toast('Enter a reason', 'warn'); return; }
   if (new Date(end) < new Date(start)) { toast(_t('End date cannot be before the start date.'), 'warn'); return; }
-  const days = _calcWorkingDays(start, end);
-  if (!(days > 0)) { toast(_t('The selected range has no working days — pick different dates.'), 'warn'); return; }
+  const days = _calcWorkingDays(start, end, _tkMe());
+  if (!(days > 0)) { toast(_t('The selected range is all weekend and public holidays — no leave would be used.'), 'warn'); return; }
 
   if (true) {  /* always use standalone Python backend (SharePoint removed) */
     const emp = document.getElementById('leave-emp-name')?.value || 'Huy Nguyen Duc';
@@ -22920,7 +22992,7 @@ function _editEmpProfile(id) {
   set('emp-family',e.familyStatus); set('emp-education',e.education); set('emp-personalId',e.personalId);
   set('emp-address',e.address); set('emp-emergency',e.emergency); set('emp-english',e.englishCert);
   set('emp-note',e.note); set('emp-annual',e.annualTotal); set('emp-sick',e.sickTotal);
-  set('emp-grade', e.grade); set('emp-salary', e.salary); _empGradeChanged(false);
+  set('emp-grade', e.grade); set('emp-salary', e.salary); set('emp-dependents', e.dependents); set('emp-shirt', e.shirtSize); _empGradeChanged(false); _empDepsChanged();
   set('emp-photo', e.photo);
   const pp = document.getElementById('emp-photo-preview');
   if (pp) { if (e.photo) { pp.style.backgroundImage='url('+e.photo+')'; pp.style.backgroundSize='cover'; pp.style.backgroundPosition='center'; pp.textContent=''; } else { pp.style.backgroundImage=''; pp.textContent='Photo'; } }
@@ -24414,7 +24486,7 @@ function tkOpenAddEmp() {
   const _idAdd = document.getElementById('emp-id'); if (_idAdd) _idAdd.readOnly = false;
   const t = document.querySelector('#addEmpModal .modal-title'); if (t) t.textContent = 'Add New Employee';
   const _slA = document.getElementById('emp-save-label'); if (_slA) _slA.textContent = 'Add Employee';
-  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary']
+  ['emp-name','emp-id','emp-title','emp-email','emp-phone','emp-dob','emp-personalId','emp-address','emp-emergency','emp-english','emp-education','emp-note','emp-start','emp-gender','emp-level','emp-family','emp-photo','emp-grade','emp-salary','emp-dependents']
     .forEach(id => { const el = document.getElementById(id); if (el) { el.value = ''; delete el.dataset.edited; } });
   const sh = document.getElementById('emp-salary-hint'); if (sh) sh.textContent = '';
   const pp = document.getElementById('emp-photo-preview'); if (pp) { pp.style.backgroundImage = ''; pp.textContent = 'Photo'; }
@@ -24439,7 +24511,20 @@ function _empGradeChanged(prefillMid) {
   const base = 'Band: ' + _PAY_FMT(band.min) + ' – ' + _PAY_FMT(band.max) + ' · mid ' + _PAY_FMT(band.mid);
   const sal = parseInt(sEl.value) || 0;
   if (sal && (sal < band.min || sal > band.max)) { hint.textContent = '⚠ ' + _PAY_FMT(sal) + ' is outside the ' + band.g + ' band. ' + base; hint.style.color = '#C00000'; }
-  else { hint.textContent = base + (sal ? '' : ' — blank uses mid'); hint.style.color = 'var(--text-light)'; }
+  else { hint.textContent = base + (sal ? '' : ' — set a salary before this person can be paid'); hint.style.color = sal ? 'var(--text-light)' : '#B7791F'; }
+}
+
+/* What the registered dependants are actually worth, in đồng, as you type. The relief is real money —
+   ₫4.4M of taxable income per dependant per month — and the field was missing entirely, so everyone
+   with children has been taxed as though they had none. Showing the number is how HR notices a wrong one. */
+function _empDepsChanged() {
+  const el = document.getElementById('emp-dependents'), hint = document.getElementById('emp-deps-hint');
+  if (!el || !hint) return;
+  const n = Math.max(0, parseInt(el.value) || 0);
+  hint.textContent = n
+    ? n + (n === 1 ? ' dependant' : ' dependants') + ' · ' + _PAY_FMT(n * 4400000) + ' of monthly income becomes untaxed'
+    : 'Each registered dependant reduces taxable income by ₫4,400,000/month.';
+  hint.style.color = 'var(--text-light)';
 }
 
 async function saveEmployee() {
@@ -24467,6 +24552,9 @@ async function saveEmployee() {
     englishCert: val('emp-english'), note: val('emp-note'), photo: val('emp-photo'),
     shirtSize: val('emp-shirt'),
     grade: val('emp-grade') || null, salary: parseInt(val('emp-salary')) || null,
+    // Registered dependants — drives the PIT relief in _payComputed. Absent until now, so every
+    // employee with children was taxed as if they had none.
+    dependents: Math.max(0, parseInt(val('emp-dependents')) || 0),
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
   };
   // Admin-assigned Employee ID — only on ADD (the ID is the immutable key; it never changes on edit).
@@ -24704,7 +24792,13 @@ function saveEmployeeProfile() {
           <div id="emp-salary-hint" style="font-size:11px;color:var(--text-light);margin-top:4px"></div>
         </div>
       </div>
-      <div style="font-size:11.5px;color:var(--text-light)">Pick a grade to load the band; leave salary blank to use the grade mid-point. Gross splits into <b>P1</b>/<b>P2</b>/<b>P3</b> automatically on the payroll run.</div>
+      <div class="grid-2">
+        <div class="form-group"><label class="form-label">Registered dependants (người phụ thuộc)</label>
+          <input type="number" class="form-control" id="emp-dependents" min="0" max="20" step="1" placeholder="0" oninput="_empDepsChanged()">
+          <div id="emp-deps-hint" style="font-size:11px;color:var(--text-light);margin-top:4px">Each registered dependant reduces taxable income by ₫4,400,000/month.</div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--text-light)">Pick a grade to load the band; salary must be set explicitly before an employee can be included in a pay run. Gross splits into <b>P1</b>/<b>P2</b>/<b>P3</b> automatically. <b>Dependants must be registered with the tax authority</b> before the relief may be applied — record here only what has been accepted.</div>
     </div>
 
     <div style="border-top:1px solid var(--line);margin:8px 0 14px;padding-top:14px">

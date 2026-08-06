@@ -210,7 +210,11 @@ def init_db():
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
                 "englishCert TEXT", "note TEXT", "photo TEXT", "salary REAL",
                 "level TEXT", "dependents INTEGER", "grade TEXT", "appsDenied TEXT", "appsAllowed TEXT",
-                "schedule TEXT", "procRole TEXT"):
+                "schedule TEXT", "procRole TEXT",
+                # Collected on the employee form, accepted by the Excel importer and shown on the
+                # profile — and, until now, in neither EMP_FIELDS nor this list, so every save threw
+                # it away and reported success. Uniform sizes matter on a site: PPE is issued by size.
+                "shirtSize TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -704,7 +708,7 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               "status", "zone", "gender", "dob", "taxId", "bank", "emergency", "address",
               "managerEmail", "jobLevel", "endDate", "serviceDuration", "personalId",
               "familyStatus", "education", "employmentType", "englishCert", "note", "photo",
-              "role", "level", "salary", "grade", "dependents", "appsDenied", "appsAllowed", "schedule",
+              "role", "level", "salary", "grade", "dependents", "shirtSize", "appsDenied", "appsAllowed", "schedule",
               "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
