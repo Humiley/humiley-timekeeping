@@ -10579,6 +10579,17 @@ async function tkRenderMySpaceOverview() {
     trainDone = enr.filter(x => x.status === 'Completed').length;
   }
 
+  // Onboarding: how many company documents still want my signature. Two small collections, counted
+  // here rather than added to /api/myspace/summary — the tile needs the same audience and VERSION
+  // matching the Onboarding tab uses, and that logic lives in the browser.
+  let _msOnbTodo = 0, _msOnbDone = 0;
+  try {
+    await Promise.all([tkLoadColl('hrdocs'), tkLoadColl('hrdoc_acks')]);
+    const _onbMine = _onbForMe(me);
+    _msOnbDone = _onbMine.filter(d => _onbAck(d.id, d.version)).length;
+    _msOnbTodo = _onbMine.length - _msOnbDone;
+  } catch (e) { }
+
   const kpis = _hrKpiRow([
     _hrKpi('Annual leave left', annualRem + 'd', '#205090'),
     _hrKpi('Present this month', present, 'var(--emerald)'),
@@ -10606,13 +10617,16 @@ async function tkRenderMySpaceOverview() {
     mytraining: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
     travelclaims: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
     payments: '<rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>',
-    mydevices: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'
+    mydevices: '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+    myonboarding: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><path d="m9 15 2 2 4-4"/>'
   };
   const mods = [
     ['myprofile', 'My Profile', (me.title || me.role || '—'), 'Keep your personal details current.', 'Cập nhật thông tin cá nhân của bạn.', '#205090'],
     ['attendance', 'Attendance', present + ' ' + _t('present') + ' · ' + late + ' ' + _t('late'), 'Your check-ins and monthly record.', 'Lịch sử chấm công hằng tháng của bạn.', '#3168A8'],
     ['leave', 'Leave', annualRem + 'd ' + _t('annual') + ' · ' + sickRem + 'd ' + _t('sick'), 'Book leave and track balances.', 'Xin nghỉ phép và theo dõi số dư.', '#00B060'],
     ['mygoals', 'My Goals', _t('PADR & self-review'), 'Your goals and self-assessment.', 'Mục tiêu và tự đánh giá của bạn.', '#F59E0B'],
+    ['myonboarding', 'Onboarding', (_msOnbTodo ? _msOnbTodo + ' ' + _t('to sign') : _msOnbDone + ' ' + _t('signed')),
+      'Company documents to read and sign.', 'Tài liệu công ty cần đọc và ký.', _msOnbTodo ? '#F59E0B' : '#00B060'],
     ['mytraining', 'My Training', trainDone + '/' + _msEnr + ' ' + _t('done'), 'Courses, progress and completion.', 'Khóa học, tiến độ và hoàn thành.', '#14b8a6'],
     ['travelclaims', 'Travel Expense', _msTrips + ' ' + _t('trips') + ' · ' + _msClaims + ' ' + _t('claims'), 'Travel requests and expense claims.', 'Đề nghị công tác và thanh toán chi phí.', '#8B5CF6'],
     ['payments', 'Payment Requests', _msPays + ' ' + _t('requests'), 'Raise and track payment requests.', 'Tạo và theo dõi đề nghị thanh toán.', '#0ea5e9'],
@@ -19049,7 +19063,7 @@ const _VI = {
   'How to work the CRM': 'Cách sử dụng CRM', 'CRM Modules': 'Phân hệ CRM',
   'Open pipeline': 'Pipeline đang mở', 'Open deals': 'Cơ hội đang mở', 'Weighted forecast': 'Dự báo có trọng số', 'Win rate': 'Tỷ lệ thắng', 'Active leads': 'Lead đang hoạt động',
   'New': 'Mới', 'Qualified': 'Đủ điều kiện', 'Proposal': 'Đề xuất', 'Negotiation': 'Đàm phán', 'Won': 'Thắng', 'Lost': 'Mất',
-  'My Tools': 'Công cụ của tôi', 'Quick Actions': 'Thao tác nhanh', 'Request Leave': 'Xin nghỉ phép', 'New Travel': 'Công tác mới', 'New Claim': 'Đề nghị mới', 'New Payment': 'Thanh toán mới',
+  'My Tools': 'Công cụ của tôi', 'to sign': 'cần ký', 'signed': 'đã ký', 'Onboarding': 'Hội nhập', 'Quick Actions': 'Thao tác nhanh', 'Request Leave': 'Xin nghỉ phép', 'New Travel': 'Công tác mới', 'New Claim': 'Đề nghị mới', 'New Payment': 'Thanh toán mới',
   'Annual leave left': 'Phép năm còn lại', 'Present this month': 'Có mặt tháng này', 'On-time rate': 'Tỷ lệ đúng giờ', 'Pending requests': 'Đề nghị chờ duyệt', 'Training progress': 'Tiến độ đào tạo',
   'present': 'có mặt', 'late': 'trễ', 'annual': 'phép năm', 'sick': 'phép ốm', 'PADR & self-review': 'PADR & tự đánh giá', 'done': 'hoàn thành', 'trips': 'chuyến', 'requests': 'đề nghị', 'assigned': 'được cấp',
   'HRBP Process': 'Quy trình HRBP', 'Employee Lifecycle': 'Vòng đời nhân viên',
