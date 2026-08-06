@@ -253,3 +253,22 @@ def test_the_hardcoded_policy_library_is_gone_from_the_frontend():
         src = fh.read()
     assert "_POLICY_LIB" not in src, "the hardcoded policy list is still there"
     assert "function tkConfirmPolicy" not in src, "the tick-box acknowledgement flow is still there"
+
+
+def test_the_onboarding_module_is_actually_wired_up():
+    """The Onboarding tab is a tab, a dispatch line and a My Tools card that all call functions
+       defined somewhere else in a 22,000-line file. A previous edit removed the definitions while
+       leaving every reference in place: the file parsed, every backend test passed, and the tab was
+       dead. Nothing catches that except checking the definitions exist."""
+    import os
+    idx = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "templates", "index.html")
+    with open(idx, encoding="utf-8") as fh:
+        src = fh.read()
+    for fn in ("tkRenderMyOnboarding", "tkOnbSign", "tkOnbSignSave", "tkOnbOpen",
+               "_onbForMe", "_onbAck", "_onbAckPdf", "tkRenderCompliance", "tkCompExport",
+               "tkCompRemind", "tkPolicyMigrate"):
+        assert ("function " + fn) in src, "%s is referenced but no longer defined" % fn
+    # And the wiring that reaches them.
+    assert "'myonboarding'" in src and "myonboarding-root" in src
+    assert "id=\"hr-compliance\"" in src, "the compliance view has no host element"
