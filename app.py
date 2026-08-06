@@ -6544,7 +6544,7 @@ class Handler(BaseHTTPRequestHandler):
                            "changed": [c[0] for c in changes]})
 
     def _hr_jd_ep(self, u, body):
-        """Attach a Job Description to a requisition and file it in HR SharePoint.
+        """Attach a Job Description file to a requisition and file it in HR SharePoint.
 
         The SharePoint copy is the one HR and a candidate get sent, so unlike the Finance archiver
         this runs while somebody is watching and reports what happened instead of failing quietly.
@@ -6573,8 +6573,7 @@ class Handler(BaseHTTPRequestHandler):
             (job.get("title") or "Job Description") + ".pdf")
 
         jd = {"name": name, "size": len(raw), "type": ctype,
-              "ts": self._utc_now_ms(), "by": u.get("name") or "",
-              "generated": bool((body or {}).get("generated"))}
+              "ts": self._utc_now_ms(), "by": u.get("name") or ""}
         # Year folder so a library does not become one flat list of every JD ever written.
         sub = ["JD", time.strftime("%Y")]
         try:
@@ -6590,9 +6589,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             db.put_collection_item("audit", {
                 "actor": u.get("name") or "", "actorId": u.get("id") or "", "action": "hr.jd",
-                "detail": "Job Description attached to '%s'%s%s" % (
-                    job.get("title") or jid,
-                    " (auto-generated draft)" if jd["generated"] else "",
+                "detail": "Job Description '%s' attached to '%s'%s" % (
+                    name, job.get("title") or jid,
                     " — filed to SharePoint" if jd.get("webUrl") else " — kept in the portal"),
                 "ts": self._utc_now()})
         except Exception:

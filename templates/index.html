@@ -8224,22 +8224,15 @@ function _hrJdCell(j) {
   const jd = j && j.jd;
   if (!jd || !jd.name) {
     return '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 9px" ' +
-      'onclick="hrJdGenerate(\'' + j.id + '\')" title="' + _tkEscA(_t('Generate a first-draft JD from this requisition')) + '">' +
-      _t('Generate') + '</button>' +
-      '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 7px" ' +
-      'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Attach an existing JD file')) + '">' + _t('Attach') + '</button>';
+      'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Attach the Job Description file')) + '">' +
+      tkIcon('upload', 11) + ' ' + _t('Attach') + '</button>';
   }
-  // A generated draft is labelled as one. Somebody briefing an interviewer should be able to see at a
-  // glance whether a human has actually written this yet.
-  const tag = jd.generated
-    ? '<span class="badge b-warn" style="font-size:9px;margin-left:5px">' + _t('Draft') + '</span>' : '';
   const where = jd.webUrl ? _t('Open in SharePoint') : _t('Stored in the portal');
   return '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:4px 7px;color:var(--navy);font-weight:600" ' +
-    'onclick="hrJdOpen(\'' + j.id + '\')" title="' + _tkEscA(where) + '">' + tkIcon('file', 12) + ' ' + _t('Show') + '</button>' + tag +
+    'onclick="hrJdOpen(\'' + j.id + '\')" title="' + _tkEscA(jd.name + ' — ' + where) + '">' + tkIcon('file', 12) + ' ' + _t('Show') + '</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 6px;color:var(--text-light)" ' +
     'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Replace the JD')) + '">' + _t('Replace') + '</button>';
 }
-
 function hrJdOpen(id) {
   const j = (_HR.jobs || []).find(x => x.id === id), jd = j && j.jd;
   if (!jd) return;
@@ -8264,121 +8257,16 @@ function hrJdPick(id) {
     const data = await new Promise((res, rej) => {
       const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f);
     });
-    await _hrJdSave(id, f.name, data, false);
+    await _hrJdSave(id, f.name, data);
   };
   el.click();
 }
 
-/* Build a first draft from the requisition, on the Humiley letterhead like every other portal
-   document. It is explicitly a DRAFT: the portal knows the role, the grade and the department, and
-   nothing about what the job actually involves, so it writes the frame and says so. */
-async function hrJdGenerate(id) {
-  const j = (_HR.jobs || []).find(x => x.id === id); if (!j) return;
-  try {
-    const ready = () => (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-    if (!ready()) {
-      if (typeof tkEnsureExportLibs === 'function') tkEnsureExportLibs();
-      toast(_t('Loading PDF engine…'), 'info', 2500);
-      for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150));
-    }
-    const J = ready();
-    if (!J) { toast(_t('PDF engine not ready — try again in a moment'), 'warn'); return; }
-    const doc = new J({ unit: 'mm', format: 'a4' });
-    const W = 210, M = 16, RIGHT = W - M;
-    const NAVY = _LH_NAVY, GREY = _LH_GREY, DARK = _LH_DARK;
-    const D = v => (v && String(v).trim()) ? String(v).trim() : '—';
-    let y = _brandHeader(doc, { title: 'JOB DESCRIPTION', subtitle: D(j.title) + '  ·  ' + D(j.dept), docCode: 'BM.HR-01-01' });
-
-    // ── the facts the requisition actually knows ──
-    doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
-    doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
-    const cX = [M + 4, M + 64, M + 124];
-    const field = (x, yy, lab, val) => {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
-    };
-    field(cX[0], y + 6, 'Position / Vi tri', j.title);
-    field(cX[1], y + 6, 'Department / Bo phan', j.dept);
-    field(cX[2], y + 6, 'Grade / Bac luong', j.grade);
-    field(cX[0], y + 14.5, 'Location / Dia diem', j.location);
-    field(cX[1], y + 14.5, 'Employment type / Loai HD', j.type);
-    field(cX[2], y + 14.5, 'Openings / So luong', String(j.openings || 1));
-    y += 27;
-
-    const H = t => { doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY); doc.text(t, M, y); y += 5; };
-    const P = t => {
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK);
-      doc.splitTextToSize(t, W - 2 * M).forEach(line => {
-        if (y > 268) { doc.addPage(); y = _brandHeader(doc, { title: 'JOB DESCRIPTION', subtitle: D(j.title), docCode: 'BM.HR-01-01' }); }
-        doc.text(line, M, y); y += 4.6;
-      });
-      y += 2.5;
-    };
-    const BULLETS = arr => arr.forEach(t => P('\u2022  ' + t));
-
-    H('1.  PURPOSE OF THE ROLE  ·  Muc dich cong viec');
-    P(D(j.title) + ' reports into ' + D(j.dept) + ' and is based at ' + D(j.location) + '. ' +
-      (j.reason ? 'This position arises from: ' + j.reason + '. ' : '') +
-      'Humiley designs, manufactures and installs HVAC and cleanroom systems, so the holder is ' +
-      'expected to work to the project programme, the contract specification and the applicable ' +
-      'standards (EN 1886, ISO 14644, EU-GMP) as they apply to the works in hand.');
-
-    H('2.  KEY RESPONSIBILITIES  ·  Trach nhiem chinh');
-    BULLETS([
-      'Deliver the assigned scope to the agreed programme, budget and quality standard.',
-      'Work to the approved drawings, method statements and inspection & test plans; raise an RFI ' +
-        'rather than proceed on an assumption.',
-      'Record progress, issues and site instructions in the Humiley Portal on the day they happen.',
-      'Comply with site HSE rules and the cleanroom protocols applying to the area of work.',
-      'Support handover: as-built information, test records and O&M content for the assigned scope.'
-    ]);
-
-    H('3.  REQUIREMENTS  ·  Yeu cau');
-    BULLETS([
-      'Qualification appropriate to grade ' + D(j.grade) + ' in a relevant engineering discipline.',
-      'Experience in HVAC, mechanical or cleanroom fit-out works of comparable scale.',
-      'Working knowledge of the standards relevant to the scope, and of reading construction drawings.',
-      'Vietnamese fluent; working English for specifications and client correspondence.'
-    ]);
-
-    H('4.  TO BE COMPLETED BY THE HIRING MANAGER  ·  Truong bo phan hoan thien');
-    doc.setFont('helvetica', 'italic'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, GREY);
-    doc.splitTextToSize(
-      'This draft was generated from the requisition record. It states what the portal knows — the ' +
-      'role, grade, department and location — and a standard frame for the rest. Before it is used ' +
-      'to advertise, brief an interviewer or agree a package, the hiring manager should replace ' +
-      'sections 2 and 3 with the duties and requirements that are actually specific to this post, ' +
-      'and re-attach the finished version.', W - 2 * M).forEach(l => { doc.text(l, M, y); y += 4.3; });
-    y += 8;
-
-    // ── sign-off ──
-    doc.setDrawColor(225, 228, 232); doc.line(M, y, RIGHT, y); y += 6;
-    const sign = (x, lab) => {
-      doc.setDrawColor(180, 186, 196); doc.line(x, y + 12, x + 52, y + 12);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
-      doc.text(lab, x, y + 16);
-    };
-    sign(M, 'Prepared by / Nguoi lap'); sign(M + 62, 'Hiring manager / Truong bo phan'); sign(M + 124, 'HR / Nhan su');
-
-    const name = 'JD_' + String(j.title || 'Position').replace(/[^\w\u00C0-\u1EF9 -]/g, '').trim().replace(/\s+/g, '_') +
-      (j.grade ? '_' + j.grade : '') + '.pdf';
-    // jsPDF emits data:application/pdf;filename=generated.pdf;base64,… — that extra ;filename=
-    // segment breaks the plain /^data:([^;]+);base64,/ parser the file's previewer uses, which is
-    // how a freshly generated JD ends up opening as a blank page. Normalise it once, here, rather
-    // than teaching every consumer about jsPDF.
-    const out = doc.output('datauristring');
-    const data = 'data:application/pdf;base64,' + out.slice(out.indexOf(',') + 1);
-    await _hrJdSave(id, name, data, true);
-  } catch (e) {
-    toast(_t('Could not generate the JD') + ': ' + _errMsg(e), 'error', 5000);
-  }
-}
-
-/* One save path for both routes, so a generated JD and an uploaded one are filed identically. */
-async function _hrJdSave(id, name, data, generated) {
+/* File the chosen JD: into HR SharePoint when it is configured, otherwise kept in the portal. */
+async function _hrJdSave(id, name, data) {
   try {
     toast(_t('Filing the JD…'));
-    const r = await tkApi('/api/hr/jd', { method: 'POST', body: { jobId: id, name: name, data: data, generated: !!generated } });
+    const r = await tkApi('/api/hr/jd', { method: 'POST', body: { jobId: id, name: name, data: data } });
     const k = (_HR.jobs || []).findIndex(x => x.id === id);
     if (k >= 0 && r.item) _HR.jobs[k] = r.item;
     try { tkCollInvalidate('jobs'); } catch (e) { }
@@ -19001,9 +18889,8 @@ const _VI = {
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
   'My Devices': 'Thiết bị của tôi', 'My Training': 'Đào tạo của tôi', 'Open Positions': 'Vị trí tuyển dụng',
-  'JD': 'MTCV', 'Generate': 'Tạo bản nháp', 'Attach': 'Đính kèm', 'Show': 'Xem', 'Replace': 'Thay thế', 'Draft': 'Bản nháp',
-  'Generate a first-draft JD from this requisition': 'Tạo bản mô tả công việc nháp từ phiếu tuyển dụng này',
-  'Attach an existing JD file': 'Đính kèm tệp mô tả công việc có sẵn',
+  'JD': 'MTCV', 'Attach': 'Đính kèm', 'Show': 'Xem', 'Replace': 'Thay thế',
+  'Attach the Job Description file': 'Đính kèm tệp mô tả công việc',
   'Replace the JD': 'Thay thế bản mô tả công việc',
   'Open in SharePoint': 'Mở trong SharePoint', 'Stored in the portal': 'Lưu trong cổng thông tin',
   'That JD file is no longer available.': 'Tệp mô tả công việc này không còn nữa.',
@@ -19012,7 +18899,6 @@ const _VI = {
   'JD filed in HR SharePoint.': 'Đã lưu bản mô tả công việc vào SharePoint HR.',
   'JD saved in the portal.': 'Đã lưu bản mô tả công việc trong cổng thông tin.',
   'Set the HR SharePoint folder in Company Portal settings to file it there.': 'Đặt thư mục SharePoint HR trong Cài đặt cổng thông tin để lưu tại đó.',
-  'Could not generate the JD': 'Không tạo được bản mô tả công việc',
   'Could not save the JD': 'Không lưu được bản mô tả công việc',
   'Loading PDF engine…': 'Đang tải bộ tạo PDF…',
   'PDF engine not ready — try again in a moment': 'Bộ tạo PDF chưa sẵn sàng — vui lòng thử lại',
