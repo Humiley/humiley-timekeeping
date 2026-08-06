@@ -104,3 +104,83 @@ def test_filing_somebody_else_s_acknowledgement_is_refused(api, tokens):
     st, b = api("POST", "/api/hr/onboarding/file", tokens["other"],
                 {"ackId": ack["id"], "data": "data:application/pdf;base64,JVBERi0="})
     assert st == 403, (st, b)
+
+
+# ── due dates, reminders and the compliance view ──────────────────────────────────────────────────
+#
+# Without a deadline "outstanding" never becomes actionable, and somebody has to chase by hand — which
+# is how this decays in every company that tries it. The deadline is counted from the LATER of
+# publication and the person's start date, so a policy published in March does not show a June joiner
+# as instantly delinquent.
+
+def test_a_document_with_no_deadline_has_no_due_date(api, tokens):
+    d = _doc(api, tokens, code="DUE-0")
+    assert app._hrdoc_due(d, {"joinDate": "2026-01-01"}) == ""
+
+
+def test_the_deadline_runs_from_publication(api, tokens):
+    d = _doc(api, tokens, code="DUE-1", dueDays=7, effectiveFrom="2026-03-01")
+    assert app._hrdoc_due(d, {"joinDate": "2020-01-01"}) == "2026-03-08"
+
+
+def test_a_later_joiner_gets_the_deadline_from_their_start_date(api, tokens):
+    """THE reason this is not just publication + N. Otherwise every new hire is born overdue."""
+    d = _doc(api, tokens, code="DUE-2", dueDays=7, effectiveFrom="2026-03-01")
+    assert app._hrdoc_due(d, {"joinDate": "2026-06-10"}) == "2026-06-17"
+
+
+def test_an_unsigned_document_is_outstanding_and_a_signed_one_is_not(api, tokens):
+    d = _doc(api, tokens, code="OUT-1", audience="Selected", empIds="HML-STF")
+    pend = [p for p in app._hrdoc_outstanding() if p["doc"]["id"] == d["id"]]
+    assert [p["emp"]["id"] for p in pend] == ["HML-STF"]
+    _sign(api, tokens["staff"], d["id"])
+    assert not [p for p in app._hrdoc_outstanding() if p["doc"]["id"] == d["id"]]
+
+
+def test_a_new_version_makes_it_outstanding_again(api, tokens):
+    """Re-issuing a policy must ask everyone again — the old signature covered the old text."""
+    d = _doc(api, tokens, code="VER-1", version="1.0", audience="Selected", empIds="HML-STF")
+    _sign(api, tokens["staff"], d["id"])
+    assert not [p for p in app._hrdoc_outstanding() if p["doc"]["id"] == d["id"]]
+    d["version"] = "2.0"
+    api("PATCH", "/api/coll/hrdocs/" + d["id"], tokens["admin"], d)
+    assert [p for p in app._hrdoc_outstanding() if p["doc"]["id"] == d["id"]]
+
+
+def test_an_inactive_employee_is_not_chased(api, tokens):
+    """A leaver on the outstanding list is noise that makes the whole report ignorable."""
+    d = _doc(api, tokens, code="OUT-2", audience="All")
+    live = {p["emp"]["id"] for p in app._hrdoc_outstanding() if p["doc"]["id"] == d["id"]}
+    for e in db.list_employees():
+        if str(e.get("status") or "Active").lower() == "inactive":
+            assert e["id"] not in live
+
+
+def test_the_compliance_view_is_manager_only(api, tokens):
+    """It is a list of who is behind — management information, not self-service."""
+    st, b = api("GET", "/api/hr/compliance", tokens["staff"])
+    assert st == 403, (st, b)
+
+
+def test_the_compliance_view_covers_everybody_not_just_the_caller(api, tokens):
+    """Staff reads of the acknowledgements are scoped to their own, correctly — which is exactly why
+       this has to be computed on the server."""
+    d = _doc(api, tokens, code="MTX-1", audience="All")
+    st, b = api("GET", "/api/hr/compliance", tokens["mgr"])
+    assert st == 200, b
+    who = {r["empId"] for r in b["rows"] if r["docId"] == d["id"]}
+    assert {"HML-STF", "HML-OTH"} <= who
+
+
+def test_the_compliance_view_reports_a_rate_per_document(api, tokens):
+    """One person behind is a person. Most of a department behind is a failed rollout."""
+    d = _doc(api, tokens, code="MTX-2", audience="Selected", empIds="HML-STF,HML-OTH")
+    _sign(api, tokens["staff"], d["id"])
+    b = api("GET", "/api/hr/compliance", tokens["mgr"])[1]
+    stat = [x for x in b["docs"] if x["id"] == d["id"]][0]
+    assert stat["required"] == 2 and stat["signed"] == 1 and stat["pct"] == 50
+
+
+def test_reminders_are_manager_only(api, tokens):
+    st, b = api("POST", "/api/hr/remind", tokens["staff"], {})
+    assert st == 403, (st, b)

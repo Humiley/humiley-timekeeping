@@ -6440,10 +6440,110 @@ async function tkAddNewHireGo() {
     document.getElementById('newHireOverlay').remove(); toast('Onboarding started for ' + name + ' (' + tasks.length + ' activities)'); tkRenderOnboarding();
   } catch (e) { toast(_t('Could not create') + ': ' + _errMsg(e), 'error', 5000); }
 }
+/* ── Policy compliance ─────────────────────────────────────────────────────────────────────────────
+   Two questions get asked in real life: "are we current?" and "who do I chase?". The matrix answers
+   the first for an auditor in one screen; the reminders answer the second without anybody chasing.
+   Computed on the SERVER because it needs every employee, and staff reads of the acknowledgements
+   are correctly scoped to the caller's own. */
+let _hrComp = null, _hrCompDept = '';
+
+async function tkRenderCompliance() {
+  const host = document.getElementById('hr-compliance'); if (!host) return;
+  host.innerHTML = tkSkeleton();
+  try { _hrComp = await tkApi('/api/hr/compliance'); }
+  catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light)">' + _t('Could not load compliance.') + '</div>'; return; }
+  const rows = (_hrComp.rows || []).filter(r => !_hrCompDept || r.dept === _hrCompDept);
+  const docs = _hrComp.docs || [];
+  const depts = [...new Set((_hrComp.employees || []).map(e => e.dept).filter(Boolean))].sort();
+  const signed = rows.filter(r => r.state === 'signed').length;
+  const overdue = rows.filter(r => r.state === 'overdue').length;
+  const pct = rows.length ? Math.round(signed / rows.length * 100) : 100;
+
+  // Per-employee rows, worst first — the chase list.
+  const byEmp = {};
+  rows.forEach(r => { (byEmp[r.empId] = byEmp[r.empId] || { name: r.name, dept: r.dept, cells: [] }).cells.push(r); });
+  const people = Object.keys(byEmp).map(k => byEmp[k])
+    .sort((a, b) => (b.cells.filter(c => c.state === 'overdue').length - a.cells.filter(c => c.state === 'overdue').length)
+                 || (b.cells.filter(c => c.state !== 'signed').length - a.cells.filter(c => c.state !== 'signed').length)
+                 || String(a.name).localeCompare(String(b.name)));
+
+  const dot = c => {
+    const bg = c.state === 'signed' ? 'var(--emerald)' : c.state === 'overdue' ? 'var(--danger,#C0392B)' : '#F59E0B';
+    const lab = c.state === 'signed' ? _t('Signed') + ' ' + tkFmtDate(String(c.signedOn || '').slice(0, 10))
+              : c.state === 'overdue' ? _t('Overdue since') + ' ' + c.due
+              : (c.due ? _t('Due') + ' ' + c.due : _t('Outstanding'));
+    return '<td style="text-align:center" title="' + _tkEscA(c.docTitle + ' — ' + lab) + '">' +
+      '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + bg + '"></span></td>';
+  };
+
+  host.innerHTML =
+    _hrKpiRow([
+      _kpiTile(_t('Compliance'), pct + '%', pct >= 95 ? '#00B060' : pct >= 80 ? '#F59E0B' : '#C0392B', '<polyline points="20 6 9 17 4 12"/>'),
+      _kpiTile(_t('Signed'), signed, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
+      _kpiTile(_t('Outstanding'), rows.length - signed, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+      _kpiTile(_t('Overdue'), overdue, overdue ? '#C0392B' : '#8A94A6', '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/>')
+    ]) +
+    '<div class="card" style="padding:0;overflow:hidden">' +
+      '<div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<div class="card-title">' + _t('Who has signed what') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          '<select class="form-control" style="width:auto;font-size:12px;padding:6px 10px" onchange="_hrCompDept=this.value;tkRenderCompliance()">' +
+            '<option value="">' + _t('All departments') + '</option>' +
+            depts.map(d => '<option value="' + _tkEscA(d) + '"' + (d === _hrCompDept ? ' selected' : '') + '>' + _crmEsc(d) + '</option>').join('') +
+          '</select>' +
+          '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tkCompExport()">' + tkIcon('download', 12) + ' ' + _t('Export') + '</button>' +
+          '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="tkCompRemind()">' + _t('Send reminders now') + '</button>' +
+        '</div></div>' +
+      (docs.length && people.length
+        ? '<div class="table-wrap"><table style="min-width:' + (320 + docs.length * 70) + 'px"><thead><tr>' +
+            '<th>' + _t('Employee') + '</th><th>' + _t('Department') + '</th>' +
+            docs.map(d => '<th style="text-align:center;font-size:10px" title="' + _tkEscA(d.title + (d.version ? ' v' + d.version : '')) + '">' +
+              _crmEsc(d.code || d.title || '') + '<div style="font-weight:400;color:var(--text-light)">' + d.pct + '%</div></th>').join('') +
+          '</tr></thead><tbody>' +
+          people.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name) + '</td><td>' + _crmEsc(p.dept || '—') + '</td>' +
+            docs.map(d => { const c = p.cells.find(x => x.docId === d.id);
+              return c ? dot(c) : '<td style="text-align:center;color:var(--text-light)" title="' + _tkEscA(_t('Not applicable')) + '">·</td>'; }).join('') +
+          '</tr>').join('') + '</tbody></table></div>'
+        : '<div style="padding:22px">' + tkEmpty('No documents published yet',
+            { icon: 'file', sub: 'Publish a document and everyone it applies to will appear here.' }) + '</div>') +
+    '</div>';
+}
+
+async function tkCompRemind() {
+  try {
+    const r = await tkApi('/api/hr/remind', { method: 'POST', body: {} });
+    toast(r.reminded ? _t('Reminded') + ' ' + r.reminded + ' ' + _t('people.') : _t('Nobody has anything outstanding.'));
+  } catch (e) { toast(_t('Could not send reminders') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
+/* The audit deliverable: one row per person per document, with the state and the date. CSV so it
+   opens in Excel, which is where this conversation always ends up. */
+function tkCompExport() {
+  const rows = (_hrComp && _hrComp.rows || []).filter(r => !_hrCompDept || r.dept === _hrCompDept);
+  if (!rows.length) { toast(_t('Nothing to export.'), 'warn'); return; }
+  const head = ['Employee ID', 'Employee', 'Department', 'Document code', 'Document', 'Version', 'Status', 'Due', 'Signed on', 'Filed in SharePoint'];
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const csv = [head.map(q).join(',')].concat(rows.map(r => [
+    r.empId, r.name, r.dept, r.docCode, r.docTitle, r.version,
+    r.state === 'signed' ? 'Signed' : r.state === 'overdue' ? 'Overdue' : 'Outstanding',
+    r.due || '', String(r.signedOn || '').slice(0, 10), r.filed ? 'Yes' : 'No'
+  ].map(q).join(','))).join('\r\n');
+  // BOM so Excel reads the Vietnamese names as UTF-8 instead of mojibake.
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'Humiley_policy_compliance_' + _today() + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
 async function tkRenderOnboarding() {
   const root = document.getElementById('onboarding-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
   await tkLoadColl('onboarding');
+  // Policy compliance renders into its own host below the joiner checklist, so a slow matrix never
+  // holds up the list HR uses every day.
+  setTimeout(() => { try { tkRenderCompliance(); } catch (e) { } }, 0);
   const items = _HR.onboarding;
   const totalTasks = items.reduce((s, o) => s + (o.tasks || []).length, 0);
   const doneTasks = items.reduce((s, o) => s + (o.tasks || []).filter(t => t.done).length, 0);
@@ -6464,7 +6564,13 @@ async function tkRenderOnboarding() {
           byPhase[p].map(({ t, i }) => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" ' + (t.done ? 'checked' : '') + ' onchange="tkOnboardToggle(\'' + o.id + '\',' + i + ',this.checked)"><span style="' + (t.done ? 'text-decoration:line-through;color:var(--text-light)' : '') + '">' + t.label + '</span></label>').join('')).join(''); })() +
     '</div>';
   }).join('') : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">No one is onboarding right now.</div>';
-  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">' + cards + '</div>';
+  root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">' + cards + '</div>' +
+    // Policy compliance lives under the joiner checklist: same tab, because both answer "is this
+    // person properly onboarded".
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 10px">' +
+      '<div style="font-size:14px;font-weight:800;color:var(--navy)">' + _t('Policy compliance') + '</div>' +
+      '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>' +
+    '</div><div id="hr-compliance"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
 /* Probation milestone strip with computed due dates + status select. */
@@ -13111,6 +13217,10 @@ const _QA_SPECS = {
     { k: 'version', label: 'Version (e.g. 1.0)' },
     { k: 'category', label: 'Category', type: 'select', options: ['Policy', 'Handbook', 'Procedure', 'Contract', 'HSE', 'IT', 'Code of Conduct', 'Other'] },
     { k: 'effectiveFrom', label: 'Effective from', type: 'date' },
+    // Without a deadline nothing is ever overdue, so "outstanding" never becomes actionable and the
+    // compliance report is a list nobody reads. Counted from the LATER of publication and the
+    // person's start date, so a new joiner is not instantly delinquent.
+    { k: 'dueDays', label: 'Sign within (days of publication / joining)', type: 'number' },
     // Re-issuing a policy = bump the version. Signatures are matched on version, so everyone is
     // asked again rather than the old signature silently covering the new text.
     { k: 'audience', label: 'Who must sign', type: 'select', options: ['All', 'Department', 'Selected'] },
@@ -19170,6 +19280,29 @@ const _VI = {
   'Candidate Funnel & Conversion': 'Phễu ứng viên & Chuyển đổi', 'Source of Hire Mix': 'Nguồn tuyển dụng',
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
+  /* Onboarding & policy compliance */
+  'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
+  'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
+  'Effective': 'Hiệu lực từ', 'Due': 'Hạn', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',
+  'Your signature': 'Chữ ký của bạn', 'Policy compliance': 'Tuân thủ tài liệu',
+  'Who has signed what': 'Ai đã ký tài liệu nào', 'Publish a document': 'Ban hành tài liệu',
+  'Send reminders now': 'Gửi nhắc nhở ngay', 'All departments': 'Tất cả bộ phận',
+  'Compliance': 'Tuân thủ', 'Employee': 'Nhân viên', 'Department': 'Bộ phận', 'Overdue': 'Quá hạn',
+  'By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.': 'Bằng việc ký, tôi xác nhận đã nhận, đã đọc và hiểu tài liệu này và đồng ý tuân thủ.',
+  'Please open each document, read it, and sign to confirm. Your signature is filed in your HR record.': 'Vui lòng mở từng tài liệu, đọc và ký xác nhận. Chữ ký của bạn được lưu vào hồ sơ nhân sự.',
+  'Please sign to confirm you have read this document.': 'Vui lòng ký để xác nhận bạn đã đọc tài liệu này.',
+  'Could not save your signature': 'Không lưu được chữ ký của bạn',
+  'Filed in your HR folder': 'Đã lưu vào thư mục hồ sơ của bạn',
+  'Filed in your HR folder.': 'Đã lưu vào thư mục hồ sơ của bạn.',
+  'Signed. Not filed to SharePoint yet:': 'Đã ký. Chưa lưu lên SharePoint:',
+  'That file is no longer available.': 'Tệp này không còn nữa.',
+  'Could not load compliance.': 'Không tải được dữ liệu tuân thủ.',
+  'Could not send reminders': 'Không gửi được nhắc nhở',
+  'Nobody has anything outstanding.': 'Không còn ai chưa ký.',
+  'Nothing to export.': 'Không có dữ liệu để xuất.',
+  'Reminded': 'Đã nhắc', 'people.': 'người.',
+  'Could not load this tab': 'Không tải được tab này',
+  'Check your connection and try again.': 'Kiểm tra kết nối và thử lại.', 'Retry': 'Thử lại',
   'In stock': 'Còn trong kho', 'in stock': 'còn trong kho', 'Owned': 'Sở hữu', 'owned': 'sở hữu', 'assigned': 'đã cấp', 'Balanced': 'Khớp',
   'issued beyond stock': 'cấp vượt tồn kho',
   'Someone has more of an item than the register says we own — check the highlighted rows.': 'Có người đang giữ nhiều hơn số lượng ghi nhận — kiểm tra các dòng được đánh dấu.',

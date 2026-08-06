@@ -13,6 +13,7 @@ otherwise the app runs in DEMO mode (pick Manager / Staff, no Azure needed).
 """
 
 import gzip
+import html as _h
 import json
 import threading
 from datetime import datetime, timedelta
@@ -939,6 +940,133 @@ def _tk_on_leave_today(today):
     return out
 
 
+def _hrdoc_targets(doc, employees):
+    """Who must sign this document. Mirrors the browser's _onbForMe exactly — if these two ever
+    disagree, somebody is chased for a document they cannot see."""
+    aud = str((doc or {}).get("audience") or "All")
+    out = []
+    for e in employees:
+        if str(e.get("status") or "Active").lower() == "inactive":
+            continue
+        if aud == "All":
+            out.append(e)
+        elif aud == "Department" and str(e.get("dept") or "") == str(doc.get("dept") or ""):
+            out.append(e)
+        elif aud == "Selected" and e.get("id") in [x.strip() for x in str(doc.get("empIds") or "").split(",")]:
+            out.append(e)
+    return out
+
+
+def _hrdoc_due(doc, emp):
+    """The date this person's signature is due, as YYYY-MM-DD, or "" when the document sets no
+    deadline.
+
+    Measured from the LATER of publication and the person's start date. A policy published in March
+    is not overdue for somebody who joined in June — counting from publication would show every new
+    hire as instantly delinquent, which is how a compliance report becomes noise nobody reads."""
+    try:
+        days = int(doc.get("dueDays") or 0)
+    except Exception:
+        days = 0
+    if days <= 0:
+        return ""
+    pub = str(doc.get("effectiveFrom") or doc.get("ts") or "")[:10]
+    join = str((emp or {}).get("joinDate") or (emp or {}).get("onboardDate") or "")[:10]
+    start = max([d for d in (pub, join) if len(d) == 10] or [""])
+    if not start:
+        return ""
+    try:
+        return (datetime.strptime(start, "%Y-%m-%d") + timedelta(days=days)).strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _hrdoc_outstanding(today=None):
+    """Every (document, employee) pair still waiting for a signature, with its due date.
+
+    One pass over both collections rather than a query per employee: this feeds the daily sweep and
+    the compliance matrix, and on a 30-person company the whole thing is a few hundred pairs."""
+    today = today or (datetime.utcnow() + timedelta(hours=7)).strftime("%Y-%m-%d")
+    docs = [d for d in db.list_collection("hrdocs") if not d.get("archived")]
+    if not docs:
+        return []
+    emps = db.list_employees()
+    signed = set()
+    for a in db.list_collection("hrdoc_acks"):
+        signed.add((a.get("docId"), a.get("empId"), str(a.get("docVersion") or "")))
+    out = []
+    for d in docs:
+        ver = str(d.get("version") or "")
+        for e in _hrdoc_targets(d, emps):
+            if (d.get("id"), e.get("id"), ver) in signed:
+                continue
+            due = _hrdoc_due(d, e)
+            out.append({"doc": d, "emp": e, "due": due,
+                        "overdue": bool(due and due < today)})
+    return out
+
+
+def _hrdoc_reminders(today=None):
+    """Daily: remind people what they still owe a signature for, and tell a manager when it is late.
+
+    Chasing by hand is what makes this decay in every company that tries it. Reminders go out once a
+    day at most, and only to people who actually have something outstanding."""
+    today = today or (datetime.utcnow() + timedelta(hours=7)).strftime("%Y-%m-%d")
+    pend = _hrdoc_outstanding(today)
+    if not pend:
+        return 0
+    by_emp, late_by_mgr = {}, {}
+    for row in pend:
+        e = row["emp"]
+        by_emp.setdefault(e.get("id"), {"emp": e, "docs": [], "late": []})
+        by_emp[e["id"]]["docs"].append(row)
+        if row["overdue"]:
+            by_emp[e["id"]]["late"].append(row)
+            mgr = (e.get("managerEmail") or "").strip().lower()
+            if mgr:
+                late_by_mgr.setdefault(mgr, []).append(row)
+    sent = 0
+    for _eid, v in by_emp.items():
+        em = (v["emp"].get("email") or "").strip().lower()
+        if not em:
+            continue
+        n, late = len(v["docs"]), len(v["late"])
+        title = ("%d document%s to sign" % (n, "" if n == 1 else "s")) if not late else \
+                ("%d overdue — please sign" % late)
+        body = "; ".join((r["doc"].get("title") or "") for r in v["docs"][:3])[:150]
+        try:
+            _tk_push([em], title, body, "/?tab=myonboarding", "hrdoc-" + today)
+            sent += 1
+        except Exception:
+            pass
+        try:
+            _sender = _appr_email_sender("hrdocs")
+            if _sender:
+                _graph_send_mail(_sender, [em], "[Humiley] " + title,
+                    "<p>These company documents are waiting for your signature:</p><ul>" +
+                    "".join("<li>%s%s</li>" % (_h.escape(r["doc"].get("title") or ""),
+                                               (" &mdash; due %s" % r["due"]) if r["due"] else "")
+                            for r in v["docs"]) +
+                    "</ul><p>Open <b>My Space &rarr; Onboarding</b> in the portal to read and sign them.</p>")
+        except Exception:
+            pass
+    # The manager hears only about what is actually LATE — a manager copied on every routine
+    # reminder stops reading them, and then the escalation is worth nothing.
+    for mgr_email, rows in late_by_mgr.items():
+        try:
+            _sender = _appr_email_sender("hrdocs")
+            if _sender:
+                _graph_send_mail(_sender, [mgr_email],
+                    "[Humiley] %d overdue document signature(s) in your team" % len(rows),
+                    "<p>These are past their due date:</p><ul>" +
+                    "".join("<li>%s &mdash; %s (due %s)</li>" % (_h.escape(r["emp"].get("name") or ""),
+                                                                 _h.escape(r["doc"].get("title") or ""), r["due"])
+                            for r in rows) + "</ul>")
+        except Exception:
+            pass
+    return sent
+
+
 def _tk_nudges(kind, today=None):
     """kind='checkin' → active staff with NO attendance record today; kind='checkout' → still clocked in.
        Working days only; skips staff on approved leave. Returns the list of emails nudged."""
@@ -987,6 +1115,23 @@ def _tk_nudge_scheduler():
                 co = int(db.get_setting("portal_tkCheckoutHour", "19") or "19")
             except Exception:
                 co = 19
+            # Policy reminders: once a day, at the check-in hour. Same once-a-day latch as the
+            # attendance nudges so a restart cannot send them twice.
+            if now_vn.hour == ci:
+                _pkey = "hrdoc:" + today
+                with _TK_NUDGE_LOCK:
+                    try:
+                        _pseen = json.loads(db.get_setting("_tkNudgeSent") or "{}")
+                    except Exception:
+                        _pseen = {}
+                    if not _pseen.get(_pkey):
+                        try:
+                            _hrdoc_reminders(today)
+                        except Exception:
+                            pass
+                        _pseen[_pkey] = time.time()
+                        _pseen = {k: v for k, v in _pseen.items() if v and (time.time() - v) < 30 * 86400}
+                        db.set_setting("_tkNudgeSent", json.dumps(_pseen))
             for kind, want in (("checkin", ci), ("checkout", co)):
                 if now_vn.hour != want:
                     continue
@@ -3415,6 +3560,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._portal_get(u))
         if path == "/api/pm/chat/summary":
             return self._guard(lambda u: self._pm_chat_summary(u))
+        if path == "/api/hr/compliance":
+            return self._guard(lambda u: self._hr_compliance_ep(u))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/exec/summary":
@@ -3465,6 +3612,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_onb_file_ep(u, body))
         if path == "/api/hr/employee-folders":
             return self._guard(lambda u: self._hr_emp_folders_ep(u))
+        if path == "/api/hr/remind":
+            return self._guard(lambda u: self._hr_remind_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
@@ -6672,6 +6821,55 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         return self._json({"ok": True, "created": made, "failed": failed, "errors": errs})
+
+    def _hr_compliance_ep(self, u):
+        """Who has signed what, and who has not. The one screen an auditor asks for.
+
+        Computed here rather than in the browser because it needs EVERY employee — and staff reads of
+        hrdoc_acks are scoped to the caller's own, correctly so. Manager and above only: it is a list
+        of who is behind, which is management information, not self-service."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access required.", 403)
+        today = time.strftime("%Y-%m-%d")
+        docs = [d for d in db.list_collection("hrdocs") if not d.get("archived")]
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").lower() != "inactive"]
+        acks = {}
+        for a in db.list_collection("hrdoc_acks"):
+            acks[(a.get("docId"), a.get("empId"), str(a.get("docVersion") or ""))] = a
+        rows, doc_stats = [], []
+        for d in docs:
+            ver = str(d.get("version") or "")
+            targets = _hrdoc_targets(d, emps)
+            signed = 0
+            for e in targets:
+                a = acks.get((d.get("id"), e.get("id"), ver))
+                due = _hrdoc_due(d, e)
+                if a:
+                    signed += 1
+                rows.append({
+                    "docId": d.get("id"), "docTitle": d.get("title") or "", "docCode": d.get("code") or "",
+                    "version": ver, "empId": e.get("id"), "name": e.get("name") or "",
+                    "dept": e.get("dept") or "", "due": due,
+                    "state": "signed" if a else ("overdue" if (due and due < today) else "outstanding"),
+                    "signedOn": (a or {}).get("ts", ""), "filed": bool((a or {}).get("webUrl")),
+                })
+            doc_stats.append({"id": d.get("id"), "title": d.get("title") or "", "code": d.get("code") or "",
+                              "version": ver, "required": len(targets), "signed": signed,
+                              "pct": (round(signed * 100.0 / len(targets)) if targets else 100)})
+        return self._json({"ok": True, "rows": rows, "docs": doc_stats,
+                           "employees": [{"id": e.get("id"), "name": e.get("name") or "",
+                                          "dept": e.get("dept") or ""} for e in emps]})
+
+    def _hr_remind_ep(self, u):
+        """Send the outstanding-signature reminders now, instead of waiting for tomorrow."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access required.", 403)
+        try:
+            n = _hrdoc_reminders()
+        except Exception as e:
+            return self._err(_graph_err_text(e)[:200] or "Could not send reminders.", 500)
+        return self._json({"ok": True, "reminded": n})
 
     def _hr_jd_ep(self, u, body):
         """Attach a Job Description file to a requisition and file it in HR SharePoint.
