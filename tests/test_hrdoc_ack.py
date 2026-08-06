@@ -184,3 +184,72 @@ def test_the_compliance_view_reports_a_rate_per_document(api, tokens):
 def test_reminders_are_manager_only(api, tokens):
     st, b = api("POST", "/api/hr/remind", tokens["staff"], {})
     assert st == 403, (st, b)
+
+
+# ── migrating the old tick-box policies ───────────────────────────────────────────────────────────
+#
+# Two places that both mean "acknowledged" is the problem. But the old records ARE records, so they
+# are carried across rather than deleted — and carried across honestly. A tick-box that arrives
+# wearing a signature image would be a forgery, and an auditor who finds one is worse off than one
+# who reads "acknowledged by tick-box on this date".
+
+def test_the_migration_publishes_the_old_policies(api, tokens):
+    st, b = api("POST", "/api/hr/policy-migrate", tokens["admin"], {})
+    assert st == 200, b
+    codes = {d.get("code") for d in db.list_collection("hrdocs")}
+    assert {"HML-HR-001", "HML-HR-002", "HML-IT-001", "HML-LE-001", "HML-HSE-001", "HML-CB-001"} <= codes
+
+
+def test_an_old_tick_box_is_carried_over_without_inventing_a_signature(api, tokens):
+    """THE line that matters. It becomes a record marked as what it was."""
+    db.put_collection_item("acks", {"empId": "HML-MGT", "doc": "IT Acceptable Use Policy", "ts": "2026-03-12"})
+    api("POST", "/api/hr/policy-migrate", tokens["admin"], {})
+    doc = [d for d in db.list_collection("hrdocs") if d.get("code") == "HML-IT-001"][0]
+    got = [a for a in db.list_collection("hrdoc_acks")
+           if a.get("docId") == doc["id"] and a.get("empId") == "HML-MGT"]
+    assert got, "the existing acknowledgement was lost"
+    a = got[0]
+    assert a["method"] == "legacy-tickbox"
+    assert not a.get("signature"), "a signature image was invented for a tick-box"
+    assert a["ts"] == "2026-03-12", "the original date was not preserved"
+    assert "tick-box" in a["meaning"]
+
+
+def test_a_real_signature_is_never_replaced_by_a_legacy_record(api, tokens):
+    """If somebody has already signed properly, importing the old tick-box list must not downgrade
+       their signature to "acknowledged by tick-box"."""
+    d = _doc(api, tokens, code="HML-LE-001", title="Confidentiality, IP & Data", version="1.0")
+    _sign(api, tokens["other"], d["id"])
+    db.put_collection_item("acks", {"empId": "HML-OTH", "doc": "Confidentiality, IP & Data", "ts": "2020-01-01"})
+    api("POST", "/api/hr/policy-migrate", tokens["admin"], {})
+    got = [a for a in db.list_collection("hrdoc_acks")
+           if a.get("docId") == d["id"] and a.get("empId") == "HML-OTH"]
+    assert len(got) == 1, "the migration added a duplicate acknowledgement"
+    assert got[0].get("method") != "legacy-tickbox", "a real signature was downgraded"
+    assert got[0].get("signature"), "the signature image was lost"
+
+
+def test_the_migration_can_be_run_twice_without_duplicating(api, tokens):
+    db.put_collection_item("acks", {"empId": "HML-OTH", "doc": "HSE / Site Safety", "ts": "2026-04-01"})
+    api("POST", "/api/hr/policy-migrate", tokens["admin"], {})
+    before = len(db.list_collection("hrdoc_acks")), len(db.list_collection("hrdocs"))
+    st, b = api("POST", "/api/hr/policy-migrate", tokens["admin"], {})
+    assert (b["documents"], b["acknowledgements"]) == (0, 0)
+    assert (len(db.list_collection("hrdoc_acks")), len(db.list_collection("hrdocs"))) == before
+
+
+def test_only_an_admin_can_migrate(api, tokens):
+    st, b = api("POST", "/api/hr/policy-migrate", tokens["mgr"], {})
+    assert st == 403, (st, b)
+
+
+def test_the_hardcoded_policy_library_is_gone_from_the_frontend():
+    """Two places that mean "acknowledged", only one of which produces a signature, is the thing this
+       whole change exists to remove."""
+    import os
+    idx = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "templates", "index.html")
+    with open(idx, encoding="utf-8") as fh:
+        src = fh.read()
+    assert "_POLICY_LIB" not in src, "the hardcoded policy list is still there"
+    assert "function tkConfirmPolicy" not in src, "the tick-box acknowledgement flow is still there"

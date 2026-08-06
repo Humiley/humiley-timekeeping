@@ -3614,6 +3614,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_emp_folders_ep(u))
         if path == "/api/hr/remind":
             return self._guard(lambda u: self._hr_remind_ep(u))
+        if path == "/api/hr/policy-migrate":
+            return self._guard(lambda u: self._hr_policy_migrate_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
@@ -6821,6 +6823,77 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         return self._json({"ok": True, "created": made, "failed": failed, "errors": errs})
+
+    # The six policies that were hardcoded in the frontend, with the codes they carried. Published
+    # at v1.0 so the EXISTING tick-box acknowledgements map onto them; HR then re-issues at a higher
+    # version to collect real signatures against the actual PDF.
+    LEGACY_POLICIES = [
+        ("Employee Handbook", "HML-HR-001", "Handbook"),
+        ("Code of Conduct & Anti-Harassment", "HML-HR-002", "Code of Conduct"),
+        ("IT Acceptable Use Policy", "HML-IT-001", "IT"),
+        ("Confidentiality, IP & Data", "HML-LE-001", "Policy"),
+        ("HSE / Site Safety", "HML-HSE-001", "HSE"),
+        ("C&B Policy (HML-CB-001)", "HML-CB-001", "Policy"),
+    ]
+
+    def _hr_policy_migrate_ep(self, u):
+        """Move the six hardcoded policies, and every tick-box acknowledgement of them, into the
+        document system — once.
+
+        The old records are NOT discarded and NOT dressed up. Each becomes an acknowledgement marked
+        method='legacy-tickbox' with no signature image, because that is what actually happened: the
+        person ticked a box. Inventing a signature image for them would be a forgery, and an auditor
+        who finds one is far worse off than one who reads "acknowledged by tick-box on 12 Mar 2026".
+
+        Idempotent: re-running adds nothing that is already there."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
+            return self._err("Admin access required.", 403)
+        existing = {str(d.get("code") or ""): d for d in db.list_collection("hrdocs")}
+        made, mapped, skipped = 0, 0, 0
+        code_by_title = {}
+        for title, code, cat in self.LEGACY_POLICIES:
+            doc = existing.get(code)
+            if not doc:
+                doc = db.put_collection_item("hrdocs", {
+                    "title": title, "code": code, "version": "1.0", "category": cat,
+                    "audience": "All", "dueDays": 0,
+                    "summary": "Migrated from the portal's built-in policy list. Upload the controlled "
+                               "PDF and re-issue at a new version to collect signatures.",
+                    "migrated": True, "ts": self._utc_now()})
+                made += 1
+            code_by_title[title] = doc
+        have = {(a.get("docId"), a.get("empId"), str(a.get("docVersion") or ""))
+                for a in db.list_collection("hrdoc_acks")}
+        for a in db.list_collection("acks"):
+            doc = code_by_title.get(str(a.get("doc") or ""))
+            if not doc:
+                skipped += 1
+                continue
+            key = (doc.get("id"), a.get("empId"), "1.0")
+            if key in have:
+                continue
+            emp = db.get_employee(a.get("empId") or "") or {}
+            db.put_collection_item("hrdoc_acks", {
+                "docId": doc.get("id"), "empId": a.get("empId") or "",
+                "name": emp.get("name") or a.get("name") or "",
+                "ts": a.get("ts") or "", "docTitle": doc.get("title"), "docCode": doc.get("code"),
+                "docVersion": "1.0",
+                # Deliberately no signature image. This was a tick-box, and the record says so.
+                "method": "legacy-tickbox",
+                "meaning": "Acknowledged by tick-box in the portal (migrated record, not a signature)",
+                "legacy": True})
+            have.add(key)
+            mapped += 1
+        try:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "", "actorId": u.get("id") or "", "action": "hr.policy.migrate",
+                "detail": "Legacy policies migrated: %d documents published, %d tick-box "
+                          "acknowledgements carried over as legacy records, %d unmatched"
+                          % (made, mapped, skipped),
+                "ts": self._utc_now()})
+        except Exception:
+            pass
+        return self._json({"ok": True, "documents": made, "acknowledgements": mapped, "unmatched": skipped})
 
     def _hr_compliance_ep(self, u):
         """Who has signed what, and who has not. The one screen an auditor asks for.

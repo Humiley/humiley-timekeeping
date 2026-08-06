@@ -6493,6 +6493,8 @@ async function tkRenderCompliance() {
           '</select>' +
           '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tkCompExport()">' + tkIcon('download', 12) + ' ' + _t('Export') + '</button>' +
           '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="tkCompRemind()">' + _t('Send reminders now') + '</button>' +
+          (_lvlRank(_userLevel) >= _lvlRank('admin')
+            ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--text-light)" onclick="tkPolicyMigrate()">' + _t('Import old policies') + '</button>' : '') +
         '</div></div>' +
       (docs.length && people.length
         ? '<div class="table-wrap"><table style="min-width:' + (320 + docs.length * 70) + 'px"><thead><tr>' +
@@ -6507,6 +6509,19 @@ async function tkRenderCompliance() {
         : '<div style="padding:22px">' + tkEmpty('No documents published yet',
             { icon: 'file', sub: 'Publish a document and everyone it applies to will appear here.' }) + '</div>') +
     '</div>';
+}
+
+/* One-time: republish the six policies that used to be hardcoded, and carry their tick-box
+   acknowledgements across as LEGACY records — no invented signature. Idempotent. */
+async function tkPolicyMigrate() {
+  if (!await tkConfirm(_t('Import the six built-in policies and their existing tick-box acknowledgements?'),
+      { body: _t('The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.'), ok: _t('Import') })) return;
+  try {
+    const r = await tkApi('/api/hr/policy-migrate', { method: 'POST', body: {} });
+    toast(_t('Imported') + ': ' + r.documents + ' ' + _t('documents') + ', ' + r.acknowledgements + ' ' + _t('acknowledgements') + '.');
+    tkCollInvalidate('hrdocs'); tkCollInvalidate('hrdoc_acks');
+    tkRenderCompliance();
+  } catch (e) { toast(_t('Could not import') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 async function tkCompRemind() {
@@ -9029,229 +9044,13 @@ async function tkMyPayslip() {
 function _tkMe() { const u = TK.user || {}; return (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase())); }
 /* Employee — e-acknowledge a policy/document. */
 /* Policy library — read-then-confirm acknowledgements (A4). Keys MUST match the docs list. */
-const _POLICY_LIB = {
-  'Employee Handbook': { rev: 'HML-HR-001 v1.0', body: '<p>Welcome to Humiley. This handbook sets out how we work together.</p><ul><li>Standard hours 08:00–17:00, Mon–Fri; flexible/site schedules by arrangement.</li><li>Attendance is recorded via GPS check-in inside an approved zone.</li><li>Annual leave accrues per your grade; apply via Leave Management for manager approval.</li><li>Probation is 60–90 days with 30/60/90-day reviews before confirmation.</li><li>Treat colleagues, clients and partners with respect and professionalism.</li></ul>' },
-  'Code of Conduct & Anti-Harassment': { rev: 'HML-HR-002', body: '<p>Every employee is entitled to a safe, respectful workplace.</p><ul><li>Harassment, discrimination, bullying or retaliation of any kind is prohibited.</li><li>Avoid conflicts of interest; disclose any that arise to HR.</li><li>No bribery, kickbacks or facilitation payments.</li><li>Report concerns to your manager or HR; reports are handled confidentially.</li></ul>' },
-  'IT Acceptable Use Policy': { rev: 'HML-IT-001', body: '<p>Company IT systems are provided for business use.</p><ul><li>Keep credentials private; enable MFA; never share passwords.</li><li>Do not install unapproved software or disable security controls.</li><li>Company email and devices may be audited for security and compliance.</li><li>Report lost devices or suspected breaches to IT immediately.</li></ul>' },
-  'Confidentiality, IP & Data': { rev: 'HML-LE-001', body: '<p>Protecting company and client information is everyone\'s duty.</p><ul><li>Keep confidential information secure during and after employment.</li><li>Work products created for Humiley are company intellectual property.</li><li>Handle personal data lawfully and only for legitimate business purposes.</li><li>Do not disclose client or project data without authorisation.</li></ul>' },
-  'HSE / Site Safety': { rev: 'HML-HSE-001', body: '<p>Safety first — on every site, every day.</p><ul><li>Wear required PPE; follow LOTO, working-at-height and confined-space rules.</li><li>Complete the HSE induction before site access.</li><li>Report hazards, near-misses and incidents immediately.</li><li>Stop work if conditions are unsafe.</li></ul>' },
-  'C&B Policy (HML-CB-001)': { rev: 'HML-CB-001 v01.0', body: '<p>Compensation follows the Salary 3P model.</p><ul><li><b>P1 – Position:</b> basic (65%) + position allowance (from G5).</li><li><b>P2 – Person:</b> responsibility (10%) + skill/seniority (0–5%).</li><li><b>P3 – Performance:</b> KPI bonus (10% × 0.5–1.5× by PADR rating).</li><li>Welfare: lunch ₫730,000 / phone ₫300,000 / transport ₫500,000 per month (non-SI).</li><li>Statutory SI/HI/UI 10.5% (employee) and PIT are withheld per law.</li></ul>' }
-};
-/* ── Onboarding & Policies ─────────────────────────────────────────────────────────────────────────
-   HR publishes a document once (`hrdocs`), chooses who it is for, and attaches the file. Everyone it
-   is aimed at finds it here, opens the actual file, and signs for it. The signature is what makes it
-   a record rather than a notice board: it says this person, on this date, read this VERSION.
+/* The six built-in policies and their tick-box acknowledgement used to live here. They are gone:
+   there must be exactly ONE thing in this portal that means "acknowledged", and it is the one that
+   produces a signature. `POST /api/hr/policy-migrate` republishes them as documents and carries the
+   old tick-box records across, marked as tick-boxes rather than dressed up as signatures.
+   tkAckDoc is kept as a shim so any old caller lands on the Onboarding tab instead of a dead end. */
+function tkAckDoc() { _msNav('myonboarding', _MYSPACE_TAB_TITLE['myonboarding']); }
 
-   The signed acknowledgement is filed into that employee's own HR SharePoint folder, because in six
-   months the question is never "is it in the app" — it is "show me what they signed". */
-
-function _onbForMe(e) {
-  const me = e || _tkMe() || {};
-  return (_HR.hrdocs || []).filter(d => {
-    if (d.archived) return false;
-    const aud = String(d.audience || 'All');
-    if (aud === 'All') return true;
-    if (aud === 'Department') return String(d.dept || '') === String(me.dept || '');
-    if (aud === 'Selected') return String(d.empIds || '').split(',').map(x => x.trim()).indexOf(me.id) >= 0;
-    return true;
-  }).sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
-}
-/* My signature on a document, matched on the VERSION: re-issuing a policy asks for a fresh signature
-   rather than silently carrying the old one forward. */
-function _onbAck(docId, version) {
-  const me = _tkMe() || {};
-  return (_HR.hrdoc_acks || []).find(a => a.docId === docId && a.empId === me.id &&
-    String(a.docVersion || '') === String(version || ''));
-}
-
-async function tkRenderMyOnboarding() {
-  const root = document.getElementById('myonboarding-root'); if (!root) return;
-  _myspaceEnsureTabBar('myonboarding', true);
-  root.innerHTML = tkSkeleton();
-  try { await Promise.all([tkLoadColl('hrdocs'), tkLoadColl('hrdoc_acks')]); } catch (e) { }
-  const me = _tkMe() || {};
-  const docs = _onbForMe(me);
-  const done = docs.filter(d => _onbAck(d.id, d.version));
-  const todo = docs.filter(d => !_onbAck(d.id, d.version));
-
-  const card = d => {
-    const a = _onbAck(d.id, d.version);
-    const file = !!d.fileName;
-    return '<div class="card" style="padding:14px 16px;margin-bottom:10px' +
-      (a ? '' : ';border-left:3px solid var(--warn,#F59E0B)') + '">' +
-      '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">' +
-        '<div style="min-width:0;flex:1">' +
-          '<div style="font-weight:700;color:var(--navy);font-size:14px">' + _crmEsc(d.title || '') + '</div>' +
-          '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' +
-            [d.code, d.version ? 'v' + d.version : '', d.category, d.effectiveFrom ? _t('Effective') + ' ' + tkFmtDate(d.effectiveFrom) : '']
-              .filter(Boolean).map(_crmEsc).join('  ·  ') + '</div>' +
-          (d.summary ? '<div style="font-size:12.5px;color:var(--text-dark);margin-top:6px;line-height:1.5">' + _crmEsc(d.summary) + '</div>' : '') +
-        '</div>' +
-        '<div style="flex:0 0 auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">' +
-          (file ? '<button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tkOnbOpen(\'' + d.id + '\')">' +
-            tkIcon('file', 12) + ' ' + _t('Open document') + '</button>' : '') +
-          (a
-            ? '<span class="badge b-ok" style="font-size:10px">' + tkIcon('check', 11) + ' ' + _t('Signed') + ' ' + tkFmtDate(String(a.ts || '').slice(0, 10)) + '</span>'
-            : '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="tkOnbSign(\'' + d.id + '\')">' + _t('Read & sign') + '</button>') +
-        '</div>' +
-      '</div>' +
-      (a && a.webUrl ? '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' + tkIcon('check', 11) + ' ' +
-        _t('Filed in your HR folder') + ' · <a href="' + _tkEscA(a.webUrl) + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600">' + _t('Open') + '</a></div>' : '') +
-    '</div>';
-  };
-
-  root.innerHTML =
-    _hrKpiRow([
-      _kpiTile(_t('To sign'), todo.length, todo.length ? '#F59E0B' : '#00B060', '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
-      _kpiTile(_t('Signed'), done.length, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
-      _kpiTile(_t('Assigned to me'), docs.length, '#205090', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/>')
-    ]) +
-    (docs.length
-      ? (todo.length ? '<div style="font-size:12.5px;color:var(--text-light);margin:2px 0 10px">' +
-            _t('Please open each document, read it, and sign to confirm. Your signature is filed in your HR record.') + '</div>' : '') +
-        todo.map(card).join('') +
-        (done.length ? '<div style="font-size:12px;font-weight:700;color:var(--text-light);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.04em">' +
-          _t('Already signed') + '</div>' + done.map(card).join('') : '')
-      : tkEmpty('Nothing to sign', { icon: 'file',
-          sub: 'Company documents that need your signature will appear here.' }));
-}
-
-function tkOnbOpen(id) {
-  const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
-  if (d.fileUrl) { window.open(d.fileUrl, '_blank', 'noopener'); return; }   // filed in SharePoint
-  if (d.file) { _tkPreviewUrl(d.file, d.fileName || 'document'); return; }
-  toast(_t('That file is no longer available.'), 'warn');
-}
-
-/* Read-and-sign. The signature pad is the same one the asset handover uses — a drawn signature, not
-   a checkbox, because this is the artefact an auditor or a labour inspector asks to see. */
-function tkOnbSign(id) {
-  const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
-  const me = _tkMe() || {};
-  document.getElementById('onbSignOverlay')?.remove();
-  const el = document.createElement('div');
-  el.id = 'onbSignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:520px;max-height:92vh;max-height:92dvh;overflow:auto" role="dialog" aria-modal="true">' +
-    '<div class="modal-header"><div><div class="modal-title" style="margin:0">' + _crmEsc(d.title || '') + '</div>' +
-      '<div style="font-size:11.5px;color:var(--text-light)">' + [d.code, d.version ? 'v' + d.version : ''].filter(Boolean).map(_crmEsc).join(' · ') + '</div></div></div>' +
-    (d.fileName
-      ? '<div style="margin-bottom:12px"><button class="btn btn-outline btn-sm" style="font-size:11.5px" onclick="tkOnbOpen(\'' + d.id + '\')">' +
-        tkIcon('file', 12) + ' ' + _t('Open document') + ' — ' + _crmEsc(d.fileName) + '</button></div>'
-      : '') +
-    (d.summary ? '<div style="font-size:13px;line-height:1.6;color:var(--text-dark);margin-bottom:12px">' + _crmEsc(d.summary) + '</div>' : '') +
-    '<div style="font-size:12.5px;color:var(--text-dark);background:var(--soft-bg);padding:10px 12px;border-radius:8px;margin-bottom:12px;line-height:1.55">' +
-      _t('By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.') + '</div>' +
-    '<div class="form-group"><label class="form-label">' + _t('Your signature') + '</label>' +
-      '<div style="position:relative;border:1px dashed var(--line);border-radius:10px;background:#fff">' +
-        '<canvas id="onb-sigpad" width="440" height="150" style="width:100%;height:150px;touch-action:none;border-radius:10px"></canvas>' +
-        '<div id="onb-sigpad-hint" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;color:var(--text-light);font-size:12px">' +
-          _t('Sign here') + '</div></div>' +
-      '<div style="text-align:right;margin-top:4px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="_sigPadClear(\'onb-sigpad\',\'onb-sigpad-hint\')">' + _t('Clear') + '</button></div>' +
-      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(me.name || '') + (me.id ? ' · ' + _crmEsc(me.id) : '') + ' · ' + tkFmtDate(_today()) + '</div>' +
-    '</div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'onbSignOverlay\').remove()">' + _t('Cancel') + '</button>' +
-      '<button class="btn btn-primary" id="onb-sign-go" onclick="tkOnbSignSave(\'' + d.id + '\')">' + tkIcon('check', 13) + ' ' + _t('Sign') + '</button></div>' +
-    '</div>';
-  document.body.appendChild(el);
-  _sigPadWire('onb-sigpad', 'onb-sigpad-hint');
-}
-
-async function tkOnbSignSave(id) {
-  const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
-  const me = _tkMe() || {};
-  const img = _sigPadImage('onb-sigpad');
-  if (!img) { toast(_t('Please sign to confirm you have read this document.'), 'warn'); return; }
-  const btn = document.getElementById('onb-sign-go'); if (btn) btn.disabled = true;
-  try {
-    // The row is stamped server-side — who, when and which VERSION — so the browser cannot sign for
-    // somebody else or against a document it edited on the way past.
-    const res = await tkApi('/api/coll/hrdoc_acks', { method: 'POST', body: {
-      docId: d.id, signature: img, method: 'signature',
-      meaning: 'Read and understood — ' + (d.title || '') } });
-    const ack = res.item;
-    (_HR.hrdoc_acks = _HR.hrdoc_acks || []).push(ack);
-    document.getElementById('onbSignOverlay')?.remove();
-    toast(_t('Signed') + ' — ' + (d.title || ''));
-    // File it into this person's own HR folder. Best-effort and reported: the signature already
-    // stands in the portal, so a SharePoint problem must not look like a failed signing.
-    try {
-      const pdf = await _onbAckPdf(d, me, ack, img);
-      if (pdf) {
-        const r = await tkApi('/api/hr/onboarding/file', { method: 'POST', body: { ackId: ack.id, data: pdf } });
-        if (r.filed) { ack.webUrl = r.webUrl; toast(_t('Filed in your HR folder.')); }
-        else if (r.error) toast(_t('Signed. Not filed to SharePoint yet:') + ' ' + r.error, 'warn', 6000);
-      }
-    } catch (e2) { }
-    tkRenderMyOnboarding();
-  } catch (e) {
-    if (btn) btn.disabled = false;
-    toast(_t('Could not save your signature') + ': ' + _errMsg(e), 'error', 5000);
-  }
-}
-
-/* The acknowledgement itself, on the Humiley letterhead: what was signed, by whom, when, and the
-   drawn signature. This is the page that gets printed if anybody ever asks. */
-async function _onbAckPdf(d, me, ack, sigImg) {
-  const ready = () => (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
-  if (!ready()) { if (typeof tkEnsureExportLibs === 'function') tkEnsureExportLibs();
-    for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150)); }
-  const J = ready(); if (!J) return null;
-  const doc = new J({ unit: 'mm', format: 'a4' });
-  const W = 210, M = 16, GREY = _LH_GREY, DARK = _LH_DARK, NAVY = _LH_NAVY;
-  const D = v => (v && String(v).trim()) ? String(v).trim() : '—';
-  let y = _brandHeader(doc, { title: 'DOCUMENT ACKNOWLEDGEMENT', subtitle: D(d.title), docCode: 'BM.HR-01-02' });
-  doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
-  doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
-  const f = (x, yy, lab, val) => {
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
-  };
-  f(M + 4, y + 6, 'Employee / Nhan vien', me.name); f(M + 64, y + 6, 'Employee ID / Ma NV', me.id);
-  f(M + 124, y + 6, 'Date / Ngay', tkFmtDate(String(ack.ts || '').slice(0, 10)));
-  f(M + 4, y + 14.5, 'Document / Tai lieu', d.code || d.title);
-  f(M + 64, y + 14.5, 'Version / Phien ban', d.version); f(M + 124, y + 14.5, 'Department / Bo phan', me.dept);
-  y += 28;
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK);
-  doc.splitTextToSize('I confirm that I have received and read "' + D(d.title) + '"' +
-    (d.version ? ' (version ' + d.version + ')' : '') + ', that I understand it, and that I agree to follow it. ' +
-    'Toi xac nhan da nhan, da doc va hieu tai lieu nay va dong y tuan thu.', W - 2 * M)
-    .forEach(l => { doc.text(l, M, y); y += 5; });
-  y += 8;
-  try { doc.addImage(sigImg, 'PNG', M, y, 62, 22); } catch (e) { }
-  doc.setDrawColor(180, 186, 196); doc.line(M, y + 24, M + 62, y + 24);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
-  doc.text('Signature / Chu ky  ·  ' + D(me.name), M, y + 28);
-  doc.text('Signed electronically in the Humiley Portal  ·  ' + String(ack.ts || ''), M, y + 33);
-  const out = doc.output('datauristring');
-  return 'data:application/pdf;base64,' + out.slice(out.indexOf(',') + 1);
-}
-
-function tkOpenPolicy(doc) {
-  const e = _tkMe(); if (!e) return;
-  const acked = (_HR.acks || []).find(a => a.empId === e.id && a.doc === doc);
-  const p = _POLICY_LIB[doc] || { rev: '', body: '<p>Policy document — please read and confirm.</p>' };
-  document.getElementById('policyOverlay')?.remove();
-  const el = document.createElement('div'); el.id = 'policyOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:560px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div><div class="modal-title" style="margin:0">' + doc + '</div>' + (p.rev ? '<div style="font-size:11px;color:var(--text-light)">' + p.rev + '</div>' : '') + '</div><button class="modal-close" onclick="document.getElementById(\'policyOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
-    '<div style="overflow:auto;padding:4px 2px;font-size:13.5px;line-height:1.65;color:var(--text-dark)">' + p.body + '</div>' +
-    (acked ? '<div class="card" style="margin-top:12px;padding:10px 14px;background:var(--light-tint);font-size:12px;color:var(--emerald);font-weight:600">' + tkIcon('check', 13) + ' ' + _t2('Acknowledged on', 'Đã xác nhận ngày') + ' ' + (acked.ts ? tkFmtDate(acked.ts) : '') + '</div><div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">' + _t2('Close', 'Đóng') + '</button></div>'
-      : '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:13px;cursor:pointer"><input type="checkbox" id="pol-ack-chk" onchange="document.getElementById(\'pol-ack-btn\').disabled=!this.checked"> ' + _t2('I have read and understood this policy.', 'Tôi đã đọc và hiểu chính sách này.') + '</label>' +
-        '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'policyOverlay\').remove()">' + _t2('Cancel', 'Hủy') + '</button><button class="btn btn-emerald" id="pol-ack-btn" disabled onclick="tkConfirmPolicy(this.getAttribute(\'data-doc\'))" data-doc="' + doc.replace(/"/g, '&quot;') + '">' + tkIcon('check') + _t2('Acknowledge', 'Xác nhận') + '</button></div>') +
-    '</div>';
-  document.body.appendChild(el);
-}
-async function tkConfirmPolicy(doc) {
-  const e = _tkMe(); if (!e) return;
-  if ((_HR.acks || []).find(a => a.empId === e.id && a.doc === doc)) { document.getElementById('policyOverlay')?.remove(); toast('Already acknowledged'); return; }
-  try {
-    const res = await tkApi('/api/coll/acks', { method: 'POST', body: { doc: doc, ts: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
-    (_HR.acks = _HR.acks || []).push(res.item); tkAudit('Policy acknowledged', e.name, doc);
-    document.getElementById('policyOverlay')?.remove(); toast('Acknowledged: ' + doc); tkRenderMyProfile();
-  }
-  catch (err) { toast(_t('Could not save') + ': ' + _errMsg(err), 'error', 5000); }
-}
-/* Back-compat: any old caller opens the read-and-confirm flow. */
-function tkAckDoc(doc) { return tkOpenPolicy(doc); }
 /* Read a file (bill / ticket / receipt) into a hidden field as a data URL. */
 function tkReadAttach(input, hid) {
   const f = input.files && input.files[0]; if (!f) return;
@@ -13836,10 +13635,19 @@ function tkRenderMyProfile() {
         '<button class="btn btn-outline btn-sm" style="margin-top:10px;width:100%;justify-content:center" onclick="tkSubmitClaim()">' + tkIcon('plus') + 'Submit a claim</button>');
     })() +
     (() => {
-      const docs = ['Employee Handbook', 'Code of Conduct & Anti-Harassment', 'IT Acceptable Use Policy', 'Confidentiality, IP & Data', 'HSE / Site Safety', 'C&B Policy (HML-CB-001)'];
-      const ackOf = nm => (_HR.acks || []).find(a => a.empId === e.id && a.doc === nm);
-      const rows = docs.map(d => { const a = ackOf(d); const dd = d.replace(/"/g, '&quot;'); return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;padding:5px 0;border-bottom:1px solid var(--line)"><span style="cursor:pointer;flex:1;min-width:0;overflow-wrap:break-word" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">' + d + '</span>' + (a ? '<span style="white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex-shrink:0"><span style="font-size:11px;color:var(--emerald)">' + tkIcon('check', 12) + (a.ts ? tkFmtDate(a.ts) : 'Acknowledged') + '</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">View</button></span>' : '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px;flex-shrink:0" onclick="tkOpenPolicy(&quot;' + dd + '&quot;)">Read &amp; acknowledge</button>') + '</div>'; }).join('');
-      return '<div class="card" style="padding:18px 20px"><div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--line)"><div style="width:32px;height:32px;border-radius:9px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + _secIcon('documents') + '</svg></div><div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--navy)">Documents &amp; Policies</div></div>' + rows + '</div>';
+      // Documents live in My Space → Onboarding now, where signing them produces a signature. This
+      // card is a pointer, not a second place to acknowledge things.
+      const mine = (typeof _onbForMe === 'function') ? _onbForMe(e) : [];
+      const todo = mine.filter(d => !_onbAck(d.id, d.version)).length;
+      return '<div class="card" style="padding:18px 20px">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)">' +
+          '<div style="font-size:15px;font-weight:800;color:var(--navy)">' + _t('Documents & Policies') + '</div>' +
+          (todo ? '<span class="badge b-warn" style="font-size:10px">' + todo + ' ' + _t('to sign') + '</span>'
+                : '<span class="badge b-ok" style="font-size:10px">' + _t('All signed') + '</span>') + '</div>' +
+        '<div style="font-size:12.5px;color:var(--text-light);line-height:1.5;margin-bottom:12px">' +
+          _t('Company documents you need to read and sign are in Onboarding, where your signature is recorded and filed in your HR folder.') + '</div>' +
+        '<button class="btn btn-outline btn-sm" style="width:100%;justify-content:center" onclick="tkAckDoc()">' +
+          tkIcon('file', 13) + ' ' + _t('Open Onboarding') + '</button></div>';
     })() +
     (() => {
       const h = (_HR.handovers || []).find(x => x.empId === e.id);
@@ -19281,6 +19089,12 @@ const _VI = {
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
   /* Onboarding & policy compliance */
+  'All signed': 'Đã ký đủ', 'Open Onboarding': 'Mở mục Hội nhập', 'Import old policies': 'Nhập chính sách cũ',
+  'Documents & Policies': 'Tài liệu & Chính sách', 'Imported': 'Đã nhập', 'documents': 'tài liệu',
+  'acknowledgements': 'xác nhận', 'Could not import': 'Không nhập được', 'Import': 'Nhập',
+  'Company documents you need to read and sign are in Onboarding, where your signature is recorded and filed in your HR folder.': 'Tài liệu công ty cần đọc và ký nằm ở mục Hội nhập, nơi chữ ký của bạn được ghi nhận và lưu vào hồ sơ nhân sự.',
+  'Import the six built-in policies and their existing tick-box acknowledgements?': 'Nhập sáu chính sách có sẵn và các xác nhận tick trước đây?',
+  'The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.': 'Bản ghi cũ được giữ lại và ghi rõ là xác nhận tick, không phải chữ ký. Sau đó hãy ban hành lại phiên bản mới để thu chữ ký thật.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
   'Effective': 'Hiệu lực từ', 'Due': 'Hạn', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',
