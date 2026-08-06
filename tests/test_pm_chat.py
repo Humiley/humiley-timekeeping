@@ -551,7 +551,9 @@ def test_the_summary_never_ships_the_messages_themselves(api, tokens):
     _post(api, tokens["other"], pid, "SECRET-MARKER-TEXT")
     s = _summary(api, tokens["staff"])
     assert "SECRET-MARKER-TEXT" not in json.dumps(s)
-    assert set(s) <= {"ok", "unread", "mentions", "names", "total", "totalMentions"}
+    assert set(s) <= {"ok", "unread", "mentions", "names", "readAt", "total", "totalMentions"}
+    # readAt carries timestamps, never anything anybody wrote
+    assert all(isinstance(v, str) and v[:2] == "20" for v in s["readAt"].values()), s["readAt"]
 
 
 def test_reading_twice_keeps_one_row_per_person(api, tokens):
@@ -680,3 +682,196 @@ def test_a_failing_push_never_loses_the_message(api, tokens, monkeypatch):
                      [{"empId": "HML-OTH", "name": "Other Staff"}])
     assert st == 200, b
     assert any(m["body"] == "@Other Staff urgent" for m in _list(api, tokens["staff"]))
+
+
+def test_the_read_watermark_is_only_for_projects_you_can_open(api, tokens):
+    """readAt drives the "new since you last looked" dots on the topic pills. It is the caller's own
+       watermark — it must not become a way to learn that another job exists, or when it was busy."""
+    mine = _project(api, tokens, "RDA-A")
+    theirs = _project(api, tokens, "RDA-B")
+    _team(api, tokens, mine, "Staff One", "HML-STF")
+    _team(api, tokens, theirs, "Other Staff", "HML-OTH")
+    _read(api, tokens["staff"], mine)
+    api("POST", "/api/pm/chat/read", tokens["other"], {"projectId": theirs})
+    s = _summary(api, tokens["staff"])
+    assert mine in s["readAt"]
+    assert theirs not in s["readAt"], "a project the caller cannot open leaked through the watermark"
+
+
+# ── topics ────────────────────────────────────────────────────────────────────────────────────────
+#
+# A topic is a LABEL on a thread, not a room. The stream stays single, so nothing can be filed
+# somewhere people stop looking — which on a live job is how a decision ends up back on Zalo. The
+# vocabulary is closed and lives in code: with ~25 people and free text you get "Vat tu", "Vật tư",
+# "Materials" and "VT" for one subject inside a month, which is the opposite of consolidating.
+
+def _topic(api, token, pid, body="hello", topic="", parent=""):
+    return api("POST", "/api/coll/pm_chat", token,
+               {"projectId": pid, "parentId": parent, "body": body, "topic": topic})
+
+
+def test_a_message_can_be_filed_under_a_topic(api, tokens):
+    pid = _project(api, tokens, "TOP-A")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _topic(api, tokens["staff"], pid, "AHU casing leak test failed", "qaqc")
+    assert st == 200 and b["item"]["topic"] == "qaqc"
+
+
+def test_an_unfiled_message_is_general(api, tokens):
+    pid = _project(api, tokens, "TOP-B")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    assert _post(api, tokens["staff"], pid, "morning")[1]["item"]["topic"] == ""
+
+
+def test_an_invented_topic_becomes_general_rather_than_an_error(api, tokens):
+    """A message must never fail to send over a label. The words are what matter."""
+    pid = _project(api, tokens, "TOP-C")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    st, b = _topic(api, tokens["staff"], pid, "urgent", "vat-tu-khac")
+    assert st == 200 and b["item"]["topic"] == ""
+
+
+def test_a_reply_inherits_the_topic_of_its_thread(api, tokens):
+    """A thread cannot split across two topics — otherwise half an argument is filed under Safety and
+       half under Cost, and neither half makes sense on its own."""
+    pid = _project(api, tokens, "TOP-D")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    root = _topic(api, tokens["staff"], pid, "scaffold is blocking the riser", "hse")[1]["item"]
+    kid = _topic(api, tokens["staff"], pid, "moving it tomorrow", "cost", parent=root["id"])[1]["item"]
+    assert kid["topic"] == "hse", "the reply chose its own topic and split the thread"
+
+
+def test_a_reply_to_a_reply_still_lands_on_the_root_topic(api, tokens):
+    pid = _project(api, tokens, "TOP-E")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    root = _topic(api, tokens["staff"], pid, "cleanroom handover date", "programme")[1]["item"]
+    kid = _post(api, tokens["staff"], pid, "which zone", parent=root["id"])[1]["item"]
+    grand = _post(api, tokens["staff"], pid, "zone 3", parent=kid["id"])[1]["item"]
+    assert grand["parentId"] == root["id"] and grand["topic"] == "programme"
+
+
+def test_a_reply_cannot_be_hung_off_another_projects_thread(api, tokens):
+    """parentId was never checked. A crafted post could attach itself to a conversation in a project
+       the caller cannot even read, and inherit that thread's topic on the way in."""
+    a = _project(api, tokens, "TOP-F1")
+    c = _project(api, tokens, "TOP-F2")
+    for pid in (a, c):
+        _team(api, tokens, pid, "Staff One", "HML-STF")
+    root = _topic(api, tokens["staff"], a, "in project A", "site")[1]["item"]
+    st, b = _topic(api, tokens["staff"], c, "smuggled in", "", parent=root["id"])
+    assert st == 400, (st, b)
+
+
+# ── re-filing ─────────────────────────────────────────────────────────────────────────────────────
+
+def _move(api, token, msg, topic):
+    m = dict(msg)
+    m["topic"] = topic
+    return api("PATCH", "/api/coll/pm_chat/" + msg["id"], token, m)
+
+
+def test_you_can_re_file_your_own_message(api, tokens):
+    pid = _project(api, tokens, "MOV-A")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    m = _topic(api, tokens["staff"], pid, "wrong place", "site")[1]["item"]
+    st, b = _move(api, tokens["staff"], m, "cost")
+    assert st == 200 and b["item"]["topic"] == "cost"
+
+
+def test_the_project_manager_can_re_file_anybody_s_message(api, tokens):
+    """The load-bearing permission. Without it a junior dumps a thread into General at 6pm on a site
+       and the one person who wanted tidiness cannot fix it."""
+    pid = _project(api, tokens, "MOV-B", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    m = _post(api, tokens["staff"], pid, "the AHU decision, filed nowhere")[1]["item"]
+    st, b = _move(api, tokens["mgr"], m, "qaqc")
+    assert st == 200, b
+    assert b["item"]["topic"] == "qaqc"
+
+
+def test_re_filing_does_not_mark_the_message_edited(api, tokens):
+    """Moving a message is not changing what it says. An 'edited' marker would suggest the words were
+       touched, which on a record people rely on is a small lie."""
+    pid = _project(api, tokens, "MOV-C", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    m = _post(api, tokens["staff"], pid, "unchanged words")[1]["item"]
+    b = _move(api, tokens["mgr"], m, "hse")[1]["item"]
+    assert b["body"] == "unchanged words"
+    assert not b.get("editedAt"), "a move was recorded as an edit"
+
+
+def test_a_bystander_cannot_re_file_somebody_else_s_message(api, tokens):
+    pid = _project(api, tokens, "MOV-D", manager="Someone Else")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    m = _post(api, tokens["staff"], pid, "mine")[1]["item"]
+    st, b = _move(api, tokens["other"], m, "cost")
+    assert st == 403, (st, b)
+
+
+def test_re_filing_is_not_a_way_to_rewrite_the_words(api, tokens):
+    """The move carve-out sits above the guard that stops people editing each other's messages. It
+       must not have punched a hole in it."""
+    pid = _project(api, tokens, "MOV-E", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    m = _post(api, tokens["staff"], pid, "the original words")[1]["item"]
+    m2 = dict(m)
+    m2["topic"] = "cost"
+    m2["body"] = "words the manager preferred"
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["mgr"], m2)
+    after = [x for x in _list(api, tokens["staff"]) if x["id"] == m["id"]][0]
+    assert after["body"] == "the original words", "a re-file was used to edit somebody else's message"
+
+
+def test_a_reply_cannot_be_re_filed_on_its_own(api, tokens):
+    pid = _project(api, tokens, "MOV-F")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    root = _topic(api, tokens["staff"], pid, "root", "site")[1]["item"]
+    kid = _post(api, tokens["staff"], pid, "reply", parent=root["id"])[1]["item"]
+    st, b = _move(api, tokens["staff"], kid, "cost")
+    assert st == 400, (st, b)
+
+
+def test_a_move_to_an_unknown_topic_is_refused_loudly(api, tokens):
+    """A bad POST is quiet (the message still sends, as General). A bad MOVE is deliberate, so it is
+       told it failed rather than silently doing nothing."""
+    pid = _project(api, tokens, "MOV-G")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    m = _post(api, tokens["staff"], pid, "x")[1]["item"]
+    st, b = _move(api, tokens["staff"], m, "not-a-topic")
+    assert st == 400, (st, b)
+
+
+def test_reacting_still_works_and_never_moves_a_message(api, tokens):
+    """Every client echoes the whole record back, from a copy that may be up to 45s stale. If a PM
+       re-filed the message in the meantime, that echo looks like a move attempt from somebody with no
+       right to move it — and the thumbs-up gets refused for a reason nobody could work out. The
+       browser therefore omits `topic` when it reacts, which is what this proves."""
+    pid = _project(api, tokens, "MOV-H", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    m = _topic(api, tokens["staff"], pid, "leak test at 14:00", "qaqc")[1]["item"]
+    _move(api, tokens["mgr"], m, "hse")                        # the PM re-files it
+
+    react = {k: v for k, v in m.items() if k != "topic"}       # what pmChatReact actually sends
+    react["reactions"] = {"\U0001F44D": ["HML-OTH"]}
+    st, b = api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"], react)
+    assert st == 200, (st, b)
+    after = [x for x in _list(api, tokens["staff"]) if x["id"] == m["id"]][0]
+    assert after["reactions"].get("\U0001F44D") == ["HML-OTH"], "the reaction did not land"
+    assert after["topic"] == "hse", "a reaction moved the message"
+
+
+def test_a_stale_client_that_does_send_the_old_topic_is_still_refused(api, tokens):
+    """Belt and braces: omitting the field is the fix, but a client that sends the stale value must
+       not be able to drag a message back to where it was."""
+    pid = _project(api, tokens, "MOV-I", manager="Dept Manager")
+    _team(api, tokens, pid, "Staff One", "HML-STF")
+    _team(api, tokens, pid, "Other Staff", "HML-OTH")
+    m = _topic(api, tokens["staff"], pid, "particle count", "qaqc")[1]["item"]
+    _move(api, tokens["mgr"], m, "hse")
+    stale = dict(m)                                            # still says qaqc
+    stale["reactions"] = {"\U0001F44D": ["HML-OTH"]}
+    api("PATCH", "/api/coll/pm_chat/" + m["id"], tokens["other"], stale)
+    after = [x for x in _list(api, tokens["staff"]) if x["id"] == m["id"]][0]
+    assert after["topic"] == "hse", "a stale echo dragged the message back to its old topic"

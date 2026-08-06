@@ -3766,6 +3766,13 @@ class Handler(BaseHTTPRequestHandler):
     # is confined to a fixed set. An open emoji field would be a free-text write onto another person's
     # record, which is exactly what the author guard exists to prevent.
     CHAT_REACTIONS = ("\U0001F44D", "\u2764\uFE0F", "\U0001F389", "\u2705", "\U0001F440", "\U0001F602")
+    # Chat topics are a CLOSED vocabulary, exactly like CHAT_REACTIONS above: what gets stored is a
+    # key THIS FILE chose, never a string somebody typed. That is why no escaping, no de-duplicating
+    # ("Vat tu" / "Vật tư" / "Materials" for one subject) and no translation hazard applies to it.
+    # '' is General and is deliberately NOT a member — it is the absence of a topic, not a topic.
+    # ONE-WAY DOOR: a key that has ever shipped stays here. Removing one deletes nothing, it just
+    # silently drops the label off every message filed under it.
+    PM_CHAT_TOPICS = ("site", "design", "materials", "qaqc", "hse", "cost", "programme", "client")
     # Leave lives in its own table with its own signature store and is handled separately; payruns are
     # deliberately absent — a finalised payroll run stays immutable.
     UNDOABLE_COLLS = ("claims", "travel", "payments",
@@ -5470,6 +5477,10 @@ class Handler(BaseHTTPRequestHandler):
                 if p.get("id") in out:
                     names[p["id"]] = p.get("code") or p.get("name") or ""
         return self._json({"ok": True, "unread": out, "mentions": mentions, "names": names,
+                           # The caller's OWN watermark, scoped by the same visibility as names. It
+                           # ships no bodies and no per-topic counts — the browser already holds the
+                           # messages it is allowed to hold, and works the per-topic dots out itself.
+                           "readAt": {k: v for k, v in read.items() if vis is None or k in vis},
                            "total": sum(out.values()), "totalMentions": sum(mentions.values())})
 
     def _pm_chat_read(self, u, body):
@@ -6170,6 +6181,27 @@ class Handler(BaseHTTPRequestHandler):
                 if isinstance(a, dict) and str((a or {}).get("url") or "").strip()
             ][:6]
             item["reactions"] = {}                     # never born with reactions
+            # The topic is rebuilt here. `item = dict(body)` above passes unknown keys straight
+            # through, so without this the browser's value would be stored raw. An unrecognised key
+            # becomes General rather than a 400 — a message must never fail to send over a label.
+            _par_id = str(item.get("parentId") or "")
+            if _par_id:
+                # A reply has no topic of its own: it is stamped from the thread ROOT, so a thread
+                # cannot split across two topics. The parent's project is checked at the same time —
+                # parentId was never validated, so a crafted post could hang itself off a thread in
+                # a project the caller cannot see.
+                _par = db.get_collection_item("pm_chat", _par_id) or {}
+                if _par.get("projectId") != item.get("projectId"):
+                    return self._err("That reply does not belong to this project.", 400)
+                if _par.get("parentId"):                   # one level only — re-point at the root
+                    _root = db.get_collection_item("pm_chat", str(_par.get("parentId") or "")) or {}
+                    if _root.get("projectId") == item.get("projectId"):
+                        _par = _root
+                        item["parentId"] = _root.get("id") or _par_id
+                item["topic"] = str(_par.get("topic") or "")
+            else:
+                _tp = str(item.get("topic") or "")
+                item["topic"] = _tp if _tp in self.PM_CHAT_TOPICS else ""
             # Mentions are {empId, name} and are checked against the project, not taken on trust. A
             # mention is the only thing here that buzzes somebody's phone, so an unchecked list would
             # be a way to make the portal ring anyone in the company from a project they cannot see.
@@ -6761,13 +6793,31 @@ class Handler(BaseHTTPRequestHandler):
                         if who:
                             out[emo] = who
                     item["reactions"] = out
+                # Re-filing into another topic: the one other field a PATCH may change. Sits ABOVE
+                # the non-author refusal on purpose — the Project Manager must be able to tidy up
+                # after somebody who dumped a thread in the wrong place, and widening the guard that
+                # stops people rewriting each other's WORDS is not the way to allow it.
+                _want_t = body.get("topic")
+                if _want_t is not None and str(_want_t) != str(existing.get("topic") or ""):
+                    if existing.get("parentId"):
+                        return self._err("A reply follows the topic of its thread.", 400)
+                    if str(_want_t) and str(_want_t) not in self.PM_CHAT_TOPICS:
+                        return self._err("Unknown topic.", 400)
+                    _proj = next((x for x in db.list_collection("pm_projects")
+                                  if x.get("id") == existing.get("projectId")), {})
+                    _is_pm = self._pm_same_person(_proj.get("manager"), u.get("name"))
+                    if not (is_author or is_admin or _is_pm):
+                        return self._err("Only the author or the project manager can move a message.", 403)
+                    item["topic"] = str(_want_t)
+                    # deliberately no editedAt: moving a message is not changing what it says
                 if not is_author and not is_admin:
                     # A non-author may send reactions and NOTHING else. Every client echoes the whole
                     # object back, and a message now always carries a reactions field — so merely
                     # seeing one is not consent to an edit. If the words differ too, this is somebody
                     # trying to rewrite a colleague's message, and it is refused rather than quietly
                     # succeeding as a no-op.
-                    if want is None or str(body.get("body") or "") != str(existing.get("body") or ""):
+                    _moved = item.get("topic") != existing.get("topic")   # an allowed PM re-file
+                    if (want is None and not _moved) or str(body.get("body") or "") != str(existing.get("body") or ""):
                         return self._err("You can only edit your own message.", 403)
                     return self._json({"ok": True, "item": db.put_collection_item(name, item)})
                 body_txt = str(body.get("body") or "")[:8000]

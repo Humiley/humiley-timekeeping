@@ -408,6 +408,8 @@ select.form-control{cursor:pointer}
 /* ── LEAVE CALENDAR ── */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .cal-day-hdr{font-size:10px;font-weight:700;color:var(--text-light);text-align:center;padding:4px;text-transform:uppercase}
+#pm-chat-topics::-webkit-scrollbar{display:none}
+#pm-chat-topics{scrollbar-width:none;mask-image:linear-gradient(to right,#000 calc(100% - 14px),transparent)}
 .cal-day{border-radius:6px;padding:6px 4px;text-align:center;font-size:12px;color:var(--text-dark);cursor:pointer;min-height:40px;position:relative}
 .cal-day:hover{background:var(--soft-bg)}
 .cal-day.today{background:var(--light-tint);color:var(--navy);font-weight:700}
@@ -711,6 +713,20 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   .tabs{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   .tabs::-webkit-scrollbar{display:none}
   .tabs>*{flex:0 0 auto}
+  /* The project workspace has THIRTEEN tabs. Wrapping put 227px — 28% of a 375px phone — of tab bar
+     above every tab's content, so the Team Conversation opened with the conversation below the fold.
+     Same treatment as .tabs above: one scrollable row. The active tab is scrolled into view on paint. */
+  #pm-tabbar{flex-wrap:nowrap !important;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity}
+  #pm-tabbar::-webkit-scrollbar{display:none}
+  #pm-tabbar>*{flex:0 0 auto;scroll-snap-align:start}
+  /* Attach + emoji + Send left the message box about 144px wide at 375px, so at the 16px font phones
+     force on inputs even "Write a message…" was cut in half. Give it the full width and let the
+     buttons sit underneath — you can read what you are typing, and every target stays 44px. */
+  #pm-chat-row{flex-wrap:wrap}
+  /* !important because the textarea carries an inline flex:1 that would otherwise win */
+  #pm-chat-row>textarea{flex:1 1 100% !important;order:-1}
+  #pm-chat-row>.btn-primary{margin-left:auto}
+  #pm-chat-row>button{min-height:44px}          /* the 44px target this project already settled on */
   /* stack every multi-column grid (class-based + inline) into one column */
   .kpi-grid,.staff-kpi-grid{grid-template-columns:repeat(2,1fr)}
   .staff-2col,.staff-portal-row{grid-template-columns:1fr !important}
@@ -734,6 +750,10 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   input,select,textarea,.form-control,.sel-filter{font-size:16px !important}
   /* larger, easier touch targets */
   .tab{min-height:40px;display:flex;align-items:center}
+  /* The topic strip is deliberately NOT .tab — that 40px would cost a whole message row on a phone.
+     And the composer's topic <select> opens the OS picker rather than focusing an input, so it does
+     not trigger iOS zoom and is exempt from the blanket 16px font rule. */
+  #pm-chat-ctx select{font-size:13px !important;padding:5px 7px !important;min-height:30px}
   .lang-btn{padding:9px 11px !important}
   .btn,.btn-sm,.btn-approve,.btn-reject{min-height:38px}
   .modal-close{width:40px !important;height:40px !important}
@@ -15562,6 +15582,8 @@ async function pmRenderWorkspace() {
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
   pmTab(_pmTabK);
   pmChatUnreadLoad();      // one small call; never downloads messages to draw a badge
+  // One scrolling row on a phone means the tab you are on can start off-screen — bring it into view.
+  try { document.querySelector('#pm-tabbar .tab[data-k="' + _pmTabK + '"]')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { }
 }
 async function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
@@ -16659,6 +16681,19 @@ function pmRenderChat(pid) {
   const lastAct = r => [r.ts].concat((kids[r.id] || []).map(k => k.ts)).sort().slice(-1)[0] || r.ts;
   roots.sort((a, b) => String(lastAct(a)).localeCompare(String(lastAct(b))));
 
+  // Topics present on this project, in catalogue order — never alphabetical, never by count, so the
+  // strip does not reshuffle under your thumb as people post.
+  const tcount = {};
+  roots.forEach(r => { const k = _pmChatTopicOf(r); tcount[k] = (tcount[k] || 0) + 1; });
+  const present = _PM_CHAT_TOPICS.filter(t => tcount[t.k]);
+  // Suppressed until a second topic exists: on day one the tab is what people already use, and the
+  // strip introduces itself the moment somebody actually files something.
+  const showStrip = present.length >= 2;
+  if (!showStrip) _pmChatTopic = '__all';
+  if (_pmChatJumpTo) _pmChatTopic = '__all';        // a notification must never land behind a filter
+  if (_pmChatTopic !== '__all' && !tcount[_pmChatTopic]) _pmChatTopic = '__all';   // last one moved away
+  const shown = _pmChatTopic === '__all' ? roots : roots.filter(r => _pmChatTopicOf(r) === _pmChatTopic);
+
   const meId = (TK.user || {}).id || '';
   const msg = (m, isReply) => {
     const nm = m.authorName || 'Someone';
@@ -16671,6 +16706,7 @@ function pmRenderChat(pid) {
           '<span style="font-weight:700;font-size:13px;color:var(--text-dark)">' + _pmEsc(nm) + '</span>' +
           '<span style="font-size:11px;color:var(--text-light);font-variant-numeric:tabular-nums">' + _pmChatFmt(m.ts) + '</span>' +
           (m.editedAt ? '<span style="font-size:10.5px;color:var(--text-light)">· ' + _t('edited') + '</span>' : '') +
+          (isReply ? '' : _pmChatTopicChip(_pmChatTopicOf(m))) +   // replies inherit, so they show nothing
           (_pmChatMine(m) ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:1px 7px;margin-left:auto" onclick="pmChatEdit(\'' + m.id + '\')">' + _t('Edit') + '</button>' : '') +
         '</div>' +
         (m.body ? '<div style="font-size:13.5px;line-height:1.55;color:var(--text-dark);margin-top:2px;overflow-wrap:anywhere">' + _pmChatBody(m.body, m.mentions) + '</div>' : '') +
@@ -16679,7 +16715,7 @@ function pmRenderChat(pid) {
   };
 
   let body = '', lastDay = '';
-  roots.forEach(r => {
+  shown.forEach(r => {
     const d = _pmChatDay(r.ts);
     if (d !== lastDay) {
       lastDay = d;
@@ -16701,15 +16737,33 @@ function pmRenderChat(pid) {
     '<div style="font-size:13px;color:var(--text-light);max-width:38em;margin:0 auto;line-height:1.6">' +
       _t('The working conversation for this project — say it here first. Anything that has to be filed for the client or an auditor belongs in Comms & Issues instead.') + '</div></div>';
 
+  // The pills. `class="pmtopic"`, never `tab` — the mobile stylesheet gives .tab a 40px min-height,
+  // which would cost a whole message row. Keys are [a-z] code constants plus __all, so they go
+  // straight into the inline onclick with nothing to escape.
+  const pill = (k, label, n, on) =>
+    '<button type="button" class="pmtopic" data-on="' + (on ? '1' : '0') + '" onclick="pmChatTopicSet(\'' + k + '\')" ' +
+    'style="flex:0 0 auto;scroll-snap-align:start;border:none;background:' + (on ? 'var(--emerald)' : 'transparent') +
+    ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-size:11.5px;font-weight:600;padding:5px 11px;' +
+    'border-radius:7px;cursor:pointer;white-space:nowrap">' + _pmEsc(label) +
+    ' <span style="opacity:.75;font-variant-numeric:tabular-nums">' + n + '</span></button>';
+  const strip = !showStrip ? '' :
+    '<div id="pm-chat-topics" style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:2px 0 7px;' +
+    '-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity">' +
+    pill('__all', _t('All'), roots.length, _pmChatTopic === '__all') +
+    present.map(t => pill(t.k, _t(t.en), tcount[t.k], _pmChatTopic === t.k)).join('') + '</div>';
+
   _pmSet(
-    '<div class="card" style="padding:11px 15px;margin-bottom:12px;border-left:3px solid var(--emerald);font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    // One muted line, not a card: at 375px the card wrapped to three lines for a sentence people read
+    // once. Losing it pays for the topic strip, so max-height:calc(100vh - 330px) below is untouched.
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.5;margin:0 0 8px">' +
       '<b style="color:var(--text-dark)">' + _t('Team Conversation') + '</b> — ' + _t('the working conversation for this project. Only people on this project can read it.') +
-    '</div>' +
-    '<div id="pm-chat-scroll" style="max-height:calc(100vh - 330px);overflow-y:auto;padding-right:2px">' + (roots.length ? body : empty) + '</div>' +
+    '</div>' + strip +
+    '<div id="pm-chat-scroll" style="max-height:calc(100vh - 330px);overflow-y:auto;padding-right:2px">' +
+      (shown.length ? body : empty) + '</div>' +
     '<div class="card" style="padding:11px 13px;margin-top:12px;position:sticky;bottom:0">' +
-      '<div id="pm-chat-ctx" style="display:none;font-size:11.5px;color:var(--text-light);margin-bottom:6px"></div>' +
+      '<div id="pm-chat-ctx" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11.5px;color:var(--text-light);margin-bottom:7px"></div>' +
       '<div id="pm-chat-tray" style="display:none;gap:7px;flex-wrap:wrap;margin-bottom:8px"></div>' +
-      '<div style="display:flex;gap:9px;align-items:flex-end">' +
+      '<div id="pm-chat-row" style="display:flex;gap:9px;align-items:flex-end">' +
         '<input type="file" id="pm-chat-file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" style="display:none" onchange="pmChatPick(this)">' +
         '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Attach a file or photo')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="document.getElementById(\'pm-chat-file\').click()">\uD83D\uDCCE</button>' +
         '<button class="btn btn-outline btn-sm" type="button" title="' + _tkEscA(_t('Emoji')) + '" style="flex:0 0 auto;padding:8px 11px" onclick="pmChatEmoji(this)">\u263A</button>' +
@@ -16725,17 +16779,33 @@ function pmRenderChat(pid) {
   const sc = document.getElementById('pm-chat-scroll'); if (sc) sc.scrollTop = sc.scrollHeight;   // land on the newest
   pmChatMarkRead(pid);      // opening the tab IS reading it
   if (_pmChatJumpTo) { const t = _pmChatJumpTo; _pmChatJumpTo = ''; _pmChatLandOn(t); }
+  // Without this the pill you are standing on silently scrolls off a phone screen mid-conversation.
+  try { document.querySelector('#pm-chat-topics .pmtopic[data-on="1"]')?.scrollIntoView({ inline: 'center', block: 'nearest' }); } catch (e) { }
 }
+/* One line above the composer that always says what pressing Send will do. The topic control lives
+   here and never moves — a control that changes position is worse with gloves on. A native <select>
+   is deliberate: it opens the OS wheel, which beats any popup we could hand-build on a phone. */
 function _pmChatCtx() {
   const el = document.getElementById('pm-chat-ctx'); if (!el) return;
+  const cur = _pmChatPostTopic(), lock = _pmChatTopicLocked();
+  const opts = _PM_CHAT_TOPICS.map(t =>
+    '<option value="' + t.k + '"' + (t.k === cur ? ' selected' : '') + '>' + _pmEsc(_t(t.en)) + '</option>').join('');
+  const cancel = ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
+  let out = '<label style="display:flex;align-items:center;gap:5px">' +
+    '<span>' + _t(_pmChatEditId && !lock ? 'Move to' : 'Topic') + '</span>' +
+    // Disabled rather than hidden while replying: it makes "a thread cannot split" visible, instead
+    // of something you only discover when the server refuses it.
+    '<select id="pm-chat-topic" onchange="pmChatTopicPickSet(this.value)"' + (lock ? ' disabled' : '') +
+    ' title="' + _tkEscA(_t(lock ? 'A reply follows the topic of its thread.' : 'Choose where this message is filed.')) + '"' +
+    ' style="font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text-dark);font-family:inherit' +
+    (lock ? ';opacity:.6' : '') + '">' + opts + '</select></label>';
   if (_pmChatEditId) {
-    el.style.display = ''; el.innerHTML = _t('Editing your message') +
-      ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
+    out += '<span>· ' + _t('Editing your message') + cancel + '</span>';
   } else if (_pmChatReplyTo) {
     const r = (_HR.pm_chat || []).find(x => x.id === _pmChatReplyTo);
-    el.style.display = ''; el.innerHTML = _t('Replying to') + ' <b>' + _pmEsc((r && r.authorName) || '') + '</b>' +
-      ' · <button class="linklike" style="color:var(--navy);font-weight:600;cursor:pointer" onclick="pmChatCancel()">' + _t('Cancel') + '</button>';
-  } else { el.style.display = 'none'; el.innerHTML = ''; }
+    out += '<span>· ' + _t('Replying to') + ' <b>' + _pmEsc((r && r.authorName) || '') + '</b>' + cancel + '</span>';
+  }
+  el.innerHTML = out;
 }
 let _pmChatJumpTo = '';            // a message a notification sent us to, consumed on the next paint
 /* Being told you were named, then having to hunt for the message, is most of the work of answering.
@@ -16772,14 +16842,69 @@ function pmChatGoto(pid, msgId) {
   pmGoto(pid, 'chat');
 }
 function pmChatReply(id) { _pmChatEditId = ''; _pmChatReplyTo = id; _pmChatCtx(); const i = document.getElementById('pm-chat-input'); if (i) i.focus(); }
-function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatMentions = []; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
+function pmChatCancel() { _pmChatReplyTo = ''; _pmChatEditId = ''; _pmChatFiles_ = []; _pmChatMentions = []; _pmChatTopicPick = _pmChatTopic === '__all' ? '' : _pmChatTopic; _pmChatTray(); const i = document.getElementById('pm-chat-input'); if (i) { i.value = ''; i.style.height = 'auto'; } _pmChatCtx(); }
 function pmChatEdit(id) {
   const m = (_HR.pm_chat || []).find(x => x.id === id); if (!m) return;
   _pmChatReplyTo = ''; _pmChatEditId = id;
+  // Point the composer at THIS message. The topic pick is a standing arming that follows whichever
+  // pill you are reading, so without this line fixing a typo while reading All would send topic:''
+  // and quietly dump a filed message — and its whole reply thread — back into General.
+  _pmChatTopicPick = _pmChatTopicOf(m);
   const i = document.getElementById('pm-chat-input');
   if (i) { i.value = m.body || ''; i.style.height = 'auto'; i.style.height = Math.min(i.scrollHeight, 140) + 'px'; i.focus(); }
   _pmChatCtx();
 }
+/* Topics. A CLOSED set mirrored in app.py PM_CHAT_TOPICS — what gets stored is a key, never text a
+   person typed, so it needs no escaping and no de-duplicating. Free text would give "Vat tu",
+   "Vật tư", "Materials" and "VT" for one subject inside a month, which is the opposite of
+   consolidating. Labels are developer literals and go through _t() like every other string here.
+   Adding a key is safe; REMOVING one is a one-way door — it drops the label off every message. */
+const _PM_CHAT_TOPICS = [
+  { k: '',          en: 'General',                hex: '#8A94A6' },
+  { k: 'site',      en: 'Site & installation',    hex: '#00B060' },
+  { k: 'design',    en: 'Drawings & design',      hex: '#205090' },
+  { k: 'materials', en: 'Materials & delivery',   hex: '#8A5A00' },
+  { k: 'qaqc',      en: 'QA/QC & commissioning',  hex: '#0E7C86' },
+  { k: 'hse',       en: 'Safety (HSE)',           hex: '#C0392B' },
+  { k: 'cost',      en: 'Cost & variation',       hex: '#6B3FA0' },
+  { k: 'programme', en: 'Programme & manpower',   hex: '#B7791F' },
+  { k: 'client',    en: 'Client & consultant',    hex: '#1F6F8B' }
+];
+let _pmChatTopic = '__all';        // what the READER is filtered to. '' is General, a real topic, so
+                                   // "no filter" needs its own sentinel.
+let _pmChatTopicPick = '';         // what the COMPOSER will file the next message under
+function _pmChatTopicDef(k) { return _PM_CHAT_TOPICS.find(t => t.k === String(k || '')) || _PM_CHAT_TOPICS[0]; }
+/* A reply resolves through its root — a reply is never asked what topic it is in, it inherits. An
+   unrecognised key degrades to General rather than rendering something raw. */
+function _pmChatTopicOf(m) {
+  if (!m) return '';
+  let r = m;
+  if (m.parentId) r = (_HR.pm_chat || []).find(x => x.id === m.parentId) || m;
+  const k = String(r.topic || '');
+  return _PM_CHAT_TOPICS.some(t => t.k === k) ? k : '';
+}
+function _pmChatTopicChip(k) {
+  const d = _pmChatTopicDef(k);
+  return d.k ? _pmBadge(_t(d.en), d.hex) : '';   // General shows nothing: a chip should MEAN something
+}
+/* THE single source of truth for "what will Send file this under". Feeds both the <select>'s rendered
+   selected attribute and pmChatSend — the classic bug in this shape of feature is the dropdown
+   reading Site while the message lands in General. */
+function _pmChatPostTopic() {
+  const find = id => (_HR.pm_chat || []).find(x => x.id === id) || null;
+  if (_pmChatReplyTo) return _pmChatTopicOf(find(_pmChatReplyTo));
+  if (_pmChatEditId) { const m = find(_pmChatEditId); if (m && m.parentId) return _pmChatTopicOf(m); }
+  return _pmChatTopicPick;
+}
+function _pmChatTopicLocked() {
+  if (_pmChatReplyTo) return true;                       // a reply follows its thread
+  const m = _pmChatEditId ? (_HR.pm_chat || []).find(x => x.id === _pmChatEditId) : null;
+  return !!(m && m.parentId);
+}
+/* Reading a topic arms the composer for it. This is the whole trick: filing happens as a by-product
+   of looking, with no extra tap and no decision — tap Safety, type, send, and it landed in Safety. */
+function pmChatTopicSet(k) { _pmChatTopic = k; if (!_pmChatReplyTo && !_pmChatEditId) _pmChatTopicPick = k === '__all' ? '' : k; pmRenderChat(_pmPid()); }
+function pmChatTopicPickSet(k) { _pmChatTopicPick = k; }
 let _pmChatMentions = [];   // {empId,name} actually picked for the next message
 /* Who can be mentioned: the people ON THIS PROJECT — its Team rows and its Project Manager. Nobody
    else, managers included. A manager can read every conversation, but @ is a summons, and summoning
@@ -16951,7 +17076,11 @@ async function pmChatReact(id, enc) {
   const who = r[e] || [];
   r[e] = who.indexOf(me) >= 0 ? who.filter(x => x !== me) : who.concat([me]);
   try {
-    const res = await tkApi('/api/coll/pm_chat/' + id, { method: 'PATCH', body: { ...m, reactions: r } });
+    // `topic` is deliberately dropped: this local copy can be 45s stale, and if the PM re-filed the
+    // message meanwhile, echoing the old value back reads as a move somebody is not allowed to make
+    // and the thumbs-up gets refused for a reason nobody could work out.
+    const { topic: _drop, ...mNoTopic } = m;
+    const res = await tkApi('/api/coll/pm_chat/' + id, { method: 'PATCH', body: { ...mNoTopic, reactions: r } });
     const k = (_HR.pm_chat || []).findIndex(x => x.id === id); if (k >= 0) _HR.pm_chat[k] = res.item;
     pmRenderChat(_pmPid());
   } catch (err) { toast(_errMsg(err), 'error', 4000); }
@@ -16981,15 +17110,21 @@ async function pmChatSend() {
       const ex = (_HR.pm_chat || []).find(x => x.id === _pmChatEditId) || {};
       // The server accepts nothing but the words — author, time and project are pinned from the
       // stored row — so sending the whole object back is safe and keeps _rev for the If-Match check.
-      const res = await tkApi('/api/coll/pm_chat/' + _pmChatEditId, { method: 'PATCH', body: { ...ex, body: text } });
+      const eb = { ...ex, body: text };
+      if (ex.parentId) delete eb.topic; else eb.topic = _pmChatPostTopic();   // editing a root can re-file it
+      const res = await tkApi('/api/coll/pm_chat/' + _pmChatEditId, { method: 'PATCH', body: eb });
       const k = (_HR.pm_chat || []).findIndex(x => x.id === _pmChatEditId); if (k >= 0) _HR.pm_chat[k] = res.item;
     } else {
       // A reply to a reply is re-pointed at the thread root: one level, so it stays readable on a phone.
       let parent = _pmChatReplyTo;
       const pm = parent ? (_HR.pm_chat || []).find(x => x.id === parent) : null;
       if (pm && pm.parentId) parent = pm.parentId;
-      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', body: text, attachments: _pmChatFiles_.slice(), mentions: _pmChatMentions.filter(x => text.indexOf('@' + x.name) >= 0) } });
+      const postTopic = parent ? '' : _pmChatPostTopic();       // a reply inherits; the server pins it
+      const res = await tkApi('/api/coll/pm_chat', { method: 'POST', body: { projectId: pid, parentId: parent || '', topic: postTopic, body: text, attachments: _pmChatFiles_.slice(), mentions: _pmChatMentions.filter(x => text.indexOf('@' + x.name) >= 0) } });
       (_HR.pm_chat = _HR.pm_chat || []).push(res.item);
+      // Follow your own message. Filing it into Safety while reading Cost would otherwise make it
+      // vanish the instant you sent it.
+      if (!parent && _pmChatTopic !== '__all' && _pmChatTopic !== postTopic) _pmChatTopic = postTopic;
     }
     pmChatCancel();
     pmRenderChat(pid);
@@ -18305,6 +18440,18 @@ const _VI = {
   /* Project Chat. */
   'Chat': 'Trao đổi',
   'Team Conversation': 'Trao đổi nhóm',
+  'Topic': 'Chủ đề', 'Move to': 'Chuyển sang', 'All': 'Tất cả',
+  'General': 'Chung',
+  'Site & installation': 'Công trường & lắp đặt',
+  'Drawings & design': 'Bản vẽ & thiết kế',
+  'Materials & delivery': 'Vật tư & giao hàng',
+  'QA/QC & commissioning': 'QA/QC & nghiệm thu',
+  'Safety (HSE)': 'An toàn (HSE)',
+  'Cost & variation': 'Chi phí & phát sinh',
+  'Programme & manpower': 'Tiến độ & nhân lực',
+  'Client & consultant': 'Chủ đầu tư & tư vấn',
+  'Choose where this message is filed.': 'Chọn nơi lưu tin nhắn này.',
+  'A reply follows the topic of its thread.': 'Câu trả lời theo chủ đề của luồng.',
   'unread': 'chưa đọc', 'mentioning you': 'nhắc đến bạn',
   'Mentioned in': 'Được nhắc đến trong', 'a project': 'một dự án',
   'message names you': 'tin nhắn nhắc đến bạn', 'messages name you': 'tin nhắn nhắc đến bạn',
