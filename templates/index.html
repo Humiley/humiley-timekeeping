@@ -6765,11 +6765,13 @@ async function tkRenderOnboarding() {
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 10px">' +
       '<div style="font-size:14px;font-weight:800;color:var(--navy)">' + _t('Policy compliance') + '</div>' +
       // Same level the server enforces (HRDOC_MIN) and the same one the register's row actions use.
-      // Showing this to a manager who will be refused means they fill the whole form, attach the
-      // PDF, press Save and lose all of it to a 403.
+      // Showing this to a manager who will be refused means they fill the whole form, attach the PDF,
+      // press Save and lose all of it to a 403. Hiding it silently is its own trap, though — HR opens
+      // the page, the button is gone, and the feature looks broken. So say which it is.
       (_lvlRank(_userLevel) >= _lvlRank('management')
         ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
-        : '') +
+        : '<span style="font-size:11.5px;color:var(--text-light)">' +
+            _t('Publishing a company document needs Approver (Management) level — ask an administrator.') + '</span>') +
     '</div><div id="hr-docreg"></div><div id="hr-compliance"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
@@ -19786,6 +19788,7 @@ const _VI = {
   'That assignment is no longer there.': 'Bàn giao này không còn nữa.',
   'Returned': 'Đã trả', 'returned': 'đã trả', 'of': 'trong',
   'Exit sign-off record': 'Biên bản ký xác nhận nghỉ việc',
+  'Publishing a company document needs Approver (Management) level — ask an administrator.': 'Ban hành tài liệu công ty cần quyền Phê duyệt (Ban giám đốc) — vui lòng liên hệ quản trị viên.',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
