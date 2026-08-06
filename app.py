@@ -957,6 +957,12 @@ def _hrdoc_targets(doc, employees):
     return out
 
 
+def _hrdoc_has_file(doc):
+    """Whether there is actually something to read. A published record with no file is a title, and
+    nobody can honestly sign for a title — so it is neither chased nor signable until HR uploads it."""
+    return bool((doc or {}).get("file") or (doc or {}).get("fileUrl"))
+
+
 def _hrdoc_due(doc, emp):
     """The date this person's signature is due, as YYYY-MM-DD, or "" when the document sets no
     deadline.
@@ -971,6 +977,12 @@ def _hrdoc_due(doc, emp):
     if days <= 0:
         return ""
     pub = str(doc.get("effectiveFrom") or doc.get("ts") or "")[:10]
+    if len(pub) != 10:
+        # No publication date means we cannot say what the deadline is measured from. Falling through
+        # to the join date would make the document overdue for every existing employee the moment it
+        # appeared — a deadline invented out of nothing, then chased daily. Documents published
+        # through _coll_add always carry `ts`; this covers anything written before that.
+        return ""
     join = str((emp or {}).get("joinDate") or (emp or {}).get("onboardDate") or "")[:10]
     start = max([d for d in (pub, join) if len(d) == 10] or [""])
     if not start:
@@ -987,7 +999,11 @@ def _hrdoc_outstanding(today=None):
     One pass over both collections rather than a query per employee: this feeds the daily sweep and
     the compliance matrix, and on a 30-person company the whole thing is a few hundred pairs."""
     today = today or (datetime.utcnow() + timedelta(hours=7)).strftime("%Y-%m-%d")
-    docs = [d for d in db.list_collection("hrdocs") if not d.get("archived")]
+    # A document with no file attached is excluded: chasing somebody daily to sign a record they
+    # cannot open is how a compliance system teaches people to ignore it. HR sees those instead, on
+    # the register, as the ones still needing a file.
+    docs = [d for d in db.list_collection("hrdocs")
+            if not d.get("archived") and _hrdoc_has_file(d)]
     if not docs:
         return []
     emps = db.list_employees()
@@ -3567,6 +3583,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path.startswith("/api/hr/doc/") and path.endswith("/file"):
+            _did = path[len("/api/hr/doc/"):-len("/file")]
+            return self._guard(lambda u: self._hr_doc_file_ep(u, urllib.parse.unquote(_did)))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/exec/summary":
@@ -5618,6 +5637,9 @@ class Handler(BaseHTTPRequestHandler):
     # Every invtrack gate — read, status/sync/import, and coll add/update/delete — references this
     # single constant so the enforcement can never drift apart between sites.
     INVTRACK_MIN = "editor"
+    # Publishing a company document commits every employee to signing it and starts chasing them.
+    # That is a management act, not a line-manager one.
+    HRDOC_MIN = "management"
     READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager",
@@ -5760,6 +5782,24 @@ class Handler(BaseHTTPRequestHandler):
         # filter — tolerable for a task list, not for a channel where people write candidly about
         # contractors, clients and each other. Enforced here so it cannot be stepped around by calling
         # /api/coll/pm_chat directly. Manager level and above get everything, matching _pmSeeAll.
+        # Company documents. Two problems here, both invisible until real PDFs were attached:
+        #  - The audience rule ("All" / one department / named people) lived ONLY in the browser, so
+        #    any authenticated account could pull a document addressed to three named people.
+        #  - Every row carried the whole file inline as base64. Six 8 MB policies is ~64 MB down the
+        #    wire on every Onboarding render and every My Dashboard load, on a phone, on 4G.
+        # The list now carries metadata only; the bytes come from /api/hr/doc/<id>/file, which
+        # re-checks the audience. Manager level and above see every document — they run the register.
+        if name == "hrdocs":
+            if self._level_rank(lvl) < self._level_rank("manager"):
+                # Reuse _hrdoc_targets against a one-element list rather than re-implementing the
+                # audience rule: a second copy of it is a second thing to keep in step with the
+                # browser, and the reminder sweep already depends on this one being right.
+                me = next((e for e in db.list_employees() if e.get("id") == u.get("id")), None) or {
+                    "id": u.get("id") or "", "name": u.get("name") or "",
+                    "dept": u.get("dept") or u.get("department") or "", "status": "Active"}
+                items = [it for it in items
+                         if not it.get("archived") and _hrdoc_targets(it, [me])]
+            items = [dict(it, file="", hasFile=_hrdoc_has_file(it)) for it in items]
         if name == "pm_chat":
             vis = self._pm_visible_projects(u)
             if vis is not None:
@@ -6354,6 +6394,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
+        # A company policy is chased from every employee and signed against. The only gate used to be
+        # `role == "manager"`, which let any line manager publish an audience=All document — and
+        # locked out an Admin whose employee role is not literally "manager".
+        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
+            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -6411,10 +6456,27 @@ class Handler(BaseHTTPRequestHandler):
         # and the document version are stamped from the session and the published record — a browser
         # that could choose them could sign a policy in somebody else's name, or backdate a signature
         # to before an incident.
+        # When a document was published, and by whom. Nothing recorded either before, and the due
+        # date depends on it: _hrdoc_due takes the later of publication and the person's start date,
+        # so with no publication date it collapses to the join date and every existing employee is
+        # overdue the moment the document appears. Deletion was audited; publication was not.
+        if name == "hrdocs":
+            item["ts"] = self._utc_now()
+            item["publishedBy"] = u.get("name") or ""
+            item["publishedById"] = u.get("id") or ""
+            item.pop("updatedBy", None)
+            item.pop("updatedAt", None)
         if name == "hrdoc_acks":
             _doc = db.get_collection_item("hrdocs", str(item.get("docId") or "")) or {}
             if not _doc:
                 return self._err("That document is no longer published.", 404)
+            # You cannot have read a document that has no body. The acknowledgement PDF says in so
+            # many words "I have received and read this document" — signing one for an empty record
+            # produces a false statement on a controlled form, and the compliance matrix then reports
+            # it green. The browser hides the button; this is the gate that cannot be walked past.
+            if not (_doc.get("file") or _doc.get("fileUrl")):
+                return self._err("That document has no file attached yet — there is nothing to read. "
+                                 "HR needs to upload it before it can be signed.", 409)
             item["empId"] = u.get("id") or ""
             item["name"] = u.get("name") or ""
             item["ts"] = self._utc_now_ms()
@@ -6561,8 +6623,31 @@ class Handler(BaseHTTPRequestHandler):
                              _txt[:160], _url, "pmchat-" + str(_created.get("projectId") or ""))
             except Exception:
                 pass                                                   # a chat post must never fail on a push
+        if name == "hrdocs":
+            self._audit_hrdoc(u, "Published document", _created)
         self._finsp_file(name, _created)
         return self._json({"ok": True, "item": _created})
+
+    def _audit_hrdoc(self, u, action, doc):
+        """Record a change to a company document in the tamper-evident chain.
+
+        Destruction was already logged and creation was not, which is the asymmetry that matters
+        least for accidents and most for arguments: 'who changed this policy after people signed it'
+        had no answer."""
+        try:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": action,
+                "target": "hrdocs/" + str((doc or {}).get("id") or ""),
+                "detail": " ".join(x for x in [
+                    (doc or {}).get("code") or "", (doc or {}).get("title") or "",
+                    ("v" + str((doc or {}).get("version"))) if (doc or {}).get("version") else "",
+                    "audience=" + str((doc or {}).get("audience") or "All"),
+                    "file=" + ("yes" if ((doc or {}).get("file") or (doc or {}).get("fileUrl")) else "NO"),
+                ] if x)[:400],
+                "ts": self._utc_now()})
+        except Exception:
+            pass                       # the document is published; a failed audit write must not undo it
 
     @staticmethod
     def _finsp_file(name, created):
@@ -6862,10 +6947,22 @@ class Handler(BaseHTTPRequestHandler):
                 doc = db.put_collection_item("hrdocs", {
                     "title": title, "code": code, "version": "1.0", "category": cat,
                     "audience": "All", "dueDays": 0,
-                    "summary": "Migrated from the portal's built-in policy list. Upload the controlled "
-                               "PDF and re-issue at a new version to collect signatures.",
+                    # `summary` is labelled "Short summary shown to the employee" and is rendered on
+                    # their card and above the signature block. HR's own to-do belongs in hrNote,
+                    # which only the register reads — everybody in the company was being shown
+                    # "Upload the controlled PDF and re-issue at a new version".
+                    "summary": "",
+                    "hrNote": "Migrated from the portal's built-in policy list. Attach the controlled "
+                              "PDF, then re-issue at a new version to collect real signatures.",
                     "migrated": True, "ts": self._utc_now()})
                 made += 1
+            elif doc.get("migrated") and str(doc.get("summary") or "").startswith("Migrated from the portal"):
+                # Repair the records already published with HR's note in the employee-facing field.
+                doc = db.put_collection_item("hrdocs", dict(
+                    doc, summary="",
+                    hrNote=doc.get("hrNote") or "Migrated from the portal's built-in policy list. "
+                                                "Attach the controlled PDF, then re-issue at a new "
+                                                "version to collect real signatures."))
             code_by_title[title] = doc
         have = {(a.get("docId"), a.get("empId"), str(a.get("docVersion") or ""))
                 for a in db.list_collection("hrdoc_acks")}
@@ -6919,25 +7016,51 @@ class Handler(BaseHTTPRequestHandler):
         for d in docs:
             ver = str(d.get("version") or "")
             targets = _hrdoc_targets(d, emps)
+            has_file = _hrdoc_has_file(d)
             signed = 0
             for e in targets:
                 a = acks.get((d.get("id"), e.get("id"), ver))
                 due = _hrdoc_due(d, e)
                 if a:
                     signed += 1
+                # "nofile" is HR's problem, not the employee's — showing it as overdue would put a red
+                # mark against a person for not signing something nobody gave them.
+                state = "signed" if a else ("nofile" if not has_file
+                                           else ("overdue" if (due and due < today) else "outstanding"))
                 rows.append({
                     "docId": d.get("id"), "docTitle": d.get("title") or "", "docCode": d.get("code") or "",
                     "version": ver, "empId": e.get("id"), "name": e.get("name") or "",
-                    "dept": e.get("dept") or "", "due": due,
-                    "state": "signed" if a else ("overdue" if (due and due < today) else "outstanding"),
+                    "dept": e.get("dept") or "", "due": due, "state": state,
                     "signedOn": (a or {}).get("ts", ""), "filed": bool((a or {}).get("webUrl")),
                 })
             doc_stats.append({"id": d.get("id"), "title": d.get("title") or "", "code": d.get("code") or "",
                               "version": ver, "required": len(targets), "signed": signed,
+                              "hasFile": has_file,
                               "pct": (round(signed * 100.0 / len(targets)) if targets else 100)})
         return self._json({"ok": True, "rows": rows, "docs": doc_stats,
                            "employees": [{"id": e.get("id"), "name": e.get("name") or "",
                                           "dept": e.get("dept") or ""} for e in emps]})
+
+    def _hr_doc_file_ep(self, u, doc_id):
+        """The bytes of one published document, for somebody it is actually addressed to.
+
+        The list endpoint deliberately ships metadata only — six real policy PDFs inline is tens of
+        megabytes on every Onboarding render. This is where the file comes from, and it re-checks the
+        audience rather than trusting that the caller only asked for what the list showed them."""
+        doc = db.get_collection_item("hrdocs", str(doc_id or "")) or {}
+        if not doc:
+            return self._err("That document is no longer published.", 404)
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            me = next((e for e in db.list_employees() if e.get("id") == u.get("id")), None) or {
+                "id": u.get("id") or "", "name": u.get("name") or "",
+                "dept": u.get("dept") or u.get("department") or "", "status": "Active"}
+            if doc.get("archived") or not _hrdoc_targets(doc, [me]):
+                return self._err("That document is not addressed to you.", 403)
+        if not _hrdoc_has_file(doc):
+            return self._err("That document has no file attached yet.", 404)
+        return self._json({"ok": True, "id": doc.get("id"), "file": doc.get("file") or "",
+                           "fileUrl": doc.get("fileUrl") or "",
+                           "fileName": doc.get("fileName") or "document"})
 
     def _hr_remind_ep(self, u):
         """Send the outstanding-signature reminders now, instead of waiting for tomorrow."""
@@ -7173,6 +7296,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
+        # A company policy is chased from every employee and signed against. The only gate used to be
+        # `role == "manager"`, which let any line manager publish an audience=All document — and
+        # locked out an Admin whose employee role is not literally "manager".
+        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
+            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -7285,6 +7413,38 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "item": db.put_collection_item("padr", existing)})
         item = dict(body or {})
         item["id"] = iid
+        # PATCH here is a blind full overwrite, so the publication facts have to be carried across by
+        # hand or the first edit erases who published the document and when — and the due date, which
+        # is derived from that date, silently moves.
+        if name == "hrdocs":
+            _prev = db.get_collection_item(name, iid) or {}
+            if not _prev:
+                return self._err("That document is no longer published.", 404)
+            for _k in ("ts", "publishedBy", "publishedById"):
+                if _prev.get(_k) is not None:
+                    item[_k] = _prev.get(_k)
+            # List reads no longer carry the file bytes, so the edit form cannot send them back. A
+            # blind overwrite would therefore delete the attachment on any edit that did not re-upload
+            # it — the exact opposite of what "just fixing a typo" should do. Only an explicit
+            # removeFile flag clears it.
+            if item.get("removeFile"):
+                item["file"] = ""
+                item["fileName"] = ""
+            elif not item.get("file") and _prev.get("file"):
+                item["file"] = _prev.get("file")
+                item.setdefault("fileName", _prev.get("fileName") or "")
+                if not item.get("fileName"):
+                    item["fileName"] = _prev.get("fileName") or ""
+            item.pop("removeFile", None)
+            item.pop("hasFile", None)      # a derived read-only flag, never stored
+            item["updatedBy"] = u.get("name") or ""
+            item["updatedAt"] = self._utc_now()
+            # An edit that changes the version is a re-issue: it invalidates every signature, because
+            # acknowledgements are matched on (docId, empId, docVersion). That is a legitimate thing
+            # to do deliberately and a terrible thing to do by accident, so it is recorded as its own
+            # kind of event rather than folded into "updated".
+            _reissue = str(_prev.get("version") or "") != str(item.get("version") or "")
+            self._audit_hrdoc(u, "Re-issued document at a new version" if _reissue else "Updated document", item)
         if name.startswith("pm_"):
             existing = db.get_collection_item(name, iid)
             if existing:
@@ -7502,9 +7662,29 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
+        if name == "hrdocs" and self._level_rank(self._caller_level(u)) < self._level_rank(self.HRDOC_MIN):
+            return self._err("Company documents can only be published or changed at Approver (Management) level or above.", 403)
+        # A signed acknowledgement is the artefact this whole feature exists to produce — the thing an
+        # inspector asks for. hrdoc_acks is staff-writable and self-owned, so until now the signer
+        # could simply delete their own signature and the compliance matrix would show them as
+        # outstanding again, with nothing recording that a signature had ever existed.
+        if name == "hrdoc_acks":
+            return self._err("A signed acknowledgement is a permanent record and cannot be deleted. "
+                             "Re-issue the document at a new version if it has to be signed again.", 403)
         existing = db.get_collection_item(name, iid)
         if not existing:
             return self._err("Not found.", 404)
+        # Deleting a published document leaves every signature against it orphaned: the acks survive
+        # but nothing can reach them, because both the compliance matrix and the reminder sweep walk
+        # documents and look acks up by (docId, empId, version). Withdraw it instead — `archived` is
+        # honoured by all three readers.
+        if name == "hrdocs":
+            _acks = [a for a in db.list_collection("hrdoc_acks")
+                     if str(a.get("docId") or "") == str(iid)]
+            if _acks:
+                return self._err("%d person(s) have already signed this document, so deleting it would "
+                                 "orphan their signatures. Archive it instead — it stops being chased "
+                                 "and the signatures stay retrievable." % len(_acks), 409)
         is_admin = self._caller_level(u) == "admin"
         # A payroll adjustment in a FINALISED (closed) month is locked — it can't be deleted either.
         if name == "payadjust" and self._payperiod_finalised(existing.get("period")):

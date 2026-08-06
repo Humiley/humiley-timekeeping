@@ -6471,14 +6471,26 @@ let _hrComp = null, _hrCompDept = '';
 async function tkRenderCompliance() {
   const host = document.getElementById('hr-compliance'); if (!host) return;
   host.innerHTML = tkSkeleton();
+  // The documents themselves, not just the matrix. Without this _HR.hrdocs is empty on every HR
+  // screen — it was only ever loaded in My Space — so the review-date warning below could never
+  // fire, and any Edit button would open a blank form and save the record away to nothing.
+  try { await tkLoadColl('hrdocs'); } catch (e) { }
+  try { tkRenderDocRegister(); } catch (e) { }   // the register does not need the matrix to paint
   try { _hrComp = await tkApi('/api/hr/compliance'); }
   catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:var(--text-light)">' + _t('Could not load compliance.') + '</div>'; return; }
+  try { tkRenderDocRegister(); } catch (e) { }   // …then again, now the signed percentages are known
   const rows = (_hrComp.rows || []).filter(r => !_hrCompDept || r.dept === _hrCompDept);
   const docs = _hrComp.docs || [];
   const depts = [...new Set((_hrComp.employees || []).map(e => e.dept).filter(Boolean))].sort();
   const signed = rows.filter(r => r.state === 'signed').length;
   const overdue = rows.filter(r => r.state === 'overdue').length;
-  const pct = rows.length ? Math.round(signed / rows.length * 100) : 100;
+  // Compliance is measured over what people could actually sign. Counting documents HR has not
+  // uploaded yet drags the headline number down and reads as "the company is not complying", when
+  // the truth is "we have not issued it" — a different problem, with a different person to talk to.
+  // Those are surfaced on their own below, and on the register.
+  const signable = rows.filter(r => r.state !== 'nofile').length;
+  const blocked = rows.length - signable;
+  const pct = signable ? Math.round(signed / signable * 100) : 100;
 
   // Per-employee rows, worst first — the chase list.
   const byEmp = {};
@@ -6489,6 +6501,12 @@ async function tkRenderCompliance() {
                  || String(a.name).localeCompare(String(b.name)));
 
   const dot = c => {
+    // 'nofile' is HR's job, not the employee's — a hollow ring, not an amber or red mark against a
+    // person who was never given anything to read.
+    if (c.state === 'nofile') {
+      return '<td style="text-align:center" title="' + _tkEscA(c.docTitle + ' — ' + _t('No file attached yet — nobody can sign this')) + '">' +
+        '<span style="display:inline-block;width:11px;height:11px;border-radius:50%;border:2px solid var(--text-light);box-sizing:border-box"></span></td>';
+    }
     const bg = c.state === 'signed' ? 'var(--emerald)' : c.state === 'overdue' ? 'var(--danger,#C0392B)' : '#F59E0B';
     const lab = c.state === 'signed' ? _t('Signed') + ' ' + tkFmtDate(String(c.signedOn || '').slice(0, 10))
               : c.state === 'overdue' ? _t('Overdue since') + ' ' + c.due
@@ -6501,9 +6519,11 @@ async function tkRenderCompliance() {
     _hrKpiRow([
       _kpiTile(_t('Compliance'), pct + '%', pct >= 95 ? '#00B060' : pct >= 80 ? '#F59E0B' : '#C0392B', '<polyline points="20 6 9 17 4 12"/>'),
       _kpiTile(_t('Signed'), signed, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
-      _kpiTile(_t('Outstanding'), rows.length - signed, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
+      _kpiTile(_t('Outstanding'), signable - signed, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
       _kpiTile(_t('Overdue'), overdue, overdue ? '#C0392B' : '#8A94A6', '<path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/>')
     ]) +
+    (blocked ? '<div style="font-size:12px;color:var(--text-light);margin:-6px 0 12px">' +
+      blocked + ' ' + _t('signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.') + '</div>' : '') +
     '<div class="card" style="padding:0;overflow:hidden">' +
       '<div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
         '<div class="card-title">' + _t('Who has signed what') + '</div>' +
@@ -6539,8 +6559,12 @@ async function tkRenderCompliance() {
 /* One-time: republish the six policies that used to be hardcoded, and carry their tick-box
    acknowledgements across as LEGACY records — no invented signature. Idempotent. */
 async function tkPolicyMigrate() {
-  if (!await tkConfirm(_t('Import the six built-in policies and their existing tick-box acknowledgements?'),
-      { body: _t('The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.'), ok: _t('Import') })) return;
+  // tkConfirm takes ONE options object — the second argument was silently discarded, so the warning
+  // that these are tick-box records rather than signatures was never actually shown to anybody.
+  if (!await tkConfirm({
+    title: _t('Import the six built-in policies and their existing tick-box acknowledgements?'),
+    body: _t('The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.'),
+    confirmText: _t('Import') })) return;
   try {
     const r = await tkApi('/api/hr/policy-migrate', { method: 'POST', body: {} });
     toast(_t('Imported') + ': ' + r.documents + ' ' + _t('documents') + ', ' + r.acknowledgements + ' ' + _t('acknowledgements') + '.');
@@ -6565,7 +6589,10 @@ function tkCompExport() {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const csv = [head.map(q).join(',')].concat(rows.map(r => [
     r.empId, r.name, r.dept, r.docCode, r.docTitle, r.version,
-    r.state === 'signed' ? 'Signed' : r.state === 'overdue' ? 'Overdue' : 'Outstanding',
+    // 'nofile' must not read as "Outstanding" — this file is what gets handed to an auditor, and
+    // that would put a person down as failing to sign a document nobody ever gave them.
+    r.state === 'signed' ? 'Signed' : r.state === 'overdue' ? 'Overdue'
+      : r.state === 'nofile' ? 'No file attached — cannot be signed' : 'Outstanding',
     r.due || '', String(r.signedOn || '').slice(0, 10), r.filed ? 'Yes' : 'No'
   ].map(q).join(','))).join('\r\n');
   // BOM so Excel reads the Vietnamese names as UTF-8 instead of mojibake.
@@ -6575,6 +6602,134 @@ function tkCompExport() {
   a.download = 'Humiley_policy_compliance_' + _today() + '.csv';
   document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+/* ── The published documents themselves ───────────────────────────────────────
+   The compliance matrix answers "who has signed what". It could not answer "what did we publish,
+   does it have a file, and who keeps it current" — and there was no way to open a published record
+   at all, so a document published without its PDF stayed that way forever while chasing everybody
+   to sign it. This is that register. */
+let _hrDocsShowArchived = false;
+
+function _hrDocSigned(d) {
+  const s = ((_hrComp || {}).docs || []).find(x => x.id === d.id);
+  return s ? { pct: s.pct, signed: s.signed, required: s.required } : null;
+}
+/* Whether there is actually something to read. Never d.file alone — list reads deliberately no longer
+   carry the bytes, only a hasFile flag.
+
+   hasFile is the SERVER's answer and wins outright when present, including when it is false. Falling
+   through to `|| d.fileName` there would let a record that has a filename but no bytes claim it had a
+   file: the browser would offer "Read & sign" and the save would come back 409. Only a record with no
+   hasFile property at all (written before this existed) falls back to its own fields. */
+function _hrDocHasFile(d) {
+  if (!d) return false;
+  if (typeof d.hasFile === 'boolean') return d.hasFile || !!d.fileUrl;
+  return !!(d.fileUrl || d.file);
+}
+
+function tkRenderDocRegister() {
+  const host = document.getElementById('hr-docreg'); if (!host) return;
+  const all = (_HR.hrdocs || []).slice()
+    .sort((a, b) => String(a.code || a.title || '').localeCompare(String(b.code || b.title || '')));
+  const docs = all.filter(d => _hrDocsShowArchived ? d.archived : !d.archived);
+  const nArch = all.filter(d => d.archived).length;
+  const noFile = all.filter(d => !d.archived && !_hrDocHasFile(d)).length;
+  const canEdit = _lvlRank(_userLevel) >= _lvlRank('management');
+
+  const row = d => {
+    const has = _hrDocHasFile(d);
+    const st = _hrDocSigned(d);
+    const nr = _onbNextReview(d), rDue = nr && nr < _today();
+    return '<tr' + (has ? '' : ' style="background:var(--soft-bg)"') + '>' +
+      '<td><div style="font-weight:650;color:var(--navy)">' + _crmEsc(d.title || '(untitled)') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' +
+          [d.code, d.category].filter(Boolean).map(_crmEsc).join(' · ') + '</div></td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _crmEsc(d.version || '—') + '</td>' +
+      '<td>' + (has
+        ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px" onclick="tkOnbOpen(\'' + d.id + '\')">' +
+            tkIcon('file', 11) + ' ' + _crmEsc(d.fileName || _t('Open')) + '</button>'
+        : '<span class="badge b-danger" style="font-size:10px">' + _t('No file attached') + '</span>') + '</td>' +
+      '<td style="font-size:12px">' + _crmEsc(d.audience === 'Department' ? (d.dept || _t('Department'))
+        : d.audience === 'Selected' ? _t('Selected people') : _t('Everyone')) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:12px">' +
+        (parseInt(d.dueDays, 10) > 0 ? (parseInt(d.dueDays, 10) + ' ' + _t('days'))
+          : '<span style="color:var(--text-light)" title="' + _tkEscA(_t('No deadline, so this document is never chased.')) + '">' + _t('none') + '</span>') + '</td>' +
+      '<td style="font-size:12px">' + (_crmEsc(d.owner || '') || '<span style="color:var(--text-light)">—</span>') + '</td>' +
+      '<td style="font-size:12px">' + (nr
+        ? (rDue ? '<span style="color:var(--danger,#C0392B);font-weight:600">⚠ ' + tkFmtDate(nr) + '</span>' : tkFmtDate(nr))
+        : '<span style="color:var(--text-light)">—</span>') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (st
+        ? '<span class="badge ' + (st.pct >= 95 ? 'b-ok' : st.pct >= 50 ? 'b-warn' : 'b-danger') + '" style="font-size:10px">' +
+            st.pct + '%</span><div style="font-size:10.5px;color:var(--text-light)">' + st.signed + ' / ' + st.required + '</div>'
+        : '<span style="color:var(--text-light)">—</span>') + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' + (canEdit
+        ? (has ? '' : '<button class="btn btn-primary btn-sm" style="font-size:10.5px;padding:5px 9px;margin-right:4px" onclick="tkQuickAdd(\'hrdocs\',\'' + d.id + '\')">' +
+              _t('Attach file') + '</button>') +
+          '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Edit')) + '" aria-label="' + _tkEscA(_t('Edit')) + '" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'hrdocs\',\'' + d.id + '\')">' + _PENCIL + '</button>' +
+          '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Re-issue at a new version')) + '" aria-label="' + _tkEscA(_t('Re-issue at a new version')) + '" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkDocReissue(\'' + d.id + '\')">' + tkIcon('refresh', 13) + '</button>' +
+          '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(d.archived ? _t('Restore') : _t('Archive — stop chasing it')) + '" aria-label="' + _tkEscA(d.archived ? _t('Restore') : _t('Archive')) + '" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkDocArchive(\'' + d.id + '\',' + (d.archived ? 'false' : 'true') + ')">' +
+            tkIcon(d.archived ? 'check' : 'inbox', 13) + '</button>'
+        : '') + '</td>' +
+    '</tr>';
+  };
+
+  host.innerHTML =
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:16px">' +
+      '<div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<div><div class="card-title">' + _t('Published documents') + '</div>' +
+          (noFile ? '<div style="font-size:11.5px;color:var(--danger,#C0392B);margin-top:2px">' +
+            noFile + ' ' + _t('document(s) have no file attached — nobody can read or sign them until you upload one.') + '</div>'
+            : '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' +
+              _t('Everything the company has published, and who keeps it current.') + '</div>') + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+          (nArch ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--text-light)" onclick="_hrDocsShowArchived=!_hrDocsShowArchived;tkRenderDocRegister()">' +
+            (_hrDocsShowArchived ? _t('Show current') : _t('Show archived') + ' (' + nArch + ')') + '</button>' : '') +
+        '</div></div>' +
+      (docs.length
+        ? '<div class="table-wrap"><table style="min-width:940px"><thead><tr>' +
+            '<th>' + _t('Document') + '</th><th>' + _t('Version') + '</th><th>' + _t('File') + '</th>' +
+            '<th>' + _t('Who must sign') + '</th><th>' + _t('Sign within') + '</th><th>' + _t('Owner') + '</th>' +
+            '<th>' + _t('Next review') + '</th><th style="text-align:right">' + _t('Signed') + '</th><th></th>' +
+          '</tr></thead><tbody>' + docs.map(row).join('') + '</tbody></table></div>'
+        : '<div style="padding:22px">' + tkEmpty(_hrDocsShowArchived ? 'Nothing archived' : 'No documents published yet',
+            { icon: 'file', sub: _hrDocsShowArchived ? 'Archived documents stop being chased but keep their signatures.'
+                                                     : 'Publish a document and everyone it applies to will be asked to sign it.' }) + '</div>') +
+    '</div>';
+}
+
+/* Re-issuing is a different act from correcting a typo: it invalidates every signature on the
+   document, because acknowledgements are matched on version. So it says so, and asks. */
+async function tkDocReissue(id) {
+  const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
+  const st = _hrDocSigned(d);
+  if (!(await tkConfirm({
+    title: _t('Re-issue at a new version?'),
+    body: _t('Everyone this applies to will be asked to sign again, against the new version.') +
+      (st && st.signed ? ' ' + st.signed + ' ' + _t('existing signature(s) stay on record against the old version.') : '') +
+      ' ' + _t('Change the version number and attach the new file in the form that follows.'),
+    confirmText: _t('Continue')
+  }))) return;
+  tkQuickAdd('hrdocs', id);
+}
+
+/* Withdraw a document without destroying it. Deleting one that people have signed would orphan
+   their signatures — the backend refuses that outright — so this is the way out. */
+async function tkDocArchive(id, on) {
+  const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
+  if (!(await tkConfirm({
+    title: on ? _t('Archive this document?') : _t('Restore this document?'),
+    body: on ? _t('It stops appearing in My Space and stops being chased. Signatures already given stay on record and it can be restored at any time.')
+             : _t('It goes back to everyone it applies to, and anyone who has not signed the current version will be asked again.'),
+    confirmText: on ? _t('Archive') : _t('Restore')
+  }))) return;
+  try {
+    const res = await tkApi('/api/coll/hrdocs/' + id, { method: 'PATCH', body: { ...d, archived: !!on } });
+    const i = (_HR.hrdocs || []).findIndex(x => x.id === id); if (i >= 0) _HR.hrdocs[i] = res.item;
+    tkCollInvalidate('hrdocs');
+    toast(on ? _t('Archived.') : _t('Restored.'));
+    tkRenderCompliance();
+  } catch (e) { toast(_t('Could not update that document') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 async function tkRenderOnboarding() {
@@ -6609,8 +6764,13 @@ async function tkRenderOnboarding() {
     // person properly onboarded".
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 10px">' +
       '<div style="font-size:14px;font-weight:800;color:var(--navy)">' + _t('Policy compliance') + '</div>' +
-      '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>' +
-    '</div><div id="hr-compliance"></div>';
+      // Same level the server enforces (HRDOC_MIN) and the same one the register's row actions use.
+      // Showing this to a manager who will be refused means they fill the whole form, attach the
+      // PDF, press Save and lose all of it to a 403.
+      (_lvlRank(_userLevel) >= _lvlRank('management')
+        ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
+        : '') +
+    '</div><div id="hr-docreg"></div><div id="hr-compliance"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
 /* Probation milestone strip with computed due dates + status select. */
@@ -9116,10 +9276,17 @@ async function tkRenderMyOnboarding() {
   const docs = _onbForMe(me);
   const done = docs.filter(d => _onbAck(d.id, d.version));
   const todo = docs.filter(d => !_onbAck(d.id, d.version));
+  // "To sign" must mean "things you can actually do". Counting documents with no file attached told
+  // six people they had six jobs and gave them no way to finish any of them.
+  const actionable = todo.filter(_hrDocHasFile);
 
   const card = d => {
     const a = _onbAck(d.id, d.version);
-    const file = !!d.fileName;
+    // hasFile is the server's answer (list reads no longer carry the bytes); the rest are fallbacks
+    // for records written before that. fileName alone used to gate the Open button while the sign
+    // button was gated on nothing — so a document with no file offered "Read & sign" and no way to
+    // read. You cannot have read what was never uploaded.
+    const file = _hrDocHasFile(d);
     return '<div class="card" style="padding:14px 16px;margin-bottom:10px' +
       (a ? '' : ';border-left:3px solid var(--warn,#F59E0B)') + '">' +
       '<div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:flex-start">' +
@@ -9136,9 +9303,13 @@ async function tkRenderMyOnboarding() {
             tkIcon('file', 12) + ' ' + _t('Open document') + '</button>' : '') +
           (a
             ? '<span class="badge b-ok" style="font-size:10px">' + tkIcon('check', 11) + ' ' + _t('Signed') + ' ' + tkFmtDate(String(a.ts || '').slice(0, 10)) + '</span>'
-            : '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="tkOnbSign(\'' + d.id + '\')">' + _t('Read & sign') + '</button>') +
+            : file
+              ? '<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="tkOnbSign(\'' + d.id + '\')">' + _t('Read & sign') + '</button>'
+              : '<span class="badge b-warn" style="font-size:10px">' + _t('Not available yet') + '</span>') +
         '</div>' +
       '</div>' +
+      (!a && !file ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' +
+        _t('HR has not attached the document yet. Nothing to do — you will be asked to sign once it is uploaded.') + '</div>' : '') +
       (a && a.webUrl ? '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' + tkIcon('check', 11) + ' ' +
         _t('Filed in your HR folder') + ' · <a href="' + _tkEscA(a.webUrl) + '" target="_blank" rel="noopener" style="color:var(--navy);font-weight:600">' + _t('Open') + '</a></div>' : '') +
     '</div>';
@@ -9146,12 +9317,12 @@ async function tkRenderMyOnboarding() {
 
   root.innerHTML =
     _hrKpiRow([
-      _kpiTile(_t('To sign'), todo.length, todo.length ? '#F59E0B' : '#00B060', '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+      _kpiTile(_t('To sign'), actionable.length, actionable.length ? '#F59E0B' : '#00B060', '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
       _kpiTile(_t('Signed'), done.length, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
       _kpiTile(_t('Assigned to me'), docs.length, '#205090', '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/>')
     ]) +
     (docs.length
-      ? (todo.length ? '<div style="font-size:12.5px;color:var(--text-light);margin:2px 0 10px">' +
+      ? (actionable.length ? '<div style="font-size:12.5px;color:var(--text-light);margin:2px 0 10px">' +
             _t('Please open each document, read it, and sign to confirm. Your signature is filed in your HR record.') + '</div>' : '') +
         todo.map(card).join('') +
         (done.length ? '<div style="font-size:12px;font-weight:700;color:var(--text-light);margin:16px 0 8px;text-transform:uppercase;letter-spacing:.04em">' +
@@ -9160,17 +9331,38 @@ async function tkRenderMyOnboarding() {
           sub: 'Company documents that need your signature will appear here.' }));
 }
 
-function tkOnbOpen(id) {
+/* The list endpoint carries metadata only — six real policy PDFs inline is tens of megabytes on
+   every render — so the bytes are fetched here, for this one document, when somebody opens it. */
+/* Bytes fetched by tkOnbOpen, kept OUT of _HR.hrdocs on purpose. Writing them back onto the shared
+   record would undo the point of stripping them: the edit form seeds its hidden input from that
+   record, so a document somebody had merely opened would put a multi-megabyte data URI into an HTML
+   attribute and re-upload the whole file on a one-word edit. */
+let _onbFileCache = {};
+async function tkOnbOpen(id) {
   const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
   if (d.fileUrl) { window.open(d.fileUrl, '_blank', 'noopener'); return; }   // filed in SharePoint
-  if (d.file) { _tkPreviewUrl(d.file, d.fileName || 'document'); return; }
-  toast(_t('That file is no longer available.'), 'warn');
+  if (d.file) { _tkPreviewUrl(d.file, d.fileName || 'document'); return; }   // already in hand
+  if (_onbFileCache[id]) { _tkPreviewUrl(_onbFileCache[id], d.fileName || 'document'); return; }
+  if (!_hrDocHasFile(d)) { toast(_t('That document has no file attached yet.'), 'warn'); return; }
+  try {
+    const r = await tkApi('/api/hr/doc/' + encodeURIComponent(id) + '/file');
+    if (r.fileUrl) { window.open(r.fileUrl, '_blank', 'noopener'); return; }
+    if (!r.file) { toast(_t('That file is no longer available.'), 'warn'); return; }
+    _onbFileCache[id] = r.file;
+    _tkPreviewUrl(r.file, r.fileName || d.fileName || 'document');
+  } catch (e) { toast(_t('Could not open that document') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
 /* Read-and-sign. The signature pad is the same one the asset handover uses — a drawn signature, not
    a checkbox, because this is the artefact an auditor or a labour inspector asks to see. */
 function tkOnbSign(id) {
   const d = (_HR.hrdocs || []).find(x => x.id === id); if (!d) return;
+  // The card hides the button; this catches a stale render. The certification below says "I have
+  // received and read this document" — it must not be signable with nothing behind it.
+  if (!_hrDocHasFile(d)) {
+    toast(_t('HR has not attached the document yet, so there is nothing to read.'), 'warn', 5000);
+    return;
+  }
   const me = _tkMe() || {};
   document.getElementById('onbSignOverlay')?.remove();
   const el = document.createElement('div');
@@ -9208,40 +9400,52 @@ async function tkOnbSignSave(id) {
   const img = _sigPadImage('onb-sigpad');
   if (!img) { toast(_t('Please sign to confirm you have read this document.'), 'warn'); return; }
   const btn = document.getElementById('onb-sign-go'); if (btn) btn.disabled = true;
+  // The row is stamped server-side — who, when and which VERSION — so the browser cannot sign for
+  // somebody else or against a document it edited on the way past.
+  const body = { docId: d.id, signature: img, method: 'signature',
+                 meaning: 'Read and understood — ' + (d.title || '') };
+  // Contract grade is signed through the PIN path so it lands in the tamper-evident chain. The row
+  // is CREATED BY that path, not before it: writing the acknowledgement first and then opening the
+  // PIN dialog meant closing that dialog left the document marked signed, with no PIN behind it and
+  // nothing in the chain. tkESign verifies the PIN before it creates anything.
+  if (_onbIsContract(d)) {
+    document.getElementById('onbSignOverlay')?.remove();
+    tkESign({
+      createColl: 'hrdoc_acks', createBody: body,
+      meaning: 'Signed and agreed — ' + (d.title || '') + (d.version ? ' v' + d.version : ''),
+      onDone: async (item, created) => {
+        const ack = created || item; if (!ack) { tkRenderMyOnboarding(); return; }
+        (_HR.hrdoc_acks = _HR.hrdoc_acks || []).push(ack);
+        await _onbFileAck(d, me, ack, img);
+        tkRenderMyOnboarding();
+      } });
+    return;
+  }
   try {
-    // The row is stamped server-side — who, when and which VERSION — so the browser cannot sign for
-    // somebody else or against a document it edited on the way past.
-    const res = await tkApi('/api/coll/hrdoc_acks', { method: 'POST', body: {
-      docId: d.id, signature: img, method: 'signature',
-      meaning: 'Read and understood — ' + (d.title || '') } });
+    const res = await tkApi('/api/coll/hrdoc_acks', { method: 'POST', body: body });
     const ack = res.item;
     (_HR.hrdoc_acks = _HR.hrdoc_acks || []).push(ack);
     document.getElementById('onbSignOverlay')?.remove();
-    // Contract grade is signed AGAIN through the PIN path so it lands in the tamper-evident chain.
-    // The drawn signature stays on the record too: one is what it looked like, the other is what
-    // makes it provable.
-    if (_onbIsContract(d)) {
-      tkESign({ coll: 'hrdoc_acks', id: ack.id,
-        meaning: 'Signed and agreed — ' + (d.title || '') + (d.version ? ' v' + d.version : ''),
-        onDone: () => { toast(_t('Signed') + ' — ' + (d.title || '')); tkRenderMyOnboarding(); } });
-      return;
-    }
     toast(_t('Signed') + ' — ' + (d.title || ''));
-    // File it into this person's own HR folder. Best-effort and reported: the signature already
-    // stands in the portal, so a SharePoint problem must not look like a failed signing.
-    try {
-      const pdf = await _onbAckPdf(d, me, ack, img);
-      if (pdf) {
-        const r = await tkApi('/api/hr/onboarding/file', { method: 'POST', body: { ackId: ack.id, data: pdf } });
-        if (r.filed) { ack.webUrl = r.webUrl; toast(_t('Filed in your HR folder.')); }
-        else if (r.error) toast(_t('Signed. Not filed to SharePoint yet:') + ' ' + r.error, 'warn', 6000);
-      }
-    } catch (e2) { }
+    await _onbFileAck(d, me, ack, img);
     tkRenderMyOnboarding();
   } catch (e) {
     if (btn) btn.disabled = false;
     toast(_t('Could not save your signature') + ': ' + _errMsg(e), 'error', 5000);
   }
+}
+
+/* File the acknowledgement into this person's own HR folder. Best-effort and reported: the signature
+   already stands in the portal, so a SharePoint problem must not look like a failed signing. Shared
+   by both grades — an acknowledgement and a contract are filed the same way. */
+async function _onbFileAck(d, me, ack, img) {
+  try {
+    const pdf = await _onbAckPdf(d, me, ack, img);
+    if (!pdf) return;
+    const r = await tkApi('/api/hr/onboarding/file', { method: 'POST', body: { ackId: ack.id, data: pdf } });
+    if (r.filed) { ack.webUrl = r.webUrl; toast(_t('Filed in your HR folder.')); }
+    else if (r.error) toast(_t('Signed. Not filed to SharePoint yet:') + ' ' + r.error, 'warn', 6000);
+  } catch (e) { }
 }
 
 /* The acknowledgement itself, on the Humiley letterhead: what was signed, by whom, when, and the
@@ -10729,7 +10933,8 @@ async function tkRenderMySpaceOverview() {
     await Promise.all([tkLoadColl('hrdocs'), tkLoadColl('hrdoc_acks')]);
     const _onbMine = _onbForMe(me);
     _msOnbDone = _onbMine.filter(d => _onbAck(d.id, d.version)).length;
-    _msOnbTodo = _onbMine.length - _msOnbDone;
+    // Only what they can actually act on — a document HR has not uploaded yet is not a job for them.
+    _msOnbTodo = _onbMine.filter(d => !_onbAck(d.id, d.version) && _hrDocHasFile(d)).length;
   } catch (e) { }
 
   const kpis = _hrKpiRow([
@@ -13247,7 +13452,10 @@ async function tkRenderDashLevelBand() {
 
 /* Quick-add modal for the HR collections */
 const _QA_SPECS = {
-  hrdocs: { title: 'Publish a document to sign', coll: 'hrdocs', reload: 'recruitment', fields: [
+  // reload: 'onboarding' — the publish button lives on the Onboarding tab, so that is the view that
+  // has to redraw. It used to say 'recruitment', which redrew a tab nobody was looking at: the
+  // document saved fine and the screen never changed, which reads exactly like "it did not save".
+  hrdocs: { title: 'Publish a document to sign', coll: 'hrdocs', reload: 'onboarding', fields: [
     { k: 'title', label: 'Document title' },
     { k: 'code', label: 'Document code (e.g. HML-HR-001)' },
     { k: 'version', label: 'Version (e.g. 1.0)' },
@@ -13497,6 +13705,13 @@ function tkQuickAdd(type, id) {
   _qaType = type; _qaEditId = id || null;
   const spec = _QA_SPECS[type]; if (!spec) return;
   const ex = id ? (_HR[spec.coll] || []).find(x => x.id === id) : null;
+  // Editing seeds the form from the in-memory cache and saves { ...ex, ...data }. If the collection
+  // was never loaded, ex is undefined, every field renders blank and Save writes those blanks over
+  // a real record. Refuse instead — a form that cannot be filled correctly must not be openable.
+  if (id && !ex) {
+    toast(_t('That record is still loading — please try again in a moment.'), 'warn');
+    return;
+  }
   /* seed the multi-file store for type:'files' fields — keep existing files on edit
      (accepts the legacy single attachment/attachmentName shape too) */
   _qaFilesStore = {};
@@ -13575,16 +13790,36 @@ async function _qaReadFile(input, k) {
       }
     }
   }
-  if (f.size > TK_MAX_INLINE) { toast(_t('File too large') + ' (' + _t('max') + ' ' + TK_MAX_INLINE_MB + ' MB). ' + _t('Tip: link the project to SharePoint to store large files there.'), 'warn', 7000); input.value = ''; return; }
-  const r = new FileReader();
-  r.onload = async e => {
-    let url = e.target.result;
+  if (f.size > TK_MAX_INLINE) {
+    // Only mention SharePoint where there IS a project to link — an HR user publishing a company
+    // policy has none, and being told to link one is advice they cannot act on.
+    const _p = (typeof _pmProj === 'function') ? _pmProj() : null;
+    toast(_t('File too large') + ' (' + _t('max') + ' ' + TK_MAX_INLINE_MB + ' MB).' +
+      (_p ? ' ' + _t('Tip: link the project to SharePoint to store large files there.') : ''), 'warn', 7000);
+    input.value = ''; return;
+  }
+  // The read is recorded so Save can WAIT for it. It used to be fire-and-forget: choosing a PDF and
+  // pressing Save quickly stored file:'' and reported "Added successfully" — a published document
+  // with no document in it, and (before the register existed) no way to ever fix it.
+  if (info) info.textContent = _t('Reading file…');
+  _qaFileReads[k] = (async () => {
+    let url = await new Promise((done, fail) => {
+      const r = new FileReader();
+      r.onload = e => done(e.target.result);
+      r.onerror = () => fail(new Error('read failed'));
+      r.readAsDataURL(f);
+    });
     // Shrink photos so the asset register (and any image field) stays light — PDFs/other files pass through.
     if (/^data:image\//i.test(url)) { try { url = await _imgDownscale(url, 1000, 0.72); } catch (x) {} }
     if (v) v.value = url; if (n) n.value = f.name; if (info) info.textContent = 'Attached: ' + f.name;
-  };
-  r.readAsDataURL(f);
+  })();
+  try { await _qaFileReads[k]; }
+  catch (e) { if (info) info.textContent = ''; toast(_t('Could not read that file.'), 'error'); input.value = ''; }
+  finally { delete _qaFileReads[k]; }
 }
+/* In-flight single-file reads, keyed by field. tkQuickAddSave awaits these before it collects
+   values — the multi-file path has always awaited its reads; this one never did. */
+let _qaFileReads = {};
 /* ── Multi-file quick-add fields (type:'files') — e.g. Site Daily/Weekly Reports where each
    contractor submits their own file. Each file uploads to the project SharePoint folder when
    linked (link kept in DB); otherwise stored as an in-DB data URL. Persisted as attachments[]. */
@@ -13656,6 +13891,10 @@ async function _qaReadFiles(input, k) {
 }
 async function tkQuickAddSave() {
   const spec = _QA_SPECS[_qaType]; if (!spec) return;
+  // A file chosen a moment ago may still be being read. Collecting values now would take the empty
+  // hidden input and save a record with no attachment, cheerfully.
+  const _pending = Object.keys(_qaFileReads).map(k => _qaFileReads[k]);
+  if (_pending.length) { try { await Promise.all(_pending); } catch (e) { } }
   const data = {};
   spec.fields.forEach(f => {
     if (f.type === 'files') {   // multi-file: persist the list + mirror the first file into the legacy single-attachment fields
@@ -19350,6 +19589,34 @@ const _VI = {
   'Company documents you need to read and sign are in Onboarding, where your signature is recorded and filed in your HR folder.': 'Tài liệu công ty cần đọc và ký nằm ở mục Hội nhập, nơi chữ ký của bạn được ghi nhận và lưu vào hồ sơ nhân sự.',
   'Import the six built-in policies and their existing tick-box acknowledgements?': 'Nhập sáu chính sách có sẵn và các xác nhận tick trước đây?',
   'The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.': 'Bản ghi cũ được giữ lại và ghi rõ là xác nhận tick, không phải chữ ký. Sau đó hãy ban hành lại phiên bản mới để thu chữ ký thật.',
+  // Published-documents register + the "no file attached yet" states
+  'Published documents': 'Tài liệu đã ban hành',
+  'Everything the company has published, and who keeps it current.': 'Tất cả tài liệu công ty đã ban hành và người phụ trách cập nhật.',
+  'document(s) have no file attached — nobody can read or sign them until you upload one.': 'tài liệu chưa có tệp đính kèm — chưa ai đọc hoặc ký được cho đến khi bạn tải tệp lên.',
+  'Document': 'Tài liệu', 'Version': 'Phiên bản', 'Who must sign': 'Ai phải ký',
+  'Sign within': 'Hạn ký', 'Next review': 'Rà soát kế tiếp', 'days': 'ngày', 'none': 'không có',
+  'Everyone': 'Tất cả nhân viên', 'Selected people': 'Người được chọn',
+  'No deadline, so this document is never chased.': 'Không có hạn ký nên tài liệu này không bao giờ được nhắc.',
+  'No file attached yet — nobody can sign this': 'Chưa đính kèm tệp — chưa ai ký được',
+  'Attach file': 'Đính kèm tệp', 'Show archived': 'Xem đã lưu trữ', 'Show current': 'Xem đang hiệu lực',
+  'Archive': 'Lưu trữ', 'Archive — stop chasing it': 'Lưu trữ — ngừng nhắc ký',
+  'Restore': 'Khôi phục', 'Archived.': 'Đã lưu trữ.', 'Restored.': 'Đã khôi phục.',
+  'Archive this document?': 'Lưu trữ tài liệu này?', 'Restore this document?': 'Khôi phục tài liệu này?',
+  'It stops appearing in My Space and stops being chased. Signatures already given stay on record and it can be restored at any time.': 'Tài liệu sẽ không còn hiển thị ở Không gian của tôi và không bị nhắc ký nữa. Các chữ ký đã có vẫn được lưu và có thể khôi phục bất cứ lúc nào.',
+  'It goes back to everyone it applies to, and anyone who has not signed the current version will be asked again.': 'Tài liệu sẽ hiển thị lại với mọi người thuộc phạm vi áp dụng, và ai chưa ký phiên bản hiện tại sẽ được nhắc ký.',
+  'Re-issue at a new version': 'Ban hành phiên bản mới', 'Re-issue at a new version?': 'Ban hành phiên bản mới?',
+  'Everyone this applies to will be asked to sign again, against the new version.': 'Mọi người thuộc phạm vi áp dụng sẽ được yêu cầu ký lại theo phiên bản mới.',
+  'existing signature(s) stay on record against the old version.': 'chữ ký hiện có vẫn được lưu theo phiên bản cũ.',
+  'Change the version number and attach the new file in the form that follows.': 'Hãy đổi số phiên bản và đính kèm tệp mới ở biểu mẫu tiếp theo.',
+  'Could not update that document': 'Không cập nhật được tài liệu',
+  'Could not open that document': 'Không mở được tài liệu',
+  'That document has no file attached yet.': 'Tài liệu này chưa được đính kèm tệp.',
+  'Not available yet': 'Chưa sẵn sàng',
+  'HR has not attached the document yet. Nothing to do — you will be asked to sign once it is uploaded.': 'Nhân sự chưa đính kèm tài liệu. Bạn chưa cần làm gì — bạn sẽ được yêu cầu ký khi tệp được tải lên.',
+  'HR has not attached the document yet, so there is nothing to read.': 'Nhân sự chưa đính kèm tài liệu nên chưa có gì để đọc.',
+  'That record is still loading — please try again in a moment.': 'Bản ghi đang được tải — vui lòng thử lại sau giây lát.',
+  'Reading file…': 'Đang đọc tệp…', 'Could not read that file.': 'Không đọc được tệp này.',
+  'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
   'Effective': 'Hiệu lực từ', 'Due': 'Hạn', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',

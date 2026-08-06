@@ -11,8 +11,11 @@ import db
 
 
 def _doc(api, tokens, **kw):
+    # A published document carries a file. One without is a title nobody can read, and signing for
+    # it is refused — see test_a_document_with_no_file_cannot_be_signed.
     body = {"title": "Employee Handbook", "code": "HML-HR-001", "version": "1.0",
-            "category": "Handbook", "audience": "All"}
+            "category": "Handbook", "audience": "All",
+            "file": "data:application/pdf;base64,JVBERi0xLjQK", "fileName": "handbook.pdf"}
     body.update(kw)
     st, b = api("POST", "/api/coll/hrdocs", tokens["admin"], body)
     assert st == 200, b
@@ -266,9 +269,27 @@ def test_the_onboarding_module_is_actually_wired_up():
     with open(idx, encoding="utf-8") as fh:
         src = fh.read()
     for fn in ("tkRenderMyOnboarding", "tkOnbSign", "tkOnbSignSave", "tkOnbOpen",
-               "_onbForMe", "_onbAck", "_onbAckPdf", "tkRenderCompliance", "tkCompExport",
-               "tkCompRemind", "tkPolicyMigrate"):
+               "_onbForMe", "_onbAck", "_onbAckPdf", "_onbFileAck", "tkRenderCompliance",
+               "tkCompExport", "tkCompRemind", "tkPolicyMigrate",
+               "tkRenderDocRegister", "tkDocArchive", "tkDocReissue", "_hrDocHasFile",
+               "_hrDocSigned"):
         assert ("function " + fn) in src, "%s is referenced but no longer defined" % fn
     # And the wiring that reaches them.
     assert "'myonboarding'" in src and "myonboarding-root" in src
     assert "id=\"hr-compliance\"" in src, "the compliance view has no host element"
+    assert "id=\"hr-docreg\"" in src, "the published-documents register has no host element"
+
+
+def test_a_published_document_can_be_opened_for_editing():
+    """The register's whole reason to exist: before it, `hrdocs` was the one compliance-critical
+    collection with no edit affordance anywhere, so a document published without its PDF stayed that
+    way for good. tkQuickAdd's second argument is what puts the form in edit mode."""
+    import os
+    idx = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                       "templates", "index.html")
+    with open(idx, encoding="utf-8") as fh:
+        src = fh.read()
+    assert "tkQuickAdd(\\'hrdocs\\',\\'" in src, "no edit-mode call site for hrdocs"
+    # And the form has to redraw the tab the button lives on, or a successful save looks like a
+    # failed one — it used to reload 'recruitment' from a button on the Onboarding tab.
+    assert "coll: 'hrdocs', reload: 'onboarding'" in src
