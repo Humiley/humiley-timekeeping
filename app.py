@@ -3461,6 +3461,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._finsp_test_ep(u))
         if path == "/api/hr/jd":
             return self._guard(lambda u: self._hr_jd_ep(u, body))
+        if path == "/api/hr/onboarding/file":
+            return self._guard(lambda u: self._hr_onb_file_ep(u, body))
+        if path == "/api/hr/employee-folders":
+            return self._guard(lambda u: self._hr_emp_folders_ep(u))
         if path == "/api/invtrack/import":
             return self._guard(lambda u: self._invtrack_import_ep(u, body))
         if path == "/api/invtrack/portal_fetch":
@@ -5445,9 +5449,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -5466,7 +5470,7 @@ class Handler(BaseHTTPRequestHandler):
                 # manager-gated, so this makes read match write.
                 "pm_costs": "manager", "pm_procurement_payments": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
-    SELF_OWNED = {"claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
+    SELF_OWNED = {"hrdoc_acks", "claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "benefits", "devices", "handovers"}
     # Travel / claim / payment: a staff user sees only their OWN; a LEADER (manager) sees only their
     # TEAM (direct reports + self); management/editor/admin (Finance-level and above) see the whole
     # company. Scoped below in _coll_list.
@@ -6247,6 +6251,21 @@ class Handler(BaseHTTPRequestHandler):
         # time: a client-supplied ts could backdate a message into the middle of an argument. Posting
         # is also refused outright on a project the caller cannot see, so the read scoping above
         # cannot be sidestepped by writing instead.
+        # A signed acknowledgement is a statement that THIS person read THIS document. Identity, time
+        # and the document version are stamped from the session and the published record — a browser
+        # that could choose them could sign a policy in somebody else's name, or backdate a signature
+        # to before an incident.
+        if name == "hrdoc_acks":
+            _doc = db.get_collection_item("hrdocs", str(item.get("docId") or "")) or {}
+            if not _doc:
+                return self._err("That document is no longer published.", 404)
+            item["empId"] = u.get("id") or ""
+            item["name"] = u.get("name") or ""
+            item["ts"] = self._utc_now_ms()
+            item["docTitle"] = _doc.get("title") or ""
+            item["docCode"] = _doc.get("code") or ""
+            item["docVersion"] = _doc.get("version") or ""
+            item.pop("webUrl", None)             # only the server may say where it was filed
         if name == "pm_chat":
             vis = self._pm_visible_projects(u)
             if vis is not None and item.get("projectId") not in vis:
@@ -6557,6 +6576,102 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": {k: v for k, v in item.items() if k != "token"},
                            "changed": [c[0] for c in changes]})
+
+    @staticmethod
+    def _hr_emp_folder(emp):
+        """One folder per employee, named so it sorts by id and stays readable: "HML-007 - Nguyen Van A".
+        The id leads because names repeat and change; the name follows so a human can find it."""
+        eid = str((emp or {}).get("id") or "").strip() or "unknown"
+        nm = str((emp or {}).get("name") or "").strip()
+        return (eid + " - " + nm).strip(" -")
+
+    def _hr_onb_file_ep(self, u, body):
+        """File a signed onboarding acknowledgement into the employee's own HR SharePoint folder.
+
+        The signature is the record that somebody read a policy, so it belongs with the rest of that
+        person's file — not only in an application database. Runs while the employee is watching, so
+        it reports what happened; if SharePoint is not configured the acknowledgement still stands and
+        stays in the portal."""
+        aid = str((body or {}).get("ackId") or "")
+        ack = db.get_collection_item("hrdoc_acks", aid) if aid else None
+        if not ack:
+            return self._err("Acknowledgement not found.", 404)
+        # Only the person who signed it (or an HR manager) may file it.
+        if (ack.get("empId") or "") != (u.get("id") or "") and \
+                self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("You can only file your own acknowledgement.", 403)
+        data = str((body or {}).get("data") or "")
+        if not data.startswith("data:"):
+            return self._err("No document received.", 400)
+        head, _, b64 = data.partition(",")
+        try:
+            raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        except Exception:
+            return self._err("That document could not be read.", 400)
+        if not raw or len(raw) > _INVTRACK_FILE_MAX:
+            return self._err("That document is empty or too large.", 400)
+        emp = db.get_employee(ack.get("empId") or "") or {"id": ack.get("empId"), "name": ack.get("name")}
+        code = str(ack.get("docCode") or "").strip()
+        name = (("%s - " % code) if code else "") + str(ack.get("docTitle") or "Acknowledgement") + " - signed.pdf"
+        out = {"ok": True, "filed": False, "error": ""}
+        try:
+            web = _hrsp_put(["Employees", self._hr_emp_folder(emp), "Onboarding"], name, raw,
+                            head[5:].split(";")[0] or "application/pdf")
+            if web:
+                ack["webUrl"] = web
+                ack["fileName"] = name
+                db.put_collection_item("hrdoc_acks", ack)
+                out["filed"] = True
+                out["webUrl"] = web
+        except Exception as e:
+            out["error"] = _graph_err_text(e)[:200]
+        return self._json(out)
+
+    def _hr_emp_folders_ep(self, u):
+        """Create the HR SharePoint folder for every active employee and drop their record in it.
+
+        Idempotent: re-running refreshes each profile file and creates only what is missing. The
+        profile is a plain text summary rather than a database dump — a folder somebody opens in a
+        browser should be readable, and it must not carry more personal data than the HR file needs."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
+            return self._err("Admin access required.", 403)
+        if not (db.get_setting("portal_hrSpUrl", "") or "").strip():
+            return self._err("Set the HR SharePoint folder in Company Portal settings first.", 400)
+        made, failed, errs = 0, 0, []
+        for e in db.list_employees():
+            if str(e.get("status") or "Active").lower() == "inactive":
+                continue
+            lines = [
+                "EMPLOYEE RECORD", "",
+                "Employee ID   : %s" % (e.get("id") or ""),
+                "Name          : %s" % (e.get("name") or ""),
+                "Position      : %s" % (e.get("title") or ""),
+                "Department    : %s" % (e.get("dept") or ""),
+                "Email         : %s" % (e.get("email") or ""),
+                "Phone         : %s" % (e.get("phone") or ""),
+                "Join date     : %s" % (e.get("joinDate") or e.get("onboardDate") or ""),
+                "Direct manager: %s" % (e.get("managerEmail") or ""),
+                "Status        : %s" % (e.get("status") or "Active"),
+                "", "Generated by the Humiley Portal on %s." % self._utc_now(),
+                "This folder holds this employee's HR documents: signed policy acknowledgements,",
+                "contracts and onboarding records.",
+            ]
+            try:
+                _hrsp_put(["Employees", self._hr_emp_folder(e)], "00 - Employee record.txt",
+                          "\r\n".join(lines).encode("utf-8"), "text/plain")
+                made += 1
+            except Exception as ex:
+                failed += 1
+                if len(errs) < 3:
+                    errs.append((e.get("name") or e.get("id") or "?") + ": " + _graph_err_text(ex)[:120])
+        try:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "", "actorId": u.get("id") or "", "action": "hr.folders",
+                "detail": "HR SharePoint employee folders: %d created/refreshed, %d failed" % (made, failed),
+                "ts": self._utc_now()})
+        except Exception:
+            pass
+        return self._json({"ok": True, "created": made, "failed": failed, "errors": errs})
 
     def _hr_jd_ep(self, u, body):
         """Attach a Job Description file to a requisition and file it in HR SharePoint.
