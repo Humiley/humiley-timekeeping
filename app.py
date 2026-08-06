@@ -5607,10 +5607,25 @@ class Handler(BaseHTTPRequestHandler):
         # staff see ONLY their own records in self-service collections (no cross-employee read)
         if lvl == "staff" and name in self.SELF_OWNED:
             myid, myname = u.get("id"), u.get("name")
+
+            def _holds(it):
+                # A device is a stock LINE that several people can hold at once. Matching only the
+                # row's own empId / assignedTo found the FIRST holder and nobody else: from the
+                # second assignment on, assignedTo is a comma-joined display string that equals no
+                # employee's name, so the other holders were told they had no company devices at all
+                # — while the register had them signed for the kit.
+                for a in (it.get("assignments") or []):
+                    if not isinstance(a, dict):
+                        continue
+                    if a.get("empId") == myid or (not a.get("empId") and myname and a.get("name") == myname):
+                        return True
+                return False
+
             items = [it for it in items
                      if it.get("empId") == myid
                      or (not it.get("empId") and myname and it.get("name") == myname)
-                     or (myname and it.get("assignedTo") == myname)]
+                     or (myname and it.get("assignedTo") == myname)
+                     or _holds(it)]
         # Travel / claim / payment: a LEADER (manager level) sees ONLY their TEAM — their own
         # records plus those of the employees who report DIRECTLY to them (managerEmail == theirs).
         # Management / editor / admin (Finance-level and above) fall through and see the whole

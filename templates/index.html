@@ -6893,16 +6893,51 @@ function _devPhotoCell(x, sz) {
    {id, empId, name, dept, qty, assignedOn, condition, note, signatures[], ackOn, ackBy}. Remaining =
    qty − Σ assigned. Older single-assignee records (assignedTo/empId/qty) are migrated on read, so the
    whole app keeps working while the register fills in per-person quantities. */
+/* Turn "this row names an assignee" into a real assignment entry. Every path that can create a
+   device with a holder — the quick-add form, Add several, the Excel import, onboarding provisioning —
+   goes through this, so a stock line always carries its holders as DATA rather than as a status plus
+   a name. Without it those rows fall back to the legacy shim, and a shim cannot know how many units
+   the person actually has. Defaults to 1 unit, never more than the line owns. */
+function _devSeedAssignments(rec, emp) {
+  if (!rec || Array.isArray(rec.assignments)) return rec;
+  const nm = String(rec.assignedTo || '').trim();
+  if (!nm) return rec;
+  const owned = _devTotalQty(rec);
+  const q = Math.min(Math.max(1, parseInt(rec.assignedQty, 10) || 1), Math.max(1, owned));
+  rec.assignments = [{
+    id: (typeof _devUid === 'function' ? _devUid() : 'a' + Date.now()),
+    empId: (emp && emp.id) || rec.empId || '', name: nm,
+    dept: (emp && emp.dept) || rec.department || '', qty: q,
+    assignedOn: rec.assignedOn || rec.purchaseDate || '', condition: rec.assignCondition || '',
+    note: rec.assignNote || '', signatures: [], ackOn: '', ackBy: ''
+  }];
+  delete rec.assignedQty;
+  return rec;
+}
 function _devAssigns(x) {
   if (x && Array.isArray(x.assignments)) return x.assignments;
+  // A row with no assignments[] predates the multi-holder model (or came from an import, the
+  // quick-add form or onboarding). It records ONE named holder and no quantity for them, so read
+  // that as ONE unit — not the whole line. Reading it as the whole line made `Assigned` a mirror of
+  // `qty`: buying four more of something the register already showed as issued to one person moved
+  // all four into that person's name, pinned Remaining at 0, and made it impossible to assign the
+  // item to anybody else. Which is exactly the symptom this started from.
   if (x && (x.empId || x.assignedTo) && (x.status || '') !== 'Available' && (x.status || '') !== 'Retired')
-    return [{ id: 'legacy', empId: x.empId || '', name: x.assignedTo || '', dept: x.department || '', qty: +x.qty || 1,
+    return [{ id: 'legacy', empId: x.empId || '', name: x.assignedTo || '', dept: x.department || '', qty: Math.min(_devTotalQty(x), Math.max(1, +x.assignedQty || 1)),
               assignedOn: x.assignedOn || x.purchaseDate || '', condition: x.assignCondition || '', note: x.assignNote || '',
               signatures: x.signatures || [], ackOn: x.ackOn || '', ackBy: x.ackBy || '' }];
   return [];
 }
+/* How many of this line we own. ONE definition, used by the table, the KPI row and the value total —
+   they used to disagree (`qty || 1` in one place, `qty || 0` in another), so a row with no quantity
+   counted as 1 item that was neither assigned nor in stock and the register stopped adding up. */
+function _devTotalQty(x) { const n = parseInt(x && x.qty, 10); return n > 0 ? n : (x && x.qty === 0 ? 0 : 1); }
 function _devAssignedQty(x) { return _devAssigns(x).reduce((s, a) => s + (+a.qty || 0), 0); }
-function _devRemaining(x) { return Math.max(0, (+x.qty || 0) - _devAssignedQty(x)); }
+/* In stock = owned − issued. NOT clamped at zero: if more is signed out than we own — an import, a
+   quantity edited down, two managers assigning at once — that is a discrepancy somebody has to
+   resolve, and clamping it to 0 is how it stays hidden. _devOver(x) is what surfaces it. */
+function _devRemaining(x) { return _devTotalQty(x) - _devAssignedQty(x); }
+function _devOver(x) { return Math.max(0, -_devRemaining(x)); }   // units issued beyond what we own
 function _devAckSigned(a) { return !!(a && (a.ackOn || (a.signatures || []).some(s => s.ack || /handover|acknowled/i.test(s.meaning || '')))); }
 function _devAvail(x) {
   const st = x.status || '';
@@ -7040,18 +7075,37 @@ async function tkRenderDevices() {
   root.innerHTML = tkSkeleton();
   await tkLoadColl('devices');
   const d = _HR.devices || [];
-  const units = d.reduce((s, x) => s + (+x.qty || 1), 0);
-  const value = d.reduce((s, x) => s + (+x.qty || 1) * (+x.unitPrice || 0), 0);
+  const units = d.reduce((s, x) => s + _devTotalQty(x), 0);
+  const value = d.reduce((s, x) => s + _devTotalQty(x) * (+x.unitPrice || 0), 0);
   const assigned = d.reduce((s, x) => s + _devAssignedQty(x), 0);
-  const remaining = d.reduce((s, x) => s + _devRemaining(x), 0);
+  const inStock = d.reduce((s, x) => s + Math.max(0, _devRemaining(x)), 0);
+  const over = d.reduce((s, x) => s + _devOver(x), 0);
+  // Assigned + In stock must equal Total. It only fails when something is signed out that we do not
+  // own, so the shortfall is shown rather than absorbed.
+  const remaining = inStock;
   const kpis = _hrKpiRow([
     _kpiTile('Total items', units, '#205090', '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
     _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('Assigned', assigned, '#8B5CF6', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
-    _kpiTile('Remaining', remaining, '#F59E0B', '<polyline points="20 6 9 17 4 12"/>')
-  ]);
+    _kpiTile(_t('In stock'), remaining, '#F59E0B', '<polyline points="20 6 9 17 4 12"/>')
+  ]) +
+  // The sum, written out, so it can be checked at a glance. When the register does NOT balance it
+  // must not print a false equation — "In stock" is what is physically on the shelf, which cannot go
+  // negative, so an over-issue is stated as a shortfall rather than folded into the arithmetic.
+  '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-4px 0 14px;font-size:12px;color:var(--text-light)">' +
+    (over
+      ? '<span style="font-variant-numeric:tabular-nums"><b style="color:var(--text-dark)">' + units + '</b> ' + _t('owned') +
+          ' · <b style="color:var(--text-dark)">' + assigned + '</b> ' + _t('assigned') +
+          ' · <b style="color:var(--text-dark)">' + remaining + '</b> ' + _t('in stock') + '</span>' +
+        '<span class="badge b-danger" style="font-size:10px">' + over + ' ' + _t('issued beyond stock') + '</span>' +
+        '<span>' + _t('Someone has more of an item than the register says we own — check the highlighted rows.') + '</span>'
+      : '<span style="font-variant-numeric:tabular-nums">' + _t('Assigned') + ' <b style="color:var(--text-dark)">' + assigned + '</b> + ' +
+          _t('In stock') + ' <b style="color:var(--text-dark)">' + remaining + '</b> = <b style="color:var(--text-dark)">' + units + '</b> ' + _t('owned') + '</span>' +
+        '<span class="badge b-ok" style="font-size:10px">' + _t('Balanced') + '</span>') +
+  '</div>';
   const byCat = {}, byStatus = {}, valByDept = {};
-  d.forEach(x => { const q = +x.qty || 1; byCat[x.category || 'Other'] = (byCat[x.category || 'Other'] || 0) + q; const av = _devAvail(x); byStatus[av] = (byStatus[av] || 0) + q; valByDept[x.department || '—'] = (valByDept[x.department || '—'] || 0) + q * (+x.unitPrice || 0); });
+  /* q uses the same basis as the KPI strip and the table, so the charts cannot disagree with them. */
+  d.forEach(x => { const q = _devTotalQty(x); byCat[x.category || 'Other'] = (byCat[x.category || 'Other'] || 0) + q; const av = _devAvail(x); byStatus[av] = (byStatus[av] || 0) + q; valByDept[x.department || '—'] = (valByDept[x.department || '—'] || 0) + q * (+x.unitPrice || 0); });
   const dk = Object.keys(valByDept).sort((a, b) => valByDept[b] - valByDept[a]);
   root.innerHTML =
     '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button>' + (_userLevel === 'admin' ? '<button class="btn btn-outline btn-sm" onclick="tkDeviceAckBackfill()" title="' + _tkEscA(_t('Mark all existing assignments as acknowledged-on-record (one-time)')) + '">' + tkIcon('check') + _t('Backfill sign-offs') + '</button>' : '') + '<button class="btn btn-outline btn-sm" onclick="tkDeviceBatchAdd()">' + tkIcon('plus') + 'Add Several</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
@@ -7089,8 +7143,10 @@ function devFillTable() {
     return (!q || hay.includes(q)) && (!cat || (x.category || '') === cat) && (!st || _devAvail(x) === st || (x.status || '') === st) && (!dept || (x.department || '') === dept) && _inPeriodLF(x.purchaseDate || x.ts, 'dev-period-f');
   }).sort((a, b) => (a.department || '').localeCompare(b.department || '') || (a.name || '').localeCompare(b.name || ''));
   tb.innerHTML = list.length ? list.map(x => {
-    const tot = (+x.qty || 1) * (+x.unitPrice || 0), asgQ = _devAssignedQty(x), rem = _devRemaining(x), av = _devAvail(x);
-    return '<tr><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + _crmEsc(x.category || '') + '</td><td style="font-size:12px">' + _devAssignSummary(x) + '</td><td>' + _crmEsc(x.department || '') + '</td><td style="text-align:right;font-weight:600">' + (x.qty || 1) + '</td><td style="text-align:right">' + asgQ + '</td><td style="text-align:right;font-weight:700;color:' + (rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--text-light)') + '">' + rem + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _devAvailCls(av) + '" style="font-size:10px">' + _t(av) + '</span></td><td style="white-space:nowrap">' + _devAsgBtn(x.id) + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
+    const tot = _devTotalQty(x) * (+x.unitPrice || 0), asgQ = _devAssignedQty(x), remRaw = _devRemaining(x), av = _devAvail(x);
+    const over = _devOver(x), rem = Math.max(0, remRaw);
+    // A line that is over-issued gets a red rail: it is the row somebody has to go and reconcile.
+    return '<tr' + (over ? ' style="background:rgba(192,57,43,.05);box-shadow:inset 3px 0 0 var(--danger,#C0392B)" title="' + _tkEscA(over + ' ' + _t('issued beyond stock')) + '"' : '') + '><td><div style="display:flex;align-items:center;gap:10px">' + _devIcon(x.category) + '<div><div style="font-weight:600">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + '</div></div></div></td><td>' + _devPhotoCell(x) + '</td><td>' + _crmEsc(x.category || '') + '</td><td style="font-size:12px">' + _devAssignSummary(x) + '</td><td>' + _crmEsc(x.department || '') + '</td><td style="text-align:right;font-weight:600">' + _devTotalQty(x) + '</td><td style="text-align:right">' + asgQ + '</td><td style="text-align:right;font-weight:700;color:' + (over ? 'var(--danger,#C0392B)' : rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--text-light)') + '">' + (over ? '\u2212' + over : rem) + '</td><td style="text-align:right">' + _PAY_FMT(x.unitPrice || 0) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td><td><span class="badge ' + _devAvailCls(av) + '" style="font-size:10px">' + _t(av) + '</span></td><td style="white-space:nowrap">' + _devAsgBtn(x.id) + _hrEditDel('devices', x.id, 'devices') + '</td></tr>';
   }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.devices || []).length ? 'No devices match your filters.' : 'No devices yet — click “Add Device”.') + '</td></tr>';
 }
 /* Row action — open the Assign & e-sign modal. */
@@ -7280,6 +7336,7 @@ async function _devBatchSave() {
     const _today0 = _today();
     const _status = r.assignedTo && (!r.status || r.status === 'Available') ? 'Assigned' : (r.status || 'Available');   // an assignee must not save as Available (else _devAssigns drops it)
     const body = { name: r.name, category: r.category, serial: r.serial, assignedTo: r.assignedTo, empId: _em ? _em.id : '', department: r.department, qty: r.qty, unitPrice: r.unitPrice, purchaseDate: _today0, status: _status, assignedOn: r.assignedTo ? _today0 : '', note: '' };
+    _devSeedAssignments(body, _em);
     try { await tkApi('/api/coll/devices', { method: 'POST', body: body }); ok++; } catch (e) { fail++; }
   }
   document.getElementById('devBatchOverlay')?.remove();
@@ -7445,7 +7502,7 @@ async function tkDeviceAssign(id) {
   const el = document.createElement('div'); el.id = 'devAssignOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:520px;max-height:92vh;max-height:92dvh;overflow:auto"><div class="modal-header"><div class="modal-title">' + _t('Assign asset & e-sign') + '</div><button class="modal-close" onclick="document.getElementById(\'devAssignOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' + (x.photo ? _devPhotoCell(x, 40) : _devIcon(x.category, 40)) + '<div><div style="font-weight:700">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc((x.category || '') + (x.serial ? ' · ' + x.serial : '')) + '</div></div></div>' +
-    '<div style="font-size:12px;margin-bottom:10px;padding:7px 10px;border-radius:8px;background:var(--soft-bg);display:flex;justify-content:space-between"><span style="color:var(--text-light)">' + _t('In stock') + ': <b style="color:var(--text-dark)">' + (x.qty || 1) + '</b> · ' + _t('Assigned') + ': <b style="color:var(--text-dark)">' + _devAssignedQty(x) + '</b></span><span style="font-weight:700;color:' + (rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--danger,#C00000)') + '">' + _t('Remaining') + ': ' + rem + '</span></div>' +
+    '<div style="font-size:12px;margin-bottom:10px;padding:7px 10px;border-radius:8px;background:var(--soft-bg);display:flex;justify-content:space-between"><span style="color:var(--text-light)">' + _t('Owned') + ': <b style="color:var(--text-dark)">' + _devTotalQty(x) + '</b> · ' + _t('Assigned') + ': <b style="color:var(--text-dark)">' + _devAssignedQty(x) + '</b></span><span style="font-weight:700;color:' + (rem > 0 ? 'var(--emerald-deep,#008548)' : 'var(--danger,#C00000)') + '">' + _t('Remaining') + ': ' + rem + '</span></div>' +
     (rem <= 0 ? '<div style="font-size:12px;color:var(--danger,#C00000);margin-bottom:10px">' + _t('No units remaining — increase the stock quantity first, or return some units.') + '</div>' : '') +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + _t('The employee signs below to acknowledge receipt — this records the handover, adds the asset to their My Devices, and emails a signed copy.') + '</div>' +
     '<div class="form-group"><label class="form-label">' + _t('Assign to (employee)') + '</label><select class="form-control" id="asg-emp">' + opts + '</select></div>' +
@@ -13251,8 +13308,15 @@ async function tkQuickAddSave() {
   if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
   if (_qaType === 'devices') {   // resolve the assignee to an employee id so an assigned asset shows in that employee's My Devices
     const _em = data.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(data.assignedTo).toLowerCase()) : null;
-    data.empId = _em ? _em.id : '';
+    // Only (re)derive empId when this form actually carries an assignee. On a line already held by
+    // several people assignedTo is a comma-joined display string that matches nobody, and blanking
+    // empId from it would cut the first holder's link to their own My Devices.
+    const _qaEx = _qaEditId ? ((_HR.devices || []).find(x => x.id === _qaEditId) || {}) : {};
+    const _multi = Array.isArray(_qaEx.assignments) && _qaEx.assignments.length > 1;
+    if (data.assignedTo !== undefined && !_multi) data.empId = _em ? _em.id : '';
     if (data.assignedTo && (!data.status || data.status === 'Available')) data.status = 'Assigned';
+    if (!data.qty || data.qty < 1) data.qty = 1;      // a blank Quantity box must not mean "we own none"
+    if (!_qaEditId) _devSeedAssignments(data, _em);   // a NEW row records its holder properly
   }
   if (!data[spec.fields[0].k]) { toast('Please fill in ' + spec.fields[0].label, 'warn'); return; }
   const _prevSpUrl = (_qaType === 'pm_projects' && _qaEditId) ? (((_HR[spec.coll] || []).find(x => x.id === _qaEditId) || {}).sharepointUrl || '') : '';
@@ -18888,6 +18952,9 @@ const _VI = {
   'Candidate Funnel & Conversion': 'Phễu ứng viên & Chuyển đổi', 'Source of Hire Mix': 'Nguồn tuyển dụng',
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
+  'In stock': 'Còn trong kho', 'in stock': 'còn trong kho', 'Owned': 'Sở hữu', 'owned': 'sở hữu', 'assigned': 'đã cấp', 'Balanced': 'Khớp',
+  'issued beyond stock': 'cấp vượt tồn kho',
+  'Someone has more of an item than the register says we own — check the highlighted rows.': 'Có người đang giữ nhiều hơn số lượng ghi nhận — kiểm tra các dòng được đánh dấu.',
   'My Devices': 'Thiết bị của tôi', 'My Training': 'Đào tạo của tôi', 'Open Positions': 'Vị trí tuyển dụng',
   'JD': 'MTCV', 'Attach': 'Đính kèm', 'Show': 'Xem', 'Replace': 'Thay thế',
   'Attach the Job Description file': 'Đính kèm tệp mô tả công việc',
