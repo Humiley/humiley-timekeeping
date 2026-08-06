@@ -1305,7 +1305,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="btn btn-outline btn-sm" onclick="tkSyncM365Users()" title="Import users from your Microsoft 365 directory"><svg width="14" height="14" viewBox="0 0 23 23" fill="none" style="margin-right:5px"><rect x="1" y="1" width="10" height="10" fill="#F25022"/><rect x="12" y="1" width="10" height="10" fill="#7FBA00"/><rect x="1" y="12" width="10" height="10" fill="#00A4EF"/><rect x="12" y="12" width="10" height="10" fill="#FFB900"/></svg>Sync from Microsoft 365</button>
     </div>
   </div>
-  <details id="db-overview" class="tk-collapse" open ontoggle="try{localStorage.setItem('tk-db-overview',this.open?'1':'0')}catch(e){}; _fitTablesSoon()">
+  <details id="db-overview" class="tk-collapse" open ontoggle="try{localStorage.setItem('tk-db-overview',this.open?'1':'0')}catch(e){}; if(typeof _fitTablesSoon==='function')_fitTablesSoon()">
     <summary>Overview &amp; stats</summary>
     <div id="database-kpis"></div>
   </details>
@@ -7240,19 +7240,27 @@ function _devAssigns(x) {
    counted as 1 item that was neither assigned nor in stock and the register stopped adding up. */
 function _devTotalQty(x) { const n = parseInt(x && x.qty, 10); return n > 0 ? n : (x && x.qty === 0 ? 0 : 1); }
 function _devAssignedQty(x) { return _devAssigns(x).reduce((s, a) => s + (+a.qty || 0), 0); }
-/* In stock = owned − issued. NOT clamped at zero: if more is signed out than we own — an import, a
-   quantity edited down, two managers assigning at once — that is a discrepancy somebody has to
-   resolve, and clamping it to 0 is how it stays hidden. _devOver(x) is what surfaces it. */
-function _devRemaining(x) { return _devTotalQty(x) - _devAssignedQty(x); }
+/* Units we still own but can never issue again: returned lost, or damaged beyond use. Written off is
+   NOT the same as in stock, and the register used to have no way to say so — a helmet handed back as
+   "Lost" went straight back into the available count, and the next person could be signed out kit
+   that does not exist. It stays inside the owned total because it was bought, and it has to keep
+   reconciling against the purchase record. */
+function _devWrittenQty(x) { const n = parseInt(x && x.writtenOff, 10); return n > 0 ? n : 0; }
+/* In stock = owned − issued − written off. NOT clamped at zero: if more is signed out than we own —
+   an import, a quantity edited down, two managers assigning at once — that is a discrepancy somebody
+   has to resolve, and clamping it to 0 is how it stays hidden. _devOver(x) is what surfaces it. */
+function _devRemaining(x) { return _devTotalQty(x) - _devAssignedQty(x) - _devWrittenQty(x); }
 function _devOver(x) { return Math.max(0, -_devRemaining(x)); }   // units issued beyond what we own
 function _devAckSigned(a) { return !!(a && (a.ackOn || (a.signatures || []).some(s => s.ack || /handover|acknowled/i.test(s.meaning || '')))); }
 function _devAvail(x) {
   const st = x.status || '';
   if (st === 'Retired' || st === 'In Repair' || st === 'Lost') return st;
+  // Every unit written off — the line is gone, whatever the row's status says.
+  if (_devWrittenQty(x) >= _devTotalQty(x) && _devTotalQty(x) > 0) return 'Written off';
   if (_devAssignedQty(x) === 0) return 'Available';
   return _devRemaining(x) <= 0 ? 'Fully assigned' : 'Partially assigned';
 }
-const _devAvailCls = a => a === 'Available' ? 'b-ok' : a === 'Fully assigned' ? 'b-info' : a === 'Partially assigned' ? 'b-warn' : a === 'In Repair' ? 'b-warn' : a === 'Retired' ? 'b-navy' : 'b-danger';
+const _devAvailCls = a => a === 'Available' ? 'b-ok' : a === 'Fully assigned' ? 'b-info' : a === 'Partially assigned' ? 'b-warn' : a === 'In Repair' ? 'b-warn' : a === 'Retired' ? 'b-navy' : a === 'Written off' ? 'b-navy' : 'b-danger';
 /* Downscale an image data URI to at most `maxPx` on the long edge, re-encoded as JPEG, so stored asset
    photos stay small and the register loads fast (a phone photo is 3–8 MB; this brings it to ~40–120 KB).
    Returns a Promise<dataUri>; on any failure or for non-images/SVG/GIF it returns the original untouched. */
@@ -7387,15 +7395,16 @@ async function tkRenderDevices() {
   const assigned = d.reduce((s, x) => s + _devAssignedQty(x), 0);
   const inStock = d.reduce((s, x) => s + Math.max(0, _devRemaining(x)), 0);
   const over = d.reduce((s, x) => s + _devOver(x), 0);
-  // Assigned + In stock must equal Total. It only fails when something is signed out that we do not
-  // own, so the shortfall is shown rather than absorbed.
+  const written = d.reduce((s, x) => s + _devWrittenQty(x), 0);
+  // Assigned + In stock + Written off must equal Total. It only fails when something is signed out
+  // that we do not own, so the shortfall is shown rather than absorbed.
   const remaining = inStock;
   const kpis = _hrKpiRow([
     _kpiTile('Total items', units, '#205090', '<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>'),
     _kpiTile('Total value', _PAY_FMT(value), '#00B060', '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
     _kpiTile('Assigned', assigned, '#8B5CF6', '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
     _kpiTile(_t('In stock'), remaining, '#F59E0B', '<polyline points="20 6 9 17 4 12"/>')
-  ]) +
+  ].concat(written ? [_kpiTile(_t('Written off'), written, '#8A94A6', '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>')] : [])) +
   // The sum, written out, so it can be checked at a glance. When the register does NOT balance it
   // must not print a false equation — "In stock" is what is physically on the shelf, which cannot go
   // negative, so an over-issue is stated as a shortfall rather than folded into the arithmetic.
@@ -7407,7 +7416,9 @@ async function tkRenderDevices() {
         '<span class="badge b-danger" style="font-size:10px">' + over + ' ' + _t('issued beyond stock') + '</span>' +
         '<span>' + _t('Someone has more of an item than the register says we own — check the highlighted rows.') + '</span>'
       : '<span style="font-variant-numeric:tabular-nums">' + _t('Assigned') + ' <b style="color:var(--text-dark)">' + assigned + '</b> + ' +
-          _t('In stock') + ' <b style="color:var(--text-dark)">' + remaining + '</b> = <b style="color:var(--text-dark)">' + units + '</b> ' + _t('owned') + '</span>' +
+          _t('In stock') + ' <b style="color:var(--text-dark)">' + remaining + '</b>' +
+          (written ? ' + ' + _t('Written off') + ' <b style="color:var(--text-dark)">' + written + '</b>' : '') +
+          ' = <b style="color:var(--text-dark)">' + units + '</b> ' + _t('owned') + '</span>' +
         '<span class="badge b-ok" style="font-size:10px">' + _t('Balanced') + '</span>') +
   '</div>';
   const byCat = {}, byStatus = {}, valByDept = {};
@@ -7464,6 +7475,14 @@ function _devHandoverBtn(empId) {
   if (!empId) return '';
   return '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Handover PDF')) + '" aria-label="Handover PDF" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:var(--navy)" onclick="tkDownloadHandover(\'' + empId + '\')">' + tkIcon('download') + '</button>';
 }
+/* Release / correct one assignment. Offboarding was the ONLY way to remove an assignment, so a
+   mistaken assign was permanent for anyone still employed — and it did not exist at all once the
+   exit was Completed. Manager+ only, and it archives rather than deletes: the entry carries a signed
+   handover, and discarding that is not a correction, it is destroying evidence. */
+function _devUnasgBtn(devId, asgId) {
+  if (_lvlRank(_userLevel) < _lvlRank('manager')) return '';
+  return '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Release / correct this assignment')) + '" aria-label="' + _tkEscA(_t('Release')) + '" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:var(--text-light)" onclick="tkDeviceUnassign(\'' + devId + '\',\'' + asgId + '\')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="22" y1="11" x2="16" y2="11"/></svg></button>';
+}
 /* Inventory / Assignments tab switch on the Asset Register. */
 function _devTabBtn(key, label, active) {
   return '<button id="devtab-' + key + '" onclick="tkDevTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (active ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (active ? '#fff' : 'var(--text)') + ';font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:9px;cursor:pointer">' + label + '</button>';
@@ -7495,7 +7514,7 @@ function devAsgFill() {
       '<td style="white-space:nowrap">' + tkFmtDate(a.assignedOn || x.purchaseDate) + '</td>' +
       '<td>' + (signed ? '<span class="badge b-ok" style="font-size:10px">' + _t('Signed') + '</span>' : '<span class="badge b-warn" style="font-size:10px">' + _t('Unsigned') + '</span>') + '</td>' +
       '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(tot) + '</td>' +
-      '<td style="white-space:nowrap">' + _devAsgBtn(x.id) + _devHandoverBtn(a.empId) + '</td></tr>';
+      '<td style="white-space:nowrap">' + _devAsgBtn(x.id) + _devUnasgBtn(x.id, a.id) + _devHandoverBtn(a.empId) + '</td></tr>';
   }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No assets are currently assigned.') + '</td></tr>';
 }
 /* ===== Audit Log (admin) — immutable security & workflow event trail =====
@@ -7710,14 +7729,24 @@ async function tkMyDeviceSignSave(id) {
 async function tkAssetReturn(empId, exitId) {
   await tkLoadColl('devices');
   const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(x => x.id === empId) || { id: empId, name: '' };
-  const mine = (_HR.devices || []).filter(x => _devHeldBy(x, e).length && (x.status || '') !== 'Retired');
+  // A Retired asset still has to be handed back — excluding it left the holder signed for kit with no
+  // way to return it, and the register showing it as theirs for good.
+  const mine = (_HR.devices || []).filter(x => _devHeldBy(x, e).length);
   document.getElementById('assetReturnOverlay')?.remove();
   const today = _today();
-  const rows = mine.length ? mine.map(x => '<tr><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + ' · ' + _crmEsc(x.category || '') + '</div></div></label></td><td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>').join('') : tkEmptyRow(2, 'No assigned devices to return.', { icon: 'inbox' });
+  const rows = mine.length ? mine.map(x => {
+    const held = _devHeldBy(x, e).reduce((s, a) => s + (+a.qty || 1), 0);
+    return '<tr data-ar-row="' + x.id + '"><td><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" data-ar-id="' + x.id + '" checked style="width:16px;height:16px;accent-color:var(--navy)"><div><div style="font-weight:600;font-size:12.5px">' + _crmEsc(x.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.serial || '') + ' · ' + _crmEsc(x.category || '') + '</div><div data-ar-msg="' + x.id + '" style="font-size:11px;margin-top:2px"></div></div></label></td>' +
+      // Quantity, because somebody holding 5 can hand back 3 and lose 2. Without this the return was
+      // all-or-nothing and the two lost units were either hidden or wrongly written off with the rest.
+      '<td><input type="number" data-ar-qty="' + x.id + '" min="1" max="' + held + '" value="' + held + '" style="width:64px;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-variant-numeric:tabular-nums">' +
+        (held > 1 ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('of') + ' ' + held + '</div>' : '') + '</td>' +
+      '<td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>';
+  }).join('') : tkEmptyRow(3, 'No assigned devices to return.', { icon: 'inbox' });
   const el = document.createElement('div'); el.id = 'assetReturnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + _crmEsc(e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">Tick each asset returned and record its condition. The employee signs below to confirm hand-back before their last day (FRM-014 Exit Clearance).</div>' +
-    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Return?</th><th>Condition</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Return?</th><th>Qty</th><th>Condition</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px"><div class="form-group" style="margin:0"><label class="form-label">Employee signature (type full name)</label><input class="form-control" id="ar-sign" value="' + _tkEscA(e.name || '') + '" placeholder="' + _tkEscA(e.name || '') + '"></div><div class="form-group" style="margin:0"><label class="form-label">Date</label><input class="form-control" id="ar-date" type="date" value="' + today + '"></div></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'assetReturnOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkAssetReturnSave(\'' + empId + '\',\'' + (exitId || '') + '\')">' + tkIcon('check') + 'Confirm Return &amp; Sign off</button></div></div>';
   document.body.appendChild(el);
@@ -7728,29 +7757,77 @@ async function tkAssetReturnSave(empId, exitId) {
   if (!sign) { toast('Please type the employee signature to confirm', 'warn'); return; }
   const e = _hrEmp(empId) || (_DEMO_EMPLOYEES || []).find(v => v.id === empId) || { id: empId, name: '' };
   const boxes = Array.from(document.querySelectorAll('[data-ar-id]'));
-  const returned = [];
-  try {
-    for (const b of boxes) {
-      if (!b.checked) continue;
-      const id = b.getAttribute('data-ar-id');
-      const cond = (document.querySelector('[data-ar-cond="' + id + '"]') || {}).value || 'Good';
-      const x = (_HR.devices || []).find(v => v.id === id); if (!x) continue;
-      // Remove ONLY this employee's assignment(s) — freeing that quantity back to stock. Other holders keep theirs.
-      const keep = _devAssigns(x).filter(a => !((a.empId && a.empId === empId) || (!a.empId && a.name === e.name)));
+  const returned = [], failed = [];
+  // One PATCH per device, each caught on its own. This loop used to sit inside a single try: one
+  // failure aborted it, so the assets already handed back were never recorded, the sign-off was
+  // never written, and the operator was told only "Could not save" with no idea which of the five
+  // items had gone through. Retrying then re-sent the ones that had already saved, with a stale _rev,
+  // and 409'd on the first item forever.
+  for (const b of boxes) {
+    if (!b.checked) continue;
+    const id = b.getAttribute('data-ar-id');
+    const cond = (document.querySelector('[data-ar-cond="' + id + '"]') || {}).value || 'Good';
+    const x = (_HR.devices || []).find(v => v.id === id); if (!x) continue;
+    const msg = document.querySelector('[data-ar-msg="' + id + '"]');
+    const held = _devHeldBy(x, e).reduce((s, a) => s + (+a.qty || 1), 0);
+    let qty = parseInt((document.querySelector('[data-ar-qty="' + id + '"]') || {}).value, 10);
+    if (!(qty > 0)) qty = held;
+    qty = Math.min(qty, held);
+    try {
+      // Take `qty` units back off this employee's assignment(s), oldest first, leaving any remainder
+      // still signed out to them. Other holders are never touched.
+      let take = qty;
+      const keep = [];
+      _devAssigns(x).forEach(a => {
+        const isMine = (a.empId && a.empId === empId) || (!a.empId && a.name === e.name);
+        if (!isMine || take <= 0) { keep.push(a); return; }
+        const n = +a.qty || 1;
+        if (n <= take) { take -= n; return; }             // whole entry comes back
+        keep.push({ ...a, qty: n - take }); take = 0;     // partial: they keep the rest
+      });
+      // Lost and Damaged units do NOT go back on the shelf. They stay inside the owned total — the
+      // company paid for them — but as written off, so nobody can be issued kit that is gone or broken.
+      const writeOff = (cond === 'Lost' || cond === 'Damaged') ? qty : 0;
       const stillHeld = keep.length > 0;
       const newStatus = stillHeld ? 'Assigned' : (cond === 'Lost' ? 'Lost' : cond === 'Damaged' ? 'In Repair' : 'Available');
-      const patch = { ...x, assignments: keep, assignedTo: keep.map(a => a.name).filter(Boolean).join(', '), empId: (keep[0] || {}).empId || '', status: newStatus, returnedOn: date, returnCondition: cond };
-      await tkApi('/api/coll/devices/' + id, { method: 'PATCH', body: patch });
+      const patch = { ...x, assignments: keep, assignedTo: keep.map(a => a.name).filter(Boolean).join(', '),
+        empId: (keep[0] || {}).empId || '', status: newStatus, returnedOn: date, returnCondition: cond,
+        writtenOff: _devWrittenQty(x) + writeOff };
+      const r = await tkApi('/api/coll/devices/' + id, { method: 'PATCH', body: patch });
       Object.assign(x, patch);
-      returned.push((x.name || '') + ' (' + cond + ')');
+      if (r && r.item) Object.assign(x, r.item);   // keep the SERVER's _rev, or a retry self-409s
+      b.checked = false; b.disabled = true;        // done — a retry must not re-send it
+      if (msg) { msg.style.color = 'var(--emerald)'; msg.textContent = _t('Returned') + ' ✓'; }
+      returned.push((x.name || '') + ' ×' + qty + ' (' + cond + ')' + (writeOff ? ' — ' + _t('written off') : ''));
+    } catch (err) {
+      if (msg) { msg.style.color = 'var(--danger,#C0392B)'; msg.textContent = _errMsg(err); }
+      failed.push((x.name || '') + ' — ' + _errMsg(err));
     }
-    if (exitId) { const ex = (_HR.exits || []).find(v => v.id === exitId); if (ex) { ex.assetReturn = { signedBy: sign, date: date, items: returned }; try { await tkApi('/api/coll/exits/' + exitId, { method: 'PATCH', body: ex }); } catch (e) {} } }
+  }
+  // Record the sign-off for whatever DID come back, even if some rows failed. Losing the employee's
+  // signature for the four laptops they genuinely handed over, because the fifth PATCH failed, is the
+  // worst outcome available.
+  if (exitId) {
+    const ex = (_HR.exits || []).find(v => v.id === exitId);
+    if (ex) {
+      const ar = { signedBy: sign, date: date, items: returned.slice() };
+      if (failed.length) ar.incomplete = failed.slice();
+      try { await tkApi('/api/coll/exits/' + exitId, { method: 'PATCH', body: { ...ex, assetReturn: ar } }); ex.assetReturn = ar; }
+      catch (err) { failed.push(_t('Exit sign-off record') + ' — ' + _errMsg(err)); }
+    }
+  }
+  if (returned.length) {
     tkAudit('Assets returned & signed off', e.name || empId, returned.length + ' item(s) · ' + sign);
     _notifyAssetReturn(e, returned, sign, date);
+  }
+  try { tkRenderDevices(); } catch (x) {} try { tkRenderOffboarding(); } catch (x) {}
+  if (failed.length) {
+    // Overlay stays open with the successes ticked off, so Confirm is a correct retry of the rest.
+    toast(returned.length + ' ' + _t('returned') + ' · ' + failed.length + ' ' + _t('failed') + ': ' + failed.join('; '), 'error', 9000);
+  } else {
     document.getElementById('assetReturnOverlay')?.remove();
     toast(returned.length + ' asset(s) returned & signed off');
-    try { tkRenderDevices(); } catch (x) {} try { tkRenderOffboarding(); } catch (x) {}
-  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
+  }
 }
 function _notifyAssetReturn(e, items, sign, date) {
   const hr = (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || '') && (x.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || ''));
@@ -7861,6 +7938,82 @@ async function tkDeviceAssignSave(id) {
     try { await tkRenderDevices(); } catch (x2) {}
   } catch (err) { toast(_t('Could not save') + ': ' + _errMsg(err), 'error', 5000); }
 }
+/* ── Release / correct one assignment ─────────────────────────────────────────
+   Offboarding was the only route that could remove an assignment, so an assign made to the wrong
+   person could never be undone for anyone still employed. This is the correction path. It ARCHIVES
+   into assignmentHistory[] rather than deleting: the entry carries the holder's signed handover, and
+   a correction that silently destroys a signature is not a correction. */
+async function tkDeviceUnassign(devId, asgId) {
+  if (!_requireLevel('manager')) return;
+  await tkLoadColl('devices');
+  const x = (_HR.devices || []).find(v => v.id === devId); if (!x) { toast(_t('Not found'), 'warn'); return; }
+  const a = _devAssigns(x).find(v => v.id === asgId); if (!a) { toast(_t('That assignment is no longer there.'), 'warn'); tkRenderDevices(); return; }
+  document.getElementById('devUnasgOverlay')?.remove();
+  const held = +a.qty || 1;
+  const el = document.createElement('div');
+  el.id = 'devUnasgOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:460px" role="dialog" aria-modal="true">' +
+    '<div class="modal-header"><div><div class="modal-title" style="margin:0">' + _t('Release assignment') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(x.name || '') + ' · ' + _crmEsc(a.name || '') + ' ×' + held + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'devUnasgOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    (_devAckSigned(a) ? '<div style="font-size:12px;background:var(--soft-bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;line-height:1.5">' +
+      tkIcon('shield', 12) + ' ' + _t('This assignment carries a signed handover. It will be archived on the asset record, not deleted.') + '</div>' : '') +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+      '<div class="form-group" style="margin:0"><label class="form-label">' + _t('Quantity to release') + '</label>' +
+        '<input class="form-control" id="unasg-qty" type="number" min="1" max="' + held + '" value="' + held + '"></div>' +
+      '<div class="form-group" style="margin:0"><label class="form-label">' + _t('Condition') + '</label>' +
+        '<select class="form-control" id="unasg-cond"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Reason') + '</label>' +
+      '<select class="form-control" id="unasg-reason">' +
+        '<option>' + _t('Returned to stock') + '</option>' +
+        '<option>' + _t('Correction — assigned in error') + '</option>' +
+        '<option>' + _t('Written off — lost or damaged') + '</option>' +
+      '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Note') + '</label>' +
+      '<input class="form-control" id="unasg-note" placeholder="' + _tkEscA(_t('What happened, for the record')) + '"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'devUnasgOverlay\').remove()">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" onclick="tkDeviceUnassignSave(\'' + devId + '\',\'' + asgId + '\')">' + tkIcon('check', 13) + ' ' + _t('Release') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+
+async function tkDeviceUnassignSave(devId, asgId) {
+  const x = (_HR.devices || []).find(v => v.id === devId); if (!x) return;
+  const a = _devAssigns(x).find(v => v.id === asgId); if (!a) return;
+  const held = +a.qty || 1;
+  let qty = parseInt((document.getElementById('unasg-qty') || {}).value, 10);
+  if (!(qty > 0)) qty = held;
+  qty = Math.min(qty, held);
+  const cond = (document.getElementById('unasg-cond') || {}).value || 'Good';
+  const reason = (document.getElementById('unasg-reason') || {}).value || _t('Returned to stock');
+  const note = (document.getElementById('unasg-note') || {}).value || '';
+  // A legacy row has no real assignments[] to edit — write one out first so the release has something
+  // to act on, rather than looking up an id that was never stored.
+  const assigns = _devAssigns(x).map(v => Object.assign({}, v, { signatures: (v.signatures || []).slice() }));
+  const i = assigns.findIndex(v => v.id === asgId); if (i < 0) return;
+  const released = Object.assign({}, assigns[i], { qty: qty, closedOn: _today(),
+    closedBy: (TK.user || {}).name || '', reason: reason, note: note, condition: cond });
+  if (qty >= held) assigns.splice(i, 1); else assigns[i].qty = held - qty;
+  const writeOff = /written off/i.test(reason) || cond === 'Lost' || cond === 'Damaged' ? qty : 0;
+  const patch = Object.assign({}, x, {
+    assignments: assigns,
+    assignmentHistory: (x.assignmentHistory || []).concat([released]),
+    assignedTo: assigns.map(v => v.name).filter(Boolean).join(', '),
+    empId: (assigns[0] || {}).empId || '',
+    writtenOff: _devWrittenQty(x) + writeOff,
+    status: assigns.length ? 'Assigned' : (cond === 'Lost' ? 'Lost' : cond === 'Damaged' ? 'In Repair' : 'Available')
+  });
+  try {
+    const r = await tkApi('/api/coll/devices/' + devId, { method: 'PATCH', body: patch });
+    Object.assign(x, patch); if (r && r.item) Object.assign(x, r.item);
+    tkAudit('Asset assignment released', (TK.user || {}).name,
+      (x.name || '') + ' ← ' + (a.name || '') + ' ×' + qty + ' · ' + reason);
+    document.getElementById('devUnasgOverlay')?.remove();
+    toast(_t('Released') + ' ×' + qty + (writeOff ? ' · ' + _t('written off') : ''));
+    try { await tkRenderDevices(); } catch (e) {}
+  } catch (err) { toast(_t('Could not save') + ': ' + _errMsg(err), 'error', 5000); }
+}
+
 /* Notify the manager + HR that an asset was assigned & signed for (the employee is emailed the handover PDF separately). */
 function _notifyAssetAssign(e, item, sign, date, qty) {
   const hr = (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || '') && (x.title || '').toLowerCase().includes('manager')) || (_DEMO_EMPLOYEES || []).find(x => /hr/i.test(x.dept || ''));
@@ -12475,8 +12628,13 @@ async function tkRenderOffboarding() {
     const pct = Math.round(dn / Math.max(tot, 1) * 100);
     const set = _exitSettlement(r);
     const arBadge = (r.assetReturn && r.assetReturn.signedBy) ? ' <span class="badge b-ok" style="font-size:9px" title="Signed by ' + _tkEscA(r.assetReturn.signedBy) + ' on ' + tkFmtDate(r.assetReturn.date) + '">assets ✓</span>' : '';
+    // A completed exit still needs the Assets button. Pressing Complete before running the asset
+    // return used to remove the only route to it, and the employee is Inactive by then so a new exit
+    // cannot be raised — the leaver stayed on record as holding company kit for good.
     const acts = r.status === 'Completed'
-      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' + arBadge
+      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' +
+        (r.assetReturn && r.assetReturn.signedBy ? '' :
+          ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button>') + arBadge
       : '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button> <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>' + arBadge;
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.title || e.title || '') + ' · ' + (r.dept || e.dept || '') + '</div></div></div></td>' +
       '<td>' + (r.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(r.lastDay) + '</td>' +
@@ -19616,6 +19774,18 @@ const _VI = {
   'HR has not attached the document yet, so there is nothing to read.': 'Nhân sự chưa đính kèm tài liệu nên chưa có gì để đọc.',
   'That record is still loading — please try again in a moment.': 'Bản ghi đang được tải — vui lòng thử lại sau giây lát.',
   'Reading file…': 'Đang đọc tệp…', 'Could not read that file.': 'Không đọc được tệp này.',
+  // Asset register — release / correct an assignment, partial return, write-off
+  'Release assignment': 'Thu hồi bàn giao', 'Release': 'Thu hồi', 'Released': 'Đã thu hồi',
+  'Release / correct this assignment': 'Thu hồi / điều chỉnh bàn giao này',
+  'Quantity to release': 'Số lượng thu hồi', 'Reason': 'Lý do',
+  'Returned to stock': 'Trả về kho', 'Correction — assigned in error': 'Điều chỉnh — bàn giao nhầm',
+  'Written off — lost or damaged': 'Ghi giảm — mất hoặc hỏng',
+  'Written off': 'Đã ghi giảm', 'written off': 'đã ghi giảm',
+  'This assignment carries a signed handover. It will be archived on the asset record, not deleted.': 'Bàn giao này có chữ ký. Hệ thống sẽ lưu trữ vào hồ sơ tài sản chứ không xoá.',
+  'What happened, for the record': 'Ghi lại điều đã xảy ra',
+  'That assignment is no longer there.': 'Bàn giao này không còn nữa.',
+  'Returned': 'Đã trả', 'returned': 'đã trả', 'of': 'trong',
+  'Exit sign-off record': 'Biên bản ký xác nhận nghỉ việc',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',

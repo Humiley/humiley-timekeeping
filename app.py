@@ -7251,39 +7251,47 @@ class Handler(BaseHTTPRequestHandler):
         # signature is added; no other field is touched, so it can't rewrite the asset register. Handled
         # up here so it's uniform for staff (who otherwise can't PATCH devices) and managers alike.
         if name == "devices" and isinstance(body, dict) and "ackSignature" in body:
-            existing = db.get_collection_item("devices", iid)
-            if not existing:
-                return self._err("You can only sign for a device assigned to you.", 403)
+            # Validate BEFORE taking the lock and before reading the row. put_collection_item rewrites
+            # the whole document, so this is a read-modify-write on a row several people share — a
+            # device is a stock LINE, and ten holders of the same line all acknowledge on their phones
+            # the same morning. Whatever sits between the read and the write is the window in which
+            # one of their signatures is lost, so nothing slow (a 2 MB data URI, an identity lookup)
+            # belongs inside it. Same reasoning as _ESIGN_LOCK on the e-signature path.
             _sig = body.get("ackSignature")
             _img = _sig.get("image") if isinstance(_sig, dict) else None
             if not (isinstance(_img, str) and _img.startswith("data:image") and len(_img) <= 2_000_000):
                 return self._err("A drawn signature is required to acknowledge receipt.", 400)
             _uid, _uname, _today = u.get("id"), u.get("name"), time.strftime("%Y-%m-%d")
+            _is_admin = self._caller_level(u) == "admin"
             _ack = {"name": _uname, "meaning": "Asset handover — acknowledged receipt", "ts": self._utc_now(),
                     "method": "signature", "image": _img, "by": _uname, "ack": True}
-            _assigns = existing.get("assignments")
-            if isinstance(_assigns, list) and _assigns:
-                # Per-assignment model: sign ONLY the assignment(s) belonging to the caller.
-                _mine = [a for a in _assigns if isinstance(a, dict) and ((a.get("empId") and a.get("empId") == _uid) or (not a.get("empId") and a.get("name") == _uname))]
-                if not _mine and self._caller_level(u) != "admin":
+            with self._ESIGN_LOCK:
+                existing = db.get_collection_item("devices", iid)
+                if not existing:
                     return self._err("You can only sign for a device assigned to you.", 403)
-                for a in _mine:
-                    a.setdefault("signatures", []).append(dict(_ack))
-                    a["ackOn"] = _today
-                    a["ackBy"] = _uname
-                existing["assignments"] = _assigns
-            else:
-                # Legacy single-assignee record.
-                _own = (existing.get("empId") == _uid) if existing.get("empId") else (existing.get("assignedTo") == _uname)
-                if not _own and self._caller_level(u) != "admin":
-                    return self._err("You can only sign for a device assigned to you.", 403)
-                _sigs = list(existing.get("signatures") or [])
-                _sigs.append(_ack)
-                existing["signatures"] = _sigs
-                existing["ackOn"] = _today
-                existing["ackBy"] = _uname
-            existing["id"] = iid
-            db.put_collection_item("devices", existing)
+                _assigns = existing.get("assignments")
+                if isinstance(_assigns, list) and _assigns:
+                    # Per-assignment model: sign ONLY the assignment(s) belonging to the caller.
+                    _mine = [a for a in _assigns if isinstance(a, dict) and ((a.get("empId") and a.get("empId") == _uid) or (not a.get("empId") and a.get("name") == _uname))]
+                    if not _mine and not _is_admin:
+                        return self._err("You can only sign for a device assigned to you.", 403)
+                    for a in _mine:
+                        a.setdefault("signatures", []).append(dict(_ack))
+                        a["ackOn"] = _today
+                        a["ackBy"] = _uname
+                    existing["assignments"] = _assigns
+                else:
+                    # Legacy single-assignee record.
+                    _own = (existing.get("empId") == _uid) if existing.get("empId") else (existing.get("assignedTo") == _uname)
+                    if not _own and not _is_admin:
+                        return self._err("You can only sign for a device assigned to you.", 403)
+                    _sigs = list(existing.get("signatures") or [])
+                    _sigs.append(_ack)
+                    existing["signatures"] = _sigs
+                    existing["ackOn"] = _today
+                    existing["ackBy"] = _uname
+                existing["id"] = iid
+                db.put_collection_item("devices", existing)
             db.put_collection_item("audit", {"actor": _uname, "actorId": _uid,
                 "action": "E-signature — asset receipt acknowledged", "target": "devices/" + str(iid),
                 "detail": existing.get("name") or "", "ts": self._utc_now()})

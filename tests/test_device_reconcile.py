@@ -46,8 +46,8 @@ def _run(js):
     with open(IDX, encoding="utf-8") as fh:
         src = fh.read()
     harness = "\n".join(_fn(src, n) for n in
-                        ("_devAssigns", "_devTotalQty", "_devAssignedQty", "_devRemaining",
-                         "_devOver", "_devAvail")) + "\n" + js
+                        ("_devAssigns", "_devTotalQty", "_devAssignedQty", "_devWrittenQty",
+                         "_devRemaining", "_devOver", "_devAvail")) + "\n" + js
     p = os.path.join(tempfile.mkdtemp(prefix="tk-dev-"), "t.js")
     with open(p, "w", encoding="utf-8") as fh:
         fh.write(harness)
