@@ -1099,25 +1099,20 @@ def _tk_nudges(kind, today=None):
 
 def _tk_nudge_scheduler():
     """Hourly wake; fires the check-in nudge at portal_tkCheckinHour and check-out at portal_tkCheckoutHour
-       (VN local, UTC+7), once per day per kind (dedup blob), only while portal_tkNudges is on."""
+       (VN local, UTC+7), once per day per kind (dedup blob), only while portal_tkNudges is on.
+
+       ALSO runs the outstanding-signature reminders — deliberately OUTSIDE that switch. Policy
+       chasing and attendance nudges are unrelated features, and gating one on a checkbox labelled
+       "Timekeeping nudges" is a trap: signatures would silently never be chased and nobody would
+       ever work out why. Publishing a document with a deadline is the opt-in; with no deadlines set,
+       the sweep finds nothing and sends nothing."""
     while True:
         time.sleep(3600)
         try:
-            if (db.get_setting("portal_tkNudges", "0") or "0").lower() not in ("1", "true", "on", "yes"):
-                continue
             now_vn = datetime.utcnow() + timedelta(hours=7)
             today = now_vn.strftime("%Y-%m-%d")
-            try:
-                ci = int(db.get_setting("portal_tkCheckinHour", "10") or "10")
-            except Exception:
-                ci = 10
-            try:
-                co = int(db.get_setting("portal_tkCheckoutHour", "19") or "19")
-            except Exception:
-                co = 19
-            # Policy reminders: once a day, at the check-in hour. Same once-a-day latch as the
-            # attendance nudges so a restart cannot send them twice.
-            if now_vn.hour == ci:
+            # 09:00 VN — before the day gets away from people, and independent of the nudge hours.
+            if now_vn.hour == 9:
                 _pkey = "hrdoc:" + today
                 with _TK_NUDGE_LOCK:
                     try:
@@ -1132,6 +1127,16 @@ def _tk_nudge_scheduler():
                         _pseen[_pkey] = time.time()
                         _pseen = {k: v for k, v in _pseen.items() if v and (time.time() - v) < 30 * 86400}
                         db.set_setting("_tkNudgeSent", json.dumps(_pseen))
+            if (db.get_setting("portal_tkNudges", "0") or "0").lower() not in ("1", "true", "on", "yes"):
+                continue
+            try:
+                ci = int(db.get_setting("portal_tkCheckinHour", "10") or "10")
+            except Exception:
+                ci = 10
+            try:
+                co = int(db.get_setting("portal_tkCheckoutHour", "19") or "19")
+            except Exception:
+                co = 19
             for kind, want in (("checkin", ci), ("checkout", co)):
                 if now_vn.hour != want:
                     continue
