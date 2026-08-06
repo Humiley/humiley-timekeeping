@@ -3601,6 +3601,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path.startswith("/api/employees/") and path.endswith("/history"):
+            _eid = path[len("/api/employees/"):-len("/history")]
+            return self._guard(lambda u: self._emp_history_ep(u, urllib.parse.unquote(_eid)))
         if path.startswith("/api/hr/doc/") and path.endswith("/file"):
             _did = path[len("/api/hr/doc/"):-len("/file")]
             return self._guard(lambda u: self._hr_doc_file_ep(u, urllib.parse.unquote(_did)))
@@ -3652,6 +3655,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_jd_ep(u, body))
         if path == "/api/hr/onboarding/file":
             return self._guard(lambda u: self._hr_onb_file_ep(u, body))
+        if path == "/api/hr/history-backfill":
+            return self._guard(lambda u: self._emp_history_backfill_ep(u), manager=True)
         if path == "/api/hr/employee-folders":
             return self._guard(lambda u: self._hr_emp_folders_ep(u))
         if path == "/api/hr/remind":
@@ -5421,6 +5426,24 @@ class Handler(BaseHTTPRequestHandler):
     # otherwise quietly become a second, unprotected compensation database.
     EMP_AUDIT_MASKED = ("salary", "bank")
 
+    @staticmethod
+    def _same_field_value(old, new):
+        """Has this field actually changed?
+
+        A plain string comparison is wrong here: `salary` is a SQLite REAL, so the stored value comes
+        back as 30000000.0 while the browser sends the integer 30000000. Comparing those as text made
+        every re-save of an unchanged salary look like a raise — a phantom row in both the audit trail
+        and the dated history, which is worse than no history at all because it invents events that
+        never happened. Compare numerically when both sides are numbers, textually otherwise."""
+        if old is None and new is None:
+            return True
+        try:
+            if old is not None and new is not None:
+                return float(old) == float(new)
+        except (TypeError, ValueError):
+            pass
+        return str(old if old is not None else "") == str(new if new is not None else "")
+
     def _audit_emp_change(self, u, eid, before, after):
         """One audit row per changed employee field.
 
@@ -5433,7 +5456,7 @@ class Handler(BaseHTTPRequestHandler):
                 if f not in (after or {}):
                     continue
                 old, new = (before or {}).get(f), (after or {}).get(f)
-                if str(old if old is not None else "") == str(new if new is not None else ""):
+                if self._same_field_value(old, new):
                     continue
                 if f in self.EMP_AUDIT_MASKED:
                     detail = "%s changed" % f            # that it moved, never to what
@@ -5444,6 +5467,16 @@ class Handler(BaseHTTPRequestHandler):
                     "actor": u.get("name") or "System", "actorId": u.get("id") or "",
                     "action": "Employee record changed", "target": "employees/" + str(eid),
                     "detail": _name + " · " + detail, "ts": self._utc_now()})
+                # …and the DATED row, which is a different thing from the audit row. The audit answers
+                # "who changed this and when did they change it". This answers "what was it in March",
+                # which is what a payslip reprint, a headcount trend and the Decree 145 labour
+                # management book all need. It stores the salary VALUE — that is the entire point —
+                # so the read side is management-only.
+                if f in db.EMP_HISTORY_FIELDS:
+                    db.add_emp_event(eid, f, old, new,
+                                     effective=str((after or {}).get("_effective") or "")[:10] or None,
+                                     reason=str((after or {}).get("_reason") or "")[:200],
+                                     actor=u.get("name") or "", actor_id=u.get("id") or "")
         except Exception:
             pass          # the change is legitimate; a failed audit write must not block it
 
@@ -7175,6 +7208,29 @@ class Handler(BaseHTTPRequestHandler):
                            "employees": [{"id": e.get("id"), "name": e.get("name") or "",
                                           "dept": e.get("dept") or ""} for e in emps]})
 
+    def _emp_history_ep(self, u, eid):
+        """One employee's effective-dated history — the answer to "what was this in March".
+
+        Scoped exactly like the roster, because it holds the same data over time. Management and above
+        see everything. You always see your OWN full history, salary included: it is your pay, and
+        being able to check what you were paid and from when is the point of keeping it. A line
+        manager sees their own reports WITHOUT the compensation fields, matching `_emp_list_for` —
+        anything looser would make this endpoint a way around the roster's scoping."""
+        emp = db.get_employee(eid)
+        if not emp:
+            return self._err("Employee not found.", 404)
+        rank = self._level_rank(self._caller_level(u))
+        mine = (eid == u.get("id"))
+        my_email = (u.get("email") or "").strip().lower()
+        manages = bool(my_email) and (emp.get("managerEmail") or "").strip().lower() == my_email
+        if not (mine or manages or rank >= self._level_rank("management")):
+            return self._err("You can only see the history of your own record or your own team.", 403)
+        hide_pay = not (mine or rank >= self._level_rank("management"))
+        rows = [r for r in db.list_emp_events(emp_id=eid)
+                if not (hide_pay and r.get("field") in ("salary", "grade"))]
+        return self._json({"ok": True, "empId": eid, "name": emp.get("name") or "",
+                           "events": rows, "payHidden": hide_pay})
+
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.
 
@@ -7195,6 +7251,56 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "id": doc.get("id"), "file": doc.get("file") or "",
                            "fileUrl": doc.get("fileUrl") or "",
                            "fileName": doc.get("fileName") or "document"})
+
+    _PAY_MONTHS = ("January", "February", "March", "April", "May", "June", "July",
+                   "August", "September", "October", "November", "December")
+
+    def _emp_history_backfill_ep(self, u):
+        """Seed the history from the pay runs already finalised.
+
+        Every finalised run froze a line per employee carrying dept, title, grade and gross as they
+        stood that month — so the history for those months already exists, it was just never queryable.
+        This reads them oldest-first and writes a dated event wherever a value differs from the
+        previous month, marked source='backfill' so an inferred row is never mistaken for a recorded
+        one. Idempotent: re-running adds nothing, because the events it would write already exist."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
+            return self._err("Admin access required.", 403)
+
+        def _period_key(p):
+            parts = str(p or "").split()
+            if len(parts) == 2 and parts[0] in self._PAY_MONTHS:
+                return "%s-%02d" % (parts[1], self._PAY_MONTHS.index(parts[0]) + 1)
+            return ""
+
+        runs = [r for r in db.list_collection("payruns")
+                if (r.get("lines") or []) and _period_key(r.get("period"))]
+        runs.sort(key=lambda r: _period_key(r.get("period")))
+        existing = {(e.get("emp_id"), e.get("field"), e.get("effective"))
+                    for e in db.list_emp_events()}
+        seen, made = {}, 0
+        for r in runs:
+            ym = _period_key(r.get("period"))
+            eff = ym + "-01"                       # a pay run describes the whole month
+            for ln in (r.get("lines") or []):
+                eid = ln.get("empId")
+                if not eid:
+                    continue
+                for field, val in (("salary", ln.get("gross")), ("grade", ln.get("grade")),
+                                   ("title", ln.get("title")), ("dept", ln.get("dept"))):
+                    if val in (None, ""):
+                        continue
+                    prev = seen.get((eid, field))
+                    if str(prev) == str(val):
+                        continue                   # unchanged since the previous run
+                    if (eid, field, eff) not in existing:
+                        db.add_emp_event(eid, field, prev, val, effective=eff,
+                                         reason="Backfilled from the %s pay run" % r.get("period"),
+                                         actor=u.get("name") or "", actor_id=u.get("id") or "",
+                                         source="backfill")
+                        made += 1
+                    seen[(eid, field)] = val
+        return self._json({"ok": True, "runs": len(runs), "events": made,
+                           "total": db.emp_events_count()})
 
     def _hr_remind_ep(self, u):
         """Send the outstanding-signature reminders now, instead of waiting for tomorrow."""

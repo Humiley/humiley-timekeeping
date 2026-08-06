@@ -191,6 +191,35 @@ def init_db():
             FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
         );
 
+        -- Effective-dated employee history. The portal knew what was true; it did not know what WAS
+        -- true, because every employee edit is an in-place UPDATE that keeps no prior value. That made
+        -- "what were we paying him in March", "when did Engineering go from 6 to 9" and the labour
+        -- management book Decree 145/2020 Art. 3 requires all unanswerable — and it silently defeated
+        -- the payroll dual-control, since a signed run's payslips were regenerated from mutable inputs.
+        --
+        -- Append-only. One row per FIELD per change, not per record, so a query can ask exactly one
+        -- question ("salary as at 2026-03-31") without parsing a blob. `effective` is the business date
+        -- the change takes force (a rise agreed today may start next month); `ts` is when it was
+        -- recorded. That pair is deliberately NOT bitemporal — nobody here will ask what we BELIEVED
+        -- the January org looked like as of March, and the third dimension doubles the cost of every
+        -- query for that one question.
+        CREATE TABLE IF NOT EXISTS emp_events (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_id     TEXT NOT NULL,
+            effective  TEXT NOT NULL,        -- YYYY-MM-DD, the date the change takes force
+            field      TEXT NOT NULL,        -- salary | grade | title | dept | managerEmail | status
+            old_value  TEXT,
+            new_value  TEXT,
+            reason     TEXT,                 -- promotion, annual review, transfer, correction…
+            actor      TEXT,
+            actor_id   TEXT,
+            source     TEXT,                 -- 'edit' | 'backfill' — a backfilled row is inferred
+            ts         TEXT NOT NULL,        -- when it was RECORDED (never edited)
+            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_emp_events_emp_eff ON emp_events (emp_id, effective);
+        CREATE INDEX IF NOT EXISTS idx_emp_events_field_eff ON emp_events (field, effective);
+
         -- Web Push subscriptions (one row per browser/device per user) for OS notifications.
         CREATE TABLE IF NOT EXISTS push_subs (
             endpoint TEXT PRIMARY KEY,
@@ -715,6 +744,59 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
 
 def list_employees():
     return _rows("SELECT * FROM employees ORDER BY id")
+
+
+# ── Effective-dated employee history ────────────────────────────────────────────────────────────
+# The fields worth a dated row: the ones that move money, route approvals or decide reporting.
+EMP_HISTORY_FIELDS = ("salary", "grade", "title", "dept", "managerEmail", "status")
+
+
+def add_emp_event(emp_id, field, old_value, new_value, effective=None, reason="",
+                  actor="", actor_id="", source="edit"):
+    """Record one dated change. Append-only — there is no update or delete for this table."""
+    now = now_iso()
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO emp_events (emp_id, effective, field, old_value, new_value, reason, "
+            "actor, actor_id, source, ts) VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (emp_id, (effective or now[:10])[:10], field,
+             None if old_value is None else str(old_value),
+             None if new_value is None else str(new_value),
+             reason or "", actor or "", actor_id or "", source, now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def list_emp_events(emp_id=None, field=None, since=None, until=None):
+    """The dated trail, newest first. Any combination of filters."""
+    sql = "SELECT * FROM emp_events WHERE 1=1"
+    args = []
+    if emp_id:
+        sql += " AND emp_id = ?"; args.append(emp_id)
+    if field:
+        sql += " AND field = ?"; args.append(field)
+    if since:
+        sql += " AND effective >= ?"; args.append(since[:10])
+    if until:
+        sql += " AND effective <= ?"; args.append(until[:10])
+    return _rows(sql + " ORDER BY effective DESC, id DESC", tuple(args))
+
+
+def emp_value_asof(emp_id, field, date):
+    """What `field` was for this employee ON `date` — the question the portal could not answer.
+
+    The latest change effective on or before the date. Returns None when nothing was recorded by
+    then, which is honestly different from "it was empty": history starts when recording starts."""
+    row = _row("SELECT new_value FROM emp_events WHERE emp_id = ? AND field = ? AND effective <= ? "
+               "ORDER BY effective DESC, id DESC LIMIT 1", (emp_id, field, str(date)[:10]))
+    return row["new_value"] if row else None
+
+
+def emp_events_count():
+    row = _row("SELECT COUNT(*) AS n FROM emp_events")
+    return row["n"] if row else 0
 
 
 def get_employee(emp_id):

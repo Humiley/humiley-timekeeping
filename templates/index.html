@@ -14282,6 +14282,50 @@ async function tkSaveMyProfile() {
 }
 
 /* Render the professional "My Profile" page for the signed-in user. */
+/* The dated employment record — what this person's job and pay were, and from when.
+
+   Loaded on demand rather than with the page: it is the most sensitive data in the portal, and the
+   server decides per caller what comes back (your own record in full, your team's without pay,
+   everything at management level). The browser never filters this itself. */
+const _EMP_HIST_LABEL = { salary: 'Salary', grade: 'Grade', title: 'Position',
+                          dept: 'Department', managerEmail: 'Reports to', status: 'Status' };
+function _empHistValue(field, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  return field === 'salary' ? _PAY_FMT(+v || 0) : String(v);
+}
+async function tkLoadEmpHistory(empId) {
+  const host = document.getElementById('emp-history-body'); if (!host) return;
+  host.innerHTML = tkSkeleton(null, 3);
+  try {
+    const r = await tkApi('/api/employees/' + encodeURIComponent(empId) + '/history');
+    const ev = r.events || [];
+    if (!ev.length) {
+      host.innerHTML = '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' +
+        _t('No changes recorded yet. History starts from the day it was switched on — earlier changes were not kept, which is the gap this closes.') + '</div>';
+      return;
+    }
+    host.innerHTML =
+      '<div class="table-wrap"><table style="min-width:520px;font-size:12.5px"><thead><tr>' +
+        '<th>' + _t('Effective') + '</th><th>' + _t('What changed') + '</th><th>' + _t('From') + '</th>' +
+        '<th>' + _t('To') + '</th><th>' + _t('Recorded by') + '</th></tr></thead><tbody>' +
+      ev.map(e => '<tr>' +
+        '<td style="white-space:nowrap;font-variant-numeric:tabular-nums">' + tkFmtDate(e.effective) +
+          (e.source === 'backfill' ? ' <span class="badge b-navy" style="font-size:9px" title="' +
+            _tkEscA(_t('Reconstructed from a finalised pay run, not recorded at the time.')) + '">' + _t('inferred') + '</span>' : '') + '</td>' +
+        '<td style="font-weight:600;color:var(--navy)">' + _crmEsc(_t(_EMP_HIST_LABEL[e.field] || e.field)) + '</td>' +
+        '<td style="color:var(--text-light)">' + _crmEsc(_empHistValue(e.field, e.old_value)) + '</td>' +
+        '<td style="font-weight:600">' + _crmEsc(_empHistValue(e.field, e.new_value)) + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(e.actor || '—') +
+          (e.reason ? '<div>' + _crmEsc(e.reason) + '</div>' : '') + '</td>' +
+      '</tr>').join('') + '</tbody></table></div>' +
+      (r.payHidden ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' +
+        _t('Salary and grade changes are not shown — those are visible to the employee themselves and to Approver (Management) level.') + '</div>' : '');
+  } catch (e) {
+    host.innerHTML = '<div style="font-size:12.5px;color:var(--danger,#C0392B)">' +
+      _t('Could not load the history') + ': ' + _crmEsc(_errMsg(e)) + '</div>';
+  }
+}
+
 function tkRenderMyProfile() {
   const root = document.getElementById('myprofile-root'); if (!root) return;
   const u = TK.user || {};
@@ -14359,6 +14403,11 @@ function tkRenderMyProfile() {
     sec('Personal Information', row('Date of Birth', tkFmtDate(e.dob)) + row('Gender', D(e.gender)) + row('Marital Status', D(e.familyStatus)) + row('Shirt / Uniform', D(e.shirtSize)) + row('ID / Passport', D(e.personalId))) +
     sec('Contact', row('Work Email', D(e.email)) + row('Phone', D(e.phone)) + row('Work Location', D(e.zone)) + block('Address', D(e.address))) +
     sec('Signature &amp; Security', '<div id="pin-status-body">' + _pinStatusInner() + '</div>') +
+    // The dated record of this person's job and pay. Loaded on demand — it is the most sensitive
+    // thing on the page, and the server decides what comes back.
+    sec('Employment history', '<div id="emp-history-body" data-emp="' + _tkEscA(e.id || '') + '">' +
+      '<button class="btn btn-outline btn-sm" style="font-size:11.5px" onclick="tkLoadEmpHistory(\'' + (e.id || '') + '\')">' +
+      tkIcon('clock', 12) + ' ' + _t('Show history') + '</button></div>') +
     sec('Education &amp; Skills', row('Education', D(e.education)) + row('English Certificate', D(e.englishCert)) + (e.note ? block('Notes', D(e.note)) : '')) +
     sec('Leave &amp; Benefits', bar('Annual Leave', aU, aT, 'prog-navy') + bar('Sick Leave', sU, sT, 'prog-emerald')) +
     sec('Emergency Contact', e.emergency ? '<div style="font-size:13px;line-height:1.6">' + D(e.emergency) + '</div>' : '<div style="font-size:13px;color:var(--text-light)">No emergency contact on file</div>') +
@@ -19911,6 +19960,22 @@ const _VI = {
   'That assignment is no longer there.': 'Bàn giao này không còn nữa.',
   'Returned': 'Đã trả', 'returned': 'đã trả', 'of': 'trong',
   'Exit sign-off record': 'Biên bản ký xác nhận nghỉ việc',
+  // Effective-dated employment history + Wave 1 payroll/leave/PII strings
+  'Employment history': 'Lịch sử công tác', 'Show history': 'Xem lịch sử',
+  'Effective': 'Hiệu lực từ', 'What changed': 'Nội dung thay đổi', 'From': 'Từ', 'To': 'Thành',
+  'Recorded by': 'Người ghi nhận', 'inferred': 'suy ra', 'Salary': 'Lương', 'Grade': 'Bậc',
+  'Position': 'Chức danh', 'Department': 'Bộ phận', 'Reports to': 'Quản lý trực tiếp', 'Status': 'Trạng thái',
+  'Could not load the history': 'Không tải được lịch sử',
+  'No changes recorded yet. History starts from the day it was switched on — earlier changes were not kept, which is the gap this closes.': 'Chưa ghi nhận thay đổi nào. Lịch sử bắt đầu từ ngày tính năng này được bật — các thay đổi trước đó không được lưu, và đây chính là khoảng trống được khắc phục.',
+  'Reconstructed from a finalised pay run, not recorded at the time.': 'Được dựng lại từ đợt lương đã chốt, không phải ghi nhận tại thời điểm đó.',
+  'Salary and grade changes are not shown — those are visible to the employee themselves and to Approver (Management) level.': 'Không hiển thị thay đổi lương và bậc — chỉ nhân viên đó và cấp Phê duyệt (Ban giám đốc) mới xem được.',
+  'FINAL — as signed': 'CHÍNH THỨC — theo bản đã ký', 'PROVISIONAL — month not closed': 'TẠM TÍNH — chưa chốt tháng',
+  'Export the full employee list?': 'Xuất toàn bộ danh sách nhân viên?',
+  'The file includes personal data — ID numbers, dates of birth, addresses and emergency contacts. It leaves the portal’s access controls, so keep it on company storage and delete it when you are done. This export is recorded in the audit log.': 'Tệp này chứa dữ liệu cá nhân — số CCCD, ngày sinh, địa chỉ và liên hệ khẩn cấp. Tệp nằm ngoài phạm vi kiểm soát truy cập của hệ thống, vì vậy hãy lưu trên kho dữ liệu công ty và xoá sau khi dùng xong. Lần xuất này được ghi vào nhật ký kiểm toán.',
+  'Payroll cannot be rolled out yet': 'Chưa thể chốt bảng lương',
+  'These employees have no salary on file, so the system has no figure to pay them:': 'Những nhân viên sau chưa có mức lương trong hồ sơ nên hệ thống không có số liệu để chi trả:',
+  'Set each one’s monthly gross on their employee record, then roll out again.': 'Hãy nhập lương gộp hằng tháng vào hồ sơ từng người, sau đó chốt lại.',
+  'The selected range is all weekend and public holidays — no leave would be used.': 'Khoảng thời gian đã chọn toàn ngày nghỉ và lễ — sẽ không trừ ngày phép nào.',
   'Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.': 'Ban hành tài liệu công ty dành cho Nhân sự, Biên tập viên và Quản trị viên — quản trị viên có thể thêm bạn ở mục Phân quyền.',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
