@@ -61,7 +61,8 @@ def perf_factor(rating):
     return 1.5 if r >= 5 else 1.25 if r >= 4 else 1.0 if r >= 3 else 0.5 if r >= 2 else 0
 
 
-def compute(gross, gi=2, yrs=0, rating=3, deps=0, has_cert=False, working_days=22, unpaid_days=0):
+def compute(gross, gi=2, yrs=0, rating=3, deps=0, has_cert=False, working_days=22, unpaid_days=0,
+            ot_units=0, ot_taxable_units=0, ot_hours=0, ot_night_hours=0):
     """One employee's payslip for a month. Inputs are the already-resolved drivers:
       gross        — monthly gross (employee.salary, else grade mid)
       gi           — grade index 0..9 (position allowance applies at gi >= 4)
@@ -71,6 +72,10 @@ def compute(gross, gi=2, yrs=0, rating=3, deps=0, has_cert=False, working_days=2
       has_cert     — has an English certificate (also triggers the skill allowance)
       working_days — standard working days in the month (unpaid-leave proration base)
       unpaid_days  — approved unpaid-leave days this month
+      ot_units     — approved overtime as MULTIPLIER-hours (overtime.month_summary with hourly=1.0):
+                     the Art. 98 rates, the night premium and the day types are already inside it
+      ot_taxable_units — the same hours at the plain rate; only the premium above it escapes PIT
+      ot_hours / ot_night_hours — carried through for the wage statement, not for the arithmetic
     Returns a dict of the rounded payslip fields (same keys as the frontend snapshot)."""
     basic = gross * 0.65
     pos_allow = gross * 0.05 if gi >= 4 else 0
@@ -88,14 +93,27 @@ def compute(gross, gi=2, yrs=0, rating=3, deps=0, has_cert=False, working_days=2
     er_total = sum(er.values())
 
     unpaid_deduction = (P1 + P2) / working_days * unpaid_days if working_days else 0
-    taxable = max(0, (P1 + P2 + P3 + TRANSPORT) - ee_total - PIT_SELF - deps * PIT_DEP)
+
+    # Overtime (Labour Code Art. 98, Decree 145/2020 Art. 55). The hourly wage is the wage-and-
+    # allowance pay over the normal hours in the month — bonuses, welfare and overtime itself are
+    # excluded from that base, so P3 and the meal/phone/transport welfare stay out of it.
+    # Overtime is NOT in the SI base, and per Circular 111/2013 Art. 3(1)(i) only the ordinary-rate
+    # part of it is taxable; the premium above that is exempt.
+    ot_hourly = (P1 + P2) / max(1, working_days * 8)
+    ot_pay = jsround(ot_hourly * (ot_units or 0))
+    ot_taxable = jsround(ot_hourly * (ot_taxable_units or 0))
+    ot_exempt = max(0, ot_pay - ot_taxable)
+
+    taxable = max(0, (P1 + P2 + P3 + TRANSPORT + ot_taxable) - ee_total - PIT_SELF - deps * PIT_DEP)
     p = pit(taxable)
-    gross_pay = P1 + P2 + P3 + WELFARE
+    gross_pay = P1 + P2 + P3 + WELFARE + ot_pay
     net = gross_pay - ee_total - p - unpaid_deduction
 
     return {
         "P1": jsround(P1), "P2": jsround(P2), "P3": jsround(P3), "kpiTarget": jsround(kpi_target),
         "welfare": WELFARE, "siBase": jsround(si_base),
+        "otHours": ot_hours, "otNightHours": ot_night_hours, "otHourly": jsround(ot_hourly),
+        "otPay": ot_pay, "otTaxable": ot_taxable, "otExempt": ot_exempt,
         "eeBhxh": jsround(ee["bhxh"]), "eeBhyt": jsround(ee["bhyt"]), "eeBhtn": jsround(ee["bhtn"]),
         "si": jsround(ee_total),
         "erBhxh": jsround(er["bhxh"]), "erBhyt": jsround(er["bhyt"]), "erBhtn": jsround(er["bhtn"]),

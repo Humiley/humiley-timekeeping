@@ -33,6 +33,7 @@ from tkutil import (_money_vnd, _now_iso, _vn_fold, _iso_minus, _einv_num, _einv
                     _appr_state_of, _appr_epoch, _claim_items, _claim_rollup)
 from einv import (_einv_safe_xml, _zip_read_bounded, _einv_parse_xml, _einv_from_zip, _einv_all_from_zip, _inv_ident, _inv_ident_str, _einv_parse_text, _pdf_engine_ok, _einv_pdf_items)   # e-invoice parsers (extracted)
 from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate limiter (extracted); _RATE/_RATE_LOCK re-exported (same objects) so callers/tests keep the app.* surface
+import overtime          # Labour Code Art. 98/106/107 overtime rates, night premium and caps (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -417,7 +418,12 @@ _APPR_SETTING_DEFAULTS = {"apprEmail": "1", "apprSenderHr": "hr@humiley.com",
                           # so an install that never sets this keeps working. Never bake real names in
                           # here — a shipped default would grant strangers HR on every other install.
                           # An admin can always publish, listed or not, so nobody is ever locked out.
-                          "hrAdmins": ""}
+                          "hrAdmins": "",
+                          # Art. 107(3): 300 overtime hours a year instead of 200, but only for the
+                          # industries the article lists and only after notifying the labour
+                          # authority. Blank = the ordinary 200-hour ceiling, which is the answer for
+                          # every company that has not made and recorded that decision.
+                          "otAnnualCap": ""}
 _APPR_REMIND_LOCK = threading.Lock()
 
 # Seeded ONCE into the DB on first boot (not used as a code default — see the note above). Clearing the
@@ -943,6 +949,65 @@ def _tk_is_workday(date_str):
     except Exception:
         pass
     return True
+
+
+def _ot_holiday_set():
+    """The public-holiday dates (YYYY-MM-DD) from the company register.
+
+    Overtime on a public holiday is paid at 300% rather than 150% (Labour Code Art. 98(1)(c)), so
+    this set is worth twice the hourly rate to the person who worked it. An unreadable register
+    returns empty rather than raising: the pay is then understated and visible, not wrong and silent.
+    """
+    try:
+        raw = db.get_setting("portal_holidays") or []
+        if isinstance(raw, str):
+            raw = json.loads(raw or "[]") or []
+        return {str((h or {}).get("date") or (h or {}).get("d") or "")[:10]
+                for h in raw if isinstance(h, dict)}
+    except Exception:
+        return set()
+
+
+_OT_MON_SUN = re.compile(r"mon\s*-\s*sun|t2\s*-\s*cn", re.I)
+_OT_MON_SAT = re.compile(r"mon\s*-\s*sat|t2\s*-\s*t7", re.I)
+
+
+def _rest_weekdays_for(emp, schedules=None):
+    """Which weekdays this person does NOT normally work — Python numbering, Monday 0 … Sunday 6.
+
+    `employee.schedule` holds the NAME of a work-schedule pattern picked from the dropdown ("Factory
+    Shift A"), not the pattern itself — so the days have to be read from the schedule that name
+    points at. Matching the name directly against /mon.*sat/ finds nothing, which silently treated
+    the whole factory as a Mon–Fri office and paid its Saturday overtime at the rest-day rate it had
+    not earned. Falls back to Sat + Sun, the office pattern.
+    """
+    name = str((emp or {}).get("schedule") or "").strip()
+    if not name:
+        return (5, 6)
+    days = ""
+    for s in (schedules if schedules is not None else db.list_collection("schedules")):
+        if str(s.get("name") or "").strip().lower() == name.lower():
+            days = str(s.get("days") or "")
+            break
+    d = (days or name).replace("–", "-").replace("—", "-")
+    if _OT_MON_SUN.search(d):
+        return ()
+    if _OT_MON_SAT.search(d):
+        return (6,)
+    return (5, 6)
+
+
+def _ot_annual_cap():
+    """Art. 107: 200 overtime hours a year, or 300 for the sectors listed in Art. 107(3).
+
+    300 is not a default. It applies only to named industries and only on notification to the labour
+    authority, so it has to be a decision somebody made and recorded in settings.
+    """
+    try:
+        v = float(db.get_setting("portal_otAnnualCap") or 0)
+    except (TypeError, ValueError):
+        v = 0
+    return v if v > 0 else overtime.CAP_YEAR_HOURS
 
 
 def _tk_on_leave_today(today):
@@ -3601,6 +3666,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path == "/api/hr/overtime":
+            return self._guard(lambda u: self._ot_summary_ep(u, qs))
         if path.startswith("/api/employees/") and path.endswith("/history"):
             _eid = path[len("/api/employees/"):-len("/history")]
             return self._guard(lambda u: self._emp_history_ep(u, urllib.parse.unquote(_eid)))
@@ -5023,13 +5090,43 @@ class Handler(BaseHTTPRequestHandler):
         is_direct_mgr = emp and (emp.get("managerEmail") or "").lower() == (u.get("email") or "").lower()
         if not (is_direct_mgr or self._is_mgmt(u)):
             return self._err("Only the employee's direct manager (or Management) can decide overtime.", 403)
+
+        # Art. 107: approving is the moment the hours become the company's overtime, so it is the
+        # moment to measure them against the statutory ceilings — 50% of a normal day, 40 hours a
+        # month, 200 a year. A breach does NOT delete the record: hours worked were worked, and
+        # refusing to record them just moves the liability off the books where nobody can see it.
+        # The approver is told what the approval would break and may proceed only by saying why,
+        # and that override is written into the audit chain under their name.
+        breaches, override = [], str(body.get("override") or "").strip()
+        if decision == "approve":
+            try:
+                this_h = float(rec.get("ot_hours") or 0)
+            except (TypeError, ValueError):
+                this_h = 0.0
+            d, mo, yr = self._ot_totals_for(rec.get("emp_id"), rec.get("date"), exclude_id=rec.get("id"))
+            caps = overtime.cap_check(d + this_h, mo + this_h, yr + this_h,
+                                      annual_cap=_ot_annual_cap())
+            breaches = caps["breaches"]
+            if breaches and not override:
+                return self._json({"ok": False, "capBreach": True, "breaches": breaches,
+                                   "dayHours": round(d + this_h, 2), "monthHours": round(mo + this_h, 2),
+                                   "yearHours": round(yr + this_h, 2),
+                                   # 422, not 409: in this API a 409 means "somebody else changed
+                                   # this record", and the client says exactly that. Nothing changed
+                                   # here — the request is understood and refused on its merits.
+                                   "error": " ".join(b["message"] for b in breaches)}, 422)
+
         st = db.decide_attendance_ot(int(aid), decision)
         db.put_collection_item("audit", {"actor": u.get("name"), "actorId": u.get("id"),
             "action": "Overtime " + ("approved" if decision == "approve" else "rejected"),
             "target": "attendance/" + str(aid),
-            "detail": (rec.get("name") or "") + " · %.1fh" % float(rec.get("ot_hours") or 0),
+            "detail": (rec.get("name") or "") + " · %.1fh" % float(rec.get("ot_hours") or 0)
+                      + ("" if not breaches else
+                         " · OVER THE STATUTORY CAP (%s) — approved anyway: %s"
+                         % (", ".join(b["cap"] for b in breaches), override[:200])),
             "ts": self._utc_now()})
-        return self._json({"ok": True, "otStatus": st, "id": rec.get("id")})
+        return self._json({"ok": True, "otStatus": st, "id": rec.get("id"),
+                           "overCap": [b["cap"] for b in breaches]})
 
     # -- leave --------------------------------------------------------------
     def _leave_list(self, u, qs):
@@ -5093,23 +5190,30 @@ class Handler(BaseHTTPRequestHandler):
                 if span < 1:
                     return self._err("The leave end date can't be before the start date.", 400)
                 # Bound by WORKING days, not the calendar span. A public holiday is not annual leave
-                # (Labour Code Art. 112) and neither is a rest day, so the browser now excludes both —
-                # this is the same rule enforced where it cannot be edited. Falls back to the calendar
-                # span if the holiday register is unreadable, which can only ever be more generous.
-                _bound = span
-                try:
-                    _hol = {str((h or {}).get("date") or "")[:10]
-                            for h in (json.loads(db.get_setting("portal_holidays", "") or "[]") or [])}
-                    _work = 0
-                    _c = d0
-                    while _c <= d1:
-                        if _c.weekday() < 5 and _c.strftime("%Y-%m-%d") not in _hol:
-                            _work += 1
-                        _c += timedelta(days=1)
-                    _bound = max(_work, 0.5) if _work else span
-                except Exception:
-                    pass
-                if dv > _bound:
+                # (Labour Code Art. 112) and neither is a rest day, so the browser excludes both —
+                # this is the same rule enforced where it cannot be edited.
+                #
+                # `db.get_setting` ALREADY json-decodes, so json.loads on its result raised TypeError
+                # on every deployment that had actually saved a holiday register — swallowed by the
+                # except below, leaving the bound at the raw calendar span. The check therefore ran
+                # only when there were no holidays to apply it to, and a nine-day Tết request went
+                # through at nine days of annual leave. `_ot_holiday_set` is the one reader of this
+                # setting, and it tolerates both shapes.
+                #
+                # Rest days come from the requester's own schedule, so a Mon–Sat factory Saturday is
+                # a working day for them and a rest day for the office — the same rule the browser
+                # applies, from the same source.
+                _hol = _ot_holiday_set()
+                _rest = set(_rest_weekdays_for(db.get_employee(u["id"]) or {}))
+                _work, _c = 0, d0
+                while _c <= d1:
+                    if _c.weekday() not in _rest and _c.strftime("%Y-%m-%d") not in _hol:
+                        _work += 1
+                    _c += timedelta(days=1)
+                if not _work:
+                    return self._err("That range is all rest days and public holidays — no leave "
+                                     "would be used.", 400)
+                if dv > _work:
                     return self._err("The number of leave days exceeds the working days in that range "
                                      "(weekends and public holidays are not annual leave).", 400)
             except (TypeError, ValueError):
@@ -5310,11 +5414,19 @@ class Handler(BaseHTTPRequestHandler):
         my_email = (u.get("email") or "").strip().lower()
         def _mine(e):
             return e.get("id") == me or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)
-        # Two different questions, so two different rules. Compensation: never, for anybody. Identity
-        # PII: only for the people they manage. Leave counters stay visible company-wide, because a
-        # manager approving a request has to see the balance it comes out of — stripping those broke
-        # leave approval, which is what the payroll-access test correctly caught.
-        return [{k: v for k, v in e.items() if k not in self.PAY_SENSITIVE} if _mine(e)
+        # Two different questions, so two different rules. Compensation: never, for anybody they
+        # manage. Identity PII: only for the people they manage. Leave counters stay visible
+        # company-wide, because a manager approving a request has to see the balance it comes out of —
+        # stripping those broke leave approval, which is what the payroll-access test correctly caught.
+        #
+        # Their OWN row goes through untouched, which is the rule the docstring has always stated and
+        # which splitting these branches quietly dropped: `_mine` is true for yourself as well as your
+        # reports, so a department head's own salary and grade were being stripped from their own
+        # record. Their payslip then priced them at the grade mid-point, printed a full invented PIT
+        # and net, and badged none of it — while an ordinary staff member on the same screen saw the
+        # right figure. Nobody is protected from their own pay.
+        return [e if e.get("id") == me
+                else {k: v for k, v in e.items() if k not in self.PAY_SENSITIVE} if _mine(e)
                 else {k: v for k, v in e.items() if k not in (self.PAY_SENSITIVE | self.PII_SENSITIVE)}
                 for e in rows]
 
@@ -5567,6 +5679,7 @@ class Handler(BaseHTTPRequestHandler):
         out["hrAdmins"] = (db.get_setting("portal_hrAdmins", "") or "") \
             if self._caller_level(u) == "admin" else ""
         out["canPublishDocs"] = self._is_hr_admin(u)
+        out["otAnnualCap"] = str(int(_ot_annual_cap()))   # the ceiling everyone's OT is measured against
         out["apprEmailHealth"] = _APPR_EMAIL_HEALTH if rank >= self._level_rank("manager") else {}
         return self._json(out)
 
@@ -5757,7 +5870,8 @@ class Handler(BaseHTTPRequestHandler):
                       ("monthlyTo", "portal_monthlyTo"),
                       ("payerSeparation", "portal_payerSeparation"),
                       ("apprPayers", "portal_apprPayers"),   # who may release money — admin-only to change
-                      ("hrAdmins", "portal_hrAdmins")):      # who is HR — admin-only to change
+                      ("hrAdmins", "portal_hrAdmins"),      # who is HR — admin-only to change
+                      ("otAnnualCap", "portal_otAnnualCap")):   # Art. 107(3) 300h election
             v = body.get(k)
             if not isinstance(v, str):
                 continue
@@ -5933,6 +6047,24 @@ class Handler(BaseHTTPRequestHandler):
         # minimum access level to read
         need = self.READ_MIN.get(name)
         if need and self._level_rank(self._caller_level(u)) < self._level_rank(need):
+            # Your OWN payslip is the one exception. Pay runs are management-only, which is right for
+            # the register and the company totals — but it also meant an employee's own payslip could
+            # never reach the FROZEN, Director-signed line, so their My Payslip screen recomputed the
+            # month live and showed them today's salary under an old month's heading. What comes back
+            # here is one line, theirs, from finalised runs only: no other employee, no company totals.
+            if name == "payruns":
+                mine = []
+                for r in db.list_collection(name):
+                    if "final" not in str(r.get("status") or "").lower():
+                        continue
+                    ln = [l for l in (r.get("lines") or [])
+                          if isinstance(l, dict) and l.get("empId") == u.get("id")]
+                    if ln:
+                        mine.append({"id": r.get("id"), "period": r.get("period"),
+                                     "scope": r.get("scope"), "empId": r.get("empId"),
+                                     "status": r.get("status"), "created": r.get("created"),
+                                     "lines": ln})
+                return self._json({"ok": True, "items": mine})
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
         lvl = self._caller_level(u)
@@ -6732,6 +6864,26 @@ class Handler(BaseHTTPRequestHandler):
         # and only a Director e-signature (/api/esign, preparer != approver) can finalise it. Stamp the
         # preparer so segregation of duties can exclude them.
         if name == "payruns":
+            # A salary nobody agreed can never enter a pay run. `_payComputed` prices an employee with
+            # no salary on file at the GRADE MID-POINT — a full gross, PIT and statutory footprint
+            # invented for a figure nobody signed — and the browser guard covered only one of the
+            # three buttons that create a run. This is the boundary that covers all of them, and any
+            # future one: the run is refused, by name, before it can be prepared and e-signed.
+            _no_salary = []
+            for _ln in (item.get("lines") if isinstance(item.get("lines"), list) else []):
+                if not isinstance(_ln, dict):
+                    continue
+                _e = db.get_employee(str(_ln.get("empId") or "")) if _ln.get("empId") else None
+                try:
+                    _ok = _e and float(_e.get("salary") or 0) > 0
+                except (TypeError, ValueError):
+                    _ok = False
+                if not _ok:
+                    _no_salary.append(str(_ln.get("name") or _ln.get("empId") or "?"))
+            if _no_salary:
+                return self._err("These employees have no salary on record, so there is nothing to "
+                                 "pay them from: %s. Enter the agreed salary first."
+                                 % ", ".join(_no_salary[:8]), 400)
             item["status"] = "Pending Approval"
             item["preparedBy"] = u.get("name")
             item["preparedById"] = u.get("id")
@@ -7231,6 +7383,83 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "empId": eid, "name": emp.get("name") or "",
                            "events": rows, "payHidden": hide_pay})
 
+    def _ot_totals_for(self, emp_id, date_iso, exclude_id=None):
+        """This employee's approved overtime on that day, in that month and in that year.
+
+        `exclude_id` drops the record being decided, so the caller can add its hours itself and ask
+        the honest question — "if I approve this, where does it leave us" — rather than measuring a
+        total that already contains, or already excludes, the thing under consideration.
+        """
+        year, ym, day = str(date_iso)[:4], str(date_iso)[:7], str(date_iso)[:10]
+        rows = db.list_ot_approved(year + "-01-01", year + "-12-31", emp_id=emp_id)
+        d = mo = yr = 0.0
+        for r in rows:
+            if exclude_id is not None and r.get("id") == exclude_id:
+                continue
+            try:
+                h = float(r.get("ot_hours") or 0)
+            except (TypeError, ValueError):
+                continue
+            yr += h
+            rd = str(r.get("date") or "")
+            if rd[:7] == ym:
+                mo += h
+            if rd[:10] == day:
+                d += h
+        return d, mo, yr
+
+    def _ot_summary_ep(self, u, qs):
+        """Approved overtime for a month, valued in rate-units and measured against the caps.
+
+        The money is deliberately NOT finished here. This returns `units` — the multiplier-hours
+        Art. 98 produces once the day type and the night window are applied — and the payroll screen
+        multiplies them by that employee's own hourly wage, which is the one number the wage model
+        already owns. So the law lives in overtime.py where it is tested, the wage lives with the
+        wage, and neither has to be restated in the other's language.
+
+        Scoped like the roster: your own overtime always, your direct reports' if you manage them,
+        everybody's from management up.
+        """
+        period = str((qs.get("period", [None])[0] or ""))[:7]
+        if not re.match(r"^\d{4}-\d{2}$", period):
+            period = self._vn_day()[:7]
+        rank = self._level_rank(self._caller_level(u))
+        emps = db.list_employees()
+        if rank < self._level_rank("management"):
+            my_email = (u.get("email") or "").strip().lower()
+            emps = [e for e in emps if e.get("id") == u.get("id")
+                    or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)]
+        allowed = {e.get("id") for e in emps}
+
+        rows_by_emp = {}
+        for r in db.list_ot_approved(period + "-01", period + "-31"):
+            if r.get("emp_id") in allowed:
+                rows_by_emp.setdefault(r.get("emp_id"), []).append(r)
+
+        hols = _ot_holiday_set()
+        scheds = db.list_collection("schedules")
+        cap_y = _ot_annual_cap()
+        out = []
+        for e in emps:
+            recs = rows_by_emp.get(e.get("id")) or []
+            if not recs:
+                continue
+            rest = _rest_weekdays_for(e, scheds)
+            # hourly = 1.0, so `pay` comes back as the pure multiplier-hours the frontend scales.
+            s = overtime.month_summary(recs, 1.0, hols, rest)
+            _, month_h, year_h = self._ot_totals_for(e.get("id"), period + "-01")
+            worst_day = max(s["byDate"].values()) if s["byDate"] else 0.0
+            caps = overtime.cap_check(worst_day, month_h, year_h, annual_cap=cap_y)
+            out.append({"empId": e.get("id"), "name": e.get("name") or "", "dept": e.get("dept") or "",
+                        "hours": round(s["hours"], 2), "nightHours": round(s["nightHours"], 2),
+                        "units": round(s["pay"], 6), "taxableUnits": round(s["taxable"], 6),
+                        "byKind": {k: {kk: round(vv, 2) for kk, vv in v.items()}
+                                   for k, v in s["byKind"].items()},
+                        "records": s["records"], "monthHours": round(month_h, 2),
+                        "yearHours": round(year_h, 2), "breaches": caps["breaches"]})
+        return self._json({"ok": True, "period": period, "annualCap": cap_y,
+                           "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out})
+
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.
 
@@ -7272,12 +7501,16 @@ class Handler(BaseHTTPRequestHandler):
                 return "%s-%02d" % (parts[1], self._PAY_MONTHS.index(parts[0]) + 1)
             return ""
 
+        # FINALISED runs only. Every run is created as "Pending Approval" (see _coll_add), so without
+        # this filter a draft the Director refused to sign was seeded into the permanent record
+        # alongside the corrected one — two same-day rows, one of them a figure nobody approved.
         runs = [r for r in db.list_collection("payruns")
-                if (r.get("lines") or []) and _period_key(r.get("period"))]
+                if (r.get("lines") or []) and _period_key(r.get("period"))
+                and "final" in str(r.get("status") or "").lower()]
         runs.sort(key=lambda r: _period_key(r.get("period")))
         existing = {(e.get("emp_id"), e.get("field"), e.get("effective"))
                     for e in db.list_emp_events()}
-        seen, made = {}, 0
+        seen, made, skipped = {}, 0, 0
         for r in runs:
             ym = _period_key(r.get("period"))
             eff = ym + "-01"                       # a pay run describes the whole month
@@ -7285,7 +7518,18 @@ class Handler(BaseHTTPRequestHandler):
                 eid = ln.get("empId")
                 if not eid:
                     continue
-                for field, val in (("salary", ln.get("gross")), ("grade", ln.get("grade")),
+                # The CONTRACTUAL salary, never the payslip total. `gross` on a line is
+                # P1+P2+P3+welfare — it carries a KPI factor, ₫1,530,000 of fixed welfare and any
+                # one-off bonus, so reading it as salary understated every ordinary month and turned
+                # a Tết bonus into a raise followed by an equal pay cut. Runs finalised before
+                # `contractGross` was recorded simply contribute no salary row: a gap in the history
+                # is honest, a wrong figure in it is not.
+                _salary = ln.get("contractGross")
+                if _salary in (None, "") and isinstance(ln.get("calc"), dict):
+                    _salary = ln["calc"].get("contractGross")
+                if _salary in (None, ""):
+                    skipped += 1
+                for field, val in (("salary", _salary), ("grade", ln.get("grade")),
                                    ("title", ln.get("title")), ("dept", ln.get("dept"))):
                     if val in (None, ""):
                         continue
@@ -7297,10 +7541,13 @@ class Handler(BaseHTTPRequestHandler):
                                          reason="Backfilled from the %s pay run" % r.get("period"),
                                          actor=u.get("name") or "", actor_id=u.get("id") or "",
                                          source="backfill")
+                        # Record it NOW, not just in `seen`: two runs can share a month, and without
+                        # this the second one writes a second row on the same effective date.
+                        existing.add((eid, field, eff))
                         made += 1
                     seen[(eid, field)] = val
         return self._json({"ok": True, "runs": len(runs), "events": made,
-                           "total": db.emp_events_count()})
+                           "salaryUnavailable": skipped, "total": db.emp_events_count()})
 
     def _hr_remind_ep(self, u):
         """Send the outstanding-signature reminders now, instead of waiting for tomorrow."""

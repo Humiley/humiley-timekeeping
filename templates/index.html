@@ -1475,6 +1475,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="form-group"><label class="form-label">Finance SharePoint folder (URL)</label><input class="form-control" id="portal-finsp" placeholder="https://humiley.sharepoint.com/sites/Finance/Shared Documents/Payments"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into &lt;Payments|Claims|Travel&gt;/&lt;year&gt;/&lt;month&gt;/&lt;reference&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkFinSpTest()">Test connection</button><button class="btn btn-outline btn-sm" onclick="tkFinSpBackfill()">Archive existing files</button></div><div id="finsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group"><label class="form-label">HR SharePoint folder (URL)</label><input class="form-control" id="portal-hrsp" placeholder="https://humiley.sharepoint.com/sites/HR/Shared Documents"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Paste the SharePoint folder link for HR documents. Job Descriptions attached to a requisition are filed by the SERVER into JD/&lt;year&gt;/, so it works whether or not anyone is signed in to Microsoft. Leave blank and JDs stay inside the portal, and signed policy acknowledgements stay in the portal too.</div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="tkHrFolders()">Create employee folders</button></div><div id="hrsp-result" style="font-size:12px;margin-top:8px;white-space:pre-line"></div></div>
     <div class="form-group"><label class="form-label">Who is HR — who may publish company documents</label><input class="form-control" id="portal-hrAdmins" placeholder="tran.doan@humiley.com"><div style="font-size:11px;color:var(--text-light);margin-top:4px"><b>Editor and Admin can already publish.</b> Naming somebody here <b>adds</b> to that — use it for the HR officer who writes the policies, so she gets <b>+ Publish a document</b> and the Edit / Re-issue / Archive controls without being promoted to Editor. Several addresses may be listed, separated by commas. A department manager still cannot publish: committing every employee to signing something is not something you inherit by running a department. Leave blank and it falls back to “Approver (Management) or above”.</div></div>
+    <div class="form-group"><label class="form-label">Annual overtime ceiling (hours)</label><input class="form-control" id="portal-otAnnualCap" placeholder="200" inputmode="numeric"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 107 allows <b>200 hours a year</b>, and <b>300</b> only for the industries Art. 107(3) lists, after notifying the labour authority. Leave blank for 200 — the answer for any company that has not taken and recorded that decision. The daily (4h) and monthly (40h) limits are fixed by the article and are not editable. Approving beyond a limit is still possible, but only with a reason, and it is written into the audit trail under the approver's name.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
@@ -2935,7 +2936,10 @@ async function tkApi(path, opts = {}) {
       try { if (typeof toast === 'function') toast(_msg, 'warn', 7000); } catch (_) {}
       const _c = new Error(_msg); _c.status = 409; _c.conflict = true; if (e && e.currentRev != null) _c.currentRev = e.currentRev; throw _c;
     }
-    const _err = new Error((e && e.error) || ('HTTP ' + res.status)); _err.status = res.status; throw _err;
+    // Carry the parsed body on the error. Some refusals are structured — an overtime approval over
+    // the Art. 107 cap comes back naming which ceilings it breaks — and a caller that can only read
+    // a message string has to re-parse prose to find out what happened.
+    const _err = new Error((e && e.error) || ('HTTP ' + res.status)); _err.status = res.status; _err.data = e || {}; throw _err;
   }
   // A successful write invalidates that collection's load cache so the next read re-fetches server truth.
   if (_m !== 'GET' && typeof tkCollInvalidate === 'function') {
@@ -5527,6 +5531,7 @@ async function tkLoadIntegrations() {
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
   const _hra = document.getElementById('portal-hrAdmins'); if (_hra) _hra.value = g('hrAdmins', '');    // admin-only; blank for everyone else
+  const _otc = document.getElementById('portal-otAnnualCap'); if (_otc) _otc.value = (g('otAnnualCap', '') === '200' ? '' : g('otAnnualCap', ''));   // blank means the ordinary 200
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
   const _dlt = document.getElementById('portal-digestLeadTo'); if (_dlt) _dlt.value = g('digestLeadTo', '');
@@ -5685,6 +5690,7 @@ async function tkSaveIntegrations() {
     payerSeparation: C('portal-payerSeparation') ? '1' : '0',
     apprPayers: V('portal-apprPayers'),   // the server ignores this key entirely unless the caller is an admin
     hrAdmins: V('portal-hrAdmins'),       // ditto — who is HR is an authorization list
+    otAnnualCap: String(parseInt(V('portal-otAnnualCap'), 10) || ''),   // blank = Art. 107's ordinary 200-hour ceiling
     digestEnabled: C('portal-digestEnabled') ? '1' : '0',
     digestDay: String(parseInt(V('portal-digestDay'), 10) || 0),
     digestLeadTo: V('portal-digestLeadTo'),
@@ -5940,7 +5946,14 @@ function _probationMilestonesFor(role) {
   const out = [];
   if (cap >= 60) out.push({ day: Math.round(cap / 2), label: 'Day ' + Math.round(cap / 2) + ' — Manager first check-in' });
   if (cap >= 30) out.push({ day: Math.max(1, cap - 10), label: 'Day ' + Math.max(1, cap - 10) + ' — HR check-in & risk review' });
-  out.push({ day: cap, label: 'Day ' + cap + ' — Probation decision (confirm or end) · statutory cap' });
+  // `decision: true` marks the one milestone that actually confirms employment. The welcome email
+  // used to be keyed on `day === 90`, a constant from when every role had a 90-day probation: after
+  // the Art. 25 caps it fired on a Director's MID-probation check-in (day 90 of 180, while they were
+  // still on probation and on 85% pay) and fired for nobody else at all, because no other tier
+  // produces a day 90. A flag on the milestone cannot drift out of step with the cap the way a
+  // number can.
+  out.push({ day: cap, decision: true,
+             label: 'Day ' + cap + ' — Probation decision (confirm or end) · statutory cap' });
   return out;
 }
 const _PROBATION_MILESTONES = _probationMilestonesFor('engineer');
@@ -6853,7 +6866,12 @@ async function tkOnboardMilestone(id, mi, status) {
   try {
     await tkApi('/api/coll/onboarding/' + id, { method: 'PATCH', body: o });
     tkAudit('Onboarding milestone ' + status, o.name || '', o.milestones[mi].label);
-    if (status === 'Confirmed' && o.milestones[mi].day === 90) {
+    // The decision milestone, not a magic number. `decision` is stamped when the milestones are
+    // built; records created before that fall back to matching the role's statutory cap.
+    const _m = o.milestones[mi];
+    const _isDecision = _m.decision === true
+      || (_m.decision === undefined && _m.day === _probationCapFor(o.role || o.title || ''));
+    if (status === 'Confirmed' && _isDecision) {
       const e = _hrEmp(o.empId) || {}; tkNotifyGraph(e.email, 'Probation passed — welcome aboard!', 'Hi ' + (o.name || '') + ', congratulations — your probation review is complete and you are now a confirmed employee. Welcome to the Humiley team!\n\nHumiley HR');
     }
     toast('Milestone: ' + status); tkRenderOnboarding();
@@ -8443,15 +8461,35 @@ function _payComputed(e, rating, opts) {
   const workingDays = opts.workingDays || 22;
   const unpaidDays = opts.unpaidDays || 0;
   const unpaidDeduction = (P1 + P2) / workingDays * unpaidDays;
+  // ── Overtime (Labour Code Art. 98, Decree 145/2020 Art. 55) ───────────────────────────────────
+  // The server has already applied the law: which kind of day each stint fell on, how much of it was
+  // after 22:00, and what the caps say. What comes back is `units` — multiplier-hours — because the
+  // hourly wage is the one number this model owns and the server should not have to restate it.
+  //
+  // The hourly wage is the wage-and-allowance pay (P1 + P2) over the normal hours in the month.
+  // Decree 145 excludes bonuses, welfare and overtime itself from that base, so P3, lunch, phone and
+  // transport are correctly out of it — otherwise overtime would compound on its own premium.
+  const ot = opts.ot || null;
+  const otHourly = (P1 + P2) / Math.max(1, workingDays * 8);
+  const otHours = ot ? (+ot.hours || 0) : 0;
+  const otNightHours = ot ? (+ot.nightHours || 0) : 0;
+  const otPay = ot ? Math.round(otHourly * (+ot.units || 0)) : 0;
+  // Circular 111/2013 Art. 3(1)(i): only the premium ABOVE the normal rate escapes PIT, so the
+  // taxable part is the plain hourly wage for the hours worked and the uplift is exempt. Overtime
+  // is NOT in the SI base — that is wage and fixed allowances, and overtime is neither.
+  const otTaxable = ot ? Math.round(otHourly * (+ot.taxableUnits || 0)) : 0;
+  const otExempt = Math.max(0, otPay - otTaxable);
   const deps = +e.dependents || 0;
-  const taxable = Math.max(0, (P1 + P2 + P3 + transport) - ee.total - PIT_SELF - deps * PIT_DEP);
+  const taxable = Math.max(0, (P1 + P2 + P3 + transport + otTaxable) - ee.total - PIT_SELF - deps * PIT_DEP);
   const pit = _payPit(taxable);
-  const grossPay = P1 + P2 + P3 + welfare;
+  const grossPay = P1 + P2 + P3 + welfare + otPay;
   const net = grossPay - ee.total - pit - unpaidDeduction;
   const R = Math.round;
   return { gi, grade: gr.g, gradeLabel: gr.label, yrs, rating: r, pf, salaryMissing,
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
+    otHours, otNightHours, otPay, otTaxable, otExempt, otHourly: R(otHourly),
+    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [],
     siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
     erBhxh: R(er.bhxh), erBhyt: R(er.bhyt), erBhtn: R(er.bhtn), erTu: R(er.tu), erTotal: R(er.total),
     pit: R(pit), grossPay: R(grossPay), workingDays, unpaidDays, unpaidDeduction: R(unpaidDeduction),
@@ -8478,26 +8516,47 @@ function _payApplyAdj(c, adj) {
   const extraDedTot = n.extraDeduct.reduce((s, x) => s + (+x.amt || 0), 0);
   n.extraEarnTot = extraEarnTot; n.extraDedTot = extraDedTot;
   n.si = n.eeBhxh + n.eeBhyt + n.eeBhtn;
-  n.grossPay = n.P1 + n.P2 + n.P3 + n.welfare + extraEarnTot;
+  n.grossPay = n.P1 + n.P2 + n.P3 + n.welfare + (n.otPay || 0) + extraEarnTot;
   n.net = n.grossPay - n.si - n.pit - (n.unpaidDeduction || 0) - extraDedTot;
   n.employerCost = n.grossPay + n.erTotal;
   return n;
 }
 const _PAY_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 let _payYM = null, _payCache = {}, _payTotals = {};
+/* Approved overtime by period, from the server — 'YYYY-MM' → { empId: {hours, units, …} }.
+   Kept out of _payComputed's signature so the calculation stays synchronous and pure: the fetch
+   happens once per period before a render, and every computation after it reads this. */
+let _payOT = {}, _payOTCap = 200;
+async function _payLoadOT(y, months) {
+  for (const m of months) {
+    const key = y + '-' + String(m + 1).padStart(2, '0');
+    if (_payOT[key]) continue;
+    try {
+      const r = await tkApi('/api/hr/overtime?period=' + key);
+      const by = {}; ((r && r.rows) || []).forEach(x => { by[x.empId] = x; });
+      _payOT[key] = by;
+      if (r && r.annualCap) _payOTCap = +r.annualCap;   // 200, or 300 where the company has elected it
+    } catch (e) { _payOT[key] = {}; }   // a month whose overtime cannot be read shows none, not a wrong figure
+  }
+}
+function _payOTFor(empId, y, m) {
+  return (_payOT[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || null;
+}
+function _payMonthsOf(ym) { return ym.m === -1 ? [0,1,2,3,4,5,6,7,8,9,10,11] : [ym.m]; }
 function _payPeriod() { return _payYM.m === -1 ? ('Year ' + _payYM.y) : (_PAY_MONTHS[_payYM.m] + ' ' + _payYM.y); }
 function _payBuild() {
   const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
   const yearly = _payYM.m === -1;
-  const monthsArr = yearly ? [0,1,2,3,4,5,6,7,8,9,10,11] : [_payYM.m];
-  const SUMK = ['basic','posAllow','responsibility','skillSen','P1','P2','kpiTarget','P3','lunch','phone','transport','welfare','siBase','eeBhxh','eeBhyt','eeBhtn','si','erBhxh','erBhyt','erBhtn','erTu','erTotal','pit','grossPay','unpaidDeduction','employerCost','net'];
+  const monthsArr = _payMonthsOf(_payYM);
+  const SUMK = ['basic','posAllow','responsibility','skillSen','P1','P2','kpiTarget','P3','lunch','phone','transport','welfare','otHours','otNightHours','otPay','otTaxable','otExempt','siBase','eeBhxh','eeBhyt','eeBhtn','si','erBhxh','erBhyt','erBhtn','erTu','erTotal','pit','grossPay','unpaidDeduction','employerCost','net'];
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   _payCache = {}; const t = { gross: 0, net: 0, ee: 0, er: 0, pit: 0, P1: 0, P2: 0, P3: 0, welfare: 0, erCost: 0, byDept: {} };
   emps.forEach(e => {
     let agg = null;
     monthsArr.forEach(m => {
       const wd = _payWD(_payYM.y, m);
-      let c = _payComputed(e, ratingBy[e.id], { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m) });
+      let c = _payComputed(e, ratingBy[e.id], { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m),
+                                                ot: _payOTFor(e.id, _payYM.y, m) });
       c = _payApplyAdj(c, _payAdjFor(e.id, _PAY_MONTHS[m] + ' ' + _payYM.y));
       if (!agg) agg = Object.assign({}, c); else SUMK.forEach(k => { agg[k] = (agg[k] || 0) + (c[k] || 0); });
     });
@@ -8528,6 +8587,7 @@ async function tkRenderPayroll() {
   root.innerHTML = tkSkeleton();
   await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns'), tkLoadColl('payadjust')]);
   if (!_payYM) { const d = new Date(); _payYM = { y: d.getFullYear(), m: d.getMonth() }; }
+  await _payLoadOT(_payYM.y, _payMonthsOf(_payYM));   // approved overtime, before anything is costed
   _payBuild();
   const monthSel = '<select class="sel-filter" id="pay-month" onchange="tkPaySetYM()"><option value="-1"' + (_payYM.m === -1 ? ' selected' : '') + '>Whole Year</option>' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select>';
   const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
@@ -8538,7 +8598,7 @@ async function tkRenderPayroll() {
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
 }
-function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; _payBuild(); _payRenderDash(); _payRenderReg(); }
+async function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; await _payLoadOT(_payYM.y, _payMonthsOf(_payYM)); _payBuild(); _payRenderDash(); _payRenderReg(); }
 function tkPayTab(tab, el) { ['dash', 'reg', 'runs'].forEach(t => { const p = document.getElementById('pay-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#payroll-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
 function _payBar(label, val, max, color) { const pct = Math.round((val / Math.max(max, 1)) * 100); return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:120px;font-size:12px;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:20px"><div style="width:' + pct + '%;background:' + (color || 'var(--navy)') + ';height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:110px;text-align:right;font-size:11px;font-weight:600">' + _PAY_FMT(val) + '</div></div>'; }
 function _payRenderDash() {
@@ -8563,19 +8623,55 @@ function _payRenderDash() {
     _mkChart('pay-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => t.byDept[d]), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 26 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
   }
 }
+/* Overtime against the statutory ceilings — the compliance half of the payroll month.
+
+   Decree 145/2020 Art. 3 requires the company to be able to show its overtime, and Art. 107 sets
+   what it may not exceed. The pay register answers "what did it cost"; this answers "were we
+   allowed to", which is the question that arrives with an inspector rather than with a payslip. */
+function _payOTPanel() {
+  if (_payYM.m === -1) return '';                       // the caps are monthly and annual, not a 12-month blur
+  const key = _payYM.y + '-' + String(_payYM.m + 1).padStart(2, '0');
+  const rows = Object.values(_payOT[key] || {}).filter(r => r.hours > 0)
+    .sort((a, b) => b.yearHours - a.yearHours);
+  if (!rows.length) return '';
+  const cap = +_payOTCap || 200;
+  const bar = (v, lim) => {
+    const pct = Math.min(100, Math.round(v / Math.max(lim, 1) * 100));
+    const col = pct >= 100 ? 'var(--danger)' : pct >= 80 ? '#B7791F' : 'var(--emerald)';
+    return '<div style="background:var(--soft-bg);border-radius:5px;height:6px;margin-top:3px"><div style="width:' + pct + '%;background:' + col + ';height:100%;border-radius:5px;min-width:2px"></div></div>';
+  };
+  const cell = (v, lim) => '<td style="text-align:right;min-width:96px"><div style="font-variant-numeric:tabular-nums"><b>' + (+v).toFixed(1) + '</b><span style="color:var(--text-light);font-size:11px"> / ' + lim + 'h</span></div>' + bar(v, lim) + '</td>';
+  const over = rows.filter(r => (r.breaches || []).length).length;
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:16px 18px">' +
+    '<div class="card-title">' + _t('Overtime &amp; statutory limits') + ' — ' + _payPeriod() + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + _t('Labour Code Art. 107 — 4h a day · 40h a month · ') + cap + _t('h a year') +
+    (over ? ' · <b style="color:var(--danger)">' + over + ' ' + _t('over the limit') + '</b>' : '') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:620px"><thead><tr><th>' + _t('Employee') + '</th>' +
+    '<th style="text-align:right">' + _t('This month') + '</th><th style="text-align:right">' + _t('This year') + '</th>' +
+    '<th style="text-align:right">' + _t('Of which at night') + '</th><th>' + _t('Breakdown') + '</th></tr></thead><tbody>' +
+    rows.map(r => '<tr><td><div style="font-weight:600">' + _crmEsc(r.name || r.empId) + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(r.dept || '') + '</div></td>' +
+      cell(r.monthHours, 40) + cell(r.yearHours, cap) +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (r.nightHours ? (+r.nightHours).toFixed(1) + 'h' : '—') + '</td>' +
+      '<td style="font-size:11px">' + (Object.keys(r.byKind || {}).map(k =>
+        '<span class="badge ' + (k === 'holiday' ? 'b-warn' : k === 'rest' ? 'b-info' : 'b-navy') + '" style="font-size:9px;margin-right:3px">' +
+        (+r.byKind[k].hours).toFixed(1) + 'h ' + (_OT_KIND_RATE[k] || '') + '</span>').join('') || '—') +
+      ((r.breaches || []).length ? '<div style="font-size:10px;color:var(--danger);margin-top:3px">' + _crmEsc(r.breaches.map(b => b.message).join(' ')) + '</div>' : '') +
+      '</td></tr>').join('') + '</tbody></table></div></div>';
+}
 function _payRenderReg() {
   const el = document.getElementById('pay-reg'); if (!el) return;
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const rows = emps.map(e => { const c = _payCache[e.id]; if (!c) return ''; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + e.name + '</div><div style="font-size:11px;color:var(--text-light)">' + (e.title || '') + '</div></div></div></td>' +
     '<td><span class="badge b-navy" style="font-size:10px" title="' + c.gradeLabel + '">' + c.grade + '</span></td>' +
     '<td style="text-align:right">' + _PAY_FMT(c.P1) + '</td><td style="text-align:right;color:#205090">' + _PAY_FMT(c.P2) + '</td><td style="text-align:right;color:var(--emerald)">' + _PAY_FMT(c.P3) + '</td>' +
+    '<td style="text-align:right">' + (c.otPay ? ('<div style="font-weight:600">' + _PAY_FMT(c.otPay) + '</div><div style="font-size:10px;color:var(--text-light)">' + (+c.otHours).toFixed(1) + 'h' + (c.otNightHours ? ' · ' + (+c.otNightHours).toFixed(1) + 'h ' + _t('night') : '') + '</div>' + ((c.otBreaches || []).length ? '<span class="badge b-warn" style="font-size:8px" title="' + _crmEsc((c.otBreaches || []).map(b => b.message).join(' ')) + '">' + _t('over cap') + '</span>' : '')) : '<span style="color:var(--text-light)">—</span>') + '</td>' +
     '<td style="text-align:right;font-weight:600">' + _PAY_FMT(c.grossPay) + '</td><td style="text-align:right;color:var(--text-light)">-' + _PAY_FMT(c.si + c.pit + c.unpaidDeduction) + '</td>' +
     '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(c.net) + (c.adjusted ? ' <span class="badge b-warn" style="font-size:8px;vertical-align:1px">adj</span>' : '') + '</td><td style="white-space:nowrap"><button class="btn btn-outline btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayAdjust(\'' + e.id + '\')">' + tkIcon('edit', 12) + 'Adjust</button> <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tkPayslip(\'' + e.id + '\')">Payslip</button> <button class="btn btn-ghost btn-sm" title="Download PDF" style="font-size:10px;padding:4px 7px" onclick="tkDownloadPayslipPDF(\'' + e.id + '\')">' + tkIcon('download', 12) + '</button></td></tr>'; }).join('');
   const period = _payPeriod(); const _yrly = _payYM.m === -1;
   const rolled = (_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual');
   const rollBar = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700;color:var(--navy)">' + (_yrly ? 'Annual calculation — ' : 'Monthly calculation — ') + period + '</div><div style="font-size:12px;color:var(--text-light)">Per-employee Salary 3P (HML-CB-001). Review the figures below, then roll out to finalise this month\'s pay run.</div></div>' + (rolled ? '<span class="badge b-ok" style="font-size:11px">' + tkIcon('check', 12) + ' Rolled out</span>' : (_lvlRank(_userLevel) >= _lvlRank('editor') ? ('<button class="btn btn-emerald btn-sm" onclick="tkRollOutPayroll()">' + tkIcon('check') + 'Roll out ' + period + '</button>') : '<span style="font-size:11px;color:var(--text-light)">View only \u00b7 payroll is run by Admin</span>')) + '</div>';
   const grades = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2</b> (Responsibility 10% + Skill 0–5%) + <b style="color:var(--emerald)">P3</b> (KPI 10% × rating) + welfare · SI base = P1+P2 · HML-CB-001.</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' + _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
-  el.innerHTML = rollBar + grades + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _payPeriod() + (_yrly ? ' <span class="badge b-info" style="font-size:10px">12 months consolidated</span>' : '') + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  el.innerHTML = rollBar + grades + _payOTPanel() + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _payPeriod() + (_yrly ? ' <span class="badge b-info" style="font-size:10px">12 months consolidated</span>' : '') + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right" title="Approved overtime — Labour Code Art. 98">Overtime</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
@@ -8615,7 +8711,16 @@ async function tkIndivPayRunGo() {
   const y = +(document.getElementById('ipr-year') || {}).value, m = +(document.getElementById('ipr-month') || {}).value;
   const e = _hrEmp(empId); if (!e) return;
   const r = (_HR.reviews || []).find(x => x.empId === empId);
-  const c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m) });
+  await _payLoadOT(y, [m]);
+  let c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m),
+                                              ot: _payOTFor(empId, y, m) });
+  // Apply the month's manual adjustment, exactly as the company roll-out does. Without this an
+  // individual run reprinted a month at its UNADJUSTED figures — and because `_payslipFrozen` then
+  // preferred the individual record, that reprint silently replaced the numbers the Director signed.
+  c = _payApplyAdj(c, _payAdjFor(empId, _PAY_MONTHS[m] + ' ' + y));
+  // Same rule as the company roll-out: a run is a signed record, and a salary nobody entered must
+  // never be filled in from the grade band and then finalised as if somebody had agreed it.
+  if (await _payBlockedByMissingSalary(empId)) return;
   const period = _PAY_MONTHS[m] + ' ' + y;
   try {
     const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { scope: 'individual', empId: empId, empName: e.name, period: period, count: 1, gross: c.grossPay, net: c.net, ee: c.si, er: c.erTotal, pit: c.pit, erCost: c.employerCost, grade: c.grade, lines: [_paySnapshotLine(e, c)], status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
@@ -8632,6 +8737,7 @@ async function tkCreatePayRun() {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period)) { if (!(await tkConfirm('A pay run for ' + period + ' already exists. Create another?'))) return; }
+  if (await _payBlockedByMissingSalary()) return;
   const t = _payTotals;
   try {
     const res = await tkApi('/api/coll/payruns', { method: 'POST', body: { period: period, count: t.count, gross: t.gross, net: t.net, ee: t.ee, er: t.er, pit: t.pit, erCost: t.erCost, lines: _paySnapshotLines(), wd: t.wd, status: 'Finalised', created: tkFmtDate(new Date().toISOString().slice(0, 10)) } });
@@ -8710,26 +8816,34 @@ async function tkPayAdjReset(empId) {
     _payBuild(); _payRenderReg(); _payRenderDash();
   } catch (e) { toast('Could not reset: ' + _errMsg(e), 'error', 5000); }
 }
+/* Nobody gets paid a guess.
+
+   An employee with no salary on file is priced by `_payComputed` at their grade's MID-POINT — a full
+   gross, PIT and statutory footprint invented for a figure nobody agreed — and then folded into the
+   total a Director e-signs. This guard sat on the roll-out button only, while "Create Pay Run" and
+   "Individual Pay Run" stood beside it doing the same thing unchecked. It now covers all three, and
+   the server refuses such a run outright so no path can create one. Returns true if it blocked. */
+async function _payBlockedByMissingSalary(onlyId) {
+  const list = (_DEMO_EMPLOYEES || [])
+    .filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
+    .filter(e => !onlyId || e.id === onlyId)
+    .filter(e => !(+e.salary > 0));
+  if (!list.length) return false;
+  await tkAlert({
+    title: _t('Payroll cannot be run yet'),
+    body: _t('These employees have no salary on file, so the system has no figure to pay them:') +
+      '\n\n• ' + list.map(e => (e.name || e.id) + ' — ' + (e.title || '—')).join('\n• ') +
+      '\n\n' + _t('Set each one’s monthly gross on their employee record, then try again.')
+  });
+  return true;
+}
 /* Roll out (finalise) the current month's company payroll from the per-employee calculation. */
 async function tkRollOutPayroll() {
   if (!_requireLevel('editor')) return;
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual')) { toast(period + ' is already rolled out', 'warn'); return; }
-  // Nobody gets paid a guess. An employee with no salary on file used to be silently priced at their
-  // grade's mid-point and folded into the total the Director signs. Name them and stop.
-  const _noSalary = (_DEMO_EMPLOYEES || [])
-    .filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
-    .filter(e => !(+e.salary > 0));
-  if (_noSalary.length) {
-    await tkAlert({
-      title: _t('Payroll cannot be rolled out yet'),
-      body: _t('These employees have no salary on file, so the system has no figure to pay them:') +
-        '\n\n• ' + _noSalary.map(e => (e.name || e.id) + ' — ' + (e.title || '—')).join('\n• ') +
-        '\n\n' + _t('Set each one’s monthly gross on their employee record, then roll out again.')
-    });
-    return;
-  }
+  if (await _payBlockedByMissingSalary()) return;
   const t = _payTotals;
   if (!(await tkConfirm('Roll out ' + period + ' payroll?\n\n' + t.count + ' employees · gross ' + _PAY_FMT(t.gross) + ' · net ' + _PAY_FMT(t.net) + '\n\nThis finalises the month and records the pay run.'))) return;
   try {
@@ -8746,6 +8860,12 @@ async function tkRollOutPayroll() {
 function _paySnapshotLine(e, c) {
   return { empId: e.id, name: e.name, dept: e.dept || '', title: e.title || '', grade: c.grade,
     P1: c.P1, P2: c.P2, P3: c.P3, welfare: c.welfare, gross: c.grossPay, ee: c.si, pit: c.pit, net: c.net, erCost: c.employerCost,
+    // The CONTRACTUAL monthly salary, which `gross` above is not: gross is P1+P2+P3+welfare+overtime,
+    // a computed payslip total that includes a KPI factor, a fixed ₫1,530,000 of welfare and any
+    // one-off bonus. Reading `gross` back as somebody's salary — which the history backfill did —
+    // understates a plain month and turns a Tết bonus into a raise followed by a pay cut. Null when
+    // no salary was on file, so a run built on a guess can never be mistaken for a recorded one.
+    contractGross: (+e.salary > 0) ? +e.salary : null,
     // The full calculation, so a payslip reprinted years later is the ONE that was signed — every
     // allowance, every statutory component, the working days and the rating that produced it. The
     // summary fields above stay for the CSV exporter and the run totals that already read them.
@@ -9021,6 +9141,17 @@ function _payslipPDF(e, c, period) {
   row('P2 · Responsibility (10%)', fmt(c.responsibility)); if (c.skillSen) row('P2 · Skill / Seniority (' + c.yrs + 'y)', fmt(c.skillSen));
   row('P3 · KPI variable (' + c.pf.toFixed(2) + '×)', fmt(c.P3), GREEN);
   row('Welfare — lunch · phone · transport (non-SI)', fmt(c.welfare));
+  // Art. 95(3): the wage statement must itemise overtime and night work, at what rate and for how
+  // many hours. A single "overtime" figure is not a statement, it is a number to be believed.
+  if (c.otPay) {
+    Object.keys(c.otByKind || {}).forEach(k => {
+      row('Overtime — ' + (_OT_KIND_LABEL[k] || k) + ' (' + (_OT_KIND_RATE[k] || '') + ')',
+          (+c.otByKind[k].hours).toFixed(1) + 'h');
+    });
+    if (c.otNightHours) row('  of which at night 22:00-06:00 (+30% and +20%)', (+c.otNightHours).toFixed(1) + 'h');
+    row('Overtime pay (hourly ' + fmt(c.otHourly) + ')', fmt(c.otPay), GREEN);
+    if (c.otExempt) row('  of which exempt from PIT', fmt(c.otExempt));
+  }
   rule(); row('GROSS PAY', fmt(c.grossPay)); y += 3;
   // ── Deductions ──
   sec('DEDUCTIONS — Employee statutory');
@@ -9087,8 +9218,13 @@ function _payslipFrozen(empId) {
   if (!_payYM || _payYM.m === -1) return null;
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   const runs = (_HR.payruns || []).filter(r => r.period === period && (r.lines || []).length);
-  // An individual run for this person beats the company run — it is the more specific record.
-  const run = runs.find(r => r.scope === 'individual' && r.empId === empId) || runs.find(r => r.scope !== 'individual');
+  // What counts as THE record for this month, in order: a run must be finalised — an unsigned draft
+  // is a proposal, not a payslip. Among finalised runs an individual one is the more specific record
+  // and wins, but only over another FINALISED run: preferring `scope === 'individual'` outright let a
+  // later individual reprint silently replace the figures a Director had already signed.
+  const fin = r => /final/i.test(String(r.status || ''));
+  const pick = list => list.find(r => r.scope === 'individual' && r.empId === empId) || list.find(r => r.scope !== 'individual');
+  const run = pick(runs.filter(fin)) || pick(runs);
   const line = run && (run.lines || []).find(l => l.empId === empId);
   if (!line) return null;
   return { line: line, run: run, frozen: true };
@@ -9101,7 +9237,7 @@ function _payslipComputed(empId) {
   // are badged, because a reconstructed breakdown would be a guess wearing the authority of a record.
   if (f && f.line.calc) return Object.assign({}, f.line.calc, { frozen: true, runStatus: f.run.status || '' });
   const e = _hrEmp(empId); let c = _payCache[empId];
-  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
+  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
   return c;
 }
 function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
@@ -9111,24 +9247,49 @@ function _payslipHTML(e, c, period) {
   return '<div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid var(--navy);padding-bottom:10px;margin-bottom:12px">' +
     '<img src="' + (_LH.logo || (document.querySelector('.sidebar-logo img') || {}).src || '') + '" alt="Humiley" onerror="this.style.display=\'none\'" style="height:30px">' +
     '<div><div style="font-weight:800;color:var(--navy);font-size:15px">HUMILEY ENGINEERING &amp; SOLUTIONS</div><div style="font-size:10px;color:var(--text-light)">' + _LH.addr + ' · Confidential Payslip</div></div>' +
+    // The FINAL / PROVISIONAL marker now lives in _payslipBody, so the PDF and the emailed payslip
+    // carry it too rather than only the on-screen modal.
     '<div style="margin-left:auto;text-align:right;font-size:11px;color:var(--text-light)">' + period +
-      // Say which kind of document this is. A signed month is the record; an open month is a preview
-      // that will still move, and an employee must never mistake one for the other.
-      (c && c.frozen
-        ? '<div style="font-size:9.5px;font-weight:700;color:var(--emerald-deep,#008548);letter-spacing:.04em">' + _t('FINAL — as signed') + '</div>'
-        : '<div style="font-size:9.5px;font-weight:700;color:#B7791F;letter-spacing:.04em">' + _t('PROVISIONAL — month not closed') + '</div>') +
     '</div></div>' + _payslipBody(e, c, period);
 }
+/* How each kind of overtime day is named and priced on the wage statement (Art. 98(1)). */
+const _OT_KIND_LABEL = { normal: 'Normal working day', rest: 'Weekly rest day', holiday: 'Public holiday' };
+const _OT_KIND_RATE = { normal: '150%', rest: '200%', holiday: '300%' };
 function _payslipBody(e, c, period) {
+  // Say which kind of document this is, on the document. The badge used to live only in the modal
+  // header, so the PDF the employee actually keeps — and the one attached to their email — said
+  // nothing about whether the month was closed.
+  const stamp = c && c.frozen
+    ? '<div style="font-size:10px;font-weight:700;color:var(--emerald-deep,#008548);letter-spacing:.04em;margin-bottom:8px">' + _t('FINAL — as signed') + '</div>'
+    : '<div style="font-size:10px;font-weight:700;color:#B7791F;letter-spacing:.04em;margin-bottom:8px">' + _t('PROVISIONAL — month not closed') + '</div>';
+  // A salary nobody entered is not a payslip. `_payComputed` prices it at the grade mid-point, which
+  // renders as a complete and entirely invented statutory breakdown; say so instead of printing it.
+  const warn = (c && c.salaryMissing)
+    ? '<div style="background:#FFF4E5;border:1px solid #F0B429;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#7A4B00">' +
+      '<b>' + _t('No salary on record') + '</b> — ' +
+      _t('the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.') + '</div>'
+    : '';
   const line = (k, v, color, ind) => '<div style="display:flex;justify-content:space-between;font-size:12.5px;padding:4px 0' + (ind ? ';padding-left:12px' : '') + '"><span style="color:var(--text-light)">' + k + '</span><span style="font-weight:600' + (color ? (';color:' + color) : '') + '">' + v + '</span></div>';
   const grp = t => '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:8px 0 2px">' + t + '</div>';
-  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
+  return stamp + warn + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">' + _hrAv(e, 'ava-md') + '<div><div style="font-weight:700;font-size:15px">' + e.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (e.id || '') + ' · ' + (e.title || '') + ' · ' + (e.dept || '') + ' · Grade ' + c.grade + '</div></div></div>' +
     '<div style="display:flex;gap:10px;margin-bottom:12px;font-size:11px"><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">Working days</div><div style="font-weight:700;font-size:14px">' + c.workingDays + '</div></div><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">Unpaid days</div><div style="font-weight:700;font-size:14px">' + c.unpaidDays + '</div></div><div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px;text-align:center"><div style="color:var(--text-light)">KPI factor</div><div style="font-weight:700;font-size:14px">' + c.pf.toFixed(2) + '×</div></div></div>' +
     '<div style="background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin-bottom:12px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-light)">Earnings — 3P</div>' +
     grp('P1 · Position') + line('Basic salary', _PAY_FMT(c.basic), '', 1) + (c.posAllow ? line('Position allowance', _PAY_FMT(c.posAllow), '', 1) : '') +
     grp('P2 · Person') + line('Responsibility', _PAY_FMT(c.responsibility), '', 1) + (c.skillSen ? line('Skill / Seniority (' + c.yrs + 'y)', _PAY_FMT(c.skillSen), '', 1) : '') +
     grp('P3 · Performance') + line('KPI variable (' + c.pf.toFixed(2) + '× · ' + _hrStars(c.rating) + ')', _PAY_FMT(c.P3), 'var(--emerald)', 1) +
     grp('Welfare (non-SI)') + line('Lunch · Phone · Transport', _PAY_FMT(c.welfare), '', 1) +
+    // Art. 95(3) requires the wage statement to show what overtime and night work were paid for and
+    // at what rate — not a single lump the employee has to take on trust.
+    (c.otPay ? grp(_t('Overtime') + ' — Labour Code Art. 98') +
+      Object.keys(c.otByKind || {}).map(k => line(
+        _OT_KIND_LABEL[k] || k, (+c.otByKind[k].hours).toFixed(1) + 'h × ' + _OT_KIND_RATE[k], '', 1)).join('') +
+      // Art. 98(2) adds 30% and Art. 98(3) a further 20%, but the 20% is taken on the daytime rate
+      // of that kind of day — so naming the two components is right on every day type, where a
+      // combined "+50%" is right only on a normal one.
+      (c.otNightHours ? line(_t('of which at night (22:00–06:00)'), (+c.otNightHours).toFixed(1) + 'h · +30% + 20%', '', 1) : '') +
+      line(_t('Hourly rate'), _PAY_FMT(c.otHourly) + '/h', '', 1) +
+      line(_t('Overtime pay'), _PAY_FMT(c.otPay), 'var(--emerald)', 1) +
+      (c.otExempt ? line(_t('of which exempt from PIT (premium above the normal rate)'), _PAY_FMT(c.otExempt), '', 1) : '') : '') +
     ((c.extraEarn && c.extraEarn.length) ? grp('Additional earnings') + c.extraEarn.map(x => line(x.label || 'Earning', _PAY_FMT(x.amt), 'var(--emerald)', 1)).join('') : '') +
     '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px">' + line('GROSS', _PAY_FMT(c.grossPay)) + '</div></div>' +
     // ── Statutory contributions — two consistent cards: Employee (deducted) + Employer (paid on top) ──
@@ -9160,8 +9321,12 @@ function _payStatCard(title, sub, rows, total, accent) {
 function tkPayslip(empId) {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const e = _hrEmp(empId); if (!e) return;
-  let c = _payCache[empId];
-  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
+  // ONE document. This screen used to recompute the month live from TODAY's employee record while the
+  // Download button beside it read the frozen, signed line — so a March payslip opened in September
+  // showed September's salary, was badged "PROVISIONAL" for a month that was closed and signed, and
+  // disagreed with its own PDF. `_payslipComputed` returns the frozen line where one exists and falls
+  // back to a live computation only for a month still open.
+  const c = _payslipComputed(empId);
   const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }));
   document.getElementById('payslipOverlay')?.remove();
   const el = document.createElement('div'); el.id = 'payslipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
@@ -9204,8 +9369,9 @@ function _openAsOutlook(to, subject, body, attName, attB64, cc) {
 }
 async function tkEmailPayslip(empId) {
   const e = _hrEmp(empId); if (!e || !e.email) { toast('No email on file for this employee', 'warn'); return; }
-  let c = _payCache[empId];
-  if (!c) { const rv = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, rv ? +rv.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m) }); }
+  // The same document the attachment is built from. These were computed separately, so an employee
+  // could receive one email whose body quoted a net pay the attached payslip contradicted.
+  const c = _payslipComputed(empId);
   const period = (_payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : _payslipPeriod());
   const subject = 'Confidential Payslip — ' + period;
   const body = 'Dear ' + e.name + ',\n\nPlease find attached your confidential payslip for ' + period + ' (PDF).\n\n' +
@@ -9477,7 +9643,12 @@ async function tkEmailHandoverToHR(empId) {
 }
 
 async function tkMyPayslip() {
-  await tkLoadColl('reviews');
+  // Pay runs too, not just reviews: without them `_payslipFrozen` finds nothing and an employee's own
+  // payslip is recomputed live from today's record — the one screen where the signed figure matters
+  // most. The server returns only this employee's own line, from finalised runs.
+  await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns').catch(() => {}),
+                     _payLoadOT(_payYM ? _payYM.y : new Date().getFullYear(),
+                                [_payYM ? _payYM.m : new Date().getMonth()]).catch(() => {})]);
   const u = TK.user || {}; const e = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
   if (!e) { toast('Your employee record was not found', 'warn'); return; }
   tkPayslip(e.id);
@@ -14903,8 +15074,16 @@ function _publicHolidaySet() {
 /* Which weekdays this person does NOT work. Factory runs Mon–Sat, the office Mon–Fri, so a Saturday
    is a working day for one and not the other. Falls back to Sat+Sun. */
 function _restDaysFor(emp) {
-  const sch = emp && emp.schedule;
-  if (sch && typeof sch === 'string' && /mon.*sat|t2.*t7/i.test(sch)) return new Set([0]);   // Mon–Sat
+  // `employee.schedule` holds the NAME of a work-schedule pattern picked from the dropdown
+  // ("Factory Shift A"), not the pattern itself — so the days have to be read from the schedule the
+  // name points at. Testing the name against /mon.*sat/ matched nothing, which quietly treated the
+  // whole factory as a Mon–Fri office. A free-typed value like "Mon – Sat" is still honoured.
+  const name = String((emp && emp.schedule) || '').trim();
+  if (!name) return new Set([0, 6]);
+  const hit = (_HR.schedules || []).find(s => String(s.name || '').trim().toLowerCase() === name.toLowerCase());
+  const days = String((hit && hit.days) || name).replace(/[–—]/g, '-');
+  if (/mon\s*-\s*sun|t2\s*-\s*cn/i.test(days)) return new Set();          // seven days
+  if (/mon\s*-\s*sat|t2\s*-\s*t7/i.test(days)) return new Set([0]);       // Sunday only
   return new Set([0, 6]);
 }
 /* Leave days actually consumed between two dates.
@@ -20221,6 +20400,22 @@ const _VI = {
   'Overtime request': 'Yêu cầu tăng ca',
   'Overtime hours': 'Số giờ tăng ca',
   'Request overtime': 'Gửi yêu cầu tăng ca',
+  // ── Overtime pay + the Art. 107 caps ──
+  'Overtime': 'Tăng ca', 'approved': 'đã duyệt', 'rejected': 'đã từ chối', 'night': 'đêm',
+  'over cap': 'vượt trần', 'Normal working day': 'Ngày làm việc bình thường',
+  'Weekly rest day': 'Ngày nghỉ hằng tuần', 'Public holiday': 'Ngày lễ, tết',
+  'of which at night (22:00–06:00)': 'trong đó làm ban đêm (22:00–06:00)',
+  'Hourly rate': 'Đơn giá giờ', 'Overtime pay': 'Tiền lương tăng ca',
+  'of which exempt from PIT (premium above the normal rate)': 'trong đó được miễn thuế TNCN (phần trả cao hơn mức bình thường)',
+  'This overtime is over the statutory limit': 'Số giờ tăng ca này vượt giới hạn luật định',
+  'would reach': 'sẽ lên tới',
+  'The hours are not being deleted — they were worked. You can approve them anyway, but the approval will be recorded in the audit trail under your name with the reason you give.':
+    'Số giờ này không bị xoá — người lao động đã làm thật. Bạn vẫn có thể duyệt, nhưng việc duyệt sẽ được ghi vào nhật ký kiểm toán dưới tên bạn kèm lý do bạn nêu.',
+  'Reason for approving over the limit': 'Lý do duyệt vượt giới hạn',
+  'e.g. emergency shutdown at the client site': 'ví dụ: dừng máy khẩn cấp tại công trình khách hàng',
+  'Approve anyway': 'Vẫn duyệt', 'Please give a reason': 'Vui lòng nhập lý do',
+  'recorded as over the statutory cap': 'đã ghi nhận là vượt trần luật định',
+  'No salary on record': 'Chưa có lương trên hồ sơ',
   'No overtime': 'Không tăng ca',
   'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Gửi yêu cầu tăng ca để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
   'e.g. urgent site work': 'ví dụ: công việc khẩn tại công trường',
@@ -22560,14 +22755,53 @@ function _renderRptAttendance() {
   }
 }
 
-/* Manager approves / rejects a pending overtime request (request #2). Only approved OT counts. */
-async function tkOtDecide(attId, decision) {
+/* Manager approves / rejects a pending overtime request (request #2). Only approved OT counts.
+
+   Approving is also the moment the hours are measured against Labour Code Art. 107 — half a normal
+   day, 40 hours a month, 200 a year. A breach comes back as a 409 naming what it would break; the
+   record is untouched, and the approver may go ahead only by saying why. Refusing outright would
+   push real hours off the books, which is the one outcome worse than recording them over the cap. */
+async function tkOtDecide(attId, decision, override) {
   try {
-    await tkApi('/api/attendance/' + attId + '/ot', { method: 'POST', body: { decision: decision } });
-    toast('Overtime ' + (decision === 'approve' ? 'approved ✓' : 'rejected'), decision === 'approve' ? 'success' : undefined, 4000);
+    const body = { decision: decision };
+    if (override) body.override = override;
+    await tkApi('/api/attendance/' + attId + '/ot', { method: 'POST', body: body });
+    toast(_t('Overtime') + ' ' + (decision === 'approve' ? _t('approved') + ' ✓' : _t('rejected'))
+          + (override ? ' · ' + _t('recorded as over the statutory cap') : ''),
+          decision === 'approve' ? 'success' : undefined, 4000);
     try { await tkBootstrap(); } catch (e) {}
     renderInOutReport();
-  } catch (e) { toast(_errMsg(e), 'error', 5000); }
+  } catch (e) {
+    const d = (e && e.data) || {};
+    if (d.capBreach) return _tkOtOverCap(attId, d);
+    toast(_errMsg(e), 'error', 5000);
+  }
+}
+/* The over-the-cap conversation: what it breaks, where it leaves the totals, and a reason box. */
+function _tkOtOverCap(attId, d) {
+  const rows = (d.breaches || []).map(b =>
+    '<li style="margin-bottom:4px">' + _crmEsc(b.message) + ' <span style="color:var(--text-light)">('
+    + _t('would reach') + ' ' + (+b.value).toFixed(1) + 'h)</span></li>').join('');
+  document.getElementById('otCapOverlay')?.remove();
+  const el = document.createElement('div');
+  el.className = 'modal-overlay open'; el.id = 'otCapOverlay'; el.style.display = 'flex'; el.style.zIndex = '2000';
+  el.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="otcap-t" style="max-width:520px">' +
+    '<div class="modal-header"><div class="modal-title" id="otcap-t">' + _t('This overtime is over the statutory limit') + '</div></div>' +
+    '<div class="modal-body"><ul style="font-size:13px;padding-left:18px;margin:0 0 12px">' + rows + '</ul>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' +
+      _t('The hours are not being deleted — they were worked. You can approve them anyway, but the approval will be recorded in the audit trail under your name with the reason you give.') + '</div>' +
+    '<div class="form-group"><label class="form-label" for="otcap-reason">' + _t('Reason for approving over the limit') + '</label>' +
+    '<textarea class="form-control" id="otcap-reason" rows="2" placeholder="' + _t('e.g. emergency shutdown at the client site') + '"></textarea></div></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'otCapOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="_tkOtOverCapGo(' + attId + ')">' + _t('Approve anyway') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const t = document.getElementById('otcap-reason'); if (t) t.focus(); }, 50);
+}
+function _tkOtOverCapGo(attId) {
+  const reason = (document.getElementById('otcap-reason') || {}).value || '';
+  if (!reason.trim()) { toast(_t('Please give a reason'), 'warn'); return; }
+  document.getElementById('otCapOverlay')?.remove();
+  tkOtDecide(attId, 'approve', reason.trim());
 }
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
@@ -22655,6 +22889,9 @@ async function submitLeave() {
   if (!end)    { toast('Pick an end date', 'warn'); return; }
   if (!reason) { toast('Enter a reason', 'warn'); return; }
   if (new Date(end) < new Date(start)) { toast(_t('End date cannot be before the start date.'), 'warn'); return; }
+  // Rest days come from the requester's own work schedule, so the schedule patterns have to be in
+  // hand before the days are counted — otherwise a factory employee's Saturday is charged as leave.
+  try { await tkLoadColl('schedules'); } catch (e) {}
   const days = _calcWorkingDays(start, end, _tkMe());
   if (!(days > 0)) { toast(_t('The selected range is all weekend and public holidays — no leave would be used.'), 'warn'); return; }
 

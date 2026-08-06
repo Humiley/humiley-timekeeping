@@ -214,8 +214,12 @@ def init_db():
             actor      TEXT,
             actor_id   TEXT,
             source     TEXT,                 -- 'edit' | 'backfill' — a backfilled row is inferred
-            ts         TEXT NOT NULL,        -- when it was RECORDED (never edited)
-            FOREIGN KEY (emp_id) REFERENCES employees (id) ON DELETE CASCADE
+            ts         TEXT NOT NULL         -- when it was RECORDED (never edited)
+            -- Deliberately NO foreign key to employees. This is the effective-dated employment
+            -- record — the thing a settlement dispute and Decree 145/2020 Art. 3 are answered from.
+            -- With ON DELETE CASCADE one DELETE erased it, and because employee_references did not
+            -- count it, the deletion was allowed and then logged "no history on record". A legal
+            -- record has to outlive the row it describes; an orphan is recoverable, an erasure is not.
         );
         CREATE INDEX IF NOT EXISTS idx_emp_events_emp_eff ON emp_events (emp_id, effective);
         CREATE INDEX IF NOT EXISTS idx_emp_events_field_eff ON emp_events (field, effective);
@@ -234,6 +238,39 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_push_email ON push_subs (email);
         """
     )
+    # migration: drop the ON DELETE CASCADE from emp_events on databases created with it.
+    # SQLite cannot ALTER a foreign key, so the table is rebuilt. Guarded on foreign_key_list, so this
+    # runs at most once and is a no-op afterwards; the table is small (one row per recorded change).
+    try:
+        if conn.execute("PRAGMA foreign_key_list(emp_events)").fetchall():
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.executescript("""
+                BEGIN;
+                CREATE TABLE emp_events_new (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    emp_id     TEXT NOT NULL,
+                    effective  TEXT NOT NULL,
+                    field      TEXT NOT NULL,
+                    old_value  TEXT,
+                    new_value  TEXT,
+                    reason     TEXT,
+                    actor      TEXT,
+                    actor_id   TEXT,
+                    source     TEXT,
+                    ts         TEXT NOT NULL
+                );
+                INSERT INTO emp_events_new SELECT id, emp_id, effective, field, old_value, new_value,
+                       reason, actor, actor_id, source, ts FROM emp_events;
+                DROP TABLE emp_events;
+                ALTER TABLE emp_events_new RENAME TO emp_events;
+                CREATE INDEX IF NOT EXISTS idx_emp_events_emp_eff ON emp_events (emp_id, effective);
+                CREATE INDEX IF NOT EXISTS idx_emp_events_field_eff ON emp_events (field, effective);
+                COMMIT;
+            """)
+            conn.execute("PRAGMA foreign_keys = ON")
+    except sqlite3.Error:
+        pass    # a DB where the rebuild cannot run keeps the old table; the reference guard still holds
+
     # migration: add newer columns to older databases
     for col in ("managerEmail TEXT", "jobLevel TEXT", "endDate TEXT", "serviceDuration TEXT",
                 "personalId TEXT", "familyStatus TEXT", "education TEXT", "employmentType TEXT",
@@ -882,12 +919,15 @@ def _refs_employee(node, emp_id):
 def employee_references(emp_id):
     """Everything in the DB that points at this employee, as {label: count}; empty == safe to delete.
 
-    attendance / leave / esign_pin matter MOST: their FKs are ON DELETE CASCADE (and foreign_keys is
-    ON), so deleting the employee DESTROYS that history outright rather than merely orphaning it."""
+    attendance / leave / esign_pin / emp_events matter MOST: their FKs are ON DELETE CASCADE (and
+    foreign_keys is ON), so deleting the employee DESTROYS that history outright rather than merely
+    orphaning it. emp_events is the effective-dated employment record — append-only through the API,
+    and until it was counted here, erasable by one DELETE that then logged "no history on record"."""
     refs = {}
     conn = get_conn()
     try:
-        for tbl, label in (("attendance", "attendance record"), ("leave", "leave request")):
+        for tbl, label in (("attendance", "attendance record"), ("leave", "leave request"),
+                           ("emp_events", "employment-history record")):
             n = conn.execute("SELECT COUNT(*) FROM %s WHERE emp_id = ?" % tbl, (emp_id,)).fetchone()[0]
             if n:
                 refs[label] = n
@@ -1001,6 +1041,21 @@ def clock_out(att_id, time_hm, ot_hours=0, ot_reason="", overnight=False):
 
 def get_attendance(att_id):
     return _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
+
+
+def list_ot_approved(start, end, emp_id=None):
+    """Approved overtime worked in a date range.
+
+    Only APPROVED rows: a pending request is not overtime, it is a question, and a rejected one is an
+    answer of no. Paying either would pay for a decision nobody made.
+    """
+    sql = ("SELECT * FROM attendance WHERE ot_status = 'approved' AND ot_hours > 0 "
+           "AND date >= ? AND date <= ?")
+    params = [start, end]
+    if emp_id:
+        sql += " AND emp_id = ?"
+        params.append(emp_id)
+    return _rows(sql + " ORDER BY date, emp_id", params)
 
 
 def decide_attendance_ot(att_id, decision):

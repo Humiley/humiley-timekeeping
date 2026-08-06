@@ -16,9 +16,15 @@ import db
 
 @pytest.fixture(autouse=True)
 def _clean_history():
-    """History is append-only by design, so tests clear it directly rather than through the API."""
+    """History is append-only by design, so tests clear it directly rather than through the API.
+
+    Pay runs go too: the backfill reads every run in the collection, so a run left behind by an
+    earlier test silently becomes an input to the next one's history — which is how a test asserting
+    "no salary was recorded for July" passed on March's figure instead.
+    """
     conn = db.get_conn()
     conn.execute("DELETE FROM emp_events")
+    conn.execute("DELETE FROM collections WHERE coll = 'payruns'")
     conn.commit()
     conn.close()
     yield
@@ -155,16 +161,30 @@ def test_a_stranger_gets_nothing(api, tokens):
 
 # ── backfill from the pay runs ───────────────────────────────────────────────────────────────────
 
+def _run(api, tokens, period, salary=None, title="Engineer", grade="G3", status="Finalised",
+         gross=99_000_000):
+    """A finalised pay run with one line. `gross` is deliberately a number that is NOT the salary —
+    on a real line it is P1+P2+P3+welfare — so any test that passes because the backfill read `gross`
+    as somebody's pay will fail loudly."""
+    line = {"empId": "HML-STF", "name": "Staff One", "dept": "Engineering",
+            "title": title, "grade": grade, "gross": gross}
+    if salary is not None:
+        line["contractGross"] = salary
+    st, b = api("POST", "/api/coll/payruns", tokens["admin"],
+                {"scope": "company", "period": period, "lines": [line]})
+    # _coll_add forces every new run to "Pending Approval" whatever the client asks for — a run only
+    # becomes Finalised when a Director e-signs it. Set the status the way that signature would,
+    # rather than pretending the create call can.
+    db.put_collection_item("payruns", dict(b["item"], status=status))
+    return st, b
+
+
 def test_backfill_reconstructs_history_from_finalised_pay_runs(api, tokens):
-    """Every finalised run froze dept, title, grade and gross per employee — the history for those
-    months already existed, it was just never queryable."""
-    for period, gross, title in (("January 2026", 20_000_000, "Engineer"),
-                                 ("February 2026", 20_000_000, "Engineer"),
-                                 ("March 2026", 25_000_000, "Senior Engineer")):
-        api("POST", "/api/coll/payruns", tokens["admin"], {
-            "scope": "company", "period": period, "status": "Finalised",
-            "lines": [{"empId": "HML-STF", "name": "Staff One", "dept": "Engineering",
-                       "title": title, "grade": "G3", "gross": gross}]})
+    """Every finalised run froze dept, title, grade and the contractual salary per employee — the
+    history for those months already existed, it was just never queryable."""
+    _run(api, tokens, "January 2026", salary=20_000_000)
+    _run(api, tokens, "February 2026", salary=20_000_000)
+    _run(api, tokens, "March 2026", salary=25_000_000, title="Senior Engineer")
     st, b = api("POST", "/api/hr/history-backfill", tokens["admin"], {})
     assert st == 200, b
     assert b["events"] > 0
@@ -176,11 +196,64 @@ def test_backfill_reconstructs_history_from_finalised_pay_runs(api, tokens):
     assert "2026-02-01" not in months, "an unchanged month must not create a fake change"
 
 
+def test_the_backfill_reads_the_contractual_salary_and_never_the_payslip_total(api, tokens):
+    """The blocker this replaced. A line's `gross` is P1+P2+P3+welfare — it carries the KPI factor,
+    ₫1,530,000 of fixed welfare and any one-off bonus. Recorded as salary it understates every
+    ordinary month, and a Tết bonus becomes a raise followed by an identical pay cut, permanently,
+    in a table with no delete."""
+    _run(api, tokens, "June 2026", salary=20_000_000, gross=41_530_000)   # gross inflated by a bonus
+    api("POST", "/api/hr/history-backfill", tokens["admin"], {})
+    assert db.emp_value_asof("HML-STF", "salary", "2026-06-15") == "20000000"
+    assert not any(e["new_value"] == "41530000"
+                   for e in db.list_emp_events(emp_id="HML-STF", field="salary"))
+
+
+def test_a_run_with_no_contractual_salary_contributes_no_salary_row(api, tokens):
+    """Runs finalised before the salary was recorded on the line. A gap in the history is honest; a
+    figure derived from the payslip total is not. The job fields still backfill, and the response
+    says how many lines it could not price."""
+    _run(api, tokens, "July 2026", salary=None, title="Foreman")
+    st, b = api("POST", "/api/hr/history-backfill", tokens["admin"], {})
+    assert b["salaryUnavailable"] == 1
+    assert db.emp_value_asof("HML-STF", "salary", "2026-07-15") is None
+    assert db.emp_value_asof("HML-STF", "title", "2026-07-15") == "Foreman"
+
+
+def test_a_run_the_director_refused_to_sign_is_not_history(api, tokens):
+    """Every run is created as Pending Approval and only a Director's e-signature makes it Finalised.
+    An unsigned draft is a proposal, and seeding the permanent record from one writes a figure nobody
+    approved into a table with no delete."""
+    _run(api, tokens, "August 2026", salary=99_000_000, status="Pending Approval")
+    st, b = api("POST", "/api/hr/history-backfill", tokens["admin"], {})
+    assert st == 200, b
+    assert b["runs"] == 0, "an unsigned run is not an input to the history"
+    assert db.list_emp_events(emp_id="HML-STF", field="salary") == []
+
+
+def test_the_signed_run_wins_over_the_draft_that_preceded_it(api, tokens):
+    """The realistic shape: HR prepares a run with a mistyped figure, the Director refuses it, HR
+    prepares a corrected one. Both sit in the collection under the same period."""
+    _run(api, tokens, "August 2026", salary=99_000_000, status="Pending Approval")
+    _run(api, tokens, "August 2026", salary=26_000_000, status="Finalised")
+    api("POST", "/api/hr/history-backfill", tokens["admin"], {})
+    vals = [e["new_value"] for e in db.list_emp_events(emp_id="HML-STF", field="salary")]
+    assert vals == ["26000000"], "the refused figure must not appear at all"
+
+
+def test_two_finalised_runs_in_one_month_cannot_both_write_the_same_dated_row(api, tokens):
+    """A company run and a later individual correction share a period. Without adding each written
+    row to the seen-set inside the pass, the second one writes a duplicate same-day event and the
+    as-of query resolves it by insertion order."""
+    _run(api, tokens, "September 2026", salary=27_000_000)
+    _run(api, tokens, "September 2026", salary=28_000_000)
+    api("POST", "/api/hr/history-backfill", tokens["admin"], {})
+    sept = [e for e in db.list_emp_events(emp_id="HML-STF", field="salary")
+            if e["effective"] == "2026-09-01"]
+    assert len(sept) == 1
+
+
 def test_backfill_is_idempotent(api, tokens):
-    api("POST", "/api/coll/payruns", tokens["admin"], {
-        "scope": "company", "period": "April 2026", "status": "Finalised",
-        "lines": [{"empId": "HML-STF", "dept": "Engineering", "title": "Engineer",
-                   "grade": "G3", "gross": 21_000_000}]})
+    _run(api, tokens, "April 2026", salary=21_000_000)
     api("POST", "/api/hr/history-backfill", tokens["admin"], {})
     n = db.emp_events_count()
     st, b = api("POST", "/api/hr/history-backfill", tokens["admin"], {})
@@ -190,10 +263,7 @@ def test_backfill_is_idempotent(api, tokens):
 
 def test_a_backfilled_row_says_it_was_inferred(api, tokens):
     """An inferred row must never be mistaken for one somebody recorded at the time."""
-    api("POST", "/api/coll/payruns", tokens["admin"], {
-        "scope": "company", "period": "May 2026", "status": "Finalised",
-        "lines": [{"empId": "HML-STF", "dept": "Engineering", "title": "Engineer",
-                   "grade": "G3", "gross": 22_000_000}]})
+    _run(api, tokens, "May 2026", salary=22_000_000)
     api("POST", "/api/hr/history-backfill", tokens["admin"], {})
     assert all(e["source"] == "backfill" for e in db.list_emp_events(emp_id="HML-STF"))
 

@@ -62,7 +62,10 @@ def test_an_unchanged_field_does_not_create_noise(api, tokens):
 def test_leave_days_cannot_exceed_the_working_days_in_the_range(api, tokens):
     """Labour Code Art. 112. The browser now excludes weekends and public holidays; this is the same
     rule where it cannot be edited."""
-    db.set_setting("portal_holidays", json.dumps([{"date": "2026-09-02", "name": "National Day"}]))
+    # The PRODUCTION shape: _portal_update stores a list, and db.set_setting json-encodes it once.
+    # Storing json.dumps(...) here instead wrote a JSON *string*, which the old json.loads-on-a-list
+    # bug happened to accept — so this test certified a code path production could never take.
+    db.set_setting("portal_holidays", [{"date": "2026-09-02", "name": "National Day"}])
     try:
         # Mon 31 Aug – Fri 4 Sep is 5 calendar days, but 2 Sep is a public holiday → 4 working days.
         st, b = api("POST", "/api/leave", tokens["staff"], {
@@ -75,11 +78,11 @@ def test_leave_days_cannot_exceed_the_working_days_in_the_range(api, tokens):
             "days": 4, "reason": "test"})
         assert st == 200, b
     finally:
-        db.set_setting("portal_holidays", "[]")
+        db.set_setting("portal_holidays", [])
 
 
 def test_weekends_are_still_excluded_when_no_holidays_are_configured(api, tokens):
-    db.set_setting("portal_holidays", "[]")
+    db.set_setting("portal_holidays", [])
     # Fri 4 Sep – Mon 7 Sep = 4 calendar days, 2 working days.
     st, b = api("POST", "/api/leave", tokens["staff"], {
         "type": "Annual", "startDate": "2026-09-04", "endDate": "2026-09-07", "days": 4, "reason": "t"})
