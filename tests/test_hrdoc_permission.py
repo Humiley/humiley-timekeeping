@@ -54,13 +54,44 @@ def test_being_named_also_allows_editing_and_archiving(api, tokens):
         db.set_setting("portal_hrAdmins", "")
 
 
-def test_somebody_not_named_is_refused_even_at_manager_level(api, tokens):
-    """The list EXCLUDES as well as admits — that is what makes it a duty rather than a rank."""
+def test_a_department_manager_is_refused_whoever_is_named(api, tokens):
+    """Committing every employee to signing something is not inherited by running a department."""
     _as_hr("someone.else@humiley.com")
     try:
         st, b = api("POST", "/api/coll/hrdocs", tokens["mgr"], _doc_body(code="HML-HR-903"))
         assert st == 403, b
         assert "HR" in (b.get("error") or "")
+    finally:
+        db.set_setting("portal_hrAdmins", "")
+
+
+# ── the list ADDS to Editor/Admin, it does not replace them ──────────────────────────────────────
+
+def test_an_editor_can_publish_without_being_named(api, tokens):
+    """Unlike the authorised-payer list, this one is additive. Editors already do this job; naming an
+    HR officer must not quietly take it away from them."""
+    _as_hr("only.hr@humiley.com")
+    try:
+        st, b = api("POST", "/api/coll/hrdocs", tokens["editor"], _doc_body(code="HML-HR-909"))
+        assert st == 200, b
+    finally:
+        db.set_setting("portal_hrAdmins", "")
+
+
+def test_an_editor_can_publish_when_nobody_is_named_at_all(api, tokens):
+    db.set_setting("portal_hrAdmins", "")
+    st, b = api("POST", "/api/coll/hrdocs", tokens["editor"], _doc_body(code="HML-HR-910"))
+    assert st == 200, b
+
+
+def test_editors_and_admins_are_told_they_can_publish(api, tokens):
+    """The UI gates on canPublishDocs, so it has to agree with the write path for every level."""
+    _as_hr(STAFF_EMAIL)
+    try:
+        for who, expected in (("editor", True), ("admin", True), ("staff", True),
+                              ("mgr", False), ("other", False)):
+            _, r = api("GET", "/api/portal", tokens[who])
+            assert r.get("canPublishDocs") is expected, "%s should be %s" % (who, expected)
     finally:
         db.set_setting("portal_hrAdmins", "")
 

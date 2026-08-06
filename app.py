@@ -4116,21 +4116,26 @@ class Handler(BaseHTTPRequestHandler):
     def _is_hr_admin(self, u):
         """May this caller publish, edit, archive or withdraw a COMPANY DOCUMENT?
 
-        Running HR is a named duty, the same shape as disbursement. Being named IS the grant: it
-        admits the HR officer who actually writes the policies without making them an Approver, and
-        it excludes a site manager who happens to hold the level but has no business publishing
-        something the whole company is then chased to sign.
+        Editor and Admin always qualify — they already administer the portal, and they are who steps
+        in when HR is away. Naming somebody as HR ADDS to that: it admits the HR officer who actually
+        writes the policies without having to promote her to Editor first.
 
-        An ADMIN always qualifies, listed or not — so there is no configuration that can lock the
-        company out of its own documents, and an admin can step in whenever HR is away. With nobody
-        named we fall back to Approver (Management) or above, so an install that never sets this
-        keeps working exactly as before."""
-        if self._caller_level(u) == "admin":
+        Note the difference from the authorised-payer list this borrows its shape from. That one is
+        EXCLUSIVE — being on it is the only way to release money, and an Editor not on it loses that
+        power. This one is ADDITIVE. Releasing money is a duty you want narrowed to named people;
+        publishing a policy is a job several people already do, and taking it away from the Editors
+        who do it today would break a working arrangement to solve a problem nobody has.
+
+        A site manager still cannot publish. Committing every employee to signing something is not a
+        thing you inherit by running a department. With nobody named at all it falls back to Approver
+        (Management) or above, so an install that never sets this keeps working as it did."""
+        _rank = self._level_rank(self._caller_level(u))
+        if _rank >= self._level_rank("editor"):          # Editor + Admin, listed or not
             return True
-        hr = _hr_admin_emails()
-        if hr:
-            return (u.get("email") or "").strip().lower() in hr
-        return self._level_rank(self._caller_level(u)) >= self._level_rank(self.HRDOC_MIN)
+        if (u.get("email") or "").strip().lower() in _hr_admin_emails():
+            return True
+        # Nobody named — the pre-existing level rule, so an unconfigured install is unchanged.
+        return not _hr_admin_emails() and _rank >= self._level_rank(self.HRDOC_MIN)
 
     @staticmethod
     def _appr_state(status):
@@ -6447,8 +6452,8 @@ class Handler(BaseHTTPRequestHandler):
         # `role == "manager"`, which let any line manager publish an audience=All document — and
         # locked out an Admin whose employee role is not literally "manager".
         if name == "hrdocs" and not self._is_hr_admin(u):
-            return self._err("Only HR (or an administrator) can publish or change a company document. "
-                             "An administrator can add you under Access & Permissions.", 403)
+            return self._err("Publishing or changing a company document is for HR, Editors and "
+                             "Administrators. An administrator can add you under Access & Permissions.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -7387,8 +7392,8 @@ class Handler(BaseHTTPRequestHandler):
         # `role == "manager"`, which let any line manager publish an audience=All document — and
         # locked out an Admin whose employee role is not literally "manager".
         if name == "hrdocs" and not self._is_hr_admin(u):
-            return self._err("Only HR (or an administrator) can publish or change a company document. "
-                             "An administrator can add you under Access & Permissions.", 403)
+            return self._err("Publishing or changing a company document is for HR, Editors and "
+                             "Administrators. An administrator can add you under Access & Permissions.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -7765,8 +7770,8 @@ class Handler(BaseHTTPRequestHandler):
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):
             return self._err("Invoice Tracking requires Editor level or above.", 403)
         if name == "hrdocs" and not self._is_hr_admin(u):
-            return self._err("Only HR (or an administrator) can publish or change a company document. "
-                             "An administrator can add you under Access & Permissions.", 403)
+            return self._err("Publishing or changing a company document is for HR, Editors and "
+                             "Administrators. An administrator can add you under Access & Permissions.", 403)
         # A signed acknowledgement is the artefact this whole feature exists to produce — the thing an
         # inspector asks for. hrdoc_acks is staff-writable and self-owned, so until now the signer
         # could simply delete their own signature and the compliance matrix would show them as
