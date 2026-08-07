@@ -28,6 +28,8 @@ Pure — no database, no clock. Every rule is exercised by tests/test_settlement
 """
 from datetime import date, timedelta
 
+import datespan
+
 # Compulsory unemployment insurance began on 1 January 2009 (Law on Social Insurance 2006). Service
 # from that date is normally covered by UI and therefore excluded from Art. 46 severance.
 UI_FROM = "2009-01-01"
@@ -54,32 +56,11 @@ def _d(value):
         return None
 
 
-def _add_months(d, months):
-    """The same day-of-month `months` later, clamped to a shorter month."""
-    m = d.month - 1 + int(months)
-    y = d.year + m // 12
-    m = m % 12 + 1
-    last = 31 if m == 12 else (date(y + (m // 12), m % 12 + 1, 1) - date(y, m, 1)).days
-    return date(y, m, min(d.day, last))
-
-
 def months_between(start, end):
-    """Whole months of service from start to end, where `end` is the LAST DAY WORKED.
-
-    A month that began on the 3rd is complete on the 2nd of the next month, so the test is against
-    the day BEFORE the anniversary. The tempting shortcut — comparing day-of-month directly — is
-    wrong for anybody who started on the 1st: it treats every part month as a whole one, and since
-    severance is half a month's wage per year, that overstates what is owed for half the workforce.
-    """
-    s, e = _d(start), _d(end)
-    if not s or not e or e < s:
-        return 0
-    k = (e.year - s.year) * 12 + (e.month - s.month)
-    while k > 0 and _add_months(s, k) - timedelta(days=1) > e:
-        k -= 1
-    while _add_months(s, k + 1) - timedelta(days=1) <= e:
-        k += 1
-    return max(0, k)
+    """Whole months of service, where `end` is the LAST DAY WORKED. See datespan for why the obvious
+    day-of-month shortcut is wrong — at half a month's wage per year it overstated severance for
+    everybody who started on the 1st."""
+    return datespan.whole_months(start, end)
 
 
 def qualifying_months(start, end, ui_from=UI_FROM, already_paid_months=0):

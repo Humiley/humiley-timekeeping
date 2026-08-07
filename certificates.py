@@ -24,6 +24,8 @@ Pure — no database, no clock. Every rule is exercised by tests/test_certificat
 """
 from datetime import date
 
+import datespan
+
 # ── the recurring requirements, and how often the law wants them ─────────────────────────────────
 # Months. A requirement with no interval is a one-off qualification that either expires on its own
 # printed date or does not expire at all.
@@ -49,16 +51,8 @@ def _d(value):
 
 
 def add_months(d, months):
-    """The same day-of-month `months` later, clamped to the end of a shorter month — 31 Jan plus one
-    month is 28 Feb, not 3 March, because a validity period should not drift forward."""
-    d = _d(d)
-    if not d:
-        return None
-    m = d.month - 1 + int(months)
-    y = d.year + m // 12
-    m = m % 12 + 1
-    last = (date(y + (m // 12), m % 12 + 1, 1) - date(y, m, 1)).days if m != 12 else 31
-    return date(y, m, min(d.day, last))
+    """The same day-of-month `months` later, clamped to a shorter month. See datespan."""
+    return datespan.add_months(d, months)
 
 
 def health_check_months(conditions="normal", minor=False, disabled=False, elderly=False):

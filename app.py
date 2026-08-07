@@ -5183,14 +5183,42 @@ class Handler(BaseHTTPRequestHandler):
         if _in and _out:
             fields["hrs"] = db._hrs_between(_in, _out, overnight=(_out < _in))
 
+        # Overtime can never exceed the hours somebody was actually checked in for. Check-out enforces
+        # this; the amend path did not, and the gap was not cosmetic: `ot_window` takes the overtime as
+        # the TAIL of the shift, so 4 hours against a 08:00–09:00 shift starts the window at 05:00 and
+        # buys an hour of night premium nobody worked — and at the extreme rolls hours onto the
+        # previous day, at its holiday rate.
+        _h_new = float(fields.get("ot_hours", rec.get("ot_hours")) or 0)
+        if _in and _out and _h_new > 0:
+            _span = db._hrs_between(_in, _out, overnight=(_out < _in))
+            try:
+                _hh, _mm = (int(x) for x in _span.replace("h", "").replace("m", "").split())
+                _span_min = _hh * 60 + _mm
+            except (ValueError, AttributeError):
+                _span_min = 0
+            if _span_min > 0 and _h_new * 60 > _span_min + 5:
+                return self._err("Overtime (%.1fh) cannot exceed the hours checked in (%.1fh). "
+                                 "Correct the times first, or reduce the overtime."
+                                 % (_h_new, _span_min / 60.0), 400)
+
         # Rule 2: the times or the hours moved, so the overtime decision no longer describes what
         # happened. Send it back for a decision rather than carrying an approval across the change.
+        #
+        # Keyed on the RESULT, not on the prior decision. Keying it on "was approved" meant a
+        # correction that ADDED overtime to a record which had none left it in no state at all —
+        # hours that no approval queue ever showed and payroll never paid, because only approved
+        # overtime counts.
         reopened = False
-        if any(k in fields for k in ("clock_in", "clock_out", "ot_hours")) \
-                and str(rec.get("ot_status") or "") == "approved":
+        if any(k in fields for k in ("clock_in", "clock_out", "ot_hours")):
             _h = fields.get("ot_hours", rec.get("ot_hours"))
-            fields["ot_status"] = "pending" if float(_h or 0) > 0 else ""
-            reopened = True
+            _was = str(rec.get("ot_status") or "")
+            if float(_h or 0) > 0:
+                if _was != "pending":
+                    fields["ot_status"] = "pending"
+                    reopened = _was == "approved"
+            elif _was:
+                fields["ot_status"] = ""
+                reopened = _was == "approved"
 
         db.amend_attendance(int(aid), fields, actor=u.get("name") or "", actor_id=u.get("id") or "",
                             reason=reason)
@@ -5247,8 +5275,14 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 this_h = 0.0
             d, mo, yr = self._ot_totals_for(rec.get("emp_id"), rec.get("date"), exclude_id=rec.get("id"))
+            # Which KIND of day it was decides the daily ceiling: half a normal day's hours on a
+            # working day, but Decree 145/2020 Art. 60's 12-hour total on a rest day or holiday,
+            # where there are no normal hours to take half of. Without this, lawful Sunday shutdown
+            # work was refused as a breach and the manager was recorded as overriding the law.
+            _kind = overtime.day_kind(rec.get("date"), _ot_holiday_set(),
+                                      _rest_weekdays_for(emp or {}))
             caps = overtime.cap_check(d + this_h, mo + this_h, yr + this_h,
-                                      annual_cap=_ot_annual_cap())
+                                      annual_cap=_ot_annual_cap(), day_kind=_kind)
             breaches = caps["breaches"]
             if breaches and not override:
                 return self._json({"ok": False, "capBreach": True, "breaches": breaches,
@@ -5648,7 +5682,15 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             for _k in ("status", "dept", "department", "managerEmail", "salary", "grade", "endDate",
                        "email", "title", "bank", "taxId", "personalId", "dependents",
-                       "annualTotal", "annualUsed", "sickTotal", "sickUsed", "compoff"):
+                       "annualTotal", "annualUsed", "sickTotal", "sickUsed", "compoff",
+                       # These four decide statutory entitlement — the working-condition class sets
+                       # the annual-leave base and the health-check cadence, the OSH group decides
+                       # whether safety training is required at all, and the Art. 20(2)(c) exemption
+                       # decides whether somebody may be kept on fixed terms indefinitely. They are
+                       # legal classifications the company makes, not fields a line manager edits.
+                       "workConditions", "disabled", "oshGroup", "contractExempt",
+                       # Bank details decide where somebody's salary is sent.
+                       "bankName", "bankAcc", "bankHolder", "bankBranch"):
                 body.pop(_k, None)
         # Protected super-admins can never be demoted OR deactivated. A DEDICATED level/role/app/status
         # change (the Access-Levels dropdown sends ONLY those fields) is rejected LOUDLY so the acting
@@ -5668,6 +5710,11 @@ class Handler(BaseHTTPRequestHandler):
         for _f in ("name", "title", "dept", "department"):
             if isinstance(body.get(_f), str):
                 body[_f] = body[_f].replace("<", "").replace(">", "")
+        # `disabled` is an INTEGER column read with bool(). A stored "0" STRING is truthy in Python,
+        # which would silently put somebody on the 14-day leave base and the six-month health-check
+        # cadence. Coerce once, here, rather than defending at every read site.
+        if "disabled" in body:
+            body["disabled"] = 1 if str(body.get("disabled")).strip().lower() in ("1", "true", "yes", "on") else 0
         if body:
             self._audit_emp_change(u, eid, ex, body)
             db.update_employee(eid, body)
@@ -5676,10 +5723,15 @@ class Handler(BaseHTTPRequestHandler):
     # The employee-record fields worth a line in the permanent trail: the ones that move money,
     # route approvals, or decide what somebody can see.
     EMP_AUDITED = ("salary", "grade", "title", "dept", "department", "managerEmail",
-                   "status", "level", "role", "employmentType", "endDate", "dependents", "bank")
+                   "status", "level", "role", "employmentType", "endDate", "dependents", "bank",
+                   # Statutory drivers: each of these changes what the law requires for this person,
+                   # so a change to one has to be as traceable as a change to their salary.
+                   "workConditions", "disabled", "oshGroup", "contractExempt",
+                   # Where the salary is sent. A quiet edit here is how money goes to the wrong place.
+                   "bankName", "bankAcc", "bankHolder")
     # Never write the VALUE of these into the audit trail — the log is readable by admins and would
     # otherwise quietly become a second, unprotected compensation database.
-    EMP_AUDIT_MASKED = ("salary", "bank")
+    EMP_AUDIT_MASKED = ("salary", "bank", "bankAcc")
 
     @staticmethod
     def _same_field_value(old, new):
@@ -6052,6 +6104,9 @@ class Handler(BaseHTTPRequestHandler):
     # HR records that are EVIDENCE about a person — the ones a labour inspector, an ISO auditor or a
     # former employee's lawyer would ask to see. Deleting one snapshots it into the audit chain first.
     HR_EVIDENCE_COLLS = {"exits", "padr", "reviews", "pip", "hrdoc_acks", "acks",
+                         # A labour contract and a health certificate are evidence too — deleting
+                         # one must leave the record in the audit chain, not just a gap.
+                         "contracts", "certificates",
                          "onboarding", "handovers", "enrollments", "payadjust", "candidates"}
     INVTRACK_MIN = "editor"
     # Publishing a company document commits every employee to signing it and starts chasing them.
@@ -6224,6 +6279,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Access restricted to %s level or above." % need, 403)
         items = db.list_collection(name)
         lvl = self._caller_level(u)
+        # Health records are the most sensitive rows in the portal. READ_MIN lets a manager reach
+        # this collection so they can check their own crew before a site day — it was never meant to
+        # hand them the whole company's medical cadence, disability status and scanned certificates.
+        # The review endpoint scopes to the caller's crew; the raw list read did not, which made the
+        # scoping decorative. It also shipped the file bytes to every reader.
+        if name == "certificates" and self._level_rank(lvl) < self._level_rank("management"):
+            my_email = (u.get("email") or "").strip().lower()
+            mine = {e.get("id") for e in db.list_employees()
+                    if e.get("id") == u.get("id")
+                    or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)}
+            items = [{k: v for k, v in it.items() if k not in ("file", "fileUrl")}
+                     for it in items if it.get("empId") in mine]
         # Audit trail: the FULL immutable log (deletions, access-level changes, attendance, invoice
         # syncs) is ADMIN-only — matching the admin-only Audit Log view. A non-admin reader (the
         # Signature Governance page is management-level and filters to e-signature events client-side
@@ -6808,6 +6875,25 @@ class Handler(BaseHTTPRequestHandler):
             seen.add(key)
         return None
 
+    @staticmethod
+    def _payrun_unsalaried(item):
+        """Anybody in this run with no salary on record. `_payComputed` prices them at the GRADE
+        MID-POINT — a full gross, PIT and statutory footprint invented for a figure nobody agreed —
+        so a run containing one must never be created OR edited into existence. It was checked on
+        create only, which left PATCH as a way in."""
+        out = []
+        for _ln in (item.get("lines") if isinstance(item.get("lines"), list) else []):
+            if not isinstance(_ln, dict):
+                continue
+            _e = db.get_employee(str(_ln.get("empId") or "")) if _ln.get("empId") else None
+            try:
+                _ok = _e and float(_e.get("salary") or 0) > 0
+            except (TypeError, ValueError):
+                _ok = False
+            if not _ok:
+                out.append(str(_ln.get("name") or _ln.get("empId") or "?"))
+        return out
+
     def _payperiod_finalised(self, period):
         """True once a COMPANY pay run for this period has been finalised (Director-e-signed). A finalised
         month is closed — its manual payroll adjustments (payadjust) must not be added, edited or deleted
@@ -6840,6 +6926,14 @@ class Handler(BaseHTTPRequestHandler):
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
+        # A labour contract states somebody's agreed wage and a certificate is their medical record.
+        # Both were gated only on the raw `role` column, so a user who may not READ a contract could
+        # still rewrite its wage or delete it. Writing must need at least what reading needs.
+        if name in ("contracts", "certificates"):
+            _need = self.READ_MIN.get(name, "management")
+            if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
+                return self._err("%s access or above is required to change %s."
+                                 % (_need.title(), name), 403)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
@@ -7025,21 +7119,11 @@ class Handler(BaseHTTPRequestHandler):
             # invented for a figure nobody signed — and the browser guard covered only one of the
             # three buttons that create a run. This is the boundary that covers all of them, and any
             # future one: the run is refused, by name, before it can be prepared and e-signed.
-            _no_salary = []
-            for _ln in (item.get("lines") if isinstance(item.get("lines"), list) else []):
-                if not isinstance(_ln, dict):
-                    continue
-                _e = db.get_employee(str(_ln.get("empId") or "")) if _ln.get("empId") else None
-                try:
-                    _ok = _e and float(_e.get("salary") or 0) > 0
-                except (TypeError, ValueError):
-                    _ok = False
-                if not _ok:
-                    _no_salary.append(str(_ln.get("name") or _ln.get("empId") or "?"))
-            if _no_salary:
+            _bad = self._payrun_unsalaried(item)
+            if _bad:
                 return self._err("These employees have no salary on record, so there is nothing to "
                                  "pay them from: %s. Enter the agreed salary first."
-                                 % ", ".join(_no_salary[:8]), 400)
+                                 % ", ".join(_bad[:8]), 400)
             item["status"] = "Pending Approval"
             item["preparedBy"] = u.get("name")
             item["preparedById"] = u.get("id")
@@ -7603,6 +7687,16 @@ class Handler(BaseHTTPRequestHandler):
             rest = _rest_weekdays_for(e, scheds)
             # hourly = 1.0, so `pay` comes back as the pure multiplier-hours the frontend scales.
             s = overtime.month_summary(recs, 1.0, hols, rest)
+            # …and the DIVISOR that turns those units into money must come from the same schedule.
+            # Decree 145/2020 Art. 55(1)(a) divides by the normal working hours in the month FOR THAT
+            # PERSON. The browser was dividing by a hardcoded Mon–Fri count while the server priced
+            # their Saturdays as normal working days, so a Mon–Sat employee's overtime came out about
+            # 24% too high — the two halves of one calculation disagreeing about their week.
+            _wd, _c = 0, datetime.strptime(period + "-01", "%Y-%m-%d")
+            while _c.strftime("%Y-%m") == period:
+                if _c.weekday() not in set(rest) and _c.strftime("%Y-%m-%d") not in hols:
+                    _wd += 1
+                _c += timedelta(days=1)
             _, month_h, year_h = self._ot_totals_for(e.get("id"), period + "-01")
             worst_day = max(s["byDate"].values()) if s["byDate"] else 0.0
             caps = overtime.cap_check(worst_day, month_h, year_h, annual_cap=cap_y)
@@ -7612,7 +7706,8 @@ class Handler(BaseHTTPRequestHandler):
                         "byKind": {k: {kk: round(vv, 2) for kk, vv in v.items()}
                                    for k, v in s["byKind"].items()},
                         "records": s["records"], "monthHours": round(month_h, 2),
-                        "yearHours": round(year_h, 2), "breaches": caps["breaches"]})
+                        "yearHours": round(year_h, 2), "breaches": caps["breaches"],
+                        "workingDays": _wd, "restDays": sorted(rest)})
         return self._json({"ok": True, "period": period, "annualCap": cap_y,
                            "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out})
 
@@ -7684,6 +7779,12 @@ class Handler(BaseHTTPRequestHandler):
                 conditions=e.get("workConditions") or "normal",
                 dob=e.get("dob"), disabled=bool(e.get("disabled")),
                 end=e.get("endDate") or None)
+            # `annualTotal` has no year on it, so writing a PRORATED figure into it makes a
+            # mid-year joiner's 6 days look like their permanent entitlement for every year after.
+            # The full-year figure is what a year-less field means; a prorated year is reported for
+            # information and left alone.
+            if r["prorated"]:
+                continue
             gap = leave_entitlement.shortfall(e.get("annualTotal"), r["days"])
             if not gap:
                 continue
@@ -8355,6 +8456,14 @@ class Handler(BaseHTTPRequestHandler):
             _pr = db.get_collection_item("payruns", iid)
             if _pr and str(_pr.get("status") or "").strip().lower() in ("finalised", "finalized"):
                 return self._err("A finalised payroll run is immutable.", 403)
+            # The same rule as creation: a run containing somebody with no salary on record is a run
+            # priced from a guess. Checking it on create alone left PATCH as a way to add them
+            # afterwards and then have a Director sign it.
+            _bad = self._payrun_unsalaried(body if isinstance(body, dict) else {})
+            if _bad:
+                return self._err("These employees have no salary on record, so there is nothing to "
+                                 "pay them from: %s. Enter the agreed salary first."
+                                 % ", ".join(_bad[:8]), 400)
             if _pr:
                 # A PATCH may amend a pending run's figures but can never CHANGE its status (the update
                 # is a blind full-document overwrite, so pin status to its stored value rather than
@@ -8454,6 +8563,14 @@ class Handler(BaseHTTPRequestHandler):
                 "action": "E-signature — asset receipt acknowledged", "target": "devices/" + str(iid),
                 "detail": existing.get("name") or "", "ts": self._utc_now()})
             return self._json({"ok": True, "item": {k: v for k, v in existing.items() if k != "token"}})
+        # A labour contract states somebody's agreed wage and a certificate is their medical record.
+        # Both were gated only on the raw `role` column, so a user who may not READ a contract could
+        # still rewrite its wage or delete it. Writing must need at least what reading needs.
+        if name in ("contracts", "certificates"):
+            _need = self.READ_MIN.get(name, "management")
+            if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
+                return self._err("%s access or above is required to change %s."
+                                 % (_need.title(), name), 403)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):

@@ -8487,7 +8487,14 @@ function _payComputed(e, rating, opts) {
   // Decree 145 excludes bonuses, welfare and overtime itself from that base, so P3, lunch, phone and
   // transport are correctly out of it — otherwise overtime would compound on its own premium.
   const ot = opts.ot || null;
-  const otHourly = (P1 + P2) / Math.max(1, workingDays * 8);
+  // Decree 145/2020 Art. 55(1)(a) divides by the normal working hours in the month FOR THIS PERSON.
+  // `workingDays` here is a Mon–Fri count, which is wrong for anybody on a Mon–Sat pattern — and the
+  // server already prices their Saturday overtime at 150% because it resolves their real schedule.
+  // Using their own working days (sent back with the overtime) keeps the two halves of the same
+  // calculation agreeing about how many days a week they work; falling back to the Mon–Fri count
+  // only when no schedule is known.
+  const otDays = (ot && +ot.workingDays > 0) ? +ot.workingDays : workingDays;
+  const otHourly = (P1 + P2) / Math.max(1, otDays * 8);
   const otHours = ot ? (+ot.hours || 0) : 0;
   const otNightHours = ot ? (+ot.nightHours || 0) : 0;
   const otPay = ot ? Math.round(otHourly * (+ot.units || 0)) : 0;
@@ -8506,7 +8513,7 @@ function _payComputed(e, rating, opts) {
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
     otHours, otNightHours, otPay, otTaxable, otExempt, otHourly: R(otHourly),
-    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [],
+    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [], otDays,
     siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
     erBhxh: R(er.bhxh), erBhyt: R(er.bhyt), erBhtn: R(er.bhtn), erTu: R(er.tu), erTotal: R(er.total),
     pit: R(pit), grossPay: R(grossPay), workingDays, unpaidDays, unpaidDeduction: R(unpaidDeduction),
@@ -8543,7 +8550,12 @@ let _payYM = null, _payCache = {}, _payTotals = {};
 /* Approved overtime by period, from the server — 'YYYY-MM' → { empId: {hours, units, …} }.
    Kept out of _payComputed's signature so the calculation stays synchronous and pure: the fetch
    happens once per period before a render, and every computation after it reads this. */
-let _payOT = {}, _payOTCap = 200;
+let _payOT = {}, _payOTCap = 200, _payOTFailed = {};
+/* A failed fetch is NOT a result. Caching `{}` made it one: an empty object is truthy, so the retry
+   was skipped for the rest of the session, every payslip showed zero overtime with no warning, and
+   the preparer could roll out a run that froze those zeros into a Director-signed record — which a
+   finalised month makes permanent. Now a failure leaves the key unset and is remembered separately,
+   so the pay run can refuse to be created from a month whose overtime could not be read. */
 async function _payLoadOT(y, months) {
   for (const m of months) {
     const key = y + '-' + String(m + 1).padStart(2, '0');
@@ -8552,10 +8564,17 @@ async function _payLoadOT(y, months) {
       const r = await tkApi('/api/hr/overtime?period=' + key);
       const by = {}; ((r && r.rows) || []).forEach(x => { by[x.empId] = x; });
       _payOT[key] = by;
+      delete _payOTFailed[key];
       if (r && r.annualCap) _payOTCap = +r.annualCap;   // 200, or 300 where the company has elected it
-    } catch (e) { _payOT[key] = {}; }   // a month whose overtime cannot be read shows none, not a wrong figure
+    } catch (e) { _payOTFailed[key] = _errMsg(e); }
   }
 }
+/* Which of the requested months could not be read. */
+function _payOTUnread(y, months) {
+  return months.map(m => y + '-' + String(m + 1).padStart(2, '0')).filter(k => _payOTFailed[k]);
+}
+/* Newly approved overtime must not be invisible until a page reload. */
+function _payOTInvalidate(key) { if (key) { delete _payOT[key]; delete _payOTFailed[key]; } else { _payOT = {}; _payOTFailed = {}; } }
 function _payOTFor(empId, y, m) {
   return (_payOT[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || null;
 }
@@ -8860,6 +8879,7 @@ async function tkCreatePayRun() {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period)) { if (!(await tkConfirm('A pay run for ' + period + ' already exists. Create another?'))) return; }
+  if (await _payBlockedByUnreadOT()) return;
   if (await _payBlockedByMissingSalary()) return;
   const t = _payTotals;
   try {
@@ -8973,6 +8993,18 @@ async function tkRebuildEmpHistory() {
    total a Director e-signs. This guard sat on the roll-out button only, while "Create Pay Run" and
    "Individual Pay Run" stood beside it doing the same thing unchecked. It now covers all three, and
    the server refuses such a run outright so no path can create one. Returns true if it blocked. */
+/* Overtime that could not be read is not overtime that is zero. Refuse rather than sign a guess. */
+async function _payBlockedByUnreadOT() {
+  if (!_payYM) return false;
+  const bad = _payOTUnread(_payYM.y, _payMonthsOf(_payYM));
+  if (!bad.length) return false;
+  await tkAlert({
+    title: _t('Overtime could not be read for this period'),
+    body: _t('The approved overtime for the month(s) below could not be loaded, so every payslip would show none — which is a wrong figure, not a missing one, and a signed run makes it permanent.') +
+      '\n\n\u2022 ' + bad.join('\n\u2022 ') + '\n\n' + _t('Reload the page and try again.')
+  });
+  return true;
+}
 async function _payBlockedByMissingSalary(onlyId) {
   const list = (_DEMO_EMPLOYEES || [])
     .filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
@@ -8993,6 +9025,7 @@ async function tkRollOutPayroll() {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
   const period = _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y;
   if ((_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual')) { toast(period + ' is already rolled out', 'warn'); return; }
+  if (await _payBlockedByUnreadOT()) return;
   if (await _payBlockedByMissingSalary()) return;
   const t = _payTotals;
   if (!(await tkConfirm('Roll out ' + period + ' payroll?\n\n' + t.count + ' employees · gross ' + _PAY_FMT(t.gross) + ' · net ' + _PAY_FMT(t.net) + '\n\nThis finalises the month and records the pay run.'))) return;
@@ -9799,6 +9832,9 @@ async function tkMyPayslip() {
   await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns').catch(() => {}),
                      _payLoadOT(_payYM ? _payYM.y : new Date().getFullYear(),
                                 [_payYM ? _payYM.m : new Date().getMonth()]).catch(() => {})]);
+  // _payslipFrozen keys off _payYM, which only the Payroll page sets — so on a staff session it was
+  // null and the frozen, Director-signed line could never be found. Default it to the current month.
+  if (!_payYM) { const d = new Date(); _payYM = { y: d.getFullYear(), m: d.getMonth() }; }
   const u = TK.user || {}; const e = (_DEMO_EMPLOYEES || []).find(x => (u.id && x.id === u.id) || (u.email && (x.email || '').toLowerCase() === (u.email || '').toLowerCase()));
   if (!e) { toast('Your employee record was not found', 'warn'); return; }
   tkPayslip(e.id);
@@ -22188,7 +22224,7 @@ function _entTable(rows) {
     const gap = x.shortfall > 0;
     return '<tr' + (gap ? ' style="background:rgba(220,38,38,.04)"' : '') + '>' +
       '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + ' · ' + _t('joined') + ' ' + _crmEsc(x.startDate || '—') + '</div></td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.onRecord == null || x.onRecord === '' ? '—' : x.onRecord) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.onRecord == null || x.onRecord === '' ? '—' : _crmEsc(x.onRecord)) + '</td>' +
       '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700">' + x.required + '</td>' +
       '<td style="text-align:right">' + (gap ? '<span class="badge b-warn" style="font-size:10px">' + _t('short by') + ' ' + x.shortfall + '</span>' : '<span style="color:var(--emerald)">✓</span>') + '</td>' +
       '<td style="font-size:11px;color:var(--text-light)">' + x.base + ' ' + _t('base') + (x.seniority ? ' + ' + x.seniority + ' ' + _t('seniority') : '') + (x.prorated ? ' · ' + _crmEsc(x.why) : '') + '</td></tr>';
@@ -23213,6 +23249,7 @@ async function tkOtDecide(attId, decision, override) {
     toast(_t('Overtime') + ' ' + (decision === 'approve' ? _t('approved') + ' ✓' : _t('rejected'))
           + (override ? ' · ' + _t('recorded as over the statutory cap') : ''),
           decision === 'approve' ? 'success' : undefined, 4000);
+    try { const _r = (_DEMO_ATTENDANCE || []).find(x => x.id === attId); if (_r && _r.date) _payOTInvalidate(String(_r.date).slice(0, 7)); } catch (_) {}
     try { await tkBootstrap(); } catch (e) {}
     renderInOutReport();
   } catch (e) {

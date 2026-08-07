@@ -121,7 +121,15 @@ def ot_window(clock_in, clock_out, ot_hours):
     start_in = hm_to_min(clock_in)
     if start_in is not None and end < start_in:
         end += 1440
-    return (end - hours * 60.0, float(end))
+    start = end - hours * 60.0
+    # Overtime cannot begin before the person was checked in. The endpoints validate this, but a row
+    # that predates the validation — or one written directly — would otherwise reach back past the
+    # check-in and collect night minutes, or roll onto the previous day at its holiday rate. Clamp it
+    # here too: this function decides what the hours are WORTH, and it should not be possible to be
+    # paid for a window nobody was present for.
+    if start_in is not None:
+        start = max(start, float(start_in))
+    return (start, float(end))
 
 
 def ot_segments(date_iso, start, end):
@@ -254,14 +262,25 @@ def month_summary(records, hourly, holidays=(), rest_weekdays=(5, 6)):
 
 # ── the caps ─────────────────────────────────────────────────────────────────────────────────────
 
-def day_cap(normal_hours=NORMAL_DAY_HOURS):
-    """Art. 107(2)(b): overtime in a day may not exceed half the normal hours for that day, and the
-    two together may not exceed 12 hours."""
+def day_cap(normal_hours=NORMAL_DAY_HOURS, kind="normal"):
+    """The ceiling on ONE day's overtime.
+
+    Art. 107(2)(b) caps overtime at half the normal working hours of a normal working DAY, and caps
+    normal + overtime together at 12 hours. On a weekly rest day or a public holiday there are no
+    normal hours to take half of — the whole shift is overtime — so what binds is Decree 145/2020
+    Art. 60's 12-hour ceiling on total hours in a day.
+
+    Applying the 4-hour figure to a rest day was refusing lawful Sunday shutdown work as a statutory
+    breach, and writing "OVER THE STATUTORY CAP" into the audit chain against a manager who had done
+    nothing wrong.
+    """
+    if str(kind) in ("rest", "holiday"):
+        return CAP_DAY_TOTAL
     return min(float(normal_hours) * CAP_DAY_RATIO, CAP_DAY_TOTAL - float(normal_hours))
 
 
 def cap_check(day_hours=0.0, month_hours=0.0, year_hours=0.0,
-              normal_hours=NORMAL_DAY_HOURS, annual_cap=CAP_YEAR_HOURS):
+              normal_hours=NORMAL_DAY_HOURS, annual_cap=CAP_YEAR_HOURS, day_kind="normal"):
     """Which statutory ceilings a set of totals breaks.
 
     Returns {"ok": bool, "breaches": [{"cap", "limit", "value", "message"}, ...]}. The totals passed
@@ -270,11 +289,13 @@ def cap_check(day_hours=0.0, month_hours=0.0, year_hours=0.0,
     approving it.
     """
     breaches = []
-    dc = day_cap(normal_hours)
+    dc = day_cap(normal_hours, day_kind)
     if day_hours > dc + 1e-9:
         breaches.append({"cap": "day", "limit": dc, "value": day_hours,
-                         "message": "Overtime on one day may not exceed %.1fh (Labour Code Art. 107)."
-                                    % dc})
+                         "message": "Overtime on one day may not exceed %.1fh (%s)."
+                                    % (dc, "Decree 145/2020 Art. 60 — 12 hours total on a rest day "
+                                           "or holiday" if str(day_kind) in ("rest", "holiday")
+                                       else "Labour Code Art. 107")})
     if month_hours > CAP_MONTH_HOURS + 1e-9:
         breaches.append({"cap": "month", "limit": CAP_MONTH_HOURS, "value": month_hours,
                          "message": "Overtime in one month may not exceed %.0fh (Labour Code Art. 107)."

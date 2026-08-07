@@ -25,6 +25,8 @@ Pure — no database, no clock. Every rule is exercised by tests/test_contracts.
 """
 from datetime import date, timedelta
 
+import datespan
+
 INDEFINITE = "indefinite"
 DEFINITE = "definite"
 TYPES = (INDEFINITE, DEFINITE)
@@ -50,21 +52,35 @@ def _d(value):
 
 
 def term_months(start, end):
-    """Whole months between two dates, for checking the 36-month ceiling. A contract running
-    1 Jan 2026 → 31 Dec 2028 is 36 months, not 35: the end date is the last day covered."""
-    s, e = _d(start), _d(end)
-    if not s or not e or e < s:
-        return 0
-    months = (e.year - s.year) * 12 + (e.month - s.month)
-    if e.day >= s.day - 1:          # the day before the anniversary completes the month
-        months += 1
-    return months
+    """Whole months of a contract term, for the Art. 20(1)(b) ceiling. The end date is the last day
+    covered, so 1 Jan 2026 → 31 Dec 2028 is 36 months, not 35.
+
+    This used a day-of-month shortcut that over-counted by one for any contract NOT starting on the
+    1st: a perfectly lawful 15 Mar 2026 → 14 Mar 2029 read as 37 months and was reported to HR as
+    breaching the ceiling. Roughly half of all contracts start mid-month.
+    """
+    return datespan.whole_months(start, end)
+
+
+def last_lawful_end(start):
+    """The latest date a fixed term starting on `start` may run to: the day before its 36-month
+    anniversary (Art. 20(1)(b))."""
+    end = datespan.add_months(start, MAX_DEFINITE_MONTHS)
+    return (end - timedelta(days=1)) if end else None
 
 
 def exceeds_max_term(start, end):
-    """Art. 20(1)(b). A fixed term longer than 36 months is not a longer contract — it is an
-    unlawful one, and the excess is unenforceable."""
-    return term_months(start, end) > MAX_DEFINITE_MONTHS
+    """Art. 20(1)(b). A fixed term longer than 36 months is not a longer contract — it is an unlawful
+    one, and the excess is unenforceable.
+
+    Compared as DATES rather than as a month count. Whole months cannot see the difference between a
+    term of exactly 36 months and one of 36 months and a day, and the second of those exceeds the
+    ceiling while the first does not.
+    """
+    s, e, limit = _d(start), _d(end), last_lawful_end(start)
+    if not s or not e or not limit:
+        return False
+    return e > limit
 
 
 def status(contract, as_of):
