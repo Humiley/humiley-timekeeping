@@ -41,6 +41,7 @@ import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlem
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
+import labour_cost       # what each project cost in people, and on what basis (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3743,6 +3744,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/labour-cost":
+            return self._guard(lambda u: self._labour_cost_ep(u, qs))
         if path == "/api/hr/access-review":
             return self._guard(lambda u: self._access_review_ep(u, qs))
         if path == "/api/hr/payroll/bankfile":
@@ -5119,7 +5122,11 @@ class Handler(BaseHTTPRequestHandler):
         # report escapes it on render, but attendance rows bypass the /api/coll _crm_sanitize path, so
         # neutralise HTML markup here too before it ever reaches storage.
         loc = str(body.get("loc") or "").replace("<", "").replace(">", "")[:120]
-        rid = db.clock_in(emp_id, date, t, loc=loc, lat=lat, lon=lon, status=status)
+        # Which job they are on. Advisory like everything else on this path — an unrecognised or
+        # absent project never blocks a check-in, it just leaves the day unattributed in the cost
+        # report. Somebody standing at a site gate at 06:00 must always be able to clock in.
+        _proj = str((body or {}).get("project") or "").strip()[:64] or None
+        rid = db.clock_in(emp_id, date, t, loc=loc, lat=lat, lon=lon, status=status, project=_proj)
         if rid is None:
             return self._err("Already checked in today.")   # atomic double-tap guard (unique index)
         db.put_collection_item("audit", {"actor": u.get("name"), "actorId": emp_id,
@@ -8063,6 +8070,120 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    # ── what each project cost in people ─────────────────────────────────────────────────────────
+
+    def _labour_cost_ep(self, u, qs=None):
+        """Labour cost per project for a month.
+
+        The number this company has never had. Two things decide how much it can be trusted, and
+        both are reported rather than assumed:
+
+        WHAT A PERSON COST. A signed pay run is the real answer — it is frozen, e-signed and already
+        carries the employer's full cost including overtime and statutory contributions. Where the
+        month has not been signed, the current salary is used as a standing-in figure and the whole
+        report is marked provisional. Pricing a tender off an unsigned month without knowing it is
+        unsigned is the failure mode.
+
+        WHICH JOB THEY WERE ON. A day recorded against a project at check-in is a fact. An
+        allocation percentage in the project register is an estimate. labour_cost keeps them apart.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this reports what "
+                             "people cost.", 403)
+        period = str((qs or {}).get("period", [""])[0] or "").strip()
+        ym = self._period_ym(period)
+        if not ym:
+            return self._err("Give a month, as YYYY-MM.", 400)
+
+        # 1. What each person cost. Prefer the signed run for that month.
+        run = None
+        for r in db.list_collection("payruns"):
+            if str(r.get("status") or "").strip().lower() != "finalised":
+                continue
+            if self._period_ym(r.get("period") or "") == ym:
+                run = r
+                break
+        cost_of, basis_note = {}, ""
+        if run:
+            for ln in (run.get("lines") or []):
+                c = (ln.get("calc") or {})
+                cost_of[str(ln.get("empId") or "")] = int(round(
+                    labour_cost._num(c.get("employerCost"),
+                                     labour_cost._num(ln.get("gross"), 0))))
+            basis_note = "signed pay run"
+        else:
+            basis_note = "current salary (this month has not been signed)"
+
+        # 2. Which job each recorded day was on.
+        days_of = {}
+        for a in db.list_attendance(start=ym + "-01", end=ym + "-31"):
+            days_of.setdefault(str(a.get("emp_id") or ""), []).append(
+                {"date": a.get("date"), "project": a.get("project") or ""})
+
+        # 3. Who the project register says is on what.
+        allocs_of, names = {}, {}
+        for pr in db.list_collection("pm_projects"):
+            names[str(pr.get("id") or "")] = pr.get("name") or pr.get("title") or pr.get("id") or ""
+        for r in db.list_collection("pm_resources"):
+            eid = self._emp_id_for_resource(r)
+            if eid:
+                allocs_of.setdefault(eid, []).append(
+                    {"projectId": str(r.get("projectId") or r.get("project") or ""),
+                     "allocationPct": r.get("allocationPct")})
+
+        people = []
+        for e in db.list_employees():
+            eid = str(e.get("id") or "")
+            cost = cost_of.get(eid)
+            if cost is None:
+                if str(e.get("status") or "Active").strip().lower() == "inactive":
+                    continue          # gone, and not in the signed run either
+                cost = int(round(labour_cost._num(e.get("salary"), 0)))
+            if not cost:
+                continue              # nobody is costed at zero; a missing salary is not free labour
+            people.append({"empId": eid, "name": e.get("name") or "", "dept": e.get("dept") or "",
+                           "cost": cost, "costBasis": basis_note,
+                           "days": days_of.get(eid, []), "allocations": allocs_of.get(eid, [])})
+
+        rep = labour_cost.report(people, project_names=names)
+        rep.update({"ok": True, "period": period or ym, "ym": ym,
+                    "costBasis": basis_note, "signed": bool(run),
+                    "provisional": not bool(run),
+                    "peopleCounted": len(people)})
+        return self._json(rep)
+
+    @staticmethod
+    def _emp_id_for_resource(r):
+        """pm_resources stores the member as a NAME chosen from a dropdown, not an id — so it has to
+        be resolved back, and a name that matches nobody is dropped rather than guessed at."""
+        v = str((r or {}).get("empId") or "").strip()
+        if v:
+            return v
+        nm = str((r or {}).get("name") or "").strip().lower()
+        if not nm:
+            return ""
+        for e in db.list_employees():
+            if str(e.get("name") or "").strip().lower() == nm:
+                return str(e.get("id") or "")
+        return ""
+
+    @staticmethod
+    def _period_ym(period):
+        """'August 2026' | '2026-08' | '2026-08-14' → '2026-08'. Anything else → ''."""
+        p = str(period or "").strip()
+        m = re.match(r"^(\d{4})-(\d{2})", p)
+        if m and 1 <= int(m.group(2)) <= 12:
+            return "%s-%s" % (m.group(1), m.group(2))
+        parts = p.split()
+        if len(parts) == 2:
+            months = ["january", "february", "march", "april", "may", "june", "july", "august",
+                      "september", "october", "november", "december"]
+            try:
+                return "%04d-%02d" % (int(parts[1]), months.index(parts[0].lower()) + 1)
+            except (ValueError, IndexError):
+                return ""
+        return ""
 
     # ── cutting off access when somebody leaves ──────────────────────────────────────────────────
 

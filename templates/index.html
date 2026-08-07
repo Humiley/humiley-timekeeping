@@ -1678,6 +1678,13 @@ window.addEventListener('orientationchange', _setLoginBg);
           </div>
           <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
         </div>
+        <div id="ci-project-panel" style="border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:16px">
+          <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px">Which job are you on today? <span style="font-weight:400;color:var(--text-light)">(optional)</span></label>
+          <select id="ci-project" style="width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:var(--card)">
+            <option value="">— Not on a specific job —</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-light);margin-top:6px">Naming the job is what makes labour cost per project a real figure instead of an estimate. It never affects your check-in — leave it blank and the day is simply not attributed.</div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <button id="btn-checkin" onclick="tkCheckIn()" disabled
             style="display:none;padding:14px;border-radius:10px;border:none;background:linear-gradient(135deg,var(--emerald),#00965a);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .2s;align-items:center;justify-content:center;gap:8px">
@@ -2067,6 +2074,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchReportTab('leave',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Leave Report</button>
     <button class="tab" onclick="switchReportTab('inout',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>In/Out Log</button>
     <button class="tab" onclick="switchReportTab('recruit',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Recruitment</button>
+    <button class="tab" onclick="switchReportTab('labour',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M2 20h20"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Labour by Project</button>
     <button class="tab" onclick="switchReportTab('payroll',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Payroll</button>
   </div>
   <div id="rpt-attendance">
@@ -2187,6 +2195,16 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div><!-- /rpt-inout -->
 
   <div id="rpt-recruit" style="display:none"></div>
+  <div id="rpt-labour" style="display:none">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <label class="form-label" style="margin:0;font-size:12px">Month</label>
+      <input type="month" class="form-control" id="lc-month" style="width:auto" onchange="tkRenderLabourCost()">
+      <button class="btn btn-outline btn-sm" onclick="tkRenderLabourCost()">Refresh</button>
+      <button class="btn btn-ghost btn-sm" onclick="tkLabourCostCsv()">Export CSV</button>
+    </div>
+    <div id="lc-root"></div>
+  </div>
+
   <div id="rpt-payroll" style="display:none"></div>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -3181,6 +3199,10 @@ function tkPopulateZoneSelect() {
   sel.innerHTML = '<option value="">— Select an approved location —</option>' +
     zones.map((z, i) => '<option value="' + i + '">' + (z.name || ('Zone ' + (i + 1))) + '</option>').join('');
   if (cur && _DEMO_ZONES[parseInt(cur)]) sel.value = cur;
+
+  // The job picker fills on the same pass — one trip, and it is never left empty because
+  // somebody opened Check In before the projects had loaded.
+  try { tkFillCheckinProjects(); } catch (e) {}
 }
 
 /* GPS is ADVISORY, not a blocker (mobile GPS is often slow/denied/±100s of metres — hiding the
@@ -3313,6 +3335,20 @@ async function _tkPersistSure(path, body) {
   }
 }
 let _tkCheckinBusy = false, _tkCheckoutBusy = false;
+/* Fill the check-in job picker from live projects. Only projects that are actually running are
+   offered — a list of every job the company has ever done is a list nobody scrolls, and a wrong
+   pick is worse than a blank one. */
+async function tkFillCheckinProjects() {
+  const sel = document.getElementById('ci-project'); if (!sel) return;
+  let list = [];
+  try { await tkLoadColl('pm_projects'); list = (_HR && _HR.pm_projects) || []; } catch (e) {}
+  const open = list.filter(p => !/complete|closed|cancel/i.test(String(p.status || '')));
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— ' + _t('Not on a specific job') + ' —</option>' +
+    open.map(p => '<option value="' + _tkEscA(p.id) + '">' + _crmEsc(p.name || p.title || p.id) + '</option>').join('');
+  if (prev) sel.value = prev;
+}
+
 async function tkCheckIn() {
   if (_tkCheckinBusy) return;   // in-flight guard: a stray button re-enable must never double-submit (issue #17)
   if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
@@ -3325,7 +3361,8 @@ async function tkCheckIn() {
   /* TRUTHFUL check-in: save first, then show success — no more "Checked in" toasts for a
      check-in that silently never reached the server on a flaky mobile connection. */
   const locLabel = _tkSelectedZone.name + (_tkGpsState === 'in' ? '' : ' (GPS unverified)');
-  const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon });
+  const _proj = (document.getElementById('ci-project') || {}).value || '';
+  const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
   if (!saved || saved.__biz) {
     if (btn) btn.disabled = false;
     if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-in — check your connection and tap again.', 'error', 7000);
@@ -19835,6 +19872,36 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Labour cost by project ──
+  'Labour by Project': 'Nhân công theo dự án',
+  'Labour cost by project': 'Chi phí nhân công theo dự án',
+  'Total labour cost': 'Tổng chi phí nhân công',
+  'On recorded days': 'Theo ngày đã ghi nhận',
+  'Unattributed': 'Chưa phân bổ',
+  'People counted': 'Số người tính',
+  'Labour cost': 'Chi phí nhân công',
+  'Share': 'Tỷ trọng',
+  'People': 'Số người',
+  'Basis': 'Cơ sở',
+  'Recorded': 'Đã ghi nhận',
+  'Estimated': 'Ước tính',
+  'Days named at check-in — a fact.': 'Ngày công đã chọn dự án khi chấm công — dữ liệu thật.',
+  'Split by the allocation % in the project register — an estimate, not a timesheet.':
+    'Phân bổ theo tỷ lệ % trong sổ dự án — là ước tính, không phải bảng chấm công.',
+  'Nobody recorded a job for these days.': 'Không ai ghi nhận dự án cho những ngày này.',
+  'To raise the recorded share, ask site staff to pick their job when they check in.':
+    'Để tăng tỷ lệ ghi nhận thật, hãy nhắc nhân sự công trường chọn dự án khi chấm công.',
+  'Every dong is attributed to exactly one line': 'Mỗi đồng được phân bổ vào đúng một dòng',
+  'These lines do not add up to the total — do not use this report':
+    'Các dòng không khớp tổng — không dùng báo cáo này',
+  'This month has not been signed off, so people are costed from their current salary. Treat these figures as provisional — a signed pay run carries the real employer cost, including overtime and contributions.':
+    'Tháng này chưa được ký duyệt nên chi phí lấy theo lương hiện tại. Hãy xem đây là số tạm tính — bảng lương đã ký mới có chi phí thực của người sử dụng lao động, gồm cả tăng ca và các khoản đóng.',
+  'Costed from the signed pay run for this month — the frozen, e-signed figures, including overtime and employer contributions.':
+    'Tính theo bảng lương đã ký của tháng này — số liệu đã chốt và ký điện tử, gồm tăng ca và các khoản đóng.',
+  'No labour cost for this month': 'Không có chi phí nhân công trong tháng này',
+  'Could not load the labour report': 'Không tải được báo cáo nhân công',
+  'Load the report first': 'Hãy tải báo cáo trước',
+  'Not on a specific job': 'Không thuộc dự án cụ thể',
   // ── Bank salary-file layout ──
   'Standard office (Mon–Fri)': 'Văn phòng tiêu chuẩn (T2–T6)',
   'Field': 'Trường dữ liệu',
@@ -23430,10 +23497,114 @@ function verifyAtZone(zoneName, zoneLat, zoneLon, zoneRadius) {
 /* ──────────────────────────────────────────────────────────
    REPORT TAB SWITCHER
 ────────────────────────────────────────────────────────── */
+/* ── Labour cost per project ────────────────────────────────────────────────────────────────────
+   The number a contractor most needs and this portal never had: the GPS attendance system and the
+   project module ran side by side for a year without being introduced. Two things govern how far
+   the answer can be trusted, and both are on the face of the report rather than in a footnote — was
+   the month SIGNED (a frozen pay run) or is the cost standing in from today's salary; and is each
+   project's share RECORDED (somebody named the job at check-in) or ALLOCATED (an estimate from the
+   project register). A number that cannot say where it came from gets used with confidence. */
+let _lcData = null;
+
+const _LC_BASIS = {
+  recorded:   { label: 'Recorded',   colour: 'var(--emerald)', why: 'Days named at check-in — a fact.' },
+  allocated:  { label: 'Estimated',  colour: '#B45309',        why: 'Split by the allocation % in the project register — an estimate, not a timesheet.' },
+  unassigned: { label: 'Unattributed', colour: 'var(--text-light)', why: 'Nobody recorded a job for these days.' }
+};
+
+function _lcMonth() {
+  const el = document.getElementById('lc-month');
+  if (el && el.value) return el.value;
+  const d = new Date();
+  const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  if (el) el.value = ym;
+  return ym;
+}
+
+async function tkRenderLabourCost() {
+  const root = document.getElementById('lc-root'); if (!root) return;
+  root.innerHTML = tkSkeleton('kpi', 4);
+  let b;
+  try { b = await tkApi('/api/hr/labour-cost?period=' + encodeURIComponent(_lcMonth())); }
+  catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t('Could not load the labour report') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  _lcData = b;
+
+  const banner = b.provisional
+    ? '<div class="card" style="padding:11px 14px;margin-bottom:14px;font-size:12.5px;background:rgba(180,83,9,.10);color:#B45309">' +
+      _t('This month has not been signed off, so people are costed from their current salary. Treat these figures as provisional — a signed pay run carries the real employer cost, including overtime and contributions.') + '</div>'
+    : '<div class="card" style="padding:11px 14px;margin-bottom:14px;font-size:12.5px;background:rgba(0,176,96,.08);color:var(--emerald)">' +
+      _t('Costed from the signed pay run for this month — the frozen, e-signed figures, including overtime and employer contributions.') + '</div>';
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Total labour cost'), _PAY_FMT(b.total), '#205090'),
+    _hrKpi(_t('On recorded days'), (b.recordedShare || 0) + '%', b.recordedShare >= 60 ? 'var(--emerald)' : '#B45309'),
+    _hrKpi(_t('Unattributed'), _PAY_FMT(b.unattributed || 0), (b.unattributed ? '#B45309' : 'var(--emerald)')),
+    _hrKpi(_t('People counted'), b.peopleCounted || 0, '#8B5CF6')
+  ]);
+
+  const rows = (b.projects || []).map(p => {
+    const meta = _LC_BASIS[p.basis] || _LC_BASIS.unassigned;
+    const pct = b.total ? Math.round(p.cost / b.total * 100) : 0;
+    return '<tr><td><div style="font-weight:600">' + _crmEsc(p.name) + '</div>' +
+      (p.projectId !== 'unassigned' ? '<div style="font-size:11px;color:var(--text-light);font-family:ui-monospace,Menlo,monospace">' + _crmEsc(p.projectId) + '</div>' : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _PAY_FMT(p.cost) + '</td>' +
+      '<td style="min-width:120px"><div class="prog-wrap"><div class="prog-fill prog-navy" style="width:' + pct + '%"></div></div>' +
+      '<span style="font-size:10.5px;color:var(--text-light)">' + pct + '%</span></td>' +
+      '<td style="text-align:right">' + p.people + '</td>' +
+      '<td><span class="badge" style="font-size:10px;background:transparent;border:1px solid ' + meta.colour + ';color:' + meta.colour + '" title="' + _tkEscA(_t(meta.why)) + '">' + _t(meta.label) + '</span></td></tr>';
+  }).join('') || tkEmptyRow(5, _t('No labour cost for this month'), { icon: 'inbox' });
+
+  // The reconciliation is stated, not assumed. If it were ever false the report would be wrong, and
+  // the person about to price a tender from it should see that before the numbers.
+  const recon = b.reconciles
+    ? '<span style="color:var(--emerald)">✓ ' + _t('Every dong is attributed to exactly one line') + '</span>'
+    : '<span style="color:#B91C1C">✗ ' + _t('These lines do not add up to the total — do not use this report') + '</span>';
+
+  root.innerHTML = banner + kpis +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px">' +
+      '<div><div class="card-title">' + _t('Labour cost by project') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _crmEsc(b.period || '') + ' · ' + _crmEsc(_t(b.costBasis || '')) + '</span></div>' +
+      '<span style="font-size:11px">' + recon + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:720px"><thead><tr>' +
+      '<th>' + _t('Project') + '</th><th style="text-align:right">' + _t('Labour cost') + '</th>' +
+      '<th>' + _t('Share') + '</th><th style="text-align:right">' + _t('People') + '</th>' +
+      '<th>' + _t('Basis') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div class="card" style="padding:12px 16px;margin-top:14px;font-size:11.5px;color:var(--text-light)">' +
+      '<b style="color:var(--text-dark)">' + _t('Recorded') + '</b> — ' + _t(_LC_BASIS.recorded.why) + ' &nbsp;·&nbsp; ' +
+      '<b style="color:var(--text-dark)">' + _t('Estimated') + '</b> — ' + _t(_LC_BASIS.allocated.why) + ' &nbsp;·&nbsp; ' +
+      '<b style="color:var(--text-dark)">' + _t('Unattributed') + '</b> — ' + _t(_LC_BASIS.unassigned.why) +
+      ' ' + _t('To raise the recorded share, ask site staff to pick their job when they check in.') + '</div>';
+}
+
+function tkLabourCostCsv() {
+  if (!_lcData) { toast(_t('Load the report first'), 'warn'); return; }
+  const rows = [['Project', 'Project ID', 'Labour cost (VND)', 'People', 'Basis']];
+  (_lcData.projects || []).forEach(p => rows.push([p.name, p.projectId, p.cost, p.people, p.basis]));
+  rows.push([]);
+  rows.push(['Month', _lcData.period]);
+  rows.push(['Cost basis', _lcData.costBasis]);
+  rows.push(['Signed pay run', _lcData.signed ? 'yes' : 'NO — provisional']);
+  rows.push(['Total', '', _lcData.total]);
+  rows.push(['Reconciles', _lcData.reconciles ? 'yes' : 'NO']);
+  const csv = rows.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  // BOM first: Excel on Windows reads a bare UTF-8 CSV as Latin-1 and turns every Vietnamese
+  // project name into mojibake.
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'labour-cost-' + (_lcData.ym || '') + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
 function switchReportTab(tab, el) {
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
-  ['attendance','leave','inout','recruit','payroll'].forEach(id => {
+  ['attendance','leave','inout','recruit','payroll','labour'].forEach(id => {
     const p = document.getElementById('rpt-' + id); if (p) p.style.display = 'none';
   });
   const active = document.getElementById('rpt-' + tab);
@@ -23443,6 +23614,7 @@ function switchReportTab(tab, el) {
   if (tab === 'leave') renderLeaveReport();
   if (tab === 'recruit') tkRenderRecruitReport();
   if (tab === 'payroll') tkRenderPayrollReport();
+  if (tab === 'labour') tkRenderLabourCost();
 }
 /* Recruitment report — pipeline funnel + open positions, by data. */
 async function tkRenderRecruitReport() {

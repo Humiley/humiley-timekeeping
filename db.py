@@ -302,8 +302,13 @@ def init_db():
     # Attendance amendment trail. Attendance now feeds payroll (approved overtime reaches the
     # payslip), so a retroactive edit moves money — and until these existed there was no edit path at
     # all, while check-out told employees to "ask HR to correct your attendance record".
+    # Which job a day of work was on. The portal has run a GPS attendance system and a PMBOK project
+    # module side by side without ever introducing them, so labour cost per job — the number a
+    # contractor most needs — had no answer. Nullable on purpose: a blank means "nobody recorded it",
+    # which the cost report reports as unattributed rather than guessing.
     for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT",
-                "amended_by TEXT", "amended_at TEXT", "amend_reason TEXT", "amend_count INTEGER"):
+                "amended_by TEXT", "amended_at TEXT", "amend_reason TEXT", "amend_count INTEGER",
+                "project TEXT"):
         try:
             conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -1047,15 +1052,29 @@ def open_attendance_any(emp_id, dates):
                 "ORDER BY date DESC, id DESC LIMIT 1" % marks, [emp_id] + list(dates))
 
 
-def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time"):
+def set_attendance_project(att_id, project):
+    """Record (or clear) which job a day was on.
+
+    Separate from `amend_attendance` on purpose: naming the job is not a change to the HOURS, so it
+    does not reopen an approved overtime decision or consume an amendment slot. It is closed once
+    the month is signed, like everything else that feeds a payslip."""
+    conn = get_conn()
+    conn.execute("UPDATE attendance SET project = ? WHERE id = ?",
+                 ((project or None), int(att_id)))
+    conn.commit()
+    conn.close()
+    return get_attendance(att_id)
+
+
+def clock_in(emp_id, date, time_hm, loc=None, lat=None, lon=None, status="on-time", project=None):
     emp = get_employee(emp_id)
     conn = get_conn()
     try:
         cur = conn.execute(
-            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO attendance (emp_id,name,dept,date,clock_in,status,loc,lat,lon,project) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?)",
             (emp_id, emp["name"] if emp else None, emp["dept"] if emp else None,
-             date, time_hm, status, loc, lat, lon))
+             date, time_hm, status, loc, lat, lon, (project or None)))
         conn.commit()
     except sqlite3.IntegrityError:
         # uq_att_open: a concurrent request already opened today's record — atomic double-tap guard
