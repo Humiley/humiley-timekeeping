@@ -42,6 +42,7 @@ import payroll_journal   # Circular 200/2014 double-entry lines from a finalised
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
+import workforce         # headcount and turnover over time, from dated facts (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3744,6 +3745,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/workforce":
+            return self._guard(lambda u: self._workforce_ep(u, qs))
         if path == "/api/hr/labour-cost":
             return self._guard(lambda u: self._labour_cost_ep(u, qs))
         if path == "/api/hr/access-review":
@@ -8070,6 +8073,42 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    # ── headcount and turnover over time ─────────────────────────────────────────────────────────
+
+    def _workforce_ep(self, u, qs=None):
+        """Headcount, joiners, leavers and turnover by month.
+
+        Computed from dated facts — startDate and endDate — not from today's roster, which is why it
+        can answer for last March. Records that cannot be placed in time come back in `unusable`
+        rather than being dropped: a headcount history that silently excludes people is worse than
+        one that admits what it could not read.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access or above is required.", 403)
+        q = qs or {}
+        to_ym = str(q.get("to", [""])[0] or "").strip() or _now_iso()[:7]
+        frm = str(q.get("from", [""])[0] or "").strip()
+        if not frm:
+            # Twelve months back by default — the window a board pack asks for.
+            y, m = int(to_ym[:4]), int(to_ym[5:7])
+            m -= 11
+            while m < 1:
+                m += 12
+                y -= 1
+            frm = "%04d-%02d" % (y, m)
+        if not workforce.month_end(frm) or not workforce.month_end(to_ym):
+            return self._err("Give a window as YYYY-MM.", 400)
+        if not workforce.months_between(frm, to_ym):
+            return self._err("The window starts after it ends.", 400)
+
+        people = [{"id": e.get("id"), "name": e.get("name"), "dept": e.get("dept"),
+                   "startDate": e.get("startDate"), "endDate": e.get("endDate"),
+                   "status": e.get("status")}
+                  for e in db.list_employees()]
+        out = workforce.summary(people, frm, to_ym)
+        out["ok"] = True
+        return self._json(out)
 
     # ── what each project cost in people ─────────────────────────────────────────────────────────
 

@@ -2074,6 +2074,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchReportTab('leave',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Leave Report</button>
     <button class="tab" onclick="switchReportTab('inout',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>In/Out Log</button>
     <button class="tab" onclick="switchReportTab('recruit',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Recruitment</button>
+    <button class="tab" onclick="switchReportTab('workforce',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Headcount &amp; Turnover</button>
     <button class="tab" onclick="switchReportTab('labour',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M2 20h20"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Labour by Project</button>
     <button class="tab" onclick="switchReportTab('payroll',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Payroll</button>
   </div>
@@ -2195,6 +2196,18 @@ window.addEventListener('orientationchange', _setLoginBg);
   </div><!-- /rpt-inout -->
 
   <div id="rpt-recruit" style="display:none"></div>
+  <div id="rpt-workforce" style="display:none">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <label class="form-label" style="margin:0;font-size:12px">From</label>
+      <input type="month" class="form-control" id="wf-from" style="width:auto" onchange="tkRenderWorkforce()">
+      <label class="form-label" style="margin:0;font-size:12px">To</label>
+      <input type="month" class="form-control" id="wf-to" style="width:auto" onchange="tkRenderWorkforce()">
+      <button class="btn btn-outline btn-sm" onclick="tkRenderWorkforce()">Refresh</button>
+      <button class="btn btn-ghost btn-sm" onclick="tkWorkforceCsv()">Export CSV</button>
+    </div>
+    <div id="wf-root"></div>
+  </div>
+
   <div id="rpt-labour" style="display:none">
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
       <label class="form-label" style="margin:0;font-size:12px">Month</label>
@@ -19872,6 +19885,30 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Headcount & turnover ──
+  'Headcount &amp; Turnover': 'Nhân sự & Biến động',
+  'Headcount by month': 'Nhân sự theo tháng',
+  'Headcount now': 'Nhân sự hiện tại',
+  'Joiners': 'Vào mới', 'Leavers': 'Nghỉ việc', 'Turnover': 'Tỷ lệ biến động',
+  'Movement': 'Biến động', 'Month': 'Tháng', 'Opening': 'Đầu kỳ', 'Joined': 'Vào',
+  // 'Left' is already in this dictionary further down as 'Đã nghỉ', which is right for this column
+  // too — a second definition here would be dead (the later one wins) and misleading to read.
+  'Closing': 'Cuối kỳ', 'Carried forward': 'Chuyển sang kỳ sau', 'Who': 'Ai',
+  'opening': 'đầu kỳ', 'closing': 'cuối kỳ', 'months': 'tháng',
+  'No months in this window': 'Không có tháng nào trong khoảng này',
+  'Could not load the workforce report': 'Không tải được báo cáo nhân sự',
+  'leavers in the period ÷ the average headcount across it':
+    'số người nghỉ trong kỳ ÷ nhân sự bình quân của kỳ',
+  'record(s) could not be placed in time and are not in any figure above':
+    'hồ sơ không xác định được mốc thời gian và không nằm trong bất kỳ số liệu nào ở trên',
+  'No start date, so they cannot be placed in any month.':
+    'Không có ngày vào làm nên không xếp được vào tháng nào.',
+  'Their last working day is before their start date.':
+    'Ngày làm việc cuối trước cả ngày vào làm.',
+  'Median tenure of the current team': 'Thâm niên trung vị của đội hiện tại',
+  'closing minus that month\'s leavers': 'cuối kỳ trừ số người nghỉ trong tháng',
+  'Somebody is employed on their last working day, so a month-end leaver is still inside that month\'s closing — which is what makes closing agree with the payroll that paid them. The figure that carries into the next month is therefore':
+    'Người lao động vẫn được tính là đang làm trong ngày làm việc cuối, nên người nghỉ cuối tháng vẫn nằm trong số cuối kỳ — nhờ vậy số cuối kỳ khớp với bảng lương tháng đó. Do đó số chuyển sang tháng sau là',
   // ── Labour cost by project ──
   'Labour by Project': 'Nhân công theo dự án',
   'Labour cost by project': 'Chi phí nhân công theo dự án',
@@ -23497,6 +23534,120 @@ function verifyAtZone(zoneName, zoneLat, zoneLon, zoneRadius) {
 /* ──────────────────────────────────────────────────────────
    REPORT TAB SWITCHER
 ────────────────────────────────────────────────────────── */
+/* ── Headcount and turnover over time ──────────────────────────────────────────────────────────
+   The portal could always say how many people work here today and nothing about last March, which
+   is the question a board pack, a bank covenant and an insurance renewal all actually ask. Computed
+   from dated facts rather than today's roster.
+
+   The convention is on the screen because every HR system picks a different one silently: somebody
+   is employed ON their last working day (so a month's closing agrees with the payroll that paid
+   them), which means month-end leavers sit inside closing and the figure that chains month to month
+   is `carriedForward`, not closing. */
+let _wfData = null;
+
+function _wfWindow() {
+  const f = document.getElementById('wf-from'), t = document.getElementById('wf-to');
+  if (t && !t.value) { const d = new Date(); t.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  if (f && !f.value) { const d = new Date(); d.setMonth(d.getMonth() - 11); f.value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+  return { from: (f || {}).value || '', to: (t || {}).value || '' };
+}
+
+async function tkRenderWorkforce() {
+  const root = document.getElementById('wf-root'); if (!root) return;
+  root.innerHTML = tkSkeleton('kpi', 4);
+  const w = _wfWindow();
+  let b;
+  try { b = await tkApi('/api/hr/workforce?from=' + encodeURIComponent(w.from) + '&to=' + encodeURIComponent(w.to)); }
+  catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t('Could not load the workforce report') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  _wfData = b;
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t('Headcount now'), b.headcountNow, '#205090'),
+    _hrKpi(_t('Joiners'), b.joiners, 'var(--emerald)'),
+    _hrKpi(_t('Leavers'), b.leavers, b.leavers ? '#B45309' : 'var(--text-light)'),
+    _hrKpi(_t('Turnover'), (b.turnoverPct || 0) + '%', '#8B5CF6')
+  ]);
+
+  const peak = Math.max(1, ...(b.months || []).map(m => m.closing));
+  const bars = (b.months || []).map(m => {
+    const h = Math.round(m.closing / peak * 100);
+    const moved = m.joiners || m.leavers;
+    return '<div style="flex:1;min-width:26px;display:flex;flex-direction:column;align-items:center;gap:4px" ' +
+      'title="' + _tkEscA(m.ym + ' — ' + _t('opening') + ' ' + m.opening + ', +' + m.joiners + ' / −' + m.leavers + ', ' + _t('closing') + ' ' + m.closing) + '">' +
+      '<div style="font-size:10px;color:var(--text-light);font-variant-numeric:tabular-nums">' + m.closing + '</div>' +
+      '<div style="width:100%;height:110px;display:flex;align-items:flex-end">' +
+        '<div style="width:100%;height:' + h + '%;min-height:2px;border-radius:4px 4px 0 0;background:' + (moved ? 'var(--navy)' : 'rgba(32,80,144,.42)') + '"></div>' +
+      '</div>' +
+      '<div style="font-size:9.5px;color:var(--text-light);white-space:nowrap">' + _crmEsc(m.ym.slice(2)) + '</div>' +
+      '<div style="font-size:9.5px;white-space:nowrap">' +
+        (m.joiners ? '<span style="color:var(--emerald)">+' + m.joiners + '</span>' : '') +
+        (m.joiners && m.leavers ? ' ' : '') +
+        (m.leavers ? '<span style="color:#B45309">−' + m.leavers + '</span>' : '') +
+      '</div></div>';
+  }).join('');
+
+  const rows = (b.months || []).map(m =>
+    '<tr><td style="white-space:nowrap">' + _crmEsc(m.ym) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + m.opening + '</td>' +
+    '<td style="text-align:right;color:var(--emerald)">' + (m.joiners || '') + '</td>' +
+    '<td style="text-align:right;color:#B45309">' + (m.leavers || '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + m.closing + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + m.carriedForward + '</td>' +
+    '<td style="text-align:right">' + (m.turnoverPct || 0) + '%</td>' +
+    '<td style="font-size:11px;color:var(--text-light)">' +
+      _crmEsc([].concat(m.joinerNames.map(n => '+' + n), m.leaverNames.map(n => '−' + n)).join(', ')) + '</td>' +
+    (m.balances ? '' : '<td style="color:#B91C1C">✗</td>') + '</tr>').join('')
+    || tkEmptyRow(8, _t('No months in this window'), { icon: 'inbox' });
+
+  const unusable = (b.unusable || []).length
+    ? '<div class="card" style="padding:11px 14px;margin-top:14px;font-size:12px;background:rgba(180,83,9,.10);color:#B45309">' +
+      '<b>' + (b.unusable.length) + ' ' + _t('record(s) could not be placed in time and are not in any figure above') + ':</b> ' +
+      _crmEsc(b.unusable.map(x => (x.name || x.empId) + ' — ' + _t(x.why)).join(' · ')) + '</div>'
+    : '';
+
+  root.innerHTML = kpis +
+    '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:12px">' + _t('Headcount by month') + '</div>' +
+      '<div style="display:flex;gap:6px;align-items:flex-end">' + bars + '</div></div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px">' +
+      '<div><div class="card-title">' + _t('Movement') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _crmEsc(b.from + ' → ' + b.to) + ' · ' +
+      _t('Turnover') + ': ' + _t(b.turnoverBasis || '') + '</span></div></div>' +
+    '<div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+      '<th>' + _t('Month') + '</th><th style="text-align:right">' + _t('Opening') + '</th>' +
+      '<th style="text-align:right">' + _t('Joined') + '</th><th style="text-align:right">' + _t('Left') + '</th>' +
+      '<th style="text-align:right">' + _t('Closing') + '</th><th style="text-align:right">' + _t('Carried forward') + '</th>' +
+      '<th style="text-align:right">' + _t('Turnover') + '</th><th>' + _t('Who') + '</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    unusable +
+    '<div class="card" style="padding:12px 16px;margin-top:14px;font-size:11.5px;color:var(--text-light)">' +
+      _t('Somebody is employed on their last working day, so a month-end leaver is still inside that month\'s closing — which is what makes closing agree with the payroll that paid them. The figure that carries into the next month is therefore') + ' <b style="color:var(--text-dark)">' + _t('Carried forward') + '</b> (' + _t('closing minus that month\'s leavers') + '). ' +
+      _t('Median tenure of the current team') + ': <b style="color:var(--text-dark)">' + (b.medianTenureMonths || 0) + ' ' + _t('months') + '</b>.</div>';
+}
+
+function tkWorkforceCsv() {
+  if (!_wfData) { toast(_t('Load the report first'), 'warn'); return; }
+  const rows = [['Month', 'Opening', 'Joined', 'Left', 'Closing', 'Carried forward', 'Turnover %', 'Who']];
+  (_wfData.months || []).forEach(m => rows.push([m.ym, m.opening, m.joiners, m.leavers, m.closing,
+    m.carriedForward, m.turnoverPct,
+    [].concat(m.joinerNames.map(n => '+' + n), m.leaverNames.map(n => '-' + n)).join('; ')]));
+  rows.push([]);
+  rows.push(['Window', _wfData.from + ' to ' + _wfData.to]);
+  rows.push(['Turnover', _wfData.turnoverPct + '%', _wfData.turnoverBasis]);
+  rows.push(['Median tenure (months)', _wfData.medianTenureMonths]);
+  (_wfData.unusable || []).forEach(x => rows.push(['NOT COUNTED', x.name || x.empId, x.why]));
+  const csv = rows.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'headcount-turnover-' + (_wfData.from || '') + '-to-' + (_wfData.to || '') + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
 /* ── Labour cost per project ────────────────────────────────────────────────────────────────────
    The number a contractor most needs and this portal never had: the GPS attendance system and the
    project module ran side by side for a year without being introduced. Two things govern how far
@@ -23604,7 +23755,7 @@ function tkLabourCostCsv() {
 function switchReportTab(tab, el) {
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
-  ['attendance','leave','inout','recruit','payroll','labour'].forEach(id => {
+  ['attendance','leave','inout','recruit','payroll','labour','workforce'].forEach(id => {
     const p = document.getElementById('rpt-' + id); if (p) p.style.display = 'none';
   });
   const active = document.getElementById('rpt-' + tab);
@@ -23615,6 +23766,7 @@ function switchReportTab(tab, el) {
   if (tab === 'recruit') tkRenderRecruitReport();
   if (tab === 'payroll') tkRenderPayrollReport();
   if (tab === 'labour') tkRenderLabourCost();
+  if (tab === 'workforce') tkRenderWorkforce();
 }
 /* Recruitment report — pipeline funnel + open positions, by data. */
 async function tkRenderRecruitReport() {
