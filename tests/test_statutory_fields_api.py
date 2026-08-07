@@ -87,3 +87,27 @@ def test_a_line_manager_still_cannot_set_any_of_them(api, tokens):
         {"workConditions": "especially_heavy", "bankAcc": "99999999", "oshGroup": "3"})
     got = db.get_employee("HML-STF")
     assert not got.get("workConditions") and not got.get("bankAcc") and not got.get("oshGroup")
+
+
+# ── work schedule: the field the rest-day overtime rate depends on ───────────────────────────────
+
+def test_the_work_schedule_round_trips(api, tokens):
+    """`schedule` holds the NAME of a pattern and decides rest days — and therefore whether a given
+    day's overtime is paid at 150% or the 200% rest-day rate. The only input that ever wrote it was
+    inside a modal that was never in the DOM, so it was blank for everyone and the whole company
+    read as Mon–Fri office. Fixing _rest_weekdays_for was necessary and not sufficient: nothing
+    could put a value in front of it."""
+    api("PATCH", "/api/employees/HML-STF", tokens["admin"], {"schedule": "Factory Shift A"})
+    assert db.get_employee("HML-STF")["schedule"] == "Factory Shift A"
+    api("PATCH", "/api/employees/HML-STF", tokens["admin"], {"schedule": ""})
+    assert not db.get_employee("HML-STF")["schedule"]
+
+
+def test_the_schedule_actually_changes_which_days_are_rest_days(api, tokens):
+    """Proof it is not cosmetic: a Mon–Sat pattern makes Saturday a WORKING day, so Saturday
+    overtime is normal-rate rather than the 200% rest-day rate."""
+    import app as _app
+    scheds = [{"name": "Factory Shift A", "days": "Mon-Sat"}]
+    assert _app._rest_weekdays_for({"schedule": "Factory Shift A"}, scheds) == (6,), "Sunday only"
+    assert _app._rest_weekdays_for({"schedule": ""}, scheds) == (5, 6), "blank falls back to Sat+Sun"
+    assert _app._rest_weekdays_for({"schedule": "Nope"}, scheds) == (5, 6), "an unknown name too"

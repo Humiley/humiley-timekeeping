@@ -3014,9 +3014,13 @@ let _deptFillSig = '';
 function tkFillSchedSelects(root) {
   let names = ((typeof _HR !== 'undefined' && _HR.schedules) || []).map(s => s && s.name).filter(Boolean);
   if (!names.length && typeof _SCHED_SEED !== 'undefined') names = _SCHED_SEED.map(s => s.name);
-  (root || document).querySelectorAll('#ee-schedule, select[data-sched-select]').forEach(sel => {
+  (root || document).querySelectorAll('#emp-schedule, select[data-sched-select]').forEach(sel => {
     const prev = sel.value;
-    sel.innerHTML = names.map(n => '<option>' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
+    // A blank first option is not decoration: "no pattern recorded" and "Mon–Fri office" are
+    // different statements, and only one of them is a decision somebody made.
+    const blank = sel.hasAttribute('data-sched-select')
+      ? '<option value="">— ' + (typeof _t === 'function' ? _t('Standard office (Mon–Fri)') : 'Standard office (Mon–Fri)') + ' —</option>' : '';
+    sel.innerHTML = blank + names.map(n => '<option>' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
     if (prev && names.indexOf(prev) >= 0) sel.value = prev;
   });
 }
@@ -19797,6 +19801,7 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   // ── Bank salary-file layout ──
+  'Standard office (Mon–Fri)': 'Văn phòng tiêu chuẩn (T2–T6)',
   'Field': 'Trường dữ liệu',
   'Heading the bank expects': 'Tiêu đề cột theo mẫu ngân hàng',
   'Preview of the first line of the file': 'Xem trước dòng đầu của tệp',
@@ -24292,6 +24297,8 @@ function _editEmpProfile(id) {
   // The four statutory classifications and the bank details. Blank means blank — `workConditions`
   // deliberately falls back to "normal" only at the point of USE, so an unclassified employee is
   // visibly unclassified here rather than silently asserted to be office staff.
+  try { tkFillSchedSelects(); } catch (_) {}   // custom persisted patterns, not just the seeds
+  set('emp-schedule', e.schedule || '');
   set('emp-workConditions', e.workConditions || 'normal'); set('emp-oshGroup', e.oshGroup || '');
   set('emp-bankName', e.bankName); set('emp-bankAcc', e.bankAcc);
   set('emp-bankHolder', e.bankHolder); set('emp-bankBranch', e.bankBranch);
@@ -25642,7 +25649,8 @@ function openAddEmpModal() {
   const count  = document.querySelectorAll('#hr-employees .emp-profile-card').length;
   const nextId = 'EMP' + String(count + 1).padStart(3, '0');
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-  setVal('emp-workConditions', 'normal'); setVal('emp-oshGroup', '');
+  try { tkFillSchedSelects(); } catch (_) {}
+  setVal('emp-schedule', ''); setVal('emp-workConditions', 'normal'); setVal('emp-oshGroup', '');
   setVal('emp-bankName', ''); setVal('emp-bankAcc', ''); setVal('emp-bankHolder', ''); setVal('emp-bankBranch', '');
   setVal('emp-contractExempt', '');
   const _d0 = document.getElementById('emp-disabled'); if (_d0) _d0.checked = false;
@@ -25738,6 +25746,8 @@ async function saveEmployee() {
     // Decree 44 safety training, Art. 20(2)(c) renewal exemption) and where salary is sent. The
     // server re-checks that only an admin may set these; sending them is not the same as being
     // allowed to.
+    // Drives rest days (and so the 150% vs 200% overtime rate) and the late-arrival threshold.
+    schedule: val('emp-schedule'),
     workConditions: val('emp-workConditions') || 'normal',
     oshGroup: val('emp-oshGroup') || '',
     disabled: document.getElementById('emp-disabled')?.checked ? 1 : 0,
@@ -25780,14 +25790,6 @@ async function saveEmployee() {
   if (!editing && provN > 0) { const _ne = (_DEMO_EMPLOYEES || []).find(x => (x.email || '').toLowerCase() === autoEmail.toLowerCase()); if (_ne) { try { await tkSendAssetHandover(_ne.id, { auto: true }); } catch (_) {} } }
 }
 
-function tkPopulateManagerSelect(selectedEmail, excludeId) {
-  const sel = document.getElementById('ee-manager');
-  if (!sel) return;
-  const emps = (_DEMO_EMPLOYEES || []).filter(e => e.id !== excludeId);
-  const cur = (selectedEmail || '').toLowerCase();
-  sel.innerHTML = '<option value="">— None (top of org) —</option>' +
-    emps.map(e => '<option value="' + (e.email || '') + '"' + (cur === (e.email || '').toLowerCase() ? ' selected' : '') + '>' + e.name + (e.title ? ' (' + e.title + ')' : '') + '</option>').join('');
-}
 
 
 
@@ -25968,6 +25970,10 @@ function tkPopulateManagerSelect(selectedEmail, excludeId) {
       <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px">Access &amp; Provisioning</div>
       <div class="grid-2">
         <div class="form-group"><label class="form-label">System Access / Permission</label><select class="form-control" id="emp-access"><option value="staff">User (Staff)</option><option value="manager">Contributor (HR / Manager)</option><option value="management">Approver (Management)</option><option value="editor">Editor (Payroll)</option><option value="admin">Admin</option></select></div>
+        <div class="form-group"><label class="form-label">Work schedule</label>
+          <select class="form-control" id="emp-schedule" data-sched-select><option value="">— Standard office (Mon–Fri) —</option></select>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Which days this person normally works. It decides their <b>rest days</b>, and therefore whether overtime on a given day is paid at 150% or the 200% rest-day rate — and it sets the threshold for a late arrival. Patterns are defined in HR Admin → Work Schedules. Left blank, they are treated as Mon–Fri with Saturday and Sunday as rest days.</div>
+        </div>
         <div class="form-group"><label class="form-label">Working conditions</label>
           <select class="form-control" id="emp-workConditions">
             <option value="normal">Normal — 12 days annual leave</option>
