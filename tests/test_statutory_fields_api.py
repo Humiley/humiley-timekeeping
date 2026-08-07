@@ -111,3 +111,33 @@ def test_the_schedule_actually_changes_which_days_are_rest_days(api, tokens):
     assert _app._rest_weekdays_for({"schedule": "Factory Shift A"}, scheds) == (6,), "Sunday only"
     assert _app._rest_weekdays_for({"schedule": ""}, scheds) == (5, 6), "blank falls back to Sat+Sun"
     assert _app._rest_weekdays_for({"schedule": "Nope"}, scheds) == (5, 6), "an unknown name too"
+
+
+# ── the settings message has to name the screen the field is actually on ─────────────────────────
+
+def test_the_hr_folder_error_points_at_the_screen_that_holds_the_field(api, tokens):
+    """The old wording sent people to "Company Portal settings" — a screen that has not held this
+    field for some time. It now lives under Access & Permissions → System Integrations, three feet
+    above the button that raised the error, which made the message read as a bug in the button."""
+    db.set_setting("portal_hrSpUrl", "")
+    st, b = api("POST", "/api/hr/employee-folders", tokens["admin"], {})
+    assert st == 400
+    msg = b.get("error") or ""
+    assert "System Integrations" in msg and "Save" in msg
+    assert "Company Portal settings" not in msg
+
+
+def test_a_saved_hr_folder_gets_past_the_check(api, tokens, monkeypatch):
+    """Proof the guard is about the SETTING being absent and nothing else: with a value saved, the
+    request gets past it and on to the upload. SharePoint is stubbed — a test must never reach out
+    to Microsoft, and without the stub this one hangs on network timeouts once per employee."""
+    import app as _app
+    calls = []
+    monkeypatch.setattr(_app, "_hrsp_put", lambda *a, **k: calls.append(a) or {"ok": True})
+    db.set_setting("portal_hrSpUrl", "https://x.sharepoint.com/sites/HR/Shared%20Documents")
+    try:
+        st, b = api("POST", "/api/hr/employee-folders", tokens["admin"], {})
+        assert st == 200, b
+        assert b["created"] > 0 and calls, "it reached the upload rather than stopping at the check"
+    finally:
+        db.set_setting("portal_hrSpUrl", "")

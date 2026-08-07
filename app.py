@@ -7590,7 +7590,9 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank("admin"):
             return self._err("Admin access required.", 403)
         if not (db.get_setting("portal_hrSpUrl", "") or "").strip():
-            return self._err("Set the HR SharePoint folder in Company Portal settings first.", 400)
+            return self._err("No HR SharePoint folder is saved yet. Set it under Access & Permissions "
+                             "→ System Integrations → HR SharePoint folder, and press Save "
+                             "integrations.", 400)
         made, failed, errs = 0, 0, []
         for e in db.list_employees():
             if str(e.get("status") or "Active").lower() == "inactive":

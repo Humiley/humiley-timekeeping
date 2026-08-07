@@ -5498,6 +5498,7 @@ async function tkRenderPortalEditor() {
    re-running refreshes each record file and creates only what is missing, so it is safe to press
    again after somebody joins. */
 async function tkHrFolders() {
+  if (_intgUnsaved('portal-hrsp', 'hrSpUrl', 'The HR SharePoint folder', 'Thư mục SharePoint Nhân sự')) return;
   const box = document.getElementById('hrsp-result');
   if (!await tkConfirm(_t('Create an HR SharePoint folder for every active employee?'),
       { body: _t('One folder per person under Employees/, each holding their record. Safe to run again later — it only adds what is missing.'), ok: _t('Create') })) return;
@@ -5516,7 +5517,8 @@ async function tkHrFolders() {
 }
 
 async function tkFinSpTest() {
-  const box = document.getElementById('finsp-result'); if (box) box.textContent = 'Testing…';
+  if (_intgUnsaved('portal-finsp', 'financeSpUrl', 'The Finance SharePoint folder', 'Thư mục SharePoint Tài chính')) return;
+  const box = document.getElementById('finsp-result'); if (box) box.textContent = _t('Testing…');
   try {
     const r = await tkApi('/api/finsp/test', { method: 'POST', body: {} });
     if (box) box.innerHTML = r && r.ok
@@ -5525,6 +5527,7 @@ async function tkFinSpTest() {
   } catch (e) { if (box) box.innerHTML = '<span style="color:#C00000">✗ ' + _crmEsc(e.message || 'failed') + '</span>'; }
 }
 async function tkFinSpBackfill() {
+  if (_intgUnsaved('portal-finsp', 'financeSpUrl', 'The Finance SharePoint folder', 'Thư mục SharePoint Tài chính')) return;
   const box = document.getElementById('finsp-result');
   if (box) box.textContent = _t('Archiving… this can take a minute.');
   try {
@@ -5601,6 +5604,28 @@ async function tkSaveBankTemplate() {
   } catch (e) { toast(_t('Could not save the layout') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
+let _intgSaved = {};
+
+/* An action button here acts on what the SERVER has stored, not on what is in the box next to it.
+   Returns true (and explains) when those two disagree, so the honest answer is "you have not saved
+   this yet" rather than a 400 that reads as "you never set it". */
+function _intgUnsaved(inputId, key, labelEn, labelVi) {
+  const el = document.getElementById(inputId);
+  if (!el) return false;
+  const onScreen = (el.value || '').trim();
+  const saved = (_intgSaved[key] || '').trim();
+  if (onScreen === saved) return false;
+  // A toast, not a modal: the person pressed a button and needs one sentence and their cursor put
+  // back in the right box — a dialog they have to dismiss is heavier than the mistake. The label is
+  // passed in BOTH languages rather than glued in as English, or the Vietnamese sentence ends up
+  // half-translated around an English noun.
+  toast(_t2(labelEn + ' on screen has not been saved yet — press "Save integrations" first.',
+            (labelVi || labelEn) + ' trên màn hình chưa được lưu — hãy bấm "Lưu tích hợp" trước.'),
+        'warn', 7000);
+  try { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {}
+  return true;
+}
+
 async function tkLoadIntegrations() {
   if (!document.getElementById('portal-teams')) return;   // integrations card absent (non-admin / other view)
   let live = null;
@@ -5620,6 +5645,12 @@ async function tkLoadIntegrations() {
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
   const _hra = document.getElementById('portal-hrAdmins'); if (_hra) _hra.value = g('hrAdmins', '');    // admin-only; blank for everyone else
+  // What the server actually holds. These action buttons operate on SAVED settings while sitting
+  // next to an editable box, so without this there is no way to tell "not configured" apart from
+  // "configured but you have not pressed Save yet" — and the second one looks like a broken button.
+  _intgSaved = {
+    hrSpUrl: g('hrSpUrl', ''), financeSpUrl: g('financeSpUrl', ''), invtrackSpUrl: g('invtrackSpUrl', '')
+  };
   if (document.getElementById('bank-tpl-root')) {
     _bankTplFields = (live && Array.isArray(live.bankTemplateKeys)) ? live.bankTemplateKeys : [];
     _bankTpl = (live && Array.isArray(live.bankTemplate)) ? live.bankTemplate.map(c => ({ key: c.key, header: c.header })) : [];
@@ -5802,7 +5833,11 @@ async function tkSaveIntegrations() {
     if (!r.ok || !j.ok) { toast((j && j.error) || 'Could not save integrations', 'error', 5000); return; }
     window._TK_PORTAL = Object.assign({}, window._TK_PORTAL || {}, { teamsWebhook: payload.teamsWebhook, financeSpUrl: payload.financeSpUrl, procurementUrl: payload.procurementUrl });
     if (TK.cfg) { TK.cfg.financeSpUrl = payload.financeSpUrl; TK.cfg.procurementUrl = payload.procurementUrl; }   // live session picks new values up without a reload
-    toast('Integration settings saved.');
+    // The snapshot the action buttons compare against must move with the save, or the very next
+    // click would claim the value is unsaved.
+    _intgSaved = { hrSpUrl: V('portal-hrsp'), financeSpUrl: V('portal-finsp'),
+                   invtrackSpUrl: _intgSaved.invtrackSpUrl || '' };
+    toast(_t('Integration settings saved.'));
   } catch (e) { toast(_t('Network error') + ': ' + _errMsg(e), 'error', 5000); }
 }
 
