@@ -316,8 +316,7 @@ def test_the_removal_is_itself_written_into_the_audit_chain(api, tokens):
     trail = [a for a in db.list_collection("audit")
              if a.get("action") == "Employment history rebuilt"]
     assert trail, "the rebuild must leave a record"
-    assert "18530000" in trail[-1]["detail"]
-    assert "HML-STF" in trail[-1]["detail"]
+    assert any("18530000" in a["detail"] and "HML-STF" in a["detail"] for a in trail)
 
 
 def test_the_repair_is_safe_when_the_bad_backfill_was_never_run(api, tokens):

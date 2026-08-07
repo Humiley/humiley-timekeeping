@@ -8648,7 +8648,8 @@ async function tkRenderPayJournal() {
     '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
     '<div><div style="font-weight:700;color:var(--navy)">' + _t('Payroll journal') + ' — ' + _crmEsc(period) + '</div>' +
     '<div style="font-size:12px;color:var(--text-light)">' + _t('From the pay run the Director signed, not a recomputation of it') + ' · ' + _crmEsc(r.basis || '') + '</div></div>' +
-    '<button class="btn btn-outline btn-sm" onclick="tkExportPayJournal()">' + tkIcon('download') + _t('Export CSV') + '</button></div>' +
+    '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayJournal()">' + tkIcon('download') + _t('Export CSV') + '</button>' +
+    (_lvlRank(_userLevel) >= _lvlRank('editor') ? '<button class="btn btn-emerald btn-sm" onclick="tkBankFile()">' + tkIcon('send') + _t('Salary payment file') + '</button>' : '') + '</div></div>' +
     (r.balanced ? '' :
       '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid var(--danger)"><div style="font-weight:700;color:var(--danger)">' +
       _t('These entries do not balance — do not post them') + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
@@ -8663,6 +8664,56 @@ async function tkRenderPayJournal() {
     '</tbody></table></div></div>';
   window._payJournalCsv = r.csv || '';
   window._payJournalPeriod = period;
+}
+/* The salary payment file the bank uploads.
+
+   Two refusals worth understanding before touching this. It will not produce a PARTIAL file — if
+   anybody in the run has no usable bank details the whole thing stops and they are named, because a
+   file missing one row uploads cleanly, looks correct, and the person finds out when their salary
+   does not arrive. And it will not quietly regenerate: a second file is how a month gets paid twice,
+   so it has to be confirmed and is recorded. */
+async function tkBankFile() {
+  if (!_payYM || _payYM.m === -1) { toast(_t('Choose a specific month.'), 'warn'); return; }
+  const period = _payPeriod();
+  let pre;
+  try { pre = await tkApi('/api/hr/payroll/bankfile?period=' + encodeURIComponent(period)); }
+  catch (e) {
+    const d = (e && e.data) || {};
+    if (d.blocked && d.blocked.length) return _tkBankBlocked(d);
+    toast(_errMsg(e), 'error', 7000); return;
+  }
+  const msg = _t('Produce the salary payment file for') + ' ' + period + '?\n\n' +
+    pre.count + ' ' + _t('employee(s)') + ' · ' + _PAY_FMT(pre.total) + '\n\n' +
+    _t('Check this total against the pay run before you release the batch in the bank portal — it is the last point the whole month can still be caught.');
+  if (!(await tkConfirm(msg))) return;
+  await _tkBankFileGo(period, false);
+}
+async function _tkBankFileGo(period, regenerate) {
+  try {
+    const r = await tkApi('/api/hr/payroll/bankfile', { method: 'POST',
+      body: { period: period, regenerate: !!regenerate } });
+    const a = document.createElement('a');
+    a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(r.csv || '');
+    a.download = 'Humiley_Salary_' + period.replace(/\s+/g, '_') + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast(_t('Payment file produced') + ' — ' + r.count + ' ' + _t('employee(s)') + ' · ' + _PAY_FMT(r.total), 'success', 7000);
+  } catch (e) {
+    const d = (e && e.data) || {};
+    if (d.blocked && d.blocked.length) return _tkBankBlocked(d);
+    if (d.needsConfirm) {
+      if (await tkConfirm(d.error + '\n\n' + _t('Produce it again anyway?'))) return _tkBankFileGo(period, true);
+      return;
+    }
+    toast(_errMsg(e), 'error', 8000);
+  }
+}
+function _tkBankBlocked(d) {
+  tkAlert({
+    title: _t('The payment file cannot be produced yet'),
+    body: _t('These people have no usable bank details, so the file would be missing them:') +
+      '\n\n\u2022 ' + (d.blocked || []).map(b => b.name + ' — ' + (b.why || []).join(', ')).join('\n\u2022 ') +
+      '\n\n' + _t('A file missing one row uploads cleanly and looks correct. Add their bank details on the employee record, then try again.')
+  });
 }
 function tkExportPayJournal() {
   const csv = window._payJournalCsv || '';
@@ -20670,6 +20721,16 @@ const _VI = {
   'These entries do not balance — do not post them': 'Bút toán không cân — không được ghi sổ',
   'Debits and credits differ. It has been recorded in the audit trail; the difference has to be explained before this is posted.': 'Tổng Nợ và tổng Có không khớp. Việc này đã được ghi vào nhật ký kiểm toán; cần giải trình chênh lệch trước khi ghi sổ.',
   'Nothing to export': 'Không có dữ liệu để xuất',
+  // ── Salary payment file ──
+  'Salary payment file': 'File chi lương', 'Choose a specific month.': 'Vui lòng chọn một tháng cụ thể.',
+  'Produce the salary payment file for': 'Tạo file chi lương cho kỳ',
+  'Check this total against the pay run before you release the batch in the bank portal — it is the last point the whole month can still be caught.':
+    'Hãy đối chiếu tổng số này với bảng lương trước khi duyệt lô lệnh trên cổng ngân hàng — đây là điểm cuối cùng còn có thể phát hiện sai sót của cả tháng.',
+  'Payment file produced': 'Đã tạo file chi lương', 'Produce it again anyway?': 'Vẫn tạo lại?',
+  'The payment file cannot be produced yet': 'Chưa thể tạo file chi lương',
+  'These people have no usable bank details, so the file would be missing them:': 'Những người sau chưa có thông tin ngân hàng hợp lệ nên sẽ bị thiếu trong file:',
+  'A file missing one row uploads cleanly and looks correct. Add their bank details on the employee record, then try again.':
+    'File thiếu một dòng vẫn tải lên bình thường và trông vẫn đúng. Vui lòng bổ sung thông tin ngân hàng trên hồ sơ nhân viên rồi thử lại.',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
@@ -25190,6 +25251,16 @@ function viewCertificate(btn) {
         </select>
         <div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 113(1). This is a classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties.</div>
       </div>
+      <div class="form-group"><label class="form-label">Bank account (for salary)</label>
+        <div class="grid-2" style="gap:8px">
+          <input class="form-control" id="ee-bankName" placeholder="Techcombank">
+          <input class="form-control" id="ee-bankAcc" inputmode="numeric" placeholder="Account number">
+        </div>
+        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Both are needed before this person can be included in a salary payment file — the file is refused outright rather than produced without them, because one missing row looks exactly like a complete file.</div>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="form-group"><label class="form-label">Account holder (if different from the name above)</label><input class="form-control" id="ee-bankHolder" placeholder="NGUYEN VAN A"></div>
       <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ee-disabled" style="width:auto">Person with disabilities</label>
         <div style="font-size:11px;color:var(--text-light);margin-top:4px">Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.</div>
       </div>
@@ -25466,6 +25537,8 @@ function editEmployeeProfile(btn) {
   try { tkFillSchedSelects(); } catch (e) {}   // custom (persisted) schedules become assignable, not just the 5 hardcoded ones
   const wcSel = document.getElementById('ee-workConditions'); if (wcSel) wcSel.value = emp.workConditions || 'normal';
   const disCb = document.getElementById('ee-disabled'); if (disCb) disCb.checked = !!emp.disabled;
+  [['ee-bankName', 'bankName'], ['ee-bankAcc', 'bankAcc'], ['ee-bankHolder', 'bankHolder']]
+    .forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.value = emp[k] || ''; });
   const schedSel = document.getElementById('ee-schedule'); if (schedSel) { if (emp.schedule && !Array.from(schedSel.options).some(o => o.value === emp.schedule)) { const o = document.createElement('option'); o.textContent = emp.schedule; schedSel.appendChild(o); } schedSel.value = emp.schedule || 'Standard 08:00 – 17:00'; }
   tkPopulateManagerSelect(emp.managerEmail, emp.id);
   openModal('editEmpModal');
@@ -25480,8 +25553,11 @@ function saveEmployeeProfile() {
   const schedule = document.getElementById('ee-schedule')?.value || '';
   const workConditions = document.getElementById('ee-workConditions')?.value || 'normal';
   const disabled = document.getElementById('ee-disabled')?.checked ? 1 : 0;
+  const bankName = document.getElementById('ee-bankName')?.value?.trim() || '';
+  const bankAcc = document.getElementById('ee-bankAcc')?.value?.trim() || '';
+  const bankHolder = document.getElementById('ee-bankHolder')?.value?.trim() || '';
   if (id) {
-    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule, workConditions, disabled }, 'PATCH')
+    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule, workConditions, disabled, bankName, bankAcc, bankHolder }, 'PATCH')
       .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
   }
   closeModal('editEmpModal');

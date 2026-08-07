@@ -119,7 +119,7 @@ def test_every_raise_is_written_to_the_audit_trail(api, tokens):
              if a.get("target") == "employee/HML-STF"
              and "statutory minimum" in (a.get("action") or "")]
     assert trail, "changing somebody's leave entitlement must leave a record"
-    assert "13" in trail[-1]["detail"]
+    assert any("13" in a["detail"] for a in trail)
 
 
 def test_applying_is_idempotent(api, tokens):

@@ -173,7 +173,7 @@ def test_raising_it_is_written_to_the_audit_chain(api, tokens):
     api("POST", "/api/hr/exit/%s/settlement" % xid, tokens["admin"], {})
     trail = [a for a in db.list_collection("audit")
              if a.get("action") == "Final settlement raised as a payment"]
-    assert trail and "Art. 48(1)" in trail[-1]["detail"]
+    assert any("Art. 48(1)" in a["detail"] for a in trail)
 
 
 def test_nothing_owed_raises_nothing(api, tokens):

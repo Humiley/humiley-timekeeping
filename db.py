@@ -284,7 +284,8 @@ def init_db():
                 # Annual-leave entitlement drivers (Art. 113(1)): the working-condition class and
                 # whether the employee is a person with disabilities. Both raise the statutory base.
                 "workConditions TEXT", "disabled INTEGER", "contractExempt TEXT",
-                "oshGroup TEXT"):
+                "oshGroup TEXT",
+                "bankName TEXT", "bankAcc TEXT", "bankHolder TEXT", "bankBranch TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -795,6 +796,10 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               # classified the person. Blank means no safety-training requirement is asserted for
               # them — inventing one for everybody would bury the people who genuinely have one.
               "oshGroup",
+              # Structured bank details for the salary transfer file. The legacy free-text `bank`
+              # field stays for anything already typed into it, but a payment file cannot be built
+              # from prose — it needs the account number on its own.
+              "bankName", "bankAcc", "bankHolder", "bankBranch",
               "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 

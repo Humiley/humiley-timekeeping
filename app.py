@@ -39,6 +39,7 @@ import contracts         # Labour Code Art. 20 contract terms, expiry and the re
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
+import bank_transfer     # the salary payment file the bank uploads (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3674,6 +3675,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
             _xid = path[len("/api/hr/exit/"):-len("/settlement")]
             return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/payroll/bankfile":
+            return self._guard(lambda u: self._bank_transfer_ep(u, qs))
         if path == "/api/hr/payroll/journal":
             return self._guard(lambda u: self._payroll_journal_ep(u, qs))
         if path == "/api/hr/certificates/review":
@@ -3738,6 +3741,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_jd_ep(u, body))
         if path == "/api/hr/onboarding/file":
             return self._guard(lambda u: self._hr_onb_file_ep(u, body))
+        if path == "/api/hr/payroll/bankfile":
+            return self._guard(lambda u: self._bank_transfer_ep(u, None, body=body, create=True),
+                               manager=True)
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
             _xid = path[len("/api/hr/exit/"):-len("/settlement")]
             return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid),
@@ -7970,6 +7976,90 @@ class Handler(BaseHTTPRequestHandler):
                            "csv": payroll_journal.to_csv(entries, period or ""),
                            "accounts": dept_acc,
                            "basis": "Circular 200/2014/TT-BTC"})
+
+    def _bank_transfer_ep(self, u, qs, body=None, create=False):
+        """The salary payment file for a signed pay run.
+
+        The last manual step in the month: somebody reads net pay off a screen and types thirty
+        account numbers into the bank's template. A transposed digit pays a stranger; a missed row
+        means somebody quietly does not get paid, and nobody finds out until they say so.
+
+        Two refusals, both deliberate. It will not produce a PARTIAL file — if anybody in the run
+        lacks usable bank details the whole thing is refused and they are named, because a file
+        missing one row looks exactly like a correct one. And it will not quietly regenerate: a
+        second file is how salaries get paid twice, so it has to be asked for and is recorded.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Editor access or above is required to produce a salary payment file.",
+                             403)
+        qs = qs or {}
+        period = str((body or {}).get("period") or qs.get("period", [""])[0] or "").strip()
+        if not period:
+            return self._err("Choose the pay period the file is for.", 400)
+        runs = [r for r in db.list_collection("payruns")
+                if str(r.get("period") or "").strip().lower() == period.lower()
+                and "final" in str(r.get("status") or "").lower() and (r.get("lines") or [])]
+        if not runs:
+            return self._err("There is no pay run for %s that a Director has signed. A payment file "
+                             "is built from a signed run, never from a draft." % period, 400)
+
+        try:
+            cols = db.get_setting("portal_bankTemplate") or None
+            if isinstance(cols, str):
+                cols = json.loads(cols or "null")
+        except Exception:
+            cols = None
+        if not (isinstance(cols, list) and cols and all(isinstance(c, dict) and c.get("key")
+                                                        for c in cols)):
+            cols = None       # fall back to the shipped layout rather than a half-configured one
+
+        merged = {"period": period, "lines": [l for r in runs for l in (r.get("lines") or [])]}
+        built = bank_transfer.build(merged, db.list_employees(),
+                                    company=db.get_setting("portal_companyShort") or "HUMILEY",
+                                    columns=cols)
+        already = [r for r in runs if r.get("bankFileAt")]
+
+        out = {"ok": True, "period": period, "count": built["count"],
+               "total": built["total"], "blocked": built["blocked"],
+               "alreadyExported": ({"at": already[0].get("bankFileAt"),
+                                    "by": already[0].get("bankFileBy")} if already else None)}
+        if built["blocked"]:
+            out["ok"] = False
+            out["error"] = ("%d employee(s) in this run cannot be paid by file yet: %s. The file is "
+                            "not produced until every one of them is fixed — a file missing a row "
+                            "looks exactly like a complete one."
+                            % (len(built["blocked"]),
+                               ", ".join(b["name"] for b in built["blocked"][:8])))
+            return self._json(out, 400)
+
+        if not create:
+            out["preview"] = built["rows"][:5]
+            return self._json(out)
+
+        if already and not (body or {}).get("regenerate"):
+            out["ok"] = False
+            out["needsConfirm"] = True
+            out["error"] = ("A payment file for %s was already produced on %s by %s. Producing "
+                            "another is how a month gets paid twice — confirm only if the first was "
+                            "never uploaded." % (period, already[0].get("bankFileAt"),
+                                                 already[0].get("bankFileBy")))
+            return self._json(out, 409)
+
+        out["csv"] = bank_transfer.to_csv(built, cols)
+        stamp = self._utc_now()
+        for r in runs:
+            db.put_collection_item("payruns", dict(r, bankFileAt=stamp,
+                                                   bankFileBy=u.get("name") or "",
+                                                   bankFileTotal=int(built["total"]),
+                                                   bankFileCount=built["count"]))
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Salary payment file produced",
+            "target": "payruns/" + period,
+            "detail": "%d employee(s), %s%s" % (built["count"], _money_vnd(built["total"]),
+                                                " · REGENERATED" if already else ""),
+            "ts": stamp})
+        return self._json(out)
 
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.

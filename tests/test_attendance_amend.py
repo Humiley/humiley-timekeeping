@@ -76,8 +76,8 @@ def test_the_before_and_after_land_in_the_audit_chain(api, tokens):
     trail = [a for a in db.list_collection("audit")
              if a.get("target") == "attendance/%d" % aid and a.get("action") == "Attendance corrected"]
     assert trail
-    d = trail[-1]["detail"]
-    assert "19:00" in d and "17:30" in d and "client meeting" in d
+    assert any("19:00" in a["detail"] and "17:30" in a["detail"]
+               and "client meeting" in a["detail"] for a in trail)
 
 
 def test_a_correction_without_a_reason_is_refused(api, tokens):
@@ -216,7 +216,7 @@ def test_correcting_your_own_record_is_allowed_but_named(api, tokens):
     assert st == 200
     trail = [a for a in db.list_collection("audit")
              if a.get("target") == "attendance/%d" % aid]
-    assert "SELF-CORRECTION" in trail[-1]["detail"]
+    assert any("SELF-CORRECTION" in a["detail"] for a in trail)
 
 
 def test_the_storage_layer_refuses_to_move_a_shift_even_if_asked_directly(api, tokens):

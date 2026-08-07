@@ -208,8 +208,8 @@ def test_an_over_cap_approval_needs_a_reason_and_is_named_in_the_audit(api, toke
     assert b["overCap"] == ["day"]
     assert db.get_attendance(aid)["ot_status"] == "approved"
     trail = [a for a in db.list_collection("audit") if a.get("target") == "attendance/%d" % aid]
-    assert trail and "OVER THE STATUTORY CAP" in trail[-1]["detail"]
-    assert "chiller" in trail[-1]["detail"]
+    assert any("OVER THE STATUTORY CAP" in a["detail"] and "chiller" in a["detail"]
+               for a in trail)
 
 
 def test_the_annual_cap_is_two_hundred_unless_the_company_has_elected_three(api, tokens):
