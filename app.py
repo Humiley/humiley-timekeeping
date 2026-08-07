@@ -35,6 +35,7 @@ from einv import (_einv_safe_xml, _zip_read_bounded, _einv_parse_xml, _einv_from
 from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate limiter (extracted); _RATE/_RATE_LOCK re-exported (same objects) so callers/tests keep the app.* surface
 import overtime          # Labour Code Art. 98/106/107 overtime rates, night premium and caps (pure)
 import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
+import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3667,6 +3668,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path == "/api/hr/contracts/review":
+            return self._guard(lambda u: self._contracts_review_ep(u, qs))
         if path == "/api/hr/leave-entitlement":
             return self._guard(lambda u: self._leave_entitlement_ep(u, qs))
         if path == "/api/hr/overtime":
@@ -5901,7 +5904,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -5922,6 +5925,10 @@ class Handler(BaseHTTPRequestHandler):
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
     READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
+                # A labour contract states the agreed wage, so it is compensation data — management
+                # and above, matching payruns. An employee reads their own through _coll_list's
+                # self-scoped branch, never anyone else's.
+                "contracts": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager",
                 # Project financials must not be world-readable to every staff account (the PM app is
@@ -5938,7 +5945,7 @@ class Handler(BaseHTTPRequestHandler):
     # company. Scoped below in _coll_list.
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
-    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits"}
+    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
@@ -6059,6 +6066,12 @@ class Handler(BaseHTTPRequestHandler):
             # never reach the FROZEN, Director-signed line, so their My Payslip screen recomputed the
             # month live and showed them today's salary under an old month's heading. What comes back
             # here is one line, theirs, from finalised runs only: no other employee, no company totals.
+            # Your own labour contract is yours to read — Art. 13(1) requires you to be given a copy,
+            # so a portal that holds it and will not show it to you is worse than not holding it.
+            # Somebody else's is compensation data and stays out of reach.
+            if name == "contracts":
+                return self._json({"ok": True, "items": [
+                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
             if name == "payruns":
                 mine = []
                 for r in db.list_collection(name):
@@ -7550,6 +7563,53 @@ class Handler(BaseHTTPRequestHandler):
             changed.append({"empId": e.get("id"), "name": e.get("name") or "",
                             "from": was, "to": r["days"]})
         return self._json({"ok": True, "year": year, "changed": changed, "count": len(changed)})
+
+    def _contracts_review_ep(self, u, qs):
+        """Every employee's contract position, and what Art. 20 says about it.
+
+        The consequences in that article happen by operation of law rather than by anybody's
+        decision — a fixed term that expires unnoticed for 30 days has ALREADY become an
+        indefinite-term contract, and a third fixed term is unlawful whether or not anybody meant
+        it — so they have to be computed, not remembered. This is what the register exists to say
+        out loud before a labour inspector does.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — a labour contract "
+                             "states the agreed wage.", 403)
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+
+        by_emp = {}
+        for c in db.list_collection("contracts"):
+            if c.get("empId"):
+                by_emp.setdefault(c["empId"], []).append(c)
+
+        rows, flagged = [], 0
+        for e in db.list_employees():
+            if str(e.get("status") or "Active").strip().lower() == "inactive":
+                continue
+            r = contracts.review(by_emp.get(e.get("id")) or [], as_of,
+                                 exempt=e.get("contractExempt") or None)
+            cur = r["contract"] or {}
+            if r["issues"]:
+                flagged += 1
+            rows.append({
+                "empId": e.get("id"), "name": e.get("name") or "", "dept": e.get("dept") or "",
+                "title": e.get("title") or "", "startDate": e.get("startDate") or "",
+                "contractId": cur.get("id"), "contractNo": cur.get("no") or "",
+                "type": cur.get("type") or "", "from": cur.get("startDate") or "",
+                "to": cur.get("endDate") or "", "status": r["status"],
+                "daysLeft": r["daysLeft"], "definiteCount": r["definiteCount"],
+                "mustBeIndefinite": r["mustBeIndefinite"],
+                "hasFile": bool(cur.get("file") or cur.get("fileUrl")),
+                "issues": r["issues"]})
+        _rank = {"none": 0, "lapsed": 1, "grace": 2, "unknown": 3, "expiring": 4,
+                 "active": 5, "indefinite": 6}
+        rows.sort(key=lambda x: (_rank.get(x["status"], 9), x["daysLeft"] if x["daysLeft"] is not None else 9999))
+        return self._json({"ok": True, "asOf": as_of, "rows": rows, "flagged": flagged,
+                           "maxTermMonths": contracts.MAX_DEFINITE_MONTHS,
+                           "graceDays": contracts.GRACE_DAYS})
 
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.

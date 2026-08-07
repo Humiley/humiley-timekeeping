@@ -283,7 +283,7 @@ def init_db():
                 "shirtSize TEXT",
                 # Annual-leave entitlement drivers (Art. 113(1)): the working-condition class and
                 # whether the employee is a person with disabilities. Both raise the statutory base.
-                "workConditions TEXT", "disabled INTEGER"):
+                "workConditions TEXT", "disabled INTEGER", "contractExempt TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -782,6 +782,10 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               # Site and factory duty is not automatically heavy work — it is a classification the
               # company makes against the MOLISA list, so it is recorded, not inferred from a title.
               "workConditions", "disabled",
+              # Art. 20(2)(c) carve-out, where one applies: 'elderly' | 'foreign' | 'state_director'
+              # | 'union_officer'. Blank for almost everyone — it is a legal status somebody records,
+              # never something to infer from a name or a job title.
+              "contractExempt",
               "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 

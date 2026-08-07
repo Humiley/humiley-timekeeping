@@ -1970,9 +1970,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab active" onclick="switchHRTab('balances',this)">Leave Balances</button>
     <button class="tab" onclick="switchHRTab('benefits',this)">Benefits</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
+    <button class="tab" id="hr-tab-contracts" style="display:none" onclick="switchHRTab('contracts',this)">Labour Contracts</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
   <div id="hr-benefits" style="display:none"><div id="hr-benefits-root"></div></div>
+  <div id="hr-contracts" style="display:none"></div>
 
   <!-- BALANCES -->
   <div id="hr-balances">
@@ -19130,7 +19132,14 @@ function showView(id, navEl, title) {
   if (id === 'manager') { loadManagerView(); }
   if (id === 'procurement') { try { tkRenderProcurementEmbed(); } catch (e) { console.warn('procurement:', e.message); } }
   if (id === 'dashboard') { setTimeout(initDashChart, 100); try { tkRenderDashLevelBand(); } catch (e) {} try { tkRenderHrMetrics(); } catch (e) {} }
-  if (id === 'hradmin') { Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} }); }
+  if (id === 'hradmin') {
+    // A labour contract states the agreed wage, so the register is Approver (management) and above —
+    // the same line payroll sits on. The server refuses it below that either way; this stops the tab
+    // appearing for somebody it will only 403 at.
+    const _ct = document.getElementById('hr-tab-contracts');
+    if (_ct) _ct.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
+    Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} });
+  }
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
   if (_HR_HUB_VIEWS.has(id)) { try { _hrEnsureTabBar(id); } catch (e) {} }
   if (id === 'staff-dashboard') { _initStaffDashboard(); }
@@ -20483,6 +20492,20 @@ const _VI = {
   'Records that already meet or exceed the minimum are left alone. Each change is written to the audit trail.':
     'Các hồ sơ đã đạt hoặc vượt mức tối thiểu sẽ được giữ nguyên. Mỗi thay đổi đều được ghi vào nhật ký kiểm toán.',
   'Raised': 'Đã nâng', 'entitlement(s)': 'hồ sơ ngày phép',
+  // ── Labour contract register (Art. 20) ──
+  'Labour contracts': 'Hợp đồng lao động',
+  'Labour Code Art. 20 — a fixed term may not exceed 36 months, a replacement must be signed within 30 days of expiry, and a fixed term may be renewed only once. After that 30 days the contract has already become indefinite-term, whatever the file says.':
+    'Bộ luật Lao động Đ.20 — hợp đồng xác định thời hạn không quá 36 tháng, phải ký hợp đồng mới trong vòng 30 ngày kể từ ngày hết hạn, và chỉ được ký thêm 01 lần. Quá 30 ngày đó, hợp đồng đã đương nhiên trở thành hợp đồng không xác định thời hạn, bất kể hồ sơ ghi gì.',
+  'contract(s) need attention': 'hợp đồng cần xử lý',
+  'Listed first below, worst case at the top.': 'Được liệt kê trước ở bảng dưới, trường hợp nghiêm trọng nhất ở trên cùng.',
+  'Every contract is in order.': 'Tất cả hợp đồng đều hợp lệ.',
+  'employee(s) checked.': 'nhân viên đã kiểm tra.',
+  'Contract no.': 'Số hợp đồng', 'Term': 'Thời hạn', 'Days left': 'Số ngày còn lại',
+  'Position under Art. 20': 'Tình trạng theo Đ.20', 'Indefinite': 'Không xác định thời hạn',
+  'fixed terms so far': 'lần ký xác định thời hạn', 'no signed copy attached': 'chưa đính kèm bản đã ký',
+  'No contract on file': 'Chưa có hợp đồng', 'Lapsed — now indefinite by law': 'Đã quá hạn — nay là HĐ không xác định thời hạn theo luật',
+  'Expired — 30-day window': 'Đã hết hạn — còn trong 30 ngày', 'No end date': 'Chưa có ngày kết thúc',
+  'Expiring': 'Sắp hết hạn', 'Active': 'Đang hiệu lực', 'Indefinite-term': 'Không xác định thời hạn',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
@@ -21974,7 +21997,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal'].forEach(id => {
+  ['balances','benefits','compliance','portal','contracts'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -21983,6 +22006,7 @@ function switchHRTab(tab, el) {
   if (panel) panel.style.display = 'block';
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
+  if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
@@ -23346,6 +23370,65 @@ async function _deleteEmp(id) {
   toast(nm + ' removed permanently');
 }
 
+/* The labour contract register — Article 20 of the Labour Code, made visible before it is missed.
+
+   The consequences in that article arrive by operation of law rather than by anybody's decision. A
+   fixed term that expires unnoticed for 30 days has ALREADY become an indefinite-term contract; a
+   third fixed term is unlawful whether or not anybody meant it. So this does not ask HR to remember
+   — it computes the position and says what has happened, worst case first. */
+const _CT_STATUS = {
+  none:       { label: 'No contract on file', cls: 'b-danger' },
+  lapsed:     { label: 'Lapsed — now indefinite by law', cls: 'b-danger' },
+  grace:      { label: 'Expired — 30-day window', cls: 'b-danger' },
+  unknown:    { label: 'No end date', cls: 'b-warn' },
+  expiring:   { label: 'Expiring', cls: 'b-warn' },
+  active:     { label: 'Active', cls: 'b-ok' },
+  indefinite: { label: 'Indefinite-term', cls: 'b-ok' }
+};
+async function tkRenderContracts() {
+  const el = document.getElementById('hr-contracts'); if (!el) return;
+  el.innerHTML = tkSkeleton();
+  let r;
+  try { r = await tkApi('/api/hr/contracts/review'); }
+  catch (e) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  const rows = r.rows || [];
+  const flagged = rows.filter(x => (x.issues || []).length);
+
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _t('Labour contracts') + ' — ' + _crmEsc(r.asOf || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('Labour Code Art. 20 — a fixed term may not exceed 36 months, a replacement must be signed within 30 days of expiry, and a fixed term may be renewed only once. After that 30 days the contract has already become indefinite-term, whatever the file says.') +
+    '</div></div>';
+
+  const banner = flagged.length
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid var(--danger)">' +
+      '<div style="font-weight:700;color:var(--danger)">' + flagged.length + ' ' + _t('contract(s) need attention') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + _t('Listed first below, worst case at the top.') + '</div></div>'
+    : '<div class="card" style="padding:24px;text-align:center;margin-bottom:16px">' +
+      '<div style="font-weight:700;color:var(--emerald)">' + _t('Every contract is in order.') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + rows.length + ' ' + _t('employee(s) checked.') + '</div></div>';
+
+  const row = x => {
+    const st = _CT_STATUS[x.status] || { label: x.status, cls: 'b-info' };
+    const issues = (x.issues || []).map(i =>
+      '<div style="font-size:11px;color:' + (i.severity === 'high' ? 'var(--danger)' : '#B7791F') + ';margin-top:3px">' + _crmEsc(i.message) + '</div>').join('');
+    return '<tr' + ((x.issues || []).length ? ' style="background:rgba(220,38,38,.04)"' : '') + '>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + (x.title ? ' · ' + _crmEsc(x.title) : '') + '</div></td>' +
+      '<td>' + (x.contractNo ? '<span style="font-variant-numeric:tabular-nums">' + _crmEsc(x.contractNo) + '</span>' : '<span style="color:var(--text-light)">—</span>') +
+        (x.contractId && !x.hasFile ? '<div style="font-size:10px;color:#B7791F">' + _t('no signed copy attached') + '</div>' : '') + '</td>' +
+      '<td style="white-space:nowrap;font-size:12px">' + (x.type === 'indefinite' ? _t('Indefinite') : (x.from ? _crmEsc(x.from) + ' → ' + _crmEsc(x.to || '?') : '—')) +
+        (x.definiteCount > 1 ? '<div style="font-size:10px;color:var(--text-light)">' + x.definiteCount + ' ' + _t('fixed terms so far') + '</div>' : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.daysLeft == null ? '—' : x.daysLeft) + '</td>' +
+      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _t(st.label) + '</span>' + issues + '</td></tr>';
+  };
+
+  el.innerHTML = head + banner +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th>' + _t('Contract no.') + '</th><th>' + _t('Term') + '</th>' +
+    '<th style="text-align:right">' + _t('Days left') + '</th><th>' + _t('Position under Art. 20') + '</th>' +
+    '</tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
+}
 function tkRenderBalances() {
   const tbody = document.getElementById('hr-balances-body');
   if (!tbody) return;
