@@ -110,9 +110,20 @@ def test_a_day_recorded_at_check_in_reaches_the_right_project(api, tokens):
     assert row["basis"] == "recorded"
 
 
-def test_check_in_can_record_the_project_and_is_never_blocked_by_it(api, tokens):
+def test_check_in_can_record_the_project_and_is_never_blocked_by_it(api, tokens, monkeypatch):
     """Somebody at a site gate at 06:00 must always be able to clock in — an unknown project leaves
-    the day unattributed, it does not refuse them."""
+    the day unattributed, it does not refuse them.
+
+    The company clock is frozen because the punch time was hardcoded at 08:00: between midnight and
+    08:00 Vietnam time the server correctly refused it as a future punch, and this test failed for
+    reasons that had nothing to do with projects."""
+    import app
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 9, 5)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
     st, b = api("POST", "/api/attendance/checkin", tokens["staff"],
                 {"time": "08:00", "project": "NO-SUCH-PROJECT"})
     assert st == 200, b

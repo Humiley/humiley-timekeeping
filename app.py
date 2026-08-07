@@ -38,6 +38,7 @@ import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + 
 import company           # the employer's legal identity, as a document has to state it (pure)
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
+import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
 import grievance         # the speak-up channel: routing, confidentiality and the clock (pure)
 import hr_decision       # the quyết định — Art. 34/36/45 termination, Art. 122-127 discipline
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
@@ -3781,6 +3782,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_get_ep(u))
         if path == "/api/hr/contract/draft":
             return self._guard(lambda u: self._contract_draft_ep(u, qs))
+        if path == "/api/hr/incidents":
+            return self._guard(lambda u: self._incidents_ep(u, qs), manager=True)
         if path == "/api/hr/speakup":
             return self._guard(lambda u: self._speakup_list_ep(u, qs))
         if path == "/api/hr/speakup/track":
@@ -3862,6 +3865,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
+        if path == "/api/hr/incidents":
+            return self._guard(lambda u: self._incident_add_ep(u, body), manager=True)
+        if path.startswith("/api/hr/incidents/"):
+            _iid = path[len("/api/hr/incidents/"):]
+            return self._guard(lambda u: self._incident_update_ep(u, urllib.parse.unquote(_iid), body),
+                               manager=True)
         if path == "/api/hr/speakup":
             return self._guard(lambda u: self._speakup_raise_ep(u, body))
         if path.startswith("/api/hr/speakup/"):
@@ -6289,7 +6298,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6306,7 +6315,7 @@ class Handler(BaseHTTPRequestHandler):
     HR_EVIDENCE_COLLS = {"exits", "padr", "reviews", "pip", "hrdoc_acks", "acks",
                          # A labour contract and a health certificate are evidence too — deleting
                          # one must leave the record in the audit chain, not just a gap.
-                         "contracts", "certificates", "decisions", "hrletters",
+                         "contracts", "certificates", "decisions", "hrletters", "incidents",
                          "onboarding", "handovers", "enrollments", "payadjust", "candidates"}
     # Records the SERVER validated when they were issued: a disciplinary measure Art. 127 permits,
     # a salary disclosure the letter's purpose justified. The generic /api/coll route does none of
@@ -6317,7 +6326,11 @@ class Handler(BaseHTTPRequestHandler):
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
-                   "concerns": ("a concern", "/api/hr/speakup")}
+                   "concerns": ("a concern", "/api/hr/speakup"),
+                   # An accident record decides, from its class and the number hurt, whether the
+                   # inspectorate must be rung TODAY and when the report is due. Created here it
+                   # would have neither, and the register would report neither.
+                   "incidents": ("an accident record", "/api/hr/incidents")}
     # Collections the GENERIC /api/coll route must never serve, at ANY level. A speak-up concern
     # is readable only through /api/hr/speakup, which applies grievance.may_read — and being an
     # administrator is deliberately not a way in. Listing the collection would hand every concern
@@ -6325,7 +6338,13 @@ class Handler(BaseHTTPRequestHandler):
     CONFIDENTIAL = {"concerns"}
     ISSUED_EDITABLE = {"decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
-                                     "issuedBy", "issuedById", "issuedAt", "_rev", "id"}}
+                                     "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
+                       # What happened is evidence and is not rewritten afterwards. What was
+                       # LEARNED afterwards — the declaration, the report, days lost, the cause,
+                       # what was done about it — is added as it becomes known.
+                       "incidents": {"declaredOn", "reportPublishedOn", "daysLost", "extended",
+                                     "outcome", "rootCause", "correctiveAction",
+                                     "file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"}}
     INVTRACK_MIN = "editor"
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
@@ -6346,7 +6365,10 @@ class Handler(BaseHTTPRequestHandler):
                 "pm_costs": "manager", "pm_procurement_payments": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
-                "certificates": "manager"}
+                "certificates": "manager",
+                # An accident record names who was hurt and how badly — health data. Manager+ so
+                # a site manager can see their own crew, matching certificates.
+                "incidents": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
     # `benefits` is deliberately NOT here. It is the per-GRADE benefits CATALOGUE — a policy table, not
     # personal data — so scoping it to "your own rows" matched nothing and every employee's Benefits
@@ -7186,7 +7208,7 @@ class Handler(BaseHTTPRequestHandler):
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
         # still rewrite its wage or delete it. Writing must need at least what reading needs.
-        if name in ("contracts", "certificates", "decisions", "hrletters"):
+        if name in ("contracts", "certificates", "decisions", "hrletters", "incidents"):
             _need = self.READ_MIN.get(name, "management")
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to change %s."
@@ -8258,6 +8280,107 @@ class Handler(BaseHTTPRequestHandler):
                 " → " + rec["endDate"] if rec["endDate"] else ""),
             "ts": self._utc_now()})
         return self._json({"ok": True, "contract": rec, "document": doc})
+
+    # ── occupational accidents ───────────────────────────────────────────────────────────────────
+
+    def _incident_hours(self, frm, to):
+        """Hours actually worked in the window, for the lost-time frequency rate.
+
+        Taken from attendance rather than from headcount × 8 × days: the rate is the one figure a
+        client compares across contractors, and a denominator nobody measured would be compared
+        against denominators somebody did.
+        """
+        try:
+            total = 0.0
+            for a in db.list_attendance(frm, to):
+                total += float(a.get("hours") or 0)
+            return total
+        except Exception:
+            return 0.0
+
+    def _incidents_ep(self, u, qs):
+        """The accident register: what must be declared today, what is late, and the year's figures."""
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+        year = as_of[:4]
+        rows = db.list_collection("incidents")
+        hours = self._incident_hours(year + "-01-01", year + "-12-31")
+        r = osh_incident.review(rows, as_of, hours_worked=hours)
+        r.update({"ok": True, "classes": [dict(c) for c in osh_incident.CLASSES],
+                  "hoursBasis": ("Hours worked in %s, from recorded attendance." % year)
+                                if hours else
+                                ("No attendance hours recorded for %s, so no frequency rate." % year)})
+        return self._json(r)
+
+    def _incident_add_ep(self, u, body):
+        """Record an accident. Manager and above — a site manager must be able to file their own."""
+        b = dict(body or {})
+        inc = {k: b.get(k) for k in (
+            "class", "occurredOn", "notifiedOn", "empId", "personName", "what", "where",
+            "injuredCount", "daysLost", "bodyPart", "cause", "immediateAction", "project",
+            "forensic", "witnesses")}
+        bad = osh_incident.blockers(inc)
+        if bad:
+            return self._json({"error": bad[0], "blockers": bad}, 400)
+        emp = db.get_employee(str(inc.get("empId") or "")) if inc.get("empId") else None
+        rec = dict(inc, **{
+            "id": "inc-" + secrets.token_hex(4),
+            "ref": "TN-" + str(inc.get("occurredOn") or "")[:4] + "-" + secrets.token_hex(2).upper(),
+            "personName": str(inc.get("personName") or (emp or {}).get("name") or ""),
+            "injuredCount": max(1, int(inc.get("injuredCount") or 1)),
+            "daysLost": max(0, int(inc.get("daysLost") or 0)),
+            "recordedBy": u.get("name") or "", "recordedById": u.get("id") or "",
+            "recordedAt": self._utc_now(),
+        })
+        db.put_collection_item("incidents", rec)
+        dec = osh_incident.declare_immediately(rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Occupational accident recorded", "target": "incidents/" + rec["ref"],
+            "detail": "%s · %s · %d hurt%s" % (rec["class"], rec["occurredOn"],
+                                               rec["injuredCount"],
+                                               " · MUST BE DECLARED AT ONCE" if dec["required"] else ""),
+            "ts": self._utc_now()})
+        # A fatal or multi-casualty accident is a matter of hours, so the people who have to act are
+        # told now rather than when somebody next opens the register.
+        if dec["required"]:
+            try:
+                raw = db.get_setting("portal_hrAdmins", "") or ""
+                mails = [x.strip() for x in str(raw).replace("\n", ",").split(",") if x.strip()]
+                if mails:
+                    _tk_push(mails, "Accident must be declared today",
+                             "%s · %s. %s" % (rec["ref"], rec["class"], dec["basis"]),
+                             url="/", tag="osh")
+            except Exception:
+                pass
+        return self._json({"ok": True, "incident": rec, "declare": dec,
+                           "deadline": osh_incident.investigation_deadline(rec, self._vn_day())})
+
+    def _incident_update_ep(self, u, iid, body):
+        """Record the declaration, the investigation report, or days lost as they become known."""
+        rec = db.get_collection_item("incidents", iid)
+        if not rec:
+            return self._err("No such accident record.", 404)
+        b = dict(body or {})
+        # Only the follow-up facts. The account of what happened is not rewritten after the event —
+        # it is evidence, and a later hand tidying it is exactly what an investigator looks for.
+        for k in ("declaredOn", "reportPublishedOn", "daysLost", "extended", "outcome",
+                  "rootCause", "correctiveAction", "fileUrl"):
+            if k in b:
+                rec[k] = b[k]
+        rec["daysLost"] = max(0, int(rec.get("daysLost") or 0))
+        db.put_collection_item("incidents", rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Occupational accident updated", "target": "incidents/" + str(rec.get("ref") or iid),
+            "detail": ", ".join(sorted(k for k in b if k in (
+                "declaredOn", "reportPublishedOn", "daysLost", "extended", "outcome",
+                "rootCause", "correctiveAction", "fileUrl"))) or "no change",
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "incident": rec,
+                           "declare": osh_incident.declare_immediately(rec),
+                           "deadline": osh_incident.investigation_deadline(rec, self._vn_day())})
 
     # ── the speak-up channel ─────────────────────────────────────────────────────────────────────
 
@@ -9875,7 +9998,7 @@ class Handler(BaseHTTPRequestHandler):
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
         # still rewrite its wage or delete it. Writing must need at least what reading needs.
-        if name in ("contracts", "certificates", "decisions", "hrletters"):
+        if name in ("contracts", "certificates", "decisions", "hrletters", "incidents"):
             _need = self.READ_MIN.get(name, "management")
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to change %s."
@@ -10296,7 +10419,7 @@ class Handler(BaseHTTPRequestHandler):
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
         # read a labour contract, a health certificate or a decision — could destroy any of them,
         # and _coll_add / _coll_update both gate exactly this set.
-        if name in ("contracts", "certificates", "decisions", "hrletters"):
+        if name in ("contracts", "certificates", "decisions", "hrletters", "incidents"):
             _need = self.READ_MIN.get(name, "management")
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to delete %s."

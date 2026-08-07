@@ -1985,6 +1985,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" id="hr-tab-contracts" style="display:none" onclick="switchHRTab('contracts',this)">Labour Contracts</button>
     <button class="tab" id="hr-tab-decisions" style="display:none" onclick="switchHRTab('decisions',this)">Decisions &amp; Letters</button>
     <button class="tab" id="hr-tab-statutory" style="display:none" onclick="switchHRTab('statutory',this)">Statutory Returns</button>
+    <button class="tab" id="hr-tab-osh" style="display:none" onclick="switchHRTab('osh',this)">Accidents &amp; Safety</button>
     <button class="tab" onclick="switchHRTab('certs',this)">Certificates &amp; Health</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
@@ -1992,6 +1993,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div id="hr-contracts" style="display:none"></div>
   <div id="hr-decisions" style="display:none"></div>
   <div id="hr-statutory" style="display:none"></div>
+  <div id="hr-osh" style="display:none"></div>
   <div id="hr-certs" style="display:none"></div>
 
   <!-- BALANCES -->
@@ -19754,6 +19756,11 @@ function showView(id, navEl, title) {
     // is refused). Showing the tab to somebody the API will refuse is worse than hiding it.
     const _st = document.getElementById('hr-tab-statutory');
     if (_st) _st.style.display = (_lvlRank(_userLevel) >= _lvlRank('editor')) ? '' : 'none';
+    // MANAGER, deliberately lower than the rest: the person who was on site when somebody was hurt
+    // is the one who knows what happened, and a fatal accident has to reach the inspectorate in
+    // hours. Waiting for an Approver to be at a desk loses the only time that matters.
+    const _ot = document.getElementById('hr-tab-osh');
+    if (_ot) _ot.style.display = (_lvlRank(_userLevel) >= _lvlRank('manager')) ? '' : 'none';
     Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} });
   }
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
@@ -19963,6 +19970,56 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Occupational accidents (Law on OSH 2015 · Decree 39/2016). Keys already in this dict are
+     deliberately not repeated — a later duplicate silently overrides the earlier one. */
+  'A fatal accident, or a serious one injuring two or more people, must be declared to the labour inspectorate at once by the fastest means — not at the end of the week. This register works out which duty applies and when the investigation report is due.':
+    'Tai nạn chết người, hoặc tai nạn nặng làm bị thương từ hai người trở lên, phải khai báo ngay với thanh tra lao động bằng phương tiện nhanh nhất — không để đến cuối tuần. Sổ này xác định nghĩa vụ nào áp dụng và khi nào phải có biên bản điều tra.',
+  'Record an accident': 'Ghi nhận tai nạn lao động',
+  'Register unavailable': 'Không mở được sổ',
+  'Must be declared to the authority today': 'Phải khai báo với cơ quan có thẩm quyền hôm nay',
+  'Once the call has been made, open the record and enter the date it was declared.':
+    'Sau khi đã khai báo, mở bản ghi và nhập ngày đã khai báo.',
+  'Accidents recorded': 'Số vụ đã ghi nhận',
+  'Under investigation': 'Đang điều tra',
+  'Working days lost': 'Số ngày công nghỉ việc',
+  'Lost-time frequency': 'Tần suất tai nạn nghỉ việc',
+  'hours worked not recorded': 'chưa có số giờ làm việc',
+  'per million hours worked': 'trên một triệu giờ làm việc',
+  'Who was hurt': 'Người bị nạn',
+  'Days lost': 'Ngày nghỉ',
+  'Report due': 'Hạn biên bản',
+  'Overdue': 'Quá hạn',
+  'Report published': 'Đã công bố biên bản',
+  'No accidents recorded. That is the register saying nothing has been entered, not that nothing has happened — enter every one, including those with no days lost.':
+    'Chưa có tai nạn nào được ghi nhận. Điều đó nghĩa là chưa ai nhập, không phải là chưa xảy ra — hãy ghi nhận mọi vụ, kể cả vụ không phải nghỉ việc.',
+  'Next return due': 'Hạn báo cáo định kỳ tiếp theo',
+  'Record it now, with whatever is known. What was learned afterwards — the declaration, the investigation report, days lost — is added later; the account of what happened is not rewritten.':
+    'Hãy ghi nhận ngay với những gì đã biết. Những gì biết sau — việc khai báo, biên bản điều tra, số ngày nghỉ — sẽ bổ sung sau; phần mô tả diễn biến không được sửa lại.',
+  'How serious was it?': 'Mức độ nghiêm trọng?',
+  'Date it happened': 'Ngày xảy ra',
+  'Date you were told': 'Ngày nhận được tin báo',
+  'The investigation clock runs from this date.': 'Thời hạn điều tra tính từ ngày này.',
+  'Not an employee — name them below': 'Không phải người lao động của công ty — ghi tên bên dưới',
+  'Or name them (subcontractor, visitor)': 'Hoặc ghi tên (nhà thầu phụ, khách)',
+  'Full name and who they work for': 'Họ tên và đơn vị công tác',
+  'People hurt': 'Số người bị nạn',
+  'Site or project': 'Công trường / dự án',
+  'In enough detail that somebody investigating it a month later can follow it.':
+    'Đủ chi tiết để người điều tra một tháng sau vẫn hiểu được.',
+  'What was done immediately': 'Xử lý ngay tại chỗ',
+  'First aid, hospital, area made safe': 'Sơ cứu, đưa đi viện, phong tỏa khu vực',
+  'Technical or forensic examination is needed — this extends the investigation to 60 days.':
+    'Cần giám định kỹ thuật hoặc pháp y — thời hạn điều tra kéo dài đến 60 ngày.',
+  'Recording…': 'Đang ghi nhận…',
+  'Accident recorded': 'Đã ghi nhận tai nạn',
+  'Record not found': 'Không tìm thấy bản ghi',
+  'This must be declared to the authority at once': 'Vụ này phải khai báo ngay với cơ quan có thẩm quyền',
+  'Where': 'Nơi xảy ra',
+  'Declared to the authority on': 'Ngày đã khai báo',
+  'Investigation report published on': 'Ngày công bố biên bản điều tra',
+  'The investigation was extended. It may be extended once only, by no more than the original period — to':
+    'Đã gia hạn điều tra. Chỉ được gia hạn một lần và không quá thời hạn ban đầu — đến',
+  'Load the register first': 'Hãy tải sổ trước',
   // ── Headcount & turnover ──
   'Headcount &amp; Turnover': 'Nhân sự & Biến động',
   'Headcount by month': 'Nhân sự theo tháng',
@@ -22972,7 +23029,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal','contracts','decisions','statutory','certs'].forEach(id => {
+  ['balances','benefits','compliance','portal','contracts','decisions','statutory','osh','certs'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -22984,6 +23041,7 @@ function switchHRTab(tab, el) {
   if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
   if (tab === 'decisions') { try { tkRenderDecisions(); } catch (e) {} }
   if (tab === 'statutory') { try { tkRenderStatutory(); } catch (e) {} }
+  if (tab === 'osh') { try { tkRenderOsh(); } catch (e) {} }
   if (tab === 'certs') { try { tkRenderCerts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
@@ -25029,6 +25087,289 @@ const _CERT_KINDS = [
   { k: 'osh_training', label: 'Occupational safety training', labelVn: 'Huấn luyện an toàn lao động' },
   { k: 'other', label: 'Other certificate or licence', labelVn: 'Chứng chỉ / giấy phép khác' },
 ];
+
+/* ── OCCUPATIONAL ACCIDENTS ────────────────────────────────────────────────────────────────────
+   The portal had a safety-certificate register, NCRs, and one free-text `safetyIncidents` line on
+   the site daily report. None of them is an accident register, and none of them knows that Decree
+   39/2016 Art. 10 gives you HOURS — not days — to ring the labour inspectorate when somebody is
+   killed or two people are seriously hurt. The server decides all of that (osh_incident.py); this
+   screen's job is to put the finding where somebody will see it before the hours run out. */
+let _oshData = null;
+/* The server returns the law's own wording in both languages (osh_incident.py). Pick the one the
+   reader can act on — this instruction is read under time pressure by Vietnamese site staff. */
+const _oshTx = (o, key) => (o || {})[key + 'Vn'] && _t2('en', 'vn') === 'vn'
+  ? (o || {})[key + 'Vn'] : ((o || {})[key] || '');
+
+async function tkRenderOsh() {
+  const el = document.getElementById('hr-osh'); if (!el) return;
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _t2('Occupational accident register', 'Sổ ghi tai nạn lao động') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('A fatal accident, or a serious one injuring two or more people, must be declared to the labour inspectorate at once by the fastest means — not at the end of the week. This register works out which duty applies and when the investigation report is due.') +
+    '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">' +
+    '<button class="btn btn-primary btn-sm" onclick="tkOshNew()">' + _t('Record an accident') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkOshCsv()">' + _t('Export CSV') + '</button>' +
+    '</div><div id="osh-body">' + tkSkeleton() + '</div>';
+
+  const body = document.getElementById('osh-body');
+  let r;
+  try { r = await tkApi('/api/hr/incidents'); }
+  catch (e) {
+    _oshData = null;
+    body.innerHTML = '<div class="card" style="padding:20px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('Register unavailable') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(_errMsg(e)) + '</div></div>';
+    return;
+  }
+  _oshData = r;
+
+  // The undeclared banner leads, in red, above everything else. It is the only thing on this screen
+  // that is measured in hours.
+  const urgent = (r.undeclared || []).length
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid #C53030">' +
+      '<div style="font-weight:700;color:#C53030">' +
+      _t('Must be declared to the authority today') + ' — ' + (r.undeclared || []).length + '</div>' +
+      (r.undeclared || []).map(x =>
+        '<div style="margin-top:8px"><div style="font-weight:600">' + _crmEsc(x.ref || '') +
+        ' · ' + _crmEsc(x.occurredOn || '') + '</div>' +
+        '<div style="font-size:12px;color:var(--text-light)">' + _crmEsc(_oshTx(x, 'basis')) + '</div>' +
+        (_oshTx(x, 'to') || []).map(t => '<div style="font-size:12px">· ' + _crmEsc(t) + '</div>').join('') +
+        '</div>').join('') +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' +
+      _t('Once the call has been made, open the record and enter the date it was declared.') +
+      '</div></div>'
+    : '';
+
+  const kpi = (lbl, val, note) => '<div class="card" style="padding:12px 16px;flex:1;min-width:150px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _t(lbl) + '</div>' +
+    '<div style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _crmEsc(String(val)) + '</div>' +
+    (note ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _crmEsc(note) + '</div>' : '') +
+    '</div>';
+
+  const f = r.frequency || {};
+  const rows = (r.rows || []).map(x => {
+    const d = x.deadline || {};
+    const cls = (r.classes || []).filter(c => c.key === x['class'])[0] || {};
+    const late = d.late ? '<span style="color:#C53030;font-weight:600">' + _t('Overdue') + '</span>' : '';
+    return '<tr>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.ref || '') + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.occurredOn || '') + '</div></td>' +
+      '<td><div>' + _crmEsc(x.personName || x.empId || '') + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.where || x.project || '') + '</div></td>' +
+      '<td>' + _crmEsc(cls.label || x['class'] || '') +
+      (Number(x.injuredCount || 1) > 1 ? ' <span style="font-size:11px;color:var(--text-light)">×' + Number(x.injuredCount) + '</span>' : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Number(x.daysLost || 0) + '</td>' +
+      '<td><div>' + _crmEsc(d.due || '—') + ' ' + late + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' +
+        (x.reportPublishedOn ? _t('Report published') + ' ' + _crmEsc(x.reportPublishedOn)
+                             : _t('Under investigation')) + '</div></td>' +
+      '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="tkOshOpen(\'' +
+        _crmEsc(String(x.id || '')) + '\')">' + _t2('Open', 'Mở') + '</button></td></tr>';
+  }).join('');
+
+  body.innerHTML = urgent +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+    kpi('Accidents recorded', r.total) +
+    kpi('Under investigation', r.open) +
+    kpi('Working days lost', r.daysLost) +
+    kpi('Lost-time frequency', f.rate === null || f.rate === undefined ? '—' : f.rate,
+        f.rate === null || f.rate === undefined ? _t('hours worked not recorded') : _t('per million hours worked')) +
+    '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+    '<th>' + _t('Reference') + '</th><th>' + _t('Who was hurt') + '</th><th>' + _t('Severity') + '</th>' +
+    '<th style="text-align:right">' + _t('Days lost') + '</th><th>' + _t('Report due') + '</th><th></th>' +
+    '</tr></thead><tbody>' + (rows || ('<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-light)">' +
+      _t('No accidents recorded. That is the register saying nothing has been entered, not that nothing has happened — enter every one, including those with no days lost.') +
+      '</td></tr>')) + '</tbody></table></div></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' +
+      _crmEsc(r.hoursBasis || '') + ' ' + _crmEsc(_oshTx(r.nextReport, 'basis')) +
+      ' ' + _t('Next return due') + ' ' + _crmEsc((r.nextReport || {}).due || '') +
+      ' (' + _crmEsc(_oshTx(r.nextReport, 'covers')) + ').' +
+    '</div>';
+}
+
+function tkOshNew() {
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const classes = (_oshData || {}).classes || [];
+  const body = document.getElementById('oshModalBody'); if (!body) return;
+  const ttl = document.getElementById('oshModalTitle');
+  if (ttl) ttl.textContent = _t2('Record an accident', 'Ghi nhận tai nạn lao động');
+  body.innerHTML =
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' +
+    _t('Record it now, with whatever is known. What was learned afterwards — the declaration, the investigation report, days lost — is added later; the account of what happened is not rewritten.') +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('How serious was it?') + '</label>' +
+    '<select class="form-control" id="osh-class">' +
+      classes.map(c => '<option value="' + _crmEsc(c.key) + '">' + _crmEsc(c.label) + ' — ' + _crmEsc(c.labelVn) + '</option>').join('') +
+    '</select>' +
+    '<div id="osh-class-help" style="font-size:11px;color:var(--text-light);margin-top:4px"></div></div>' +
+    '<div class="grid-2" style="gap:12px">' +
+    '<div class="form-group"><label class="form-label">' + _t('Date it happened') + '</label>' +
+    '<input class="form-control" type="date" id="osh-occurred" value="' + new Date().toISOString().slice(0, 10) + '"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Date you were told') + '</label>' +
+    '<input class="form-control" type="date" id="osh-notified" value="' + new Date().toISOString().slice(0, 10) + '">' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('The investigation clock runs from this date.') + '</div></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Who was hurt') + '</label>' +
+    '<select class="form-control" id="osh-emp"><option value="">' + _t('Not an employee — name them below') + '</option>' +
+      emps.map(e => '<option value="' + _crmEsc(e.id) + '">' + _crmEsc(e.name) + ' — ' + _crmEsc(e.dept || '') + '</option>').join('') +
+    '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Or name them (subcontractor, visitor)') + '</label>' +
+    '<input class="form-control" id="osh-person" placeholder="' + _t('Full name and who they work for') + '"></div>' +
+    '<div class="grid-3" style="gap:12px">' +
+    '<div class="form-group"><label class="form-label">' + _t('People hurt') + '</label>' +
+    '<input class="form-control" type="number" min="1" id="osh-count" value="1"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Working days lost') + '</label>' +
+    '<input class="form-control" type="number" min="0" id="osh-days" value="0"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Site or project') + '</label>' +
+    '<input class="form-control" id="osh-where"></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('What happened') + '</label>' +
+    '<textarea class="form-control" id="osh-what" rows="4" placeholder="' +
+      _t('In enough detail that somebody investigating it a month later can follow it.') + '"></textarea></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('What was done immediately') + '</label>' +
+    '<input class="form-control" id="osh-action" placeholder="' + _t('First aid, hospital, area made safe') + '"></div>' +
+    '<div class="form-group"><label style="display:flex;gap:8px;align-items:flex-start;font-size:13px">' +
+    '<input type="checkbox" id="osh-forensic" style="margin-top:3px">' +
+    '<span>' + _t('Technical or forensic examination is needed — this extends the investigation to 60 days.') + '</span></label></div>' +
+    '<div id="osh-warn"></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'oshModal\')">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" id="osh-save" onclick="_oshSave()">' + _t('Record it') + '</button></div>';
+
+  const sel = document.getElementById('osh-class');
+  const help = document.getElementById('osh-class-help');
+  const paint = () => {
+    const c = classes.filter(x => x.key === sel.value)[0] || {};
+    help.textContent = c.help || '';
+  };
+  if (sel) { sel.addEventListener('change', paint); paint(); }
+  openModal('oshModal');
+}
+
+async function _oshSave() {
+  const g = id => (document.getElementById(id) || {}).value;
+  const btn = document.getElementById('osh-save');
+  const warn = document.getElementById('osh-warn');
+  const body = {
+    'class': g('osh-class'),
+    occurredOn: g('osh-occurred'), notifiedOn: g('osh-notified'),
+    empId: g('osh-emp'), personName: g('osh-person'),
+    injuredCount: Number(g('osh-count') || 1), daysLost: Number(g('osh-days') || 0),
+    where: g('osh-where'), what: g('osh-what'), immediateAction: g('osh-action'),
+    forensic: !!(document.getElementById('osh-forensic') || {}).checked,
+  };
+  if (btn) { btn.disabled = true; btn.textContent = _t('Recording…'); }
+  let r;
+  try { r = await tkApi('/api/hr/incidents', { method: 'POST', body: JSON.stringify(body) }); }
+  catch (e) {
+    if (warn) warn.innerHTML = '<div style="padding:10px 12px;border-left:3px solid #B7791F;font-size:12px">' +
+      _crmEsc(_errMsg(e)) + '</div>';
+    if (btn) { btn.disabled = false; btn.textContent = _t('Record it'); }
+    return;
+  }
+  // The declaration duty is the whole point, so it is not a toast that disappears — the record is
+  // reopened straight away with the instruction on it.
+  //
+  // Deliberately NOT closeModal-then-reopen: closeModal defers `display = 'none'` by 250ms, and that
+  // pending timeout fires AFTER the reopen, leaving the overlay hidden with the instruction inside it.
+  // Measured in the browser — the form vanished and nothing came back. Re-render in place instead.
+  const declare = (r.declare || {}).required;
+  if (!declare) closeModal('oshModal');
+  await tkRenderOsh();
+  if (declare) tkOshOpen((r.incident || {}).id);
+  else toast(_t('Accident recorded') + ' — ' + ((r.incident || {}).ref || ''), 'success');
+}
+
+function tkOshOpen(id) {
+  const row = ((_oshData || {}).rows || []).filter(x => String(x.id) === String(id))[0];
+  if (!row) { toast(_t('Record not found'), 'warn'); return; }
+  const d = row.deadline || {}, dec = row.declare || {};
+  const body = document.getElementById('oshModalBody'); if (!body) return;
+  const ttl = document.getElementById('oshModalTitle');
+  if (ttl) ttl.textContent = (row.ref || '') + ' · ' + (row.occurredOn || '');
+  const declared = row.declaredOn;
+  body.innerHTML =
+    (dec.required && !declared
+      ? '<div style="padding:12px 14px;border-left:3px solid #C53030;margin-bottom:14px">' +
+        '<div style="font-weight:700;color:#C53030">' + _t('This must be declared to the authority at once') + '</div>' +
+        '<div style="font-size:12px;margin-top:4px">' + _crmEsc(_oshTx(dec, 'basis')) + '</div>' +
+        (_oshTx(dec, 'to') || []).map(t => '<div style="font-size:12px;margin-top:4px">· ' + _crmEsc(t) + '</div>').join('') +
+        '<div style="font-size:12px;margin-top:6px">' + _crmEsc(_oshTx(dec, 'how')) + '</div></div>'
+      : '') +
+    '<div style="font-size:13px;line-height:1.6;margin-bottom:14px">' +
+    '<div><strong>' + _t('Who was hurt') + ':</strong> ' + _crmEsc(row.personName || row.empId || '—') + '</div>' +
+    '<div><strong>' + _t('Where') + ':</strong> ' + _crmEsc(row.where || row.project || '—') + '</div>' +
+    '<div style="margin-top:6px">' + _crmEsc(row.what || '') + '</div>' +
+    (row.immediateAction ? '<div style="margin-top:6px;color:var(--text-light)">' + _crmEsc(row.immediateAction) + '</div>' : '') +
+    '</div>' +
+    (d.basis ? '<div style="font-size:12px;color:var(--text-light);padding:10px 12px;background:var(--bg);border-radius:8px;margin-bottom:14px">' +
+      _crmEsc(_oshTx(d, 'basis')) + ' ' + _t('Due') + ' ' + _crmEsc(d.due || '') + '.</div>' : '') +
+    '<div class="grid-2" style="gap:12px">' +
+    '<div class="form-group"><label class="form-label">' + _t('Declared to the authority on') + '</label>' +
+    '<input class="form-control" type="date" id="osh-u-declared" value="' + _crmEsc(row.declaredOn || '') + '"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Investigation report published on') + '</label>' +
+    '<input class="form-control" type="date" id="osh-u-report" value="' + _crmEsc(row.reportPublishedOn || '') + '"></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Working days lost') + '</label>' +
+    '<input class="form-control" type="number" min="0" id="osh-u-days" value="' + Number(row.daysLost || 0) + '"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Root cause') + '</label>' +
+    '<textarea class="form-control" id="osh-u-cause" rows="2">' + _crmEsc(row.rootCause || '') + '</textarea></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Corrective action') + '</label>' +
+    '<textarea class="form-control" id="osh-u-action" rows="2">' + _crmEsc(row.correctiveAction || '') + '</textarea></div>' +
+    '<div class="form-group"><label style="display:flex;gap:8px;align-items:flex-start;font-size:13px">' +
+    '<input type="checkbox" id="osh-u-extended"' + (row.extended ? ' checked' : '') + ' style="margin-top:3px">' +
+    '<span>' + _t('The investigation was extended. It may be extended once only, by no more than the original period — to') +
+      ' ' + _crmEsc(d.extensionLimit || '—') + '.</span></label></div>' +
+    '<div id="osh-u-warn"></div>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'oshModal\')">' + _t('Close') + '</button>' +
+    '<button class="btn btn-primary" id="osh-u-save" onclick="_oshUpdate(\'' + _crmEsc(String(row.id)) + '\')">' +
+      _t('Save') + '</button></div>';
+  openModal('oshModal');
+}
+
+async function _oshUpdate(id) {
+  const g = i => (document.getElementById(i) || {}).value;
+  const btn = document.getElementById('osh-u-save');
+  const warn = document.getElementById('osh-u-warn');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Saving…'); }
+  try {
+    await tkApi('/api/hr/incidents/' + encodeURIComponent(id), { method: 'POST', body: JSON.stringify({
+      declaredOn: g('osh-u-declared'), reportPublishedOn: g('osh-u-report'),
+      daysLost: Number(g('osh-u-days') || 0),
+      rootCause: g('osh-u-cause'), correctiveAction: g('osh-u-action'),
+      extended: !!(document.getElementById('osh-u-extended') || {}).checked,
+    }) });
+  } catch (e) {
+    if (warn) warn.innerHTML = '<div style="padding:10px 12px;border-left:3px solid #B7791F;font-size:12px">' +
+      _crmEsc(_errMsg(e)) + '</div>';
+    if (btn) { btn.disabled = false; btn.textContent = _t('Save'); }
+    return;
+  }
+  closeModal('oshModal');
+  toast(_t('Saved'), 'success');
+  tkRenderOsh();
+}
+
+function tkOshCsv() {
+  if (!_oshData) { toast(_t('Load the register first'), 'warn'); return; }
+  const rows = [['Reference', 'Date', 'Notified', 'Class', 'People hurt', 'Person', 'Site',
+                 'What happened', 'Days lost', 'Declared on', 'Report due', 'Report published',
+                 'Late', 'Root cause', 'Corrective action']];
+  (_oshData.rows || []).forEach(x => {
+    const d = x.deadline || {};
+    rows.push([x.ref || '', x.occurredOn || '', x.notifiedOn || '', x['class'] || '',
+               x.injuredCount || 1, x.personName || x.empId || '', x.where || x.project || '',
+               x.what || '', x.daysLost || 0, x.declaredOn || '', d.due || '',
+               x.reportPublishedOn || '', d.late ? 'YES' : '', x.rootCause || '',
+               x.correctiveAction || '']);
+  });
+  _csvSave('accident-register-' + (_oshData.asOf || '') + '.csv', rows);
+}
 
 function tkCertAdd(empId) {
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
@@ -27844,6 +28185,17 @@ async function saveEmployee() {
       <button class="modal-close" onclick="closeModal('certAddModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div id="certAddBody"></div>
+  </div>
+</div>
+
+<!-- OCCUPATIONAL ACCIDENT -->
+<div class="modal-overlay" id="oshModal">
+  <div class="modal" style="max-width:680px;max-height:90vh;max-height:90dvh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title" id="oshModalTitle">Record an accident</div>
+      <button class="modal-close" onclick="closeModal('oshModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="oshModalBody"></div>
   </div>
 </div>
 
