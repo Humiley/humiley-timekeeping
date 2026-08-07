@@ -38,6 +38,7 @@ import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + 
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
+import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3673,6 +3674,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
             _xid = path[len("/api/hr/exit/"):-len("/settlement")]
             return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/payroll/journal":
+            return self._guard(lambda u: self._payroll_journal_ep(u, qs))
         if path == "/api/hr/certificates/review":
             return self._guard(lambda u: self._certificates_review_ep(u, qs))
         if path == "/api/hr/contracts/review":
@@ -7913,6 +7916,60 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         res["paymentId"] = pay.get("id")
         return self._json(dict({"ok": True, "payment": pay}, **res))
+
+    def _payroll_journal_ep(self, u, qs):
+        """The accounting entries a signed pay run produces.
+
+        Payroll has always ended at the payslip: what the month cost, what is still owed and what must
+        be remitted to the social insurance agency and the tax office were then re-keyed into the
+        accounts by hand from a PDF. This gives the accountant the entries from the run that was
+        actually signed, so the posting matches the signature rather than the transcription.
+
+        Only FINALISED runs. A draft is a proposal, and proposals do not belong in a ledger.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — the payroll journal "
+                             "carries the company's payroll totals.", 403)
+        period = str(qs.get("period", [""])[0] or "").strip()
+        runs = [r for r in db.list_collection("payruns")
+                if (r.get("lines") or [])
+                and "final" in str(r.get("status") or "").lower()
+                and (not period or str(r.get("period") or "").strip().lower() == period.lower())]
+        if not runs:
+            return self._json({"ok": True, "period": period, "runs": 0, "entries": [],
+                               "totals": {"debit": 0, "credit": 0}, "balanced": True,
+                               "note": "No finalised pay run for that period."})
+
+        try:
+            dept_acc = db.get_setting("portal_payrollAccounts") or {}
+            if isinstance(dept_acc, str):
+                dept_acc = json.loads(dept_acc or "{}") or {}
+        except Exception:
+            dept_acc = {}
+        if not isinstance(dept_acc, dict):
+            dept_acc = {}
+
+        merged = {"lines": [l for r in runs for l in (r.get("lines") or [])]}
+        entries = payroll_journal.entries(merged, dept_accounts=dept_acc)
+        tot = payroll_journal.totals(entries)
+        bal = payroll_journal.balanced(entries)
+        if not bal:
+            # Never hand an accountant an unbalanced journal quietly. It would post, and the
+            # difference would surface a month later as an unexplained suspense balance nobody can
+            # trace back to here. `balanced` goes in the response so the screen says so too.
+            db.put_collection_item("audit", {
+                "actor": u.get("name"), "actorId": u.get("id"),
+                "action": "Payroll journal does not balance",
+                "target": "payruns/" + (period or "all"),
+                "detail": "debit %s vs credit %s — the entries were shown but must not be posted "
+                          "until this is explained" % (tot["debit"], tot["credit"]),
+                "ts": self._utc_now()})
+        return self._json({"ok": True, "period": period or "all finalised",
+                           "runs": len(runs), "entries": entries, "totals": tot,
+                           "balanced": bal,
+                           "csv": payroll_journal.to_csv(entries, period or ""),
+                           "accounts": dept_acc,
+                           "basis": "Circular 200/2014/TT-BTC"})
 
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.

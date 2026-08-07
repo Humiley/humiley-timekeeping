@@ -8611,12 +8611,67 @@ async function tkRenderPayroll() {
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
     '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>' + (_lvlRank(_userLevel) >= _lvlRank('editor') ? ('<button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button>') : '') + '</div></div>' +
-    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Calculation</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button></div>' +
-    '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div>';
+    '<div class="tabs" style="margin-bottom:16px"><button class="tab active" onclick="tkPayTab(\'dash\',this)">Dashboard</button><button class="tab" onclick="tkPayTab(\'reg\',this)">Calculation</button><button class="tab" onclick="tkPayTab(\'runs\',this)">Pay Runs</button><button class="tab" onclick="tkPayTab(\'journal\',this)">Journal</button></div>' +
+    '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div><div id="pay-journal" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
 }
 async function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; await _payLoadOT(_payYM.y, _payMonthsOf(_payYM)); _payBuild(); _payRenderDash(); _payRenderReg(); }
-function tkPayTab(tab, el) { ['dash', 'reg', 'runs'].forEach(t => { const p = document.getElementById('pay-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#payroll-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); }
+function tkPayTab(tab, el) { ['dash', 'reg', 'runs', 'journal'].forEach(t => { const p = document.getElementById('pay-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#payroll-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'journal') tkRenderPayJournal(); }
+
+/* The accounting entries a signed pay run produces (Circular 200/2014/TT-BTC).
+
+   Payroll used to end at the payslip: what the month cost, what was still owed and what had to be
+   remitted were re-keyed into the accounts by hand from a PDF. This is the same figures the Director
+   signed, as double-entry lines, with a CSV the accountant imports. */
+async function tkRenderPayJournal() {
+  const el = document.getElementById('pay-journal'); if (!el) return;
+  if (_payYM && _payYM.m === -1) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _t('Choose a specific month — a journal is posted per period.') + '</div>'; return; }
+  const period = _payPeriod();
+  el.innerHTML = tkSkeleton();
+  let r;
+  try { r = await tkApi('/api/hr/payroll/journal?period=' + encodeURIComponent(period)); }
+  catch (e) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+
+  if (!r.entries || !r.entries.length) {
+    el.innerHTML = '<div class="card" style="padding:28px;text-align:center;color:var(--text-light)">' +
+      '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('No journal for') + ' ' + _crmEsc(period) + '</div>' +
+      '<div style="font-size:12px">' + _t('A journal comes from a pay run a Director has signed. A draft is a proposal, and proposals do not belong in a ledger.') + '</div></div>';
+    return;
+  }
+  const rows = r.entries.map(l =>
+    '<tr><td style="font-variant-numeric:tabular-nums;font-weight:600">' + _crmEsc(l.account) + '</td>' +
+    '<td style="font-size:12px">' + _crmEsc(l.name || '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (l.debit ? _PAY_FMT(l.debit) : '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (l.credit ? _PAY_FMT(l.credit) : '') + '</td></tr>').join('');
+
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
+    '<div><div style="font-weight:700;color:var(--navy)">' + _t('Payroll journal') + ' — ' + _crmEsc(period) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light)">' + _t('From the pay run the Director signed, not a recomputation of it') + ' · ' + _crmEsc(r.basis || '') + '</div></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="tkExportPayJournal()">' + tkIcon('download') + _t('Export CSV') + '</button></div>' +
+    (r.balanced ? '' :
+      '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid var(--danger)"><div style="font-weight:700;color:var(--danger)">' +
+      _t('These entries do not balance — do not post them') + '</div><div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+      _t('Debits and credits differ. It has been recorded in the audit trail; the difference has to be explained before this is posted.') + '</div></div>') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:560px"><thead><tr>' +
+    '<th>' + _t('Account') + '</th><th>' + _t('Account name') + '</th>' +
+    '<th style="text-align:right">' + _t('Debit') + '</th><th style="text-align:right">' + _t('Credit') + '</th>' +
+    '</tr></thead><tbody>' + rows +
+    '<tr style="border-top:2px solid var(--navy);font-weight:700"><td colspan="2">' + _t('TOTAL') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _PAY_FMT(r.totals.debit) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _PAY_FMT(r.totals.credit) + '</td></tr>' +
+    '</tbody></table></div></div>';
+  window._payJournalCsv = r.csv || '';
+  window._payJournalPeriod = period;
+}
+function tkExportPayJournal() {
+  const csv = window._payJournalCsv || '';
+  if (!csv) { toast(_t('Nothing to export'), 'warn'); return; }
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,\uFEFF' + encodeURIComponent(csv);
+  a.download = 'Humiley_Payroll_Journal_' + String(window._payJournalPeriod || '').replace(/\s+/g, '_') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
 function _payBar(label, val, max, color) { const pct = Math.round((val / Math.max(max, 1)) * 100); return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="width:120px;font-size:12px;color:var(--text-dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + label + '</div><div style="flex:1;background:var(--soft-bg);border-radius:6px;height:20px"><div style="width:' + pct + '%;background:' + (color || 'var(--navy)') + ';height:100%;border-radius:6px;min-width:2px"></div></div><div style="width:110px;text-align:right;font-size:11px;font-weight:600">' + _PAY_FMT(val) + '</div></div>'; }
 function _payRenderDash() {
   const el = document.getElementById('pay-dash'); if (!el) return;
@@ -20605,6 +20660,16 @@ const _VI = {
   'It goes into the normal approval and disbursement path. A settlement can only ever be raised once.': 'Khoản này sẽ đi theo quy trình duyệt và chi thông thường. Mỗi khoản thanh toán nghỉ việc chỉ được lập một lần duy nhất.',
   'This settlement was already raised.': 'Khoản thanh toán này đã được lập trước đó.',
   'Raised as payment request': 'Đã lập đề nghị thanh toán',
+  // ── Payroll journal (Circular 200/2014) ──
+  'Payroll journal': 'Bút toán tiền lương', 'Account': 'Tài khoản', 'Account name': 'Tên tài khoản',
+  'Debit': 'Nợ', 'Credit': 'Có', 'TOTAL': 'TỔNG CỘNG',
+  'From the pay run the Director signed, not a recomputation of it': 'Lấy từ bảng lương Giám đốc đã ký, không phải tính lại',
+  'No journal for': 'Chưa có bút toán cho',
+  'A journal comes from a pay run a Director has signed. A draft is a proposal, and proposals do not belong in a ledger.': 'Bút toán chỉ sinh ra từ bảng lương đã được Giám đốc ký. Bản nháp chỉ là đề xuất, và đề xuất thì không được ghi sổ.',
+  'Choose a specific month — a journal is posted per period.': 'Vui lòng chọn một tháng cụ thể — bút toán được ghi theo từng kỳ.',
+  'These entries do not balance — do not post them': 'Bút toán không cân — không được ghi sổ',
+  'Debits and credits differ. It has been recorded in the audit trail; the difference has to be explained before this is posted.': 'Tổng Nợ và tổng Có không khớp. Việc này đã được ghi vào nhật ký kiểm toán; cần giải trình chênh lệch trước khi ghi sổ.',
+  'Nothing to export': 'Không có dữ liệu để xuất',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
