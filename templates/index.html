@@ -21256,6 +21256,42 @@ const _VI = {
   'Raised': 'Đã nâng', 'entitlement(s)': 'hồ sơ ngày phép',
   // ── Labour contract register (Art. 20) ──
   'Labour contracts': 'Hợp đồng lao động',
+  'Company legal identity': 'Thông tin pháp lý công ty',
+  'These fields are what a signed document says the employer is. They are stated on every labour contract under Labour Code Art. 21(1)(a).': 'Các thông tin này là những gì một văn bản đã ký nói về người sử dụng lao động. Điều 21(1)(a) Bộ luật Lao động yêu cầu ghi trên mọi hợp đồng lao động.',
+  'Admin access is required to change these — a contract issued afterwards would name whoever is set here.': 'Cần quyền quản trị để thay đổi — hợp đồng lập sau đó sẽ ghi tên người được đặt ở đây.',
+  'What this is enough to issue': 'Đủ để lập những văn bản nào',
+  'Ready': 'Đủ điều kiện',
+  'Blocked': 'Còn thiếu',
+  'Still needs': 'Còn thiếu',
+  'Draft contract': 'Soạn hợp đồng',
+  'New contract': 'Hợp đồng mới',
+  'Draft labour contract': 'Soạn hợp đồng lao động',
+  'Contract number': 'Số hợp đồng',
+  'Definite term': 'Xác định thời hạn',
+  'Indefinite term': 'Không xác định thời hạn',
+  'Effective from': 'Ngày có hiệu lực',
+  'Until': 'Đến ngày',
+  'Job title': 'Chức danh',
+  'Place of work': 'Địa điểm làm việc',
+  'Wage (₫/month)': 'Mức lương (₫/tháng)',
+  'Wage paid on': 'Thời hạn trả lương',
+  'Probation (days)': 'Thử việc (ngày)',
+  'Kind of post': 'Loại vị trí',
+  'sets the Art. 25 ceiling': 'quyết định mức trần theo Điều 25',
+  'Working and rest time': 'Thời giờ làm việc, nghỉ ngơi',
+  'Wage-rise arrangements': 'Chế độ nâng lương',
+  'Protective equipment': 'Trang bị bảo hộ',
+  'Training': 'Đào tạo, bồi dưỡng',
+  'Preview PDF': 'Xem trước PDF',
+  'Issue contract': 'Lập hợp đồng',
+  'Issuing…': 'Đang lập…',
+  'This contract must be indefinite-term.': 'Hợp đồng này phải là không xác định thời hạn.',
+  'Art. 20(2)(c) allows a fixed term to be renewed only once, and this employee has already had': 'Điều 20(2)(c) chỉ cho phép gia hạn hợp đồng xác định thời hạn một lần, và người lao động này đã có',
+  'Company legal identity (Settings)': 'Thông tin pháp lý công ty (Cài đặt)',
+  'The employee record': 'Hồ sơ nhân viên',
+  'This form': 'Biểu mẫu này',
+  'The term as drafted': 'Thời hạn đang soạn',
+  'days': 'ngày',
   'Labour Code Art. 20 — a fixed term may not exceed 36 months, a replacement must be signed within 30 days of expiry, and a fixed term may be renewed only once. After that 30 days the contract has already become indefinite-term, whatever the file says.':
     'Bộ luật Lao động Đ.20 — hợp đồng xác định thời hạn không quá 36 tháng, phải ký hợp đồng mới trong vòng 30 ngày kể từ ngày hết hạn, và chỉ được ký thêm 01 lần. Quá 30 ngày đó, hợp đồng đã đương nhiên trở thành hợp đồng không xác định thời hạn, bất kể hồ sơ ghi gì.',
   'contract(s) need attention': 'hợp đồng cần xử lý',
@@ -24606,15 +24642,343 @@ async function tkRenderContracts() {
       '<td style="white-space:nowrap;font-size:12px">' + (x.type === 'indefinite' ? _t('Indefinite') : (x.from ? _crmEsc(x.from) + ' → ' + _crmEsc(x.to || '?') : '—')) +
         (x.definiteCount > 1 ? '<div style="font-size:10px;color:var(--text-light)">' + x.definiteCount + ' ' + _t('fixed terms so far') + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.daysLeft == null ? '—' : x.daysLeft) + '</td>' +
-      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _t(st.label) + '</span>' + issues + '</td></tr>';
+      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _t(st.label) + '</span>' + issues + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="tkContractDraft(\'' + _crmEsc(x.empId) + '\')">' +
+        _t(x.contractId ? 'New contract' : 'Draft contract') + '</button></td></tr>';
   };
 
-  el.innerHTML = head + banner +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+  // The register spent its whole life as a reader: nothing here could create a row, so the Art. 20
+  // warnings above were watching a list nobody could add to.
+  const tools = '<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px">' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkCompanyIdentity()">' + _t('Company legal identity') + '</button></div>';
+
+  el.innerHTML = head + banner + tools +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:860px"><thead><tr>' +
     '<th>' + _t('Employee') + '</th><th>' + _t('Contract no.') + '</th><th>' + _t('Term') + '</th>' +
     '<th style="text-align:right">' + _t('Days left') + '</th><th>' + _t('Position under Art. 20') + '</th>' +
+    '<th style="text-align:right">' + _t('Action') + '</th>' +
     '</tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
 }
+/* ── The employer's legal identity ──────────────────────────────────────────────────────────────
+   The portal has always known the company as a display name in a header. That brands a report; it
+   cannot sign a contract. Art. 21(1)(a) wants the employer's name, address and the full name AND
+   title of whoever concludes it, and Circular 10/2020 adds the registration number. */
+let _coReview = null;
+
+async function tkCompanyIdentity() {
+  const body = document.getElementById('companyIdBody'); if (!body) return;
+  body.innerHTML = tkSkeleton();
+  openModal('companyIdModal');
+  try { _coReview = await tkApi('/api/hr/company'); }
+  catch (e) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  _coRenderIdentity();
+}
+
+function _coRenderIdentity() {
+  const r = _coReview, body = document.getElementById('companyIdBody');
+  if (!r || !body) return;
+  const ro = !r.canEdit;
+  const field = f =>
+    '<div class="form-group"><label class="form-label">' + _crmEsc(f.label) +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _crmEsc(f.labelVn) + '</span></label>' +
+    '<input class="form-input" id="co-' + f.key + '" value="' + _crmEsc(r.identity[f.key] || '') + '"' +
+    (ro ? ' disabled' : '') + '>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _crmEsc(f.why) + '</div></div>';
+  // Each document says which fields it is still short of, so nobody has to work out from a list of
+  // blanks which one is stopping the contract.
+  const docs = (r.documents || []).map(d =>
+    '<div style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--border)">' +
+    '<span class="badge ' + (d.ready ? 'b-ok' : 'b-warn') + '" style="font-size:10px;white-space:nowrap">' +
+    (d.ready ? _t('Ready') : _t('Blocked')) + '</span>' +
+    '<div><div style="font-weight:600;font-size:13px">' + _crmEsc(d.title) + ' · ' + _crmEsc(d.titleVn) + '</div>' +
+    (d.ready ? '' : '<div style="font-size:11px;color:#B7791F;margin-top:2px">' + _t('Still needs') + ': ' +
+      d.missing.map(m => _crmEsc(m.label)).join(', ') + '</div>') +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _crmEsc(d.basis) + '</div></div></div>').join('');
+
+  body.innerHTML =
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:14px">' +
+    _t('These fields are what a signed document says the employer is. They are stated on every labour contract under Labour Code Art. 21(1)(a).') + '</div>' +
+    (ro ? '<div class="card" style="padding:10px 14px;margin-bottom:14px;border-left:3px solid var(--navy);font-size:12px">' +
+      _t('Admin access is required to change these — a contract issued afterwards would name whoever is set here.') + '</div>' : '') +
+    (r.fields || []).map(field).join('') +
+    '<div style="margin-top:18px"><div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:4px">' +
+    _t('What this is enough to issue') + '</div>' + docs + '</div>' +
+    '<div class="modal-footer" style="margin-top:18px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'companyIdModal\')">' + _t('Close') + '</button>' +
+    (ro ? '' : '<button class="btn btn-primary" id="coSaveBtn" onclick="_coSaveIdentity()">' + _t('Save') + '</button>') +
+    '</div>';
+}
+
+async function _coSaveIdentity() {
+  if (!_coReview) return;
+  const btn = document.getElementById('coSaveBtn');
+  const payload = {};
+  (_coReview.fields || []).forEach(f => {
+    const el = document.getElementById('co-' + f.key);
+    if (el) payload[f.key] = el.value.trim();
+  });
+  if (btn) { btn.disabled = true; btn.textContent = _t('Saving…'); }
+  try {
+    _coReview = await tkApi('/api/hr/company', { method: 'POST', body: payload });
+    _coRenderIdentity();
+    toast(_t2('Company identity saved', 'Đã lưu thông tin công ty'), 'success');
+  } catch (e) {
+    toast(_errMsg(e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = _t('Save'); }
+  }
+}
+
+/* ── Drafting a labour contract ─────────────────────────────────────────────────────────────────
+   The register was a reader with no writer: nothing in the UI could create a row, so the Art. 20
+   expiry warnings were watching a list nobody could add to. This is the other half. */
+let _ctDraft = null;
+
+async function tkContractDraft(empId) {
+  const body = document.getElementById('contractDraftBody'); if (!body) return;
+  body.innerHTML = tkSkeleton();
+  openModal('contractDraftModal');
+  try { _ctDraft = await tkApi('/api/hr/contract/draft?emp=' + encodeURIComponent(empId)); }
+  catch (e) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  _ctRenderDraft();
+}
+
+function _ctBlockerList(b) {
+  const group = (items, where) => (items || []).length
+    ? '<div style="margin-top:6px"><div style="font-size:11px;font-weight:700;color:#B7791F">' + _t(where) + '</div>' +
+      '<ul style="margin:2px 0 0 16px;font-size:11px;color:var(--text-light)">' +
+      items.map(m => '<li>' + _crmEsc(m.label || m) + '</li>').join('') + '</ul></div>'
+    : '';
+  const term = (b.term || []).length
+    ? '<div style="margin-top:6px"><div style="font-size:11px;font-weight:700;color:var(--danger)">' + _t('The term as drafted') + '</div>' +
+      '<ul style="margin:2px 0 0 16px;font-size:11px;color:var(--danger)">' +
+      b.term.map(m => '<li>' + _crmEsc(m) + '</li>').join('') + '</ul></div>'
+    : '';
+  // Grouped by whose record it is: the identity is fixed by an admin in settings, the employee
+  // fields by HR on the person's record, the terms here. One flat red list sends everybody to the
+  // wrong screen.
+  return group(b.company, 'Company legal identity (Settings)') +
+         group(b.employee, 'The employee record') +
+         group(b.terms, 'This form') + term;
+}
+
+function _ctRenderDraft() {
+  const d = _ctDraft, body = document.getElementById('contractDraftBody');
+  if (!d || !body) return;
+  const t = d.defaults || {}, emp = (d.content && d.content.b) || {};
+  const ttl = document.getElementById('contractDraftTitle');
+  if (ttl) ttl.textContent = _t2('Draft labour contract', 'Soạn hợp đồng lao động') + ' — ' + (emp.name || d.empId || '');
+
+  const bands = (d.probationBands || []).map(b =>
+    '<option value="' + _crmEsc(b.key) + '">' + _crmEsc(b.key) + ' — ' + b.days + ' ' + _t('days') + '</option>').join('');
+  const pos = d.position || {};
+  const note = pos.mustBeIndefinite
+    ? '<div class="card" style="padding:10px 14px;margin-bottom:14px;border-left:3px solid var(--danger);font-size:12px">' +
+      '<b>' + _t('This contract must be indefinite-term.') + '</b> ' +
+      _t('Art. 20(2)(c) allows a fixed term to be renewed only once, and this employee has already had') +
+      ' ' + (pos.definiteCount || 0) + '.</div>'
+    : '';
+
+  const inp = (id, label, labelVn, val, type) =>
+    '<div class="form-group" style="flex:1;min-width:200px"><label class="form-label">' + _crmEsc(label) +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _crmEsc(labelVn) + '</span></label>' +
+    '<input class="form-input" id="ct-' + id + '" type="' + (type || 'text') + '" value="' + _crmEsc(val == null ? '' : String(val)) + '"></div>';
+
+  body.innerHTML = note +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('no', 'Contract number', 'Số hợp đồng', '') +
+    '<div class="form-group" style="flex:1;min-width:200px"><label class="form-label">' + _t('Contract type') +
+    '<span style="color:var(--text-light);font-weight:400"> · Loại hợp đồng</span></label>' +
+    '<select class="form-input" id="ct-contractType" onchange="_ctToggleEnd()">' +
+    '<option value="definite"' + (t.contractType === 'definite' ? ' selected' : '') + '>' + _t('Definite term') + '</option>' +
+    '<option value="indefinite"' + (t.contractType === 'indefinite' ? ' selected' : '') + '>' + _t('Indefinite term') + '</option>' +
+    '</select></div></div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('startDate', 'Effective from', 'Ngày có hiệu lực', t.startDate, 'date') +
+    inp('endDate', 'Until', 'Đến ngày', '', 'date') + '</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('jobTitle', 'Job title', 'Chức danh', t.jobTitle) +
+    inp('workplace', 'Place of work', 'Địa điểm làm việc', t.workplace) + '</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('wage', 'Wage (₫/month)', 'Mức lương', t.wage, 'number') +
+    inp('payDay', 'Wage paid on', 'Thời hạn trả lương', '') + '</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('probationDays', 'Probation (days)', 'Thử việc (ngày)', '', 'number') +
+    '<div class="form-group" style="flex:1;min-width:200px"><label class="form-label">' + _t('Kind of post') +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _t('sets the Art. 25 ceiling') + '</span></label>' +
+    '<select class="form-input" id="ct-probationBand"><option value="">—</option>' + bands + '</select></div></div>' +
+    inp('hours', 'Working and rest time', 'Thời giờ làm việc, nghỉ ngơi', '') +
+    inp('raiseTerms', 'Wage-rise arrangements', 'Chế độ nâng lương', '') +
+    inp('ppe', 'Protective equipment', 'Trang bị bảo hộ', '') +
+    inp('training', 'Training', 'Đào tạo, bồi dưỡng', '') +
+    '<div id="ct-blockers" style="margin-top:10px"></div>' +
+    '<div class="modal-footer" style="margin-top:16px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'contractDraftModal\')">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-ghost" onclick="_ctPreview()">' + _t('Preview PDF') + '</button>' +
+    '<button class="btn btn-primary" id="ctIssueBtn" onclick="_ctIssue()">' + _t('Issue contract') + '</button></div>';
+  _ctToggleEnd();
+  document.getElementById('ct-blockers').innerHTML = _ctBlockerList(d.blockers || {});
+}
+
+function _ctToggleEnd() {
+  const sel = document.getElementById('ct-contractType'), end = document.getElementById('ct-endDate');
+  if (!sel || !end) return;
+  const indefinite = sel.value === 'indefinite';
+  end.disabled = indefinite;
+  if (indefinite) end.value = '';
+}
+
+function _ctTerms() {
+  const g = id => { const el = document.getElementById('ct-' + id); return el ? el.value.trim() : ''; };
+  return {
+    empId: (_ctDraft || {}).empId, no: g('no'),
+    contractType: g('contractType'), startDate: g('startDate'), endDate: g('endDate'),
+    jobTitle: g('jobTitle'), workplace: g('workplace'),
+    dept: ((_ctDraft || {}).defaults || {}).dept || '',
+    wage: Number(g('wage') || 0), payDay: g('payDay'),
+    probationDays: Number(g('probationDays') || 0), probationBand: g('probationBand'),
+    hours: g('hours'), raiseTerms: g('raiseTerms'), ppe: g('ppe'), training: g('training')
+  };
+}
+
+async function _ctIssue() {
+  const btn = document.getElementById('ctIssueBtn');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Issuing…'); }
+  let res;
+  try {
+    res = await tkApi('/api/hr/contract', { method: 'POST', body: _ctTerms() });
+  } catch (e) {
+    // The server is the boundary: it re-checks Art. 21 and Art. 20 and hands back what is missing,
+    // grouped the same way, rather than a single "invalid" that sends nobody anywhere.
+    const b = (e && e.data && e.data.blockers) || null;
+    if (b) document.getElementById('ct-blockers').innerHTML = _ctBlockerList(b);
+    toast(_errMsg(e), 'error');
+    if (btn) { btn.disabled = false; btn.textContent = _t('Issue contract'); }
+    return;
+  }
+  closeModal('contractDraftModal');
+  toast(_t2('Labour contract issued', 'Đã lập hợp đồng lao động'), 'success');
+  try { await _ctContractPdf(res.document, true); } catch (e) {}
+  try { await tkRenderContracts(); } catch (e) {}
+}
+
+async function _ctPreview() {
+  // A preview of a draft that cannot yet be issued is still worth having — it is how somebody sees
+  // which line is empty.
+  const t = _ctTerms();
+  const d = _ctDraft || {};
+  const merged = JSON.parse(JSON.stringify(d.content || {}));
+  merged.c = Object.assign({}, merged.c, { jobTitle: t.jobTitle, workplace: t.workplace, dept: t.dept });
+  merged['đ'] = Object.assign({}, merged['đ'], { wage: t.wage, wageInWords: '', payDay: t.payDay });
+  merged.d = Object.assign({}, merged.d, { type: t.contractType, startDate: t.startDate, endDate: t.endDate,
+    text: '', textVn: '', probationDays: t.probationDays, probationBand: t.probationBand });
+  merged.g = Object.assign({}, merged.g, { text: t.hours });
+  merged.e = Object.assign({}, merged.e, { text: t.raiseTerms });
+  merged.h = Object.assign({}, merged.h, { text: t.ppe });
+  merged.k = Object.assign({}, merged.k, { text: t.training });
+  await _ctContractPdf(Object.assign({}, d, { content: merged, docNo: t.no }), false);
+}
+
+/* The document itself, on the Humiley letterhead. Bilingual: Vietnamese is the governing text and
+   leads each particular; English follows in grey. This only became possible once the PDF font could
+   draw Vietnamese — before that it printed "Nguyen Duc Huy" on his own contract. */
+async function _ctContractPdf(doc, save) {
+  await tkEnsureExportLibs();
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t('PDF engine not loaded'), 'warn'); return; }
+  const c = (doc && doc.content) || {};
+  const p = new J('p', 'mm', 'a4');
+  const W = 210, M = 18; let y = 0;
+  const HDR = { title: 'HỢP ĐỒNG LAO ĐỘNG',
+                subtitle: 'Labour Contract' + (doc.docNo ? '   ·   ' + doc.docNo : ''),
+                docCode: 'BM.HR-01-05' };
+  y = _brandHeader(p, HDR) + 4;
+
+  // `need` is how much room the next thing wants. A heading asks for its own two lines PLUS a line
+  // of content, so a particular never ends up titled on one page and answered on the next.
+  const page = (need) => { if (y + (need || 6) > 268) { p.addPage(); y = _brandHeader(p, HDR) + 4; } };
+  const heading = (code, vn, en) => {
+    page(14); _pdfFont(p, 'bold'); p.setFontSize(10); p.setTextColor(32, 80, 144);
+    p.text(_pdfSafe(code + ') ' + vn), M, y); y += 4.4;
+    _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+    p.text(_pdfSafe(en), M, y); y += 4.6;
+  };
+  const line = (label, value) => {
+    if (!value) return;
+    page(); _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
+    const txt = _pdfSafe((label ? label + ': ' : '') + value);
+    const wrapped = p.splitTextToSize(txt, W - M * 2 - 4);
+    wrapped.forEach(w => { page(); p.text(w, M + 4, y); y += 4.6; });
+  };
+
+  heading('a', 'Người sử dụng lao động', 'The employer');
+  line('Tên đơn vị', c.a && c.a.employer);
+  line('Mã số doanh nghiệp', c.a && c.a.regNo);
+  line('Địa chỉ', c.a && c.a.address);
+  line('Người đại diện', c.a && c.a.signatory);
+  y += 2;
+  heading('b', 'Người lao động', 'The employee');
+  line('Họ và tên', c.b && c.b.name);
+  line('Ngày sinh', c.b && c.b.dob);
+  line('Giới tính', c.b && c.b.gender);
+  line('Nơi cư trú', c.b && c.b.residence);
+  line('Số CCCD/hộ chiếu', c.b && c.b.personalId);
+  y += 2;
+  heading('c', 'Công việc và địa điểm làm việc', 'Job and place of work');
+  line('Chức danh', c.c && c.c.jobTitle);
+  line('Bộ phận', c.c && c.c.dept);
+  line('Địa điểm', c.c && c.c.workplace);
+  y += 2;
+  heading('d', 'Thời hạn hợp đồng', 'Term of the contract');
+  line('', (c.d && c.d.textVn) ||
+    ((c.d && c.d.type) === 'indefinite' ? 'Không xác định thời hạn.'
+      : 'Từ ngày ' + ((c.d && c.d.startDate) || '—') + ' đến ngày ' + ((c.d && c.d.endDate) || '—')));
+  if (c.d && c.d.probationDays) line('Thử việc', c.d.probationDays + ' ngày' + (c.d.probationCap ? ' (tối đa ' + c.d.probationCap.days + ')' : ''));
+  y += 2;
+  heading('đ', 'Mức lương và hình thức trả lương', 'Wage and how it is paid');
+  const wage = (c['đ'] && c['đ'].wage) || 0;
+  line('Mức lương', wage ? '₫' + Number(wage).toLocaleString('vi-VN') + ' / tháng' : '');
+  line('Bằng chữ', c['đ'] && c['đ'].wageInWords);
+  line('Hình thức trả lương', c['đ'] && c['đ'].payForm);
+  line('Thời hạn trả lương', c['đ'] && c['đ'].payDay);
+  y += 2;
+  heading('e', 'Chế độ nâng bậc, nâng lương', 'Promotion and wage rises');
+  line('', (c.e && c.e.text) || '—');
+  y += 2;
+  heading('g', 'Thời giờ làm việc, thời giờ nghỉ ngơi', 'Working time and rest time');
+  line('', (c.g && c.g.text) || '—');
+  y += 2;
+  heading('h', 'Trang bị bảo hộ lao động', 'Personal protective equipment');
+  line('', (c.h && c.h.text) || '—');
+  y += 2;
+  heading('i', 'Bảo hiểm xã hội, y tế và thất nghiệp', 'Social, health and unemployment insurance');
+  line('', c.i && c.i.textVn);
+  y += 2;
+  heading('k', 'Đào tạo, bồi dưỡng, nâng cao trình độ', 'Training and skill improvement');
+  line('', (c.k && c.k.text) || '—');
+  y += 4;
+  page();
+  _pdfFont(p, 'normal'); p.setFontSize(8); p.setTextColor(120, 128, 140);
+  p.splitTextToSize(_pdfSafe(doc.copiesVn || ''), W - M * 2).forEach(w => { page(); p.text(w, M, y); y += 4; });
+
+  // The two signature blocks. Art. 14 — in writing, two copies of equal effect.
+  y = Math.max(y + 8, 236); page();
+  _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
+  p.text(_pdfSafe('NGƯỜI LAO ĐỘNG'), M + 8, y);
+  p.text(_pdfSafe('NGƯỜI SỬ DỤNG LAO ĐỘNG'), W - M - 52, y);
+  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  p.text(_pdfSafe('(Ký, ghi rõ họ tên)'), M + 8, y + 4);
+  p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 52, y + 4);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
+  p.text(_pdfSafe((c.b && c.b.name) || ''), M + 8, y + 24);
+  p.text(_pdfSafe((c.a && c.a.repName) || ''), W - M - 52, y + 24);
+  // Footers last, so every page can say "X of Y" — the total is not known until the content is laid.
+  const tot = p.internal.getNumberOfPages();
+  for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, 'BM.HR-01-05', 'HỢP ĐỒNG LAO ĐỘNG'); }
+
+  const name = 'HDLD-' + ((c.b && c.b.empId) || 'draft') + '-' + (doc.issuedOn || '') + '.pdf';
+  if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+}
+
 function tkRenderBalances() {
   const tbody = document.getElementById('hr-balances-body');
   if (!tbody) return;
@@ -26483,6 +26847,30 @@ async function saveEmployee() {
       <button class="btn btn-ghost" onclick="closeModal('addEmpModal')">Cancel</button>
       <button class="btn btn-emerald" id="emp-save-btn" onclick="saveEmployee()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg> <span id="emp-save-label">Add Employee</span></button>
     </div>
+  </div>
+</div>
+
+<!-- COMPANY LEGAL IDENTITY — who the employer is, in the terms a document has to state it.
+     Top-level on purpose: the last two modals added here were written inside a demo popup's
+     template literal, so they were never in the DOM and threw when opened. -->
+<div class="modal-overlay" id="companyIdModal">
+  <div class="modal" style="max-width:640px;max-height:90vh;max-height:90dvh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title">Company legal identity</div>
+      <button class="modal-close" onclick="closeModal('companyIdModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="companyIdBody"></div>
+  </div>
+</div>
+
+<!-- LABOUR CONTRACT DRAFTING -->
+<div class="modal-overlay" id="contractDraftModal">
+  <div class="modal" style="max-width:760px;max-height:90vh;max-height:90dvh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title" id="contractDraftTitle">Draft labour contract</div>
+      <button class="modal-close" onclick="closeModal('contractDraftModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="contractDraftBody"></div>
   </div>
 </div>
 

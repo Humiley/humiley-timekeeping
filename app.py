@@ -35,6 +35,8 @@ from einv import (_einv_safe_xml, _zip_read_bounded, _einv_parse_xml, _einv_from
 from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate limiter (extracted); _RATE/_RATE_LOCK re-exported (same objects) so callers/tests keep the app.* surface
 import overtime          # Labour Code Art. 98/106/107 overtime rates, night premium and caps (pure)
 import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
+import company           # the employer's legal identity, as a document has to state it (pure)
+import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
@@ -3772,6 +3774,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._certificates_review_ep(u, qs))
         if path == "/api/hr/contracts/review":
             return self._guard(lambda u: self._contracts_review_ep(u, qs))
+        if path == "/api/hr/company":
+            return self._guard(lambda u: self._company_get_ep(u))
+        if path == "/api/hr/contract/draft":
+            return self._guard(lambda u: self._contract_draft_ep(u, qs))
         if path == "/api/hr/leave-entitlement":
             return self._guard(lambda u: self._leave_entitlement_ep(u, qs))
         if path == "/api/hr/overtime":
@@ -3841,6 +3847,10 @@ class Handler(BaseHTTPRequestHandler):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid),
                                                            run=True, body=body), manager=True)
+        if path == "/api/hr/company":
+            return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/hr/contract":
+            return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
         if path == "/api/hr/appraisal/open":
             return self._guard(lambda u: self._appraisal_open_ep(u, body), manager=True)
         if path.startswith("/api/hr/appraisal/close/"):
@@ -8032,6 +8042,144 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "asOf": as_of, "rows": rows, "flagged": flagged,
                            "maxTermMonths": contracts.MAX_DEFINITE_MONTHS,
                            "graceDays": contracts.GRACE_DAYS})
+
+    # ── the employer's legal identity, and the documents that need it ────────────────────────────
+
+    def _company_settings(self):
+        return {k: db.get_setting("portal_co_" + k) or "" for k in company.FIELD_KEYS}
+
+    def _company_get_ep(self, u):
+        """Who the employer is, in the terms a document has to state it.
+
+        Management level to read: it is the registration number and the name of whoever signs for
+        the company, which is not roster data.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to see the company's "
+                             "legal identity.", 403)
+        r = company.review(self._company_settings())
+        r["ok"] = True
+        r["canEdit"] = self._caller_level(u) == "admin"
+        return self._json(r)
+
+    def _company_put_ep(self, u, body):
+        """Set it. Admin only, and every change is audited.
+
+        These fields decide what a signed labour contract says the employer is. Changing the legal
+        representative silently would leave every contract issued afterwards naming somebody who did
+        not sign it, so it is written to the audit chain field by field.
+        """
+        if self._caller_level(u) != "admin":
+            return self._err("Admin access is required to change the company's legal identity — it "
+                             "is what a signed contract says the employer is.", 403)
+        b = dict(body or {})
+        unknown = [k for k in b if k not in company.FIELD_KEYS]
+        if unknown:
+            return self._err("Not a company identity field: %s." % ", ".join(sorted(unknown)), 400)
+        before = self._company_settings()
+        changed = []
+        for k in company.FIELD_KEYS:
+            if k not in b:
+                continue
+            new = str(b.get(k) or "").strip()[:300]
+            if new != (before.get(k) or ""):
+                db.set_setting("portal_co_" + k, new or None)
+                changed.append(k)
+        if changed:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": "Company legal identity changed", "target": "settings/company",
+                "detail": ", ".join("%s: '%s' → '%s'" % (k, before.get(k) or "—",
+                                                         str(b.get(k) or "").strip() or "—")
+                                    for k in changed),
+                "ts": self._utc_now()})
+        r = company.review(self._company_settings())
+        r.update({"ok": True, "changed": changed, "canEdit": True})
+        return self._json(r)
+
+    # ── drafting a labour contract ───────────────────────────────────────────────────────────────
+
+    def _contract_draft_ep(self, u, qs):
+        """A draft contract for one employee, with its own gaps attached.
+
+        The register has always been a reader with no writer — nothing could create a row, so the
+        expiry warnings were watching a list nobody could add to. This is the other half.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to draft a labour "
+                             "contract.", 403)
+        eid = str(qs.get("emp", [""])[0] or "").strip()
+        emp = db.get_employee(eid) if eid else None
+        if not emp:
+            return self._err("No such employee.", 404)
+        settings = self._company_settings()
+        terms = contract_doc.defaults_from(emp, settings)
+        # What Art. 20 already says about this person's history — a third fixed term is unlawful
+        # whether or not the drafter knows it, so the draft has to arrive knowing.
+        hist = [c for c in db.list_collection("contracts") if c.get("empId") == eid]
+        pos = contracts.review(hist, self._vn_day(), exempt=emp.get("contractExempt") or None)
+        if pos["mustBeIndefinite"]:
+            terms["contractType"] = contracts.INDEFINITE
+        draft = contract_doc.assemble(settings, emp, terms, as_of=self._vn_day())
+        draft.update({
+            "ok": True, "empId": eid,
+            "defaults": terms,
+            "position": {"status": pos["status"], "definiteCount": pos["definiteCount"],
+                         "mustBeIndefinite": pos["mustBeIndefinite"], "issues": pos["issues"]},
+            "probationBands": [{"key": k, "days": v[0], "basis": v[1]}
+                               for k, v in sorted(contract_doc.PROBATION_MAX_DAYS.items(),
+                                                  key=lambda kv: -kv[1][0])],
+            "maxTermMonths": contracts.MAX_DEFINITE_MONTHS,
+        })
+        return self._json(draft)
+
+    def _contract_create_ep(self, u, body):
+        """Record a labour contract, refusing one with a legal gap in it.
+
+        /api/coll/contracts can still edit a row, but creation comes through here so that the Art. 21
+        particulars and the Art. 20 term are checked once, on the server, rather than trusted from
+        whatever the form happened to send.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to issue a labour "
+                             "contract.", 403)
+        b = dict(body or {})
+        eid = str(b.get("empId") or "").strip()
+        emp = db.get_employee(eid) if eid else None
+        if not emp:
+            return self._err("A contract needs an employee.", 404 if eid else 400)
+        settings = self._company_settings()
+        terms = {k: b.get(k) for k in (
+            "jobTitle", "workplace", "dept", "duties", "contractType", "startDate", "endDate",
+            "wage", "payForm", "payDay", "allowances", "raiseTerms", "hours", "schedule", "ppe",
+            "training", "probationDays", "probationBand")}
+        blockers = contract_doc.blockers(settings, emp, terms)
+        if any(blockers.values()):
+            return self._json({"error": "This contract cannot be issued yet — something it must "
+                                        "state is missing.", "blockers": blockers}, 400)
+        rec = {
+            "id": "hd-" + secrets.token_hex(4),
+            "empId": eid, "empName": emp.get("name") or "",
+            "no": str(b.get("no") or "").strip(),
+            "type": str(terms.get("contractType") or "").strip().lower(),
+            "startDate": str(terms.get("startDate") or "")[:10],
+            "endDate": str(terms.get("endDate") or "")[:10],
+            "terms": terms,
+            "issuedBy": u.get("name") or "", "issuedById": u.get("id") or "",
+            "issuedAt": self._utc_now(),
+        }
+        db.put_collection_item("contracts", rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Labour contract issued", "target": "contracts/" + rec["id"],
+            "detail": "%s (%s) · %s · %s%s" % (
+                rec["empName"], eid, rec["type"], rec["startDate"],
+                " → " + rec["endDate"] if rec["endDate"] else ""),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "contract": rec,
+                           "document": contract_doc.assemble(settings, emp, terms,
+                                                             as_of=self._vn_day(),
+                                                             doc_no=rec["no"] or rec["id"])})
 
     def _certificates_review_ep(self, u, qs):
         """Who is covered, whose certificate is lapsing, and who never had one.
