@@ -38,6 +38,7 @@ import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + 
 import company           # the employer's legal identity, as a document has to state it (pure)
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
+import grievance         # the speak-up channel: routing, confidentiality and the clock (pure)
 import hr_decision       # the quyết định — Art. 34/36/45 termination, Art. 122-127 discipline
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
@@ -3780,6 +3781,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_get_ep(u))
         if path == "/api/hr/contract/draft":
             return self._guard(lambda u: self._contract_draft_ep(u, qs))
+        if path == "/api/hr/speakup":
+            return self._guard(lambda u: self._speakup_list_ep(u, qs))
+        if path == "/api/hr/speakup/track":
+            return self._guard(lambda u: self._speakup_track_ep(u, qs))
         if path == "/api/hr/decision/draft":
             return self._guard(lambda u: self._decision_draft_ep(u, qs))
         if path == "/api/hr/letter/draft":
@@ -3857,6 +3862,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
+        if path == "/api/hr/speakup":
+            return self._guard(lambda u: self._speakup_raise_ep(u, body))
+        if path.startswith("/api/hr/speakup/"):
+            _cid = path[len("/api/hr/speakup/"):]
+            return self._guard(lambda u: self._speakup_update_ep(u, urllib.parse.unquote(_cid), body))
         if path == "/api/hr/decision":
             return self._guard(lambda u: self._decision_create_ep(u, body), manager=True)
         if path == "/api/hr/letter":
@@ -4699,6 +4709,10 @@ class Handler(BaseHTTPRequestHandler):
                 _appr_notify("leave", _lrec, _lev, signer_name)
             return self._json({"ok": True, "item": {k: v for k, v in (row or {}).items() if k != "token"}})
         if coll not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        if coll in self.CONFIDENTIAL:
+            # Not 403 with an explanation of what lives here — that confirms the collection exists
+            # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         item = db.get_collection_item(coll, iid)
         if not item:
@@ -6001,6 +6015,10 @@ class Handler(BaseHTTPRequestHandler):
         out["monthlyDay"] = db.get_setting("portal_monthlyDay", "1") or "1"
         out["monthlyTo"] = db.get_setting("portal_monthlyTo", "") or ""
         out["payerSeparation"] = db.get_setting("portal_payerSeparation", "1") or "1"   # disbursement SoD: 2nd approver to pay
+        # Read back to an admin only — like the payer allow-list, it is an authorization list, and
+        # publishing who reads concerns tells everyone who to avoid raising one about.
+        if self._caller_level(u) == "admin":
+            out["speakupHandlers"] = db.get_setting("portal_speakupHandlers", "") or ""
         # The payer ALLOW-LIST is an authorization list, so only an admin (who can edit it) reads it
         # back. Everyone gets `canPay` instead — their OWN capability, computed by the same helper the
         # e-signature gate uses, so the Mark-paid button can never appear for someone the server will
@@ -6244,6 +6262,10 @@ class Handler(BaseHTTPRequestHandler):
                       ("payerSeparation", "portal_payerSeparation"),
                       ("apprPayers", "portal_apprPayers"),   # who may release money — admin-only to change
                       ("hrAdmins", "portal_hrAdmins"),      # who is HR — admin-only to change
+                      # Who handles a speak-up concern. Admin-only, and deliberately a list of
+                      # NAMED people rather than a level: "who may read a harassment report" is a
+                      # decision about individuals, not a side effect of a role.
+                      ("speakupHandlers", "portal_speakupHandlers"),
                       ("otAnnualCap", "portal_otAnnualCap")):   # Art. 107(3) 300h election
             v = body.get(k)
             if not isinstance(v, str):
@@ -6267,7 +6289,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6294,7 +6316,13 @@ class Handler(BaseHTTPRequestHandler):
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
-                   "hrletters": ("a confirmation letter", "/api/hr/letter")}
+                   "hrletters": ("a confirmation letter", "/api/hr/letter"),
+                   "concerns": ("a concern", "/api/hr/speakup")}
+    # Collections the GENERIC /api/coll route must never serve, at ANY level. A speak-up concern
+    # is readable only through /api/hr/speakup, which applies grievance.may_read — and being an
+    # administrator is deliberately not a way in. Listing the collection would hand every concern
+    # to exactly the people the channel exists to be independent of.
+    CONFIDENTIAL = {"concerns"}
     ISSUED_EDITABLE = {"decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"}}
@@ -6437,6 +6465,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _coll_list(self, u, name):
         if name not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        if name in self.CONFIDENTIAL:
+            # Not 403 with an explanation of what lives here — that confirms the collection exists
+            # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
         app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
@@ -7139,6 +7171,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
+            return self._err("Unknown collection.", 404)
+        if name in self.CONFIDENTIAL:
+            # Not 403 with an explanation of what lives here — that confirms the collection exists
+            # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         if not isinstance(body, dict):     # json.loads can return a list/str/number → dict() would 500
             return self._err("Invalid record.", 400)
@@ -8222,6 +8258,165 @@ class Handler(BaseHTTPRequestHandler):
                 " → " + rec["endDate"] if rec["endDate"] else ""),
             "ts": self._utc_now()})
         return self._json({"ok": True, "contract": rec, "document": doc})
+
+    # ── the speak-up channel ─────────────────────────────────────────────────────────────────────
+
+    def _speakup_handlers(self):
+        """Who handles concerns. HR admins ordinarily; management and above for the serious ones.
+
+        Both come from data rather than from a level check, because "who may read a harassment
+        report" is a decision the company makes about named people, not a side effect of a role.
+        """
+        raw = db.get_setting("portal_speakupHandlers", "") or ""
+        ids = [x.strip() for x in str(raw).replace("\n", ",").split(",") if x.strip()]
+        if not ids:
+            # Fall back to the designated HR admins so the channel works before anybody configures
+            # it — a concern that cannot be raised because a setting is blank is the worst outcome.
+            raw = db.get_setting("portal_hrAdmins", "") or ""
+            mails = {x.strip().lower() for x in str(raw).replace("\n", ",").split(",") if x.strip()}
+            ids = [e["id"] for e in db.list_employees()
+                   if str(e.get("email") or "").lower() in mails]
+        senior = [e["id"] for e in db.list_employees()
+                  if self._level_rank(self._emp_level(e)) >= self._level_rank("management")]
+        return ids, senior
+
+    def _emp_level(self, e):
+        return str((e or {}).get("level") or (e or {}).get("role") or "staff").lower()
+
+    def _speakup_raise_ep(self, u, body):
+        """Raise a concern. Any employee, about themselves or something they witnessed.
+
+        Deliberately NOT gated above staff: a channel only managers can use is not a speak-up
+        channel. `anonymous` really does omit the reporter from the record — see the notice the
+        module carries, which says plainly what that does and does not promise.
+        """
+        b = dict(body or {})
+        handlers, senior = self._speakup_handlers()
+        anon = bool(b.get("anonymous"))
+        concern = {
+            "category": str(b.get("category") or "").strip(),
+            "detail": str(b.get("detail") or "").strip()[:8000],
+            "about": [str(x).strip() for x in (b.get("about") or []) if str(x).strip()][:10],
+            "raisedById": "" if anon else (u.get("id") or ""),
+        }
+        bad = grievance.blockers(concern, handlers, senior)
+        if bad:
+            return self._json({"error": bad[0], "blockers": bad}, 400)
+        routed = grievance.handlers_for(concern, handlers, senior)
+        rec = dict(concern, **{
+            "id": "spk-" + secrets.token_hex(4),
+            # The reference the reporter keeps. Short enough to write on paper, and the ONLY way an
+            # anonymous reporter can ever follow up — the record does not know who they are.
+            "ref": "SPK-" + secrets.token_hex(3).upper(),
+            "anonymous": anon,
+            "raisedByName": "" if anon else (u.get("name") or ""),
+            "raisedOn": self._vn_day(),
+            "status": grievance.OPEN,
+            "routedTo": routed,
+            "timeline": [{"on": self._vn_day(), "what": "Raised", "by": "" if anon else (u.get("name") or "")}],
+        })
+        db.put_collection_item("concerns", rec)
+        # Audited WITHOUT the reporter and WITHOUT the detail. The audit log is readable by every
+        # administrator; putting either in it would undo the channel from the other end.
+        db.put_collection_item("audit", {
+            "actor": "Speak-up channel", "actorId": "",
+            "action": "Concern raised", "target": "concerns/" + rec["ref"],
+            "detail": "category: %s · anonymous: %s · routed to %d handler(s)"
+                      % (rec["category"], "yes" if anon else "no", len(routed)),
+            "ts": self._utc_now()})
+        # Push, not email: an email about a concern sits in an inbox that gets forwarded, printed
+        # and searched. The notification deliberately carries the reference and the category and
+        # nothing else — no detail, no reporter, not even whether it was anonymous.
+        try:
+            mails = [str((db.get_employee(h) or {}).get("email") or "") for h in routed]
+            mails = [m for m in mails if m]
+            if mails:
+                _tk_push(mails, "A concern has been raised",
+                         "%s · %s — please acknowledge within %d days."
+                         % (rec["ref"], rec["category"], grievance.ACK_DAYS),
+                         url="/", tag="speakup")
+        except Exception:
+            pass
+        return self._json({"ok": True, "ref": rec["ref"], "anonymous": anon,
+                           "routedCount": len(routed),
+                           "due": grievance.due(rec, self._vn_day()),
+                           "keepThis": ("Keep this reference. It is how you check what happened — "
+                                        "and if you raised this anonymously it is the ONLY way, "
+                                        "because the record does not know who you are.")})
+
+    def _speakup_track_ep(self, u, qs):
+        """Status by reference. No identity needed — that is the point of the reference."""
+        ref = str(qs.get("ref", [""])[0] or "").strip().upper()
+        if not ref:
+            return self._err("Enter the reference you were given.", 400)
+        hit = next((c for c in db.list_collection("concerns")
+                    if str(c.get("ref") or "").upper() == ref), None)
+        if not hit:
+            # Same message either way: a different one for "no such reference" turns this into an
+            # oracle for guessing them.
+            return self._err("No concern matches that reference.", 404)
+        return self._json({"ok": True, "concern": grievance.public_view(hit, self._vn_day())})
+
+    def _speakup_list_ep(self, u, qs):
+        """The handler's queue — and ONLY the concerns routed to this handler.
+
+        There is no administrator view. grievance.may_read decides, and being an admin is not one
+        of its two ways in.
+        """
+        handlers, senior = self._speakup_handlers()
+        uid = u.get("id") or ""
+        mine = [c for c in db.list_collection("concerns")
+                if grievance.may_read(c, uid, handlers, senior)]
+        for c in mine:
+            c["due"] = grievance.due(c, self._vn_day())
+            if c.get("anonymous"):
+                c.pop("raisedById", None)
+                c.pop("raisedByName", None)
+        return self._json({
+            "ok": True, "concerns": sorted(mine, key=lambda c: str(c.get("raisedOn") or ""), reverse=True),
+            "isHandler": uid in {str(h) for h in handlers} or uid in {str(s) for s in senior},
+            "summary": grievance.summary(mine, self._vn_day()),
+            "categories": [dict(c) for c in grievance.CATEGORIES],
+            "notice": grievance.ANONYMITY_NOTICE, "noticeVn": grievance.ANONYMITY_NOTICE_VN,
+            "noRetaliation": grievance.NO_RETALIATION,
+            "noRetaliationVn": grievance.NO_RETALIATION_VN,
+            "ackDays": grievance.ACK_DAYS})
+
+    def _speakup_update_ep(self, u, cid, body):
+        """Acknowledge, progress or close a concern. Only a handler it was routed to."""
+        handlers, senior = self._speakup_handlers()
+        rec = db.get_collection_item("concerns", cid)
+        if not rec or not grievance.may_read(rec, u.get("id") or "", handlers, senior):
+            return self._err("No such concern.", 404)
+        if not (u.get("id") in (rec.get("routedTo") or [])):
+            return self._err("Only a handler this concern was routed to can act on it.", 403)
+        b = dict(body or {})
+        status = str(b.get("status") or "").strip()
+        if status and status not in grievance.STATES:
+            return self._err("'%s' is not a state a concern can be in." % status, 400)
+        note = str(b.get("note") or "").strip()[:4000]
+        today = self._vn_day()
+        if status == grievance.ACKNOWLEDGED and not rec.get("acknowledgedOn"):
+            rec["acknowledgedOn"] = today
+        if status == grievance.CLOSED:
+            outcome = str(b.get("outcome") or "").strip()
+            if len(outcome) < 10:
+                return self._err("Closing a concern needs an outcome — what was decided. It is the "
+                                 "one thing the person who raised it is entitled to be told.", 400)
+            rec["outcome"] = outcome[:4000]
+            rec["closedOn"] = today
+        if status:
+            rec["status"] = status
+        rec["timeline"] = list(rec.get("timeline") or []) + [{
+            "on": today, "what": status or "Note added", "by": u.get("name") or "", "note": note}]
+        if note:
+            rec["handlerNotes"] = (str(rec.get("handlerNotes") or "") + "\n" + note).strip()
+        db.put_collection_item("concerns", rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Concern updated", "target": "concerns/" + str(rec.get("ref") or cid),
+            "detail": "status: %s" % (status or "note added"), "ts": self._utc_now()})
+        return self._json({"ok": True, "concern": dict(rec, due=grievance.due(rec, today))})
 
     # ── decisions (quyết định) ───────────────────────────────────────────────────────────────────
 
@@ -9526,7 +9721,9 @@ class Handler(BaseHTTPRequestHandler):
                            "health": _FINSP_HEALTH})
 
     def _coll_update(self, u, name, iid, body):
-        if name not in self.COLLECTIONS or not iid:
+        if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
+            # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
+            # the collection exists, which for the speak-up channel is itself information.
             return self._err("Unknown item.", 404)
         if not isinstance(body, dict):     # a non-object JSON body would 500 in dict(body) below
             return self._err("Invalid record.", 400)
@@ -10085,7 +10282,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "item": {k: v for k, v in _out.items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
-        if name not in self.COLLECTIONS or not iid:
+        if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
+            # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
+            # the collection exists, which for the speak-up channel is itself information.
             return self._err("Unknown item.", 404)
         # The audit trail is append-only (21 CFR Part 11) — never deletable via the generic store.
         if name == "audit":
