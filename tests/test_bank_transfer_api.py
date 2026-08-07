@@ -6,6 +6,7 @@ never a partial file, and never a second one by accident.
 import pytest
 
 import db
+import bank_transfer as bt
 import payroll_calc as pc
 
 
@@ -188,3 +189,74 @@ def test_a_manager_cannot_produce_a_salary_payment_file(api, tokens):
 def test_staff_cannot_even_preview_it(api, tokens):
     st, _ = api("GET", "/api/hr/payroll/bankfile?period=August%202026", tokens["staff"])
     assert st == 403
+
+
+# ── the layout is a setting somebody can actually reach ──────────────────────────────────────────
+
+def test_the_current_layout_comes_back_with_the_fields_that_can_fill_it(api, tokens):
+    """It was configurable and unreachable: the only way in was a direct database write, so 'your
+    bank's template' was in practice whatever had been guessed. The settings form needs both the
+    current layout and the list of fields the builder can actually fill."""
+    st, b = api("GET", "/api/portal", tokens["admin"])
+    assert st == 200
+    assert b["bankTemplateIsDefault"] is True
+    assert [c["key"] for c in b["bankTemplate"]] == [c["key"] for c in bt.COLUMNS]
+    assert {c["key"] for c in b["bankTemplateKeys"]} == {c["key"] for c in bt.COLUMNS}
+
+
+def test_an_admin_can_change_the_layout_and_the_next_file_uses_it(api, tokens):
+    _bank()
+    _run(api, tokens)
+    cols = [{"key": "account", "header": "Beneficiary Account"},
+            {"key": "name", "header": "Beneficiary Name"},
+            {"key": "amount", "header": "Amount (VND)"}]
+    st, _ = api("PATCH", "/api/portal", tokens["admin"], {"bankTemplate": cols})
+    assert st == 200
+    _, b = api("POST", "/api/hr/payroll/bankfile", tokens["admin"], {"period": "August 2026"})
+    assert b["csv"].split("\n")[0] == '"Beneficiary Account","Beneficiary Name","Amount (VND)"'
+
+
+def test_a_field_the_file_cannot_fill_is_refused_rather_than_left_blank(api, tokens):
+    """A column the builder does not know produces a silently empty column, and a blank column in a
+    payment file is how a batch is rejected at the bank on payday."""
+    st, b = api("PATCH", "/api/portal", tokens["admin"],
+                {"bankTemplate": [{"key": "swift", "header": "SWIFT"},
+                                  {"key": "amount", "header": "Amount"}]})
+    assert st == 400 and "not a field" in (b.get("error") or "")
+    assert db.get_setting("portal_bankTemplate") in (None, "", [])
+
+
+def test_a_layout_with_no_amount_column_is_refused(api, tokens):
+    st, b = api("PATCH", "/api/portal", tokens["admin"],
+                {"bankTemplate": [{"key": "name", "header": "Name"}]})
+    assert st == 400 and "no amount column" in (b.get("error") or "")
+
+
+def test_a_column_with_no_heading_is_refused(api, tokens):
+    st, b = api("PATCH", "/api/portal", tokens["admin"],
+                {"bankTemplate": [{"key": "amount", "header": "  "}]})
+    assert st == 400 and "heading" in (b.get("error") or "")
+
+
+def test_the_same_field_cannot_appear_twice(api, tokens):
+    st, b = api("PATCH", "/api/portal", tokens["admin"],
+                {"bankTemplate": [{"key": "amount", "header": "A"}, {"key": "amount", "header": "B"}]})
+    assert st == 400 and "only appear once" in (b.get("error") or "")
+
+
+def test_only_an_admin_may_change_the_layout(api, tokens):
+    st, b = api("PATCH", "/api/portal", tokens["management"],
+                {"bankTemplate": [{"key": "amount", "header": "Amount"}]})
+    assert st == 403 and "Admin access required" in (b.get("error") or "")
+
+
+def test_changing_the_layout_is_written_to_the_audit_chain(api, tokens):
+    api("PATCH", "/api/portal", tokens["admin"],
+        {"bankTemplate": [{"key": "account", "header": "A/C"}, {"key": "amount", "header": "Amount"}]})
+    trail = [a for a in db.list_collection("audit") if a.get("action") == "Bank file layout changed"]
+    assert any("account→A/C" in a["detail"] for a in trail)
+
+
+def test_staff_never_see_the_bank_layout_at_all(api, tokens):
+    _, b = api("GET", "/api/portal", tokens["staff"])
+    assert "bankTemplate" not in b

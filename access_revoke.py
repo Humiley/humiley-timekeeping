@@ -43,13 +43,32 @@ STEPS = [
     {"key": "portal_push", "system": "portal", "auto": True,
      "label": "Push notifications stopped",
      "exposure": "Their phone keeps receiving approval and payroll notifications."},
+    # `needsAny` is a list of ALTERNATIVE permission sets — the step can run if the app holds every
+    # permission in ANY ONE of them. It is not one name, because Microsoft does not offer one name.
+    #
+    # I first shipped both of these as `needs: "User.ReadWrite.All"` and that was wrong twice over.
+    # For revokeSignInSessions the Application row of Microsoft's own permissions table reads
+    # "User.RevokeSessions.All" as least privileged and "Not available." for higher privileged —
+    # User.ReadWrite.All is a DELEGATED-only answer there. The portal would have reported the step as
+    # runnable, the owner would have granted the wrong permission, and the button would have 403'd on
+    # the day somebody left: precisely the failure this design exists to prevent.
     {"key": "m365_sessions", "system": "m365", "auto": True,
-     "needs": "User.ReadWrite.All",
+     "needsAny": [["User.RevokeSessions.All"]],
      "label": "Microsoft 365 sign-in sessions revoked",
      "exposure": "Mail and Teams keep working on any device already signed in, for the life of the "
                  "refresh token — blocking the account alone does not stop this."},
+    # Blocking sign-in is a "sensitive action": a Graph permission is necessary and NOT sufficient.
+    # Microsoft requires an app-only caller to ALSO hold a privileged directory role. That role is not
+    # in the token's `roles` claim, so no amount of reading the token can confirm it — which is why it
+    # is carried as a caveat that is always shown rather than a check that would quietly pass.
     {"key": "m365_account", "system": "m365", "auto": True,
-     "needs": "User.ReadWrite.All",
+     "needsAny": [["User.EnableDisableAccount.All", "User.Read.All"],
+                  ["User.ReadWrite.All"],
+                  ["Directory.ReadWrite.All"]],
+     "roleCaveat": "Microsoft also requires the app itself to hold a privileged directory role (User "
+                   "Administrator is enough for ordinary staff). That role is not visible in the "
+                   "token, so the portal cannot confirm it here — if it is missing, this step fails "
+                   "with Authorization_RequestDenied and says so.",
      "label": "Microsoft 365 sign-in blocked",
      "exposure": "They can sign in to email, SharePoint and Teams with their existing password."},
     {"key": "m365_mailbox", "system": "manual", "auto": False,
@@ -98,6 +117,23 @@ def done_map(exit_rec):
     return dict(raw) if isinstance(raw, dict) else {}
 
 
+def missing_permissions(step, granted_roles):
+    """Which permissions are still needed for this step, or [] if it can run.
+
+    A step may be satisfied by any one of several alternative sets. When none is satisfied we report
+    the set that is CLOSEST to complete — telling somebody to grant Directory.ReadWrite.All when they
+    are one granular permission away from the least-privileged answer is bad advice.
+    """
+    alts = step.get("needsAny") or []
+    if not alts:
+        return []
+    have = set(granted_roles or [])
+    gaps = [[p for p in alt if p not in have] for alt in alts]
+    if any(not g for g in gaps):
+        return []
+    return min(gaps, key=len)
+
+
 def plan(exit_rec, today=None, granted_roles=None, m365_configured=True):
     """The full picture for one leaver: every step, whether it is done, and what is blocking it."""
     roles = set(granted_roles or [])
@@ -111,15 +147,18 @@ def plan(exit_rec, today=None, granted_roles=None, m365_configured=True):
         # `blocked` is the English prose an API consumer or a log reader gets; `blockedCode` is the
         # same fact as a token, so the UI can say it in the reader's own language instead of shipping
         # a sentence with a permission name glued into the middle of it.
-        row["blocked"], row["blockedCode"] = "", ""
+        row["blocked"], row["blockedCode"], row["missing"] = "", "", []
         if s["system"] == "m365" and not row["done"]:
             if not m365_configured:
                 row["blockedCode"] = "unconfigured"
                 row["blocked"] = "Microsoft 365 is not connected in Company Portal settings."
-            elif s.get("needs") and s["needs"] not in roles:
-                row["blockedCode"] = "consent"
-                row["blocked"] = ("The %s application permission has not been granted to the portal's "
-                                  "app registration, so it cannot do this." % s["needs"])
+            else:
+                missing = missing_permissions(s, roles)
+                if missing:
+                    row["blockedCode"] = "consent"
+                    row["missing"] = missing
+                    row["blocked"] = ("The portal's app registration has not been granted %s, so it "
+                                      "cannot do this." % " + ".join(missing))
         steps.append(row)
 
     outstanding = [s for s in steps if not s["done"]]

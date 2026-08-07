@@ -119,22 +119,115 @@ OneDrive selective‑sync. (Prod on the VPS is unaffected; this is about local/d
 
 ---
 
-## P1‑1 · Scrub PII + secrets from git history, then make the repo private ⚠️ irreversible
-The public repo's **history** still contains real employee PII (`deliverables/pin-guides/*.docx`,
-`deliverables/screenshots/02_employee_database.jpg` + `03_payroll.jpg`, and the now‑removed
-`demo_data.json`). Deleting from HEAD (done) is **not** enough. This is a **destructive history rewrite +
-force‑push** — Claude will not run it for you. Do it deliberately:
-```bash
-# 1) Mirror-clone a backup first:  git clone --mirror <repo> repo-backup.git
-# 2) Install git-filter-repo, then from a fresh clone:
-git filter-repo --path deliverables/pin-guides --path deliverables/screenshots \
-                --path demo_data.json --invert-paths
-# 3) Force-push all refs (coordinate with anyone who has a clone — everyone must re-clone):
-git push --force --all && git push --force --tags
-```
-Then GitHub → **Settings → Danger Zone → Change visibility → Private** (strongly recommended for a repo
-holding payroll/HR logic). Rotate any secret that ever touched a commit. If unsure, engage counsel — this is
-a Vietnam PDPD (Decree 13/2023) exposure.
+## P1‑1 · The public repo still contains employee PII ⚠️ read the ORDER before doing anything
+
+**Corrected 2026‑08‑07** after checking the repository directly. The previous version of this section
+was wrong in ways that mattered, and following it verbatim would have produced a false sense of
+remediation while breaking production.
+
+**What is actually true**
+- The repo **is public** (`Humiley/humiley-timekeeping`, 563 commits, 0 forks).
+- **HEAD is NOT clean.** Commit `0b7fc20` removed only 5 demo files from the repo root. Still tracked
+  today: `deliverables/pin-guides/*.docx` (15 files, each named after a real person),
+  `deliverables/screenshots/*.jpg` (15 files — all show a real name and job title in the sidebar;
+  two also show roster and payroll content), `seed_data.py` (15 real employees with phone, DOB, tax
+  ID, bank and address) and `import_csv.py` (a real name→mailbox table).
+- **One earlier claim was overstated, and the correction matters:** the removed `demo_data.json` had
+  bank, tax‑ID and salary fields **empty for all 54 records**. It carried names, work emails, 53
+  dates of birth and 6 personal IDs. Bad, but not the payroll dump it was described as.
+- Also present and invisible to any name/email search: a **real personal name in the XMP metadata**
+  of the base64 logo embedded in `templates/index.html`, and author metadata (`dc:creator`) in 18
+  tracked Office files.
+- **Neither `git-filter-repo` nor BFG is installed** on this Mac, and there is no Java runtime.
+
+**Do it in this order. The order is the whole point.**
+
+1. **Fix the VPS credentials FIRST — before making the repo private.** The server pulls over plain
+   HTTPS with no token. The moment the repo turns private, `git pull` returns 403, `deploy.sh` exits
+   1, and `autodeploy.sh` gives up permanently after five tries. Add a read‑only deploy key or a
+   fine‑grained PAT to the remote URL on the VPS, and do the same for the `humiley-procurement`
+   clone that `update.sh` also pulls. Verify with a manual `git -C /opt/humiley-timekeeping pull`.
+2. **Take a mirror backup**, onto a disk outside the OneDrive‑synced tree:
+   ```bash
+   git clone --mirror https://github.com/Humiley/humiley-timekeeping.git repo-backup.git
+   ```
+3. **Make the repo private.** GitHub → Settings → Danger Zone → Change visibility → Private. This is
+   the highest‑value single action and it is not destructive. It ends the public exposure of
+   everything at once — history, HEAD, and the pull refs — which a history rewrite alone does **not**
+   do (see step 5).
+4. **Clean HEAD.** This is an ordinary commit and needs no rewrite:
+   ```bash
+   git rm -r --cached deliverables/pin-guides deliverables/screenshots   # already in .gitignore; files stay on disk
+   ```
+   then replace the 15 real records in `seed_data.py` with synthetic ones and strip the real
+   name→mailbox tables in `import_csv.py`.
+5. **Only then consider a history rewrite — and know its limit.** There are **9 open PRs**, and
+   GitHub keeps their commits reachable under `refs/pull/*` regardless of a force‑push. Close them
+   and delete the `snapshot/pre-session-2026-06-25` branch (it still carries `demo_data.json` and the
+   1.8 MB `Humiley-Portal-DEMO.html`) **before** rewriting, or the rewrite erases nothing. You would
+   also need to install the tool first (`brew install git-filter-repo`), widen the path list well
+   beyond what this document used to say — add `seed_data.py`, `import_csv.py`,
+   `Humiley-Portal-DEMO.html` — and use `--replace-text` for addresses embedded in
+   `templates/index.html` rather than deleting the file. Afterwards, repair the VPS with
+   `git fetch origin && git reset --hard origin/main` (never `rm -rf` that directory — `.env` lives
+   there, and regenerating `TK_ESIGN_PEPPER` invalidates every enrolled signing PIN), and ask GitHub
+   Support to garbage‑collect the orphaned objects, without which the old commits stay fetchable by
+   SHA.
+6. **The disclosure question is separate and does not go away.** Named employees' dates of birth,
+   personal IDs and work addresses were publicly available for roughly seven weeks. That is a Vietnam
+   PDPD (Decree 13/2023) matter; a rewrite does not undo it. Engage counsel, and reconcile whatever
+   is decided with `static/privacy.html`, which currently says nothing about it.
+
+## P1‑1b · Microsoft 365 consent for offboarding, and the two classifications ✅ screens now exist
+
+**Granting the Microsoft permissions.** Revoking a leaver's Microsoft access needs application
+permissions the portal did not previously ask for. I originally told you to grant
+`User.ReadWrite.All`; **that was wrong**, and Microsoft's own tables are the reason:
+
+| What it does | Application permission required |
+|---|---|
+| Revoke sign‑in sessions (kills issued refresh tokens) | **`User.RevokeSessions.All`** — `User.ReadWrite.All` is listed as *"Not available"* for app‑only |
+| Block sign‑in (`accountEnabled = false`) | **`User.EnableDisableAccount.All` + `User.Read.All`** (least privilege), or the broader `User.ReadWrite.All` |
+| Read whether an account is still enabled (the "Access still open" register) | `User.Read.All` |
+
+Entra admin centre → **App registrations** → the Humiley portal app → **API permissions** → **Add a
+permission** → **Microsoft Graph** → **Application permissions** → add the three above → **Grant
+admin consent for Humiley**.
+
+⚠️ **Blocking sign‑in also needs a directory role, which no permission grant provides.** Microsoft
+treats `accountEnabled` as a sensitive action: in app‑only scenarios the app itself must additionally
+hold a privileged administrator role. Entra → **Roles and administrators** → **User Administrator** →
+**Add assignments** → choose the portal's application. Without it the step fails with
+`Authorization_RequestDenied`. The portal cannot see directory roles in its token, so it says so
+plainly on the step rather than pretending to have checked.
+
+**To verify it worked:** Access & Permissions → **Integrations & health** → the *Microsoft Graph
+permissions* row lists exactly what is granted and names anything still missing. It now re‑reads with
+a fresh token when something looks unconsented — a token minted before consent is cached for up to an
+hour, so this screen used to tell you your consent had not worked for the rest of that hour.
+
+**The two statutory classifications.** These had no input anywhere in the portal, so every employee
+read as normal‑conditions office staff to both the leave and the certificate reviews. They are now on
+**Human Resource Hub → Employees → Edit** (Admin only — they are legal classifications, not fields a
+line manager edits):
+
+- **Working conditions** — Normal (12 days annual leave) / Heavy, hazardous, dangerous (14) /
+  Especially heavy (16), per Art. 113(1). It also moves the health‑check cadence from 12 months to 6.
+  Classify against the MOLISA occupational list, not against job titles.
+- **OSH group** — Decree 44/2016 Art. 24, groups 1–6. Safety training is required and chased **only**
+  where a group is set; blank asserts the requirement for nobody.
+- **Person with disabilities** — raises the leave base to at least 14 days.
+- **Fixed‑term renewal exemption** — the Art. 20(2)(c) case that applies (elderly / foreign worker /
+  appointed state‑enterprise director / union officer), or "not exempt". It records *which*, because
+  that is what an inspector asks.
+- **Bank details** — name, account, holder, branch. All four employees' salary files depend on these.
+
+**The bank file layout.** Also previously unreachable — it was a setting nothing could set, so "your
+bank's template" was whatever had been guessed. Now at Access & Permissions → **Integrations &
+health** → **Bank salary‑file layout**: pick the columns and headings your bank publishes, with a live
+preview of the file's first line. Download your bank's own sample (Techcombank F@st EBank:
+**Payroll → Bulk transfer → Download template**) and copy the headings exactly — banks match on the
+heading text. Admin only, audited, and it refuses a layout with no amount column or an unknown field.
 
 ## P1‑2 · External, off‑box monitoring (survives a full‑host outage)
 All current alerting fires from a daemon *inside* the app, so a kernel panic / disk‑full / OOM pages nobody.

@@ -11,7 +11,8 @@ def _exit(last_day="2026-08-31", **kw):
     return dict({"id": "X1", "empId": "HML-STF", "name": "Staff One", "lastDay": last_day}, **kw)
 
 
-ROLES = ["Mail.Send", "User.ReadWrite.All"]
+# The permissions Microsoft actually requires for app-only calls, not the ones I first assumed.
+ROLES = ["Mail.Send", "User.RevokeSessions.All", "User.EnableDisableAccount.All", "User.Read.All"]
 
 
 # ── timing ───────────────────────────────────────────────────────────────────────────────────────
@@ -82,8 +83,43 @@ def test_a_missing_graph_consent_is_named_before_anybody_presses_the_button():
     """Failing at the moment of use, on the day somebody left, is the worst time to discover this."""
     p = ar.plan(_exit(), granted_roles=["Mail.Send"])
     m365 = [s for s in p["steps"] if s["key"] == "m365_account"][0]
-    assert "User.ReadWrite.All" in m365["blocked"]
+    assert m365["missing"] and "User.ReadWrite.All" in m365["blocked"]
     assert "m365_account" not in p["canRunNow"]
+
+
+def test_user_readwrite_all_does_NOT_let_the_portal_revoke_microsoft_sessions():
+    """The correction. I first declared both Microsoft steps as needing User.ReadWrite.All. For
+    app-only revokeSignInSessions, Microsoft's permissions table gives Application: least privileged
+    "User.RevokeSessions.All", higher privileged "Not available." — User.ReadWrite.All is a DELEGATED
+    answer only. Under the old declaration the portal reported the step as runnable, so an owner
+    would have granted the wrong permission and hit a 403 at the button on the day somebody left:
+    exactly the failure this whole design exists to prevent."""
+    p = ar.plan(_exit(), granted_roles=["User.ReadWrite.All"])
+    sessions = [s for s in p["steps"] if s["key"] == "m365_sessions"][0]
+    assert sessions["missing"] == ["User.RevokeSessions.All"]
+    assert "m365_sessions" not in p["canRunNow"]
+    # ...while the account step IS satisfied by it, so the two must not share one answer.
+    assert "m365_account" in p["canRunNow"]
+
+
+def test_the_least_privileged_route_is_accepted_and_is_the_one_recommended():
+    """Blocking sign-in accepts several permission sets. When none is held, the advice must be the
+    set closest to complete — sending somebody to Directory.ReadWrite.All when they are one granular
+    permission short of the least-privileged answer is bad security advice."""
+    assert "m365_account" in ar.plan(
+        _exit(), granted_roles=["User.EnableDisableAccount.All", "User.Read.All"])["canRunNow"]
+    near = [s for s in ar.plan(_exit(), granted_roles=["User.Read.All"])["steps"]
+            if s["key"] == "m365_account"][0]
+    assert near["missing"] == ["User.EnableDisableAccount.All"], "one short, so ask for that one"
+
+
+def test_blocking_sign_in_admits_it_cannot_verify_the_directory_role():
+    """Microsoft requires an app-only caller to ALSO hold a privileged directory role for this
+    property. Directory roles are not in the token's `roles` claim, so no amount of reading the token
+    can confirm it. Claiming a green light we cannot see would be the tick-box failure again."""
+    step = [s for s in ar.plan(_exit(), granted_roles=ROLES)["steps"] if s["key"] == "m365_account"][0]
+    assert "directory role" in step["roleCaveat"]
+    assert "User Administrator" in step["roleCaveat"]
 
 
 def test_the_reason_a_step_is_blocked_comes_back_as_a_code_as_well_as_prose():

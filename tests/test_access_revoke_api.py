@@ -13,7 +13,8 @@ import access_revoke as ar
 import app
 import db
 
-ROLES = ["Mail.Send", "Sites.ReadWrite.All", "User.ReadWrite.All"]
+ROLES = ["Mail.Send", "Sites.ReadWrite.All",
+         "User.RevokeSessions.All", "User.EnableDisableAccount.All", "User.Read.All"]
 
 
 @pytest.fixture(autouse=True)
@@ -85,8 +86,39 @@ def test_a_missing_graph_consent_is_named_in_the_preview(api, tokens, monkeypatc
     monkeypatch.setattr(app, "_graph_granted_roles", lambda force=False: ["Mail.Send"])
     xid = _exit(api, tokens)
     _, b = api("GET", "/api/hr/exit/%s/revoke" % xid, tokens["admin"])
-    assert "User.ReadWrite.All" in _steps(b["plan"])["m365_account"]["blocked"]
+    assert _steps(b["plan"])["m365_account"]["missing"] == ["User.ReadWrite.All"]
+    assert _steps(b["plan"])["m365_sessions"]["missing"] == ["User.RevokeSessions.All"]
     assert "m365_account" not in b["plan"]["canRunNow"]
+
+
+def test_consent_granted_a_minute_ago_is_seen_now_and_not_in_an_hour(api, tokens, monkeypatch):
+    """The app-only token is cached for about an hour and a token minted BEFORE consent does not
+    carry the new role. So the screen an owner opens to check their consent worked is exactly the
+    screen most likely to tell them it did not. When anything looks unconsented, the roles are
+    re-read once with a forced token."""
+    seen = []
+
+    def _roles(force=False):
+        seen.append(force)
+        return ROLES if force else ["Mail.Send"]      # stale cache vs. what Entra now says
+
+    monkeypatch.setattr(app, "_graph_granted_roles", _roles)
+    xid = _exit(api, tokens)
+    _, b = api("GET", "/api/hr/exit/%s/revoke" % xid, tokens["admin"])
+    assert True in seen, "a stale-looking answer must be re-checked against a fresh token"
+    assert "m365_account" in b["plan"]["canRunNow"]
+    assert "m365_sessions" in b["plan"]["canRunNow"]
+
+
+def test_a_fully_consented_tenant_is_not_re_checked_on_every_page_load(api, tokens, monkeypatch):
+    """The forced re-read costs a token round trip to Microsoft. It is for the moment after consent,
+    not for every preview thereafter."""
+    seen = []
+    monkeypatch.setattr(app, "_graph_granted_roles",
+                        lambda force=False: (seen.append(force), list(ROLES))[1])
+    xid = _exit(api, tokens)
+    api("GET", "/api/hr/exit/%s/revoke" % xid, tokens["admin"])
+    assert True not in seen
 
 
 def test_an_unconnected_tenant_does_not_stop_the_portal_side(api, tokens, monkeypatch):

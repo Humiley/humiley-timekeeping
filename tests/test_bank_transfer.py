@@ -167,3 +167,60 @@ def test_a_comma_in_a_branch_name_does_not_shift_the_columns():
     b = B.build(_run([_ln()]), [_emp(branch="Chi nhánh Sài Gòn, Quận 1")])
     rows = list(csv.reader(io.StringIO(B.to_csv(b))))
     assert all(len(r) == len(B.COLUMNS) for r in rows), rows
+
+# ── the control row must fit the template it is written into ─────────────────────────────────────
+
+def _cols(*pairs):
+    return [{"key": k, "header": h} for k, h in pairs]
+
+
+def _built():
+    return B.build(_run([_ln()]), {"HML-STF": _emp()})
+
+
+def _parsed(csv_text):
+    import csv as _csv
+    import io as _io
+    return list(_csv.reader(_io.StringIO(csv_text)))
+
+
+def test_the_control_row_is_never_wider_than_the_header():
+    """It used to be built as four fixed fields padded up to the column count, so any template with
+    fewer than four columns produced a trailer WIDER than its header — a malformed CSV, in the one
+    file where malformed means a month's salaries."""
+    built = _built()
+    for cols in (_cols(("account", "A/C"), ("amount", "Amount")),
+                 _cols(("amount", "Amount")),
+                 _cols(("no", "No"), ("name", "Name"), ("amount", "Amount"))):
+        rows = _parsed(B.to_csv(built, columns=cols))
+        assert len(rows[-1]) == len(rows[0]) == len(cols), \
+            "trailer %r does not fit header %r" % (rows[-1], rows[0])
+
+
+def test_the_batch_total_sits_under_the_amount_column_wherever_it_is():
+    """The total used to be written at a fixed index 3. With the amount column anywhere else the
+    control total appeared under a different heading — under the account number, in the very row a
+    bank reads back to check the batch before releasing it."""
+    built = _built()
+    cols = _cols(("no", "No"), ("name", "Name"), ("bank", "Bank"), ("account", "A/C"),
+                 ("amount", "Amount"))
+    rows = _parsed(B.to_csv(built, columns=cols))
+    hdr, trailer = rows[0], rows[-1]
+    assert trailer[hdr.index("Amount")] == str(int(built["total"])), "the total belongs under Amount"
+    assert trailer[hdr.index("A/C")] == "", "and not under the account number"
+
+
+def test_the_default_layout_is_unchanged_by_the_fix():
+    """The shipped layout was already correct; a fix for custom templates must not move it."""
+    built = _built()
+    rows = _parsed(B.to_csv(built))
+    assert rows[0][0] == "STT" and rows[-1][0] == "TOTAL"
+    assert rows[-1][3] == str(int(built["total"])), "So tien still carries the total"
+    assert len(rows[-1]) == len(rows[0])
+
+
+def test_the_row_count_never_overwrites_the_total():
+    """Both live in the control row; on a two-column template they would collide."""
+    built = _built()
+    rows = _parsed(B.to_csv(built, columns=_cols(("account", "A/C"), ("amount", "Amount"))))
+    assert rows[-1][1] == str(int(built["total"]))

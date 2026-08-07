@@ -5787,8 +5787,17 @@ class Handler(BaseHTTPRequestHandler):
         # `disabled` is an INTEGER column read with bool(). A stored "0" STRING is truthy in Python,
         # which would silently put somebody on the 14-day leave base and the six-month health-check
         # cadence. Coerce once, here, rather than defending at every read site.
+        # Same trap for both: SQLite stores a value it cannot convert as TEXT, and bool("false") is
+        # True — so a non-numeric string would silently assert the flag. Coerce once, here, rather
+        # than defending at every read site.
         if "disabled" in body:
             body["disabled"] = 1 if str(body.get("disabled")).strip().lower() in ("1", "true", "yes", "on") else 0
+        # `contractExempt` is NOT a flag — contracts.RENEWAL_EXEMPT decides which of the four
+        # Art. 20(2)(c) cases applies, and anything else means "not exempt". Reject the rest at the
+        # boundary rather than storing a value the law module will silently ignore.
+        if "contractExempt" in body:
+            _ce = str(body.get("contractExempt") or "").strip()
+            body["contractExempt"] = _ce if _ce in contracts.RENEWAL_EXEMPT else ""
         if body:
             self._audit_emp_change(u, eid, ex, body)
             db.update_employee(eid, body)
@@ -5915,6 +5924,15 @@ class Handler(BaseHTTPRequestHandler):
         out["hrSpUrl"] = db.get_setting("portal_hrSpUrl", "") or ""
         out["invtrackSpUrl"] = (db.get_setting("portal_invtrackSpUrl", "") or "") if rank >= self._level_rank(self.INVTRACK_MIN) else ""
         out["procurementUrl"] = db.get_setting("portal_procurementUrl", "") or ""
+        # The bank's column layout. Sent only to Editor+ (it describes a salary payment file), with
+        # the shipped default echoed back when nothing is configured so the form always has
+        # something real to show rather than an empty table the owner has to invent from nothing.
+        if rank >= self._level_rank("editor"):
+            _bt = db.get_setting("portal_bankTemplate")
+            out["bankTemplate"] = _bt if isinstance(_bt, list) and _bt else list(bank_transfer.COLUMNS)
+            out["bankTemplateIsDefault"] = not (isinstance(_bt, list) and _bt)
+            out["bankTemplateKeys"] = [{"key": c["key"], "header": c["header"]}
+                                       for c in bank_transfer.COLUMNS]
         # Approval-lifecycle email (department senders + on/off + last-send health for managers+).
         out["apprEmail"] = db.get_setting("portal_apprEmail", "1") or "1"
         out["apprSenderHr"] = db.get_setting("portal_apprSenderHr", "") or "hr@humiley.com"
@@ -6115,6 +6133,43 @@ class Handler(BaseHTTPRequestHandler):
         # frontend echoes the current URLs back on every save, so an UNCHANGED value passes
         # through silently and only an actual change requires admin.
         is_admin = self._caller_level(u) == "admin"
+        # The bank column layout. Admin-only: it decides the shape of the file that moves everybody's
+        # salary. Validated against the keys the builder can actually fill — an unknown key would
+        # produce a silently blank column, and a blank column in a payment file is how a batch gets
+        # rejected at the bank on payday.
+        if "bankTemplate" in body:
+            if not is_admin:
+                return self._err("Admin access required to change the bank file layout.", 403)
+            _bt = body.get("bankTemplate")
+            if not isinstance(_bt, list):
+                return self._err("The bank file layout must be a list of columns.", 400)
+            _known = {c["key"] for c in bank_transfer.COLUMNS}
+            _clean = []
+            for _c in _bt:
+                if not isinstance(_c, dict):
+                    return self._err("Each column needs a field and a heading.", 400)
+                _k = str(_c.get("key") or "").strip()
+                _h = str(_c.get("header") or "").strip()
+                if _k not in _known:
+                    return self._err("'%s' is not a field this file can fill. Choose one of: %s."
+                                     % (_k, ", ".join(sorted(_known))), 400)
+                if not _h:
+                    return self._err("Every column needs a heading — the bank matches on it.", 400)
+                _clean.append({"key": _k, "header": _h})
+            if _clean and not any(c["key"] == "amount" for c in _clean):
+                return self._err("The layout has no amount column, so the file would carry no money "
+                                 "figures at all.", 400)
+            if len(_clean) != len({c["key"] for c in _clean}):
+                return self._err("Each field can only appear once in the layout.", 400)
+            _was = db.get_setting("portal_bankTemplate")
+            db.set_setting("portal_bankTemplate", _clean or None)
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": "Bank file layout changed", "target": "settings/bankTemplate",
+                "detail": ("reset to the shipped layout" if not _clean else
+                           "columns: " + " | ".join("%s→%s" % (c["key"], c["header"]) for c in _clean))
+                          + (" (was the shipped default)" if not isinstance(_was, list) else ""),
+                "ts": self._utc_now()})
         for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
                       ("financeSpUrl", "portal_financeSpUrl"),
                       ("hrSpUrl", "portal_hrSpUrl"),
@@ -6690,12 +6745,37 @@ class Handler(BaseHTTPRequestHandler):
         # And say plainly what Microsoft has actually granted, so nobody has to guess again.
         _need = [("Mail.Read", "invoice inbox sync"), ("Mail.Send", "approval email")]
         _missing = [n for n, _ in _need if n not in _roles] + ([] if _site_ok else ["Sites.*"])
+        # Offboarding needs permissions this list never mentioned, so an owner who read "Granted: …"
+        # and saw a green row still had no way to learn that revoking a leaver's Microsoft access
+        # would fail. access_revoke owns the requirement; this just asks it.
+        _off = []
+        for _s in access_revoke.STEPS:
+            _off += access_revoke.missing_permissions(_s, _roles)
+        _off = sorted(set(_off))
+        # A token minted BEFORE consent still lacks the new role, and it is cached for up to an hour —
+        # so the screen an owner opens to check their consent worked is exactly the screen most likely
+        # to lie to them. Re-read once, with a fresh token, before reporting anything as missing.
+        if (_missing or _off) and ready:
+            _roles = _graph_granted_roles(force=True)
+            _site_ok = any(r.startswith("Sites.") for r in _roles)
+            _missing = [n for n, _ in _need if n not in _roles] + ([] if _site_ok else ["Sites.*"])
+            _off = sorted({p for _s in access_revoke.STEPS
+                           for p in access_revoke.missing_permissions(_s, _roles)})
+        _all_missing = _missing + _off
+        _hint = ""
+        if _all_missing:
+            _hint = ("Missing: " + ", ".join(_all_missing) +
+                     " — add under Entra → App registrations → API permissions → Microsoft Graph → "
+                     "Application permissions, then Grant admin consent.")
+            if _off:
+                _hint += (" The offboarding ones (" + ", ".join(_off) + ") are what let the portal cut "
+                          "a leaver's Microsoft access. Blocking sign-in ALSO needs the app assigned a "
+                          "privileged directory role (User Administrator) — that one cannot be seen in "
+                          "the token, so it is not listed above.")
         add("graphperms", "Microsoft Graph permissions",
-            "ok" if not _missing else "warn",
+            "ok" if not _all_missing else "warn",
             ("Granted: " + (", ".join(_roles) if _roles else "(none)")),
-            "" if not _missing else ("Missing: " + ", ".join(_missing) +
-                                     " — add under Entra → App registrations → API permissions "
-                                     "(Application), then Grant admin consent."))
+            _hint)
 
         pdfok = _pdf_engine_ok()
         add("pdf", "Invoice PDF reader", "ok" if pdfok else "warn",
@@ -8012,12 +8092,25 @@ class Handler(BaseHTTPRequestHandler):
         roles = _graph_granted_roles() if ready else []
         body = dict(body or {})
 
+        def _roles_now():
+            """Re-read the granted permissions with a FRESH token when anything looks unconsented.
+
+            The cached app-only token lives for about an hour, and a token minted before consent does
+            not carry the new role. Without this, an owner who grants consent and comes straight back
+            is told for the rest of the hour that they have not."""
+            if not ready:
+                return []
+            r = _graph_granted_roles()
+            if any(access_revoke.missing_permissions(st, r) for st in access_revoke.STEPS):
+                r = _graph_granted_roles(force=True)
+            return r
+
         def _full_plan(record):
             """The plan plus the two things only the server can answer — who this is, and what the
             tenant itself says. Both halves are returned by the preview AND by the run: after
             blocking an account, the tenant answering "disabled" is the proof, and a result screen
             that forgot whose access it just cut is not a result screen."""
-            pl = access_revoke.plan(record, granted_roles=roles, m365_configured=ready)
+            pl = access_revoke.plan(record, granted_roles=_roles_now(), m365_configured=ready)
             pl["m365"] = _graph_user(emp.get("email")) if ready else {
                 "found": False, "enabled": None, "id": "",
                 "error": "Microsoft 365 is not connected in Company Portal settings."}

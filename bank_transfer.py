@@ -148,9 +148,29 @@ def to_csv(built, columns=None):
     approves the batch in the bank's portal can check it against the pay run before releasing it —
     which is the one moment the whole month can still be caught."""
     cols = columns or built.get("columns") or COLUMNS
-    out = [",".join('"%s"' % str(c["header"]).replace('"', '""') for c in cols)]
+    q = lambda v: '"%s"' % str(v).replace('"', '""')
+    out = [",".join(q(c["header"]) for c in cols)]
     for r in built["rows"]:
-        out.append(",".join('"%s"' % str(r.get(c["key"], "")).replace('"', '""') for c in cols))
-    out.append(",".join(['"TOTAL"', '"%d rows"' % built["count"], '""',
-                         '"%d"' % int(built["total"])] + ['""'] * max(0, len(cols) - 4)))
+        out.append(",".join(q(r.get(c["key"], "")) for c in cols))
+
+    # The control row is built to the SHAPE OF THE TEMPLATE, not to a fixed four fields. The previous
+    # version wrote TOTAL / n rows / blank / total and then padded to len(cols), which broke twice on
+    # a custom layout: with fewer than four columns the trailer came out WIDER than the header (a
+    # malformed CSV), and the total always landed in the fourth column whatever that column actually
+    # was — so with the amount last, the batch total sat under the account-number heading. For a file
+    # a bank reads back to check a month's payroll, a total under the wrong heading is worse than no
+    # total at all.
+    keys = [c.get("key") for c in cols]
+    trailer = [""] * len(cols)
+    if trailer:
+        trailer[0] = "TOTAL"
+    _amount = keys.index("amount") if "amount" in keys else None
+    if _amount is not None:
+        trailer[_amount] = "%d" % int(built["total"])
+    # The count goes in the first free cell that is not the total, so it never overwrites it.
+    for i in range(1, len(cols)):
+        if i != _amount:
+            trailer[i] = "%d rows" % built["count"]
+            break
+    out.append(",".join(q(v) for v in trailer))
     return "\n".join(out)

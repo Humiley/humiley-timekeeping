@@ -1483,6 +1483,11 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="form-group"><label class="form-label">Annual overtime ceiling (hours)</label><input class="form-control" id="portal-otAnnualCap" placeholder="200" inputmode="numeric"><div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 107 allows <b>200 hours a year</b>, and <b>300</b> only for the industries Art. 107(3) lists, after notifying the labour authority. Leave blank for 200 — the answer for any company that has not taken and recorded that decision. The daily (4h) and monthly (40h) limits are fixed by the article and are not editable. Approving beyond a limit is still possible, but only with a reason, and it is written into the audit trail under the approver's name.</div></div>
     <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
+      <label class="form-label">Bank salary-file layout</label>
+      <div style="font-size:11px;color:var(--text-light);margin-bottom:8px">Every Vietnamese bank publishes its own upload template. Set the columns your bank expects and in what order — changing bank is a setting here, not a new release. Download a sample file from your bank's portal (Techcombank F@st EBank: <b>Payroll → Bulk transfer → Download template</b>) and copy its headings exactly; the bank matches on the heading text. Leave it untouched to use the shipped layout.</div>
+      <div id="bank-tpl-root"></div>
+    </div>
+    <div class="form-group" style="border-top:1px solid var(--line);padding-top:14px;margin-top:6px">
       <label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="portal-payerSeparation" style="width:auto">Disbursement segregation of duties — a different person pays than approved</label>
       <div style="font-size:11px;color:var(--text-light);margin-top:4px">When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least <b>two</b> authorised payers. Turn OFF only if your finance function is a single person; paying your <em>own</em> request stays blocked either way.</div>
       <label class="form-label" style="margin-top:12px">Authorised payers — who may mark a request paid</label>
@@ -5529,6 +5534,69 @@ async function tkFinSpBackfill() {
     toast(parts.join(' · '));
   } catch (e) { if (box) box.innerHTML = '<span style="color:#C00000">✗ ' + _crmEsc(e.message || 'failed') + '</span>'; }
 }
+/* ── Bank salary-file layout ────────────────────────────────────────────────────────────────────
+   The column layout was already a setting the file builder honoured — but with nothing anywhere to
+   set it, the only way in was a direct write to the database. So "your bank's template" was
+   effectively whatever we had guessed. This is the screen that makes it a real setting. */
+let _bankTpl = null, _bankTplFields = [], _bankTplDefault = true;
+
+function tkRenderBankTemplate() {
+  const root = document.getElementById('bank-tpl-root'); if (!root) return;
+  const isAdmin = _lvlRank(_userLevel) >= _lvlRank('admin');
+  const rows = (_bankTpl || []).map((c, i) => {
+    const opts = _bankTplFields.map(f => '<option value="' + f.key + '"' + (f.key === c.key ? ' selected' : '') + '>' + _crmEsc(f.key) + '</option>').join('');
+    return '<tr><td style="padding:3px 6px 3px 0;width:34px;color:var(--text-light);font-size:11px">' + (i + 1) + '</td>' +
+      '<td style="padding:3px 6px 3px 0"><select class="form-control" style="font-size:12px;padding:5px 8px" ' + (isAdmin ? '' : 'disabled ') + 'onchange="_bankTpl[' + i + '].key=this.value;tkRenderBankTemplate()">' + opts + '</select></td>' +
+      '<td style="padding:3px 6px 3px 0"><input class="form-control" style="font-size:12px;padding:5px 8px" ' + (isAdmin ? '' : 'disabled ') + 'value="' + _tkEscA(c.header) + '" oninput="_bankTpl[' + i + '].header=this.value;_bankTplPreview()"></td>' +
+      '<td style="padding:3px 0;width:30px">' + (isAdmin ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 7px;color:#C00000" onclick="_bankTpl.splice(' + i + ',1);tkRenderBankTemplate()">✕</button>' : '') + '</td></tr>';
+  }).join('');
+  root.innerHTML =
+    '<table style="width:100%;font-size:12px"><thead><tr>' +
+      '<th style="text-align:left;font-size:10px;color:var(--text-light)">#</th>' +
+      '<th style="text-align:left;font-size:10px;color:var(--text-light)">' + _t('Field') + '</th>' +
+      '<th style="text-align:left;font-size:10px;color:var(--text-light)">' + _t("Heading the bank expects") + '</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' + _t('Preview of the first line of the file') + ':</div>' +
+    '<div id="bank-tpl-preview" style="font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--soft-bg);padding:8px 10px;border-radius:6px;overflow-x:auto;white-space:nowrap;margin-top:3px"></div>' +
+    (_bankTplDefault ? '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' + _t('Currently using the shipped layout — nothing has been configured for your bank yet.') + '</div>' : '') +
+    (isAdmin
+      ? '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+          '<button class="btn btn-outline btn-sm" onclick="_bankTplAdd()">' + _t('Add column') + '</button>' +
+          '<button class="btn btn-ghost btn-sm" onclick="_bankTplReset()">' + _t('Reset to the shipped layout') + '</button>' +
+          '<button class="btn btn-primary btn-sm" onclick="tkSaveBankTemplate()">' + _t('Save layout') + '</button>' +
+        '</div>'
+      : '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' + _t('Only an Admin can change this — it decides the shape of the file that moves everyone\'s salary.') + '</div>');
+  _bankTplPreview();
+}
+
+function _bankTplPreview() {
+  const el = document.getElementById('bank-tpl-preview'); if (!el) return;
+  el.textContent = (_bankTpl || []).map(c => '"' + String(c.header || '').replace(/"/g, '""') + '"').join(',');
+}
+
+function _bankTplAdd() {
+  const used = new Set((_bankTpl || []).map(c => c.key));
+  const next = _bankTplFields.find(f => !used.has(f.key)) || _bankTplFields[0];
+  if (!next) return;
+  _bankTpl.push({ key: next.key, header: next.header });
+  tkRenderBankTemplate();
+}
+
+function _bankTplReset() {
+  _bankTpl = _bankTplFields.map(f => ({ key: f.key, header: f.header }));
+  tkRenderBankTemplate();
+}
+
+async function tkSaveBankTemplate() {
+  if (!_bankTpl || !_bankTpl.length) { toast(_t('Add at least one column'), 'warn'); return; }
+  try {
+    await tkApi('/api/portal', { method: 'PATCH', body: { bankTemplate: _bankTpl } });
+    _bankTplDefault = false;
+    toast(_t('Bank file layout saved. The next salary file uses these columns.'), 'success', 5000);
+    tkRenderBankTemplate();
+  } catch (e) { toast(_t('Could not save the layout') + ': ' + _errMsg(e), 'error', 6000); }
+}
+
 async function tkLoadIntegrations() {
   if (!document.getElementById('portal-teams')) return;   // integrations card absent (non-admin / other view)
   let live = null;
@@ -5548,6 +5616,12 @@ async function tkLoadIntegrations() {
   const _ps = document.getElementById('portal-payerSeparation'); if (_ps) _ps.checked = String(g('payerSeparation', '1')) === '1';
   const _pp = document.getElementById('portal-apprPayers'); if (_pp) _pp.value = g('apprPayers', '');   // admin-only; blank for everyone else
   const _hra = document.getElementById('portal-hrAdmins'); if (_hra) _hra.value = g('hrAdmins', '');    // admin-only; blank for everyone else
+  if (document.getElementById('bank-tpl-root')) {
+    _bankTplFields = (live && Array.isArray(live.bankTemplateKeys)) ? live.bankTemplateKeys : [];
+    _bankTpl = (live && Array.isArray(live.bankTemplate)) ? live.bankTemplate.map(c => ({ key: c.key, header: c.header })) : [];
+    _bankTplDefault = !!(live && live.bankTemplateIsDefault);
+    tkRenderBankTemplate();
+  }
   const _otc = document.getElementById('portal-otAnnualCap'); if (_otc) _otc.value = (g('otAnnualCap', '') === '200' ? '' : g('otAnnualCap', ''));   // blank means the ordinary 200
   const _de = document.getElementById('portal-digestEnabled'); if (_de) _de.checked = String(g('digestEnabled', '0')) === '1';
   const _dday = document.getElementById('portal-digestDay'); if (_dday) _dday.value = g('digestDay', '0');
@@ -13193,19 +13267,23 @@ function _revokeStepRow(s, exitId) {
   const why = s.blockedCode === 'unconfigured'
     ? _t('Microsoft 365 is not connected in Company Portal settings.')
     : s.blockedCode === 'consent'
-      ? (s.needs || '') + ' — ' + _t('this permission has not been granted to the portal, so it cannot do this.')
+      ? (s.missing || []).join(' + ') + ' — ' + _t('not granted to the portal, so it cannot do this.')
       : (s.note || _t(s.exposure || ''));
   const sub = s.done
     ? '<div style="font-size:10.5px;color:var(--emerald)">' + _crmEsc(s.note || '') +
       (s.by ? ' — ' + _crmEsc(s.by) : '') + (s.at ? ' · ' + tkFmtDate((s.at || '').slice(0, 10)) : '') + '</div>'
     : '<div style="font-size:10.5px;color:' + (s.blocked ? '#B45309' : 'var(--text-light)') + '">' +
       _crmEsc(why) + '</div>';
+  // A requirement the portal genuinely cannot verify is stated rather than assumed away.
+  const caveat = (!s.done && s.roleCaveat)
+    ? '<div style="font-size:10.5px;color:#B45309;margin-top:2px">' + _crmEsc(_t(s.roleCaveat)) + '</div>'
+    : '';
   const btn = (!s.done && s.auto && !s.blocked)
     ? '<button class="btn btn-outline btn-sm" style="font-size:10.5px;padding:3px 8px;white-space:nowrap" onclick="tkExitRevokeRun(\'' + exitId + '\',\'' + s.key + '\')">' + _t('Revoke') + '</button>'
     : '';
   return '<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)">' +
     '<div style="width:14px;flex:none;text-align:center">' + tick + '</div>' +
-    '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">' + _crmEsc(_t(s.label)) + '</div>' + sub + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">' + _crmEsc(_t(s.label)) + '</div>' + sub + caveat + '</div>' +
     '<div style="flex:none">' + btn + '</div></div>';
 }
 
@@ -19718,6 +19796,21 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Bank salary-file layout ──
+  'Field': 'Trường dữ liệu',
+  'Heading the bank expects': 'Tiêu đề cột theo mẫu ngân hàng',
+  'Preview of the first line of the file': 'Xem trước dòng đầu của tệp',
+  'Currently using the shipped layout — nothing has been configured for your bank yet.':
+    'Đang dùng bố cục mặc định — chưa cấu hình theo ngân hàng của bạn.',
+  'Add column': 'Thêm cột',
+  'Reset to the shipped layout': 'Khôi phục bố cục mặc định',
+  'Save layout': 'Lưu bố cục',
+  'Add at least one column': 'Hãy thêm ít nhất một cột',
+  'Bank file layout saved. The next salary file uses these columns.':
+    'Đã lưu bố cục. Tệp lương tiếp theo sẽ dùng các cột này.',
+  'Could not save the layout': 'Không lưu được bố cục',
+  "Only an Admin can change this — it decides the shape of the file that moves everyone's salary.":
+    'Chỉ Quản trị viên mới đổi được — nó quyết định định dạng tệp chuyển lương cho tất cả mọi người.',
   // ── Access on exit ──
   'Access': 'Quyền truy cập',
   'Access on exit': 'Quyền truy cập khi nghỉ việc',
@@ -19769,8 +19862,10 @@ const _VI = {
   'Microsoft 365 not checked': 'Chưa kiểm tra Microsoft 365',
   'Microsoft 365 is not connected in Company Portal settings.':
     'Chưa kết nối Microsoft 365 trong cài đặt Cổng công ty.',
-  'this permission has not been granted to the portal, so it cannot do this.':
-    'quyền này chưa được cấp cho cổng, nên không thể thực hiện.',
+  'not granted to the portal, so it cannot do this.':
+    'chưa được cấp cho cổng, nên không thể thực hiện.',
+  'Microsoft also requires the app itself to hold a privileged directory role (User Administrator is enough for ordinary staff). That role is not visible in the token, so the portal cannot confirm it here — if it is missing, this step fails with Authorization_RequestDenied and says so.':
+    'Microsoft còn yêu cầu ứng dụng có vai trò quản trị thư mục (User Administrator là đủ cho nhân viên thường). Vai trò này không hiện trong token nên cổng không xác nhận được — nếu thiếu, bước này sẽ lỗi Authorization_RequestDenied và báo rõ.',
   'Check Microsoft 365': 'Kiểm tra Microsoft 365',
   'Portal only': 'Chỉ trong cổng',
   'Former employees whose access has not been shut — asked of the systems themselves, not of the checklist':
@@ -24074,7 +24169,11 @@ function tkRenderBalances() {
       '<td><div style="font-size:12px">' + sU + ' / ' + sT + ' days<div class="prog-wrap" style="margin-top:3px;width:100px"><div class="prog-fill prog-emerald" style="width:' + sPct + '%"></div></div></div></td>' +
       '<td style="font-weight:700;color:var(--navy)">' + (e.compoff || 0) + 'd</td>' +
       '<td><span class="badge ' + (active ? 'b-ok' : 'b-danger') + '" style="font-size:10px">' + (active ? 'Active' : 'Inactive') + '</span></td>' +
-      '<td><button class="btn btn-ghost btn-sm" onclick="editBalance(this)">Edit</button></td></tr>';
+      // Straight to the employee record. The old button opened a modal that was not in the DOM (it
+      // had been swallowed into a demo popup's template literal), so it threw; and its save handler
+      // only ever showed "Balance updated" without writing anything. Annual and sick days live on
+      // the employee form, which does persist.
+      '<td><button class="btn btn-ghost btn-sm" onclick="_editEmpProfile(\'' + e.id + '\')">' + _t('Edit') + '</button></td></tr>';
   }).join('');
 }
 
@@ -24190,6 +24289,14 @@ function _editEmpProfile(id) {
   set('emp-address',e.address); set('emp-emergency',e.emergency); set('emp-english',e.englishCert);
   set('emp-note',e.note); set('emp-annual',e.annualTotal); set('emp-sick',e.sickTotal);
   set('emp-grade', e.grade); set('emp-salary', e.salary); set('emp-dependents', e.dependents); set('emp-shirt', e.shirtSize); _empGradeChanged(false); _empDepsChanged();
+  // The four statutory classifications and the bank details. Blank means blank — `workConditions`
+  // deliberately falls back to "normal" only at the point of USE, so an unclassified employee is
+  // visibly unclassified here rather than silently asserted to be office staff.
+  set('emp-workConditions', e.workConditions || 'normal'); set('emp-oshGroup', e.oshGroup || '');
+  set('emp-bankName', e.bankName); set('emp-bankAcc', e.bankAcc);
+  set('emp-bankHolder', e.bankHolder); set('emp-bankBranch', e.bankBranch);
+  const _dis = document.getElementById('emp-disabled'); if (_dis) _dis.checked = !!e.disabled;
+  set('emp-contractExempt', e.contractExempt || '');
   set('emp-photo', e.photo);
   const pp = document.getElementById('emp-photo-preview');
   if (pp) { if (e.photo) { pp.style.backgroundImage='url('+e.photo+')'; pp.style.backgroundSize='cover'; pp.style.backgroundPosition='center'; pp.textContent=''; } else { pp.style.backgroundImage=''; pp.textContent='Photo'; } }
@@ -24197,12 +24304,6 @@ function _editEmpProfile(id) {
   openModal('addEmpModal');
 }
 
-function editEmployeeProfile(btn) {
-  const card = btn.closest('.emp-profile-card');
-  const name = card?.querySelector('.emp-profile-name')?.dataset.empname || card?.querySelector('.emp-profile-name')?.textContent?.trim();
-  if (name) { const e = _DEMO_EMPLOYEES.find(x=>x.name===name); if(e) { _viewEmpProfile(e.id); return; } }
-  openModal('addEmpModal');
-}
 
 /* ──────────────────────────────────────────────────────────
    SAVE LOCATION — adds row to GPS zones table
@@ -24231,20 +24332,6 @@ function saveLocation() {
     });
 }
 
-function editBalance(btnOrName) {
-  let empName = typeof btnOrName === 'string' ? btnOrName : '';
-  if (!empName && typeof btnOrName === 'object') {
-    const row = btnOrName.closest('tr');
-    empName = row?.querySelector('[style*="font-weight:700"]')?.textContent?.trim() || 'Employee';
-  }
-  openModal('editBalanceModal');
-  document.getElementById('ebal-emp').textContent = empName;
-  document.getElementById('ebal-annual').value = '';
-  document.getElementById('ebal-sick').value   = '';
-  document.getElementById('ebal-compoff').value = '';
-  // Store name for save
-  document.getElementById('ebal-emp-hidden').value = empName;
-}
 
 /* ──────────────────────────────────────────────────────────
    15. ATTENDANCE TABLE
@@ -25451,126 +25538,6 @@ function viewLeaveDetail(btn) {
   document.body.appendChild(el);
 }
 
-/* ══════════════════════════════════════════════════════════
-   VIEW CERTIFICATE (demo)
-══════════════════════════════════════════════════════════ */
-function viewCertificate(btn) {
-  const card = btn.closest('.approval-card');
-  const name  = card?.querySelector('[style*="font-weight:700"]')?.textContent?.trim() || 'Employee';
-  // Open a small popup window showing a demo certificate
-  const win = window.open('', '_blank', 'width=420,height=320,scrollbars=no');
-  if (win) {
-    win.document.write(`<html><head><title>Medical Certificate — ${name}</title>
-    <style>body{font-family:Calibri,Arial;padding:30px;color:#1F2937}h2{color:#205090;border-bottom:2px solid #00B060;padding-bottom:8px}table{width:100%;border-collapse:collapse;margin-top:14px}td{padding:6px 0;font-size:13px}td:first-child{color:#5C6470;width:130px}.stamp{margin-top:20px;border:2px dashed #00B060;padding:10px;border-radius:8px;text-align:center;color:#205090}</style>
-    </head><body>
-    <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:7px"><path d="M8 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/><path d="M12 11v6M9 14h6"/></svg>Medical Certificate</h2>
-    <table>
-    <tr><td>Patient Name</td><td><strong>${name}</strong></td></tr>
-    <tr><td>Date Issued</td><td>May 9, 2026</td></tr>
-    <tr><td>Diagnosis</td><td>Acute febrile illness (fever, flu)</td></tr>
-    <tr><td>Rest Advised</td><td>1 day (May 10, 2026)</td></tr>
-    <tr><td>Issuing Doctor</td><td>Dr. Nguyen Thi Huong</td></tr>
-    <tr><td>Hospital</td><td>Cho Ray Hospital, HCMC</td></tr>
-    </table>
-    <div class="stamp">Verified — Cho Ray Hospital · Stamp No. 2026-0510-CR</div>
-    
-<!-- EDIT LEAVE BALANCE MODAL -->
-<div class="modal-overlay" id="editBalanceModal">
-  <div class="modal" style="max-width:400px">
-    <div class="modal-header">
-      <div class="modal-title"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:7px"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit Leave Balance</div>
-      <button class="modal-close" onclick="closeModal('editBalanceModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div style="font-size:13px;margin-bottom:14px;color:var(--text-light)">
-      Editing balance for: <strong id="ebal-emp" style="color:var(--navy)">—</strong>
-      <input type="hidden" id="ebal-emp-hidden">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Annual Leave (days remaining)</label>
-      <input type="number" class="form-control" id="ebal-annual" placeholder="e.g. 8" min="0" max="30">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Sick Leave (days remaining)</label>
-      <input type="number" class="form-control" id="ebal-sick" placeholder="e.g. 30" min="0" max="60">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Comp-off (days remaining)</label>
-      <input type="number" class="form-control" id="ebal-compoff" placeholder="e.g. 2" min="0" max="10">
-    </div>
-    <div class="tip-box">Changes sync to SharePoint <code>Leave_Balances</code> list when connected.</div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('editBalanceModal')">Cancel</button>
-      <button class="btn btn-emerald" onclick="saveBalance()">Save Changes</button>
-    </div>
-  </div>
-</div>
-
-<!-- EDIT EMPLOYEE PROFILE MODAL -->
-<div class="modal-overlay" id="editEmpModal">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header">
-      <div class="modal-title">Edit Employee Profile</div>
-      <button class="modal-close" onclick="closeModal('editEmpModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
-    <div class="grid-2">
-      <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="form-control" id="ee-name"></div>
-      <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="ee-id" readonly style="background:var(--soft-bg)"></div>
-    </div>
-    <div class="grid-2">
-      <div class="form-group"><label class="form-label">Job Title</label><input type="text" class="form-control" id="ee-title"></div>
-      <div class="form-group"><label class="form-label">Department</label>
-        <select class="form-control" id="ee-dept">
-          <option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option>
-        </select>
-      </div>
-    </div>
-    <div class="grid-2">
-      <div class="form-group"><label class="form-label">Work Schedule</label>
-        <select class="form-control" id="ee-schedule">
-          <option>Standard 08:00 – 17:00</option><option>Morning Shift 06:00 – 14:00</option>
-          <option>Evening Shift 14:00 – 22:00</option><option>Flexible (Field Services)</option><option>WFH Schedule</option>
-        </select>
-      </div>
-      <div class="form-group"><label class="form-label">Status</label>
-        <select class="form-control" id="ee-status"><option>Active</option><option>Inactive</option><option>On Leave</option></select>
-      </div>
-    </div>
-    <div class="grid-2">
-      <div class="form-group"><label class="form-label">Working conditions</label>
-        <select class="form-control" id="ee-workConditions">
-          <option value="normal">Normal — 12 days annual leave</option>
-          <option value="heavy">Heavy / hazardous / dangerous — 14 days</option>
-          <option value="especially_heavy">Especially heavy / hazardous / dangerous — 16 days</option>
-        </select>
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 113(1). This is a classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties.</div>
-      </div>
-      <div class="form-group"><label class="form-label">Bank account (for salary)</label>
-        <div class="grid-2" style="gap:8px">
-          <input class="form-control" id="ee-bankName" placeholder="Techcombank">
-          <input class="form-control" id="ee-bankAcc" inputmode="numeric" placeholder="Account number">
-        </div>
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Both are needed before this person can be included in a salary payment file — the file is refused outright rather than produced without them, because one missing row looks exactly like a complete file.</div>
-      </div>
-    </div>
-    <div class="grid-2">
-      <div class="form-group"><label class="form-label">Account holder (if different from the name above)</label><input class="form-control" id="ee-bankHolder" placeholder="NGUYEN VAN A"></div>
-      <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ee-disabled" style="width:auto">Person with disabilities</label>
-        <div style="font-size:11px;color:var(--text-light);margin-top:4px">Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.</div>
-      </div>
-    </div>
-    <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-control" id="ee-email" placeholder="name@humiley.com.vn"></div>
-    <div class="form-group"><label class="form-label">Direct Manager (approves their leave)</label><select class="form-control" id="ee-manager"><option value="">— None (top of org) —</option></select></div>
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('editEmpModal')">Cancel</button>
-      <button class="btn btn-emerald" onclick="saveEmployeeProfile()">Save Changes</button>
-    </div>
-  </div>
-</div>
-</body></html>`);
-  } else {
-    toast('Medical certificate on file — Cho Ray Hospital May 9, 2026');
-  }
-}
 
 /* ══════════════════════════════════════════════════════════
    MANAGER NOTE
@@ -25665,19 +25632,6 @@ function toggleNotifications() {
 }
 
 
-function saveBalance() {
-  const emp     = document.getElementById('ebal-emp-hidden')?.value || '—';
-  const annual  = document.getElementById('ebal-annual')?.value;
-  const sick    = document.getElementById('ebal-sick')?.value;
-  const compoff = document.getElementById('ebal-compoff')?.value;
-  const parts = [];
-  if (annual  !== '') parts.push('Annual: ' + annual + 'd');
-  if (sick    !== '') parts.push('Sick: ' + sick + 'd');
-  if (compoff !== '') parts.push('Comp-off: ' + compoff + 'd');
-  if (!parts.length) { toast('Please enter at least one balance value', 'warn'); return; }
-  closeModal('editBalanceModal');
-  toast('Balance updated for ' + emp + ' — ' + parts.join(' · '));
-}
 
 
 /* ══════════════════════════════════════════════════════════
@@ -25688,6 +25642,10 @@ function openAddEmpModal() {
   const count  = document.querySelectorAll('#hr-employees .emp-profile-card').length;
   const nextId = 'EMP' + String(count + 1).padStart(3, '0');
   const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+  setVal('emp-workConditions', 'normal'); setVal('emp-oshGroup', '');
+  setVal('emp-bankName', ''); setVal('emp-bankAcc', ''); setVal('emp-bankHolder', ''); setVal('emp-bankBranch', '');
+  setVal('emp-contractExempt', '');
+  const _d0 = document.getElementById('emp-disabled'); if (_d0) _d0.checked = false;
   setVal('emp-name',   '');
   setVal('emp-id',     nextId);
   setVal('emp-title',  '');
@@ -25776,6 +25734,19 @@ async function saveEmployee() {
     // employee with children was taxed as if they had none.
     dependents: Math.max(0, parseInt(val('emp-dependents')) || 0),
     annualTotal: parseInt(val('emp-annual')) || 12, sickTotal: parseInt(val('emp-sick')) || 30,
+    // Statutory classifications (Art. 113(1) leave base, OSH Law Art. 21 health-check cadence,
+    // Decree 44 safety training, Art. 20(2)(c) renewal exemption) and where salary is sent. The
+    // server re-checks that only an admin may set these; sending them is not the same as being
+    // allowed to.
+    workConditions: val('emp-workConditions') || 'normal',
+    oshGroup: val('emp-oshGroup') || '',
+    disabled: document.getElementById('emp-disabled')?.checked ? 1 : 0,
+    // NOT a boolean: contracts.py tests this for membership in RENEWAL_EXEMPT, so it carries WHICH
+    // of the four Art. 20(2)(c) cases applies. A 1/0 flag would never match, and the exemption would
+    // silently never apply.
+    contractExempt: val('emp-contractExempt') || '',
+    bankName: val('emp-bankName'), bankAcc: val('emp-bankAcc'),
+    bankHolder: val('emp-bankHolder'), bankBranch: val('emp-bankBranch'),
   };
   // Admin-assigned Employee ID — only on ADD (the ID is the immutable key; it never changes on edit).
   if (!_tkEditEmpId) { const eid = val('emp-id'); if (eid) payload.id = eid; }
@@ -25818,44 +25789,7 @@ function tkPopulateManagerSelect(selectedEmail, excludeId) {
     emps.map(e => '<option value="' + (e.email || '') + '"' + (cur === (e.email || '').toLowerCase() ? ' selected' : '') + '>' + e.name + (e.title ? ' (' + e.title + ')' : '') + '</option>').join('');
 }
 
-function editEmployeeProfile(btn) {
-  const card = btn.closest('.emp-profile-card');
-  const name = (card?.querySelector('.emp-profile-name')?.textContent || '').trim();
-  const emp = (_DEMO_EMPLOYEES || []).find(e => e.name === name);
-  if (!emp) { if (typeof toast === 'function') toast('Employee not found', 'warn'); return; }
-  document.getElementById('ee-name').value  = emp.name;
-  document.getElementById('ee-id').value    = emp.id;
-  document.getElementById('ee-title').value = emp.title || '';
-  document.getElementById('ee-email').value = emp.email || '';
-  try { tkFillSchedSelects(); } catch (e) {}   // custom (persisted) schedules become assignable, not just the 5 hardcoded ones
-  const wcSel = document.getElementById('ee-workConditions'); if (wcSel) wcSel.value = emp.workConditions || 'normal';
-  const disCb = document.getElementById('ee-disabled'); if (disCb) disCb.checked = !!emp.disabled;
-  [['ee-bankName', 'bankName'], ['ee-bankAcc', 'bankAcc'], ['ee-bankHolder', 'bankHolder']]
-    .forEach(([id, k]) => { const el = document.getElementById(id); if (el) el.value = emp[k] || ''; });
-  const schedSel = document.getElementById('ee-schedule'); if (schedSel) { if (emp.schedule && !Array.from(schedSel.options).some(o => o.value === emp.schedule)) { const o = document.createElement('option'); o.textContent = emp.schedule; schedSel.appendChild(o); } schedSel.value = emp.schedule || 'Standard 08:00 – 17:00'; }
-  tkPopulateManagerSelect(emp.managerEmail, emp.id);
-  openModal('editEmpModal');
-}
 
-function saveEmployeeProfile() {
-  const id    = document.getElementById('ee-id')?.value?.trim() || '';
-  const name  = document.getElementById('ee-name')?.value?.trim() || '—';
-  const title = document.getElementById('ee-title')?.value?.trim() || '';
-  const email = document.getElementById('ee-email')?.value?.trim() || '';
-  const managerEmail = document.getElementById('ee-manager')?.value || '';
-  const schedule = document.getElementById('ee-schedule')?.value || '';
-  const workConditions = document.getElementById('ee-workConditions')?.value || 'normal';
-  const disabled = document.getElementById('ee-disabled')?.checked ? 1 : 0;
-  const bankName = document.getElementById('ee-bankName')?.value?.trim() || '';
-  const bankAcc = document.getElementById('ee-bankAcc')?.value?.trim() || '';
-  const bankHolder = document.getElementById('ee-bankHolder')?.value?.trim() || '';
-  if (id) {
-    tkPersist('/api/employees/' + id, { name, title, email, managerEmail, schedule, workConditions, disabled, bankName, bankAcc, bankHolder }, 'PATCH')
-      .then(async () => { try { await tkBootstrap(); _renderEmployeeTable(); tkRenderDashboard(); tkUpdateNotifications(); } catch (e) {} });
-  }
-  closeModal('editEmpModal');
-  toast('Profile updated for ' + name + (title ? ' — ' + title : ''));
-}
 
 </script>
 
@@ -26034,6 +25968,45 @@ function saveEmployeeProfile() {
       <div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:10px">Access &amp; Provisioning</div>
       <div class="grid-2">
         <div class="form-group"><label class="form-label">System Access / Permission</label><select class="form-control" id="emp-access"><option value="staff">User (Staff)</option><option value="manager">Contributor (HR / Manager)</option><option value="management">Approver (Management)</option><option value="editor">Editor (Payroll)</option><option value="admin">Admin</option></select></div>
+        <div class="form-group"><label class="form-label">Working conditions</label>
+          <select class="form-control" id="emp-workConditions">
+            <option value="normal">Normal — 12 days annual leave</option>
+            <option value="heavy">Heavy / hazardous / dangerous — 14 days</option>
+            <option value="especially_heavy">Especially heavy / hazardous / dangerous — 16 days</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Labour Code Art. 113(1). A classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties. It also sets the health-check cadence to every 6 months instead of 12.</div>
+        </div>
+        <div class="form-group"><label class="form-label">Occupational safety &amp; health group</label>
+          <select class="form-control" id="emp-oshGroup">
+            <option value="">— None (office duties) —</option>
+            <option value="1">Group 1 — managers responsible for OSH</option>
+            <option value="2">Group 2 — OSH officers</option>
+            <option value="3">Group 3 — workers on jobs with strict OSH requirements</option>
+            <option value="4">Group 4 — other workers</option>
+            <option value="5">Group 5 — occupational health staff</option>
+            <option value="6">Group 6 — safety &amp; health network members</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Decree 44/2016 Art. 24. Safety training is only required — and only chased — where a group is set. Leaving this blank asserts the training requirement for nobody.</div>
+        </div>
+        <div class="form-group"><label class="form-label" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="emp-disabled" style="width:auto">Person with disabilities</label>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.</div>
+        </div>
+        <div class="form-group"><label class="form-label">Exempt from the fixed-term renewal limit</label>
+          <select class="form-control" id="emp-contractExempt">
+            <option value="">— Not exempt (the normal case) —</option>
+            <option value="elderly">Elderly employee</option>
+            <option value="foreign">Foreign worker on a work permit</option>
+            <option value="state_director">Appointed director of a state-capital enterprise</option>
+            <option value="union_officer">Trade-union officer serving a term</option>
+          </select>
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Art. 20(2)(c) recognises exactly these four cases, who may be renewed on fixed terms indefinitely. Everyone else may be renewed once, after which the next contract must be indefinite. It records WHICH exemption applies, not merely that one does — that is the question an inspector asks.</div>
+        </div>
+        <div class="form-group"><label class="form-label">Bank name</label><input class="form-control" id="emp-bankName" placeholder="Techcombank"></div>
+        <div class="form-group"><label class="form-label">Bank account number</label><input class="form-control" id="emp-bankAcc" inputmode="numeric" placeholder="19012345678901">
+          <div style="font-size:11px;color:var(--text-light);margin-top:4px">Both are needed before this person can appear in a salary payment file — the file is refused outright rather than produced without them, because a file missing one row uploads cleanly and looks correct.</div>
+        </div>
+        <div class="form-group"><label class="form-label">Account holder <span style="font-weight:400;color:var(--text-light)">(only if different from their name)</span></label><input class="form-control" id="emp-bankHolder" placeholder="NGUYEN VAN A"></div>
+        <div class="form-group"><label class="form-label">Bank branch</label><input class="form-control" id="emp-bankBranch" placeholder="Tan Binh"></div>
         <div class="form-group"><label class="form-label">Shirt / Uniform Size</label><select class="form-control" id="emp-shirt"><option value="">—</option><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>3XL</option></select></div>
       </div>
       <label class="form-label">Provision on hire <span style="color:var(--text-light);font-weight:400">(auto-creates assets assigned to this employee)</span></label>
