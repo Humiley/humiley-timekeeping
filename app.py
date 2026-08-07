@@ -37,6 +37,7 @@ import overtime          # Labour Code Art. 98/106/107 overtime rates, night pre
 import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
+import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3669,6 +3670,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
+            _xid = path[len("/api/hr/exit/"):-len("/settlement")]
+            return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid)))
         if path == "/api/hr/certificates/review":
             return self._guard(lambda u: self._certificates_review_ep(u, qs))
         if path == "/api/hr/contracts/review":
@@ -3731,6 +3735,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_jd_ep(u, body))
         if path == "/api/hr/onboarding/file":
             return self._guard(lambda u: self._hr_onb_file_ep(u, body))
+        if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
+            _xid = path[len("/api/hr/exit/"):-len("/settlement")]
+            return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid),
+                                                               create=True, body=body), manager=True)
         if path == "/api/hr/leave-entitlement/apply":
             return self._guard(lambda u: self._leave_entitlement_apply_ep(u, body), manager=True)
         if path == "/api/hr/history-repair":
@@ -7789,6 +7797,122 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    def _exit_settlement(self, u, exit_id, create=False, body=None):
+        """What is owed on the way out — computed, itemised, and optionally raised as a payable.
+
+        The exit record has always carried a settlement figure. Nobody computed it: severance was a
+        number somebody typed, beside a comment claiming a calculation the code never did. And the
+        figure went nowhere — paying it was a separate act of memory, outside the approval and
+        disbursement path every other payment in the company goes through.
+
+        This computes it from the law (Art. 113(4) untaken leave, Art. 46 severance or Art. 47
+        job-loss allowance, Art. 48(1) deadline) and, on POST, raises it as a payment request so it
+        is approved and released like anything else. Once. A second POST returns the first payable
+        rather than minting a duplicate — this is somebody's final pay, and paying it twice is not a
+        recoverable clerical error.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — a final settlement "
+                             "states somebody's pay.", 403)
+        rec = db.get_collection_item("exits", str(exit_id or "")) or {}
+        if not rec:
+            return self._err("Exit record not found.", 404)
+        emp = db.get_employee(rec.get("empId")) if rec.get("empId") else None
+        if not emp:
+            return self._err("That exit has no employee record to settle against.", 404)
+
+        body = body or {}
+        last_day = str(rec.get("lastDay") or emp.get("endDate") or "")[:10]
+        if not self._RE_DATE.match(last_day):
+            return self._err("The exit has no last working day, so nothing can be settled or dated.", 400)
+
+        # The wage the allowances are computed on: Decree 145/2020 Art. 8(2) takes the average of the
+        # six months before termination. The dated history is the only honest source for that — a
+        # current salary would price a leaver on a raise they had for one month.
+        wages = []
+        try:
+            hist = db.list_emp_events(emp_id=emp.get("id"), field="salary")
+            for m in range(6):
+                d = (datetime.strptime(last_day, "%Y-%m-%d") - timedelta(days=30 * m)).strftime("%Y-%m-%d")
+                v = db.emp_value_asof(emp.get("id"), "salary", d)
+                if v not in (None, ""):
+                    wages.append(float(v))
+        except Exception:
+            hist = []
+        if not wages:
+            try:
+                wages = [float(emp.get("salary") or 0)]
+            except (TypeError, ValueError):
+                wages = [0.0]
+        wage = settlement.average_wage(list(reversed(wages)))
+
+        # Art. 113(4): leave earned and not taken. The entitlement engine gives the earned figure for
+        # the leaving year — prorated, which a leaver's is — rather than the annual headline.
+        ent = leave_entitlement.entitlement(
+            emp.get("startDate"), int(last_day[:4]),
+            conditions=emp.get("workConditions") or "normal", dob=emp.get("dob"),
+            disabled=bool(emp.get("disabled")), end=last_day)
+        try:
+            used = float(emp.get("annualUsed") or 0)
+        except (TypeError, ValueError):
+            used = 0.0
+        untaken = max(0.0, float(ent["days"]) - used)
+
+        _hol = _ot_holiday_set()
+        _rest = _rest_weekdays_for(emp)
+        res = settlement.settle(
+            emp.get("startDate"), last_day, wage,
+            leave_days_untaken=untaken,
+            reason=rec.get("type") or rec.get("reason") or "",
+            outstanding_salary=float(body.get("outstandingSalary") or rec.get("outstandingSalary") or 0),
+            deductions=float(body.get("deductions") or rec.get("deductions") or 0),
+            holidays=_hol, rest_weekdays=_rest)
+        res["employee"] = {"id": emp.get("id"), "name": emp.get("name") or "",
+                           "startDate": emp.get("startDate") or "", "lastDay": last_day}
+        res["wage"] = wage
+        res["leaveEarned"] = ent["days"]
+        res["leaveUsed"] = used
+        res["leaveUntaken"] = untaken
+        res["paymentId"] = rec.get("settlementPaymentId") or ""
+
+        if not create:
+            return self._json(dict({"ok": True}, **res))
+
+        # Already raised: hand back the one that exists. Never a second.
+        if rec.get("settlementPaymentId"):
+            return self._json(dict({"ok": True, "alreadyRaised": True}, **res))
+        if res["total"] <= 0:
+            return self._err("There is nothing owed on this settlement, so there is nothing to pay.", 400)
+
+        _rows = "\n".join("%s: %s" % (l["label"], _money_vnd(l["amount"])) for l in res["lines"])
+        pay = db.put_collection_item("payments", {
+            "reqNo": "FS-" + str(exit_id)[:12],
+            "name": u.get("name"), "empId": u.get("id"),
+            "department": emp.get("dept") or "", "payee": emp.get("name") or "",
+            "category": "Final settlement", "method": "Bank transfer",
+            "purpose": "Final settlement — %s, last day %s" % (emp.get("name") or "", last_day),
+            "amount": round(res["total"]),
+            "dueDate": res["deadline"],
+            "note": _rows + "\n\nDue by %s — %s" % (res["deadline"], res["deadlineBasis"]),
+            "status": "Pending Approval",
+            # The itemisation IS the supporting document here: there is no third-party invoice for
+            # somebody's own final pay, and the article behind each line is on the record.
+            "attachment": "", "spUrl": "", "settlementFor": exit_id,
+            "settlementLines": res["lines"],
+        })
+        db.put_collection_item("exits", dict(rec, settlementPaymentId=pay.get("id"),
+                                             settlementTotal=round(res["total"]),
+                                             settlementDeadline=res["deadline"]))
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Final settlement raised as a payment",
+            "target": "exits/" + str(exit_id),
+            "detail": "%s · %s · due %s (%s)" % (emp.get("name") or "", _money_vnd(res["total"]),
+                                                 res["deadline"], res["deadlineBasis"]),
+            "ts": self._utc_now()})
+        res["paymentId"] = pay.get("id")
+        return self._json(dict({"ok": True, "payment": pay}, **res))
 
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.

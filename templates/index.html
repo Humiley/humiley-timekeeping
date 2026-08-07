@@ -12911,7 +12911,14 @@ const _EXIT_CLEARANCE = [
 const _exitDefClearance = () => _EXIT_CLEARANCE.map(([owner, label]) => ({ owner, label, done: false }));
 const _exitDone = r => (r.clearance || []).filter(c => c.done).length;
 const _exitYears = r => { const a = _tkDateParts(r.initStart || (_hrEmp(r.empId) || {}).startDate), b = _tkDateParts(r.lastDay); if (!a || !b) return 0; return Math.max(0, Math.round(((new Date(b.y, b.m - 1, b.d) - new Date(a.y, a.m - 1, a.d)) / 31557600000) * 10) / 10); };
-/* Final settlement — Article 46: leave payout + severance (½ month × years not covered by UI) − deductions. */
+/* Final settlement.
+
+   The screen figure below is a PREVIEW built from what the browser has to hand. The authoritative
+   one is computed on the server from the law — Art. 113(4) untaken leave at the entitlement a leaver
+   actually earned, Art. 46 severance (or Art. 47 job-loss allowance) on the six-month average wage
+   from the dated salary history, and the Art. 48(1) deadline — and is what "Final settlement" opens
+   and what gets raised as a payment. `severance` here stays a typed field only so an older exit
+   record keeps rendering; nothing computes from it any more. */
 function _exitSettlement(rec) {
   const e = _hrEmp(rec.empId) || {};
   let c = null; try { const rb = {}; (_HR.reviews || []).forEach(r => { if (r.empId) rb[r.empId] = +r.rating || 3; }); c = _payComputed(e, rb[e.id]); } catch (x) {}
@@ -12921,6 +12928,56 @@ function _exitSettlement(rec) {
   const severance = +rec.severance || 0;
   const deductions = +rec.deductions || 0;
   return { dayRate, leaveDays, leavePayout, severance, deductions, monthly: c ? (c.P1 + c.P2) : 0, net: leavePayout + severance - deductions };
+}
+/* The computed settlement: what the law says is owed, itemised, with the article behind each line
+   and the Art. 48(1) deadline — then raised as a payment so it is approved and released like every
+   other payment in the company rather than remembered. */
+async function tkExitFinalSettlement(exitId) {
+  let r;
+  try { r = await tkApi('/api/hr/exit/' + exitId + '/settlement'); }
+  catch (e) { toast(_errMsg(e), 'error', 7000); return; }
+  const lines = (r.lines || []).map(l =>
+    '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-bottom:1px solid var(--line)">' +
+    '<div><div style="font-size:13px">' + _crmEsc(l.label) + '</div>' +
+    (l.basis ? '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.basis) + '</div>' : '') + '</div>' +
+    '<div style="font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums">' + _PAY_FMT(l.amount) + '</div></div>').join('')
+    || '<div style="color:var(--text-light);font-size:13px">' + _t('Nothing is owed on this settlement.') + '</div>';
+
+  document.getElementById('fsOverlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'fsOverlay'; el.className = 'modal-overlay open';
+  el.style.display = 'flex'; el.style.zIndex = '2000';
+  el.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="fs-t" style="max-width:560px">' +
+    '<div class="modal-header"><div class="modal-title" id="fs-t">' + _t('Final settlement') + ' — ' + _crmEsc((r.employee || {}).name || '') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'fsOverlay\').remove()">&times;</button></div>' +
+    '<div class="modal-body">' +
+    '<div style="display:flex;gap:10px;margin-bottom:12px;font-size:11px">' +
+      '<div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px"><div style="color:var(--text-light)">' + _t('Last day') + '</div><div style="font-weight:700">' + _crmEsc((r.employee || {}).lastDay || '') + '</div></div>' +
+      '<div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px"><div style="color:var(--text-light)">' + _t('Leave earned / taken') + '</div><div style="font-weight:700">' + r.leaveEarned + ' / ' + r.leaveUsed + '</div></div>' +
+      '<div style="flex:1;background:var(--soft-bg);border-radius:6px;padding:8px 10px"><div style="color:var(--text-light)">' + _t('6-month average wage') + '</div><div style="font-weight:700">' + _PAY_FMT(r.wage) + '</div></div>' +
+    '</div>' + lines +
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:linear-gradient(135deg,var(--navy-deep,#163866),var(--navy));color:#fff;border-radius:8px;padding:12px 14px;margin-top:12px">' +
+    '<span style="font-size:13px">' + _t('TOTAL OWED') + '</span><span style="font-size:19px;font-weight:800">' + _PAY_FMT(r.total) + '</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _t('Must be settled by') + ' <b>' + _crmEsc(r.deadline || '') + '</b> — ' + _crmEsc(r.deadlineBasis || '') + '</div>' +
+    (r.paymentId ? '<div style="background:#E8F6EE;border:1px solid var(--emerald);border-radius:8px;padding:9px 11px;margin-top:12px;font-size:12px">' + _t('Already raised as a payment request — it is in the Finance approval queue.') + '</div>' : '') +
+    '</div><div class="modal-footer">' +
+    '<button class="btn btn-ghost" onclick="document.getElementById(\'fsOverlay\').remove()">' + _t('Close') + '</button>' +
+    (r.paymentId || !(r.total > 0) ? '' :
+      '<button class="btn btn-emerald" onclick="tkExitSettleRaise(\'' + exitId + '\')">' + tkIcon('check') + _t('Raise as a payment') + '</button>') +
+    '</div></div>';
+  document.body.appendChild(el);
+}
+async function tkExitSettleRaise(exitId) {
+  if (!(await tkConfirm(_t('Raise this final settlement as a payment request?') + '\n\n' +
+                        _t('It goes into the normal approval and disbursement path. A settlement can only ever be raised once.')))) return;
+  try {
+    const r = await tkApi('/api/hr/exit/' + exitId + '/settlement', { method: 'POST', body: {} });
+    document.getElementById('fsOverlay')?.remove();
+    toast(r.alreadyRaised ? _t('This settlement was already raised.')
+                          : _t('Raised as payment request') + ' ' + ((r.payment || {}).reqNo || ''), 'success', 6000);
+    try { await tkLoadColl('exits', true); } catch (e) {}
+    tkRenderOffboarding();
+  } catch (e) { toast(_errMsg(e), 'error', 7000); }
 }
 async function tkRenderOffboarding() {
   const root = document.getElementById('offboarding-root'); if (!root) return;
@@ -12949,11 +13006,14 @@ async function tkRenderOffboarding() {
     // A completed exit still needs the Assets button. Pressing Complete before running the asset
     // return used to remove the only route to it, and the employee is Inactive by then so a new exit
     // cannot be raised — the leaver stayed on record as holding company kit for good.
+    const fsBtn = (_lvlRank(_userLevel) >= _lvlRank('management') && r.lastDay)
+      ? ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitFinalSettlement(\'' + r.id + '\')">' + tkIcon('file', 11) + (r.settlementPaymentId ? 'Settlement ✓' : 'Final settlement') + '</button>'
+      : '';
     const acts = r.status === 'Completed'
-      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' +
+      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' + fsBtn +
         (r.assetReturn && r.assetReturn.signedBy ? '' :
           ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button>') + arBadge
-      : '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button> <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>' + arBadge;
+      : '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button>' + fsBtn + ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>' + arBadge;
     return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<div><div style="font-weight:600">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.title || e.title || '') + ' · ' + (r.dept || e.dept || '') + '</div></div></div></td>' +
       '<td>' + (r.type || '') + '</td><td style="font-size:12px">' + tkFmtDate(r.lastDay) + '</td>' +
       '<td style="min-width:130px"><div class="prog-wrap" style="margin-bottom:3px"><div class="prog-fill ' + (pct === 100 ? 'prog-emerald' : 'prog-navy') + '" style="width:' + pct + '%"></div></div><span style="font-size:10px;color:var(--text-light)">' + dn + ' / ' + tot + ' cleared</span></td>' +
@@ -20534,6 +20594,17 @@ const _VI = {
   'Work': 'Công việc', 'On file': 'Trong hồ sơ', 'What needs doing': 'Việc cần làm',
   'Normal': 'Bình thường', 'Hazardous': 'Nặng nhọc, độc hại', 'Especially hazardous': 'Đặc biệt nặng nhọc, độc hại',
   'OSH group': 'Nhóm ATVSLĐ', 'to': 'đến',
+  // ── Final settlement (Art. 46/47/48 + 113(4)) ──
+  'Final settlement': 'Thanh toán khi nghỉ việc', 'Last day': 'Ngày làm việc cuối',
+  'Leave earned / taken': 'Phép được hưởng / đã nghỉ', '6-month average wage': 'Lương bình quân 6 tháng',
+  'TOTAL OWED': 'TỔNG PHẢI TRẢ', 'Must be settled by': 'Phải thanh toán xong trước',
+  'Nothing is owed on this settlement.': 'Không có khoản nào phải thanh toán.',
+  'Already raised as a payment request — it is in the Finance approval queue.': 'Đã lập đề nghị thanh toán — đang chờ duyệt tại bộ phận Tài chính.',
+  'Raise as a payment': 'Lập đề nghị thanh toán',
+  'Raise this final settlement as a payment request?': 'Lập đề nghị thanh toán cho khoản thanh toán nghỉ việc này?',
+  'It goes into the normal approval and disbursement path. A settlement can only ever be raised once.': 'Khoản này sẽ đi theo quy trình duyệt và chi thông thường. Mỗi khoản thanh toán nghỉ việc chỉ được lập một lần duy nhất.',
+  'This settlement was already raised.': 'Khoản thanh toán này đã được lập trước đó.',
+  'Raised as payment request': 'Đã lập đề nghị thanh toán',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
