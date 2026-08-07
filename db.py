@@ -1626,6 +1626,25 @@ def push_sub_remove(endpoint):
     conn.close()
 
 
+def push_subs_count(email):
+    row = _row("SELECT COUNT(*) AS n FROM push_subs WHERE email = ?", ((email or "").lower(),))
+    return int((row or {}).get("n") or 0)
+
+
+def push_subs_clear(email):
+    """Drop every device subscription a person holds — offboarding. Returns how many went, because
+    "we stopped their notifications" and "there was nothing to stop" are different sentences."""
+    email = (email or "").lower()
+    if not email:
+        return 0
+    n = push_subs_count(email)
+    conn = get_conn()
+    conn.execute("DELETE FROM push_subs WHERE email = ?", (email,))
+    conn.commit()
+    conn.close()
+    return n
+
+
 # ── Generic collections store (recruitment, onboarding, performance, etc.) ──
 def list_collection(coll):
     rows = _rows("SELECT data FROM collections WHERE coll = ? ORDER BY id", (coll,))

@@ -6187,7 +6187,8 @@ const TK_ICON = {
   folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
   inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
-  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>'
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
 };
 function tkIcon(name, sz) {
   return '<svg width="' + (sz || 14) + '" height="' + (sz || 14) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + (TK_ICON[name] || '') + '</svg>';
@@ -13151,8 +13152,11 @@ async function tkRenderOffboarding() {
     const fsBtn = (_lvlRank(_userLevel) >= _lvlRank('management') && r.lastDay)
       ? ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitFinalSettlement(\'' + r.id + '\')">' + tkIcon('file', 11) + (r.settlementPaymentId ? 'Settlement ✓' : 'Final settlement') + '</button>'
       : '';
+    const revBtn = (_lvlRank(_userLevel) >= _lvlRank('management'))
+      ? ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitRevoke(\'' + r.id + '\')">' + tkIcon('lock', 11) + _t('Access') + '</button>'
+      : '';
     const acts = r.status === 'Completed'
-      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' + fsBtn +
+      ? '<span style="font-size:11px;color:var(--text-light)">Settled ' + _PAY_FMT(set.net) + '</span>' + fsBtn + revBtn +
         (r.assetReturn && r.assetReturn.signedBy ? '' :
           ' <button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button>') + arBadge
       : '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkAssetReturn(\'' + r.empId + '\',\'' + r.id + '\')">' + tkIcon('check', 11) + 'Assets</button>' + fsBtn + ' <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitManage(\'' + r.id + '\')">Manage</button> <button class="btn btn-emerald btn-sm" style="font-size:11px;padding:4px 9px" onclick="tkExitComplete(\'' + r.id + '\')">Complete</button>' + arBadge;
@@ -13165,7 +13169,170 @@ async function tkRenderOffboarding() {
   }).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--text-light);padding:20px">No exits in progress. Click <b>Initiate Exit</b> to start.</td></tr>';
   root.innerHTML = kpis +
     '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Exit Register</div><span style="font-size:11px;color:var(--text-light)">Resignation · clearance · final settlement</span></div>' +
-    '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Employee</th><th>Type</th><th>Last day</th><th>Clearance</th><th style="text-align:right">Net settlement</th><th>Status</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>';
+    '<div class="table-wrap"><table style="min-width:880px"><thead><tr><th>Employee</th><th>Type</th><th>Last day</th><th>Clearance</th><th style="text-align:right">Net settlement</th><th>Status</th><th></th></tr></thead><tbody>' + rowsHtml + '</tbody></table></div></div>' +
+    (_lvlRank(_userLevel) >= _lvlRank('management') ? '<div id="hr-access-review" style="margin-top:16px"></div>' : '');
+  if (_lvlRank(_userLevel) >= _lvlRank('management')) tkRenderAccessReview();
+}
+
+/* ── Access on the way out ──────────────────────────────────────────────────────────────────────
+   The clearance checklist has always carried a line reading "IT: disable email account". Somebody
+   ticked it; nothing checked. These two views replace the tick with the answer: what is still open
+   for THIS leaver (tkExitRevoke), and who across the whole company still has access they should not
+   (tkRenderAccessReview) — asked of the systems themselves, not of the checklist. */
+
+const _REVOKE_SYS = { portal: 'Humiley Portal', m365: 'Microsoft 365', manual: 'Manual — somebody has to do this' };
+
+function _revokeStepRow(s, exitId) {
+  const tick = s.done
+    ? '<span style="color:var(--emerald);font-weight:700">✓</span>'
+    : (s.blocked ? '<span style="color:#B45309;font-weight:700">!</span>'
+                 : '<span style="color:var(--text-light)">○</span>');
+  // The blocked reason and the exposure are guidance and must speak the reader's language; the note
+  // is the server's record of what it did (numbers and all) and stays as written, exactly as it
+  // appears in the audit trail.
+  const why = s.blockedCode === 'unconfigured'
+    ? _t('Microsoft 365 is not connected in Company Portal settings.')
+    : s.blockedCode === 'consent'
+      ? (s.needs || '') + ' — ' + _t('this permission has not been granted to the portal, so it cannot do this.')
+      : (s.note || _t(s.exposure || ''));
+  const sub = s.done
+    ? '<div style="font-size:10.5px;color:var(--emerald)">' + _crmEsc(s.note || '') +
+      (s.by ? ' — ' + _crmEsc(s.by) : '') + (s.at ? ' · ' + tkFmtDate((s.at || '').slice(0, 10)) : '') + '</div>'
+    : '<div style="font-size:10.5px;color:' + (s.blocked ? '#B45309' : 'var(--text-light)') + '">' +
+      _crmEsc(why) + '</div>';
+  const btn = (!s.done && s.auto && !s.blocked)
+    ? '<button class="btn btn-outline btn-sm" style="font-size:10.5px;padding:3px 8px;white-space:nowrap" onclick="tkExitRevokeRun(\'' + exitId + '\',\'' + s.key + '\')">' + _t('Revoke') + '</button>'
+    : '';
+  return '<div style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)">' +
+    '<div style="width:14px;flex:none;text-align:center">' + tick + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="font-size:12.5px;font-weight:600">' + _crmEsc(_t(s.label)) + '</div>' + sub + '</div>' +
+    '<div style="flex:none">' + btn + '</div></div>';
+}
+
+async function tkExitRevoke(exitId) {
+  document.getElementById('revokeOverlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'revokeOverlay'; el.className = 'modal-overlay open'; el.style.display = 'flex'; el.style.zIndex = '4000';
+  el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;max-height:90dvh;overflow:auto">' + tkSkeleton() + '</div>';
+  document.body.appendChild(el);
+  let b;
+  try { b = await tkApi('/api/hr/exit/' + encodeURIComponent(exitId) + '/revoke'); }
+  catch (e) { el.remove(); toast(_t('Could not read their access') + ': ' + _errMsg(e), 'error', 5000); return; }
+  _revokeRender(el, exitId, b);
+}
+
+function _revokeRender(el, exitId, b) {
+  const p = b.plan || {}, emp = p.employee || {}, m = p.m365 || {};
+  const byS = {};
+  (p.steps || []).forEach(s => { (byS[s.system] = byS[s.system] || []).push(s); });
+  const banner = p.state === 'complete'
+    ? '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12px;background:rgba(0,176,96,.08);color:var(--emerald)">' +
+      _t('Everything the portal can shut is shut.') + '</div>'
+    : p.state === 'exposed'
+      ? (function () {
+          // Naming what is still open beats a fixed sentence: after the portal steps run, four green
+          // ticks under the words "the access below is still open" reads as a bug rather than as the
+          // mailbox and the licence being somebody else's job.
+          const left = (p.steps || []).filter(s => !s.done);
+          const auto = left.filter(s => s.auto && !s.blocked).length;
+          const what = left.map(s => _t(s.label)).join(', ');
+          return '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12px;background:rgba(' +
+            (auto ? '220,38,38,.08">' : '245,158,11,.10">') + '<span style="color:' + (auto ? '#B91C1C' : '#B45309') + '">' +
+            _t('Their last working day was') + ' ' + tkFmtDate(p.dueOn) + ' — ' + p.overdueDays + ' ' +
+            _t('day(s) ago.') + ' ' + _t('Still open:') + ' ' + _crmEsc(what) + '.</span></div>';
+        })()
+      : p.state === 'nodate'
+        ? '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12px;background:rgba(245,158,11,.10);color:#B45309">' +
+          _t('This exit has no last working day, so nothing can be scheduled. Set one first.') + '</div>'
+        : '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12px;color:var(--text-light)">' +
+          _t('Due at the end of their last working day,') + ' ' + tkFmtDate(p.dueOn) + '. ' +
+          _t('Revoking now cuts them off during their notice period, so it needs a reason.') + '</div>';
+  // The tenant's own answer, printed beside our record of it — a ticked box and a live mailbox are
+  // the two things this screen exists to tell apart.
+  const tenant = m.enabled === true
+    ? '<span style="color:#B91C1C;font-weight:600">' + _t('their Microsoft 365 account can still sign in') + '</span>'
+    : m.enabled === false
+      ? '<span style="color:var(--emerald);font-weight:600">' + (m.found ? _t('their Microsoft 365 account is blocked') : _t('no Microsoft 365 account exists')) + '</span>'
+      : '<span style="color:#B45309;font-weight:600">' + _t('Microsoft 365 could not be checked') +
+        (m.error ? ' — ' + _crmEsc(_t(m.error)) : '') + '</span>';
+  const sections = ['portal', 'm365', 'manual'].filter(k => byS[k]).map(k =>
+    '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin:12px 0 2px">' + _t(_REVOKE_SYS[k]) + '</div>' +
+    byS[k].map(s => _revokeStepRow(s, exitId)).join('')).join('');
+  const canAll = (p.canRunNow || []).length;
+  el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;max-height:90dvh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title" style="margin:0">' + _t('Access on exit') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(emp.name || '') + ' · ' + _crmEsc(emp.email || '') + ' · ' + tenant + '</div></div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'revokeOverlay\').remove()">✕</button></div>' +
+    banner + sections +
+    (p.early ? '<div class="form-group" style="margin-top:14px"><label class="form-label">' + _t('Reason for revoking before their last day') + '</label>' +
+      '<input class="form-control" id="rv-reason" placeholder="' + _tkEscA(_t('e.g. summary dismissal — Art. 125 gross misconduct')) + '"></div>' : '') +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'revokeOverlay\').remove()">' + _t('Close') + '</button>' +
+    (canAll ? '<button class="btn btn-primary" onclick="tkExitRevokeRun(\'' + exitId + '\')">' + tkIcon('lock') + _t('Revoke all') + ' ' + canAll + ' ' + _t('remaining') + '</button>' : '') +
+    '</div></div>';
+}
+
+async function tkExitRevokeRun(exitId, key) {
+  const el = document.getElementById('revokeOverlay');
+  const reason = (document.getElementById('rv-reason') || {}).value || '';
+  const body = { reason: reason };
+  if (key) body.steps = [key];
+  let b;
+  try { b = await tkApi('/api/hr/exit/' + encodeURIComponent(exitId) + '/revoke', { method: 'POST', body: body }); }
+  catch (e) {
+    const d = (e && e.data) || {};
+    if (d.needsReason) { toast(_t('Give a reason — this cuts off access during their notice period.'), 'warn', 6000);
+      (document.getElementById('rv-reason') || {}).focus?.(); return; }
+    toast(_t('Could not revoke') + ': ' + _errMsg(e), 'error', 6000); return;
+  }
+  const nd = (b.done || []).length, nf = (b.failed || []).length;
+  if (nf) toast(nd + ' ' + _t('revoked,') + ' ' + nf + ' ' + _t('failed — see the list.'), 'warn', 6000);
+  else toast(nd + ' ' + _t('revoked.'), 'success');
+  if (el) _revokeRender(el, exitId, b);
+  try { await tkLoadColl('exits', true); } catch (e) {}
+  try { tkRenderAccessReview(); } catch (e) {}
+}
+
+const _ACC_SEV = { open: { c: '#B91C1C', l: 'Still open' }, unknown: { c: '#B45309', l: 'Unknown' },
+                   residual: { c: 'var(--text-light)', l: 'Leftover' } };
+
+async function tkRenderAccessReview(deep) {
+  const root = document.getElementById('hr-access-review'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let b;
+  try { b = await tkApi('/api/hr/access-review' + (deep ? '?m365=1' : '')); }
+  catch (e) { root.innerHTML = ''; return; }
+  const s = b.summary || {}, rows = b.rows || [];
+  const hdr = '<div class="card-hdr" style="padding:16px 18px"><div><div class="card-title">' + _t('Access still open') + '</div>' +
+    '<span style="font-size:11px;color:var(--text-light)">' + _t('Former employees whose access has not been shut — asked of the systems themselves, not of the checklist') + '</span></div>' +
+    '<button class="btn btn-outline btn-sm" style="font-size:11px;padding:5px 10px" onclick="tkRenderAccessReview(' + (deep ? 'false' : 'true') + ')">' +
+    tkIcon('refresh', 11) + (deep ? _t('Portal only') : _t('Check Microsoft 365')) + '</button></div>';
+  if (!rows.length) {
+    root.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' + hdr +
+      '<div style="padding:18px;text-align:center;font-size:12.5px;color:var(--emerald)">' +
+      (deep ? _t('Nobody who has left still has access. Microsoft 365 was checked.')
+            : _t('Nothing open on the portal side. Microsoft 365 has not been checked — press the button above.')) +
+      '</div></div>';
+    return;
+  }
+  const body = rows.map(r => {
+    const sv = _ACC_SEV[r.severity] || _ACC_SEV.residual;
+    const why = r.findings.map(f => '<div style="font-size:11px;color:var(--text-light)">• ' + _crmEsc(_t(f.why)) + '</div>').join('');
+    const act = r.exitId
+      ? '<button class="btn btn-outline btn-sm" style="font-size:10.5px;padding:4px 9px" onclick="tkExitRevoke(\'' + r.exitId + '\')">' + _t('Shut it') + '</button>'
+      : '<span style="font-size:10.5px;color:var(--text-light)">' + _t('No exit record') + '</span>';
+    return '<tr><td><div style="font-weight:600">' + _crmEsc(r.name || r.empId) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(r.dept || '') + '</div></td>' +
+      '<td style="font-size:12px;white-space:nowrap">' + tkFmtDate(r.goneOn) + '<div style="font-size:10.5px;color:var(--text-light)">' + r.daysSince + ' ' + _t('days ago') + '</div></td>' +
+      '<td>' + why + '</td>' +
+      '<td><span class="badge" style="font-size:10px;background:transparent;border:1px solid ' + sv.c + ';color:' + sv.c + '">' + _t(sv.l) + '</span></td>' +
+      '<td style="text-align:right;white-space:nowrap">' + act + '</td></tr>';
+  }).join('');
+  root.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' + hdr +
+    '<div style="padding:10px 18px;font-size:12px;color:var(--text-light);border-bottom:1px solid var(--border)">' +
+    (s.open || 0) + ' ' + _t('still open') + ' · ' + (s.unknown || 0) + ' ' + _t('unknown') + ' · ' +
+    (s.residual || 0) + ' ' + _t('leftover') + ' · ' + _t('oldest') + ' ' + (s.oldestDays || 0) + ' ' + _t('days') +
+    (b.deep ? '' : ' · <b>' + _t('Microsoft 365 not checked') + '</b>') + '</div>' +
+    '<div class="table-wrap"><table style="min-width:760px"><thead><tr><th>' + _t('Employee') + '</th><th>' + _t('Left') + '</th><th>' + _t('What is open') + '</th><th>' + _t('Severity') + '</th><th></th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
 function tkInitExit() {
   document.getElementById('exitOverlay')?.remove();
@@ -19551,6 +19718,95 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  // ── Access on exit ──
+  'Access': 'Quyền truy cập',
+  'Access on exit': 'Quyền truy cập khi nghỉ việc',
+  'Access still open': 'Quyền truy cập chưa được thu hồi',
+  'Revoke': 'Thu hồi',
+  'Revoke all': 'Thu hồi tất cả',
+  'remaining': 'còn lại',
+  'Shut it': 'Thu hồi ngay',
+  'Humiley Portal': 'Cổng Humiley',
+  'Manual — somebody has to do this': 'Thủ công — cần người thực hiện',
+  'Portal account deactivated': 'Đã vô hiệu hoá tài khoản cổng',
+  'Portal sign-in sessions ended': 'Đã kết thúc các phiên đăng nhập cổng',
+  'E-signature credential revoked': 'Đã thu hồi mã chữ ký điện tử',
+  'Push notifications stopped': 'Đã ngừng thông báo đẩy',
+  'Microsoft 365 sign-in sessions revoked': 'Đã thu hồi phiên đăng nhập Microsoft 365',
+  'Microsoft 365 sign-in blocked': 'Đã chặn đăng nhập Microsoft 365',
+  'Mailbox delegated to their manager': 'Đã uỷ quyền hộp thư cho quản lý',
+  'Microsoft 365 licence released': 'Đã thu hồi bản quyền Microsoft 365',
+  'They can still sign in to the portal and read HR, payroll and project records.':
+    'Họ vẫn đăng nhập được vào cổng và xem hồ sơ nhân sự, lương và dự án.',
+  'A phone already signed in stays signed in for up to thirty days.':
+    'Điện thoại đã đăng nhập vẫn giữ phiên tới ba mươi ngày.',
+  'They can still put a legally binding signature on a company document.':
+    'Họ vẫn có thể ký hợp lệ lên tài liệu của công ty.',
+  'Their phone keeps receiving approval and payroll notifications.':
+    'Điện thoại của họ vẫn nhận thông báo phê duyệt và lương.',
+  'They can sign in to email, SharePoint and Teams with their existing password.':
+    'Họ vẫn đăng nhập được email, SharePoint và Teams bằng mật khẩu hiện tại.',
+  'Customer mail sent to their address is not being read by anybody.':
+    'Thư khách hàng gửi tới địa chỉ của họ không có ai đọc.',
+  'The company is paying a monthly licence for somebody who has left.':
+    'Công ty vẫn trả phí bản quyền hàng tháng cho người đã nghỉ.',
+  'Everything the portal can shut is shut.': 'Cổng đã thu hồi mọi thứ trong khả năng.',
+  'Their last working day was': 'Ngày làm việc cuối của họ là',
+  'day(s) ago.': 'ngày trước.',
+  'Still open:': 'Vẫn còn mở:',
+  'Due at the end of their last working day,': 'Đến hạn vào cuối ngày làm việc cuối cùng,',
+  'Revoking now cuts them off during their notice period, so it needs a reason.':
+    'Thu hồi lúc này sẽ cắt quyền trong thời gian báo trước, nên cần nêu lý do.',
+  'This exit has no last working day, so nothing can be scheduled. Set one first.':
+    'Hồ sơ nghỉ việc chưa có ngày làm việc cuối nên chưa thể lên lịch. Hãy đặt ngày trước.',
+  'Reason for revoking before their last day': 'Lý do thu hồi trước ngày làm việc cuối',
+  'e.g. summary dismissal — Art. 125 gross misconduct':
+    'ví dụ: sa thải — Điều 125, vi phạm nghiêm trọng',
+  'their Microsoft 365 account can still sign in': 'tài khoản Microsoft 365 vẫn đăng nhập được',
+  'their Microsoft 365 account is blocked': 'tài khoản Microsoft 365 đã bị chặn',
+  'no Microsoft 365 account exists': 'không có tài khoản Microsoft 365',
+  'Microsoft 365 could not be checked': 'Không kiểm tra được Microsoft 365',
+  'Microsoft 365 not checked': 'Chưa kiểm tra Microsoft 365',
+  'Microsoft 365 is not connected in Company Portal settings.':
+    'Chưa kết nối Microsoft 365 trong cài đặt Cổng công ty.',
+  'this permission has not been granted to the portal, so it cannot do this.':
+    'quyền này chưa được cấp cho cổng, nên không thể thực hiện.',
+  'Check Microsoft 365': 'Kiểm tra Microsoft 365',
+  'Portal only': 'Chỉ trong cổng',
+  'Former employees whose access has not been shut — asked of the systems themselves, not of the checklist':
+    'Người đã nghỉ nhưng chưa bị thu hồi quyền — hỏi trực tiếp hệ thống, không dựa vào danh mục kiểm tra',
+  'Nobody who has left still has access. Microsoft 365 was checked.':
+    'Không ai đã nghỉ còn quyền truy cập. Đã kiểm tra Microsoft 365.',
+  'Nothing open on the portal side. Microsoft 365 has not been checked — press the button above.':
+    'Phía cổng không còn gì. Chưa kiểm tra Microsoft 365 — hãy bấm nút phía trên.',
+  'Their portal account is still active.': 'Tài khoản cổng của họ vẫn đang hoạt động.',
+  'Their e-signature credential still works.': 'Mã chữ ký điện tử của họ vẫn dùng được.',
+  'Their phone is still subscribed to company notifications.':
+    'Điện thoại của họ vẫn đăng ký nhận thông báo của công ty.',
+  'Their Microsoft 365 account can still sign in.': 'Tài khoản Microsoft 365 của họ vẫn đăng nhập được.',
+  'Microsoft 365 could not be checked, so their mail and files may still be reachable.':
+    'Không kiểm tra được Microsoft 365, nên thư và tệp của họ có thể vẫn truy cập được.',
+  'There is no exit record for them at all — nothing was offboarded through the portal.':
+    'Không có hồ sơ nghỉ việc nào cho họ — chưa có gì được xử lý qua cổng.',
+  'Still open': 'Chưa thu hồi',
+  'Unknown': 'Chưa rõ',
+  'Leftover': 'Còn sót',
+  'No exit record': 'Chưa có hồ sơ nghỉ việc',
+  'What is open': 'Đang mở những gì',
+  'Left': 'Đã nghỉ',
+  'days ago': 'ngày trước',
+  'still open': 'chưa thu hồi',
+  'unknown': 'chưa rõ',
+  'leftover': 'còn sót',
+  'oldest': 'lâu nhất',
+  'days': 'ngày',
+  'revoked,': 'đã thu hồi,',
+  'failed — see the list.': 'thất bại — xem danh sách.',
+  'revoked.': 'đã thu hồi.',
+  'Could not revoke': 'Không thể thu hồi',
+  'Could not read their access': 'Không đọc được quyền truy cập của họ',
+  'Give a reason — this cuts off access during their notice period.':
+    'Hãy nêu lý do — việc này cắt quyền trong thời gian báo trước.',
   // ── Finance hub tabs ──
   'Overview': 'Tổng quan',
   'Payments': 'Thanh toán',

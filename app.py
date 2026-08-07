@@ -40,6 +40,7 @@ import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
+import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -132,6 +133,20 @@ def new_session(emp_id, role):
     SESSIONS[_tok_hash(token)] = {"emp_id": emp_id, "role": role, "expires": time.time() + SESSION_TTL}
     _persist_sessions()
     return token   # the RAW token goes to the client; only its hash is stored server-side
+
+
+def kill_sessions(emp_id):
+    """Drop every live portal session belonging to one person. session_user already refuses an
+    Inactive employee on their next request, so this is not the only lock on the door — but "their
+    session is gone" should be a fact we can state, not a consequence we hope holds."""
+    if not emp_id:
+        return 0
+    keys = [k for k, s in SESSIONS.items() if isinstance(s, dict) and s.get("emp_id") == emp_id]
+    for k in keys:
+        SESSIONS.pop(k, None)
+    if keys:
+        _persist_sessions()
+    return len(keys)
 
 
 def session_user(token):
@@ -1897,6 +1912,56 @@ def _graph_get(url, token):
     req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token})
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def _graph_user(upn):
+    """The tenant's view of one person: are they still able to sign in?
+
+    Returns {"found": bool, "enabled": bool|None, "id": str, "error": str}. `enabled` is None when
+    the question could not be asked — reported as unknown, never as an all-clear, because "Graph did
+    not answer" and "the account is shut" are the opposite of each other.
+    """
+    upn = (upn or "").strip()
+    if not upn:
+        return {"found": False, "enabled": None, "id": "", "error": "No work email on the record."}
+    try:
+        j = _graph_get("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(upn)
+                       + "?$select=id,accountEnabled,userPrincipalName", _graph_app_token())
+        return {"found": True, "enabled": bool(j.get("accountEnabled")), "id": j.get("id") or "",
+                "error": ""}
+    except urllib.error.HTTPError as e:
+        if getattr(e, "code", 0) == 404:
+            # No account at all is a clean answer, not a failure: there is nothing left to shut.
+            return {"found": False, "enabled": False, "id": "", "error": ""}
+        return {"found": False, "enabled": None, "id": "", "error": _graph_err_text(e)}
+    except Exception as e:
+        return {"found": False, "enabled": None, "id": "", "error": str(e)[:200]}
+
+
+def _graph_revoke_sessions(upn):
+    """Invalidate every refresh token the person holds. Without this, blocking the account leaves
+    mail and Teams working on any device already signed in until the tokens expire."""
+    url = ("https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote((upn or "").strip())
+           + "/revokeSignInSessions")
+    req = urllib.request.Request(url, data=b"", method="POST",
+                                 headers={"Authorization": "Bearer " + _graph_app_token(),
+                                          "Content-Length": "0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        resp.read()
+    return True
+
+
+def _graph_block_signin(upn):
+    """accountEnabled=false. Deliberately NOT a delete: deleting the account destroys the mailbox
+    the company may need to read, and the licence is released separately by whoever owns the bill."""
+    url = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote((upn or "").strip())
+    body = json.dumps({"accountEnabled": False}).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="PATCH",
+                                 headers={"Authorization": "Bearer " + _graph_app_token(),
+                                          "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        resp.read()
+    return True
 
 
 def _graph_put_bytes(url, token, data, ctype):
@@ -3675,6 +3740,11 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/settlement"):
             _xid = path[len("/api/hr/exit/"):-len("/settlement")]
             return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid)))
+        if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
+            _xid = path[len("/api/hr/exit/"):-len("/revoke")]
+            return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/access-review":
+            return self._guard(lambda u: self._access_review_ep(u, qs))
         if path == "/api/hr/payroll/bankfile":
             return self._guard(lambda u: self._bank_transfer_ep(u, qs))
         if path == "/api/hr/payroll/journal":
@@ -3748,6 +3818,10 @@ class Handler(BaseHTTPRequestHandler):
             _xid = path[len("/api/hr/exit/"):-len("/settlement")]
             return self._guard(lambda u: self._exit_settlement(u, urllib.parse.unquote(_xid),
                                                                create=True, body=body), manager=True)
+        if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
+            _xid = path[len("/api/hr/exit/"):-len("/revoke")]
+            return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid),
+                                                           run=True, body=body), manager=True)
         if path == "/api/hr/leave-entitlement/apply":
             return self._guard(lambda u: self._leave_entitlement_apply_ep(u, body), manager=True)
         if path == "/api/hr/history-repair":
@@ -7907,6 +7981,185 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    # ── cutting off access when somebody leaves ──────────────────────────────────────────────────
+
+    def _m365_ready(self):
+        """Is the tenant connected at all? Separate from consent — an unconfigured tenant and a
+        configured one missing a permission need different sentences."""
+        return bool(M365.get("clientId") and M365.get("clientSecret") and M365.get("tenantId"))
+
+    def _revoke_actor(self, u):
+        return (u.get("name") or "System") + " <" + (u.get("email") or "") + ">"
+
+    def _exit_revoke(self, u, exit_id, run=False, body=None):
+        """Preview or perform the access revocation for one leaver.
+
+        GET answers "what is still open, and can we close it from here?" — including which Graph
+        consent is missing, so nobody discovers that at the moment they press the button on the day
+        somebody left. POST closes what it can and records each step's real result, failures
+        included: "Graph refused" is what HR has to chase, and it is not the same as "nobody has
+        been here yet".
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to revoke somebody's "
+                             "access.", 403)
+        rec = db.get_collection_item("exits", str(exit_id or "")) or {}
+        if not rec:
+            return self._err("Exit record not found.", 404)
+        emp = db.get_employee(rec.get("empId") or "") or {}
+        ready = self._m365_ready()
+        roles = _graph_granted_roles() if ready else []
+        body = dict(body or {})
+
+        def _full_plan(record):
+            """The plan plus the two things only the server can answer — who this is, and what the
+            tenant itself says. Both halves are returned by the preview AND by the run: after
+            blocking an account, the tenant answering "disabled" is the proof, and a result screen
+            that forgot whose access it just cut is not a result screen."""
+            pl = access_revoke.plan(record, granted_roles=roles, m365_configured=ready)
+            pl["m365"] = _graph_user(emp.get("email")) if ready else {
+                "found": False, "enabled": None, "id": "",
+                "error": "Microsoft 365 is not connected in Company Portal settings."}
+            pl["employee"] = {"id": emp.get("id") or record.get("empId") or "",
+                              "name": emp.get("name") or record.get("name") or "",
+                              "email": emp.get("email") or "",
+                              "status": emp.get("status") or ""}
+            return pl
+
+        if not run:
+            return self._json({"ok": True, "exitId": rec.get("id"), "plan": _full_plan(rec)})
+
+        # ---- perform ----
+        if (emp.get("email") or "").lower() in self.ADMIN_EMAILS:
+            return self._err("This is a protected super-admin account — its access cannot be revoked "
+                             "from here, so a mistake can never lock the whole company out.", 403)
+        if emp.get("id") and emp.get("id") == u.get("id"):
+            return self._err("You cannot revoke your own access — ask another approver to do it.", 403)
+
+        reason = str(body.get("reason") or "").strip()
+        early = access_revoke.is_early(rec)
+        if early and not reason:
+            # Before the end of the last working day this cuts somebody off mid-notice. Lawful — a
+            # dismissal for cause serves no notice — but it is a decision, and a decision is signed.
+            return self._json({"error": "Their last working day has not passed yet, so this cuts "
+                                        "off access during their notice period. Give a reason to "
+                                        "proceed.",
+                               "needsReason": True, "dueOn": (rec.get("lastDay") or "")}, 400)
+
+        want = body.get("steps") if isinstance(body.get("steps"), list) else None
+        todo = access_revoke.runnable(rec, keys=want, granted_roles=roles, m365_configured=ready)
+        if not todo:
+            return self._json({"error": "There is nothing left that the portal can revoke.",
+                               "plan": _full_plan(rec)}, 400)
+
+        now, done, failed = self._utc_now(), [], []
+        for key in todo:
+            try:
+                note = self._revoke_step(key, emp)
+                rec = access_revoke.record(rec, key, self._revoke_actor(u), note=note, at=now)
+                done.append({"key": key, "note": note})
+            except Exception as e:
+                why = (_graph_err_text(e) if isinstance(e, urllib.error.HTTPError)
+                       else str(e)[:200])
+                rec = access_revoke.record(rec, key, self._revoke_actor(u), note=why, at=now,
+                                           ok=False)
+                failed.append({"key": key, "why": why})
+
+        rec["revokedAt"] = rec.get("revokedAt") or now
+        db.put_collection_item("exits", rec)
+        plan = _full_plan(rec)
+        labels = {s["key"]: s["label"] for s in access_revoke.STEPS}
+        detail = "%s <%s> · %s" % (emp.get("name") or rec.get("name") or "", emp.get("email") or "",
+                                  "; ".join(labels.get(d["key"], d["key"]) for d in done) or "nothing")
+        if failed:
+            detail += " · FAILED: " + "; ".join(
+                "%s (%s)" % (labels.get(f["key"], f["key"]), f["why"]) for f in failed)
+        if early:
+            detail += " · EARLY, before the last working day %s — reason: %s" % (
+                rec.get("lastDay") or "?", reason)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Access revoked on exit", "target": "exits/" + str(rec.get("id") or ""),
+            "detail": detail, "ts": now})
+        return self._json({"ok": True, "done": done, "failed": failed, "plan": plan,
+                           "exitId": rec.get("id")})
+
+    def _revoke_step(self, key, emp):
+        """Do one thing, and return what actually happened in words an HR officer can read back.
+        Raises on failure — the caller records that as a failure rather than as silence."""
+        upn = emp.get("email") or ""
+        if key == "portal":
+            db.update_employee(emp.get("id"), {"status": "Inactive"})
+            return "Portal account set to Inactive."
+        if key == "portal_sessions":
+            n = kill_sessions(emp.get("id"))
+            return "%d live portal session(s) ended." % n
+        if key == "portal_pin":
+            db.revoke_pin(emp.get("id"))
+            return "E-signature credential revoked; it can no longer sign anything."
+        if key == "portal_push":
+            n = db.push_subs_clear(upn)
+            return "%d device subscription(s) removed." % n
+        if key == "m365_sessions":
+            _graph_revoke_sessions(upn)
+            return "Microsoft 365 refresh tokens invalidated for " + upn + "."
+        if key == "m365_account":
+            _graph_block_signin(upn)
+            return "Microsoft 365 sign-in blocked for " + upn + " (mailbox retained)."
+        raise ValueError("Unknown revocation step: " + str(key))
+
+    def _access_review_ep(self, u, qs=None):
+        """Everybody whose access should be shut and is not.
+
+        The forward check — did we tick the boxes — proves nothing on its own. This asks the systems
+        themselves: is the PIN live, is the phone still subscribed, does the Microsoft account still
+        answer. It also finds the people who never went through an exit at all, which is where the
+        old accounts actually are.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this lists former "
+                             "employees and their access.", 403)
+        deep = str((qs or {}).get("m365", [""])[0]).strip() in ("1", "true", "yes")
+        ready = self._m365_ready()
+        exits_by_emp = {}
+        for x in db.list_collection("exits"):
+            eid = x.get("empId") or ""
+            if eid and (eid not in exits_by_emp or str(x.get("status") or "").lower() == "completed"):
+                exits_by_emp[eid] = x
+        today = _now_iso()[:10]
+        people, checked = [], 0
+        for e in db.list_employees():
+            x = exits_by_emp.get(e.get("id")) or {}
+            inactive = str(e.get("status") or "Active").strip().lower() == "inactive"
+            last = x.get("lastDay") or e.get("endDate") or ""
+            if not inactive and not (last and last < today):
+                continue                                   # still here — nothing to review
+            if (e.get("email") or "").lower() in self.ADMIN_EMAILS:
+                continue                                   # protected accounts are never revoked
+            pin = db.get_pin_status(e.get("id")) or {}
+            # Only ask Graph when asked to: it is one call per former employee, and the register
+            # should still open in a second when somebody just wants the portal-side picture.
+            m365 = False
+            if deep and ready:
+                g = _graph_user(e.get("email"))
+                m365 = g["enabled"] if (g["found"] or g["error"] == "") else None
+                checked += 1
+            elif deep:
+                m365 = None
+            people.append({
+                "empId": e.get("id"), "name": e.get("name"), "dept": e.get("dept"),
+                "status": e.get("status"), "endDate": e.get("endDate"),
+                "lastDay": x.get("lastDay") or "", "exitId": x.get("id") or "",
+                "exitStatus": x.get("status") or "", "revoked": x.get("revoked") or {},
+                "live": {"pin": bool(pin.get("enrolled")) and not pin.get("revoked"),
+                         "push": db.push_subs_count(e.get("email")), "m365": m365},
+            })
+        rows = access_revoke.review(people, today=today)
+        return self._json({"ok": True, "asOf": today, "rows": rows,
+                           "summary": access_revoke.summary(rows),
+                           "m365Checked": checked, "m365Available": ready,
+                           "deep": deep})
 
     def _exit_settlement(self, u, exit_id, create=False, body=None):
         """What is owed on the way out — computed, itemised, and optionally raised as a payable.
