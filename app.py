@@ -36,6 +36,7 @@ from ratelimit import _rate_allow, _RATE, _RATE_LOCK   # in-process request rate
 import overtime          # Labour Code Art. 98/106/107 overtime rates, night premium and caps (pure)
 import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
+import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3668,6 +3669,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._pm_chat_summary(u))
         if path == "/api/hr/compliance":
             return self._guard(lambda u: self._hr_compliance_ep(u))
+        if path == "/api/hr/certificates/review":
+            return self._guard(lambda u: self._certificates_review_ep(u, qs))
         if path == "/api/hr/contracts/review":
             return self._guard(lambda u: self._contracts_review_ep(u, qs))
         if path == "/api/hr/leave-entitlement":
@@ -6017,7 +6020,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6047,7 +6050,10 @@ class Handler(BaseHTTPRequestHandler):
                 # Project financials must not be world-readable to every staff account (the PM app is
                 # on by default). Line-item costs + vendor payments need manager+; creation is already
                 # manager-gated, so this makes read match write.
-                "pm_costs": "manager", "pm_procurement_payments": "manager"}
+                "pm_costs": "manager", "pm_procurement_payments": "manager",
+                # Not compensation data: a site manager has to know whether their crew is covered
+                # before sending them out, so this is manager-and-above, not management.
+                "certificates": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
     # `benefits` is deliberately NOT here. It is the per-GRADE benefits CATALOGUE — a policy table, not
     # personal data — so scoping it to "your own rows" matched nothing and every employee's Benefits
@@ -6058,7 +6064,7 @@ class Handler(BaseHTTPRequestHandler):
     # company. Scoped below in _coll_list.
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
-    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts"}
+    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
@@ -7723,6 +7729,66 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "asOf": as_of, "rows": rows, "flagged": flagged,
                            "maxTermMonths": contracts.MAX_DEFINITE_MONTHS,
                            "graceDays": contracts.GRACE_DAYS})
+
+    def _certificates_review_ep(self, u, qs):
+        """Who is covered, whose certificate is lapsing, and who never had one.
+
+        The last of those is the answer a plain register cannot give, and the one that matters on a
+        site or in a client audit. Health-check cadence follows Law on OSH 2015 Art. 21(1) — once a
+        year, twice for hazardous work, minors, elderly and disabled workers — and safety training
+        follows Decree 44/2016 Art. 24 where the company has classified somebody into a group.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access required.", 403)
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+
+        by_emp = {}
+        for c in db.list_collection("certificates"):
+            if c.get("empId"):
+                by_emp.setdefault(c["empId"], []).append(c)
+
+        # A manager sees their own crew; management sees everybody. A certificate is not pay, but it
+        # is still somebody's medical cadence, so it is not company-wide reading for everyone.
+        emps = db.list_employees()
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            my_email = (u.get("email") or "").strip().lower()
+            emps = [e for e in emps if e.get("id") == u.get("id")
+                    or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)]
+
+        rows, flagged = [], 0
+        for e in emps:
+            if str(e.get("status") or "Active").strip().lower() == "inactive":
+                continue
+            r = certificates.review(
+                by_emp.get(e.get("id")) or [], as_of,
+                conditions=e.get("workConditions") or "normal",
+                minor=leave_entitlement.is_minor(e.get("dob"), as_of),
+                disabled=bool(e.get("disabled")),
+                elderly=self._is_elderly(e.get("dob"), as_of),
+                osh_group=str(e.get("oshGroup") or "").strip() or None)
+            if r["issues"]:
+                flagged += 1
+            rows.append({"empId": e.get("id"), "name": e.get("name") or "",
+                         "dept": e.get("dept") or "", "title": e.get("title") or "",
+                         "conditions": e.get("workConditions") or "normal",
+                         "oshGroup": e.get("oshGroup") or "",
+                         "items": r["items"], "issues": r["issues"]})
+        _sev = lambda x: 0 if any(i["severity"] == "high" for i in x["issues"]) \
+            else (1 if x["issues"] else 2)
+        rows.sort(key=lambda x: (_sev(x), x["name"]))
+        return self._json({"ok": True, "asOf": as_of, "rows": rows, "flagged": flagged})
+
+    @staticmethod
+    def _is_elderly(dob, as_of):
+        """Art. 148 defines an elderly employee by the retirement age, which Art. 169 is raising a
+        few months every year. Rather than track a moving figure, this triggers at 60 — which can
+        only ever ask for MORE health checks than the law requires, never fewer."""
+        d, a = leave_entitlement._d(dob), leave_entitlement._d(as_of)
+        if not d or not a:
+            return False
+        return leave_entitlement.completed_years(d, a) >= 60
 
     def _hr_doc_file_ep(self, u, doc_id):
         """The bytes of one published document, for somebody it is actually addressed to.

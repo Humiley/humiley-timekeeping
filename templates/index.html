@@ -1971,10 +1971,12 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchHRTab('benefits',this)">Benefits</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
     <button class="tab" id="hr-tab-contracts" style="display:none" onclick="switchHRTab('contracts',this)">Labour Contracts</button>
+    <button class="tab" onclick="switchHRTab('certs',this)">Certificates &amp; Health</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
   <div id="hr-benefits" style="display:none"><div id="hr-benefits-root"></div></div>
   <div id="hr-contracts" style="display:none"></div>
+  <div id="hr-certs" style="display:none"></div>
 
   <!-- BALANCES -->
   <div id="hr-balances">
@@ -20519,6 +20521,19 @@ const _VI = {
   'Give a reason for the correction — it goes on the record': 'Vui lòng nhập lý do sửa — lý do này sẽ được lưu vào hồ sơ',
   'Nothing was changed': 'Không có thay đổi nào', 'Attendance corrected': 'Đã sửa chấm công',
   'overtime sent back for approval': 'tăng ca được gửi lại để duyệt',
+  // ── Certificates, licences & health checks ──
+  'Certificates, licences &amp; health checks': 'Chứng chỉ, giấy phép &amp; khám sức khoẻ',
+  'Law on OSH 2015 Art. 21(1) — a health examination at least once a year, and every six months for hazardous work, minors, elderly and disabled workers · Decree 44/2016 Art. 24 — safety training valid 2 years, where the company has classified somebody into a group.':
+    'Luật ATVSLĐ 2015 Đ.21(1) — khám sức khoẻ định kỳ ít nhất 1 lần/năm, và 6 tháng/lần với công việc nặng nhọc độc hại, người chưa thành niên, người cao tuổi và người khuyết tật · NĐ 44/2016 Đ.24 — chứng chỉ huấn luyện an toàn có giá trị 2 năm, với những người đã được phân nhóm.',
+  'person(s) not fully covered': 'người chưa đủ điều kiện',
+  'Missing and expired first. A certificate on file that lapsed is not cover.': 'Thiếu và hết hạn xếp trước. Chứng chỉ có trong hồ sơ nhưng đã hết hạn thì không còn giá trị.',
+  'Everybody is covered.': 'Tất cả đều đủ điều kiện.',
+  'Never obtained': 'Chưa từng có', 'Expired': 'Đã hết hạn', 'Due soon': 'Sắp đến hạn',
+  'Valid': 'Còn hiệu lực', 'Does not expire': 'Không hết hạn', 'No dates': 'Chưa có ngày',
+  'Nothing on file': 'Chưa có gì trong hồ sơ', 'no copy on file': 'chưa có bản sao',
+  'Work': 'Công việc', 'On file': 'Trong hồ sơ', 'What needs doing': 'Việc cần làm',
+  'Normal': 'Bình thường', 'Hazardous': 'Nặng nhọc, độc hại', 'Especially hazardous': 'Đặc biệt nặng nhọc, độc hại',
+  'OSH group': 'Nhóm ATVSLĐ', 'to': 'đến',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
@@ -22010,7 +22025,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal','contracts'].forEach(id => {
+  ['balances','benefits','compliance','portal','contracts','certs'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -22020,6 +22035,7 @@ function switchHRTab(tab, el) {
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
   if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
+  if (tab === 'certs') { try { tkRenderCerts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
     _renderEmployeeTable();
@@ -23433,6 +23449,68 @@ async function _deleteEmp(id) {
   toast(nm + ' removed permanently');
 }
 
+/* Certificates, licences and health checks.
+
+   A register of what people hold answers half a question. The half that matters before a crew goes
+   on site is the other one: whose certificate lapsed while they kept working, and who never had one.
+   The health-check cadence follows the employee's own recorded working conditions and age — once a
+   year, twice for hazardous work, minors, elderly and disabled workers (Law on OSH 2015 Art. 21(1)) —
+   because one cadence for everybody is exactly how the exposure goes unnoticed. */
+const _CERT_ST = {
+  missing:  { label: 'Never obtained', cls: 'b-danger' },
+  expired:  { label: 'Expired', cls: 'b-danger' },
+  expiring: { label: 'Due soon', cls: 'b-warn' },
+  valid:    { label: 'Valid', cls: 'b-ok' },
+  permanent:{ label: 'Does not expire', cls: 'b-ok' },
+  unknown:  { label: 'No dates', cls: 'b-warn' }
+};
+async function tkRenderCerts() {
+  const el = document.getElementById('hr-certs'); if (!el) return;
+  el.innerHTML = tkSkeleton();
+  let r;
+  try { r = await tkApi('/api/hr/certificates/review'); }
+  catch (e) { el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  const rows = r.rows || [];
+  const flagged = rows.filter(x => (x.issues || []).length);
+
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _t('Certificates, licences &amp; health checks') + ' — ' + _crmEsc(r.asOf || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('Law on OSH 2015 Art. 21(1) — a health examination at least once a year, and every six months for hazardous work, minors, elderly and disabled workers · Decree 44/2016 Art. 24 — safety training valid 2 years, where the company has classified somebody into a group.') +
+    '</div></div>';
+
+  const banner = flagged.length
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid var(--danger)">' +
+      '<div style="font-weight:700;color:var(--danger)">' + flagged.length + ' ' + _t('person(s) not fully covered') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' + _t('Missing and expired first. A certificate on file that lapsed is not cover.') + '</div></div>'
+    : '<div class="card" style="padding:24px;text-align:center;margin-bottom:16px">' +
+      '<div style="font-weight:700;color:var(--emerald)">' + _t('Everybody is covered.') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + rows.length + ' ' + _t('employee(s) checked.') + '</div></div>';
+
+  const row = x => {
+    const held = (x.items || []).map(i => {
+      const st = _CERT_ST[i.status] || { label: i.status, cls: 'b-info' };
+      return '<div style="font-size:11px;margin-bottom:2px">' + _crmEsc(i.label) +
+        ' <span class="badge ' + st.cls + '" style="font-size:9px">' + _t(st.label) + '</span>' +
+        (i.due ? ' <span style="color:var(--text-light)">' + _t('to') + ' ' + _crmEsc(i.due) + '</span>' : '') +
+        (i.hasFile ? '' : ' <span style="color:#B7791F">· ' + _t('no copy on file') + '</span>') + '</div>';
+    }).join('') || '<span style="color:var(--text-light);font-size:11px">' + _t('Nothing on file') + '</span>';
+    const issues = (x.issues || []).map(i =>
+      '<div style="font-size:11px;color:' + (i.severity === 'high' ? 'var(--danger)' : '#B7791F') + ';margin-top:3px">' + _crmEsc(i.message) + '</div>').join('');
+    return '<tr' + ((x.issues || []).length ? ' style="background:rgba(220,38,38,.04)"' : '') + '>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + (x.title ? ' · ' + _crmEsc(x.title) : '') + '</div></td>' +
+      '<td style="font-size:11px">' + (x.conditions === 'normal' ? _t('Normal') : (x.conditions === 'heavy' ? _t('Hazardous') : _t('Especially hazardous'))) +
+        (x.oshGroup ? '<div style="color:var(--text-light)">' + _t('OSH group') + ' ' + _crmEsc(x.oshGroup) + '</div>' : '') + '</td>' +
+      '<td>' + held + '</td>' +
+      '<td>' + (issues || '<span style="color:var(--emerald)">✓</span>') + '</td></tr>';
+  };
+
+  el.innerHTML = head + banner +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th>' + _t('Work') + '</th><th>' + _t('On file') + '</th>' +
+    '<th>' + _t('What needs doing') + '</th></tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
+}
 /* The labour contract register — Article 20 of the Labour Code, made visible before it is missed.
 
    The consequences in that article arrive by operation of law rather than by anybody's decision. A

@@ -283,7 +283,8 @@ def init_db():
                 "shirtSize TEXT",
                 # Annual-leave entitlement drivers (Art. 113(1)): the working-condition class and
                 # whether the employee is a person with disabilities. Both raise the statutory base.
-                "workConditions TEXT", "disabled INTEGER", "contractExempt TEXT"):
+                "workConditions TEXT", "disabled INTEGER", "contractExempt TEXT",
+                "oshGroup TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -790,6 +791,10 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               # | 'union_officer'. Blank for almost everyone — it is a legal status somebody records,
               # never something to infer from a name or a job title.
               "contractExempt",
+              # Decree 44/2016 occupational-safety training group (1–6), where the company has
+              # classified the person. Blank means no safety-training requirement is asserted for
+              # them — inventing one for everybody would bury the people who genuinely have one.
+              "oshGroup",
               "procRole",
               "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"]
 
