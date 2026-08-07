@@ -1984,12 +1984,14 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
     <button class="tab" id="hr-tab-contracts" style="display:none" onclick="switchHRTab('contracts',this)">Labour Contracts</button>
     <button class="tab" id="hr-tab-decisions" style="display:none" onclick="switchHRTab('decisions',this)">Decisions &amp; Letters</button>
+    <button class="tab" id="hr-tab-statutory" style="display:none" onclick="switchHRTab('statutory',this)">Statutory Returns</button>
     <button class="tab" onclick="switchHRTab('certs',this)">Certificates &amp; Health</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
   <div id="hr-benefits" style="display:none"><div id="hr-benefits-root"></div></div>
   <div id="hr-contracts" style="display:none"></div>
   <div id="hr-decisions" style="display:none"></div>
+  <div id="hr-statutory" style="display:none"></div>
   <div id="hr-certs" style="display:none"></div>
 
   <!-- BALANCES -->
@@ -19745,6 +19747,11 @@ function showView(id, navEl, title) {
     // letter can disclose a salary. The server enforces it too — this only hides the door.
     const _dt = document.getElementById('hr-tab-decisions');
     if (_dt) _dt.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
+    // EDITOR, not management: these are the figures that go to the social-insurance agency and the
+    // tax authority, and the server gates them at editor too (test_statutory_api asserts management
+    // is refused). Showing the tab to somebody the API will refuse is worse than hiding it.
+    const _st = document.getElementById('hr-tab-statutory');
+    if (_st) _st.style.display = (_lvlRank(_userLevel) >= _lvlRank('editor')) ? '' : 'none';
     Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} });
   }
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
@@ -21263,6 +21270,39 @@ const _VI = {
   // ── Labour contract register (Art. 20) ──
   'Labour contracts': 'Hợp đồng lao động',
   'Company legal identity': 'Thông tin pháp lý công ty',
+  'Statutory returns': 'Báo cáo, tờ khai bắt buộc',
+  'Built from a SIGNED pay run, never recomputed — a declaration that disagrees with the payslips it came from is worse than a late one.': 'Lấy từ bảng lương ĐÃ KÝ, không tính lại — một tờ khai mâu thuẫn với phiếu lương mà nó dựa vào còn tệ hơn nộp muộn.',
+  'Labour usage report (Decree 145 Art. 4)': 'Báo cáo sử dụng lao động (Điều 4 NĐ 145)',
+  'Labour usage report exported': 'Đã xuất báo cáo sử dụng lao động',
+  'No return for this month': 'Chưa có tờ khai cho tháng này',
+  'Contribution cap variance': 'Chênh lệch do mức trần đóng',
+  'What was withheld has already been paid to the authority. This reports both figures and changes neither — confirm the position with your accountant before altering any withholding.': 'Số đã khấu trừ đã nộp cho cơ quan quản lý. Màn hình này nêu cả hai con số và không thay đổi con số nào — hãy xác nhận với kế toán trước khi điều chỉnh.',
+  'Employee contributions': 'Người lao động đóng',
+  'Employer contributions': 'Người sử dụng lao động đóng',
+  'Union fund': 'Kinh phí công đoàn',
+  'PIT withheld': 'Thuế TNCN đã khấu trừ',
+  'Contribution base': 'Mức đóng',
+  'Record a certificate': 'Ghi nhận chứng chỉ',
+  'Certificate recorded': 'Đã ghi nhận chứng chỉ',
+  'Kind': 'Loại',
+  'Title on the certificate': 'Tên trên chứng chỉ',
+  'e.g. Working at height — Group 3': 'ví dụ: Làm việc trên cao — Nhóm 3',
+  'Issued on': 'Ngày cấp',
+  'Expires on': 'Ngày hết hạn',
+  'leave blank to use the statutory cadence': 'để trống sẽ dùng chu kỳ luật định',
+  'Link to the scanned copy': 'Liên kết bản scan',
+  'SharePoint or a URL': 'SharePoint hoặc đường dẫn',
+  'Record it': 'Ghi nhận',
+  'Record': 'Ghi nhận',
+  'With no printed expiry, the review treats a health examination as valid for 12 months — 6 for hazardous work, minors, elderly and disabled workers (OSH Law Art. 21(1)).': 'Nếu không in ngày hết hạn, khám sức khỏe được tính hiệu lực 12 tháng — 6 tháng với công việc nặng nhọc, người chưa thành niên, người cao tuổi và người khuyết tật (Điều 21(1) Luật ATVSLĐ).',
+  'With no printed expiry, safety training is treated as valid for 2 years (Decree 44/2016 Art. 24), and only where the person has an OSH group set.': 'Nếu không in ngày hết hạn, huấn luyện an toàn được tính hiệu lực 2 năm (Điều 24 NĐ 44/2016), và chỉ khi người lao động đã được phân nhóm.',
+  'No statutory cadence is assumed for other certificates — only the expiry printed on them.': 'Chứng chỉ khác không áp chu kỳ luật định — chỉ dùng ngày hết hạn in trên chứng chỉ.',
+  'Leave report exported': 'Đã xuất báo cáo phép',
+  'Leave balances exported': 'Đã xuất số ngày phép',
+  'No employee records loaded yet': 'Chưa tải dữ liệu nhân viên',
+  'Nothing to export on this report yet': 'Báo cáo này chưa có dữ liệu để xuất',
+  'Exported': 'Đã xuất',
+  'optional': 'không bắt buộc',
   'Decisions & Letters': 'Quyết định & Giấy tờ',
   'A quyết định records what the company decided about someone. The Labour Code governs two of them — a termination (Art. 34/36/45) and a disciplinary measure (Art. 122–127) — and those are checked before they can be issued.': 'Quyết định ghi nhận điều công ty đã quyết đối với người lao động. Bộ luật Lao động điều chỉnh hai loại — chấm dứt hợp đồng (Điều 34/36/45) và xử lý kỷ luật (Điều 122–127) — và hai loại này được kiểm tra trước khi ban hành.',
   'New decision': 'Quyết định mới',
@@ -22905,7 +22945,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal','contracts','decisions','certs'].forEach(id => {
+  ['balances','benefits','compliance','portal','contracts','decisions','statutory','certs'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -22916,6 +22956,7 @@ function switchHRTab(tab, el) {
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
   if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
   if (tab === 'decisions') { try { tkRenderDecisions(); } catch (e) {} }
+  if (tab === 'statutory') { try { tkRenderStatutory(); } catch (e) {} }
   if (tab === 'certs') { try { tkRenderCerts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
@@ -24257,9 +24298,32 @@ function renderInOutReport() {
   document.getElementById('io-avghrs').textContent = validMins.length ? (() => { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); return Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; })() : '—';
 }
 
+/* Export whatever report is actually on screen.
+
+   This used to fire a toast saying "Exporting … to Excel" and do nothing at all — the user got a
+   success message and no file. It now reads the visible table, and if there is no table it says so
+   instead of claiming to have exported one. */
 function exportCurrentReport() {
-  const active = document.querySelector('#rpt-tabs .tab.active')?.textContent?.trim() || 'Report';
-  toast('Exporting "' + active + '" to Excel…', undefined, 3000);
+  const tab = document.querySelector('#rpt-tabs .tab.active');
+  const name = (tab && tab.textContent ? tab.textContent : 'Report').trim();
+  // The panel belonging to the active tab: the visible rpt-* section that actually HOLDS a table.
+  // Matching the first visible one instead picked up #rpt-period — the period <select> in the
+  // toolbar — and then reported "nothing to export" for every report on the screen.
+  const panel = [...document.querySelectorAll('[id^="rpt-"]')]
+    .find(el => el.id !== 'rpt-tabs' && el.offsetParent !== null && el.querySelector('table'));
+  const table = panel ? panel.querySelector('table') : null;
+  if (!table || !table.tBodies.length || !table.tBodies[0].rows.length) {
+    toast(_t2('Nothing to export on this report yet', 'Báo cáo này chưa có dữ liệu để xuất'), 'warn');
+    return;
+  }
+  const cells = tr => [...tr.cells].map(td => (td.innerText || '').replace(/\s+/g, ' ').trim());
+  const rows = [];
+  [...table.tHead ? table.tHead.rows : []].forEach(tr => rows.push(cells(tr)));
+  [...table.tBodies[0].rows].forEach(tr => rows.push(cells(tr)));
+  rows.push([]);
+  rows.push([name, _t('Exported'), new Date().toISOString().slice(0, 10)]);
+  _csvSave(name.replace(/[^\w]+/g, '_') + '_' + new Date().toISOString().slice(0, 10) + '.csv', rows);
+  toast(_t2('Exported', 'Đã xuất') + ' — ' + name + ' (' + (rows.length - 3) + ')');
 }
 
 async function submitLeave() {
@@ -24638,14 +24702,217 @@ async function tkRenderCerts() {
       '<td style="font-size:11px">' + (x.conditions === 'normal' ? _t('Normal') : (x.conditions === 'heavy' ? _t('Hazardous') : _t('Especially hazardous'))) +
         (x.oshGroup ? '<div style="color:var(--text-light)">' + _t('OSH group') + ' ' + _crmEsc(x.oshGroup) + '</div>' : '') + '</td>' +
       '<td>' + held + '</td>' +
-      '<td>' + (issues || '<span style="color:var(--emerald)">✓</span>') + '</td></tr>';
+      '<td>' + (issues || '<span style="color:var(--emerald)">✓</span>') + '</td>' +
+      '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="tkCertAdd(\'' +
+        _crmEsc(x.empId) + '\')">' + _t('Record') + '</button></td></tr>';
   };
 
-  el.innerHTML = head + banner +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+  const tools = '<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px">' +
+    '<button class="btn btn-primary btn-sm" onclick="tkCertAdd()">' + _t('Record a certificate') + '</button></div>';
+
+  el.innerHTML = head + banner + tools +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
     '<th>' + _t('Employee') + '</th><th>' + _t('Work') + '</th><th>' + _t('On file') + '</th>' +
-    '<th>' + _t('What needs doing') + '</th></tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
+    '<th>' + _t('What needs doing') + '</th><th style="text-align:right">' + _t('Action') + '</th>' +
+    '</tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
 }
+/* The statutory returns.
+
+   /api/hr/statutory and /api/hr/labour-report were built, tested and routed — and had ZERO callers
+   in this file, so the SI/PIT schedules and the Decree 145 Art. 4 labour-usage report existed and
+   nobody could open them. This is the screen. */
+let _stData = null;
+
+async function tkRenderStatutory() {
+  const el = document.getElementById('hr-statutory'); if (!el) return;
+  const period = (document.getElementById('st-period') || {}).value ||
+                 new Date().toISOString().slice(0, 7);
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _t('Statutory returns') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('Built from a SIGNED pay run, never recomputed — a declaration that disagrees with the payslips it came from is worse than a late one.') +
+    '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">' +
+    '<div><label class="form-label">' + _t('Month') + '</label>' +
+    '<input class="form-input" id="st-period" type="month" value="' + _crmEsc(period) + '" style="width:170px"></div>' +
+    '<button class="btn btn-primary btn-sm" onclick="tkRenderStatutory()">' + _t('Load') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkStatutoryCsv()">' + _t('Export CSV') + '</button>' +
+    '<div style="flex:1"></div>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkLabourReport()">' + _t('Labour usage report (Decree 145 Art. 4)') + '</button>' +
+    '</div><div id="st-body">' + tkSkeleton() + '</div>';
+
+  const body = document.getElementById('st-body');
+  let r;
+  try { r = await tkApi('/api/hr/statutory?period=' + encodeURIComponent(period)); }
+  catch (e) {
+    _stData = null;
+    body.innerHTML = '<div class="card" style="padding:20px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('No return for this month') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(_errMsg(e)) + '</div></div>';
+    return;
+  }
+  _stData = r;
+  const c = r.contributions || {}, p = r.pit || {}, t = c.totals || {};
+
+  // The variance is the finding this screen exists to surface, so it leads.
+  const variance = c.variance
+    ? '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('Contribution cap variance') + ' — ₫' +
+        Number(c.variance).toLocaleString('vi-VN') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(c.capBasis || '') + '</div>' +
+      '<div style="font-size:12px;margin-top:6px">' + (c.affected || []).map(a =>
+        '<div>· ' + _crmEsc(a.name || a.empId) + ' — ₫' + Number(a.variance).toLocaleString('vi-VN') + '</div>').join('') +
+      '</div><div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _t('What was withheld has already been paid to the authority. This reports both figures and changes neither — confirm the position with your accountant before altering any withholding.') +
+      '</div></div>'
+    : '';
+
+  const kpi = (lbl, val) => '<div class="card" style="padding:12px 16px;flex:1;min-width:150px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _t(lbl) + '</div>' +
+    '<div style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">₫' +
+      Number(val || 0).toLocaleString('vi-VN') + '</div></div>';
+
+  const rows = (c.rows || []).map(x =>
+    '<tr><td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + '</div></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Number(x.contributionBase).toLocaleString('vi-VN') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Number(x.withheld.eeBhxh + x.withheld.eeBhyt + x.withheld.eeBhtn).toLocaleString('vi-VN') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + Number(x.withheld.erBhxh + x.withheld.erBhyt + x.withheld.erBhtn).toLocaleString('vi-VN') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' + (x.variance ? '#B7791F' : 'var(--text-light)') + '">' +
+      (x.variance ? Number(x.variance).toLocaleString('vi-VN') : '—') +
+      (x.capNote ? '<div style="font-size:10px;font-weight:400">' + _crmEsc(x.capNote) + '</div>' : '') + '</td></tr>').join('');
+
+  body.innerHTML = variance +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+    kpi('Employee contributions', t.employee) + kpi('Employer contributions', t.employer) +
+    kpi('Union fund', t.union) + kpi('PIT withheld', p.total) + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th style="text-align:right">' + _t('Contribution base') + '</th>' +
+    '<th style="text-align:right">' + _t('Employee') + '</th><th style="text-align:right">' + _t('Employer') + '</th>' +
+    '<th style="text-align:right">' + _t('Variance') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' + _crmEsc(p.note || '') + '</div>';
+}
+
+function tkStatutoryCsv() {
+  if (!_stData) { toast(_t('Load the report first'), 'warn'); return; }
+  const c = _stData.contributions || {}, p = _stData.pit || {};
+  const rows = [['Employee ID', 'Name', 'Department', 'Contribution base', 'Base BHXH/BHYT', 'Base BHTN',
+                 'EE BHXH', 'EE BHYT', 'EE BHTN', 'ER BHXH', 'ER BHYT', 'ER BHTN', 'Union',
+                 'Variance vs the caps', 'Note']];
+  (c.rows || []).forEach(x => rows.push([x.empId, x.name, x.dept, x.contributionBase, x.baseSiHi, x.baseUi,
+    x.withheld.eeBhxh, x.withheld.eeBhyt, x.withheld.eeBhtn,
+    x.withheld.erBhxh, x.withheld.erBhyt, x.withheld.erBhtn, x.withheld.union,
+    x.variance, x.capNote]));
+  rows.push([]);
+  rows.push(['PIT withheld', p.total, p.taxed + ' of ' + p.people + ' taxed', p.note]);
+  rows.push(['Cap basis', c.capBasis]);
+  rows.push(['Region', c.region, 'Base salary', c.baseSalary, 'SI/HI cap', c.capSiHi, 'UI cap', c.capUi]);
+  _csvSave('Statutory_' + (_stData.period || '') + '.csv', rows);
+}
+
+async function tkLabourReport() {
+  const asOf = new Date().toISOString().slice(0, 10);
+  let r;
+  try { r = await tkApi('/api/hr/labour-report?asOf=' + asOf); }
+  catch (e) { toast(_errMsg(e), 'error', 6000); return; }
+  const rows = [['Labour usage report', r.asOf], [], ['Total', r.total], ['Female', r.female], ['Male', r.male], []];
+  rows.push(['By employment type']);
+  (r.byType || []).forEach(x => rows.push([x.type, x.count]));
+  rows.push([]);
+  rows.push(['By department']);
+  (r.byDept || []).forEach(x => rows.push([x.dept, x.count]));
+  (r.unusable || []).forEach(x => rows.push(['NOT COUNTED', x.name || x.empId, x.why]));
+  rows.push([]);
+  rows.push([r.basis]);
+  _csvSave('Labour_usage_report_' + r.asOf + '.csv', rows);
+  toast(_t2('Labour usage report exported', 'Đã xuất báo cáo sử dụng lao động') + ' — ' + r.total);
+}
+
+/* Recording a certificate.
+
+   certificates.py has encoded the OSH cadence since it was written, and the register has painted it
+   — but nothing in the UI could ever CREATE a row. `grep "coll/certificates', { method"` returned
+   zero: an empty register, rendering a rule about records nobody could enter. Health-check and
+   safety-training evidence is exactly what a client's social-compliance audit asks for. */
+const _CERT_KINDS = [
+  { k: 'health_check', label: 'Periodic health examination', labelVn: 'Khám sức khỏe định kỳ' },
+  { k: 'osh_training', label: 'Occupational safety training', labelVn: 'Huấn luyện an toàn lao động' },
+  { k: 'other', label: 'Other certificate or licence', labelVn: 'Chứng chỉ / giấy phép khác' },
+];
+
+function tkCertAdd(empId) {
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const body = document.getElementById('certAddBody'); if (!body) return;
+  body.innerHTML =
+    '<div class="form-group"><label class="form-label">' + _t('Employee') + '</label>' +
+    '<select class="form-input" id="ct-emp">' + emps.map(e =>
+      '<option value="' + _crmEsc(e.id) + '"' + (e.id === empId ? ' selected' : '') + '>' +
+      _crmEsc(e.name) + ' — ' + _crmEsc(e.title || '') + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Kind') + '</label>' +
+    '<select class="form-input" id="ct-kind" onchange="_certKindChanged()">' + _CERT_KINDS.map(k =>
+      '<option value="' + k.k + '">' + _crmEsc(k.labelVn) + ' — ' + _crmEsc(k.label) + '</option>').join('') +
+    '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Title on the certificate') +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _t('optional') + '</span></label>' +
+    '<input class="form-input" id="ct-label" placeholder="' + _t('e.g. Working at height — Group 3') + '"></div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    '<div class="form-group" style="flex:1;min-width:180px"><label class="form-label">' + _t('Issued on') + '</label>' +
+    '<input class="form-input" id="ct-issued" type="date"></div>' +
+    '<div class="form-group" style="flex:1;min-width:180px"><label class="form-label">' + _t('Expires on') +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _t('leave blank to use the statutory cadence') + '</span></label>' +
+    '<input class="form-input" id="ct-expiry" type="date"></div></div>' +
+    '<div id="ct-cadence" style="font-size:11px;color:var(--text-light);margin-bottom:12px"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Link to the scanned copy') +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _t('SharePoint or a URL') + '</span></label>' +
+    '<input class="form-input" id="ct-file" placeholder="https://…"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Note') + '</label>' +
+    '<input class="form-input" id="ct-note"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal(\'certAddModal\')">' +
+    _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" id="ctSaveBtn" onclick="_certSave()">' + _t('Record it') + '</button></div>';
+  openModal('certAddModal');
+  _certKindChanged();
+}
+
+function _certKindChanged() {
+  const k = (document.getElementById('ct-kind') || {}).value;
+  const el = document.getElementById('ct-cadence'); if (!el) return;
+  // Stated, not enforced here: the server-side review recomputes the real cadence from the person's
+  // own workConditions and age, which this form does not know.
+  el.textContent = k === 'health_check'
+    ? _t('With no printed expiry, the review treats a health examination as valid for 12 months — 6 for hazardous work, minors, elderly and disabled workers (OSH Law Art. 21(1)).')
+    : (k === 'osh_training'
+      ? _t('With no printed expiry, safety training is treated as valid for 2 years (Decree 44/2016 Art. 24), and only where the person has an OSH group set.')
+      : _t('No statutory cadence is assumed for other certificates — only the expiry printed on them.'));
+}
+
+async function _certSave() {
+  const g = id => { const e = document.getElementById('ct-' + id); return e ? e.value.trim() : ''; };
+  const empId = g('emp'), kind = g('kind'), issued = g('issued');
+  if (!empId) { toast(_t2('Choose an employee', 'Chọn nhân viên'), 'warn'); return; }
+  if (!issued) { toast(_t2('The date it was issued is what the cadence is measured from', 'Cần ngày cấp để tính chu kỳ'), 'warn'); return; }
+  const emp = (_DEMO_EMPLOYEES || []).find(e => e.id === empId) || {};
+  const known = _CERT_KINDS.find(k => k.k === kind) || {};
+  const btn = document.getElementById('ctSaveBtn');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Saving…'); }
+  try {
+    await tkApi('/api/coll/certificates', { method: 'POST', body: {
+      empId: empId, empName: emp.name || '', kind: kind,
+      label: g('label') || known.label || '',
+      issuedDate: issued, expiryDate: g('expiry'),
+      fileUrl: g('file'), note: g('note') } });
+  } catch (e) {
+    toast(_errMsg(e), 'error', 6000);
+    if (btn) { btn.disabled = false; btn.textContent = _t('Record it'); }
+    return;
+  }
+  closeModal('certAddModal');
+  toast(_t2('Certificate recorded', 'Đã ghi nhận chứng chỉ'), 'success');
+  try { await tkRenderCerts(); } catch (e) {}
+}
+
 /* The labour contract register — Article 20 of the Labour Code, made visible before it is missed.
 
    The consequences in that article arrive by operation of law rather than by anybody's decision. A
@@ -26889,38 +27156,60 @@ function viewAnomalyOnMap(lat, lon, empName) {
 /* ══════════════════════════════════════════════════════════
    HR REPORT EXPORTS
 ══════════════════════════════════════════════════════════ */
-function exportHRReport() {
-  const rows = [
-    ['Employee','Department','Annual Leave Used','Annual Leave Remaining','Sick Leave Used','Sick Leave Remaining'],
-    ['Nguyen Van An','Engineering','4','8','0','30'],
-    ['Tran Thi Bao','Project Mgmt','2','10','1','29'],
-    ['Le Van Cuong','Engineering','3','9','0','30'],
-    ['Pham Thi Dung','HRBP','5','7','2','28'],
-    ['Hoang Van Em','Finance','1','11','0','30'],
-  ];
-  const csv = rows.map(r => r.map(c => '"'+c+'"').join(',')).join('\n');
+/* One CSV writer for the whole app. UTF-8 BOM so Excel opens Vietnamese correctly, quotes doubled,
+   Blob rather than a data: URI (a data: URI silently truncates a large roster in some browsers). */
+function _csvSave(filename, rows) {
+  const csv = (rows || []).map(r => (r || []).map(
+    v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
   const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'HR_Leave_Report_' + new Date().toISOString().slice(0,10) + '.csv';
+  a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = filename;
   a.click();
-  toast('HR report exported to CSV');
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+/* The leave roster, from the real employee records.
+
+   This and exportBalances() used to emit five HARDCODED names — "Nguyen Van An", "Tran Thi Bao" —
+   wired to live buttons on the HR screen. A file of invented employees leaving the building over a
+   button marked "Export Report" is worse than no button at all. */
+function _leaveRows() {
+  return (_DEMO_EMPLOYEES || [])
+    .filter(e => (e.status || 'Active').toLowerCase() !== 'inactive')
+    .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+}
+
+function exportHRReport() {
+  const emps = _leaveRows();
+  if (!emps.length) { toast(_t2('No employee records loaded yet', 'Chưa tải dữ liệu nhân viên'), 'warn'); return; }
+  const rows = [['Employee ID', 'Employee', 'Department', 'Annual used', 'Annual remaining',
+                 'Sick used', 'Sick remaining']];
+  emps.forEach(e => {
+    const aT = +e.annualTotal || 0, aU = +e.annualUsed || 0;
+    const sT = +e.sickTotal || 0, sU = +e.sickUsed || 0;
+    rows.push([e.id, e.name, e.dept || '', aU, Math.max(0, aT - aU), sU, Math.max(0, sT - sU)]);
+  });
+  rows.push([]);
+  rows.push(['Exported', new Date().toISOString().slice(0, 10), emps.length + ' active employee(s)']);
+  _csvSave('HR_Leave_Report_' + new Date().toISOString().slice(0, 10) + '.csv', rows);
+  toast(_t2('Leave report exported', 'Đã xuất báo cáo phép') + ' — ' + emps.length);
 }
 
 function exportBalances() {
-  const rows = [
-    ['Employee','Department','Annual Total','Annual Used','Annual Remaining','Sick Total','Sick Used','Sick Remaining','Comp-off'],
-    ['Nguyen Van An','Engineering','12','4','8','30','0','30','2'],
-    ['Tran Thi Bao','Project Mgmt','12','2','10','30','1','29','1'],
-    ['Le Van Cuong','Engineering','12','3','9','30','0','30','3'],
-    ['Pham Thi Dung','HRBP','12','5','7','30','2','28','0'],
-    ['Hoang Van Em','Finance','12','1','11','30','0','30','2'],
-  ];
-  const csv = rows.map(r => r.map(c => '"'+c+'"').join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'Leave_Balances_' + new Date().toISOString().slice(0,10) + '.csv';
-  a.click();
-  toast('Leave balances exported to CSV');
+  const emps = _leaveRows();
+  if (!emps.length) { toast(_t2('No employee records loaded yet', 'Chưa tải dữ liệu nhân viên'), 'warn'); return; }
+  const rows = [['Employee ID', 'Employee', 'Department', 'Annual total', 'Annual used',
+                 'Annual remaining', 'Sick total', 'Sick used', 'Sick remaining', 'Comp-off']];
+  emps.forEach(e => {
+    const aT = +e.annualTotal || 0, aU = +e.annualUsed || 0;
+    const sT = +e.sickTotal || 0, sU = +e.sickUsed || 0;
+    rows.push([e.id, e.name, e.dept || '', aT, aU, Math.max(0, aT - aU),
+               sT, sU, Math.max(0, sT - sU), +e.compoff || 0]);
+  });
+  rows.push([]);
+  rows.push(['Exported', new Date().toISOString().slice(0, 10), emps.length + ' active employee(s)']);
+  _csvSave('Leave_Balances_' + new Date().toISOString().slice(0, 10) + '.csv', rows);
+  toast(_t2('Leave balances exported', 'Đã xuất số ngày phép') + ' — ' + emps.length);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -27344,6 +27633,17 @@ async function saveEmployee() {
       <button class="modal-close" onclick="closeModal('companyIdModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
     <div id="companyIdBody"></div>
+  </div>
+</div>
+
+<!-- RECORD A CERTIFICATE / HEALTH CHECK -->
+<div class="modal-overlay" id="certAddModal">
+  <div class="modal" style="max-width:600px;max-height:90vh;max-height:90dvh;overflow-y:auto">
+    <div class="modal-header">
+      <div class="modal-title">Record a certificate</div>
+      <button class="modal-close" onclick="closeModal('certAddModal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div id="certAddBody"></div>
   </div>
 </div>
 
