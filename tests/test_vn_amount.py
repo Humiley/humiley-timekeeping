@@ -94,3 +94,20 @@ def test_a_fraction_is_rounded_to_the_dong_rather_than_truncated():
 
 def test_a_negative_is_said_as_negative_rather_than_silently_flipped():
     assert v.words(-5000) == "âm năm nghìn"
+
+
+def test_amounts_at_and_above_a_thousand_billion_do_not_crash():
+    """words(10**12) put 1000 into the hundreds group and raised IndexError out of UNITS[10] —
+    reachable from any contract wage box, so an unhandled 500 on /api/hr/contract."""
+    assert v.words(10 ** 12) == "một nghìn tỷ"
+    assert v.words(2_500_000_000_000) == "hai nghìn năm trăm tỷ"
+    assert v.words(-(10 ** 12)) == "âm một nghìn tỷ"
+    assert v.words(10 ** 15) == "một triệu tỷ"
+
+
+def test_the_boundary_below_it_still_reads_the_old_way():
+    assert v.words(999_999_999_999).startswith("chín trăm chín mươi chín tỷ")
+
+
+def test_a_remainder_after_the_billions_head_is_still_spoken():
+    assert v.words(1_000_000_000_001) == "một nghìn tỷ không trăm linh một"

@@ -37,6 +37,8 @@ import overtime          # Labour Code Art. 98/106/107 overtime rates, night pre
 import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + Decree 145 proration (pure)
 import company           # the employer's legal identity, as a document has to state it (pure)
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
+import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
+import hr_decision       # the quyết định — Art. 34/36/45 termination, Art. 122-127 discipline
 import contracts         # Labour Code Art. 20 contract terms, expiry and the renewal limit (pure)
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
@@ -3778,6 +3780,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_get_ep(u))
         if path == "/api/hr/contract/draft":
             return self._guard(lambda u: self._contract_draft_ep(u, qs))
+        if path == "/api/hr/decision/draft":
+            return self._guard(lambda u: self._decision_draft_ep(u, qs))
+        if path == "/api/hr/letter/draft":
+            return self._guard(lambda u: self._letter_draft_ep(u, qs))
         if path == "/api/hr/leave-entitlement":
             return self._guard(lambda u: self._leave_entitlement_ep(u, qs))
         if path == "/api/hr/overtime":
@@ -3851,6 +3857,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
+        if path == "/api/hr/decision":
+            return self._guard(lambda u: self._decision_create_ep(u, body), manager=True)
+        if path == "/api/hr/letter":
+            return self._guard(lambda u: self._letter_issue_ep(u, body))
         if path == "/api/hr/appraisal/open":
             return self._guard(lambda u: self._appraisal_open_ep(u, body), manager=True)
         if path.startswith("/api/hr/appraisal/close/"):
@@ -6257,7 +6267,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6274,8 +6284,20 @@ class Handler(BaseHTTPRequestHandler):
     HR_EVIDENCE_COLLS = {"exits", "padr", "reviews", "pip", "hrdoc_acks", "acks",
                          # A labour contract and a health certificate are evidence too — deleting
                          # one must leave the record in the audit chain, not just a gap.
-                         "contracts", "certificates",
+                         "contracts", "certificates", "decisions", "hrletters",
                          "onboarding", "handovers", "enrollments", "payadjust", "candidates"}
+    # Records the SERVER validated when they were issued: a disciplinary measure Art. 127 permits,
+    # a salary disclosure the letter's purpose justified. The generic /api/coll route does none of
+    # that checking, so creating one through it walks straight past the law. Measured, not assumed:
+    # a decision with measure="fine" was refused 400 by /api/hr/decision and accepted 200 by
+    # POST /api/coll/decisions, and a letter could be marked Issued with no purpose at all.
+    # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
+    # do not change what was decided — a wrong decision is superseded, not rewritten.
+    ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
+                   "hrletters": ("a confirmation letter", "/api/hr/letter")}
+    ISSUED_EDITABLE = {"decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
+                       "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
+                                     "issuedBy", "issuedById", "issuedAt", "_rev", "id"}}
     INVTRACK_MIN = "editor"
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
@@ -6284,7 +6306,10 @@ class Handler(BaseHTTPRequestHandler):
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
-                "contracts": "management",
+                "contracts": "management", "decisions": "management",
+                # Who is applying for a mortgage, at which bank, and who is job-hunting
+                # (purpose "new_employer"). An employee reads their OWN through SELF_OWNED.
+                "hrletters": "management",
                 "reviews": "manager", "talent": "manager", "jobs": "manager", "candidates": "manager",
                 "competency": "manager", "audit": "manager",
                 # Project financials must not be world-readable to every staff account (the PM app is
@@ -6298,13 +6323,13 @@ class Handler(BaseHTTPRequestHandler):
     # `benefits` is deliberately NOT here. It is the per-GRADE benefits CATALOGUE — a policy table, not
     # personal data — so scoping it to "your own rows" matched nothing and every employee's Benefits
     # card was permanently empty while HR maintained a table nobody could see.
-    SELF_OWNED = {"hrdoc_acks", "claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "devices", "handovers"}
+    SELF_OWNED = {"hrdoc_acks", "claims", "travel", "payments", "acks", "padr", "enrollments", "onboarding", "goals", "devices", "handovers", "hrletters"}
     # Travel / claim / payment: a staff user sees only their OWN; a LEADER (manager) sees only their
     # TEAM (direct reports + self); management/editor/admin (Finance-level and above) see the whole
     # company. Scoped below in _coll_list.
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
-    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates", "review_cycles"}
+    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates", "review_cycles", "decisions", "hrletters"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
@@ -6428,7 +6453,10 @@ class Handler(BaseHTTPRequestHandler):
             # Your own labour contract is yours to read — Art. 13(1) requires you to be given a copy,
             # so a portal that holds it and will not show it to you is worse than not holding it.
             # Somebody else's is compensation data and stays out of reach.
-            if name == "contracts":
+            # A confirmation letter belongs here for the same reason: the employee ASKED for it,
+            # so it is theirs to see the status of. Everyone else's is out of reach — READ_MIN keeps
+            # a line manager from enumerating who is applying for a mortgage or job-hunting.
+            if name in ("contracts", "decisions", "hrletters"):
                 return self._json({"ok": True, "items": [
                     c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
             if name == "payruns":
@@ -7122,11 +7150,16 @@ class Handler(BaseHTTPRequestHandler):
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
         # still rewrite its wage or delete it. Writing must need at least what reading needs.
-        if name in ("contracts", "certificates"):
+        if name in ("contracts", "certificates", "decisions", "hrletters"):
             _need = self.READ_MIN.get(name, "management")
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to change %s."
                                  % (_need.title(), name), 403)
+        if name in self.ISSUED_ONLY:
+            _what, _where = self.ISSUED_ONLY[name]
+            return self._err("%s is issued through %s, which checks what the law requires of it "
+                             "before it exists. Creating one here would skip those checks."
+                             % (_what[0].upper() + _what[1:], _where), 400)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
@@ -8168,6 +8201,13 @@ class Handler(BaseHTTPRequestHandler):
             "issuedBy": u.get("name") or "", "issuedById": u.get("id") or "",
             "issuedAt": self._utc_now(),
         }
+        # Assembled BEFORE the write. It was after, so anything that threw in assemble() — a
+        # 13-digit wage typo used to crash vn_amount — left a contract row and an audit entry
+        # behind, and each retry added another. contracts.review counts definite terms, so the
+        # ghosts pushed definiteCount toward the Art. 20(2)(c) limit and the register began
+        # warning about renewals that had never happened.
+        doc = contract_doc.assemble(settings, emp, terms, as_of=self._vn_day(),
+                                    doc_no=rec["no"] or rec["id"])
         db.put_collection_item("contracts", rec)
         db.put_collection_item("audit", {
             "actor": u.get("name") or "System", "actorId": u.get("id") or "",
@@ -8176,10 +8216,208 @@ class Handler(BaseHTTPRequestHandler):
                 rec["empName"], eid, rec["type"], rec["startDate"],
                 " → " + rec["endDate"] if rec["endDate"] else ""),
             "ts": self._utc_now()})
-        return self._json({"ok": True, "contract": rec,
-                           "document": contract_doc.assemble(settings, emp, terms,
-                                                             as_of=self._vn_day(),
-                                                             doc_no=rec["no"] or rec["id"])})
+        return self._json({"ok": True, "contract": rec, "document": doc})
+
+    # ── decisions (quyết định) ───────────────────────────────────────────────────────────────────
+
+    def _decision_ctx(self, qs_or_body, key="emp"):
+        eid = str((qs_or_body.get(key, [""])[0] if isinstance(qs_or_body.get(key), list)
+                   else qs_or_body.get(key) or "")).strip()
+        return eid, (db.get_employee(eid) if eid else None)
+
+    def _decision_draft_ep(self, u, qs):
+        """A draft decision for one employee, with whatever the law says about it attached.
+
+        Most of a quyết định is convention. The parts that are not — the Art. 123 clock on a
+        disciplinary decision, the Art. 36 notice on a termination — are computed here so the
+        drafter is told before they sign rather than after somebody challenges it.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to draft a "
+                             "decision.", 403)
+        kind = str(qs.get("kind", [""])[0] or "").strip()
+        if kind not in hr_decision.DECISIONS:
+            return self._json({"error": "Not a decision this company issues.",
+                               "kinds": [dict(v, kind=k) for k, v in
+                                         sorted(hr_decision.DECISIONS.items())]}, 400)
+        eid, emp = self._decision_ctx(qs)
+        if not emp:
+            return self._err("No such employee.", 404)
+        settings = self._company_settings()
+        seed = {}
+        # A termination decision is sourced from the offboarding record rather than retyped: the
+        # exit already carries the type, the last day and the notice, and those are exactly the
+        # facts Art. 34/36/45 turn on.
+        if kind == "termination":
+            ex = sorted((x for x in db.list_collection("exits") if x.get("empId") == eid),
+                        key=lambda x: str(x.get("initiated") or ""), reverse=True)
+            if ex:
+                x = ex[0]
+                seed = {
+                    "exitId": x.get("id"),
+                    "ground": hr_decision.ground_for_exit(x.get("type")),
+                    "effectiveFrom": x.get("lastDay") or "",
+                    "subject": "Termination of employment — %s" % (x.get("type") or ""),
+                    "reason": x.get("reason") or "",
+                    "noticeDays": x.get("noticeDays"),
+                }
+            cur = contracts.current(
+                [c for c in db.list_collection("contracts") if c.get("empId") == eid],
+                self._vn_day()) or {}
+            seed["contractType"] = cur.get("type") or ""
+            seed["termMonths"] = (datespan.whole_months(cur.get("startDate"), cur.get("endDate"))
+                                  if cur.get("startDate") and cur.get("endDate") else None)
+        doc = hr_decision.assemble(kind, settings, emp, seed, as_of=self._vn_day())
+        doc.update({
+            "ok": True, "empId": eid, "kind": kind, "seed": seed,
+            "grounds": [dict(g) for g in hr_decision.TERMINATION_GROUNDS],
+            "employerGrounds": [dict(g) for g in hr_decision.EMPLOYER_GROUNDS],
+            "measures": [dict(m) for m in hr_decision.MEASURES],
+            "forbidden": dict(hr_decision.FORBIDDEN_MEASURES),
+            "kinds": [dict(v, kind=k) for k, v in sorted(hr_decision.DECISIONS.items())],
+        })
+        return self._json(doc)
+
+    def _decision_create_ep(self, u, body):
+        """Record a decision, refusing one the Labour Code does not permit.
+
+        The refusals are the reason this is a server endpoint and not a form: a fine dressed up as
+        discipline (Art. 127(2)) and a dismissal issued out of time (Art. 123) are both things a
+        hopeful client would happily submit.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to issue a "
+                             "decision.", 403)
+        b = dict(body or {})
+        kind = str(b.get("kind") or "").strip()
+        if kind not in hr_decision.DECISIONS:
+            return self._err("Not a decision this company issues.", 400)
+        eid, emp = self._decision_ctx(b, "empId")
+        if not emp:
+            return self._err("A decision needs an employee.", 404 if eid else 400)
+        settings = self._company_settings()
+        d = {k: b.get(k) for k in (
+            "subject", "subjectVn", "effectiveFrom", "reason", "ground", "employerGround",
+            "contractType", "termMonths", "noticeDate", "measure", "violationDate", "serious",
+            "suspendedUntil", "deferMonths", "exitId")}
+        d.setdefault("issuedOn", self._vn_day())
+        blockers = hr_decision.blockers(kind, settings, emp, d)
+        if any(blockers.values()):
+            return self._json({"error": "This decision cannot be issued as drafted.",
+                               "blockers": blockers}, 400)
+        rec = {
+            "id": "qd-" + secrets.token_hex(4), "kind": kind,
+            "empId": eid, "empName": emp.get("name") or "",
+            "no": str(b.get("no") or "").strip(),
+            "subject": str(d.get("subject") or "")[:300],
+            "effectiveFrom": str(d.get("effectiveFrom") or "")[:10],
+            "detail": d,
+            "issuedBy": u.get("name") or "", "issuedById": u.get("id") or "",
+            "issuedAt": self._utc_now(),
+        }
+        db.put_collection_item("decisions", rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Decision issued", "target": "decisions/" + rec["id"],
+            "detail": "%s · %s (%s) · effective %s%s"
+                      % (hr_decision.DECISIONS[kind]["title"], rec["empName"], eid,
+                         rec["effectiveFrom"] or "—",
+                         " · %s" % rec["subject"] if rec["subject"] else ""),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "decision": rec,
+                           "document": hr_decision.assemble(kind, settings, emp, d,
+                                                            doc_no=rec["no"] or rec["id"],
+                                                            as_of=self._vn_day())})
+
+    # ── employment confirmation letters ──────────────────────────────────────────────────────────
+
+    def _letter_subject(self, u, qs_or_body, key="emp"):
+        """Whose letter this is. Defaults to the caller; anybody else needs management level."""
+        raw = qs_or_body.get(key)
+        eid = str((raw[0] if isinstance(raw, list) else raw) or "").strip() or (u.get("id") or "")
+        if eid != (u.get("id") or "") and \
+                self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return None, None, self._err("You can only request a confirmation letter about "
+                                         "yourself.", 403)
+        emp = db.get_employee(eid) if eid else None
+        if not emp:
+            return None, None, self._err("No such employee.", 404)
+        return eid, emp, None
+
+    def _letter_draft_ep(self, u, qs):
+        """A confirmation letter as it WOULD read — including what it will not say.
+
+        The employee sees the draft before asking for it, because the useful thing to know is that
+        the visa letter does not carry their salary, before they send it to a bank.
+        """
+        eid, emp, err = self._letter_subject(u, qs)
+        if err:
+            return err
+        req = {"purpose": str(qs.get("purpose", [""])[0] or "").strip(),
+               "addressedTo": str(qs.get("to", [""])[0] or "").strip(),
+               "leaveApproved": str(qs.get("leave", [""])[0] or "").strip()}
+        doc = employment_letter.assemble(self._company_settings(), emp, req, as_of=self._vn_day())
+        doc.update({"ok": True, "empId": eid,
+                    "canIssueHere": self._level_rank(self._caller_level(u))
+                                    >= self._level_rank("management")})
+        return self._json(doc)
+
+    def _letter_issue_ep(self, u, body):
+        """Request a letter, or — at management level — issue one.
+
+        An employee asking about themselves creates a REQUEST. Only management turns that into an
+        issued letter, because the letter is the company speaking, not the employee.
+        """
+        b = dict(body or {})
+        eid, emp, err = self._letter_subject(u, b, "empId")
+        if err:
+            return err
+        issue = bool(b.get("issue"))
+        is_mgmt = self._level_rank(self._caller_level(u)) >= self._level_rank("management")
+        if issue and not is_mgmt:
+            return self._err("Approver (management) level or above is required to issue a "
+                             "confirmation letter — it is the company speaking, not you.", 403)
+        settings = self._company_settings()
+        req = {"purpose": str(b.get("purpose") or "").strip(),
+               "addressedTo": str(b.get("addressedTo") or "")[:200],
+               "leaveApproved": str(b.get("leaveApproved") or "")[:200]}
+        blockers = employment_letter.blockers(settings, emp, req)
+        # A REQUEST does not have to satisfy the company-identity blockers — the employee cannot fix
+        # those and should not be stopped by them. Issuing does.
+        if blockers["terms"] or blockers["employee"] or (issue and blockers["company"]):
+            return self._json({"error": "This letter cannot be produced yet.",
+                               "blockers": blockers}, 400)
+        rec = {
+            "id": "xn-" + secrets.token_hex(4),
+            "empId": eid, "empName": emp.get("name") or "",
+            "purpose": req["purpose"], "addressedTo": req["addressedTo"],
+            "leaveApproved": req["leaveApproved"],
+            "disclosesSalary": employment_letter.discloses_salary(req["purpose"]),
+            "no": str(b.get("no") or "").strip(),
+            "status": "Issued" if issue else "Requested",
+            "requestedBy": u.get("name") or "", "requestedById": u.get("id") or "",
+            "requestedAt": self._utc_now(),
+        }
+        if issue:
+            rec.update({"issuedBy": u.get("name") or "", "issuedById": u.get("id") or "",
+                        "issuedAt": self._utc_now()})
+        db.put_collection_item("hrletters", rec)
+        # Audited with the purpose, because the purpose is the reason a salary was or was not
+        # disclosed and that is the question anybody would ask afterwards.
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Confirmation letter " + ("issued" if issue else "requested"),
+            "target": "hrletters/" + rec["id"],
+            "detail": "%s (%s) · purpose: %s · salary disclosed: %s"
+                      % (rec["empName"], eid, rec["purpose"] or "—",
+                         "yes" if rec["disclosesSalary"] else "no"),
+            "ts": self._utc_now()})
+        out = {"ok": True, "letter": rec}
+        if issue:
+            out["document"] = employment_letter.assemble(settings, emp, req,
+                                                         as_of=self._vn_day(),
+                                                         doc_no=rec["no"] or rec["id"])
+        return self._json(out)
 
     def _certificates_review_ep(self, u, qs):
         """Who is covered, whose certificate is lapsing, and who never had one.
@@ -9429,11 +9667,27 @@ class Handler(BaseHTTPRequestHandler):
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
         # still rewrite its wage or delete it. Writing must need at least what reading needs.
-        if name in ("contracts", "certificates"):
+        if name in ("contracts", "certificates", "decisions", "hrletters"):
             _need = self.READ_MIN.get(name, "management")
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to change %s."
                                  % (_need.title(), name), 403)
+        if name in self.ISSUED_ONLY:
+            # Fetched here rather than relying on `existing`, which the branches below assign only
+            # for the collections they handle — reading it at this point raised a NameError.
+            _cur = db.get_collection_item(name, iid) or {}
+            _b = body or {}
+            # BOTH directions. The write below is a whole-document replace, so a key the body
+            # OMITS is erased just as surely as one it changes — a one-key PATCH deleted an issued
+            # decision without going near the delete path that snapshots it into the audit chain.
+            _bad = sorted({k for k in set(_b) | set(_cur)
+                           if k not in self.ISSUED_EDITABLE[name]
+                           and str(_cur.get(k)) != str(_b.get(k))})
+            if _bad:
+                _what, _where = self.ISSUED_ONLY[name]
+                return self._err("%s cannot be rewritten after it is issued — %s decides what it "
+                                 "says. Issue a superseding one instead. Refused change to: %s."
+                                 % (_what[0].upper() + _what[1:], _where, ", ".join(_bad)), 400)
         if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
         if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
@@ -9829,6 +10083,14 @@ class Handler(BaseHTTPRequestHandler):
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
+        # Deleting must need at least what READING needs. Without this a line manager — who cannot
+        # read a labour contract, a health certificate or a decision — could destroy any of them,
+        # and _coll_add / _coll_update both gate exactly this set.
+        if name in ("contracts", "certificates", "decisions", "hrletters"):
+            _need = self.READ_MIN.get(name, "management")
+            if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
+                return self._err("%s access or above is required to delete %s."
+                                 % (_need.title(), name), 403)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
         if name == "invtrack" and self._level_rank(self._caller_level(u)) < self._level_rank(self.INVTRACK_MIN):

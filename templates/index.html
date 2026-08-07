@@ -1983,11 +1983,13 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" onclick="switchHRTab('benefits',this)">Benefits</button>
     <button class="tab" onclick="switchHRTab('compliance',this)">Compliance</button>
     <button class="tab" id="hr-tab-contracts" style="display:none" onclick="switchHRTab('contracts',this)">Labour Contracts</button>
+    <button class="tab" id="hr-tab-decisions" style="display:none" onclick="switchHRTab('decisions',this)">Decisions &amp; Letters</button>
     <button class="tab" onclick="switchHRTab('certs',this)">Certificates &amp; Health</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
   <div id="hr-benefits" style="display:none"><div id="hr-benefits-root"></div></div>
   <div id="hr-contracts" style="display:none"></div>
+  <div id="hr-decisions" style="display:none"></div>
   <div id="hr-certs" style="display:none"></div>
 
   <!-- BALANCES -->
@@ -19739,6 +19741,10 @@ function showView(id, navEl, title) {
     // appearing for somebody it will only 403 at.
     const _ct = document.getElementById('hr-tab-contracts');
     if (_ct) _ct.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
+    // Same gate: a decision can state somebody's pay or end their employment, and a confirmation
+    // letter can disclose a salary. The server enforces it too — this only hides the door.
+    const _dt = document.getElementById('hr-tab-decisions');
+    if (_dt) _dt.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
     Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} });
   }
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
@@ -21257,6 +21263,53 @@ const _VI = {
   // ── Labour contract register (Art. 20) ──
   'Labour contracts': 'Hợp đồng lao động',
   'Company legal identity': 'Thông tin pháp lý công ty',
+  'Decisions & Letters': 'Quyết định & Giấy tờ',
+  'A quyết định records what the company decided about someone. The Labour Code governs two of them — a termination (Art. 34/36/45) and a disciplinary measure (Art. 122–127) — and those are checked before they can be issued.': 'Quyết định ghi nhận điều công ty đã quyết đối với người lao động. Bộ luật Lao động điều chỉnh hai loại — chấm dứt hợp đồng (Điều 34/36/45) và xử lý kỷ luật (Điều 122–127) — và hai loại này được kiểm tra trước khi ban hành.',
+  'New decision': 'Quyết định mới',
+  'Kind of decision': 'Loại quyết định',
+  'Appointment / assignment': 'Bổ nhiệm / điều động',
+  'Appointment': 'Bổ nhiệm',
+  'Salary adjustment': 'Điều chỉnh lương',
+  'Termination of employment': 'Chấm dứt hợp đồng lao động',
+  'Termination': 'Chấm dứt hợp đồng',
+  'Disciplinary measure': 'Xử lý kỷ luật',
+  'Reward / commendation': 'Khen thưởng',
+  'Reward': 'Khen thưởng',
+  'Decision': 'Quyết định',
+  'Issue decision': 'Ban hành quyết định',
+  'Decision issued': 'Đã ban hành quyết định',
+  'Decision number': 'Số quyết định',
+  'About': 'Về việc',
+  'About (Vietnamese)': 'Về việc (tiếng Việt)',
+  'Ground under Art. 34': 'Căn cứ theo Điều 34',
+  'If under Art. 36, which point': 'Nếu theo Điều 36, điểm nào',
+  'Employee told on': 'Ngày báo trước',
+  'Last working day': 'Ngày cuối cùng làm việc',
+  'Measure under Art. 124': 'Hình thức kỷ luật theo Điều 124',
+  'Months deferred (if a pay rise)': 'Số tháng kéo dài nâng lương',
+  'Date of the violation': 'Ngày xảy ra vi phạm',
+  'Concerns finance, assets or trade secrets — Art. 123 allows 12 months rather than 6': 'Liên quan tài chính, tài sản hoặc bí mật kinh doanh — Điều 123 cho 12 tháng thay vì 6',
+  'Art. 122(4) period ended on': 'Hết thời gian không được xử lý kỷ luật (Điều 122(4)) ngày',
+  'Not disciplinary measures, and refused if chosen': 'Không phải hình thức kỷ luật, sẽ bị từ chối',
+  'No decisions issued yet.': 'Chưa ban hành quyết định nào.',
+  'No letters requested yet.': 'Chưa có yêu cầu xác nhận nào.',
+  'Employment confirmation letters': 'Giấy xác nhận công tác',
+  'Employment confirmation letter': 'Giấy xác nhận công tác',
+  'confirmation letter(s) waiting to be issued.': 'giấy xác nhận đang chờ cấp.',
+  'What the letter is for': 'Mục đích sử dụng',
+  'Addressed to': 'Kính gửi',
+  'Approved leave (visa letters)': 'Nghỉ phép đã duyệt (thư xin visa)',
+  'This letter will state': 'Giấy này sẽ ghi',
+  'It will NOT state': 'Giấy này sẽ KHÔNG ghi',
+  'Request letter': 'Gửi yêu cầu',
+  'Issue letter': 'Cấp giấy xác nhận',
+  'Request sent to HR': 'Đã gửi yêu cầu tới Nhân sự',
+  'Letter issued': 'Đã cấp giấy xác nhận',
+  'states the salary': 'có ghi mức lương',
+  'Issued by': 'Người ký',
+  'Purpose': 'Mục đích',
+  'Working…': 'Đang xử lý…',
+  'Continue': 'Tiếp tục',
   'These fields are what a signed document says the employer is. They are stated on every labour contract under Labour Code Art. 21(1)(a).': 'Các thông tin này là những gì một văn bản đã ký nói về người sử dụng lao động. Điều 21(1)(a) Bộ luật Lao động yêu cầu ghi trên mọi hợp đồng lao động.',
   'Admin access is required to change these — a contract issued afterwards would name whoever is set here.': 'Cần quyền quản trị để thay đổi — hợp đồng lập sau đó sẽ ghi tên người được đặt ở đây.',
   'What this is enough to issue': 'Đủ để lập những văn bản nào',
@@ -22852,7 +22905,7 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal','contracts','certs'].forEach(id => {
+  ['balances','benefits','compliance','portal','contracts','decisions','certs'].forEach(id => {
     const p = document.getElementById('hr-' + id);
     if (p) p.style.display = 'none';
   });
@@ -22862,6 +22915,7 @@ function switchHRTab(tab, el) {
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
   if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
+  if (tab === 'decisions') { try { tkRenderDecisions(); } catch (e) {} }
   if (tab === 'certs') { try { tkRenderCerts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
@@ -24659,6 +24713,436 @@ async function tkRenderContracts() {
     '<th style="text-align:right">' + _t('Action') + '</th>' +
     '</tr></thead><tbody>' + rows.map(row).join('') + '</tbody></table></div></div>';
 }
+/* ── Decisions (quyết định) and confirmation letters ────────────────────────────────────────────
+   Most of a decision is convention. The parts that are not — the Art. 123 clock on a disciplinary
+   decision, the Art. 36 notice on a termination, the four measures Art. 124 allows — are decided by
+   the server, so this screen asks and displays rather than restating any of it. */
+let _qdDraft = null, _qdList = null;
+
+async function tkRenderDecisions() {
+  const el = document.getElementById('hr-decisions'); if (!el) return;
+  el.innerHTML = tkSkeleton();
+  let dec = [], lets = [];
+  try {
+    dec = ((await tkApi('/api/coll/decisions')) || {}).items || [];
+    lets = ((await tkApi('/api/coll/hrletters')) || {}).items || [];
+  } catch (e) {
+    el.innerHTML = '<div class="card" style="padding:24px;color:var(--text-light)">' + _crmEsc(_errMsg(e)) + '</div>';
+    return;
+  }
+  _qdList = { dec: dec, lets: lets };
+  const pending = lets.filter(l => (l.status || '') !== 'Issued');
+
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _t('Decisions & Letters') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('A quyết định records what the company decided about someone. The Labour Code governs two of them — a termination (Art. 34/36/45) and a disciplinary measure (Art. 122–127) — and those are checked before they can be issued.') +
+    '</div></div>';
+
+  const bar = '<div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:12px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkCompanyIdentity()">' + _t('Company legal identity') + '</button>' +
+    '<button class="btn btn-primary btn-sm" onclick="tkDecisionNew()">' + _t('New decision') + '</button></div>';
+
+  const kindLabel = k => ({ appointment: 'Appointment', salary: 'Salary adjustment',
+    termination: 'Termination', discipline: 'Disciplinary measure', reward: 'Reward' })[k] || k;
+
+  const decRows = dec.length ? dec.slice().sort((a, b) => String(b.issuedAt || '').localeCompare(String(a.issuedAt || ''))).map(d =>
+    '<tr><td><div style="font-weight:600">' + _crmEsc(d.empName || d.empId) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.subject || '') + '</div></td>' +
+    '<td><span class="badge b-info" style="font-size:10px">' + _t(kindLabel(d.kind)) + '</span></td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _crmEsc(d.no || '—') + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _crmEsc(d.effectiveFrom || '—') + '</td>' +
+    '<td style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.issuedBy || '') + '</td>' +
+    '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="_qdReprint(\'' + _crmEsc(d.id) + '\')">' + _t('PDF') + '</button></td></tr>').join('')
+    : '<tr><td colspan="6" style="text-align:center;color:var(--text-light);padding:20px">' + _t('No decisions issued yet.') + '</td></tr>';
+
+  const letRows = lets.length ? lets.slice().sort((a, b) => String(b.requestedAt || '').localeCompare(String(a.requestedAt || ''))).map(l =>
+    '<tr><td><div style="font-weight:600">' + _crmEsc(l.empName || l.empId) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.addressedTo || '') + '</div></td>' +
+    '<td>' + _crmEsc(l.purpose || '—') +
+      (l.disclosesSalary ? '<div style="font-size:10px;color:#B7791F">' + _t('states the salary') + '</div>' : '') + '</td>' +
+    '<td><span class="badge ' + (l.status === 'Issued' ? 'b-ok' : 'b-warn') + '" style="font-size:10px">' + _t(l.status || '') + '</span></td>' +
+    '<td style="text-align:right">' + (l.status === 'Issued'
+      ? '<button class="btn btn-ghost btn-sm" onclick="_xnReprint(\'' + _crmEsc(l.id) + '\')">' + _t('PDF') + '</button>'
+      : '<button class="btn btn-primary btn-sm" onclick="_xnIssue(\'' + _crmEsc(l.id) + '\')">' + _t('Issue') + '</button>') +
+    '</td></tr>').join('')
+    : '<tr><td colspan="4" style="text-align:center;color:var(--text-light);padding:20px">' + _t('No letters requested yet.') + '</td></tr>';
+
+  el.innerHTML = head + bar +
+    (pending.length ? '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:3px solid #B7791F;font-size:12px">' +
+      '<b>' + pending.length + ' ' + _t('confirmation letter(s) waiting to be issued.') + '</b></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th>' + _t('Decision') + '</th><th>' + _t('No.') + '</th>' +
+    '<th>' + _t('Effective') + '</th><th>' + _t('Issued by') + '</th><th></th></tr></thead><tbody>' + decRows + '</tbody></table></div></div>' +
+    '<div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:8px">' + _t('Employment confirmation letters') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:680px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th>' + _t('Purpose') + '</th><th>' + _t('Status') + '</th><th></th>' +
+    '</tr></thead><tbody>' + letRows + '</tbody></table></div></div>';
+}
+
+function tkDecisionNew() {
+  const body = document.getElementById('contractDraftBody'); if (!body) return;
+  const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
+  const ttl = document.getElementById('contractDraftTitle');
+  if (ttl) ttl.textContent = _t2('New decision', 'Quyết định mới');
+  body.innerHTML =
+    '<div class="form-group"><label class="form-label">' + _t('Employee') + '</label>' +
+    '<select class="form-input" id="qd-emp">' + emps.map(e =>
+      '<option value="' + _crmEsc(e.id) + '">' + _crmEsc(e.name) + ' — ' + _crmEsc(e.title || '') + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Kind of decision') + '</label>' +
+    '<select class="form-input" id="qd-kind">' +
+    ['appointment', 'salary', 'termination', 'discipline', 'reward'].map(k =>
+      '<option value="' + k + '">' + _t({ appointment: 'Appointment / assignment', salary: 'Salary adjustment',
+        termination: 'Termination of employment', discipline: 'Disciplinary measure', reward: 'Reward / commendation' }[k]) + '</option>').join('') +
+    '</select></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="closeModal(\'contractDraftModal\')">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="tkDecisionDraft()">' + _t('Continue') + '</button></div>';
+  openModal('contractDraftModal');
+}
+
+async function tkDecisionDraft() {
+  const emp = (document.getElementById('qd-emp') || {}).value;
+  const kind = (document.getElementById('qd-kind') || {}).value;
+  const body = document.getElementById('contractDraftBody');
+  body.innerHTML = tkSkeleton();
+  try {
+    _qdDraft = await tkApi('/api/hr/decision/draft?kind=' + encodeURIComponent(kind) +
+                           '&emp=' + encodeURIComponent(emp));
+  } catch (e) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  _qdRenderDraft();
+}
+
+function _qdRenderDraft() {
+  const d = _qdDraft, body = document.getElementById('contractDraftBody');
+  if (!d || !body) return;
+  const seed = d.seed || {}, kind = d.kind;
+  const ttl = document.getElementById('contractDraftTitle');
+  if (ttl) ttl.textContent = _crmEsc(d.titleVn || d.title) + ' — ' + ((d.employee || {}).name || '');
+
+  const inp = (id, label, labelVn, val, type) =>
+    '<div class="form-group" style="flex:1;min-width:200px"><label class="form-label">' + _crmEsc(label) +
+    '<span style="color:var(--text-light);font-weight:400"> · ' + _crmEsc(labelVn) + '</span></label>' +
+    '<input class="form-input" id="qd-' + id + '" type="' + (type || 'text') + '" value="' + _crmEsc(val == null ? '' : String(val)) + '"></div>';
+  const sel = (id, label, opts, val) =>
+    '<div class="form-group" style="flex:1;min-width:200px"><label class="form-label">' + _crmEsc(label) + '</label>' +
+    '<select class="form-input" id="qd-' + id + '"><option value="">—</option>' +
+    opts.map(o => '<option value="' + _crmEsc(o.v) + '"' + (o.v === val ? ' selected' : '') + '>' + _crmEsc(o.l) + '</option>').join('') +
+    '</select></div>';
+
+  let extra = '';
+  if (kind === 'termination') {
+    extra =
+      '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+      sel('ground', _t('Ground under Art. 34'), (d.grounds || []).map(g => ({ v: g.key, l: 'kh. ' + g.clause + ' — ' + g.labelVn })), seed.ground) +
+      sel('employerGround', _t('If under Art. 36, which point'), (d.employerGrounds || []).map(g => ({ v: g.key, l: 'đ. ' + g.point + ' — ' + g.labelVn })), '') +
+      '</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+      inp('noticeDate', 'Employee told on', 'Ngày báo trước', '', 'date') +
+      inp('effectiveFrom', 'Last working day', 'Ngày cuối cùng làm việc', seed.effectiveFrom, 'date') + '</div>';
+  } else if (kind === 'discipline') {
+    extra =
+      '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+      sel('measure', _t('Measure under Art. 124'), (d.measures || []).map(m => ({ v: m.key, l: m.labelVn + ' — ' + m.label })), '') +
+      inp('deferMonths', 'Months deferred (if a pay rise)', 'Số tháng kéo dài', '', 'number') + '</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+      inp('violationDate', 'Date of the violation', 'Ngày xảy ra vi phạm', '', 'date') +
+      inp('effectiveFrom', 'Effective from', 'Có hiệu lực từ', '', 'date') + '</div>' +
+      '<label style="display:block;font-size:12px;margin-bottom:6px"><input type="checkbox" id="qd-serious"> ' +
+      _t('Concerns finance, assets or trade secrets — Art. 123 allows 12 months rather than 6') + '</label>' +
+      inp('suspendedUntil', 'Art. 122(4) period ended on', 'Hết thời gian không được xử lý kỷ luật', '', 'date') +
+      '<div class="card" style="padding:10px 14px;margin-bottom:12px;font-size:11px;color:var(--text-light)">' +
+      _t('Not disciplinary measures, and refused if chosen') + ': ' +
+      Object.keys(d.forbidden || {}).map(_crmEsc).join(', ') + '</div>';
+  } else {
+    extra = '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+      inp('effectiveFrom', 'Effective from', 'Có hiệu lực từ', seed.effectiveFrom, 'date') + '</div>';
+  }
+
+  body.innerHTML =
+    '<div class="card" style="padding:10px 14px;margin-bottom:14px;font-size:11px;color:var(--text-light)">' +
+    _crmEsc(d.basis || '') + '</div>' +
+    '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
+    inp('no', 'Decision number', 'Số quyết định', '') +
+    inp('subject', 'About', 'Về việc', seed.subject || '') + '</div>' +
+    inp('subjectVn', 'About (Vietnamese)', 'Về việc (tiếng Việt)', '') +
+    extra +
+    '<div id="qd-blockers" style="margin-top:10px"></div>' +
+    '<div class="modal-footer" style="margin-top:14px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'contractDraftModal\')">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" id="qdIssueBtn" onclick="_qdIssue()">' + _t('Issue decision') + '</button></div>';
+  document.getElementById('qd-blockers').innerHTML = _ctBlockerList(d.blockers || {});
+}
+
+function _qdBody() {
+  const g = id => { const e = document.getElementById('qd-' + id); return e ? (e.type === 'checkbox' ? e.checked : e.value.trim()) : ''; };
+  const d = _qdDraft || {}, seed = d.seed || {};
+  return {
+    kind: d.kind, empId: d.empId, no: g('no'),
+    subject: g('subject'), subjectVn: g('subjectVn'), effectiveFrom: g('effectiveFrom'),
+    ground: g('ground'), employerGround: g('employerGround'), noticeDate: g('noticeDate'),
+    contractType: seed.contractType || '', termMonths: seed.termMonths,
+    measure: g('measure'), violationDate: g('violationDate'),
+    serious: g('serious'), suspendedUntil: g('suspendedUntil'),
+    deferMonths: g('deferMonths') ? Number(g('deferMonths')) : null,
+    exitId: seed.exitId || ''
+  };
+}
+
+async function _qdIssue() {
+  const btn = document.getElementById('qdIssueBtn');
+  if (btn) { btn.disabled = true; btn.textContent = _t('Issuing…'); }
+  let res;
+  try { res = await tkApi('/api/hr/decision', { method: 'POST', body: _qdBody() }); }
+  catch (e) {
+    const b = (e && e.data && e.data.blockers) || null;
+    if (b) document.getElementById('qd-blockers').innerHTML = _ctBlockerList(b);
+    toast(_errMsg(e), 'error', 6000);
+    if (btn) { btn.disabled = false; btn.textContent = _t('Issue decision'); }
+    return;
+  }
+  closeModal('contractDraftModal');
+  toast(_t2('Decision issued', 'Đã ban hành quyết định'), 'success');
+  try { await _qdPdf(res.document, true); } catch (e) {}
+  try { await tkRenderDecisions(); } catch (e) {}
+}
+
+async function _qdReprint(id) {
+  const rec = ((_qdList || {}).dec || []).find(x => x.id === id); if (!rec) return;
+  try {
+    const d = await tkApi('/api/hr/decision/draft?kind=' + encodeURIComponent(rec.kind) +
+                          '&emp=' + encodeURIComponent(rec.empId));
+    // Reprint what was RECORDED, not a fresh draft: the stored detail is the decision.
+    const doc = Object.assign({}, d, { docNo: rec.no || rec.id });
+    await _qdPdf(doc, true);
+  } catch (e) { toast(_errMsg(e), 'error'); }
+}
+
+/* The decision, in the conventional Vietnamese shape: national heading, recitals, numbered
+   articles, recipient list, signature block. */
+async function _qdPdf(doc, save) {
+  await tkEnsureExportLibs();
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t('PDF engine not loaded'), 'warn'); return; }
+  const p = new J('p', 'mm', 'a4');
+  const W = 210, M = 18; let y = 16;
+  const emp = doc.employee || {}, er = doc.employer || {};
+  const page = (need) => { if (y + (need || 6) > 268) { p.addPage(); y = 20; } };
+  const txt = (s, x, size, weight, colour, align) => {
+    _pdfFont(p, weight || 'normal'); p.setFontSize(size || 9);
+    p.setTextColor.apply(p, colour || [31, 41, 55]);
+    p.text(_pdfSafe(String(s == null ? '' : s)), x, y, align ? { align: align } : undefined);
+  };
+  const para = (s, x, size, weight) => {
+    _pdfFont(p, weight || 'normal'); p.setFontSize(size || 9); p.setTextColor(31, 41, 55);
+    p.splitTextToSize(_pdfSafe(String(s || '')), W - M * 2).forEach(l => { page(); p.text(l, x, y); y += 4.8; });
+  };
+
+  // Company block left, national heading right — the standard Vietnamese layout.
+  txt(er.name || '', M, 9, 'bold', [32, 80, 144]);
+  txt(doc.nationalHeading || '', W - M, 9, 'bold', [31, 41, 55], 'right'); y += 4.6;
+  txt('Số: ' + (doc.docNo || '……') + '/' + (doc.prefix || 'QĐ'), M, 8.5, 'normal', [92, 100, 112]);
+  txt(doc.nationalMotto || '', W - M, 9, 'bold', [31, 41, 55], 'right'); y += 4.2;
+  p.setDrawColor(32, 80, 144); p.setLineWidth(0.4);
+  p.line(W - M - 52, y - 2.6, W - M, y - 2.6);
+  y += 8;
+  _pdfFont(p, 'normal'); p.setFontSize(8.5); p.setTextColor(92, 100, 112);
+  p.text(_pdfSafe('TP. Hồ Chí Minh, ngày ' + (doc.issuedOn || '')), W - M, y, { align: 'right' });
+  y += 10;
+
+  txt('QUYẾT ĐỊNH', W / 2, 15, 'bold', [0, 176, 96], 'center'); y += 6.5;
+  txt('Về việc: ' + (doc.subjectVn || doc.subject || ''), W / 2, 9.5, 'bold', [32, 80, 144], 'center'); y += 5;
+  txt(doc.title || '', W / 2, 8, 'normal', [120, 128, 140], 'center'); y += 9;
+
+  txt((er.repTitle || 'GIÁM ĐỐC') + ' ' + (er.name || ''), W / 2, 9.5, 'bold', [31, 41, 55], 'center'); y += 7;
+  (doc.recitals || []).forEach(r => { page(); para(r, M, 9); });
+  y += 3; page();
+  txt('QUYẾT ĐỊNH:', W / 2, 11, 'bold', [32, 80, 144], 'center'); y += 8;
+  (doc.articles || []).forEach(a => {
+    page(12);
+    para('Điều ' + a.no + '. ' + (a.textVn || ''), M, 9, 'bold');
+    if (a.text) { _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+      p.splitTextToSize(_pdfSafe(a.text), W - M * 2).forEach(l => { page(); p.text(l, M, y); y += 3.8; }); }
+    y += 2.5;
+  });
+
+  y = Math.max(y + 6, 228); page();
+  txt('Nơi nhận:', M, 8.5, 'bold', [31, 41, 55]); y += 4.2;
+  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(92, 100, 112);
+  (doc.recipients || []).forEach(r => { p.text(_pdfSafe('- ' + r), M, y); y += 3.6; });
+  const sy = Math.max(y - ((doc.recipients || []).length * 3.6) - 4, 232);
+  _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
+  p.text(_pdfSafe((er.repTitle || 'GIÁM ĐỐC').toUpperCase()), W - M - 46, sy);
+  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 46, sy + 4);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
+  p.text(_pdfSafe(er.repName || ''), W - M - 46, sy + 24);
+
+  const tot = p.internal.getNumberOfPages();
+  for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, doc.prefix || 'QĐ', 'QUYẾT ĐỊNH'); }
+  const name = 'QD-' + (emp.id || '') + '-' + (doc.issuedOn || '') + '.pdf';
+  if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+}
+
+/* ── Confirmation letters ───────────────────────────────────────────────────────────────────────
+   The purpose decides what the letter discloses, so the purpose is what the form asks for. */
+let _xnDraft = null;
+
+async function tkLetterRequest(empId) {
+  const body = document.getElementById('contractDraftBody'); if (!body) return;
+  body.innerHTML = tkSkeleton();
+  openModal('contractDraftModal');
+  try { _xnDraft = await tkApi('/api/hr/letter/draft' + (empId ? '?emp=' + encodeURIComponent(empId) : '')); }
+  catch (e) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">' + _crmEsc(_errMsg(e)) + '</div>'; return; }
+  _xnRender();
+}
+
+function _xnRender() {
+  const d = _xnDraft, body = document.getElementById('contractDraftBody');
+  if (!d || !body) return;
+  const ttl = document.getElementById('contractDraftTitle');
+  if (ttl) ttl.textContent = _t2('Employment confirmation letter', 'Giấy xác nhận công tác');
+  const cur = d.purpose || '';
+  body.innerHTML =
+    '<div class="form-group"><label class="form-label">' + _t('What the letter is for') +
+    '<span style="color:var(--text-light);font-weight:400"> · Mục đích sử dụng</span></label>' +
+    '<select class="form-input" id="xn-purpose" onchange="_xnPreview()">' +
+    (d.purposes || []).map(p => '<option value="' + _crmEsc(p.key) + '"' + (p.key === cur ? ' selected' : '') + '>' +
+      _crmEsc(p.labelVn) + ' — ' + _crmEsc(p.label) + '</option>').join('') + '</select>' +
+    '<div id="xn-why" style="font-size:11px;color:var(--text-light);margin-top:4px"></div></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Addressed to') +
+    '<span style="color:var(--text-light);font-weight:400"> · Kính gửi</span></label>' +
+    '<input class="form-input" id="xn-to" value="' + _crmEsc(d.addressedTo || '') + '"></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Approved leave (visa letters)') +
+    '<span style="color:var(--text-light);font-weight:400"> · Nghỉ phép đã duyệt</span></label>' +
+    '<input class="form-input" id="xn-leave" value=""></div>' +
+    '<div id="xn-preview" style="margin-top:6px"></div>' +
+    '<div class="modal-footer" style="margin-top:14px">' +
+    '<button class="btn btn-ghost" onclick="closeModal(\'contractDraftModal\')">' + _t('Cancel') + '</button>' +
+    (d.canIssueHere
+      ? '<button class="btn btn-primary" id="xnBtn" onclick="_xnSubmit(true)">' + _t('Issue letter') + '</button>'
+      : '<button class="btn btn-primary" id="xnBtn" onclick="_xnSubmit(false)">' + _t('Request letter') + '</button>') +
+    '</div>';
+  _xnPreview();
+}
+
+async function _xnPreview() {
+  const d = _xnDraft; if (!d) return;
+  const purpose = (document.getElementById('xn-purpose') || {}).value || '';
+  const spec = (d.purposes || []).find(p => p.key === purpose) || {};
+  const why = document.getElementById('xn-why');
+  if (why) why.textContent = spec.why || '';
+  let fresh;
+  try {
+    fresh = await tkApi('/api/hr/letter/draft?purpose=' + encodeURIComponent(purpose) +
+                        (d.empId ? '&emp=' + encodeURIComponent(d.empId) : ''));
+  } catch (e) { return; }
+  _xnDraft = Object.assign(fresh, { canIssueHere: d.canIssueHere });
+  const el = document.getElementById('xn-preview'); if (!el) return;
+  // The point of showing this: somebody should see that the visa letter does not carry their
+  // salary BEFORE they send it to a bank.
+  el.innerHTML =
+    '<div class="card" style="padding:10px 14px;font-size:12px">' +
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('This letter will state') + '</div>' +
+    (fresh.rows || []).map(r => '<div>· ' + _crmEsc(r.labelVn) + ': <b>' + _crmEsc(r.value) + '</b></div>').join('') +
+    ((fresh.withheld || []).length
+      ? '<div style="font-weight:700;color:#B7791F;margin-top:8px">' + _t('It will NOT state') + '</div>' +
+        (fresh.withheld || []).map(w => '<div style="color:#B7791F">· ' + _crmEsc(w.labelVn) + '</div>').join('')
+      : '') + '</div>';
+}
+
+async function _xnSubmit(issue) {
+  const btn = document.getElementById('xnBtn');
+  const b = {
+    empId: (_xnDraft || {}).empId,
+    purpose: (document.getElementById('xn-purpose') || {}).value || '',
+    addressedTo: (document.getElementById('xn-to') || {}).value || '',
+    leaveApproved: (document.getElementById('xn-leave') || {}).value || '',
+    issue: !!issue
+  };
+  if (btn) { btn.disabled = true; btn.textContent = _t('Working…'); }
+  let res;
+  try { res = await tkApi('/api/hr/letter', { method: 'POST', body: b }); }
+  catch (e) {
+    toast(_errMsg(e), 'error', 6000);
+    if (btn) { btn.disabled = false; btn.textContent = _t(issue ? 'Issue letter' : 'Request letter'); }
+    return;
+  }
+  closeModal('contractDraftModal');
+  toast(issue ? _t2('Letter issued', 'Đã cấp giấy xác nhận')
+              : _t2('Request sent to HR', 'Đã gửi yêu cầu tới Nhân sự'), 'success');
+  if (res.document) { try { await _xnPdf(res.document, true); } catch (e) {} }
+  try { await tkRenderDecisions(); } catch (e) {}
+}
+
+async function _xnIssue(id) {
+  const rec = ((_qdList || {}).lets || []).find(x => x.id === id); if (!rec) return;
+  try {
+    const res = await tkApi('/api/hr/letter', { method: 'POST', body: {
+      empId: rec.empId, purpose: rec.purpose, addressedTo: rec.addressedTo,
+      leaveApproved: rec.leaveApproved, issue: true, no: rec.no } });
+    toast(_t2('Letter issued', 'Đã cấp giấy xác nhận'), 'success');
+    if (res.document) await _xnPdf(res.document, true);
+    await tkRenderDecisions();
+  } catch (e) { toast(_errMsg(e), 'error', 6000); }
+}
+
+async function _xnReprint(id) {
+  const rec = ((_qdList || {}).lets || []).find(x => x.id === id); if (!rec) return;
+  try {
+    const d = await tkApi('/api/hr/letter/draft?purpose=' + encodeURIComponent(rec.purpose || '') +
+                          '&emp=' + encodeURIComponent(rec.empId) +
+                          '&to=' + encodeURIComponent(rec.addressedTo || '') +
+                          '&leave=' + encodeURIComponent(rec.leaveApproved || ''));
+    await _xnPdf(Object.assign(d, { docNo: rec.no || rec.id }), true);
+  } catch (e) { toast(_errMsg(e), 'error'); }
+}
+
+async function _xnPdf(doc, save) {
+  await tkEnsureExportLibs();
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t('PDF engine not loaded'), 'warn'); return; }
+  const p = new J('p', 'mm', 'a4');
+  const W = 210, M = 18;
+  const HDR = { title: 'GIẤY XÁC NHẬN CÔNG TÁC',
+                subtitle: 'Employment Confirmation' + (doc.docNo ? '   ·   ' + doc.docNo : ''),
+                docCode: 'BM.HR-01-06' };
+  let y = _brandHeader(p, HDR) + 6;
+  const er = doc.employer || {};
+  if (doc.addressedTo) {
+    _pdfFont(p, 'bold'); p.setFontSize(9.5); p.setTextColor(32, 80, 144);
+    p.text(_pdfSafe('Kính gửi: ' + doc.addressedTo), M, y); y += 7;
+  }
+  _pdfFont(p, 'normal'); p.setFontSize(9.5); p.setTextColor(31, 41, 55);
+  p.splitTextToSize(_pdfSafe(doc.bodyVn || ''), W - M * 2).forEach(l => { p.text(l, M, y); y += 5.2; });
+  y += 2;
+  _pdfFont(p, 'normal'); p.setFontSize(8); p.setTextColor(120, 128, 140);
+  p.splitTextToSize(_pdfSafe(doc.body || ''), W - M * 2).forEach(l => { p.text(l, M, y); y += 4; });
+  y += 5;
+  (doc.rows || []).forEach(r => {
+    _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(92, 100, 112);
+    p.text(_pdfSafe(r.labelVn + ':'), M + 4, y);
+    _pdfFont(p, 'bold'); p.setTextColor(31, 41, 55);
+    p.text(_pdfSafe(r.key === 'salary' ? '₫' + Number(r.value || 0).toLocaleString('vi-VN') : r.value), M + 62, y);
+    y += 5.2;
+  });
+  y += 6;
+  _pdfFont(p, 'normal'); p.setFontSize(8.5); p.setTextColor(92, 100, 112);
+  p.splitTextToSize(_pdfSafe('Giấy xác nhận này được cấp theo đề nghị của người lao động, dùng cho mục đích: '
+    + (doc.purposeLabelVn || '—') + '.'), W - M * 2).forEach(l => { p.text(l, M, y); y += 4.4; });
+
+  y = Math.max(y + 10, 232);
+  _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
+  p.text(_pdfSafe((er.repTitle || 'GIÁM ĐỐC').toUpperCase()), W - M - 50, y);
+  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 50, y + 4);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
+  p.text(_pdfSafe(er.repName || ''), W - M - 50, y + 24);
+  const tot = p.internal.getNumberOfPages();
+  for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, 'BM.HR-01-06', 'GIẤY XÁC NHẬN CÔNG TÁC'); }
+  const name = 'XN-' + (doc.empId || '') + '-' + (doc.issuedOn || '') + '.pdf';
+  if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+}
+
 /* ── The employer's legal identity ──────────────────────────────────────────────────────────────
    The portal has always known the company as a display name in a header. That brands a report; it
    cannot sign a contract. Art. 21(1)(a) wants the employer's name, address and the full name AND

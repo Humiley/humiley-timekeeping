@@ -203,3 +203,16 @@ def test_the_legal_basis_comes_back_with_the_document():
     doc = cd.assemble(COMPANY, EMP, _terms())
     for cite in ("Art. 21(1)", "Art. 20", "Art. 25", "Circular 10/2020"):
         assert cite in doc["basis"], cite
+
+
+def test_a_date_the_parser_cannot_read_is_refused_rather_than_silently_disabling_art_20():
+    """The whole point of this module. A drafter typing 30/01/2026 in the Vietnamese format got the
+    36-month ceiling switched off entirely, and a 15-year fixed term issued without a word."""
+    out = cd.term_check(_terms(startDate="01/01/2026", endDate="2040-12-31"))
+    assert out and "not a date" in out[0]
+    assert not cd.can_issue(COMPANY, EMP, _terms(startDate="01/01/2026", endDate="2040-12-31"))
+
+
+def test_an_unreadable_end_date_is_named_too():
+    out = cd.term_check(_terms(endDate="31/12/2028"))
+    assert any("end date" in m and "not a date" in m for m in out)

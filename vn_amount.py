@@ -21,7 +21,12 @@ document that a Vietnamese reader can see is machine-written:
 Pure. Exercised by tests/test_vn_amount.py.
 """
 UNITS = ("không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín")
+# Vietnamese has no word above `tỷ`; larger numbers are read as multiples of it — 10^12 is "một
+# nghìn tỷ", handled by recursion in words(). Before that, words(10**12) put 1000 into _group and
+# raised IndexError out of UNITS[10] — reachable from any contract wage box, so an unhandled 500 on
+# /api/hr/contract.
 SCALES = ((10 ** 9, "tỷ"), (10 ** 6, "triệu"), (10 ** 3, "nghìn"), (1, ""))
+BILLION = 10 ** 9
 
 CURRENCY = "đồng"
 
@@ -74,6 +79,15 @@ def words(amount):
     n = abs(n)
     said = []
     started = False                 # has a higher group already been spoken?
+    # Anything at or above 10^12 is spoken as "<that many> tỷ": 2,500,000,000,000 is
+    # "hai nghìn năm trăm tỷ". Recursing keeps one implementation of the reading rules.
+    if n >= 1000 * BILLION:
+        head, n = divmod(n, BILLION)
+        said.append(words(head))
+        said.append("tỷ")
+        started = True
+        if not n:
+            return sign + " ".join(w for w in said if w)
     for value, name in SCALES:
         part, n = divmod(n, value)
         if not part:

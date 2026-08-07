@@ -140,6 +140,13 @@ def term_check(terms):
     out = []
     kind = _s(terms.get("contractType")).lower()
     start, end = _d(terms.get("startDate")), _d(terms.get("endDate"))
+    # A date the parser cannot read used to fall through every branch below, so a drafter who typed
+    # 30/01/2026 in the Vietnamese format got the Art. 20 ceiling switched off entirely and a
+    # 15-year fixed term issued without a word. The one check this module exists to perform.
+    for label, raw in (("start", terms.get("startDate")), ("end", terms.get("endDate"))):
+        if _s(raw) and not _d(raw):
+            out.append("The %s date '%s' is not a date the term can be checked against. Use "
+                       "YYYY-MM-DD." % (label, raw))
     if kind == contracts.DEFINITE:
         if not end:
             out.append("A definite-term contract needs an end date — that is what makes it definite.")
