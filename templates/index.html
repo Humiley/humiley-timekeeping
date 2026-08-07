@@ -8744,8 +8744,13 @@ function _payOTFor(empId, y, m) {
 }
 function _payMonthsOf(ym) { return ym.m === -1 ? [0,1,2,3,4,5,6,7,8,9,10,11] : [ym.m]; }
 function _payPeriod() { return _payYM.m === -1 ? ('Year ' + _payYM.y) : (_PAY_MONTHS[_payYM.m] + ' ' + _payYM.y); }
-function _payBuild() {
-  const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+async function _payBuild() {
+  // The governing rating for this month, from the closed appraisal round.
+  await _payLoadRatings(_payYM.y, _payYM.m === -1 ? 0 : _payYM.m);
+  if (_payRatingsFailed) {
+    toast(_t('Could not read the appraisal ratings — refusing to produce a run rather than paying everybody the neutral rating.'), 'error', 8000);
+    return;
+  }
   const yearly = _payYM.m === -1;
   const monthsArr = _payMonthsOf(_payYM);
   const SUMK = ['basic','posAllow','responsibility','skillSen','P1','P2','kpiTarget','P3','lunch','phone','transport','welfare','otHours','otNightHours','otPay','otTaxable','otExempt','siBase','eeBhxh','eeBhyt','eeBhtn','si','erBhxh','erBhyt','erBhtn','erTu','erTotal','pit','grossPay','unpaidDeduction','employerCost','net'];
@@ -8755,7 +8760,7 @@ function _payBuild() {
     let agg = null;
     monthsArr.forEach(m => {
       const wd = _payWD(_payYM.y, m);
-      let c = _payComputed(e, ratingBy[e.id], { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m),
+      let c = _payComputed(e, _payRatingFor(e.id), { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m),
                                                 ot: _payOTFor(e.id, _payYM.y, m) });
       c = _payApplyAdj(c, _payAdjFor(e.id, _PAY_MONTHS[m] + ' ' + _payYM.y));
       if (!agg) agg = Object.assign({}, c); else SUMK.forEach(k => { agg[k] = (agg[k] || 0) + (c[k] || 0); });
@@ -8788,7 +8793,7 @@ async function tkRenderPayroll() {
   await Promise.all([tkLoadColl('reviews'), tkLoadColl('payruns'), tkLoadColl('payadjust')]);
   if (!_payYM) { const d = new Date(); _payYM = { y: d.getFullYear(), m: d.getMonth() }; }
   await _payLoadOT(_payYM.y, _payMonthsOf(_payYM));   // approved overtime, before anything is costed
-  _payBuild();
+  await _payBuild();
   const monthSel = '<select class="sel-filter" id="pay-month" onchange="tkPaySetYM()"><option value="-1"' + (_payYM.m === -1 ? ' selected' : '') + '>Whole Year</option>' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select>';
   const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   root.innerHTML =
@@ -8798,7 +8803,7 @@ async function tkRenderPayroll() {
     '<div id="pay-dash"></div><div id="pay-reg" style="display:none"></div><div id="pay-runs" style="display:none"></div><div id="pay-journal" style="display:none"></div>';
   _payRenderDash(); _payRenderReg(); _payRenderRuns();
 }
-async function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; await _payLoadOT(_payYM.y, _payMonthsOf(_payYM)); _payBuild(); _payRenderDash(); _payRenderReg(); }
+async function tkPaySetYM() { _payYM = { y: +document.getElementById('pay-year').value, m: +document.getElementById('pay-month').value }; await _payLoadOT(_payYM.y, _payMonthsOf(_payYM)); await _payBuild(); _payRenderDash(); _payRenderReg(); }
 function tkPayTab(tab, el) { ['dash', 'reg', 'runs', 'journal'].forEach(t => { const p = document.getElementById('pay-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#payroll-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'journal') tkRenderPayJournal(); }
 
 /* The accounting entries a signed pay run produces (Circular 200/2014/TT-BTC).
@@ -9016,9 +9021,9 @@ async function tkIndivPayRunGo() {
   const empId = (document.getElementById('ipr-emp') || {}).value;
   const y = +(document.getElementById('ipr-year') || {}).value, m = +(document.getElementById('ipr-month') || {}).value;
   const e = _hrEmp(empId); if (!e) return;
-  const r = (_HR.reviews || []).find(x => x.empId === empId);
   await _payLoadOT(y, [m]);
-  let c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m),
+  await _payLoadRatings(y, m);
+  let c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m),
                                               ot: _payOTFor(empId, y, m) });
   // Apply the month's manual adjustment, exactly as the company roll-out does. Without this an
   // individual run reprinted a month at its UNADJUSTED figures — and because `_payslipFrozen` then
@@ -9109,7 +9114,7 @@ async function tkPayAdjSave(empId) {
     else { const r = await tkApi('/api/coll/payadjust', { method: 'POST', body: body }); if (r && r.item) (_HR.payadjust = _HR.payadjust || []).push(r.item); }
     tkAudit('Payroll adjusted', body.name, period + (body.note ? (' · ' + body.note) : ''));
     document.getElementById('payAdjOverlay').remove(); toast('Adjustment saved for ' + body.name);
-    _payBuild(); _payRenderReg(); _payRenderDash();
+    await _payBuild(); _payRenderReg(); _payRenderDash();
   } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
 }
 async function tkPayAdjReset(empId) {
@@ -9120,7 +9125,7 @@ async function tkPayAdjReset(empId) {
     _HR.payadjust = (_HR.payadjust || []).filter(a => a.id !== existing.id);
     tkAudit('Payroll adjustment removed', (_hrEmp(empId) || {}).name, period);
     document.getElementById('payAdjOverlay').remove(); toast('Reset to formula');
-    _payBuild(); _payRenderReg(); _payRenderDash();
+    await _payBuild(); _payRenderReg(); _payRenderDash();
   } catch (e) { toast('Could not reset: ' + _errMsg(e), 'error', 5000); }
 }
 /* Rebuild the inferred employment history from the signed pay runs.
@@ -9584,7 +9589,7 @@ function _payslipComputed(empId) {
   // are badged, because a reconstructed breakdown would be a guess wearing the authority of a record.
   if (f && f.line.calc) return Object.assign({}, f.line.calc, { frozen: true, runStatus: f.run.status || '' });
   const e = _hrEmp(empId); let c = _payCache[empId];
-  if (!c) { const r = (_HR.reviews || []).find(x => x.empId === empId); const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, r ? +r.rating : 3, { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
+  if (!c) { const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
   return c;
 }
 function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
@@ -14358,7 +14363,7 @@ async function tkRenderHrMetrics() {
   const reviews = _HR.reviews || [];
   const avgRating = reviews.length ? (reviews.reduce((s, r) => s + (+r.rating || 0), 0) / reviews.length).toFixed(1) : '—';
   const enroll = (_HR.courses || []).reduce((s, c) => s + (+c.enrolled || 0), 0);
-  const ratingBy = {}; reviews.forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
+
   const newHires = emps.filter(e => { const p = _tkDateParts(e.startDate); return p && p.y === new Date().getFullYear() && (p.m - 1) === new Date().getMonth(); }).length;
   const exitsYr = (_HR.exits || []).filter(x => (x.lastDay || x.initiated || '').slice(0, 4) === String(new Date().getFullYear())).length;
   const turnover = emps.length ? Math.round(exitsYr / emps.length * 1000) / 10 : 0;
@@ -14400,7 +14405,7 @@ async function tkRenderHrMetrics() {
   // Training status (from enrollments)
   const tr = { Completed: 0, 'In progress': 0, Enrolled: 0 }; (_HR.enrollments || []).forEach(x => { const s = x.status || 'Enrolled'; tr[s] = (tr[s] || 0) + 1; });
   // Avg performance (PADR) by department — new dashboard chart
-  const perfAgg = {}; emps.forEach(e => { const d = e.dept || '—'; (perfAgg[d] = perfAgg[d] || { s: 0, n: 0 }); perfAgg[d].s += (ratingBy[e.id] || 3); perfAgg[d].n++; });
+  const perfAgg = {}; emps.forEach(e => { const d = e.dept || '—'; (perfAgg[d] = perfAgg[d] || { s: 0, n: 0 }); perfAgg[d].s += (_payRatingFor(e.id) || 3); perfAgg[d].n++; });
   const perfDeptVals = deptKeys.map(d => perfAgg[d] && perfAgg[d].n ? Math.round(perfAgg[d].s / perfAgg[d].n * 10) / 10 : 0);
   const chartCard = (title, cid) => '<div class="card" style="padding:14px 16px"><div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:200px"><canvas id="' + cid + '"></canvas></div></div>';
   ch.innerHTML = chartCard('Staff by Department', 'dc-deptbar') + chartCard('Headcount by Department', 'dc-dept') + chartCard('Recruitment Funnel', 'dc-funnel') + chartCard('Performance Distribution', 'dc-perf') +
@@ -14450,8 +14455,8 @@ async function tkRenderDashLevelBand() {
       row([box('Staff', counts.staff, '#205090', I_USER), box('Managers', counts.manager, '#3168A8', I_USERS), box('Management', counts.management, '#8B5CF6', I_SHIELD), box('Admins', counts.admin, '#F59E0B', I_KEY)]) +
       '<div style="margin:12px 0 4px"><button type="button" class="linklike" onclick="showView(\'permissions\',null,\'Access &amp; Permissions\')" style="font-size:12px;color:var(--navy);cursor:pointer;font-weight:700">Manage access levels →</button></div>');
   } else if (lvl === 'management') {
-    let gross = 0, erCost = 0; const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
-    emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
+    let gross = 0, erCost = 0;
+    emps.forEach(e => { try { const c = _payComputed(e, _payRatingFor(e.id)); gross += c.grossPay; erCost += c.employerCost; } catch (x) {} });
     const exits = (_HR.exits || []).length; const turnover = emps.length ? Math.round(exits / emps.length * 1000) / 10 : 0;
     const I_CASH = '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>';
     const I_BANK = '<rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 3 2 9h20z"/><line x1="7" y1="15" x2="7" y2="17"/><line x1="12" y1="15" x2="12" y2="17"/><line x1="17" y1="15" x2="17" y2="17"/>';
@@ -23534,6 +23539,40 @@ function verifyAtZone(zoneName, zoneLat, zoneLon, zoneRadius) {
 /* ──────────────────────────────────────────────────────────
    REPORT TAB SWITCHER
 ────────────────────────────────────────────────────────── */
+/* ── Which appraisal rating may set somebody's KPI pay ──────────────────────────────────────────
+   Five separate places built this the same wrong way:
+
+       ratingBy[empId] = +r.rating || 3     // for every review record, in list order
+
+   so the LAST record won — any cycle, any date, finished or not. A rating drives P3 through the
+   performance factor (0x at a 1, 1.5x at a 5), so a stale review from two years ago, or somebody's
+   unfinished self-assessment, could quietly set this month's pay. The rule now lives once, in
+   appraisal.py on the server, and is fetched per month rather than restated in five places. */
+let _payRatings = {}, _payRatingsFor = '', _payRatingsFailed = false, _payRatingsCycle = '';
+
+async function _payLoadRatings(y, m) {
+  const ym = y + '-' + String((m | 0) + 1).padStart(2, '0');
+  if (_payRatingsFor === ym && !_payRatingsFailed) return _payRatings;
+  try {
+    const r = await tkApi('/api/hr/appraisal/ratings?period=' + ym);
+    _payRatings = r.ratings || {};
+    _payRatingsFor = ym; _payRatingsFailed = false; _payRatingsCycle = r.governingCycle || '';
+  } catch (e) {
+    // A failed fetch must NOT be cached as "everybody neutral" — that would silently reprice the
+    // whole company from a network error. Record the failure so a money-producing caller refuses.
+    _payRatingsFailed = true; _payRatings = {}; _payRatingsFor = ''; _payRatingsCycle = '';
+  }
+  return _payRatings;
+}
+
+/* Neutral when nothing is loaded. Neutral pays the KPI target exactly, so a dashboard that has not
+   fetched shows a defensible estimate rather than one built from whichever record sorted last. */
+function _payRatingFor(empId) {
+  const r = _payRatings[empId];
+  return (r && typeof r.rating === 'number') ? r.rating : 3;
+}
+function _payRatingBasis(empId) { return (_payRatings[empId] || {}).basis || ''; }
+
 /* ── Headcount and turnover over time ──────────────────────────────────────────────────────────
    The portal could always say how many people work here today and nothing about last March, which
    is the question a board pack, a bank covenant and an insurance renewal all actually ask. Computed
@@ -23807,9 +23846,8 @@ async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
   await tkLoadColl('reviews');
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
-  const ratingBy = {}; (_HR.reviews || []).forEach(r => { if (r.empId) ratingBy[r.empId] = +r.rating || 3; });
   const byDept = {}; let gross = 0, net = 0, erCost = 0, pit = 0, si = 0, erStat = 0, P1 = 0, P2 = 0, P3 = 0, welfare = 0;
-  emps.forEach(e => { try { const c = _payComputed(e, ratingBy[e.id]); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; erStat += (c.erTotal || 0); P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0); P3 += (c.P3 || 0); welfare += (c.welfare || 0); (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
+  emps.forEach(e => { try { const c = _payComputed(e, _payRatingFor(e.id)); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; erStat += (c.erTotal || 0); P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0); P3 += (c.P3 || 0); welfare += (c.welfare || 0); (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
   const kpis = _hrKpiRow([
     _hrKpi('Headcount', emps.length, '#8B5CF6'),
     _hrKpi('Gross payroll', _PAY_FMT(gross), '#F59E0B'),

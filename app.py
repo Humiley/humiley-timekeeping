@@ -43,6 +43,8 @@ import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
+import appraisal         # appraisal cycles + which rating may move pay (pure)
+import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
 import hashlib
 import zipfile
 import xml.etree.ElementTree as ET
@@ -3745,6 +3747,12 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/appraisal/cycles":
+            return self._guard(lambda u: self._appraisal_state_ep(u, qs))
+        if path == "/api/hr/appraisal/ratings":
+            return self._guard(lambda u: self._appraisal_ratings_ep(u, qs))
+        if path == "/api/hr/appraisal/proposals":
+            return self._guard(lambda u: self._appraisal_proposals_ep(u, qs))
         if path == "/api/hr/workforce":
             return self._guard(lambda u: self._workforce_ep(u, qs))
         if path == "/api/hr/labour-cost":
@@ -3828,6 +3836,12 @@ class Handler(BaseHTTPRequestHandler):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid),
                                                            run=True, body=body), manager=True)
+        if path == "/api/hr/appraisal/open":
+            return self._guard(lambda u: self._appraisal_open_ep(u, body), manager=True)
+        if path.startswith("/api/hr/appraisal/close/"):
+            _cid = path[len("/api/hr/appraisal/close/"):]
+            return self._guard(lambda u: self._appraisal_close_ep(u, urllib.parse.unquote(_cid), body),
+                               manager=True)
         if path == "/api/hr/leave-entitlement/apply":
             return self._guard(lambda u: self._leave_entitlement_apply_ep(u, body), manager=True)
         if path == "/api/hr/history-repair":
@@ -6228,7 +6242,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6251,7 +6265,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management",
+    READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -6275,7 +6289,7 @@ class Handler(BaseHTTPRequestHandler):
     # company. Scoped below in _coll_list.
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
-    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates"}
+    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates", "review_cycles"}
     EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
     # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
@@ -8073,6 +8087,146 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    # ── appraisal cycles ─────────────────────────────────────────────────────────────────────────
+
+    def _cycles(self):
+        return db.list_collection("review_cycles")
+
+    def _appraisal_open_ep(self, u, body):
+        """Open a review round, freezing who is in it.
+
+        The participant list is captured NOW and never recomputed. Recomputing on every read means a
+        leaver quietly drops out of the denominator and completion climbs towards 100% without
+        anybody having finished anything.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to open a review "
+                             "round.", 403)
+        b = dict(body or {})
+        name = str(b.get("name") or "").strip()
+        frm, to = str(b.get("periodFrom") or "").strip(), str(b.get("periodTo") or "").strip()
+        if not name or not datespan.to_date(frm) or not datespan.to_date(to):
+            return self._err("A review round needs a name and a period (from and to).", 400)
+        if datespan.to_date(to) < datespan.to_date(frm):
+            return self._err("The period ends before it starts.", 400)
+        try:
+            min_months = max(0, int(b.get("minMonths", 3)))
+        except (TypeError, ValueError):
+            min_months = 3
+        elig = appraisal.eligible(db.list_employees(), frm, to, min_months=min_months)
+        if not elig["included"]:
+            return self._json({"error": "Nobody is eligible for this period, so there is nothing to "
+                                        "open.", "excluded": elig["excluded"]}, 400)
+        cyc = {
+            "id": "cyc-" + secrets.token_hex(4), "name": name,
+            "periodFrom": frm, "periodTo": to, "dueDate": str(b.get("dueDate") or "").strip(),
+            "status": appraisal.OPEN, "minMonths": min_months,
+            "participants": elig["included"], "excluded": elig["excluded"],
+            "openedBy": u.get("name") or "", "openedAt": self._utc_now(),
+        }
+        db.put_collection_item("review_cycles", cyc)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Review round opened", "target": "review_cycles/" + cyc["id"],
+            "detail": "%s · %s → %s · %d participant(s), %d excluded"
+                      % (name, frm, to, len(elig["included"]), len(elig["excluded"])),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "cycle": cyc,
+                           "state": appraisal.state(cyc, db.list_collection("reviews"))})
+
+    def _appraisal_close_ep(self, u, cycle_id, body):
+        """Close a round. From this point its ratings govern pay — so it is audited, and a round
+        with unfinished reviews has to be closed deliberately."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required.", 403)
+        cyc = db.get_collection_item("review_cycles", str(cycle_id or "")) or {}
+        if not cyc:
+            return self._err("Review round not found.", 404)
+        if str(cyc.get("status") or "") == appraisal.CLOSED:
+            return self._err("This round is already closed.", 400)
+        st = appraisal.state(cyc, db.list_collection("reviews"))
+        if st["outstanding"] and not (body or {}).get("confirm"):
+            return self._json({
+                "error": "%d of %d reviews are not finished. Closing now means those people are paid "
+                         "on the neutral rating rather than on an appraisal."
+                         % (st["outstanding"], st["participants"]),
+                "needsConfirm": True, "state": st}, 409)
+        cyc = dict(cyc, status=appraisal.CLOSED, closedBy=u.get("name") or "",
+                   closedAt=self._utc_now())
+        db.put_collection_item("review_cycles", cyc)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Review round closed", "target": "review_cycles/" + str(cyc.get("id") or ""),
+            "detail": "%s · %d of %d complete%s — its ratings now govern pay for this period"
+                      % (cyc.get("name") or "", st["done"], st["participants"],
+                         "" if not st["outstanding"] else " (closed with %d unfinished)" % st["outstanding"]),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "cycle": cyc,
+                           "state": appraisal.state(cyc, db.list_collection("reviews"))})
+
+    def _appraisal_state_ep(self, u, qs=None):
+        if self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
+            return self._err("Manager access or above is required.", 403)
+        cid = str((qs or {}).get("cycle", [""])[0] or "").strip()
+        cycles = self._cycles()
+        reviews = db.list_collection("reviews")
+        if cid:
+            cyc = db.get_collection_item("review_cycles", cid)
+            if not cyc:
+                return self._err("Review round not found.", 404)
+            return self._json({"ok": True, "state": appraisal.state(cyc, reviews)})
+        return self._json({"ok": True, "cycles": [appraisal.state(c, reviews) for c in
+                                                  sorted(cycles, key=lambda c: str(c.get("periodTo") or ""),
+                                                         reverse=True)]})
+
+    def _appraisal_ratings_ep(self, u, qs=None):
+        """Which rating governs each person for a month, and why.
+
+        Payroll used to build this itself as `ratingBy[empId] = rating` over every review record in
+        list order, so the last one won regardless of cycle, date or whether it was finished — and
+        the rating swings the KPI component from 0× to 1.5×. The rule lives in appraisal.py and is
+        served from here so the frontend never restates it.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required.", 403)
+        ym = self._period_ym(str((qs or {}).get("period", [""])[0] or ""))
+        if not ym:
+            return self._err("Give a month, as YYYY-MM.", 400)
+        cycles, reviews = self._cycles(), db.list_collection("reviews")
+        gov = appraisal.governing_cycle(cycles, ym)
+        out = {}
+        for e in db.list_employees():
+            eid = str(e.get("id") or "")
+            rating, basis = appraisal.governing_rating(cycles, reviews, eid, ym)
+            out[eid] = {"rating": rating, "basis": basis}
+        return self._json({"ok": True, "period": ym, "ratings": out,
+                           "governingCycle": (gov or {}).get("name") or "",
+                           "governingCycleId": (gov or {}).get("id") or "",
+                           "neutral": appraisal.NEUTRAL_RATING})
+
+    def _appraisal_proposals_ep(self, u, qs=None):
+        """Proposed salary changes from a closed round. Proposals only — nothing is applied here."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this proposes "
+                             "changes to pay.", 403)
+        cid = str((qs or {}).get("cycle", [""])[0] or "").strip()
+        cyc = db.get_collection_item("review_cycles", cid) if cid else None
+        if not cyc:
+            return self._err("Review round not found.", 404)
+        st = appraisal.state(cyc, db.list_collection("reviews"))
+        try:
+            budget = float((qs or {}).get("budget", [""])[0])
+        except (TypeError, ValueError):
+            budget = None
+        matrix = db.get_setting("portal_salaryMatrix")
+        if not isinstance(matrix, dict):
+            matrix = None
+        out = appraisal.proposals(st["rows"], db.list_employees(), matrix=matrix, budget_pct=budget)
+        out.update({"ok": True, "cycle": cyc.get("name"), "cycleId": cyc.get("id"),
+                    "closed": str(cyc.get("status") or "") == appraisal.CLOSED,
+                    "distribution": st["distribution"]})
+        return self._json(out)
 
     # ── headcount and turnover over time ─────────────────────────────────────────────────────────
 
