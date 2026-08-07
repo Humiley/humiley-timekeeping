@@ -220,13 +220,28 @@ def _d(v):
 # ── notice ───────────────────────────────────────────────────────────────────────────────────────
 
 def notice_required(contract_type, term_months=None):
-    """The Art. 36(2) / Art. 35(1) ladder, from the contract alone."""
+    """The Art. 36(2) / Art. 35(1) ladder, from the contract alone.
+
+    `days` is None when the contract is not known well enough to place somebody on the ladder. The
+    first version returned the 30-day middle rung for a blank contract type, which invented an
+    obligation from missing data and got it wrong in both directions — an indefinite employee owed
+    45 and a short-contract one owed 3 working days. Refusing to pretend is the same rule
+    company.py follows.
+    """
     kind = _s(contract_type).lower()
     if kind == INDEFINITE:
         return {"days": 45, "working": False,
                 "basis": "45 days — indefinite-term contract (Art. 36(2)(a) / Art. 35(1)(a))."}
+    if kind != DEFINITE:
+        return {"days": None, "working": False,
+                "basis": "The contract type is not recorded, so the Art. 36(2) / Art. 35(1) notice "
+                         "period cannot be worked out. Record the contract first."}
     months = term_months if isinstance(term_months, (int, float)) else None
-    if months is not None and months < 12:
+    if months is None:
+        return {"days": None, "working": False,
+                "basis": "A fixed-term contract with no recorded length could owe 30 days or 03 "
+                         "working days (Art. 36(2)(b) vs (c)). Record the term first."}
+    if months < 12:
         return {"days": 3, "working": True,
                 "basis": "03 working days — fixed term under 12 months "
                          "(Art. 36(2)(c) / Art. 35(1)(c))."}
@@ -404,7 +419,9 @@ def termination_check(ground_key, contract_type, term_months=None, employer_grou
             # compliant — three calendar days but only two working ones.
             given = notice_given(notice_date, last_day, working=need["working"])
             unit = "working day" if need["working"] else "day"
-            if need["days"] and given is None:
+            if need["days"] is None:
+                out.append(need["basis"])
+            elif need["days"] and given is None:
                 out.append("%s The record does not say when the employee was told, so the notice "
                            "cannot be checked." % need["basis"])
             elif need["days"] and given < need["days"]:
@@ -431,6 +448,8 @@ def termination_notes(ground_key, contract_type, term_months=None, notice_date="
     if _s(ground_key).lower() != "employee_unilateral":
         return notes
     need = notice_required(contract_type, term_months)
+    if need["days"] is None:
+        return notes
     given = notice_given(notice_date, last_day, working=need["working"])
     if given is not None and given < need["days"]:
         notes.append("The employee gave %d day(s) where Art. 35(1) asks for %d. %s Art. 35(2) "
@@ -560,7 +579,11 @@ def assemble(kind, company_settings, employee, decision, doc_no="", as_of=None):
         g = _GROUND.get(_s(d.get("ground")).lower())
         if g:
             recitals.insert(1, "Căn cứ khoản %d Điều 34 Bộ luật Lao động 2019;" % g["clause"])
-        eg = _EMP_GROUND.get(_s(d.get("employerGround")).lower())
+        # Only when the termination IS under Art. 36. A consensual exit reciting the 5-day-absence
+        # clause misstates the ground on the face of a signed document, and the module's whole
+        # claim is that a decision cannot cite an article it does not rest on.
+        eg = (_EMP_GROUND.get(_s(d.get("employerGround")).lower())
+              if (g and g["key"] == "employer_unilateral") else None)
         if eg:
             recitals.insert(2, "Căn cứ điểm %s khoản 1 Điều 36 Bộ luật Lao động 2019;" % eg["point"])
         articles = [

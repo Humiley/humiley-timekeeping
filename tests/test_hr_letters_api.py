@@ -320,3 +320,26 @@ def test_a_letters_purpose_cannot_be_changed_after_it_is_issued(api, tokens):
     code, r = api("PATCH", "/api/coll/hrletters/" + rec["id"], tokens["management"],
                   dict(rec, purpose="bank", disclosesSalary=True))
     assert code == 400 and "purpose" in (r.get("error") or "")
+
+
+def test_an_empty_list_as_an_employee_id_is_a_400_not_a_500(api, tokens):
+    """Reachable by any authenticated account with {"empId": []}; it raised IndexError."""
+    for path, body in (("/api/hr/letter", {"empId": [], "purpose": "general"}),
+                       ("/api/hr/decision", {"kind": "appointment", "empId": []})):
+        code, _ = api("POST", path, tokens["admin"], body)
+        assert code < 500, (path, code)
+
+
+def test_the_audit_line_records_the_value_that_was_actually_stored(api, tokens):
+    """It recorded the untruncated input while storage kept 300 chars — so the chain described a
+    value that never existed, and every later save re-audited the same non-change."""
+    long = "X" * 350
+    api("POST", "/api/hr/company", tokens["admin"], dict(FULL_CO, repName=long))
+    trail = [a for a in db.list_collection("audit")
+             if a.get("action") == "Company legal identity changed"]
+    assert trail and ("X" * 350) not in trail[-1]["detail"]
+    n = len(trail)
+    _, b = api("POST", "/api/hr/company", tokens["admin"], dict(FULL_CO, repName=long))
+    assert b["changed"] == [], "the truncated value must compare equal on the next save"
+    assert len([a for a in db.list_collection("audit")
+                if a.get("action") == "Company legal identity changed"]) == n

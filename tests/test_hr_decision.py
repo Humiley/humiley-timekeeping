@@ -386,3 +386,29 @@ def test_a_draft_with_gaps_still_assembles_and_carries_them():
     d = hd.assemble("termination", {}, {}, {})
     assert d["canIssue"] is False and d["blockers"]["company"]
     assert d["articles"], "the drafter still needs to see the rest of it"
+
+
+def test_an_unrecorded_contract_type_refuses_to_invent_a_notice_period():
+    """It returned the 30-day middle rung for a blank type — inventing an obligation from missing
+    data, and wrong in both directions: indefinite owes 45, a short fixed term owes 3 working days."""
+    assert hd.notice_required("")["days"] is None
+    assert hd.notice_required("definite")["days"] is None, "no term length recorded"
+    out = hd.termination_check("employer_unilateral", "", employer_ground="underperformance",
+                               notice_date="2026-07-01", last_day="2026-08-05")
+    assert out and "not recorded" in out[0]
+
+
+def test_a_known_contract_still_gets_its_rung():
+    assert hd.notice_required("indefinite")["days"] == 45
+    assert hd.notice_required("definite", 24)["days"] == 30
+    assert hd.notice_required("definite", 6)["days"] == 3
+
+
+def test_a_termination_not_under_art_36_does_not_recite_an_art_36_point():
+    """A consensual exit reciting the 5-day-unexcused-absence clause misstates the ground on the
+    face of a signed document."""
+    d = hd.assemble("termination", COMPANY, EMP,
+                    {"subject": "x", "effectiveFrom": "2026-09-01",
+                     "ground": "mutual", "employerGround": "absent_five_days"})
+    assert not any("Điều 36" in r for r in d["recitals"])
+    assert any("khoản 3 Điều 34" in r for r in d["recitals"])

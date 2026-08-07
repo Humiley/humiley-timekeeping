@@ -8114,10 +8114,15 @@ class Handler(BaseHTTPRequestHandler):
         for k in company.FIELD_KEYS:
             if k not in b:
                 continue
-            new = str(b.get(k) or "").strip()[:300]
+            # Truncated BEFORE the comparison and before the audit line. It was truncated only on
+            # the way to storage, so the chain recorded an "after" value that was never saved — and
+            # the next save then saw a difference that was not one, auditing the same change again
+            # for ever. A newline is flattened for the same reason: the detail line is single-line.
+            new = " ".join(str(b.get(k) or "").split())[:300]
             if new != (before.get(k) or ""):
                 db.set_setting("portal_co_" + k, new or None)
                 changed.append(k)
+                b[k] = new
         if changed:
             db.put_collection_item("audit", {
                 "actor": u.get("name") or "System", "actorId": u.get("id") or "",
@@ -8220,9 +8225,16 @@ class Handler(BaseHTTPRequestHandler):
 
     # ── decisions (quyết định) ───────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _one(raw):
+        """First value of a query-string list, or the value itself. An EMPTY list used to raise
+        IndexError and return a 500 to any authenticated account that posted {"empId": []}."""
+        if isinstance(raw, list):
+            raw = raw[0] if raw else ""
+        return str(raw or "").strip()
+
     def _decision_ctx(self, qs_or_body, key="emp"):
-        eid = str((qs_or_body.get(key, [""])[0] if isinstance(qs_or_body.get(key), list)
-                   else qs_or_body.get(key) or "")).strip()
+        eid = self._one(qs_or_body.get(key))
         return eid, (db.get_employee(eid) if eid else None)
 
     def _decision_draft_ep(self, u, qs):
@@ -8235,7 +8247,7 @@ class Handler(BaseHTTPRequestHandler):
         if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             return self._err("Approver (management) level or above is required to draft a "
                              "decision.", 403)
-        kind = str(qs.get("kind", [""])[0] or "").strip()
+        kind = self._one(qs.get("kind"))
         if kind not in hr_decision.DECISIONS:
             return self._json({"error": "Not a decision this company issues.",
                                "kinds": [dict(v, kind=k) for k, v in
@@ -8333,8 +8345,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _letter_subject(self, u, qs_or_body, key="emp"):
         """Whose letter this is. Defaults to the caller; anybody else needs management level."""
-        raw = qs_or_body.get(key)
-        eid = str((raw[0] if isinstance(raw, list) else raw) or "").strip() or (u.get("id") or "")
+        eid = self._one(qs_or_body.get(key)) or (u.get("id") or "")
         if eid != (u.get("id") or "") and \
                 self._level_rank(self._caller_level(u)) < self._level_rank("management"):
             return None, None, self._err("You can only request a confirmation letter about "
@@ -8353,9 +8364,9 @@ class Handler(BaseHTTPRequestHandler):
         eid, emp, err = self._letter_subject(u, qs)
         if err:
             return err
-        req = {"purpose": str(qs.get("purpose", [""])[0] or "").strip(),
-               "addressedTo": str(qs.get("to", [""])[0] or "").strip(),
-               "leaveApproved": str(qs.get("leave", [""])[0] or "").strip()}
+        req = {"purpose": self._one(qs.get("purpose")),
+               "addressedTo": self._one(qs.get("to")),
+               "leaveApproved": self._one(qs.get("leave"))}
         doc = employment_letter.assemble(self._company_settings(), emp, req, as_of=self._vn_day())
         doc.update({"ok": True, "empId": eid,
                     "canIssueHere": self._level_rank(self._caller_level(u))
