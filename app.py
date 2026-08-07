@@ -44,6 +44,7 @@ import access_revoke     # what access has to be cut when somebody leaves, and w
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
 import appraisal         # appraisal cycles + which rating may move pay (pure)
+import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
 import hashlib
 import zipfile
@@ -3747,6 +3748,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/hr/exit/") and path.endswith("/revoke"):
             _xid = path[len("/api/hr/exit/"):-len("/revoke")]
             return self._guard(lambda u: self._exit_revoke(u, urllib.parse.unquote(_xid)))
+        if path == "/api/hr/statutory":
+            return self._guard(lambda u: self._statutory_ep(u, qs))
+        if path == "/api/hr/labour-report":
+            return self._guard(lambda u: self._labour_report_ep(u, qs))
         if path == "/api/hr/appraisal/cycles":
             return self._guard(lambda u: self._appraisal_state_ep(u, qs))
         if path == "/api/hr/appraisal/ratings":
@@ -8087,6 +8092,54 @@ class Handler(BaseHTTPRequestHandler):
         if not d or not a:
             return False
         return leave_entitlement.completed_years(d, a) >= 60
+
+    # ── statutory returns ────────────────────────────────────────────────────────────────────────
+
+    def _statutory_ep(self, u, qs=None):
+        """The returns filed with the authorities, built from a SIGNED pay run.
+
+        A declaration that disagrees with the payslips it came from is worse than a late one, so
+        nothing here is recomputed — the schedule is read out of the frozen run. An unsigned month
+        produces no return at all rather than a provisional one somebody might file.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Editor level or above is required — these are the figures filed with "
+                             "the authorities.", 403)
+        ym = self._period_ym(str((qs or {}).get("period", [""])[0] or ""))
+        if not ym:
+            return self._err("Give a month, as YYYY-MM.", 400)
+        run = None
+        for r in db.list_collection("payruns"):
+            if str(r.get("status") or "").strip().lower() == "finalised" \
+                    and self._period_ym(r.get("period") or "") == ym:
+                run = r
+                break
+        if not run:
+            return self._err("There is no signed pay run for %s. A statutory return is built from "
+                             "the signed figures, never from a draft." % ym, 400)
+
+        region = str(db.get_setting("portal_siRegion", "") or "I").strip().upper() or "I"
+        try:
+            base_salary = int(db.get_setting("portal_baseSalary", "") or statutory.BASE_SALARY)
+        except (TypeError, ValueError):
+            base_salary = statutory.BASE_SALARY
+        lines = run.get("lines") or []
+        contrib = statutory.contributions(lines, region=region, base_salary=base_salary)
+        pit = statutory.pit_summary(lines)
+        return self._json({"ok": True, "period": run.get("period") or ym, "ym": ym,
+                           "contributions": contrib, "pit": pit,
+                           "runId": run.get("id"), "signedBy": run.get("finalisedBy") or ""})
+
+    def _labour_report_ep(self, u, qs=None):
+        """Decree 145/2020 Art. 4 — the labour-usage return, twice a year."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required.", 403)
+        as_of = str((qs or {}).get("asOf", [""])[0] or "").strip() or _now_iso()[:10]
+        if not datespan.to_date(as_of):
+            return self._err("Give a reporting date, as YYYY-MM-DD.", 400)
+        rep = statutory.labour_report(db.list_employees(), as_of)
+        rep["ok"] = True
+        return self._json(rep)
 
     # ── appraisal cycles ─────────────────────────────────────────────────────────────────────────
 
