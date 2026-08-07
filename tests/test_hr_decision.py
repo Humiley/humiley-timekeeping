@@ -412,3 +412,66 @@ def test_a_termination_not_under_art_36_does_not_recite_an_art_36_point():
                      "ground": "mutual", "employerGround": "absent_five_days"})
     assert not any("Điều 36" in r for r in d["recitals"])
     assert any("khoản 3 Điều 34" in r for r in d["recitals"])
+
+
+# ── Decree 145/2020 Art. 7: the rung the ladder never had ────────────────────────────────────────
+
+def test_an_enterprise_manager_on_an_indefinite_contract_is_owed_120_days_not_45():
+    """Art. 36(2)(d) and Art. 35(1)(d) do not state a period — they hand it to the Government, and
+    Decree 145/2020 Art. 7 sets it at 120 days. The portal certified 45 as compliant for this
+    company's own Director and printed a quyết định reciting Art. 36 to say so."""
+    n = hd.notice_required(hd.INDEFINITE, special_job=True)
+    assert n["days"] == 120 and n["working"] is False
+    assert "145/2020" in n["basis"]
+    assert hd.notice_required(hd.INDEFINITE)["days"] == 45, "and the ordinary rung is untouched"
+
+
+def test_a_twelve_month_or_longer_fixed_term_is_also_120():
+    assert hd.notice_required(hd.DEFINITE, 12, special_job=True)["days"] == 120
+    assert hd.notice_required(hd.DEFINITE, 36, special_job=True)["days"] == 120
+    assert hd.notice_required(hd.DEFINITE, 36)["days"] == 30
+
+
+def test_a_shorter_term_is_a_quarter_of_it_rounded_up_never_three_days():
+    """Art. 7(2): at least one quarter of the term. Rounded up — the decree sets a floor."""
+    n = hd.notice_required(hd.DEFINITE, 8, special_job=True)
+    assert n["days"] == 60, "8 months ≈ 240 days, a quarter is 60"
+    assert hd.notice_required(hd.DEFINITE, 3, special_job=True)["days"] == 23   # ceil(90/4)
+    assert hd.notice_required(hd.DEFINITE, 8)["days"] == 3, "the ordinary rung is 3 WORKING days"
+
+
+def test_it_binds_both_sides_not_just_the_employer():
+    """Art. 35(1)(d) is the employee's side of the same clause."""
+    notes = hd.termination_notes("employee_unilateral", hd.INDEFINITE, notice_date="2026-01-01",
+                                last_day="2026-02-20", special_job=True)
+    assert notes and "120" in notes[0]
+    assert not hd.termination_notes("employee_unilateral", hd.INDEFINITE,
+                                   notice_date="2026-01-01", last_day="2026-02-20")
+
+
+def test_a_manager_terminated_on_45_days_notice_is_refused_with_the_figure():
+    out = hd.termination_check("employer_unilateral", hd.INDEFINITE,
+                              employer_ground="underperformance",
+                              notice_date="2026-01-01", last_day="2026-02-15",
+                              special_job=True)
+    assert out and "Short notice" in out[0] and "120" in out[0]
+    assert hd.termination_check("employer_unilateral", hd.INDEFINITE,
+                               employer_ground="underperformance",
+                               notice_date="2026-01-01", last_day="2026-02-15") == []
+
+
+def test_the_grounds_that_need_no_notice_still_need_none():
+    """Art. 36(3) is not overridden by Art. 7 — a special job does not create notice where the
+    Labour Code says none is owed."""
+    for g in ("absent_5_days", "abandoned"):
+        n = hd.employer_notice(g, hd.INDEFINITE, special_job=True)
+        if n and n["days"] == 0:
+            assert "36(3)" in n["basis"]
+
+
+def test_who_the_special_rung_covers_is_stated_rather_than_guessed_from_a_title():
+    """The Law on Enterprises definition turns on the company charter, and no regex reads a
+    charter — so this is an explicit flag, and the module says who it means."""
+    assert "charter" in hd.SPECIAL_JOBS["help"]
+    assert "NOT" in hd.SPECIAL_JOBS["help"], "a head of department is not automatically one"
+    assert hd.SPECIAL_JOBS["helpVn"] and hd.SPECIAL_JOBS["labelVn"]

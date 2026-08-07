@@ -227,3 +227,35 @@ def test_the_english_service_line_has_no_trailing_space_at_an_anniversary():
     b = el.assemble(COMPANY, dict(EMP, startDate="2020-01-01"), {"purpose": "general"},
                     as_of="2021-01-01")["body"]
     assert "1 year ." not in b and "a service of 1 year." in b
+
+
+# ── the citizen ID is a disclosure, not a header field ───────────────────────────────────────────
+
+def test_a_reference_to_a_prospective_employer_does_not_carry_the_citizen_id():
+    """In Vietnam the CCCD is what banks and telcos use for e-KYC. Handing it to somebody who asked
+    only whether this person works here is not what they asked for."""
+    assert "personalId" not in el.fields_for("new_employer")
+    assert "personalId" not in el.fields_for("general")
+
+
+def test_a_bank_letter_does_carry_it_because_the_lender_must_identify_the_borrower():
+    assert "personalId" in el.fields_for("bank")
+
+
+def test_a_visa_letter_carries_it_so_the_consulate_can_match_the_travel_document():
+    assert "personalId" in el.fields_for("visa")
+
+
+def test_the_letter_says_the_id_was_withheld_rather_than_silently_dropping_it():
+    """The employee should be able to see what the letter did not say, and ask for another purpose."""
+    doc = el.assemble(COMPANY, dict(EMP, personalId="079095001234"),
+                      {"purpose": "new_employer", "addressedTo": "ABC Co."}, as_of="2026-08-08")
+    assert "personalId" not in [r["key"] for r in doc["rows"]]
+    assert "personalId" in [w["key"] for w in doc["withheld"]]
+
+
+def test_no_purpose_ever_prints_an_id_that_is_not_on_the_record():
+    for purpose in el.PURPOSES:
+        doc = el.assemble(COMPANY, dict(EMP, personalId=""),
+                          {"purpose": purpose, "addressedTo": "X"}, as_of="2026-08-08")
+        assert "personalId" not in [r["key"] for r in doc["rows"]], purpose

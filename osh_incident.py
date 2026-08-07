@@ -204,32 +204,54 @@ def next_report_due(as_of):
             "basis": _REPORT_BASIS, "basisVn": _REPORT_BASIS_VN}
 
 
-def lost_time_rate(incidents, hours_worked):
-    """Lost-time injury frequency per million hours worked.
+def lost_time_rate(incidents, hours_worked, frm=None, to=None):
+    """Lost-time injury frequency per million hours worked, over ONE stated period.
 
     Refuses to produce a number when the hours are not supplied. A frequency rate against a guessed
     denominator is worse than no rate: it is the single figure a client's safety audit compares
     across contractors, and it would be compared.
+
+    `frm`/`to` bound the NUMERATOR to the same period as the hours in the denominator. Without them
+    the count was every accident ever recorded, divided by one year's hours — a ratio of two
+    different periods that grows every year the register is kept, and the longer this company runs
+    the register properly the worse its published safety record would look.
     """
     hrs = 0
     try:
         hrs = float(hours_worked or 0)
     except (TypeError, ValueError):
         hrs = 0
-    lti = sum(1 for c in (incidents or []) if _n((c or {}).get("daysLost")) > 0
+    a, b = _d(frm), _d(to)
+    rows = []
+    for c in (incidents or []):
+        when = _d((c or {}).get("occurredOn"))
+        if a and b:
+            # An accident with no usable date cannot be placed in the period, so it is not counted
+            # in a rate that names one. It still appears in the register above.
+            if not when or when < a or when > b:
+                continue
+        rows.append(c)
+    period = ("%s to %s" % (a.isoformat(), b.isoformat())) if (a and b) else "all recorded accidents"
+    # Rendered separately rather than dropping the English connector into a Vietnamese sentence.
+    period_vn = (("từ %s đến %s" % (a.isoformat(), b.isoformat())) if (a and b)
+                 else "toàn bộ tai nạn đã ghi nhận")
+    lti = sum(1 for c in rows if _n((c or {}).get("daysLost")) > 0
               or _s((c or {}).get("class")).lower() in (SERIOUS, FATAL))
     if hrs <= 0:
         return {"rate": None, "lostTimeInjuries": lti, "hours": 0,
+                "period": period, "periodVn": period_vn,
                 "why": "No hours worked were supplied, so a frequency rate cannot be computed. A "
                        "rate against a guessed denominator would be compared with other "
                        "contractors' real ones.",
                 "whyVn": "Chưa có số giờ làm việc nên không tính được tần suất. Một tỷ lệ dựa trên "
                          "mẫu số phỏng đoán sẽ bị đem so sánh với số liệu thật của nhà thầu khác."}
     return {"rate": round(lti * 1000000.0 / hrs, 2), "lostTimeInjuries": lti, "hours": int(hrs),
-            "why": "Lost-time injuries per 1,000,000 hours worked. A lost-time injury is one with "
-                   "days lost recorded, or any serious or fatal accident.",
-            "whyVn": "Số vụ tai nạn phải nghỉ việc trên 1.000.000 giờ làm việc. Tai nạn phải nghỉ "
-                     "việc là vụ có ghi nhận ngày nghỉ, hoặc bất kỳ tai nạn nặng hay chết người."}
+            "period": period, "periodVn": period_vn,
+            "why": "Lost-time injuries per 1,000,000 hours worked, %s. A lost-time injury is one "
+                   "with days lost recorded, or any serious or fatal accident." % period,
+            "whyVn": "Số vụ tai nạn phải nghỉ việc trên 1.000.000 giờ làm việc, %s. Tai nạn phải "
+                     "nghỉ việc là vụ có ghi nhận ngày nghỉ, hoặc bất kỳ tai nạn nặng hay chết "
+                     "người." % period_vn}
 
 
 def blockers(incident):
@@ -252,8 +274,12 @@ def blockers(incident):
     return out
 
 
-def review(incidents, as_of, hours_worked=None):
-    """The register: what is outstanding, what is late, and the figures an audit asks for."""
+def review(incidents, as_of, hours_worked=None, rate_from=None, rate_to=None):
+    """The register: what is outstanding, what is late, and the figures an audit asks for.
+
+    The REGISTER lists every accident ever recorded. The frequency RATE covers only rate_from..
+    rate_to, because that is the period the hours in the denominator were worked over.
+    """
     today = _d(as_of) or date.today()
     rows, undeclared, late, open_ = [], [], 0, 0
     by_class = {}
@@ -289,7 +315,7 @@ def review(incidents, as_of, hours_worked=None):
         "byClass": sorted(({"class": k, "label": (klass(k) or {}).get("label", k), "count": v}
                            for k, v in by_class.items()), key=lambda r: (-r["count"], r["class"])),
         "nextReport": next_report_due(today),
-        "frequency": lost_time_rate(incidents, hours_worked),
+        "frequency": lost_time_rate(incidents, hours_worked, rate_from, rate_to),
         "statement": ("%d accident(s) recorded, %d still under investigation, %d day(s) lost."
                       % (len(rows), open_, days_lost)),
     }

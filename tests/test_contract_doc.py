@@ -216,3 +216,37 @@ def test_a_date_the_parser_cannot_read_is_refused_rather_than_silently_disabling
 def test_an_unreadable_end_date_is_named_too():
     out = cd.term_check(_terms(endDate="31/12/2028"))
     assert any("end date" in m and "not a date" in m for m in out)
+
+
+# ── Art. 24(3): the term and the probation are not independent facts ─────────────────────────────
+
+def test_no_probation_at_all_on_a_contract_of_under_one_month():
+    """The term was validated against Art. 20 and the probation against Art. 25, and the two were
+    never related — so a two-week contract with a 60-day probation passed both, the probation
+    outlasting the contract it was attached to."""
+    out = cd.term_check({"contractType": "definite", "startDate": "2026-01-01",
+                         "endDate": "2026-01-14", "probationDays": 90,
+                         "probationBand": "degree"})
+    assert any("24(3)" in m for m in out), out
+    # And ONLY that. "It also exceeds the 60-day Art. 25 ceiling" is noise when no probation is
+    # allowed at all — the drafter needs the one instruction that fixes it.
+    assert not any("ceiling" in m for m in out), out
+
+
+def test_a_short_contract_with_no_probation_is_fine():
+    assert cd.term_check({"contractType": "definite", "startDate": "2026-01-01",
+                          "endDate": "2026-01-14"}) == []
+
+
+def test_a_contract_of_exactly_one_month_may_still_have_one():
+    out = cd.term_check({"contractType": "definite", "startDate": "2026-01-01",
+                         "endDate": "2026-02-01", "probationDays": 6,
+                         "probationBand": "other"})
+    assert not any("24(3)" in m for m in out), out
+
+
+def test_the_art_25_ceiling_still_applies_on_a_longer_contract():
+    out = cd.term_check({"contractType": "definite", "startDate": "2026-01-01",
+                         "endDate": "2026-12-31", "probationDays": 90,
+                         "probationBand": "degree"})
+    assert any("60-day ceiling" in m for m in out), out

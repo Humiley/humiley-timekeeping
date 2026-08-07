@@ -172,18 +172,35 @@ def test_somebody_who_cannot_read_a_contract_cannot_rewrite_its_wage(api, tokens
     assert st == 403
 
 
-def test_management_can_still_write_a_contract(api, tokens):
-    st, _ = api("POST", "/api/coll/contracts", tokens["management"],
+def test_nobody_can_create_a_contract_through_the_collection_route_any_more(api, tokens):
+    """The level gate above is still the FIRST thing checked — a manager gets 403, not 400 — but at
+    management level the answer is now 400: a labour contract is created only through
+    /api/hr/contract, which applies the Art. 20 term and Art. 21 particulars. Creating one here
+    stored a contract with none of them."""
+    st, b = api("POST", "/api/coll/contracts", tokens["management"],
                 {"empId": "HML-STF", "type": "definite", "startDate": "2026-01-01",
                  "endDate": "2026-12-31"})
-    assert st == 200
+    assert st == 400, b
+    assert "/api/hr/contract" in b["error"]
+
+
+def test_management_can_still_attach_the_signed_copy(api, tokens):
+    """Closing the create door must not close the register: the signed scan, the e-signature and
+    the ending are all recorded after the fact."""
+    db.put_collection_item("contracts", {
+        "id": "hd-w2-1", "empId": "HML-STF", "no": "HD-2026-778", "type": "definite",
+        "startDate": "2026-01-01", "endDate": "2026-12-31"})
+    rec = db.get_collection_item("contracts", "hd-w2-1")
+    st, b = api("PATCH", "/api/coll/contracts/hd-w2-1", tokens["management"],
+                dict(rec, fileUrl="https://sp/hd.pdf", status="Signed"))
+    assert st == 200, b
 
 
 def test_deleting_a_contract_snapshots_it_into_the_audit_chain(api, tokens):
-    _, b = api("POST", "/api/coll/contracts", tokens["admin"],
-               {"empId": "HML-STF", "no": "HD-2026-777", "type": "definite",
-                "startDate": "2026-01-01", "endDate": "2026-12-31"})
-    api("DELETE", "/api/coll/contracts/" + b["item"]["id"], tokens["admin"])
+    db.put_collection_item("contracts", {
+        "id": "hd-w2-2", "empId": "HML-STF", "no": "HD-2026-777", "type": "definite",
+        "startDate": "2026-01-01", "endDate": "2026-12-31"})
+    api("DELETE", "/api/coll/contracts/hd-w2-2", tokens["admin"])
     assert any("HD-2026-777" in str(a.get("detail") or "") for a in db.list_collection("audit"))
 
 

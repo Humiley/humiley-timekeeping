@@ -26,7 +26,12 @@ import company
 import datespan
 
 # What every letter says, whatever it is for. Anything beyond this has to be justified by a purpose.
-BASE_FIELDS = ("name", "personalId", "title", "dept", "startDate", "status")
+#
+# personalId is deliberately NOT here. The whole design of PURPOSES is that the purpose decides
+# disclosure, and the CCCD was the one field that ignored it — a reference to a prospective
+# employer and a general confirmation for a landlord both carried the number Vietnamese banks and
+# telcos use for e-KYC, to a party who had asked only whether the person works here.
+BASE_FIELDS = ("name", "title", "dept", "startDate", "status")
 
 FIELD_LABELS = {
     "name": ("Full name", "Họ và tên"),
@@ -45,15 +50,17 @@ FIELD_LABELS = {
 PURPOSES = {
     "bank": {
         "label": "Bank / loan application", "labelVn": "Vay vốn ngân hàng",
-        "discloses": ("contractType", "salary", "taxId"),
+        "discloses": ("personalId", "contractType", "salary", "taxId"),
         "why": "A lender is assessing income, so the salary is the point of the letter rather than "
-               "an incidental disclosure.",
+               "an incidental disclosure. The lender must also identify the borrower, so the "
+               "citizen ID belongs on this one.",
     },
     "visa": {
         "label": "Visa / travel", "labelVn": "Xin thị thực / đi công tác",
-        "discloses": ("dob", "contractType", "leaveApproved"),
-        "why": "A consulate wants to know the employment is real and that the trip is agreed. It "
-               "does not need the salary, so this letter does not print it.",
+        "discloses": ("personalId", "dob", "contractType", "leaveApproved"),
+        "why": "A consulate wants to know the employment is real and that the trip is agreed, and it "
+               "matches the letter to the travel document. It does not need the salary, so this "
+               "letter does not print it.",
     },
     "new_employer": {
         "label": "Prospective employer / reference", "labelVn": "Xác nhận cho nơi làm việc mới",
@@ -184,7 +191,7 @@ def assemble(company_settings, employee, request, as_of=None, doc_no=""):
     # Named explicitly rather than silently omitted, so the employee can see the letter did not say
     # what they were hoping it would say and ask for a different purpose.
     if spec:
-        for key in ("salary", "taxId", "dob", "leaveApproved", "contractType"):
+        for key in ("personalId", "salary", "taxId", "dob", "leaveApproved", "contractType"):
             if key not in order and _s(emp.get(key) or req.get(key)):
                 label, label_vn = FIELD_LABELS[key]
                 withheld.append({"key": key, "label": label, "labelVn": label_vn})

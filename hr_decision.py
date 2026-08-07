@@ -26,6 +26,7 @@ disciplined is not a question a portal is entitled to answer.
 Sources are the official English translation of Labour Code 45/2019/QH14. Pure — no database, no
 clock. Exercised by tests/test_hr_decision.py.
 """
+import math
 from datetime import date, timedelta
 
 import company
@@ -110,6 +111,34 @@ EMPLOYER_GROUNDS = (
      "labelVn": "Cung cấp thông tin không trung thực khi giao kết hợp đồng"},
 )
 _EMP_GROUND = {g["key"]: g for g in EMPLOYER_GROUNDS}
+
+# Decree 145/2020 Art. 7 — the fourth rung the ladder never had.
+#
+# Art. 36(2)(d) and Art. 35(1)(d) do not state a period; they hand it to the Government, and the
+# Government set it in Decree 145/2020 Art. 7 for a short list of occupations: an enterprise manager
+# as defined by the Law on Enterprises, aircrew and aircraft technical staff, and the master and
+# crew of a Vietnamese vessel working abroad. For them the notice is AT LEAST 120 days on an
+# indefinite contract or a fixed term of 12 months or more, and at least a QUARTER of the term on a
+# shorter one. It binds both sides.
+#
+# This company has enterprise managers. Without this branch the portal certified 45 days as
+# compliant for its own Director and printed a Vietnamese quyết định reciting Art. 36 to say so —
+# a signed document that is evidence of the breach it describes.
+SPECIAL_NOTICE_DAYS = 120
+SPECIAL_JOBS = {
+    "label": "Enterprise manager, aircrew or seagoing crew",
+    "labelVn": "Người quản lý doanh nghiệp, thành viên tổ bay hoặc thuyền viên",
+    "help": "An enterprise manager as defined by the Law on Enterprises (the owner, company "
+            "chairman, chairman or members of the Members' Council or the Board, the Director or "
+            "General Director, and any other managerial title named in the company charter); "
+            "aircrew and aircraft technical staff; and the master or crew of a Vietnamese vessel "
+            "working abroad. A head of department is NOT one of these unless the charter names "
+            "the role.",
+    "helpVn": "Người quản lý doanh nghiệp theo Luật Doanh nghiệp; thành viên tổ lái, nhân viên kỹ "
+              "thuật bảo dưỡng tàu bay; thuyền trưởng, thuyền viên tàu biển Việt Nam làm việc ở "
+              "nước ngoài. Trưởng phòng KHÔNG thuộc nhóm này trừ khi điều lệ công ty quy định.",
+    "basis": "Decree 145/2020 Art. 7, made under Labour Code Art. 35(1)(d) and Art. 36(2)(d).",
+}
 
 # Art. 36(2)(a)–(c) and Art. 35(1)(a)–(c): the same ladder for both sides.
 NOTICE_LADDER = (
@@ -219,8 +248,12 @@ def _d(v):
 
 # ── notice ───────────────────────────────────────────────────────────────────────────────────────
 
-def notice_required(contract_type, term_months=None):
+def notice_required(contract_type, term_months=None, special_job=False):
     """The Art. 36(2) / Art. 35(1) ladder, from the contract alone.
+
+    `special_job` selects the Decree 145/2020 Art. 7 rung — see SPECIAL_JOBS. It is a separate
+    argument rather than something inferred from a job title, because the Law on Enterprises
+    definition turns on the company charter and no regex over "Giám đốc" can read a charter.
 
     `days` is None when the contract is not known well enough to place somebody on the ladder. The
     first version returned the 30-day middle rung for a blank contract type, which invented an
@@ -229,6 +262,11 @@ def notice_required(contract_type, term_months=None):
     company.py follows.
     """
     kind = _s(contract_type).lower()
+    special = _flag(special_job)
+    if special and kind == INDEFINITE:
+        return {"days": SPECIAL_NOTICE_DAYS, "working": False, "special": True,
+                "basis": "120 days — indefinite-term contract for %s. %s"
+                         % (SPECIAL_JOBS["label"].lower(), SPECIAL_JOBS["basis"])}
     if kind == INDEFINITE:
         return {"days": 45, "working": False,
                 "basis": "45 days — indefinite-term contract (Art. 36(2)(a) / Art. 35(1)(a))."}
@@ -241,6 +279,18 @@ def notice_required(contract_type, term_months=None):
         return {"days": None, "working": False,
                 "basis": "A fixed-term contract with no recorded length could owe 30 days or 03 "
                          "working days (Art. 36(2)(b) vs (c)). Record the term first."}
+    if special and months >= 12:
+        return {"days": SPECIAL_NOTICE_DAYS, "working": False, "special": True,
+                "basis": "120 days — fixed term of 12 months or more for %s. %s"
+                         % (SPECIAL_JOBS["label"].lower(), SPECIAL_JOBS["basis"])}
+    if special:
+        # "At least one quarter of the term." The term is held in whole months here, so the day
+        # count is derived from it and the basis says so rather than implying a precision the
+        # record does not have. Rounded UP: the decree sets a floor, not a target.
+        days = int(math.ceil(months * 30 / 4.0))
+        return {"days": days, "working": False, "special": True,
+                "basis": "%d days — at least a quarter of a %d-month term, for %s. %s"
+                         % (days, months, SPECIAL_JOBS["label"].lower(), SPECIAL_JOBS["basis"])}
     if months < 12:
         return {"days": 3, "working": True,
                 "basis": "03 working days — fixed term under 12 months "
@@ -249,7 +299,7 @@ def notice_required(contract_type, term_months=None):
             "basis": "30 days — fixed term of 12 to 36 months (Art. 36(2)(b) / Art. 35(1)(b))."}
 
 
-def employer_notice(ground_key, contract_type, term_months=None):
+def employer_notice(ground_key, contract_type, term_months=None, special_job=False):
     """What Art. 36 requires for THIS ground. None if it is not an employer-unilateral ground.
 
     Two things a straight reading of the ladder gets wrong, both encoded here: grounds (d) and (e)
@@ -267,7 +317,7 @@ def employer_notice(ground_key, contract_type, term_months=None):
         return {"days": 3, "working": True, "point": g["point"],
                 "basis": "03 working days — Art. 36(2)(c) names Art. 36(1)(b) alongside contracts "
                          "of under 12 months, so the contract type does not change it."}
-    out = dict(notice_required(contract_type, term_months))
+    out = dict(notice_required(contract_type, term_months, special_job))
     out["point"] = g["point"]
     return out
 
@@ -398,7 +448,7 @@ def ground_for_exit(exit_type):
 
 def termination_check(ground_key, contract_type, term_months=None, employer_ground="",
                       notice_date="", last_day="", violation_date="", issued_on="",
-                      serious=False, suspended_until=None):
+                      serious=False, suspended_until=None, special_job=False):
     """What Art. 34/36/45 say about this termination as recorded. Problems, not a verdict."""
     out = []
     g = _GROUND.get(_s(ground_key).lower())
@@ -413,7 +463,7 @@ def termination_check(ground_key, contract_type, term_months=None, employer_grou
                        "Art. 36(1) it rests on — the notice owed depends on it, and a termination "
                        "on no stated ground is unlawful.")
         else:
-            need = employer_notice(eg["key"], contract_type, term_months)
+            need = employer_notice(eg["key"], contract_type, term_months, special_job)
             # In the unit the requirement is expressed in. Art. 36(2)(c) says WORKING days, and
             # comparing that against calendar days passed a Friday-to-Monday termination as
             # compliant — three calendar days but only two working ones.
@@ -436,7 +486,8 @@ def termination_check(ground_key, contract_type, term_months=None, employer_grou
     return out
 
 
-def termination_notes(ground_key, contract_type, term_months=None, notice_date="", last_day=""):
+def termination_notes(ground_key, contract_type, term_months=None, notice_date="", last_day="",
+                      special_job=False):
     """Observations that are NOT reasons to refuse the decision.
 
     An employee who resigns on short notice has not stopped the company from recording that they
@@ -447,7 +498,7 @@ def termination_notes(ground_key, contract_type, term_months=None, notice_date="
     notes = []
     if _s(ground_key).lower() != "employee_unilateral":
         return notes
-    need = notice_required(contract_type, term_months)
+    need = notice_required(contract_type, term_months, special_job)
     if need["days"] is None:
         return notes
     given = notice_given(notice_date, last_day, working=need["working"])
@@ -508,7 +559,8 @@ def blockers(kind, company_settings, employee, decision):
                                 violation_date=d.get("violationDate"),
                                 issued_on=d.get("issuedOn") or d.get("effectiveFrom"),
                                 serious=_flag(d.get("serious")),
-                                suspended_until=d.get("suspendedUntil"))
+                                suspended_until=d.get("suspendedUntil"),
+                                special_job=_flag(d.get("specialJob")))
     return {
         "company": company.missing_for("decision", company_settings),
         "employee": ([] if _s(emp.get("name")) else
@@ -543,7 +595,8 @@ def notes(kind, decision):
     if _s(kind) != "termination":
         return []
     return termination_notes(d.get("ground"), d.get("contractType"), d.get("termMonths"),
-                             notice_date=d.get("noticeDate"), last_day=d.get("effectiveFrom"))
+                             notice_date=d.get("noticeDate"), last_day=d.get("effectiveFrom"),
+                             special_job=_flag(d.get("specialJob")))
 
 
 def can_issue(kind, company_settings, employee, decision):

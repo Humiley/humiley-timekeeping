@@ -19,6 +19,7 @@ def _clean():
     def wipe():
         conn = db.get_conn()
         conn.execute("DELETE FROM collections WHERE coll = 'incidents'")
+        conn.execute("DELETE FROM attendance")
         conn.commit()
         conn.close()
     wipe()
@@ -179,16 +180,69 @@ def test_it_counts_days_lost_and_open_investigations(api, tokens):
     assert r["daysLost"] == 15 and r["open"] == 2 and r["lateInvestigations"] == 2
 
 
-def test_the_frequency_rate_is_refused_unless_the_hours_are_real(api, tokens):
+def _worked(emp_id="HML-STF", date="2026-03-02", cin="08:00", cout="17:00"):
+    """One worked day in the attendance table — the denominator of the frequency rate."""
+    conn = db.get_conn()
+    conn.execute("INSERT INTO attendance (emp_id,name,dept,date,clock_in,clock_out,status) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (emp_id, "Staff One", "Engineering", date, cin, cout, "on-time"))
+    conn.commit()
+    conn.close()
+
+
+def test_with_no_attendance_at_all_the_rate_is_refused_and_says_why(api, tokens):
     """The one figure a client's safety audit compares across contractors."""
     _file(api, tokens)
     _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
-    if r["frequency"]["rate"] is None:
-        assert "guessed denominator" in r["frequency"]["why"]
-        assert "No attendance hours" in r["hoursBasis"]
-    else:
-        assert r["frequency"]["hours"] > 0
-        assert "from recorded attendance" in r["hoursBasis"]
+    assert r["frequency"]["rate"] is None
+    assert "guessed denominator" in r["frequency"]["why"]
+    assert "No attendance hours" in r["hoursBasis"]
+
+
+def test_recorded_attendance_actually_reaches_the_denominator(api, tokens):
+    """The test this replaces was an if/else that accepted either branch, so it never noticed that
+    the hours query was `list_attendance(frm, to)` — positional, against
+    (emp_id=None, start=None, end=None) — which bound a date to emp_id and matched nothing. The
+    register reported "no attendance hours recorded" against a table full of them, permanently."""
+    _file(api, tokens)
+    for d in ("2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"):
+        _worked(date=d)                      # 4 days × 9h = 36h
+    _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
+    assert r["frequency"]["hours"] == 36, r["frequency"]
+    assert r["frequency"]["rate"] is not None
+    assert "from recorded attendance" in r["hoursBasis"]
+
+
+def test_an_overnight_shift_counts_as_the_hours_worked_not_a_negative(api, tokens):
+    _file(api, tokens)
+    _worked(date="2026-03-02", cin="20:00", cout="04:00")     # 8h across midnight
+    _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
+    assert r["frequency"]["hours"] == 8
+
+
+def test_a_day_still_open_is_not_counted_as_hours_worked(api, tokens):
+    _file(api, tokens)
+    _worked(date="2026-03-02", cout=None)
+    _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
+    assert r["frequency"]["rate"] is None, "nobody has finished a shift, so there are no hours yet"
+
+
+def test_the_rate_covers_the_same_period_as_the_hours_in_it(api, tokens):
+    """The numerator counted every accident ever recorded; the denominator was one year's hours.
+    Two different periods in one ratio — and it would get worse every year the register is kept."""
+    _file(api, tokens, occurredOn="2019-05-05", notifiedOn="2019-05-05", daysLost=30)
+    _file(api, tokens, occurredOn="2026-03-10", notifiedOn="2026-03-10", daysLost=4)
+    for d in ("2026-03-02", "2026-03-03"):
+        _worked(date=d)                      # 18h in 2026
+    _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
+    assert r["total"] == 2, "the register still lists both"
+    assert r["frequency"]["lostTimeInjuries"] == 1, "but only 2026 belongs in a 2026 rate"
+    assert "2026-01-01 to 2026-12-31" in r["frequency"]["period"]
+    assert r["frequency"]["period"] in r["frequency"]["why"], "the rate states its own period"
+    # And the Vietnamese sentence uses a Vietnamese connector, not the English "to".
+    assert "từ 2026-01-01 đến 2026-12-31" == r["frequency"]["periodVn"]
+    assert r["frequency"]["periodVn"] in r["frequency"]["whyVn"]
+    assert " to " not in r["frequency"]["whyVn"]
 
 
 def test_a_nonsense_asOf_falls_back_to_today_rather_than_crashing(api, tokens):
@@ -200,3 +254,15 @@ def test_the_classes_come_from_the_server_so_the_form_cannot_invent_one(api, tok
     _, r = api("GET", "/api/hr/incidents", tokens["mgr"])
     assert [c["key"] for c in r["classes"]] == [o.MINOR, o.SERIOUS, o.FATAL]
     assert all(c["labelVn"] for c in r["classes"])
+
+
+def test_one_unparseable_row_does_not_wipe_out_the_whole_years_hours(api, tokens):
+    """The function used to wrap the whole loop in `except: return 0.0`. That is what let the two
+    query bugs above survive — it reported a confident "no attendance hours recorded", which reads
+    as a fact about the company rather than a fault in the code."""
+    _file(api, tokens)
+    _worked(date="2026-03-02")                          # 9h, good
+    _worked(date="2026-03-03", cin="oops", cout="??")   # junk
+    _worked(date="2026-03-04")                          # 9h, good
+    _, r = api("GET", "/api/hr/incidents?asOf=2026-08-07", tokens["mgr"])
+    assert r["frequency"]["hours"] == 18, "the two good days still count"

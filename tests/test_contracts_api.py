@@ -23,11 +23,18 @@ def _clean():
 
 
 def _add(api, tokens, emp_id, start, end=None, type_=None, **kw):
-    body = dict({"empId": emp_id, "startDate": start, "endDate": end,
-                 "type": type_ or ("indefinite" if end is None else "definite")}, **kw)
-    st, b = api("POST", "/api/coll/contracts", tokens["admin"], body)
-    assert st == 200, b
-    return b["item"]
+    """Seeds the register directly.
+
+    It used to POST /api/coll/contracts. That door is now shut — a labour contract is created only
+    through /api/hr/contract, which applies the Art. 20/21 checks — and these tests are about what
+    the REVIEW says about existing rows, not about how they were created. Going through the store
+    keeps them testing the register rather than the contract writer's blocker list.
+    """
+    rec = dict({"id": "hd-" + emp_id + "-" + str(start), "empId": emp_id,
+                "startDate": start, "endDate": end,
+                "type": type_ or ("indefinite" if end is None else "definite")}, **kw)
+    db.put_collection_item("contracts", rec)
+    return rec
 
 
 def _rows(b):

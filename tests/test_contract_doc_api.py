@@ -242,3 +242,38 @@ def test_management_can(api, tokens):
     _setup_employee()
     assert api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["management"])[0] == 200
     assert api("POST", "/api/hr/contract", tokens["management"], _terms())[0] == 200
+
+
+# ── the second door ──────────────────────────────────────────────────────────────────────────────
+
+def test_the_generic_collection_route_cannot_create_a_contract_with_no_particulars(api, tokens):
+    """Measured before it was fixed: this returned 200 and stored a labour contract with none of the
+    ten Art. 21 particulars and no Art. 20 term check. Every check in contract_doc.py was one URL
+    away from irrelevant — the same hole that decisions, letters, concerns and accidents had."""
+    code, b = api("POST", "/api/coll/contracts", tokens["management"],
+                  {"empId": "HML-STF", "type": "definite", "terms": {}})
+    assert code in (400, 403), b
+    assert "labour contract" in str(b.get("error", "")).lower()
+
+
+def test_what_was_agreed_cannot_be_edited_after_the_contract_is_issued(api, tokens):
+    """A change to the wage, the term or the job is an annex or a new contract, not an edit."""
+    _setup_company(api, tokens); _setup_employee()
+    code, made = api("POST", "/api/hr/contract", tokens["management"], _terms())
+    assert code == 200, made
+    cid = made["contract"]["id"]
+    code, b = api("PATCH", "/api/coll/contracts/" + cid, tokens["management"],
+                  dict(made["contract"], terms=dict(made["contract"]["terms"], wage=1)))
+    assert code == 400, b
+    assert "cannot be rewritten" in str(b.get("error", ""))
+
+
+def test_the_signed_scan_and_the_ending_can_still_be_attached(api, tokens):
+    _setup_company(api, tokens); _setup_employee()
+    code, made = api("POST", "/api/hr/contract", tokens["management"], _terms())
+    assert code == 200, made
+    rec = made["contract"]
+    code, b = api("PATCH", "/api/coll/contracts/" + rec["id"], tokens["management"],
+                  dict(rec, fileUrl="https://sp/contract.pdf", signedAt="2026-08-08",
+                       status="Signed"))
+    assert code == 200, b

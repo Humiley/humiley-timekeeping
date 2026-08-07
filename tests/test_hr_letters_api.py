@@ -5,6 +5,8 @@ that a decision the Labour Code forbids is refused at the server rather than by 
 a termination decision is sourced from the offboarding record instead of retyped, and that an
 employee can ask for a letter about themselves but cannot issue one — or ask about anybody else.
 """
+import json
+
 import pytest
 
 import company
@@ -343,3 +345,80 @@ def test_the_audit_line_records_the_value_that_was_actually_stored(api, tokens):
     assert b["changed"] == [], "the truncated value must compare equal on the next save"
     assert len([a for a in db.list_collection("audit")
                 if a.get("action") == "Company legal identity changed"]) == n
+
+
+# ── issuing a request updates it, rather than making a second one ────────────────────────────────
+
+def test_issuing_a_pending_request_empties_the_queue_instead_of_duplicating_it(api, tokens):
+    """It minted a fresh id on every call, so pressing Issue left the request pending for ever and
+    put an unlinked second record beside it. The register showed two letters where one was asked
+    for, and the pending count never went down."""
+    _co(api, tokens); _emp()
+    code, asked = api("POST", "/api/hr/letter", tokens["staff"],
+                      {"empId": "HML-STF", "purpose": "bank", "addressedTo": "Techcombank"})
+    assert code == 200, asked
+    rid = asked["letter"]["id"]
+    assert asked["letter"]["status"] == "Requested"
+
+    code, done = api("POST", "/api/hr/letter", tokens["management"],
+                     {"id": rid, "empId": "HML-STF", "purpose": "bank",
+                      "addressedTo": "Techcombank", "issue": True})
+    assert code == 200, done
+    assert done["letter"]["id"] == rid, "the same record, now issued"
+    assert done["letter"]["status"] == "Issued"
+
+    rows = [r for r in db.list_collection("hrletters") if r.get("empId") == "HML-STF"]
+    assert len(rows) == 1, rows
+    assert not [r for r in rows if r.get("status") == "Requested"]
+
+
+def test_who_asked_survives_who_issued(api, tokens):
+    _co(api, tokens); _emp()
+    _, asked = api("POST", "/api/hr/letter", tokens["staff"],
+                   {"empId": "HML-STF", "purpose": "bank", "addressedTo": "Techcombank"})
+    _, done = api("POST", "/api/hr/letter", tokens["management"],
+                  {"id": asked["letter"]["id"], "empId": "HML-STF", "purpose": "bank",
+                   "addressedTo": "Techcombank", "issue": True})
+    assert done["letter"]["requestedById"] == "HML-STF"
+    assert done["letter"]["issuedById"] == "HML-MGT"
+
+
+def test_the_same_letter_cannot_be_issued_twice(api, tokens):
+    _co(api, tokens); _emp()
+    _, asked = api("POST", "/api/hr/letter", tokens["staff"],
+                   {"empId": "HML-STF", "purpose": "bank", "addressedTo": "Techcombank"})
+    body = {"id": asked["letter"]["id"], "empId": "HML-STF", "purpose": "bank",
+            "addressedTo": "Techcombank", "issue": True}
+    assert api("POST", "/api/hr/letter", tokens["management"], body)[0] == 200
+    code, b = api("POST", "/api/hr/letter", tokens["management"], body)
+    assert code == 400 and "already been issued" in b["error"]
+
+
+# ── a reprint is the decision that was issued, not today's draft ─────────────────────────────────
+
+def test_a_reprint_is_the_decision_that_was_issued_not_a_fresh_draft(api, tokens):
+    """The reprint rebuilt the draft from today's employee record while carrying the SIGNED
+    document's number. For a disciplinary or termination decision that is the paper an inspector
+    compares against the employee's own copy."""
+    _co(api, tokens); _emp()
+    code, made = api("POST", "/api/hr/decision", tokens["management"],
+                     {"kind": "appointment", "empId": "HML-STF", "no": "12/2026/QD-HML",
+                      "subject": "Bổ nhiệm Trưởng phòng Kỹ thuật",
+                      "effectiveFrom": "2026-03-01", "reason": "Theo đề nghị của Ban Giám đốc"})
+    assert code == 200, made
+    did = made["decision"]["id"]
+
+    # The world moves on: the person is promoted again and their title changes.
+    db.update_employee("HML-STF", {"title": "Giám đốc Kỹ thuật"})
+
+    code, doc = api("GET", "/api/hr/decision/" + did + "/document", tokens["management"])
+    assert code == 200, doc
+    assert doc["reprint"] is True
+    assert doc["docNo"] == "12/2026/QD-HML"
+    body = json.dumps(doc, ensure_ascii=False)
+    assert "Bổ nhiệm Trưởng phòng Kỹ thuật" in body
+    assert "2026-03-01" in body
+
+
+def test_reprinting_something_that_was_never_issued_is_a_404(api, tokens):
+    assert api("GET", "/api/hr/decision/qd-nope/document", tokens["management"])[0] == 404

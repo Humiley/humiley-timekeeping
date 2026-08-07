@@ -6129,8 +6129,16 @@ function _probationCapFor(role) {
   const t = String(role || '').toLowerCase();
   if (/director|manager|head|chief|truong phong|giam doc/.test(t)) return _PROBATION_CAP_DAYS.manager;
   if (/engineer|officer|specialist|supervisor|accountant|ky su|chuyen vien/.test(t)) return _PROBATION_CAP_DAYS.degree;
-  if (/technician|operator|foreman|cong nhan|ky thuat vien/.test(t)) return _PROBATION_CAP_DAYS.technical;
-  return _PROBATION_CAP_DAYS.degree;   // safest default for an office hire: 60, never 90
+  if (/technician|operator|foreman|cong nhan ky thuat|ky thuat vien/.test(t)) return _PROBATION_CAP_DAYS.technical;
+  // Art. 25(4) — "any other work": SIX WORKING DAYS. This band was declared and never returned by
+  // any branch, so an unskilled hire — a labourer, a helper, a driver, a guard, all of which this
+  // company employs on site — was given a 60-day probation timetable where the law allows six days.
+  // Guessing HIGH is the unlawful direction; guessing low is merely cautious.
+  if (/labour|labor|helper|worker|driver|guard|cleaner|storekeeper|lao dong pho thong|phu viec|tai xe|bao ve|tap vu|thu kho|cong nhan/.test(t))
+    return _PROBATION_CAP_DAYS.other;
+  // Nothing matched. 60 is the office-hire default, never 90 — and it is only a TIMETABLE. The
+  // contract's legal check is contract_doc.probation_cap, which refuses to guess a band at all.
+  return _PROBATION_CAP_DAYS.degree;
 }
 function _probationMilestonesFor(role) {
   const cap = _probationCapFor(role);
@@ -11802,6 +11810,13 @@ async function tkRenderMySpaceOverview() {
     '<button class="btn btn-outline btn-sm" onclick="tkNewTravel()">' + _t('New Travel') + '</button>' +
     '<button class="btn btn-outline btn-sm" onclick="tkSubmitClaim()">' + _t('New Claim') + '</button>' +
     '<button class="btn btn-outline btn-sm" onclick="tkNewPayment()">' + _t('New Payment') + '</button>' +
+    // The speak-up channel's ONLY door used to be the first-run Getting-started checklist. Dismiss
+    // that card — or tick its six boxes — and the confidential channel the Code of Conduct promises
+    // was gone from the portal for good, along with the handler's own queue. It needs a permanent
+    // door, at every level: a channel you can only reach in your first week is not a channel.
+    '<button class="btn btn-outline btn-sm" onclick="tkSpeakUp()" title="' +
+      _crmEsc(_t('Confidential — it does not go to your manager')) + '">' +
+      _t('Raise a concern') + '</button>' +
     '</div></div>';
 
   const msico = {
@@ -11838,8 +11853,33 @@ async function tkRenderMySpaceOverview() {
   // Signature PIN — settable right here in the workspace (reuses the My Profile pin-status-body id
   // so tkPinSetup's after-save refresh updates this card too).
   const pinCard = '<div class="card" style="padding:16px 18px;margin-bottom:20px"><div class="card-title" style="margin-bottom:4px">' + _t2('Signature & Security', 'Chữ ký & Bảo mật') + '</div><div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + _t2('Set a personal signing PIN so you can e-sign your submissions and approvals quickly.', 'Đặt mã PIN ký cá nhân để bạn ký điện tử nhanh khi gửi và phê duyệt.') + '</div><div id="pin-status-body">' + _pinStatusInner() + '</div></div>';
-  root.innerHTML = intro + kpis + qa + pinCard +
+  root.innerHTML = intro + kpis + qa + '<div id="ms-speakup-queue"></div>' + pinCard +
     '<div style="font-size:14px;font-weight:800;color:var(--navy);margin:4px 0 12px">' + _t('My Tools') + '</div>' + cards;
+  // A designated speak-up handler's queue lived ONLY inside the Raise-a-concern modal, which in turn
+  // was reachable only from the dismissible first-run checklist. Somebody trusted to investigate
+  // concerns had no way to learn one had been routed to them. Painted after the fact so it never
+  // delays first paint, and silent for everybody who is not a handler.
+  try {
+    tkApi('/api/hr/speakup').then(d => {
+      const slot = document.getElementById('ms-speakup-queue');
+      const open_ = (d.concerns || []).filter(c => c.status !== 'Closed');
+      if (!slot || !d.isHandler || !open_.length) return;
+      const late = open_.filter(c => (c.due || {}).overdue).length;
+      slot.innerHTML = '<div class="card" style="padding:16px 18px;margin-bottom:20px;border-left:3px solid ' +
+        (late ? 'var(--danger)' : '#B7791F') + '">' +
+        '<div style="font-weight:800;color:var(--navy);font-size:13px">' +
+          _t2('Concerns routed to you', 'Phản ánh chuyển đến bạn') + ' — ' + open_.length +
+          (late ? ' <span style="color:var(--danger)">(' + late + ' ' + _t('overdue') + ')</span>' : '') +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--text-light);margin:4px 0 10px">' +
+          _t('You were designated to handle these. They are confidential and are not visible to the people they are about.') +
+        '</div>' +
+        '<button class="btn btn-primary btn-sm" onclick="tkSpeakUp()">' + _t('Open the queue') + '</button></div>';
+      if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') {
+        try { _viWalk(slot); } catch (e) {}
+      }
+    }).catch(() => {});
+  } catch (e) {}
   try { tkPinRefresh().then(() => { const b = document.getElementById('pin-status-body'); if (b) { b.innerHTML = _pinStatusInner(); if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') { try { _viWalk(b); } catch (e) {} } } }); } catch (e) {}
 }
 const _finPending = s => ['submit', 'review'].includes(_aprState(s));
@@ -19970,6 +20010,10 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Open the queue': 'Mở danh sách',
+  'You were designated to handle these. They are confidential and are not visible to the people they are about.':
+    'Bạn được chỉ định xử lý các phản ánh này. Nội dung được bảo mật và không hiển thị với người bị phản ánh.',
+  'notice is 120 days, not 45': 'thời hạn báo trước là 120 ngày, không phải 45 ngày',
   /* Occupational accidents (Law on OSH 2015 · Decree 39/2016). Keys already in this dict are
      deliberately not repeated — a later duplicate silently overrides the earlier one. */
   'A fatal accident, or a serious one injuring two or more people, must be declared to the labour inspectorate at once by the fastest means — not at the end of the week. This register works out which duty applies and when the investigation report is due.':
@@ -25635,7 +25679,16 @@ function _qdRenderDraft() {
       '</div>' +
       '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
       inp('noticeDate', 'Employee told on', 'Ngày báo trước', '', 'date') +
-      inp('effectiveFrom', 'Last working day', 'Ngày cuối cùng làm việc', seed.effectiveFrom, 'date') + '</div>';
+      inp('effectiveFrom', 'Last working day', 'Ngày cuối cùng làm việc', seed.effectiveFrom, 'date') + '</div>' +
+      // Decree 145/2020 Art. 7. Seeded from the Art. 25 probation band already on the contract —
+      // the same Law-on-Enterprises fact — but only as a default: the definition turns on the
+      // company charter, and it also covers aircrew and seagoing crew that no record here implies.
+      '<label style="display:block;font-size:12px;margin-bottom:6px">' +
+      '<input type="checkbox" id="qd-specialJob"' + (seed.specialJob ? ' checked' : '') + '> ' +
+      _crmEsc(_t2((d.specialJobs || {}).label || '', (d.specialJobs || {}).labelVn || '')) +
+      ' — ' + _t('notice is 120 days, not 45') + '</label>' +
+      '<div style="font-size:11px;color:var(--text-light);margin:-2px 0 10px">' +
+      _crmEsc(_t2((d.specialJobs || {}).help || '', (d.specialJobs || {}).helpVn || '')) + '</div>';
   } else if (kind === 'discipline') {
     extra =
       '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
@@ -25679,6 +25732,7 @@ function _qdBody() {
     ground: g('ground'), employerGround: g('employerGround'), noticeDate: g('noticeDate'),
     contractType: seed.contractType || '', termMonths: seed.termMonths,
     measure: g('measure'), violationDate: g('violationDate'),
+    specialJob: !!(document.getElementById('qd-specialJob') || {}).checked,
     serious: g('serious'), suspendedUntil: g('suspendedUntil'),
     deferMonths: g('deferMonths') ? Number(g('deferMonths')) : null,
     exitId: seed.exitId || ''
@@ -25704,12 +25758,13 @@ async function _qdIssue() {
 }
 
 async function _qdReprint(id) {
-  const rec = ((_qdList || {}).dec || []).find(x => x.id === id); if (!rec) return;
+  // Reprint what was RECORDED. This used to fetch /api/hr/decision/draft and override only the
+  // document number — and a draft is rebuilt from TODAY's employee record and today's offboarding
+  // row, so the reprint of a decision issued months ago could carry the signed document's number
+  // over a different job title, ground and effective date. The server now re-assembles it from the
+  // stored detail, which is the decision.
   try {
-    const d = await tkApi('/api/hr/decision/draft?kind=' + encodeURIComponent(rec.kind) +
-                          '&emp=' + encodeURIComponent(rec.empId));
-    // Reprint what was RECORDED, not a fresh draft: the stored detail is the decision.
-    const doc = Object.assign({}, d, { docNo: rec.no || rec.id });
+    const doc = await tkApi('/api/hr/decision/' + encodeURIComponent(id) + '/document');
     await _qdPdf(doc, true);
   } catch (e) { toast(_errMsg(e), 'error'); }
 }
@@ -25874,8 +25929,10 @@ async function _xnSubmit(issue) {
 async function _xnIssue(id) {
   const rec = ((_qdList || {}).lets || []).find(x => x.id === id); if (!rec) return;
   try {
+    // `id` is what turns this into an UPDATE of the pending request. Without it the server minted
+    // a fresh record, so the request stayed in the queue for ever with a duplicate beside it.
     const res = await tkApi('/api/hr/letter', { method: 'POST', body: {
-      empId: rec.empId, purpose: rec.purpose, addressedTo: rec.addressedTo,
+      id: rec.id, empId: rec.empId, purpose: rec.purpose, addressedTo: rec.addressedTo,
       leaveApproved: rec.leaveApproved, issue: true, no: rec.no } });
     toast(_t2('Letter issued', 'Đã cấp giấy xác nhận'), 'success');
     if (res.document) await _xnPdf(res.document, true);

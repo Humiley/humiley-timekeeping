@@ -166,6 +166,20 @@ def term_check(terms):
                    % terms.get("contractType"))
     prob = terms.get("probationDays")
     band = terms.get("probationBand")
+    # Art. 24(3): NO probation at all on a contract of under one month. The term and the probation
+    # were validated as two independent facts and never related to each other, so a two-week
+    # contract with a 60-day probation passed both checks — the probation outlasting the contract
+    # it was attached to.
+    if prob and kind == contracts.DEFINITE and start and end:
+        try:
+            short = datespan.whole_months(start.isoformat(), end.isoformat()) < 1
+        except Exception:
+            short = (end - start).days < 30
+        if short:
+            out.append("Art. 24(3) does not allow a probation period at all on a contract of under "
+                       "one month. This one runs %s to %s. Remove the probation, or make the "
+                       "contract longer." % (start.isoformat(), end.isoformat()))
+            prob = None
     if prob:
         cap = probation_cap(band)
         if not cap:

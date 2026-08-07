@@ -3788,6 +3788,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._speakup_list_ep(u, qs))
         if path == "/api/hr/speakup/track":
             return self._guard(lambda u: self._speakup_track_ep(u, qs))
+        if path.startswith("/api/hr/decision/") and path.endswith("/document"):
+            _did = path[len("/api/hr/decision/"):-len("/document")]
+            return self._guard(lambda uu: self._decision_reprint_ep(uu, urllib.parse.unquote(_did)),
+                               manager=True)
         if path == "/api/hr/decision/draft":
             return self._guard(lambda u: self._decision_draft_ep(u, qs))
         if path == "/api/hr/letter/draft":
@@ -6330,7 +6334,13 @@ class Handler(BaseHTTPRequestHandler):
                    # An accident record decides, from its class and the number hurt, whether the
                    # inspectorate must be rung TODAY and when the report is due. Created here it
                    # would have neither, and the register would report neither.
-                   "incidents": ("an accident record", "/api/hr/incidents")}
+                   "incidents": ("an accident record", "/api/hr/incidents"),
+                   # Measured, not assumed: POST /api/coll/contracts with {"empId": …,
+                   # "type": "definite", "terms": {}} returned 200 and stored a labour contract
+                   # with NONE of the ten Art. 21 particulars and no Art. 20 term check. This
+                   # register was the FIRST to get a checking endpoint and the last to have its
+                   # back door shut.
+                   "contracts": ("a labour contract", "/api/hr/contract")}
     # Collections the GENERIC /api/coll route must never serve, at ANY level. A speak-up concern
     # is readable only through /api/hr/speakup, which applies grievance.may_read — and being an
     # administrator is deliberately not a way in. Listing the collection would hand every concern
@@ -6344,7 +6354,13 @@ class Handler(BaseHTTPRequestHandler):
                        # what was done about it — is added as it becomes known.
                        "incidents": {"declaredOn", "reportPublishedOn", "daysLost", "extended",
                                      "outcome", "rootCause", "correctiveAction",
-                                     "file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"}}
+                                     "file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
+                       # What was AGREED is fixed once signed — a change to the wage, the term or
+                       # the job is an annex or a new contract, not an edit. What may still be
+                       # attached afterwards is the signed scan, the e-signature and the ending.
+                       "contracts": {"file", "fileUrl", "fileName", "spUrl", "note", "signedAt",
+                                     "signedBy", "signedById", "sig", "sigHash", "status",
+                                     "endedOn", "endReason", "_rev", "id"}}
     INVTRACK_MIN = "editor"
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
@@ -8289,14 +8305,39 @@ class Handler(BaseHTTPRequestHandler):
         Taken from attendance rather than from headcount × 8 × days: the rate is the one figure a
         client compares across contractors, and a denominator nobody measured would be compared
         against denominators somebody did.
+
+        Two things this got wrong, both of which returned 0.0 and blamed it on missing data:
+          · KEYWORDS, not positions. list_attendance is (emp_id=None, start=None, end=None), so
+            list_attendance(frm, to) bound a date string to emp_id and matched nothing, forever.
+          · The column is `hrs`, and it holds a DISPLAY string ("8h 30m"), not a number. There is no
+            `hours` column. Read the clock instead — clock_in/clock_out is the stored fact, and
+            db._hrs_between formats the same span for display.
+
+        The span from clock-in to clock-out already contains any overtime actually worked, so
+        ot_hours is deliberately not added on top of it.
+
+        There is deliberately NO blanket `except: return 0.0` around this. That is what let the two
+        bugs above go unnoticed for as long as they did: it turned any failure into a confident
+        "no attendance hours recorded", which reads like a fact about the company rather than a
+        fault in the query. A single unparseable row is skipped; anything worse is allowed to fail
+        loudly.
         """
-        try:
-            total = 0.0
-            for a in db.list_attendance(frm, to):
-                total += float(a.get("hours") or 0)
-            return total
-        except Exception:
-            return 0.0
+        total_min = 0
+        for a in db.list_attendance(start=frm, end=to):
+            cin, cout = a.get("clock_in"), a.get("clock_out")
+            if not cin or not cout:
+                continue              # still on shift, or never clocked out — not hours worked yet
+            try:
+                ih, im = map(int, str(cin).split(":"))
+                oh, om = map(int, str(cout).split(":"))
+            except (ValueError, AttributeError):
+                continue              # one malformed row, not a reason to report zero for the year
+            mins = (oh * 60 + om) - (ih * 60 + im)
+            if mins < 0:
+                mins += 1440          # overnight shift, same convention as db._hrs_between
+            if 0 < mins <= 1440:
+                total_min += mins
+        return total_min / 60.0
 
     def _incidents_ep(self, u, qs):
         """The accident register: what must be declared today, what is late, and the year's figures."""
@@ -8305,8 +8346,11 @@ class Handler(BaseHTTPRequestHandler):
             as_of = self._vn_day()
         year = as_of[:4]
         rows = db.list_collection("incidents")
-        hours = self._incident_hours(year + "-01-01", year + "-12-31")
-        r = osh_incident.review(rows, as_of, hours_worked=hours)
+        y_from, y_to = year + "-01-01", year + "-12-31"
+        hours = self._incident_hours(y_from, y_to)
+        # The rate window matches the hours window. The register itself still lists everything.
+        r = osh_incident.review(rows, as_of, hours_worked=hours,
+                                rate_from=y_from, rate_to=y_to)
         r.update({"ok": True, "classes": [dict(c) for c in osh_incident.CLASSES],
                   "hoursBasis": ("Hours worked in %s, from recorded attendance." % year)
                                 if hours else
@@ -8595,6 +8639,11 @@ class Handler(BaseHTTPRequestHandler):
                 [c for c in db.list_collection("contracts") if c.get("empId") == eid],
                 self._vn_day()) or {}
             seed["contractType"] = cur.get("type") or ""
+            # Decree 145/2020 Art. 7 needs to know whether this person is an enterprise manager.
+            # The contract already records that as the Art. 25 probation band, which is the same
+            # Law-on-Enterprises fact — seeded here as a default the drafter can correct, never as
+            # a conclusion, because the definition turns on the company charter.
+            seed["specialJob"] = str(((cur.get("terms") or {}).get("probationBand") or "")) == "manager"
             seed["termMonths"] = (datespan.whole_months(cur.get("startDate"), cur.get("endDate"))
                                   if cur.get("startDate") and cur.get("endDate") else None)
         doc = hr_decision.assemble(kind, settings, emp, seed, as_of=self._vn_day())
@@ -8605,7 +8654,31 @@ class Handler(BaseHTTPRequestHandler):
             "measures": [dict(m) for m in hr_decision.MEASURES],
             "forbidden": dict(hr_decision.FORBIDDEN_MEASURES),
             "kinds": [dict(v, kind=k) for k, v in sorted(hr_decision.DECISIONS.items())],
+            "specialJobs": dict(hr_decision.SPECIAL_JOBS),
         })
+        return self._json(doc)
+
+    def _decision_reprint_ep(self, u, did):
+        """The decision AS ISSUED, re-assembled from what was stored — never a fresh draft.
+
+        _qdReprint used to call /api/hr/decision/draft and override only the document number. A
+        draft is rebuilt from today's employee record and today's offboarding row, so the reprint of
+        a decision issued months ago could state a different job title, a different ground and a
+        different effective date from the paper that was signed — while carrying the signed
+        document's number. For a disciplinary or termination decision that is the document an
+        inspector compares against the employee's copy.
+        """
+        rec = db.get_collection_item("decisions", did)
+        if not rec:
+            return self._err("No such decision.", 404)
+        emp = db.get_employee(str(rec.get("empId") or "")) or {}
+        detail = dict(rec.get("detail") or {})
+        doc = hr_decision.assemble(rec.get("kind"), self._company_settings(), emp, detail,
+                                   as_of=detail.get("issuedOn") or str(rec.get("issuedAt") or "")[:10],
+                                   doc_no=rec.get("no") or rec.get("id"))
+        doc.update({"ok": True, "reprint": True, "kind": rec.get("kind"),
+                    "empId": rec.get("empId"), "issuedAt": rec.get("issuedAt"),
+                    "issuedBy": rec.get("issuedBy")})
         return self._json(doc)
 
     def _decision_create_ep(self, u, body):
@@ -8629,7 +8702,7 @@ class Handler(BaseHTTPRequestHandler):
         d = {k: b.get(k) for k in (
             "subject", "subjectVn", "effectiveFrom", "reason", "ground", "employerGround",
             "contractType", "termMonths", "noticeDate", "measure", "violationDate", "serious",
-            "suspendedUntil", "deferMonths", "exitId")}
+            "suspendedUntil", "deferMonths", "exitId", "specialJob")}
         d.setdefault("issuedOn", self._vn_day())
         blockers = hr_decision.blockers(kind, settings, emp, d)
         if any(blockers.values()):
@@ -8716,17 +8789,29 @@ class Handler(BaseHTTPRequestHandler):
         if blockers["terms"] or blockers["employee"] or (issue and blockers["company"]):
             return self._json({"error": "This letter cannot be produced yet.",
                                "blockers": blockers}, 400)
-        rec = {
-            "id": "xn-" + secrets.token_hex(4),
+        # Issuing an EXISTING request updates that request. This minted a fresh id every time, so
+        # pressing Issue on a pending request left the request sitting in the queue for ever and put
+        # a second, unlinked record beside it — the register showed two letters where one was asked
+        # for, and the queue never emptied.
+        prior = db.get_collection_item("hrletters", str(b.get("id") or "")) if b.get("id") else None
+        if prior and str(prior.get("status") or "") == "Issued":
+            return self._err("That letter has already been issued. Request a new one instead.", 400)
+        if prior and not issue:
+            return self._err("That request already exists.", 400)
+        rec = dict(prior or {})
+        rec.update({
+            "id": (prior or {}).get("id") or ("xn-" + secrets.token_hex(4)),
             "empId": eid, "empName": emp.get("name") or "",
             "purpose": req["purpose"], "addressedTo": req["addressedTo"],
             "leaveApproved": req["leaveApproved"],
             "disclosesSalary": employment_letter.discloses_salary(req["purpose"]),
-            "no": str(b.get("no") or "").strip(),
+            "no": str(b.get("no") or "").strip() or (prior or {}).get("no") or "",
             "status": "Issued" if issue else "Requested",
-            "requestedBy": u.get("name") or "", "requestedById": u.get("id") or "",
-            "requestedAt": self._utc_now(),
-        }
+        })
+        # Who ASKED is a fact about the request and is never overwritten by whoever issues it.
+        if not prior:
+            rec.update({"requestedBy": u.get("name") or "", "requestedById": u.get("id") or "",
+                        "requestedAt": self._utc_now()})
         if issue:
             rec.update({"issuedBy": u.get("name") or "", "issuedById": u.get("id") or "",
                         "issuedAt": self._utc_now()})
