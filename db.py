@@ -297,7 +297,11 @@ def init_db():
     except sqlite3.OperationalError:
         pass
     # Overtime request/approval on an attendance record: OT only counts once a manager approves it.
-    for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT"):
+    # Attendance amendment trail. Attendance now feeds payroll (approved overtime reaches the
+    # payslip), so a retroactive edit moves money — and until these existed there was no edit path at
+    # all, while check-out told employees to "ask HR to correct your attendance record".
+    for col in ("ot_status TEXT", "ot_hours REAL", "ot_reason TEXT",
+                "amended_by TEXT", "amended_at TEXT", "amend_reason TEXT", "amend_count INTEGER"):
         try:
             conn.execute("ALTER TABLE attendance ADD COLUMN " + col)
         except sqlite3.OperationalError:
@@ -1090,6 +1094,37 @@ def list_ot_approved(start, end, emp_id=None):
         sql += " AND emp_id = ?"
         params.append(emp_id)
     return _rows(sql + " ORDER BY date, emp_id", params)
+
+
+def amend_attendance(att_id, fields, actor="", actor_id="", reason=""):
+    """Correct an attendance record, and record that it was corrected.
+
+    Only the times and the overtime figure may be changed — never the date or the employee. Moving a
+    shift to another day would move it between months and therefore between pay runs; changing whose
+    it is would be a new record, not a correction.
+
+    Returns the row as it stood BEFORE, so the caller can write the before/after into the audit chain.
+    """
+    before = _row("SELECT * FROM attendance WHERE id = ?", (att_id,))
+    if not before:
+        return None
+    sets, args = [], []
+    for k in ("clock_in", "clock_out", "status", "ot_hours", "ot_reason", "ot_status", "hrs"):
+        if k in fields:
+            sets.append("%s = ?" % k)
+            args.append(fields[k])
+    if not sets:
+        return before
+    sets += ["amended_by = ?", "amended_at = ?", "amend_reason = ?",
+             "amend_count = COALESCE(amend_count, 0) + 1"]
+    args += [actor or "", now_iso(), (reason or "")[:500], att_id]
+    conn = get_conn()
+    try:
+        conn.execute("UPDATE attendance SET " + ", ".join(sets) + " WHERE id = ?", args)
+        conn.commit()
+    finally:
+        conn.close()
+    return before
 
 
 def decide_attendance_ot(att_id, decision):

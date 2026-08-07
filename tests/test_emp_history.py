@@ -35,6 +35,10 @@ def _clean_history():
 
 def test_what_were_we_paying_him_in_march(api, tokens):
     """The headline. Three raises, and the portal must give the right answer for each date."""
+    # A baseline none of the three amounts below, set directly so it writes no event: otherwise a
+    # test in another file that happens to leave the salary at 20,000,000 turns the first PATCH into
+    # a no-op, no event is recorded, and this fails for a reason unrelated to what it is testing.
+    db.update_employee("HML-STF", {"salary": 1_000_000})
     for eff, amount in (("2026-01-01", 20_000_000), ("2026-04-01", 24_000_000), ("2026-07-01", 30_000_000)):
         api("PATCH", "/api/employees/HML-STF", tokens["admin"],
             {"salary": amount, "_effective": eff, "_reason": "annual review"})

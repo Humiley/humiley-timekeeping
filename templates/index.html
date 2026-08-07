@@ -2172,7 +2172,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Department</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
           <tbody id="inout-report-tbody"></tbody>
         </table>
       </div>
@@ -20506,6 +20506,19 @@ const _VI = {
   'No contract on file': 'Chưa có hợp đồng', 'Lapsed — now indefinite by law': 'Đã quá hạn — nay là HĐ không xác định thời hạn theo luật',
   'Expired — 30-day window': 'Đã hết hạn — còn trong 30 ngày', 'No end date': 'Chưa có ngày kết thúc',
   'Expiring': 'Sắp hết hạn', 'Active': 'Đang hiệu lực', 'Indefinite-term': 'Không xác định thời hạn',
+  // ── Correcting an attendance record ──
+  'Correct': 'Sửa', 'corrected': 'đã sửa', 'Correct attendance': 'Sửa chấm công',
+  'Check-in': 'Giờ vào', 'Check-out': 'Giờ ra', 'Overtime hours': 'Số giờ tăng ca',
+  'Overtime on this record is already approved. Changing the times or the hours sends it back for a decision — the approval described the shift as it was.':
+    'Tăng ca của bản ghi này đã được duyệt. Việc thay đổi giờ hoặc số giờ sẽ đưa nó trở lại chờ duyệt — phê duyệt trước đó áp dụng cho ca làm việc như cũ.',
+  'Reason for the correction': 'Lý do sửa',
+  'e.g. forgot to check out; site sign-out sheet shows 18:30': 'ví dụ: quên chấm công ra; sổ ký ra tại công trình ghi 18:30',
+  'The before and after, your name and this reason go into the audit trail. Attendance feeds payroll, so a correction here can change what somebody is paid.':
+    'Giá trị trước và sau, tên bạn và lý do này sẽ được ghi vào nhật ký kiểm toán. Chấm công là căn cứ tính lương, nên việc sửa ở đây có thể làm thay đổi số tiền nhân viên được nhận.',
+  'Save correction': 'Lưu chỉnh sửa',
+  'Give a reason for the correction — it goes on the record': 'Vui lòng nhập lý do sửa — lý do này sẽ được lưu vào hồ sơ',
+  'Nothing was changed': 'Không có thay đổi nào', 'Attendance corrected': 'Đã sửa chấm công',
+  'overtime sent back for approval': 'tăng ca được gửi lại để duyệt',
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
@@ -22924,6 +22937,55 @@ function _renderRptAttendance() {
   }
 }
 
+/* Correct an attendance record — the facility check-out has been telling employees to ask HR for.
+
+   Attendance is no longer only a timesheet: approved overtime reaches the payslip, so an edit here
+   moves money. The dialog says so, requires a reason, and warns that changing the times sends the
+   overtime back for a decision — because the manager approved a particular stretch of work, and
+   moving it means they have not approved what is now there. */
+async function tkAmendAttendance(attId) {
+  const rec = (_DEMO_ATTENDANCE || []).find(r => r.id === attId) || {};
+  document.getElementById('attAmendOverlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'attAmendOverlay'; el.className = 'modal-overlay open';
+  el.style.display = 'flex'; el.style.zIndex = '2000';
+  const otApproved = (rec.ot_status || '') === 'approved';
+  el.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="amend-t" style="max-width:520px">' +
+    '<div class="modal-header"><div class="modal-title" id="amend-t">' + _t('Correct attendance') + ' — ' + _crmEsc(rec.name || '') + ' · ' + _crmEsc(rec.date || '') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'attAmendOverlay\').remove()">&times;</button></div>' +
+    '<div class="modal-body">' +
+    '<div class="grid-2">' +
+    '<div class="form-group"><label class="form-label" for="amend-in">' + _t('Check-in') + '</label><input type="time" class="form-control" id="amend-in" value="' + _crmEsc(rec.in || rec.clock_in || '') + '"></div>' +
+    '<div class="form-group"><label class="form-label" for="amend-out">' + _t('Check-out') + '</label><input type="time" class="form-control" id="amend-out" value="' + _crmEsc((rec.out === '—' ? '' : rec.out) || rec.clock_out || '') + '"></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label" for="amend-ot">' + _t('Overtime hours') + '</label><input type="number" step="0.5" min="0" max="16" class="form-control" id="amend-ot" value="' + (+rec.ot_hours || 0) + '"></div>' +
+    (otApproved ? '<div style="background:#FFF4E5;border:1px solid #F0B429;border-radius:8px;padding:9px 11px;margin-bottom:12px;font-size:12px;color:#7A4B00">' +
+      _t('Overtime on this record is already approved. Changing the times or the hours sends it back for a decision — the approval described the shift as it was.') + '</div>' : '') +
+    '<div class="form-group"><label class="form-label" for="amend-reason">' + _t('Reason for the correction') + '</label>' +
+    '<textarea class="form-control" id="amend-reason" rows="2" placeholder="' + _t('e.g. forgot to check out; site sign-out sheet shows 18:30') + '"></textarea>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('The before and after, your name and this reason go into the audit trail. Attendance feeds payroll, so a correction here can change what somebody is paid.') + '</div></div>' +
+    '</div><div class="modal-footer">' +
+    '<button class="btn btn-ghost" onclick="document.getElementById(\'attAmendOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-primary" onclick="tkAmendAttendanceSave(' + attId + ')">' + _t('Save correction') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const t = document.getElementById('amend-reason'); if (t) t.focus(); }, 50);
+}
+async function tkAmendAttendanceSave(attId) {
+  const g = id => (document.getElementById(id) || {}).value;
+  const reason = (g('amend-reason') || '').trim();
+  if (reason.length < 4) { toast(_t('Give a reason for the correction — it goes on the record'), 'warn'); return; }
+  const body = { reason: reason, clock_in: g('amend-in') || '', clock_out: g('amend-out') || '',
+                 ot_hours: +g('amend-ot') || 0 };
+  try {
+    const r = await tkApi('/api/attendance/' + attId + '/amend', { method: 'POST', body: body });
+    document.getElementById('attAmendOverlay')?.remove();
+    toast(r && r.unchanged ? _t('Nothing was changed') :
+      (_t('Attendance corrected') + (r && r.otReopened ? ' · ' + _t('overtime sent back for approval') : '')),
+      'success', 5000);
+    try { await tkBootstrap(); } catch (e) {}
+    renderInOutReport();
+  } catch (e) { toast(_errMsg(e), 'error', 7000); }
+}
 /* Manager approves / rejects a pending overtime request (request #2). Only approved OT counts.
 
    Approving is also the moment the hours are measured against Labour Code Art. 107 — half a normal
@@ -23029,12 +23091,13 @@ function renderInOutReport() {
       <td><span class="badge b-info" style="font-size:10px">${_crmEsc(r.loc||'HQ')}</span></td>
       <td><span class="badge ${bcls}" style="font-size:10px">${stat}</span></td>
       <td>${otCell}</td>
+      <td style="white-space:nowrap">${(canOt && r.id) ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="tkAmendAttendance(' + r.id + ')">' + _t('Correct') + '</button>' : ''}${r.amend_count ? '<div style="font-size:9.5px;color:#B7791F" title="' + _crmEsc((r.amend_reason || '') + ' — ' + (r.amended_by || '')) + '">' + _t('corrected') + ' ×' + r.amend_count + '</div>' : ''}</td>
     </tr>`;
   }).join('');
   if (!window._ioShowAll && rows.length > IO_CAP) {   // reveal the rest without re-filtering
-    tbody.innerHTML += '<tr><td colspan="8" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td colspan="9" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
   }
-  if (!rows.length) tbody.innerHTML = tkEmptyRow(8, 'No records match your filters.', { icon: 'search' });
+  if (!rows.length) tbody.innerHTML = tkEmptyRow(9, 'No records match your filters.', { icon: 'search' });
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;

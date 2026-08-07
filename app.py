@@ -3766,6 +3766,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._checkin(u, body))
         if path == "/api/attendance/checkout":
             return self._guard(lambda u: self._checkout(u, body))
+        if path.startswith("/api/attendance/") and path.endswith("/amend"):
+            _aid = path[len("/api/attendance/"):-len("/amend")]
+            return self._guard(lambda u: self._attendance_amend(u, _aid, body), manager=True)
         if path.startswith("/api/attendance/") and path.endswith("/ot"):
             aid = path[len("/api/attendance/"):-len("/ot")]
             return self._guard(lambda u: self._attendance_ot(u, aid, body), manager=True)
@@ -5081,6 +5084,116 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "hrs": hrs, "id": rec["id"],
                            "otStatus": ("pending" if ot_hours else "none")})
+
+    _AMEND_FIELDS = ("clock_in", "clock_out", "ot_hours", "ot_reason", "status")
+
+    def _attendance_amend(self, u, aid, body):
+        """Correct an attendance record — and say who corrected it, when, and why.
+
+        Until now there was no way to correct one at all, while check-out told an employee whose
+        check-out was missed to "ask HR to correct your attendance record". HR had no such facility,
+        so the record simply stayed wrong.
+
+        Attendance is no longer only a timesheet: approved overtime reaches the payslip, so editing
+        one of these rows moves money. Three rules follow from that.
+
+          1. A month that a Director has e-signed is CLOSED. Its attendance cannot be amended,
+             because the figures built on it are signed and an amendment would change their basis
+             with nothing to show for it.
+          2. Changing the times or the hours REOPENS the overtime decision. The manager approved a
+             particular stretch of work; move it and they have not approved what is now there.
+          3. Every amendment carries a reason and lands in the tamper-evident audit chain with the
+             before and after. A correction nobody can see is indistinguishable from a falsification.
+        """
+        rec = db.get_attendance(int(aid)) if str(aid).isdigit() else None
+        if not rec:
+            return self._err("Attendance record not found.", 404)
+        # Their own manager, or Management and above. Not the employee: correcting your own
+        # attendance is not a correction, and the hours are now worth money.
+        emp = db.get_employee(rec.get("emp_id")) if rec.get("emp_id") else None
+        is_direct_mgr = emp and (emp.get("managerEmail") or "").lower() == (u.get("email") or "").lower()
+        if not (is_direct_mgr or self._is_mgmt(u)):
+            return self._err("Only the employee's direct manager (or Management) can correct an "
+                             "attendance record.", 403)
+        # Correcting your OWN record is not forbidden — at this size the Managing Director is the top
+        # of the chain, and a rule nobody can satisfy would mean their record could never be fixed at
+        # all. It is NAMED instead: the audit row says so, which is the accountability that actually
+        # bites when somebody reads the trail later.
+        self_correction = rec.get("emp_id") == u.get("id")
+
+        reason = str(body.get("reason") or "").strip()
+        if len(reason) < 4:
+            return self._err("Give a reason for the correction — it goes on the record.", 400)
+
+        _month = str(rec.get("date") or "")[:7]
+        if _month and self._payperiod_finalised(self._period_label(_month)):
+            return self._err("%s payroll has been finalised and signed, so its attendance can no "
+                             "longer be corrected. Raise a payroll adjustment for the next month "
+                             "instead." % self._period_label(_month), 403)
+
+        changes, fields = [], {}
+        for k in self._AMEND_FIELDS:
+            if k not in body:
+                continue
+            v = body[k]
+            if k in ("clock_in", "clock_out"):
+                v = str(v or "").strip()
+                if v and not self._RE_TIME.match(v):
+                    return self._err("%s must be a time like 08:30." % k.replace("_", "-"), 400)
+            elif k == "ot_hours":
+                try:
+                    v = float(v or 0)
+                except (TypeError, ValueError):
+                    return self._err("Overtime hours must be a number.", 400)
+                if not (0 <= v <= 16):
+                    return self._err("Overtime hours must be between 0 and 16.", 400)
+            else:
+                v = str(v or "")[:60]
+            if str(rec.get(k) if rec.get(k) is not None else "") != str(v):
+                changes.append("%s %s → %s" % (k, rec.get(k) if rec.get(k) not in (None, "") else "—",
+                                               v if v not in (None, "") else "—"))
+                fields[k] = v
+        if not fields:
+            return self._json({"ok": True, "unchanged": True, "id": rec.get("id")})
+
+        # Recompute the worked span from whatever the times now are, so `hrs` can never disagree
+        # with the clock it is derived from.
+        _in = fields.get("clock_in", rec.get("clock_in"))
+        _out = fields.get("clock_out", rec.get("clock_out"))
+        if _in and _out:
+            fields["hrs"] = db._hrs_between(_in, _out, overnight=(_out < _in))
+
+        # Rule 2: the times or the hours moved, so the overtime decision no longer describes what
+        # happened. Send it back for a decision rather than carrying an approval across the change.
+        reopened = False
+        if any(k in fields for k in ("clock_in", "clock_out", "ot_hours")) \
+                and str(rec.get("ot_status") or "") == "approved":
+            _h = fields.get("ot_hours", rec.get("ot_hours"))
+            fields["ot_status"] = "pending" if float(_h or 0) > 0 else ""
+            reopened = True
+
+        db.amend_attendance(int(aid), fields, actor=u.get("name") or "", actor_id=u.get("id") or "",
+                            reason=reason)
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "Attendance corrected",
+            "target": "attendance/" + str(aid),
+            "detail": "%s %s · %s · reason: %s%s"
+                      % (rec.get("name") or rec.get("emp_id") or "", rec.get("date") or "",
+                         "; ".join(changes), reason[:300],
+                         (" · overtime approval reopened" if reopened else "")
+                         + (" · SELF-CORRECTION (own record)" if self_correction else "")),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "id": rec.get("id"), "otReopened": reopened,
+                           "record": db.get_attendance(int(aid))})
+
+    def _period_label(self, ym):
+        """'2026-08' → 'August 2026', the form pay runs are stored under."""
+        try:
+            y, m = str(ym)[:7].split("-")
+            return "%s %s" % (self._PAY_MONTHS[int(m) - 1], y)
+        except (ValueError, IndexError, TypeError):
+            return ""
 
     def _attendance_ot(self, u, aid, body):
         """Manager approves / rejects a pending overtime request (request #2). Only approved OT
