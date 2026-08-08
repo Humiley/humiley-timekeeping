@@ -235,3 +235,68 @@ def test_checkout_time_cannot_be_in_the_future(api, tokens, monkeypatch):
     st, r = api("POST", "/api/attendance/checkout", tokens["editor"], {"time": "21:00"})
     assert st == 400, "a future check-out time must be rejected"
     assert "future" in (r.get("error") or "").lower()
+
+
+# ── a forgotten check-out must never become an ordinary-looking day ──────────────────────────────
+
+def _open_row(emp_id, date, cin):
+    """One open row and no other. Through db.clock_in — the production path, and it does not fight
+    the server thread for the SQLite write lock the way a second raw connection does.
+
+    The rows are cleared first because a REFUSED check-out leaves its row open, and
+    open_attendance_any would then close a leftover from the previous test instead of this one.
+    """
+    conn = db.get_conn()
+    conn.execute("DELETE FROM attendance WHERE emp_id = ?", (emp_id,))
+    conn.commit()
+    conn.close()
+    return db.clock_in(emp_id, date, cin)
+
+
+def test_a_forgotten_checkout_closed_the_next_AFTERNOON_is_refused(api, tokens, monkeypatch):
+    """The guard wrapped +1440 only on a NEGATIVE subtraction, so it fired only when the check-out
+    time-of-day was EARLIER than the check-in. Closing yesterday's 08:00 row at 17:00 today
+    subtracted to +540 and was stored as a nine-hour day nobody worked — with no amendment flag and
+    no overnight marker, indistinguishable from a measured day in the register a client audits."""
+    _freeze_company_clock(monkeypatch)                     # company clock = 2026-07-18 09:05
+    _open_row("HML-MGT", "2026-07-17", "08:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "09:00"})
+    assert st == 400, b
+    assert "missed check-out" in b["error"]
+
+
+def test_and_closed_the_next_MORNING_is_refused_too(api, tokens, monkeypatch):
+    """The mirror error: it stored twenty minutes and erased the whole day."""
+    _freeze_company_clock(monkeypatch)
+    _open_row("HML-MGT", "2026-07-17", "08:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "08:20"})
+    assert st == 400, b
+
+
+def test_a_genuine_night_shift_still_closes(api, tokens, monkeypatch):
+    """20:00 -> 04:00 is eight hours and must go through — the guard must not punish shift work."""
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 4, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+    _open_row("HML-MGT", "2026-07-17", "20:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "04:00"})
+    assert st == 200, b
+    assert b["hrs"] == "8h 00m"
+
+
+def test_the_overtime_ceiling_is_computed_from_the_true_span_not_the_subtraction(api, tokens, monkeypatch):
+    """The OT plausibility guard divides by the same span, so a fabricated one licensed a
+    fabricated overtime request alongside it."""
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt(2026, 7, 18, 4, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+    _open_row("HML-MGT", "2026-07-17", "20:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"],
+                {"time": "04:00", "otHours": 9})
+    assert st == 400 and "cannot exceed" in b["error"], "8h worked cannot carry 9h of overtime"

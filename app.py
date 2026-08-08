@@ -5228,18 +5228,30 @@ class Handler(BaseHTTPRequestHandler):
         overnight = rec["date"] != self._vn_day()
         if not overnight and rec.get("clock_in") and t < rec["clock_in"]:
             return self._err("Check-out time is before today's check-in.")
-        # Worked span in minutes (the overnight case wraps +24h, matching db._hrs_between).
+        # Worked span in minutes.
+        #
+        # For an OVERNIGHT row the clock has gone all the way round once, so the true span is always
+        # raw + 1440 — whatever the sign. The wrap used to be applied only when the subtraction came
+        # out NEGATIVE, which is right for a same-day punch and wrong for every overnight one where
+        # the check-out time-of-day is LATER than the check-in. That is the common forgotten
+        # check-out: you notice the next afternoon. An 08:00 row closed at 17:00 the next day
+        # subtracted to +540 and was stored as a nine-hour Monday that nobody worked; closed at 08:20
+        # it stored twenty minutes and erased the day. Both were written with no amendment flag and
+        # no overnight marker, so neither is distinguishable from a measured day in the register a
+        # client auditor reads.
+        #
+        # With the wrap always applied, a genuine night shift (20:00 -> 04:00) is 480 minutes and a
+        # forgotten one is >= 1440, so the single 16-hour guard below catches every case.
         try:
             ih, im = map(int, (rec.get("clock_in") or "0:0").split(":"))
             oh, om = map(int, t.split(":"))
             span_min = (oh * 60 + om) - (ih * 60 + im)
-            if span_min < 0:
+            if overnight or span_min < 0:
                 span_min += 1440
         except (ValueError, AttributeError):
             span_min = 0
-        # Guard against a FORGOTTEN check-out from an earlier day: with the overnight +24h wrap, that
-        # would otherwise be recorded as a ~19-23h shift (a genuine night shift is <16h). Reject it so
-        # HR can correct the record, instead of storing a fabricated overnight.
+        # Guard against a FORGOTTEN check-out from an earlier day: a genuine night shift is under 16
+        # hours. Reject it so the record can be corrected, rather than storing a fabricated day.
         if overnight and span_min > 16 * 60:
             return self._err("This looks like a missed check-out from an earlier day (the shift would "
                              "exceed 16 hours). Please ask HR to correct your attendance record.", 400)

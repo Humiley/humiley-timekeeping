@@ -3246,6 +3246,39 @@ function _tkIsMine(r) { const uid = TK.user && TK.user.id; return (r.emp_id && u
 /* my open session: today's, or yesterday's for overnight/OT shifts checking out after 00:00 */
 function _tkMyOpenRow() { const t = _today(), y = _tkYesterday(); return (_DEMO_ATTENDANCE || []).find(r => _tkIsMine(r) && !(r.out || r.clock_out) && (r.date === t || r.date === y)); }
 
+/* Is this open row past saving? The server refuses a check-out whose true span exceeds 16 hours
+   (app.py _checkout), because closing it would stamp a day nobody worked onto the register. This
+   is the same test, so the screen never offers a button the server will refuse — and never hides
+   Check In for a row that can no longer be closed. */
+const _TK_MAX_SHIFT_MIN = 16 * 60;
+function _tkStaleOpenRow(row) {
+  if (!row) return null;
+  const cin = row.in || row.clock_in;
+  if (!cin) return null;
+  if (row.date === _today()) return null;                 // today's row is always live
+  const p = cin.split(':').map(Number);
+  const now = new Date();
+  // The row is from yesterday: the clock has gone round once.
+  const mins = 1440 - (p[0] * 60 + p[1]) + (now.getHours() * 60 + now.getMinutes());
+  return mins > _TK_MAX_SHIFT_MIN ? row : null;
+}
+
+/* Say so, on the screen, in the language they read — and leave Check In available. A missing
+   check-out is HR's to correct (the amendment path), not something a worker can invent. */
+function _tkShowStaleNotice(row) {
+  const box = document.getElementById('checkin-msg');
+  if (!box) return;
+  if (!row) { if (box.dataset.stale === '1') { box.style.display = 'none'; box.dataset.stale = ''; } return; }
+  box.dataset.stale = '1';
+  box.style.display = 'block';
+  box.style.background = '#FEF3C7'; box.style.borderColor = '#F59E0B'; box.style.color = '#92400E';
+  // The date is interpolated, so the sentence around it must be a FIXED key — _t() on a string
+  // with a date in it can never match _VI and silently falls back to English.
+  box.innerHTML = '<strong>' + _crmEsc(_t2('Your check-out is missing for', 'Thiếu giờ chấm công ra ngày')) +
+    ' ' + _crmEsc(row.date || '') + '.</strong> ' +
+    _crmEsc(_t('It is too late to close it here — the hours would be a guess. Ask your manager to correct that day. You can still check in today as normal.'));
+}
+
 function _tkLateThreshold(schedule) {
   const sch = String(schedule || (TK.user && TK.user.schedule) || '');
   if (!sch) return '08:15';
@@ -3532,9 +3565,15 @@ function tkRenderCheckin() {
   // an open check-in = today has a check-in time and no check-out yet → we are checked in and
   // Check Out must ALWAYS be available (never locked by schedule/time — for outside jobs).
   const openRow = _tkMyOpenRow();               // today's open session, or yesterday's overnight one
-  const _cinToday = openRow && (openRow.in || openRow.clock_in);
-  const _openToday = !!openRow;
+  // A row from YESTERDAY is a live night shift only while it is still a plausible one. Past 16
+  // hours the server refuses to close it (it would fabricate the day), so treating it as "checked
+  // in" left the worker with Check Out refused AND Check In hidden — locked out of their own
+  // timekeeping until somebody in HR noticed. The client uses the server's rule so the two agree.
+  const _stale = _tkStaleOpenRow(openRow);
+  const _cinToday = !_stale && openRow && (openRow.in || openRow.clock_in);
+  const _openToday = !!openRow && !_stale;
   _checkedIn = _openToday;
+  _tkShowStaleNotice(_stale);
   (function () {
     const bo = document.getElementById('btn-checkout');
     if (bo) {
@@ -20033,6 +20072,9 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Timekeeping — a forgotten check-out. */
+  'It is too late to close it here — the hours would be a guess. Ask your manager to correct that day. You can still check in today as normal.':
+    'Không thể đóng ca ở đây nữa — số giờ sẽ chỉ là phỏng đoán. Hãy đề nghị quản lý điều chỉnh ngày đó. Bạn vẫn chấm công vào bình thường hôm nay.',
   /* Client social-compliance audit pack. */
   'The nine sections a customer\'s labour-compliance audit asks for, from the registers that hold them. A section with nothing behind it says so — it is not evidence that there is nothing to report.':
     'Chín mục mà cuộc đánh giá tuân thủ lao động của khách hàng yêu cầu, lấy từ chính các sổ đăng ký đang lưu. Mục không có dữ liệu sẽ ghi rõ như vậy — đó không phải bằng chứng rằng không có gì để báo cáo.',

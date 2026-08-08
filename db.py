@@ -1045,11 +1045,21 @@ def open_attendance(emp_id, date):
 
 
 def _hrs_between(cin, cout, overnight=False):
+    """Worked minutes as a display string.
+
+    When `overnight`, the clock has gone round once, so the wrap applies WHATEVER the sign — the
+    same correction as app.py's _checkout. Wrapping only on a negative made 08:00 -> 17:00 the next
+    day read as "9h 00m" instead of the 33 hours it really was, which is how a forgotten check-out
+    became an ordinary-looking day. The endpoint refuses anything over 16h, so a value that reaches
+    here is a real shift.
+    """
     try:
         ih, im = map(int, cin.split(":")); oh, om = map(int, cout.split(":"))
         mins = (oh * 60 + om) - (ih * 60 + im)
-        if overnight and mins < 0:
-            mins += 1440          # 18:00 → 00:30 next day = 6h30, not -18h30
+        if overnight:
+            # 18:00 → 00:30 next day = 6h30, not -18h30. One wrap is the most this can ever need:
+            # both times are within a single day, so the result is at most 1439 + 1440 minutes.
+            mins += 1440
         if mins < 0:
             return ""             # same-day out<in is rejected upstream; never store negatives
         return "%dh %02dm" % (mins // 60, mins % 60)
