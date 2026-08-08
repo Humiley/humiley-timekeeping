@@ -1,0 +1,24 @@
+# Automated dependency (SCA) monitoring. Opens PRs when a dependency has a newer / security-fixed
+# version. The portal app itself is pure Python stdlib (no runtime deps); this watches the dev
+# tooling (pytest), the GitHub Actions we pin, and the Capacitor mobile shell's npm tree.
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "security"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "ci"]
+
+  - package-ecosystem: "npm"
+    directory: "/mobile"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "mobile"]

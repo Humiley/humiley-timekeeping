@@ -1,6 +1,10 @@
 # Database (runtime data — do not commit)
 *.db
 timekeeping.db
+# WAL sidecars. journal_mode=WAL leaves these next to the database; they hold committed pages that
+# have not been checkpointed yet, so they are live data — and *.db above does not match them.
+*.db-wal
+*.db-shm
 
 # Deploy secrets / per-server config
 .env
@@ -21,3 +25,20 @@ venv/
 
 # Local preview/launch config (machine-specific)
 .claude/
+
+# Capacitor / iOS + Android native build artifacts (generated on the build machine)
+mobile/node_modules/
+mobile/ios/
+mobile/android/
+mobile/package-lock.json
+humiley-procurement/
+
+# Generated brand deliverables + local reference copies (regenerable outputs, not app source —
+# keep them on disk but out of the public repo).
+deliverables/
+HUMILEY-PROCUREMENT-SPEC.md
+static/brand/1.png
+static/brand/2.png
+static/brand/3.png
+static/brand/4.png
+static/brand/5.png

@@ -1,0 +1,42 @@
+name: CI
+
+# Runs the backend regression suite on every push + PR. The app is pure Python stdlib
+# (no runtime deps); the only dev dependency is pytest (requirements-dev.txt).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Backend tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Syntax gate (compile every module)
+        run: python -m py_compile app.py db.py
+
+      - name: Run tests
+        env:
+          # deterministic env for the server-in-thread harness (never a real pepper)
+          TK_ESIGN_PEPPER: ci-test-pepper-0123456789
+        run: python -m pytest -q
