@@ -5128,6 +5128,29 @@ class Handler(BaseHTTPRequestHandler):
         return (datetime.utcnow() + timedelta(hours=7, days=offset_days)).strftime("%Y-%m-%d")
 
     _PUNCH_SKEW_MIN = 10   # tolerate a device clock a little ahead of the company clock
+    # The longest span this company will record as one shift. A genuine night shift is well under
+    # it; anything longer is a forgotten check-out or a mistyped correction, and storing it puts a
+    # day nobody worked into the register a client audits. ONE constant, used by check-out AND by
+    # the amendment path — they had different rules, so the correction tool could create exactly the
+    # impossible shift check-out refuses, while the refusal message told the employee to ask HR.
+    _MAX_SHIFT_MIN = 16 * 60
+
+    @staticmethod
+    def _shift_minutes(cin, cout, overnight):
+        """Worked minutes, wrapping once when the shift crosses midnight. None if unparseable.
+
+        The wrap applies whenever `overnight` — see db._hrs_between. Applying it only on a negative
+        subtraction is what let a forgotten check-out read as a short day.
+        """
+        try:
+            ih, im = map(int, str(cin).split(":"))
+            oh, om = map(int, str(cout).split(":"))
+        except (TypeError, ValueError, AttributeError):
+            return None
+        mins = (oh * 60 + om) - (ih * 60 + im)
+        if overnight or mins < 0:
+            mins += 1440
+        return mins
 
     @staticmethod
     def _vn_now():
@@ -5242,19 +5265,41 @@ class Handler(BaseHTTPRequestHandler):
         #
         # With the wrap always applied, a genuine night shift (20:00 -> 04:00) is 480 minutes and a
         # forgotten one is >= 1440, so the single 16-hour guard below catches every case.
-        try:
-            ih, im = map(int, (rec.get("clock_in") or "0:0").split(":"))
-            oh, om = map(int, t.split(":"))
-            span_min = (oh * 60 + om) - (ih * 60 + im)
-            if overnight or span_min < 0:
-                span_min += 1440
-        except (ValueError, AttributeError):
-            span_min = 0
-        # Guard against a FORGOTTEN check-out from an earlier day: a genuine night shift is under 16
-        # hours. Reject it so the record can be corrected, rather than storing a fabricated day.
-        if overnight and span_min > 16 * 60:
-            return self._err("This looks like a missed check-out from an earlier day (the shift would "
-                             "exceed 16 hours). Please ask HR to correct your attendance record.", 400)
+        span_min = self._shift_minutes(rec.get("clock_in") or "0:0", t, overnight) or 0
+        # The ceiling applies to a SAME-DAY shift too. The future-punch guard bounds a punch from
+        # above but nothing bounded it from below: an authenticated POST of {"time":"00:05"} at
+        # 17:00 company time was backdated, accepted, classified "on-time" and closed as a 16h55m
+        # day — no device tampering, just the API.
+        if span_min > self._MAX_SHIFT_MIN:
+            return self._err(
+                ("This looks like a missed check-out from %s — the shift would be %.1f hours. "
+                 "Closing it here would record hours nobody measured. Please ask your manager to "
+                 "correct that day; you can still check in today as normal."
+                 % (rec.get("date") or "an earlier day", span_min / 60.0)) if overnight else
+                ("A shift of %.1f hours cannot be right — check the check-in time on the record. "
+                 "Ask your manager to correct it rather than closing it here."
+                 % (span_min / 60.0)), 400)
+        # Art. 146 ordinary HOURS, not just overtime. A minor's ceiling is 4 hours a day under 15
+        # and 8 from 15 to under 18, and it binds the working day itself — the overtime refusal
+        # added at the approval path only covers hours somebody asked to be paid extra for.
+        # minors.daily_hours_ok existed and nothing called it, so the ceiling was never applied to
+        # a worked day at all.
+        #
+        # This RECORDS rather than refuses. The hours were worked; refusing to close the day would
+        # move them off the books, which is the opposite of what Art. 146 is for. The breach is
+        # named in the audit chain and surfaces in the young-worker register.
+        _emp_rec = db.get_employee(u.get("id")) or {}
+        _mh = minors.daily_hours_ok(_emp_rec.get("dob"), rec.get("date") or self._vn_day(),
+                                    span_min / 60.0)
+        if not _mh["ok"] and _mh.get("cap"):
+            db.put_collection_item("audit", {
+                "actor": u.get("name"), "actorId": u.get("id"),
+                "action": "Young worker over the Art. 146 daily limit",
+                "target": "attendance/" + str(rec["id"]),
+                "detail": "%s · %.1fh worked against a %dh ceiling. %s"
+                          % (rec.get("date"), span_min / 60.0, _mh["cap"], _mh["basis"]),
+                "ts": self._utc_now()})
+
         # Optional overtime REQUEST at checkout — pending manager approval; only approved OT counts.
         try:
             ot_hours = float(body.get("otHours") or 0)
@@ -5350,8 +5395,27 @@ class Handler(BaseHTTPRequestHandler):
         # with the clock it is derived from.
         _in = fields.get("clock_in", rec.get("clock_in"))
         _out = fields.get("clock_out", rec.get("clock_out"))
+
+        # The SAME two guards check-out enforces. This path had neither, so the tool HR is told to
+        # use ("please ask HR to correct your attendance record") could write the very record
+        # check-out had just refused — a post-dated punch, or a 23-hour day from swapping the times.
+        for _k, _label in (("clock_in", "check-in"), ("clock_out", "check-out")):
+            if _k in fields and fields[_k] and self._is_future_punch(rec.get("date"), fields[_k]):
+                return self._err("That %s time is in the future. A record can be corrected to what "
+                                 "actually happened, never to something that has not happened yet."
+                                 % _label, 400)
         if _in and _out:
-            fields["hrs"] = db._hrs_between(_in, _out, overnight=(_out < _in))
+            # `overnight` is INFERRED here, because the row does not record which day the check-out
+            # fell on. Inferring it from out < in is the only signal available — and it is exactly
+            # why the ceiling matters: swapping 08:00/17:00 to 08:00/07:00 reads as a 23-hour night.
+            _ovn = _out < _in
+            _mins = self._shift_minutes(_in, _out, _ovn)
+            if _mins is not None and _mins > self._MAX_SHIFT_MIN:
+                return self._err("%s to %s is %.1f hours. This company does not record a shift "
+                                 "longer than %d hours — check the times, and if somebody really "
+                                 "worked through, record it as two days."
+                                 % (_in, _out, _mins / 60.0, self._MAX_SHIFT_MIN // 60), 400)
+            fields["hrs"] = db._hrs_between(_in, _out, overnight=_ovn)
 
         # Overtime can never exceed the hours somebody was actually checked in for. Check-out enforces
         # this; the amend path did not, and the gap was not cosmetic: `ot_window` takes the overtime as
@@ -8068,8 +8132,25 @@ class Handler(BaseHTTPRequestHandler):
                     _wd += 1
                 _c += timedelta(days=1)
             _, month_h, year_h = self._ot_totals_for(e.get("id"), period + "-01")
-            worst_day = max(s["byDate"].values()) if s["byDate"] else 0.0
-            caps = overtime.cap_check(worst_day, month_h, year_h, annual_cap=cap_y)
+            # Each day against ITS OWN ceiling. `max(byDate.values())` threw away WHICH day the
+            # worst one was, and cap_check then defaulted to day_kind="normal" — a 4-hour cap. So
+            # eight lawful hours of Sunday shutdown work, which the approval path correctly allows
+            # under Decree 145/2020 Art. 60's 12-hour rule, came back here as a statutory breach and
+            # was printed into the audit pack that goes TO THE CLIENT. The approval path already
+            # passes day_kind; this one did not, and the two halves disagreed about the same day.
+            worst_day, day_breach = 0.0, None
+            for _d, _h in (s["byDate"] or {}).items():
+                _dk = overtime.day_kind(_d, hols, rest)
+                _c = overtime.cap_check(_h, 0, 0, annual_cap=cap_y, day_kind=_dk)
+                _over = [b for b in _c["breaches"] if b["cap"] == "day"]
+                if _h > worst_day:
+                    worst_day = _h
+                if _over and (day_breach is None or _over[0]["value"] > day_breach["value"]):
+                    day_breach = dict(_over[0], date=_d, dayKind=_dk)
+            # The month and year ceilings are not day-typed, so they are asked once.
+            caps = overtime.cap_check(0, month_h, year_h, annual_cap=cap_y)
+            if day_breach:
+                caps = {"ok": False, "breaches": [day_breach] + caps["breaches"]}
             out.append({"empId": e.get("id"), "name": e.get("name") or "", "dept": e.get("dept") or "",
                         "hours": round(s["hours"], 2), "nightHours": round(s["nightHours"], 2),
                         "units": round(s["pay"], 6), "taxableUnits": round(s["taxable"], 6),

@@ -217,3 +217,76 @@ def test_the_refusal_is_readable_in_vietnamese(api, tokens):
     _, b = api("POST", "/api/attendance/%d/ot" % aid, tokens["management"],
                {"decision": "approve"})
     assert b["errorVn"] and any(ord(c) > 127 for c in b["errorVn"])
+
+
+# ── the Art. 146 ceiling on ORDINARY hours, not just overtime ────────────────────────────────────
+
+def _freeze(monkeypatch, when="2026-08-03 17:00"):
+    """The checkout endpoint finds the open row by the COMPANY's today/yesterday, so the clock has
+    to agree with the date under test."""
+    import app as _app
+    from datetime import datetime as _dt, timedelta as _td
+    fixed = _dt.strptime(when, "%Y-%m-%d %H:%M")
+    monkeypatch.setattr(_app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(_app.Handler, "_vn_day",
+                        staticmethod(lambda offset_days=0:
+                                     (fixed + _td(days=offset_days)).strftime("%Y-%m-%d")))
+
+
+def _breaches():
+    return [a for a in db.list_collection("audit")
+            if "Art. 146 daily limit" in str(a.get("action") or "")]
+
+
+def _clear_att():
+    conn = db.get_conn(); conn.execute("DELETE FROM attendance"); conn.commit(); conn.close()
+
+
+def test_a_minor_worked_over_the_daily_ceiling_is_recorded_as_a_breach(api, tokens, monkeypatch):
+    """minors.daily_hours_ok existed and NOTHING called it — the overtime refusal only covers hours
+    somebody asked to be paid extra for, so a ten-hour ordinary day for a 16-year-old passed
+    unremarked. It RECORDS rather than refuses: the hours were worked, and refusing to close the day
+    would move them off the books, which is the opposite of what Art. 146 is for."""
+    _freeze(monkeypatch)
+    db.update_employee("HML-MGT", {"dob": _age(16)})
+    _clear_att()
+    before = len(_breaches())
+    db.clock_in("HML-MGT", "2026-08-03", "06:00")
+    code, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "16:00"})
+    assert code == 200, b                       # the day is still recorded
+    after = _breaches()
+    assert len(after) == before + 1, "the breach is named in the audit chain"
+    assert "8h ceiling" in after[-1]["detail"]
+    assert "146" in after[-1]["detail"]
+
+
+def test_an_adult_working_the_same_day_raises_nothing(api, tokens, monkeypatch):
+    _freeze(monkeypatch)
+    db.update_employee("HML-MGT", {"dob": _age(35)})
+    _clear_att()
+    before = len(_breaches())
+    db.clock_in("HML-MGT", "2026-08-03", "06:00")
+    assert api("POST", "/api/attendance/checkout", tokens["management"], {"time": "16:00"})[0] == 200
+    assert len(_breaches()) == before
+
+
+def test_a_minor_inside_the_ceiling_raises_nothing(api, tokens, monkeypatch):
+    _freeze(monkeypatch, "2026-08-03 16:30")
+    db.update_employee("HML-MGT", {"dob": _age(16)})
+    _clear_att()
+    before = len(_breaches())
+    db.clock_in("HML-MGT", "2026-08-03", "08:00")
+    assert api("POST", "/api/attendance/checkout", tokens["management"], {"time": "16:00"})[0] == 200
+    assert len(_breaches()) == before, "eight hours is exactly the ceiling for a 15-to-18-year-old"
+
+
+def test_an_unknown_date_of_birth_raises_nothing_rather_than_guessing(api, tokens, monkeypatch):
+    """It cannot be a breach of a ceiling nobody can establish. The gap is the young-worker
+    register's finding, not the attendance log's."""
+    _freeze(monkeypatch)
+    db.update_employee("HML-MGT", {"dob": ""})
+    _clear_att()
+    before = len(_breaches())
+    db.clock_in("HML-MGT", "2026-08-03", "06:00")
+    assert api("POST", "/api/attendance/checkout", tokens["management"], {"time": "16:00"})[0] == 200
+    assert len(_breaches()) == before

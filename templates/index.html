@@ -1676,7 +1676,7 @@ window.addEventListener('orientationchange', _setLoginBg);
             </select>
             <button onclick="tkVerifySelectedZone(true)" style="display:inline-flex;align-items:center;gap:6px;padding:11px 14px;border-radius:8px;border:1.5px solid var(--navy);background:var(--card);color:var(--navy);font-weight:600;font-family:inherit;cursor:pointer;white-space:nowrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Re-check</button>
           </div>
-          <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll confirm you're there before allowing check-in.</div>
+          <div id="ci-verify-status" style="font-size:13px;color:var(--text-light);margin-top:12px;padding:11px 13px;background:var(--soft-bg);border-radius:8px">Select your location above — we'll check your GPS and record it with your punch. It never blocks your check-in.</div>
         </div>
         <div id="ci-project-panel" style="border:1.5px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:16px">
           <label style="font-size:12px;font-weight:700;color:var(--text-dark);display:block;margin-bottom:7px">Which job are you on today? <span style="font-weight:400;color:var(--text-light)">(optional)</span></label>
@@ -3300,8 +3300,14 @@ function _tkSetCheckinAllowed(state) {
   _tkGpsState = state;
   const btn = document.getElementById('btn-checkin');
   if (!btn) return;
-  const allow = (state === 'in' || state === 'unverified') && !_checkedIn && _tkSelectedZone;
-  if (allow) { btn.style.display = 'flex'; btn.disabled = false; btn.style.opacity = state === 'unverified' ? '.93' : '1'; }
+  // GPS is ADVISORY. Being outside a registered zone — or at a client site nobody has added to the
+  // zone register yet — used to hide the Check In button entirely, and a GOOD fix made it worse
+  // than a poor one, because a coarse fix fell through to 'unverified' and was allowed. Humiley's
+  // fitters work inside pharma cleanrooms and on sites that are new that morning; a worker who
+  // cannot clock in does not go home, they work unrecorded, and unrecorded hours are the
+  // employer's legal exposure, not theirs. The punch is taken and the record says where they were.
+  const allow = !_checkedIn && _tkSelectedZone;
+  if (allow) { btn.style.display = 'flex'; btn.disabled = false; btn.style.opacity = state === 'in' ? '1' : '.93'; }
   else { btn.style.display = 'none'; btn.disabled = true; }
 }
 
@@ -3311,7 +3317,7 @@ function tkSelectZone() {
   const idx = sel ? sel.value : '';
   if (idx === '') {
     _tkSelectedZone = null; _tkInsideSelected = false; _tkSetCheckinAllowed(false);
-    if (status) status.textContent = "Select your location above — we'll confirm you're there before allowing check-in.";
+    if (status) status.textContent = _t("Select your location above — we'll check your GPS and record it with your punch. It never blocks your check-in.");
     return;
   }
   _tkSelectedZone = _DEMO_ZONES[parseInt(idx)];
@@ -3414,14 +3420,20 @@ async function tkCheckIn() {
   if (_tkCheckinBusy) return;   // in-flight guard: a stray button re-enable must never double-submit (issue #17)
   if (_checkedIn) { if (typeof toast === 'function') toast(_t2('You are already checked in', 'Bạn đã chấm công vào rồi'), 'warn'); return; }
   if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Please select your location first', 'Vui lòng chọn địa điểm trước'), 'warn'); return; }
-  if (_tkGpsState === 'out') { if (typeof toast === 'function') toast('You are not at ' + _tkSelectedZone.name + ' — check-in not allowed here', 'error'); return; }
+  // Not a refusal — a label. The record carries where they actually were, and the manager sees it.
+  if (_tkGpsState === 'out' && typeof toast === 'function') {
+    toast(_t2('Recorded as away from ', 'Ghi nhận là ở ngoài ') + _tkSelectedZone.name, 'warn', 5000);
+  }
   _tkCheckinBusy = true;
   try {
   const now = new Date(), t = now.toTimeString().slice(0, 5);
   const btn = document.getElementById('btn-checkin'); if (btn) btn.disabled = true;
   /* TRUTHFUL check-in: save first, then show success — no more "Checked in" toasts for a
      check-in that silently never reached the server on a flaky mobile connection. */
-  const locLabel = _tkSelectedZone.name + (_tkGpsState === 'in' ? '' : ' (GPS unverified)');
+  // Three different facts, three different labels. "unverified" used to cover both "GPS could not
+  // tell us" and "GPS says you are somewhere else", which are not the same thing to a manager.
+  const locLabel = _tkSelectedZone.name + (
+    _tkGpsState === 'in' ? '' : _tkGpsState === 'out' ? ' (away from site)' : ' (GPS unverified)');
   const _proj = (document.getElementById('ci-project') || {}).value || '';
   const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
   if (!saved || saved.__biz) {
@@ -20072,6 +20084,9 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Your check-out is missing for': 'Thiếu giờ chấm công ra ngày',
+  "Select your location above — we'll check your GPS and record it with your punch. It never blocks your check-in.":
+    'Chọn địa điểm ở trên — hệ thống sẽ kiểm tra GPS và ghi kèm lần chấm công. Việc này không bao giờ chặn bạn chấm công vào.',
   /* Timekeeping — a forgotten check-out. */
   'It is too late to close it here — the hours would be a guess. Ask your manager to correct that day. You can still check in today as normal.':
     'Không thể đóng ca ở đây nữa — số giờ sẽ chỉ là phỏng đoán. Hãy đề nghị quản lý điều chỉnh ngày đó. Bạn vẫn chấm công vào bình thường hôm nay.',

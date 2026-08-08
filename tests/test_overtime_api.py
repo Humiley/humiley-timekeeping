@@ -257,3 +257,40 @@ def test_the_three_hundred_hour_election_is_a_recorded_decision():
     db.set_setting("portal_otAnnualCap", "300")
     assert app._ot_annual_cap() == 300
     db.set_setting("portal_otAnnualCap", "")
+
+
+# ── the summary must agree with the approval path about what a lawful day is ─────────────────────
+
+def test_lawful_sunday_shutdown_work_is_not_reported_as_a_statutory_breach(api, tokens):
+    """The approval path passes day_kind, so 8h of Sunday work is correctly allowed under Decree
+    145/2020 Art. 60. The SUMMARY did not — it took max(byDate) and let cap_check default to a
+    normal day's 4-hour ceiling — so the same lawful hours came back as a breach and were printed
+    into the audit pack that goes to the client."""
+    db.update_employee("HML-STF", {"schedule": "", "managerEmail": "mgr@humiley.com"})
+    _att("HML-STF", "2026-08-02", "08:00", "16:00", 8)                 # 2026-08-02 is a Sunday
+    _, r = api("GET", "/api/hr/overtime?period=2026-08", tokens["admin"])
+    row = [x for x in r["rows"] if x["empId"] == "HML-STF"]
+    assert row, r
+    day = [b for b in row[0]["breaches"] if b["cap"] == "day"]
+    assert not day, "a rest day is capped at 12 total hours, not 4 of overtime: %s" % day
+
+
+def test_the_same_eight_hours_on_a_weekday_IS_a_breach(api, tokens):
+    """…and the guard must not simply stop reporting. Monday still caps at 4."""
+    db.update_employee("HML-STF", {"schedule": "", "managerEmail": "mgr@humiley.com"})
+    _att("HML-STF", "2026-08-03", "08:00", "16:00", 8)         # Monday
+    _, r = api("GET", "/api/hr/overtime?period=2026-08", tokens["admin"])
+    row = [x for x in r["rows"] if x["empId"] == "HML-STF"][0]
+    day = [b for b in row["breaches"] if b["cap"] == "day"]
+    assert day, "eight hours of overtime on a working day exceeds Art. 107"
+    assert day[0]["date"] == "2026-08-03", "and it names WHICH day"
+
+
+def test_the_breach_names_the_day_and_its_kind(api, tokens):
+    db.update_employee("HML-STF", {"schedule": "", "managerEmail": "mgr@humiley.com"})
+    _att("HML-STF", "2026-08-03", "08:00", "16:00", 8)
+    _, r = api("GET", "/api/hr/overtime?period=2026-08", tokens["admin"])
+    b = [x for x in [y for y in r["rows"] if y["empId"] == "HML-STF"][0]["breaches"]
+         if x["cap"] == "day"][0]
+    assert b["dayKind"] == "normal"
+    assert "Art. 107" in b["message"]

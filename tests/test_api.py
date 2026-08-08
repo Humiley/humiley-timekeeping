@@ -300,3 +300,30 @@ def test_the_overtime_ceiling_is_computed_from_the_true_span_not_the_subtraction
     st, b = api("POST", "/api/attendance/checkout", tokens["management"],
                 {"time": "04:00", "otHours": 9})
     assert st == 400 and "cannot exceed" in b["error"], "8h worked cannot carry 9h of overtime"
+
+
+def test_a_same_day_shift_over_sixteen_hours_is_refused_too(api, tokens, monkeypatch):
+    """The future-punch guard bounded a punch from ABOVE and nothing bounded it from below. An
+    authenticated POST of {"time":"00:05"} at 17:00 company time was backdated, accepted, classified
+    on-time and closed as a 16h55m day — no device tampering needed, just the API."""
+    _freeze_company_clock(monkeypatch)                     # company clock = 2026-07-18 09:05
+    st, b = api("POST", "/api/attendance/checkin", tokens["management"], {"time": "00:05"})
+    assert st == 200, b                                    # backdating a punch stays allowed
+    from datetime import datetime as _dt, timedelta as _td
+    later = _dt(2026, 7, 18, 21, 0)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: later))
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "21:00"})
+    assert st == 400, b
+    assert "cannot be right" in b["error"]
+
+
+def test_an_ordinary_long_day_still_closes(api, tokens, monkeypatch):
+    """The ceiling must not punish a genuine long day — 06:00 to 20:00 is fourteen hours."""
+    from datetime import datetime as _dt
+    fixed = _dt(2026, 7, 18, 20, 30)
+    monkeypatch.setattr(app.Handler, "_vn_now", staticmethod(lambda: fixed))
+    monkeypatch.setattr(app.Handler, "_vn_day", staticmethod(lambda offset_days=0: "2026-07-18"))
+    _open_row("HML-MGT", "2026-07-18", "06:00")
+    st, b = api("POST", "/api/attendance/checkout", tokens["management"], {"time": "20:00"})
+    assert st == 200, b
+    assert b["hrs"] == "14h 00m"

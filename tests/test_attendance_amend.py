@@ -229,3 +229,45 @@ def test_the_storage_layer_refuses_to_move_a_shift_even_if_asked_directly(api, t
     rec = db.get_attendance(aid)
     assert rec["date"] == "2026-08-03" and rec["emp_id"] == "HML-STF"
     assert rec["clock_out"] == "18:00", "the fields that ARE allowed still land"
+
+
+# ── the correction tool must not write what check-out just refused ───────────────────────────────
+
+def test_a_correction_cannot_post_date_a_punch(api, tokens):
+    """Check-out refuses a future time because it fabricates hours. The amend path had no such
+    guard at all — and the refusal message tells the employee to ask HR, so the one tool offered as
+    the remedy could write exactly the record that was refused."""
+    aid = _att(date="2026-08-03", cin="08:00", cout="17:00")
+    st, b = _amend(api, tokens["mgr"], aid, clock_out="23:59", reason="Gate log shows a late finish")
+    # 2026-08-03 23:59 is in the past by the time the suite runs, so this one is allowed…
+    assert st == 200, b
+    from datetime import datetime, timedelta
+    tomorrow = (datetime.utcnow() + timedelta(days=2)).strftime("%Y-%m-%d")
+    aid2 = _att(date=tomorrow, cin="08:00", cout="09:00")
+    st, b = _amend(api, tokens["mgr"], aid2, clock_out="18:00", reason="Gate log shows a late finish")
+    assert st == 400, b
+    assert "has not happened yet" in b["error"]
+
+
+def test_a_correction_cannot_create_a_twenty_three_hour_day(api, tokens):
+    """`overnight` is INFERRED from out < in, because the row does not record which day the
+    check-out fell on. Swapping 08:00/17:00 to 08:00/07:00 therefore reads as a 23-hour night —
+    and was stored, by the tool whose whole purpose is to correct impossible shifts."""
+    aid = _att(date="2026-08-03", cin="08:00", cout="17:00")
+    st, b = _amend(api, tokens["mgr"], aid, clock_out="07:00", reason="Typed the wrong finish time")
+    assert st == 400, b
+    assert "does not record a shift longer than 16 hours" in b["error"]
+
+
+def test_a_genuine_night_shift_can_still_be_corrected(api, tokens):
+    """20:00 -> 04:00 is eight hours. The ceiling must not stop shift work being fixed."""
+    aid = _att(date="2026-08-03", cin="20:00", cout="03:00", hours=0)
+    st, b = _amend(api, tokens["mgr"], aid, clock_out="04:00", reason="gate log")
+    assert st == 200, b
+    assert db.get_attendance(aid)["hrs"] == "8h 00m"
+
+
+def test_the_ceiling_is_the_same_number_the_check_out_endpoint_uses(api, tokens):
+    """One constant, so the two paths cannot drift into disagreeing about what a shift is."""
+    import app as _app
+    assert _app.Handler._MAX_SHIFT_MIN == 16 * 60
