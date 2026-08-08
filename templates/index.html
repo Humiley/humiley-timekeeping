@@ -3387,6 +3387,121 @@ function tkVerifySelectedZone(force) {
 
 /* Persist with a self-heal retry: if the backend session died overnight, silently re-login via
    the cached MSAL account and retry ONCE — so the first tap of the morning just works. */
+/* ── THE PUNCH QUEUE ────────────────────────────────────────────────────────────────────────────
+   Humiley's fitters work inside pharma and electronics cleanrooms and on client sites — the exact
+   places with no signal. A punch that failed to reach the server was simply LOST: the app did not
+   even remember it had been tried, and the day went unrecorded. Unrecorded working time is the
+   employer's legal exposure, not the worker's.
+
+   The queue keeps the punch on the device and sends it when there is a connection. Three things
+   make that safe rather than merely convenient:
+
+     · The punch carries ITS OWN date and time — the moment the button was pressed, not the moment
+       it syncs. The server allows a backdated punch and refuses a post-dated one, so a punch that
+       sits in the queue for three hours still records when the person actually arrived.
+     · Replay is harmless. db.clock_in is protected by a unique index over (emp_id, date) for open
+       rows, so a check-in that was in fact delivered cannot create a second one; a check-out for an
+       already-closed row comes back as a business refusal, which the queue treats as settled rather
+       than retrying for ever.
+     · It never claims success it does not have. The existing check-in was deliberately written to
+       refuse to say "Checked in" for a punch that never arrived; this keeps that honesty and adds
+       the one thing missing — the punch is not thrown away, and the screen says where it is. */
+const _TK_Q_KEY = 'tk_punch_queue_v1';
+
+function _tkQueueRead() {
+  try { const v = JSON.parse(localStorage.getItem(_TK_Q_KEY) || '[]'); return Array.isArray(v) ? v : []; }
+  catch (e) { return []; }
+}
+function _tkQueueWrite(list) {
+  try { localStorage.setItem(_TK_Q_KEY, JSON.stringify(list.slice(-50))); } catch (e) {}
+}
+function _tkQueueCount() { return _tkQueueRead().length; }
+
+/* Queue a punch that could not be delivered. Returns the entry so the caller can tell the user. */
+function _tkQueueAdd(path, body) {
+  const list = _tkQueueRead();
+  list.push({
+    id: 'q' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    path: path, body: body,
+    queuedAt: new Date().toISOString(),
+    tries: 0, lastError: '',
+  });
+  _tkQueueWrite(list);
+  try { _tkQueueBadge(); } catch (e) {}
+  return list[list.length - 1];
+}
+
+let _tkQueueFlushing = false;
+/* Send whatever is waiting. Safe to call often — it no-ops when empty, offline, or already running. */
+async function _tkQueueFlush() {
+  if (_tkQueueFlushing) return { sent: 0, left: _tkQueueCount() };
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return { sent: 0, left: _tkQueueCount() };
+  let list = _tkQueueRead();
+  if (!list.length) return { sent: 0, left: 0 };
+  _tkQueueFlushing = true;
+  let sent = 0, refused = 0;
+  try {
+    for (const item of list.slice()) {
+      let res;
+      try { res = await tkApi(item.path, { method: 'POST', body: item.body }); }
+      catch (e) {
+        const network = !e || !e.message || /network|fetch|load failed|abort/i.test(e.message || '');
+        if (network || e.status === 401) {
+          // Still no connection, or the session needs healing. Keep it and stop for now — the next
+          // trigger will try again. Counting a try lets the badge explain a punch that keeps failing.
+          item.tries = (item.tries || 0) + 1;
+          item.lastError = (e && e.message) || 'no connection';
+          break;
+        }
+        // The SERVER said no. Retrying will never change that — most often it is "Already checked
+        // in today", i.e. the punch actually arrived the first time. Settle it, and keep the
+        // message so the screen can say what happened rather than silently discarding a punch.
+        item.settled = (e && e.message) || 'refused';
+        refused += 1;
+      }
+      if (res || item.settled) {
+        list = _tkQueueRead().filter(x => x.id !== item.id);
+        _tkQueueWrite(list);
+        if (res) sent += 1;
+      } else {
+        _tkQueueWrite(_tkQueueRead().map(x => x.id === item.id ? item : x));
+      }
+    }
+  } finally { _tkQueueFlushing = false; }
+  const left = _tkQueueCount();
+  try { _tkQueueBadge(); } catch (e) {}
+  if (sent) {
+    try { await tkBootstrap(); } catch (e) {}
+    try { tkRenderCheckin(); } catch (e) {}
+    if (typeof toast === 'function') {
+      toast(_t2('Sent ' + sent + ' punch(es) saved on this device', 'Đã gửi ' + sent + ' lần chấm công lưu trên máy'), 'success');
+    }
+  }
+  return { sent: sent, left: left, refused: refused };
+}
+
+/* Say so on the check-in screen. A worker who cannot see the queue has no reason to trust it. */
+function _tkQueueBadge() {
+  const box = document.getElementById('checkin-msg');
+  if (!box) return;
+  const n = _tkQueueCount();
+  if (!n) { if (box.dataset.queue === '1') { box.style.display = 'none'; box.dataset.queue = ''; } return; }
+  if (box.dataset.stale === '1') return;          // a missing check-out is the more urgent message
+  box.dataset.queue = '1';
+  box.style.display = 'block';
+  box.style.background = '#E0F2FE'; box.style.borderColor = '#0EA5E9'; box.style.color = '#075985';
+  box.innerHTML = '<strong>' + n + ' ' +
+    _crmEsc(_t2('punch(es) saved on this device', 'lần chấm công đã lưu trên máy')) + '.</strong> ' +
+    _crmEsc(_t('They will be sent automatically when you have a connection. The time recorded is when you pressed the button, not when it is sent.'));
+}
+
+/* Every reasonable trigger: coming back online, returning to the app, and app start. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { _tkQueueFlush(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) _tkQueueFlush(); });
+  window.addEventListener('load', () => { setTimeout(() => { _tkQueueFlush(); }, 2500); });
+}
+
 async function _tkPersistSure(path, body) {
   /* returns the server response, or null on NETWORK failure, or {__biz: msg} when the server
      said no (400) — a business refusal must never be reported as a connection problem. */
@@ -3436,10 +3551,23 @@ async function tkCheckIn() {
     _tkGpsState === 'in' ? '' : _tkGpsState === 'out' ? ' (away from site)' : ' (GPS unverified)');
   const _proj = (document.getElementById('ci-project') || {}).value || '';
   const saved = await _tkPersistSure('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
-  if (!saved || saved.__biz) {
+  if (saved && saved.__biz) {
+    // The SERVER refused it. Queueing would only replay a refusal.
     if (btn) btn.disabled = false;
-    if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-in — check your connection and tap again.', 'error', 7000);
-    if (saved && saved.__biz) { try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {} }
+    if (typeof toast === 'function') toast(saved.__biz, 'error', 7000);
+    try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {}
+    return;
+  }
+  if (!saved) {
+    // NO CONNECTION. The punch is kept on the device with the time it was pressed, and sent when
+    // there is signal — it used to be discarded, and the day went unrecorded.
+    _tkQueueAdd('/api/attendance/checkin', { date: _today(), time: t, loc: locLabel, lat: _tkLastLat, lon: _tkLastLon, project: _proj });
+    if (btn) btn.disabled = false;
+    if (typeof toast === 'function') {
+      toast(_t2('No connection — your check-in at ' + t + ' is saved on this device and will be sent automatically.',
+                'Không có kết nối — lần chấm công vào lúc ' + t + ' đã lưu trên máy và sẽ tự động gửi sau.'), 'warn', 8000);
+    }
+    try { _tkQueueBadge(); } catch (e) {}
     return;
   }
   _checkedIn = true;
@@ -3515,11 +3643,30 @@ async function _tkDoCheckout(t, otHours, otReason) {
   if (otHours && otHours > 0) { body.otHours = otHours; body.otReason = otReason || ''; }
   /* TRUTHFUL checkout: save first (with silent session heal + one retry), then update the UI. */
   const saved = await _tkPersistSure('/api/attendance/checkout', body);
-  if (!saved || saved.__biz) {
+  const _reEnable = () => {
     _tkCheckoutBusy = false;
-    const _bo = document.getElementById('btn-checkout'); if (_bo) { _bo.disabled = false; _bo.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; _bo.style.color = '#fff'; _bo.style.cursor = 'pointer'; }
-    if (typeof toast === 'function') toast(saved && saved.__biz ? saved.__biz : 'Could not record your check-out — check your connection and tap again.', 'error', 7000);
-    if (saved && saved.__biz) { try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {} }
+    const _bo = document.getElementById('btn-checkout');
+    if (_bo) { _bo.disabled = false; _bo.style.background = 'linear-gradient(135deg,#205090,#162f5a)'; _bo.style.color = '#fff'; _bo.style.cursor = 'pointer'; }
+  };
+  if (saved && saved.__biz) {
+    // The server refused it — a missed check-out, or a shift that cannot be right. Queueing would
+    // only replay the refusal, and the message is the thing the worker needs to act on.
+    _reEnable();
+    if (typeof toast === 'function') toast(saved.__biz, 'error', 9000);
+    try { tkBootstrap().then(() => tkRenderCheckin()); } catch (e) {}
+    return;
+  }
+  if (!saved) {
+    // NO CONNECTION. Keep the check-out with the time it was pressed. Leaving somebody unable to
+    // clock out is how a day ends up as a forgotten check-out — the very thing that used to
+    // fabricate hours the next morning.
+    _tkQueueAdd('/api/attendance/checkout', body);
+    _reEnable();
+    if (typeof toast === 'function') {
+      toast(_t2('No connection — your check-out at ' + t + ' is saved on this device and will be sent automatically.',
+                'Không có kết nối — lần chấm công ra lúc ' + t + ' đã lưu trên máy và sẽ tự động gửi sau.'), 'warn', 8000);
+    }
+    try { _tkQueueBadge(); } catch (e) {}
     return;
   }
   _tkCheckoutBusy = false;
@@ -3586,6 +3733,7 @@ function tkRenderCheckin() {
   const _openToday = !!openRow && !_stale;
   _checkedIn = _openToday;
   _tkShowStaleNotice(_stale);
+  try { _tkQueueBadge(); } catch (e) {}
   (function () {
     const bo = document.getElementById('btn-checkout');
     if (bo) {
@@ -20084,6 +20232,8 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'They will be sent automatically when you have a connection. The time recorded is when you pressed the button, not when it is sent.':
+    'Hệ thống sẽ tự động gửi khi có kết nối. Giờ được ghi nhận là lúc bạn bấm nút, không phải lúc gửi đi.',
   'Your check-out is missing for': 'Thiếu giờ chấm công ra ngày',
   "Select your location above — we'll check your GPS and record it with your punch. It never blocks your check-in.":
     'Chọn địa điểm ở trên — hệ thống sẽ kiểm tra GPS và ghi kèm lần chấm công. Việc này không bao giờ chặn bạn chấm công vào.',
