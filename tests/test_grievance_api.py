@@ -5,6 +5,8 @@ confidentiality boundary actually holds against a real request — including aga
 who is deliberately not a way in, and including through the generic /api/coll route that would
 otherwise hand every concern to exactly the people the channel exists to be independent of.
 """
+import json
+
 import pytest
 
 import db
@@ -283,3 +285,65 @@ def test_the_handler_screen_carries_the_summary_and_both_notices(api, tokens):
     assert b["summary"]["total"] == 1 and "1 concern(s) raised" in b["summary"]["statement"]
     assert "cannot promise" in b["notice"] and b["noticeVn"]
     assert "Retaliation" in b["noRetaliation"] and b["noRetaliationVn"]
+
+
+# ── the reporter sees their case, never the investigation into it ────────────────────────────────
+
+def test_the_person_who_complained_cannot_read_the_investigation_into_their_complaint(api, tokens):
+    """may_read lets the raiser in, and the list endpoint returned the RAW record — so handlerNotes,
+    the timeline naming who did what, and the handler list all reached them. The people
+    investigating must be able to write freely, including where the complaint is unfounded and
+    where the notes concern a third party with their own confidentiality."""
+    _handlers("HML-MGT")
+    _, raised = _raise(api, tokens, "staff")
+    cid = raised.get("id") or [c["id"] for c in db.list_collection("concerns")][0]
+
+    api("POST", "/api/hr/speakup/" + cid, tokens["management"],
+        {"note": "Spoke to the supervisor; account does not match the roster."})
+
+    _, mine = api("GET", "/api/hr/speakup", tokens["staff"])
+    row = mine["concerns"][0]
+    assert "handlerNotes" not in row
+    assert "timeline" not in row
+    assert "routedTo" not in row
+    body = json.dumps(mine, ensure_ascii=False)
+    assert "does not match the roster" not in body
+    assert "HML-MGT" not in body
+
+
+def test_but_they_do_get_their_own_account_and_the_progress_back(api, tokens):
+    """A channel you cannot follow up is a channel people stop using."""
+    _handlers("HML-MGT")
+    _raise(api, tokens, "staff")
+    _, mine = api("GET", "/api/hr/speakup", tokens["staff"])
+    row = mine["concerns"][0]
+    assert row["mine"] is True
+    assert row["detail"] == DETAIL, "their own words, given back"
+    assert row["ref"].startswith("SPK-")
+    assert row["status"] and "resolveBy" in row
+    assert row["routedCount"] == 1, "how many, never which"
+
+
+def test_the_handler_still_sees_everything(api, tokens):
+    _handlers("HML-MGT")
+    _, raised = _raise(api, tokens, "staff")
+    cid = [c["id"] for c in db.list_collection("concerns")][0]
+    api("POST", "/api/hr/speakup/" + cid, tokens["management"],
+        {"note": "Spoke to the supervisor."})
+    _, q = api("GET", "/api/hr/speakup", tokens["management"])
+    row = q["concerns"][0]
+    assert q["isHandler"] is True
+    assert "Spoke to the supervisor." in row["handlerNotes"]
+    assert row["timeline"] and row["routedTo"]
+
+
+def test_an_acknowledged_concern_is_not_reported_back_as_unacknowledged(api, tokens):
+    """reporter_view drops acknowledgedOn, and due() re-derives acknowledgement from it — so a
+    summary built on the reduced shape told the reporter the opposite of the truth."""
+    _handlers("HML-MGT")
+    _raise(api, tokens, "staff")
+    cid = [c["id"] for c in db.list_collection("concerns")][0]
+    api("POST", "/api/hr/speakup/" + cid, tokens["management"], {"status": g.ACKNOWLEDGED})
+    _, mine = api("GET", "/api/hr/speakup", tokens["staff"])
+    assert mine["concerns"][0]["acknowledged"] is True
+    assert mine["summary"]["unacknowledged"] == 0, mine["summary"]

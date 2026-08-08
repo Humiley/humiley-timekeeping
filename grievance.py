@@ -170,6 +170,37 @@ def public_view(concern, as_of=None):
     }
 
 
+def reporter_view(concern, as_of=None):
+    """What the person who RAISED a concern may see of their own case.
+
+    They are entitled to their own account back, and to the progress of the case. They are NOT
+    entitled to the investigation: `handlerNotes`, the `timeline` (which names who did what and
+    when), and `routedTo` (which names the handlers) are the record OF the investigation, and the
+    people investigating a complaint must be able to write freely about it without the complainant
+    reading it over their shoulder — including where the complaint turns out to be unfounded, or
+    where the notes concern a third party who is entitled to their own confidentiality.
+
+    `may_read` lets the raiser in, and the list endpoint returned the RAW record — so every one of
+    those fields reached them. public_view existed to prevent exactly this, and was only ever
+    applied on the reference-lookup route.
+    """
+    c = concern or {}
+    out = public_view(c, as_of)
+    out.update({
+        "id": _s(c.get("id")),
+        "mine": True,
+        # Their own submission, given back to them verbatim.
+        "detail": _s(c.get("detail")),
+        "about": list(c.get("about") or []),
+        "anonymous": bool(c.get("anonymous")),
+        "raisedByName": _s(c.get("raisedByName")),
+        # How many people are handling it, never WHICH — the count is reassurance that it went
+        # somewhere, the names are the investigation.
+        "routedCount": len(c.get("routedTo") or []),
+    })
+    return out
+
+
 # ── the clock ────────────────────────────────────────────────────────────────────────────────────
 
 def due(concern, as_of):

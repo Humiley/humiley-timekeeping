@@ -8532,17 +8532,31 @@ class Handler(BaseHTTPRequestHandler):
         """
         handlers, senior = self._speakup_handlers()
         uid = u.get("id") or ""
-        mine = [c for c in db.list_collection("concerns")
-                if grievance.may_read(c, uid, handlers, senior)]
-        for c in mine:
-            c["due"] = grievance.due(c, self._vn_day())
-            if c.get("anonymous"):
-                c.pop("raisedById", None)
-                c.pop("raisedByName", None)
+        is_handler = uid in {str(h) for h in handlers} or uid in {str(s) for s in senior}
+        raw = [c for c in db.list_collection("concerns")
+               if grievance.may_read(c, uid, handlers, senior)]
+        # A HANDLER gets the case. Anybody else who may read it is here because they RAISED it, and
+        # they get their own account back plus the progress — never handlerNotes, never the timeline,
+        # never who is handling it. This returned the RAW record, so the person who complained could
+        # read the investigation into their own complaint.
+        if is_handler:
+            mine = []
+            for c in raw:
+                c = dict(c)
+                c["due"] = grievance.due(c, self._vn_day())
+                if c.get("anonymous"):
+                    c.pop("raisedById", None)
+                    c.pop("raisedByName", None)
+                mine.append(c)
+        else:
+            mine = [grievance.reporter_view(c, self._vn_day()) for c in raw]
         return self._json({
             "ok": True, "concerns": sorted(mine, key=lambda c: str(c.get("raisedOn") or ""), reverse=True),
-            "isHandler": uid in {str(h) for h in handlers} or uid in {str(s) for s in senior},
-            "summary": grievance.summary(mine, self._vn_day()),
+            "isHandler": is_handler,
+            # From the RAW records: reporter_view deliberately drops acknowledgedOn, and due()
+            # re-derives acknowledgement from it — so a summary built on the reduced shape would
+            # tell a reporter their acknowledged concern was unacknowledged.
+            "summary": grievance.summary(raw, self._vn_day()),
             "categories": [dict(c) for c in grievance.CATEGORIES],
             "notice": grievance.ANONYMITY_NOTICE, "noticeVn": grievance.ANONYMITY_NOTICE_VN,
             "noRetaliation": grievance.NO_RETALIATION,
