@@ -1843,7 +1843,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="card mb16">
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Schedule Name</th><th>Department</th><th>Check-In Window</th><th>Check-Out From</th><th>Work Days</th><th>Grace Period</th><th>Overtime Rate</th><th>Active</th><th></th></tr></thead>
+        <thead><tr><th>Schedule Name</th><th>Department</th><th>Check-In Window</th><th>Check-Out From</th><th>Work Days</th><th>Grace Period</th><th>Unpaid Break</th><th>Overtime Rate</th><th>Active</th><th></th></tr></thead>
         <tbody id="sched-tbody">
           <tr><td><div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:30px;border-radius:8px;background:var(--light-tint);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></span><span style="font-weight:700;color:var(--navy)">Standard 08:00 – 17:00</span></div></td><td>All</td><td>07:30 – 08:30</td><td>17:00</td><td>Mon – Fri</td><td>30 min</td><td>1.5×</td><td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td><td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'Standard 08:00 – 17:00')">Edit</button></td></tr>
           <tr><td><div style="display:flex;align-items:center;gap:9px"><span style="width:30px;height:30px;border-radius:8px;background:var(--light-tint);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--navy)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></span><span style="font-weight:700;color:var(--navy)">Morning Shift 06:00 – 14:00</span></div></td><td>Factory</td><td>05:45 – 06:15</td><td>14:00</td><td>Mon – Sat</td><td>15 min</td><td>1.5×</td><td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td><td><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(this,'Morning Shift 06:00 – 14:00')">Edit</button></td></tr>
@@ -2224,6 +2224,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       <button class="btn btn-ghost btn-sm" onclick="tkTimesheetCsv()">Export CSV</button>
     </div>
     <div id="ts-root"></div>
+    <div id="wt-root" style="margin-top:18px"></div>
   </div><!-- /rpt-timesheet -->
 
   <div id="rpt-recruit" style="display:none"></div>
@@ -22065,6 +22066,9 @@ const _VI = {
   'Google Maps API Key': 'Khóa API Google Maps',
   'Google Maps API Key (Geocoding)': 'Khóa API Google Maps (Mã hóa địa lý)',
   'Grace Period': 'Thời gian ân hạn',
+  'Unpaid Break': 'Nghỉ giữa giờ không lương', 'Unpaid Break (min)': 'Nghỉ giữa giờ không lương (phút)',
+  'The mid-shift break inside these hours. Art. 109 requires at least 30 consecutive minutes on a day of 6 hours or more, 45 where 3 or more hours fall between 22:00 and 06:00. It only counts as paid working time for continuous shift work (Decree 145 Art. 63(3)). Working-time compliance is measured after this comes off.':
+    'Thời gian nghỉ giữa giờ trong ca. Điều 109 yêu cầu ít nhất 30 phút liên tục nếu làm việc từ 6 giờ trở lên trong ngày, 45 phút nếu có từ 3 giờ trở lên trong khoảng 22:00–06:00. Chỉ được tính vào giờ làm việc có hưởng lương đối với ca liên tục (khoản 3 Điều 63 Nghị định 145). Việc kiểm tra giờ làm việc được tính sau khi trừ khoảng này.',
   'Grace Period (min)': 'Thời gian ân hạn (phút)',
   'Grade': 'Bậc lương',
   'Gross': 'Tổng (gộp)',
@@ -24572,6 +24576,79 @@ async function tkRenderTimesheet() {
       '<th style="text-align:right">' + _t2('Absent', 'Vắng') + '</th>' +
       '<th style="text-align:right">' + _t2('No check-out', 'Thiếu chấm ra') + '</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+
+  tkRenderWorkingTime();   // the same period, asked whether the pattern was lawful
+}
+
+/* ═══ Rest and hours — Arts. 105, 110, 111 ══════════════════════════════════════════════════════
+   The portal has always known when people came and went and never asked whether the pattern was
+   lawful. A 60-hour week, four hours between a late finish and an early start, or a month with no
+   24-hour rest all passed without a word. Read-only: it raises findings for somebody to answer and
+   moves no money. */
+const _WT_ART = {
+  'Art. 105': ['Normal hours in a day', 'Giờ làm việc bình thường trong ngày'],
+  'Art. 105(1)': ['Normal hours in a week', 'Giờ làm việc bình thường trong tuần'],
+  'Art. 110': ['Rest between shifts', 'Nghỉ chuyển ca'],
+  'Art. 111(1)': ['Weekly rest', 'Nghỉ hằng tuần'],
+};
+async function tkRenderWorkingTime() {
+  const root = document.getElementById('wt-root'); if (!root) return;
+  const w = _tsWindow();
+  root.innerHTML = tkSkeleton('rows', 3);
+  let b;
+  try { b = await tkApi('/api/hr/working-time?from=' + encodeURIComponent(w.from) + '&to=' + encodeURIComponent(w.to)); }
+  catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load the working-time check', 'Không tải được phần kiểm tra giờ làm việc') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const f = b.findings || [];
+  const rows = f.length ? f.map(x => {
+    const art = _WT_ART[x.article] || [x.article, x.article];
+    return '<tr>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '—') + '</div></td>' +
+      '<td style="white-space:nowrap;font-variant-numeric:tabular-nums">' + _crmEsc(x.date || x.week || '') + '</td>' +
+      '<td><span class="badge b-danger" style="font-size:10px">' + _crmEsc(x.article) + '</span>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _crmEsc(_t2(art[0], art[1])) + '</div></td>' +
+      '<td style="font-size:12px">' + _crmEsc(_LANG.cur === 'vi' ? (x.whyVn || x.why) : x.why) + '</td>' +
+      '</tr>';
+  }).join('') : tkEmptyRow(4, _t2('Nothing to answer for this period', 'Không có vấn đề nào trong kỳ này'), { icon: 'check' });
+
+  // Somebody whose schedule declares no break cannot be measured exactly — the portal records one
+  // check-in and one check-out, so their day is time on site. Say so rather than counting them clean.
+  const undeclared = (b.undeclaredBreak || []).length
+    ? '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12.5px;background:rgba(180,83,9,.10);color:#B45309">' +
+      _crmEsc(_t2('Working time cannot be measured exactly for ', 'Chưa thể tính chính xác giờ làm việc cho ') +
+              b.undeclaredBreak.length + _t2(' person(s): their work schedule does not declare an unpaid break, so a check-in and a check-out only give time on site. Set it on Work Schedules.',
+                                             ' người: lịch làm việc chưa khai báo thời gian nghỉ giữa giờ không hưởng lương. Hãy đặt trong mục Lịch làm việc.')) +
+      '</div>' : '';
+
+  const night = b.nightHours > 0
+    ? '<div class="card" style="padding:11px 14px;margin-bottom:12px;font-size:12.5px;background:rgba(139,92,246,.10);color:#6D28D9">' +
+      '<b>' + _crmEsc(_t2('Night work', 'Làm việc ban đêm')) + ' — ' + b.nightHours + 'h</b> · ' +
+      _crmEsc(_LANG.cur === 'vi' ? b.nightPayVn : b.nightPay) + '</div>' : '';
+
+  root.innerHTML = undeclared + night +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px">' +
+      '<div><div class="card-title">' + _t2('Rest and hours', 'Giờ làm việc và thời gian nghỉ') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' +
+      _crmEsc(_t2('Labour Code Arts. 105, 110 and 111 · ', 'Bộ luật Lao động Điều 105, 110, 111 · ')) +
+      b.headcount + ' ' + _t2('people checked', 'người được kiểm tra') + '</span></div>' +
+      '<span style="font-size:11.5px;font-weight:700;color:' + (f.length ? '#B91C1C' : 'var(--emerald)') + '">' +
+      (f.length ? f.length + ' ' + _t2('to answer', 'cần xử lý') : '✓ ' + _t2('Nothing to answer', 'Không có vấn đề')) + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:760px"><thead><tr>' +
+      '<th>' + _t2('Employee', 'Nhân viên') + '</th><th>' + _t2('When', 'Thời điểm') + '</th>' +
+      '<th>' + _t2('Article', 'Điều luật') + '</th><th>' + _t2('What was found', 'Nội dung') + '</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div class="card" style="padding:12px 16px;margin-top:12px;font-size:11.5px;color:var(--text-light)">' +
+      '<b style="color:var(--text-dark)">' + _t2('Not checked here', 'Không kiểm tra ở đây') + '</b> — ' +
+      _crmEsc(_t2('the 40-hour week in Art. 105(2) is encouragement, not a limit, so a lawful 44-hour week is not reported as a breach. Overtime ceilings are Art. 107 and are enforced when overtime is approved.',
+                  'tuần làm việc 40 giờ tại khoản 2 Điều 105 là khuyến khích chứ không phải giới hạn. Trần làm thêm giờ thuộc Điều 107 và được kiểm tra khi duyệt làm thêm.')) +
+      ((b.unresolved || []).length ? ' &nbsp;·&nbsp; <b style="color:var(--text-dark)">' +
+        _t2('Open questions', 'Vấn đề chưa xác định') + '</b> — ' +
+        _crmEsc((b.unresolved || []).map(x => x.topic).join('; ')) + '.' : '') +
+    '</div>';
 }
 
 function tkTimesheetCsv() {
@@ -28478,11 +28555,11 @@ function removeTestZone() {
    They set lateness/OT expectations only; they never block check-in/out. */
 let _schedEditId = null;
 const _SCHED_SEED = [
-  { name: 'Standard 08:00 – 17:00', dept: 'All', inwin: '07:30 – 08:30', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '1.5×', active: true },
-  { name: 'Morning Shift 06:00 – 14:00', dept: 'Factory (FAC)', inwin: '05:45 – 06:15', out: '14:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', active: true },
-  { name: 'Evening Shift 14:00 – 22:00', dept: 'Factory (FAC)', inwin: '13:45 – 14:15', out: '22:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', active: true },
-  { name: 'Flexible (Field Services)', dept: 'Field Services', inwin: '07:00 – 09:00', out: '8h after in', days: 'Mon – Fri', grace: 30, ot: '1.5×', active: true },
-  { name: 'WFH Schedule', dept: 'Approved only', inwin: '08:00 – 09:00', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '—', active: false }
+  { name: 'Standard 08:00 – 17:00', dept: 'All', inwin: '07:30 – 08:30', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '1.5×', breakMin: 60, active: true },
+  { name: 'Morning Shift 06:00 – 14:00', dept: 'Factory (FAC)', inwin: '05:45 – 06:15', out: '14:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', breakMin: 30, active: true },
+  { name: 'Evening Shift 14:00 – 22:00', dept: 'Factory (FAC)', inwin: '13:45 – 14:15', out: '22:00', days: 'Mon – Sat', grace: 15, ot: '1.5×', breakMin: 30, active: true },
+  { name: 'Flexible (Field Services)', dept: 'Field Services', inwin: '07:00 – 09:00', out: '8h after in', days: 'Mon – Fri', grace: 30, ot: '1.5×', breakMin: 60, active: true },
+  { name: 'WFH Schedule', dept: 'Approved only', inwin: '08:00 – 09:00', out: '17:00', days: 'Mon – Fri', grace: 30, ot: '—', breakMin: 60, active: false }
 ];
 function _tkRenderSchedRows() {
   const tb = document.getElementById('sched-tbody'); if (!tb) return;
@@ -28495,11 +28572,14 @@ function _tkRenderSchedRows() {
       + '<td>' + _crmEsc(s.out || '') + '</td>'
       + '<td>' + _crmEsc(s.days || '') + '</td>'
       + '<td>' + _crmEsc(String(s.grace == null ? '' : s.grace)) + ' min</td>'
+      + '<td>' + (s.breakMin == null
+          ? '<span style="color:#B45309" title="' + _tkEscA(_t2('Not declared — working-time compliance cannot be measured exactly for this pattern.', 'Chưa khai báo — không thể tính chính xác giờ làm việc cho lịch này.')) + '">' + _t2('not set', 'chưa đặt') + '</span>'
+          : _crmEsc(String(s.breakMin)) + ' min') + '</td>'
       + '<td>' + _crmEsc(s.ot || '') + '</td>'
       + '<td><button class="toggle ' + (s.active === false ? 'off' : 'on') + '" onclick="tkToggleSchedActive(\'' + s.id + '\',this)"></button></td>'
       + '<td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editScheduleRow(\'' + s.id + '\')">' + _t('Edit') + '</button> <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="tkDeleteSchedule(\'' + s.id + '\')">' + _t('Delete') + '</button></td>'
       + '</tr>';
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No schedules yet.') + '</td></tr>';
+  }).join('') : '<tr><td colspan="10" style="text-align:center;color:var(--text-light);padding:16px">' + _t('No schedules yet.') + '</td></tr>';
   try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(tb); } catch (e) {}
 }
 async function tkRenderSchedules() {
@@ -28512,7 +28592,7 @@ async function tkRenderSchedules() {
 function tkOpenScheduleModal() {
   _schedEditId = null;
   const setV = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
-  setV('sch-name', ''); setV('sch-inwin', ''); setV('sch-grace', '15'); setV('sch-out', '17:00');
+  setV('sch-name', ''); setV('sch-inwin', ''); setV('sch-grace', '15'); setV('sch-out', '17:00'); setV('sch-break', '60');
   ['sch-dept', 'sch-days', 'sch-ot'].forEach(id => { const e = document.getElementById(id); if (e) e.selectedIndex = 0; });
   const t = document.querySelector('#addScheduleModal .modal-title'); if (t) t.textContent = _t('Add Work Schedule');
   openModal('addScheduleModal');
@@ -28522,7 +28602,7 @@ function editScheduleRow(id) {
   _schedEditId = id;
   const setV = (eid, v) => { const e = document.getElementById(eid); if (e) e.value = (v == null ? '' : v); };
   const setSel = (eid, v) => { const e = document.getElementById(eid); if (e) { const o = Array.from(e.options).find(op => op.value === v || op.textContent === v); e.value = o ? o.value : e.value; } };
-  setV('sch-name', s.name); setV('sch-inwin', s.inwin); setV('sch-out', s.out); setV('sch-grace', s.grace);
+  setV('sch-name', s.name); setV('sch-inwin', s.inwin); setV('sch-out', s.out); setV('sch-grace', s.grace); setV('sch-break', s.breakMin == null ? '' : s.breakMin);
   setSel('sch-dept', s.dept); setSel('sch-days', s.days); setSel('sch-ot', s.ot);
   const t = document.querySelector('#addScheduleModal .modal-title'); if (t) t.textContent = _t('Edit Work Schedule');
   openModal('addScheduleModal');
@@ -28531,7 +28611,10 @@ async function saveSchedule() {
   const g = id => (document.getElementById(id) || {}).value;
   const name = (g('sch-name') || '').trim();
   if (!name) { toast(_t2('Please enter a schedule name', 'Vui lòng nhập tên lịch làm việc'), 'warn'); return; }
-  const body = { name: name, dept: g('sch-dept'), days: g('sch-days'), inwin: (g('sch-inwin') || '').trim(), out: g('sch-out'), grace: parseInt(g('sch-grace'), 10) || 0, ot: g('sch-ot') };
+  // A blank break stays NULL rather than becoming 0. Zero would assert "no break at all" and make
+  // the Art. 105 arithmetic exact on a number nobody entered.
+  const brk = (g('sch-break') || '').trim();
+  const body = { name: name, dept: g('sch-dept'), days: g('sch-days'), inwin: (g('sch-inwin') || '').trim(), out: g('sch-out'), grace: parseInt(g('sch-grace'), 10) || 0, ot: g('sch-ot'), breakMin: brk === '' ? null : Math.max(0, parseInt(brk, 10) || 0) };
   try {
     if (_schedEditId) {
       const existing = (_HR.schedules || []).find(x => x.id === _schedEditId) || {};
@@ -28953,6 +29036,13 @@ async function saveEmployee() {
       <div class="form-group"><label class="form-label">Overtime Rate</label>
         <select class="form-control" id="sch-ot"><option>1.5×</option><option>2.0×</option><option>—</option></select>
       </div>
+    </div>
+    <!-- The portal records one check-in and one check-out, so a row is time ON SITE. Without the
+         break length, an 08:00–17:00 day looks like nine working hours and the Art. 105 check
+         cannot tell a lawful day from an unlawful one. -->
+    <div class="form-group"><label class="form-label">Unpaid Break (min)</label>
+      <input type="number" class="form-control" id="sch-break" value="60" min="0" max="180" step="5">
+      <div style="font-size:11px;color:var(--text-light);margin-top:4px">The mid-shift break inside these hours. Art. 109 requires at least 30 consecutive minutes on a day of 6 hours or more, 45 where 3 or more hours fall between 22:00 and 06:00. It only counts as paid working time for continuous shift work (Decree 145 Art. 63(3)). Working-time compliance is measured after this comes off.</div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('addScheduleModal')">Cancel</button>

@@ -39,6 +39,7 @@ import company           # the employer's legal identity, as a document has to s
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
 import attendance_days  # what each day WAS: worked / leave / holiday / rest / absent
+import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hours and the rest owed (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3781,6 +3782,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._audit_pack_ep(uu, qs), manager=True)
         if path == "/api/hr/timesheet":
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
+        if path == "/api/hr/working-time":
+            return self._guard(lambda uu: self._working_time_ep(uu, qs))
         if path == "/api/hr/minwage":
             return self._guard(lambda uu: self._minwage_ep(uu, qs), manager=True)
         if path == "/api/hr/minors":
@@ -9294,6 +9297,112 @@ class Handler(BaseHTTPRequestHandler):
                   "headcount": len(emps), "today": today,
                   "truncated": bool(to > today)})
         return self._json(r)
+
+    def _break_minutes_for(self, emp, schedules=None):
+        """The unpaid mid-shift break declared on this person's work schedule, or None.
+
+        None means "not declared", and it has to stay distinct from 0. Zero asserts that the person
+        works straight through, which would make the Art. 105 arithmetic exact on a figure nobody
+        entered — and report an ordinary 08:00–17:00 day as an hour over the limit.
+        """
+        name = str((emp or {}).get("schedule") or "").strip()
+        if not name:
+            return None
+        for s in (schedules if schedules is not None else db.list_collection("schedules")):
+            if str(s.get("name") or "").strip().lower() == name.lower():
+                v = s.get("breakMin")
+                if v is None or str(v).strip() == "":
+                    return None
+                try:
+                    return max(0, int(float(v)))
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    def _working_time_ep(self, u, qs):
+        """Arts. 105, 110 and 111 against the attendance register — the rest nobody was checking.
+
+        The portal has always known when people came and went and never asked whether the pattern
+        was lawful: a 60-hour week, four hours between a late finish and an early start, or a month
+        with no 24-hour rest all passed without a word. overtime.py polices the overtime; this
+        polices the normal hours and the rest around them.
+
+        Read-only. It raises findings for somebody to answer, and changes no pay: the night hours it
+        surfaces are stated as an exposure, not paid.
+
+        Scoped like the timesheet: your own always, your direct reports' if you manage them,
+        everybody's from management up.
+        """
+        frm = str(qs.get("from", [""])[0] or "")[:10]
+        to = str(qs.get("to", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(frm or "") or not self._RE_DATE.match(to or ""):
+            today = self._vn_day()
+            frm, to = today[:8] + "01", today
+        rank = self._level_rank(self._caller_level(u))
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").strip().lower() != "inactive"]
+        if rank < self._level_rank("management"):
+            my_email = (u.get("email") or "").strip().lower()
+            emps = [e for e in emps if e.get("id") == u.get("id")
+                    or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)]
+        only = str(qs.get("emp", [""])[0] or "").strip()
+        if only:
+            emps = [e for e in emps if e.get("id") == only]
+
+        scheds = db.list_collection("schedules")
+        rows_by_emp = {}
+        for r in db.list_attendance(start=frm, end=to):
+            rows_by_emp.setdefault(r.get("emp_id"), []).append(r)
+
+        people, findings, night_total, undeclared = [], [], 0.0, []
+        for e in emps:
+            rows = rows_by_emp.get(e.get("id")) or []
+            if not rows:
+                continue
+            brk = self._break_minutes_for(e, scheds)
+            if brk is None:
+                undeclared.append({"empId": e.get("id"), "name": e.get("name"),
+                                   "schedule": e.get("schedule") or ""})
+            rev = working_time.review_rows(rows, break_minutes=brk, as_of=to)
+            night_total += rev["nightHours"]
+            for f in rev["findings"]:
+                findings.append(dict(f, empId=e.get("id"), name=e.get("name"),
+                                     dept=e.get("dept") or ""))
+            people.append({
+                "empId": e.get("id"), "name": e.get("name"), "dept": e.get("dept") or "",
+                "schedule": e.get("schedule") or "", "breakMinutes": brk,
+                "days": rev["days"], "weeks": rev["weeks"], "weeklyRest": rev["weeklyRest"],
+                "nightHours": rev["nightHours"], "openRows": rev["openRows"],
+                "indeterminate": rev["indeterminate"],
+                "findings": len(rev["findings"]),
+            })
+
+        by_article = {}
+        for f in findings:
+            by_article[f["article"]] = by_article.get(f["article"], 0) + 1
+        return self._json({
+            "ok": True, "from": frm, "to": to, "people": people, "findings": findings,
+            "byArticle": by_article, "headcount": len(people),
+            "nightHours": round(night_total, 2),
+            "undeclaredBreak": undeclared,
+            "limits": working_time.limits(to),
+            "unresolved": [dict(x) for x in working_time.UNRESOLVED],
+            "rejected": [dict(x) for x in working_time.REJECTED],
+            "nightPay": (
+                "Art. 98(2) pays a 30%% premium for night work whether or not there is any overtime. "
+                "This portal only ever priced night hours inside the overtime tail, so the %.2f "
+                "night hour(s) of NORMAL time above have not reached a payslip. Stated as an "
+                "exposure to settle with the accountant, not applied — this endpoint changes no pay."
+                % round(night_total, 2)),
+            "nightPayVn": (
+                "Khoản 2 Điều 98 quy định phụ cấp làm việc ban đêm 30%% kể cả khi không có làm thêm "
+                "giờ. Cổng thông tin trước đây chỉ tính giờ đêm trong phần làm thêm, nên %.2f giờ "
+                "đêm thuộc giờ làm việc bình thường chưa được đưa vào bảng lương." % round(night_total, 2)),
+            "statement": "%d finding(s) across %d people. %s" % (
+                len(findings), len(people),
+                "Nothing to answer." if not findings
+                else ", ".join("%s: %d" % (a, n) for a, n in sorted(by_article.items()))),
+        })
 
     def _minwage_ep(self, u, qs):
         """Is anybody paid below the statutory regional minimum? — a client audit's first line.
