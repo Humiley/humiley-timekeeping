@@ -38,6 +38,8 @@ import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + 
 import company           # the employer's legal identity, as a document has to state it (pure)
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
+import min_wage         # the statutory wage floor, effective-dated by decree
+import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
 import grievance         # the speak-up channel: routing, confidentiality and the clock (pure)
 import hr_decision       # the quyết định — Art. 34/36/45 termination, Art. 122-127 discipline
@@ -3774,6 +3776,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._bank_transfer_ep(u, qs))
         if path == "/api/hr/payroll/journal":
             return self._guard(lambda u: self._payroll_journal_ep(u, qs))
+        if path == "/api/hr/audit-pack":
+            return self._guard(lambda uu: self._audit_pack_ep(uu, qs), manager=True)
+        if path == "/api/hr/minwage":
+            return self._guard(lambda uu: self._minwage_ep(uu, qs), manager=True)
+        if path == "/api/hr/minors":
+            return self._guard(lambda uu: self._minors_ep(uu, qs), manager=True)
         if path == "/api/hr/certificates/review":
             return self._guard(lambda u: self._certificates_review_ep(u, qs))
         if path == "/api/hr/contracts/review":
@@ -5420,6 +5428,30 @@ class Handler(BaseHTTPRequestHandler):
         # and that override is written into the audit chain under their name.
         breaches, override = [], str(body.get("override") or "").strip()
         if decision == "approve":
+            # Art. 146 comes BEFORE Art. 107, and it is a different kind of rule. The Art. 107
+            # ceilings below are limits the approver may exceed by saying why, because the Code
+            # itself contemplates the cases. Art. 146(1) forbids overtime for an employee under 15
+            # outright, and Art. 146(2) allows it for a 15-to-under-18 only in occupations the
+            # Ministry lists — none of which is mechanical, electrical or cleanroom work. Neither
+            # admits an override, so this refuses rather than offering one.
+            #
+            # The employee record was already loaded above and carries the date of birth. Nothing
+            # here consulted it, so the portal would approve a 14-year-old's overtime.
+            _age = minors.overtime_allowed((emp or {}).get("dob"), rec.get("date") or self._vn_day())
+            # A MINOR is refused outright — no override buys past Art. 146. An UNKNOWN age is a gap
+            # in the record rather than a prohibition, so the approver may proceed by attesting that
+            # they know the person is over 18, and that attestation is written into the audit chain
+            # under their name (below) exactly like an Art. 107 override.
+            if _age["refuse"] and not (_age.get("overridable") and override):
+                return self._json({"ok": False, "ageRefusal": True,
+                                   "band": _age["band"], "basis": _age["basis"],
+                                   "overridable": bool(_age.get("overridable")),
+                                   "error": _age["reason"], "errorVn": _age["reasonVn"]}, 422)
+            if _age["refuse"] and _age.get("overridable"):
+                breaches = list(breaches) + [{
+                    "kind": "age_unknown",
+                    "message": "No date of birth on record. The approver attested that this "
+                               "employee is over 18."}]
             try:
                 this_h = float(rec.get("ot_hours") or 0)
             except (TypeError, ValueError):
@@ -6252,6 +6284,12 @@ class Handler(BaseHTTPRequestHandler):
                 "ts": self._utc_now()})
         for k, sk in (("teamsWebhook", "portal_teamsWebhook"),
                       ("financeSpUrl", "portal_financeSpUrl"),
+                      # The company's default Decree 293/2025 wage region, and whether its
+                      # collective agreement commits to the 7% trained-worker uplift. Without the
+                      # first, an employee with no region of their own cannot be checked at all —
+                      # and the wage register says so rather than passing them silently.
+                      ("wageRegion", "portal_wageRegion"),
+                      ("trainedUplift", "portal_trainedUplift"),
                       ("hrSpUrl", "portal_hrSpUrl"),
                       ("invtrackSpUrl", "portal_invtrackSpUrl"),
                       ("procurementUrl", "portal_procurementUrl"),
@@ -6382,8 +6420,17 @@ class Handler(BaseHTTPRequestHandler):
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
                 "certificates": "manager",
-                # An accident record names who was hurt and how badly — health data. Manager+ so
-                # a site manager can see their own crew, matching certificates.
+                # An accident record names who was hurt and how badly — health data. MANAGER, not
+                # higher, because the person who was on site when somebody was hurt is the one who
+                # knows what happened and a fatal accident has to reach the inspectorate in hours.
+                #
+                # Deliberately NOT scoped to a manager's own crew. An earlier version of this comment
+                # claimed it was, which was untrue: _incidents_ep lists the whole register. Scoping
+                # it would be wrong as well as harder — the duty in Decree 39/2016 Art. 10 does not
+                # care whose department the injured person is in, a subcontractor has no department
+                # at all, and a register that hides half the accidents from the person looking at it
+                # cannot answer "has this been declared". The trade is real and stated: every line
+                # manager can see every accident record, including who was hurt and how badly.
                 "incidents": "manager"}
     # Staff MAY read these collections, but ONLY their own records (scoped by empId / name / assignedTo).
     # `benefits` is deliberately NOT here. It is the per-GRADE benefits CATALOGUE — a policy table, not
@@ -7965,6 +8012,15 @@ class Handler(BaseHTTPRequestHandler):
         period = str((qs.get("period", [None])[0] or ""))[:7]
         if not re.match(r"^\d{4}-\d{2}$", period):
             period = self._vn_day()[:7]
+        return self._json(self._ot_summary(u, period))
+
+    def _ot_summary(self, u, period):
+        """The overtime position for a month, as data.
+
+        Split out of the endpoint so the audit pack can report the same figures rather than
+        recomputing them beside it — two calculations of one thing eventually disagree, and the one
+        an auditor is holding is the one that has to be right.
+        """
         rank = self._level_rank(self._caller_level(u))
         emps = db.list_employees()
         if rank < self._level_rank("management"):
@@ -8010,8 +8066,8 @@ class Handler(BaseHTTPRequestHandler):
                         "records": s["records"], "monthHours": round(month_h, 2),
                         "yearHours": round(year_h, 2), "breaches": caps["breaches"],
                         "workingDays": _wd, "restDays": sorted(rest)})
-        return self._json({"ok": True, "period": period, "annualCap": cap_y,
-                           "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out})
+        return {"ok": True, "period": period, "annualCap": cap_y,
+                "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out}
 
     def _leave_entitlement_ep(self, u, qs):
         """What annual leave the law requires for each employee this year, beside what is on record.
@@ -8264,7 +8320,19 @@ class Handler(BaseHTTPRequestHandler):
         terms = {k: b.get(k) for k in (
             "jobTitle", "workplace", "dept", "duties", "contractType", "startDate", "endDate",
             "wage", "payForm", "payDay", "allowances", "raiseTerms", "hours", "schedule", "ppe",
-            "training", "probationDays", "probationBand")}
+            "training", "probationDays", "probationBand",
+            # Art. 90(2) needs to know which region's floor applies. Without these three the wage
+            # check has no region and stays silent, which is right for an unknown but wrong when
+            # the answer was on the employee record all along.
+            "wageRegion", "trained", "applyTrainedUplift")}
+        # The region of the WORKPLACE, from the employee record or the company default, unless the
+        # drafter states one for this contract — a site posting can be in a different region.
+        if not str(terms.get("wageRegion") or "").strip():
+            terms["wageRegion"] = (str(emp.get("wageRegion") or "").strip()
+                                   or str(db.get_setting("portal_wageRegion", "") or ""))
+        if terms.get("trained") is None:
+            terms["trained"] = bool(emp.get("trained"))
+        terms["applyTrainedUplift"] = bool(db.get_setting("portal_trainedUplift", False))
         blockers = contract_doc.blockers(settings, emp, terms)
         if any(blockers.values()):
             return self._json({"error": "This contract cannot be issued yet — something it must "
@@ -8847,6 +8915,297 @@ class Handler(BaseHTTPRequestHandler):
                                                          doc_no=rec["no"] or rec["id"])
         return self._json(out)
 
+    # ── the client social-compliance audit pack ─────────────────────────────────────────────────
+
+    # Nine sections, in the order a SMETA/RBA-style labour audit walks them. Each names the register
+    # it is answered from, so a section with no data says WHICH screen would fill it rather than
+    # rendering an empty box.
+    AUDIT_SECTIONS = (
+        ("contracts", "Labour contracts", "Hợp đồng lao động",
+         "Labour Code 2019 Art. 13–21 — every employee under a written contract, of a lawful type "
+         "and term, stating the ten particulars."),
+        ("hours", "Working hours and overtime", "Thời giờ làm việc và làm thêm giờ",
+         "Art. 105–107 and Decree 145/2020 — normal hours, overtime within the daily, monthly and "
+         "annual ceilings, with the approvals that authorised it."),
+        ("wages", "Wages and payslips", "Tiền lương và phiếu lương",
+         "Art. 90, 94–97 and Decree 293/2025 — paid at or above the regional minimum, in full and "
+         "on time, with a payslip."),
+        ("insurance", "Social, health and unemployment insurance", "Bảo hiểm xã hội, y tế, thất nghiệp",
+         "The contribution schedule behind the monthly return, from the signed pay run."),
+        ("leave", "Leave", "Nghỉ phép",
+         "Art. 112–115 — statutory annual leave computed from working conditions and seniority, "
+         "public holidays not consuming it."),
+        ("safety", "Health and safety", "An toàn, vệ sinh lao động",
+         "Law on OSH 2015 and Decree 39/2016 — the accident register, the declaration duty, "
+         "periodic health examinations and safety training."),
+        ("young", "Young workers and protected groups", "Lao động chưa thành niên và nhóm được bảo vệ",
+         "Art. 143–147 — the monitoring book, the age bands and the overtime prohibition."),
+        ("voice", "Grievance and speak-up", "Kênh phản ánh",
+         "A confidential channel independent of the line manager, with an acknowledgement and "
+         "resolution clock."),
+        ("discipline", "Discipline and termination", "Kỷ luật và chấm dứt hợp đồng",
+         "Art. 34–48 and Art. 122–127 — every decision issued on a stated ground, in time, and "
+         "recording a lawful measure."),
+    )
+
+    def _audit_pack_ep(self, u, qs):
+        """One document answering all nine sections, assembled from the registers that hold them.
+
+        Every section here already had a screen. None of them had an export that spanned more than
+        one, and four had no export at all — so answering a client meant clicking through five
+        screens, downloading five files and stapling them together by hand. This does not recompute
+        anything: it calls the same review functions the screens call, so the pack and the screen
+        can never disagree.
+
+        A section with nothing behind it says so, and says which register would fill it. An empty
+        section that reads like a pass is the failure mode this is built to avoid.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to assemble the "
+                             "audit pack — it contains every wage, date of birth and health "
+                             "result in the company.", 403)
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+        period = str(qs.get("period", [""])[0] or "")[:7]
+
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").strip().lower() != "inactive"]
+        sections, out = {}, []
+
+        def _sec(key, data, statement, findings, empty_hint="", statement_vn="", findings_vn=None):
+            sections[key] = {"data": data, "statement": statement,
+                             "statementVn": statement_vn or "",
+                             "findings": list(findings or []),
+                             "findingsVn": list(findings_vn or []),
+                             "emptyHint": empty_hint}
+
+        # 1. Contracts — the register's own review, per employee.
+        by_emp = {}
+        for c in db.list_collection("contracts"):
+            if c.get("empId"):
+                by_emp.setdefault(c["empId"], []).append(c)
+        c_rows, c_find = [], []
+        for e in emps:
+            r = contracts.review(by_emp.get(e.get("id")) or [], as_of,
+                                 exempt=e.get("contractExempt"))
+            c_rows.append({"empId": e.get("id"), "name": e.get("name"), "dept": e.get("dept"),
+                           "state": r.get("state"), "issues": r.get("issues") or []})
+            for i in (r.get("issues") or []):
+                c_find.append("%s — %s" % (e.get("name") or e.get("id"),
+                                           i.get("message") if isinstance(i, dict) else i))
+        _sec("contracts", c_rows,
+             "%d employee(s); %d with a contract finding." % (len(emps), len({r["empId"] for r in c_rows if r["issues"]})),
+             c_find[:50],
+             "No labour contracts are on file. HR Admin → Labour Contracts.")
+
+        # 2. Hours and overtime — the approved-overtime position for the period.
+        ot = self._ot_summary(u, period or as_of[:7])
+        ot_rows = ot.get("rows") or []
+        ot_find = ["%s — %s" % (r["name"], b.get("message", ""))
+                   for r in ot_rows for b in (r.get("breaches") or [])]
+        _sec("hours", ot,
+             ("%d employee(s) worked approved overtime in %s; %d cap breach(es) recorded."
+              % (len(ot_rows), ot["period"], len(ot_find))) if ot_rows
+             else "No approved overtime in %s." % ot["period"],
+             ot_find[:50], "Attendance → Overtime.")
+
+        # 3. Wages — the minimum-wage register.
+        wage = min_wage.review(emps, as_of,
+                               default_region=str(db.get_setting("portal_wageRegion", "") or ""),
+                               apply_trained_uplift=bool(db.get_setting("portal_trainedUplift", False)))
+        # An UNCHECKED employee is a finding, not a silence. Without this the section rendered
+        # "nothing outstanding" in green while its own statement said nobody could be checked —
+        # exactly the reading-as-a-pass this pack exists to prevent, and the first thing an auditor
+        # would seize on.
+        w_find = ["%s — %s" % (r["name"], r["why"]) for r in wage["rows"] if r["ok"] is False][:50]
+        if wage["unchecked"]:
+            w_find.insert(0, "%d employee(s) could not be checked against any wage floor — no "
+                             "workplace region or no monthly wage on record. Nothing is asserted "
+                             "about them either way." % wage["unchecked"])
+        w_find_vn = ["%s — %s" % (r["name"], r.get("whyVn") or r["why"])
+                     for r in wage["rows"] if r["ok"] is False][:50]
+        if wage["unchecked"]:
+            w_find_vn.insert(0, "%d người lao động chưa đối chiếu được với bất kỳ mức sàn nào — "
+                                "chưa có vùng nơi làm việc hoặc chưa có mức lương tháng trên hồ "
+                                "sơ. Không kết luận gì về họ theo hướng nào." % wage["unchecked"])
+        _sec("wages", wage, wage["statement"], w_find,
+             "Set the company wage region in HR Admin → Company Portal.",
+             statement_vn=wage.get("statementVn", ""), findings_vn=w_find_vn)
+
+        # 4. Insurance — from the SIGNED pay run, never recomputed.
+        runs = [r for r in db.list_collection("payruns") if r.get("finalisedAt")]
+        runs.sort(key=lambda r: str(r.get("period") or ""), reverse=True)
+        _sec("insurance", {"signedRuns": len(runs),
+                           "latest": (runs[0].get("period") if runs else "")},
+             ("%d signed pay run(s); the latest is %s." % (len(runs), runs[0].get("period"))) if runs
+             else "No signed pay run, so no contribution schedule can be produced.",
+             [] if runs else ["Nothing in this section is evidenced: a pay run must be prepared and "
+                              "signed by the Director before a contribution schedule exists."],
+             "Finance → Payroll.")
+
+        # 5. Leave — the statutory entitlement against what is recorded.
+        l_rows, l_find = [], []
+        for e in emps:
+            comp = leave_entitlement.entitlement(
+                e.get("startDate"), int(as_of[:4]), conditions=e.get("workConditions") or "normal",
+                dob=e.get("dob"), disabled=bool(e.get("disabled")), as_of=as_of)
+            short = leave_entitlement.shortfall(e.get("annualTotal"), comp.get("days"))
+            l_rows.append({"empId": e.get("id"), "name": e.get("name"),
+                           "recorded": e.get("annualTotal"), "statutory": comp.get("days"),
+                           "shortfall": short})
+            if short:
+                l_find.append("%s — recorded %s day(s) against a statutory %s."
+                              % (e.get("name"), e.get("annualTotal"), comp.get("days")))
+        _sec("leave", l_rows,
+             "%d employee(s); %d recorded below the statutory entitlement."
+             % (len(l_rows), len(l_find)), l_find[:50], "HR Admin → Leave Balances.")
+
+        # 6. Safety — the accident register and the certificate position.
+        inc = db.list_collection("incidents")
+        y_from, y_to = as_of[:4] + "-01-01", as_of[:4] + "-12-31"
+        osh = osh_incident.review(inc, as_of, hours_worked=self._incident_hours(y_from, y_to),
+                                  rate_from=y_from, rate_to=y_to)
+        s_find = ["%s — must be declared to the authority and has not been."
+                  % (x.get("ref") or "") for x in osh.get("undeclared") or []]
+        _sec("safety", {"accidents": osh}, osh.get("statement", ""), s_find,
+             "HR Admin → Accidents & Safety, and Certificates & Health.",
+             findings_vn=["%s — phải khai báo với cơ quan có thẩm quyền và chưa khai báo."
+                          % (x.get("ref") or "") for x in osh.get("undeclared") or []])
+
+        # 7. Young workers.
+        health = {}
+        for c in db.list_collection("certificates"):
+            if c.get("empId") and str(c.get("kind") or "") == certificates.KIND_HEALTH:
+                health.setdefault(c["empId"], []).append(
+                    {"issued": c.get("issued"), "result": c.get("result") or ""})
+        yw = minors.register(emps, as_of, health_by_emp=health)
+        _sec("young", yw, yw["statement"],
+             [i for r in yw["rows"] for i in r["issues"]][:50],
+             "Record every employee's date of birth on their profile.",
+             statement_vn=yw.get("statementVn", ""),
+             findings_vn=[i for r in yw["rows"] for i in r.get("issuesVn") or []][:50])
+
+        # 8. Speak-up. The pack reports the CHANNEL and the numbers, never the concerns: an audit
+        # asks whether a channel exists and is answered in time, not what anybody said.
+        handlers, senior = self._speakup_handlers()
+        # DESIGNATED handlers, counted separately from the senior pool. `_speakup_handlers` falls
+        # back to the HR admins when nobody is designated and always adds everybody at management
+        # level as an escalation route, so a raw total says nothing about whether the company has
+        # made a decision. What an auditor asks is who was NAMED to handle concerns.
+        named = [x for x in (str(db.get_setting("portal_speakupHandlers", "") or "")
+                             .replace("\n", ",").split(",")) if x.strip()]
+        concerns = db.list_collection("concerns")
+        g = grievance.summary(concerns, as_of)
+        v_find = []
+        if not named:
+            v_find.append("No speak-up handler is designated, so concerns fall back to whoever is "
+                          "an HR admin. A channel the company has not deliberately staffed is hard "
+                          "to evidence as independent. HR Admin → Company Portal.")
+        elif len(named) < 2:
+            v_find.append("Only one handler is designated, so a concern ABOUT that person has "
+                          "nowhere independent to go. Designate at least two.")
+        _sec("voice", {"designatedHandlers": len(named),
+                       "readableBy": len(set(handlers) | set(senior)),
+                       "summary": g,
+                       "notice": grievance.ANONYMITY_NOTICE,
+                       "noRetaliation": grievance.NO_RETALIATION},
+             g.get("statement", ""), v_find,
+             "Designate speak-up handlers in HR Admin → Company Portal.")
+
+        # 9. Discipline and termination.
+        decisions = db.list_collection("decisions")
+        _sec("discipline", {"count": len(decisions),
+                            "kinds": sorted({str(d.get("kind") or "") for d in decisions})},
+             "%d decision(s) issued." % len(decisions), [],
+             "HR Admin → Decisions & Letters.")
+
+        for key, label, label_vn, basis in self.AUDIT_SECTIONS:
+            sec = sections.get(key) or {}
+            out.append({"key": key, "label": label, "labelVn": label_vn, "basis": basis,
+                        "statement": sec.get("statement", ""),
+                        "statementVn": sec.get("statementVn", ""),
+                        "findings": sec.get("findings", []),
+                        "findingsVn": sec.get("findingsVn", []),
+                        "emptyHint": sec.get("emptyHint", ""),
+                        "data": sec.get("data")})
+        findings = sum(len(s["findings"]) for s in out)
+        return self._json({
+            "ok": True, "asOf": as_of, "period": period or as_of[:7],
+            "company": company.identity(self._company_settings()),
+            "headcount": len(emps),
+            "sections": out,
+            "findings": findings,
+            "statement": ("%d section(s), %d finding(s) to answer."
+                          % (len(out), findings)),
+            "caveat": "Assembled from the registers as they stand today. A section with no data "
+                      "says so — it is not evidence that there is nothing to report.",
+            "caveatVn": "Được tổng hợp từ các sổ đăng ký tại thời điểm hiện tại. Mục không có dữ "
+                        "liệu sẽ ghi rõ như vậy — đó không phải là bằng chứng rằng không có gì để "
+                        "báo cáo.",
+        })
+
+    def _minwage_ep(self, u, qs):
+        """Is anybody paid below the statutory regional minimum? — a client audit's first line.
+
+        Nothing in the portal could answer it. statutory.py held one minimum-wage figure and used it
+        only as the BHTN contribution ceiling; payroll_calc has no floor; the contract writer
+        accepted any wage above zero.
+
+        MANAGEMENT and above, because it lists every salary on one screen.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this lists every "
+                             "employee's monthly wage.", 403)
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").strip().lower() != "inactive"]
+        default_region = str(db.get_setting("portal_wageRegion", "") or "")
+        apply_uplift = bool(db.get_setting("portal_trainedUplift", False))
+        r = min_wage.review(emps, as_of, default_region=default_region,
+                            apply_trained_uplift=apply_uplift)
+        r.update({"ok": True, "headcount": len(emps),
+                  "defaultRegion": default_region,
+                  "regions": list(min_wage.REGIONS),
+                  "regionNote": ("No company default wage region is set, so an employee with no "
+                                 "region of their own cannot be checked. Set it in HR Admin → "
+                                 "Company Portal.") if not default_region else ""})
+        return self._json(r)
+
+    def _minors_ep(self, u, qs):
+        """The Art. 144 monitoring book, and the two numbers an auditor asks for.
+
+        Every column this returns already existed on the employee record and in the certificates
+        register. _certificates_review_ep even computed minor status per employee and then threw it
+        away before building its response. The one register a labour audit always opens with was
+        missing not for want of data but for want of a place to put it.
+
+        MANAGEMENT and above: it lists dates of birth and health-examination results for named
+        people, which is more than the certificates register discloses in one place.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to read the young-"
+                             "worker register — it lists dates of birth and health results.", 403)
+        as_of = str(qs.get("asOf", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(as_of or ""):
+            as_of = self._vn_day()
+        health = {}
+        for c in db.list_collection("certificates"):
+            if c.get("empId") and str(c.get("kind") or "") == certificates.KIND_HEALTH:
+                health.setdefault(c["empId"], []).append(
+                    {"issued": c.get("issued"), "expires": c.get("expires"),
+                     "result": c.get("result") or c.get("note") or ""})
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").strip().lower() != "inactive"]
+        r = minors.register(emps, as_of, health_by_emp=health)
+        r.update({"ok": True,
+                  "headcount": len(emps),
+                  "listedNote": minors.LISTED_OCCUPATIONS_NOTE,
+                  "listedNoteVn": minors.LISTED_OCCUPATIONS_NOTE_VN})
+        return self._json(r)
+
     def _certificates_review_ep(self, u, qs):
         """Who is covered, whose certificate is lapsing, and who never had one.
 
@@ -8884,6 +9243,7 @@ class Handler(BaseHTTPRequestHandler):
                 minor=leave_entitlement.is_minor(e.get("dob"), as_of),
                 disabled=bool(e.get("disabled")),
                 elderly=self._is_elderly(e.get("dob"), as_of),
+                age_known=leave_entitlement.dob_known(e.get("dob")),
                 osh_group=str(e.get("oshGroup") or "").strip() or None)
             if r["issues"]:
                 flagged += 1

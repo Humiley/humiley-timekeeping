@@ -18,6 +18,12 @@ def _clean():
     conn.execute("DELETE FROM collections WHERE coll = 'certificates'")
     conn.commit()
     conn.close()
+    # These tests are about the health-check CADENCE for an adult. Without a date of birth the
+    # register now (correctly) reports that the interval it applied is the adult one and nobody can
+    # tell whether it should have been the six-monthly minor one — a finding of its own, and not
+    # the finding these tests are making.
+    for e in db.list_employees():
+        db.update_employee(e["id"], {"dob": "1990-05-20"})
     yield
     conn = db.get_conn()
     conn.execute("DELETE FROM collections WHERE coll = 'certificates'")

@@ -1986,6 +1986,9 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab" id="hr-tab-decisions" style="display:none" onclick="switchHRTab('decisions',this)">Decisions &amp; Letters</button>
     <button class="tab" id="hr-tab-statutory" style="display:none" onclick="switchHRTab('statutory',this)">Statutory Returns</button>
     <button class="tab" id="hr-tab-osh" style="display:none" onclick="switchHRTab('osh',this)">Accidents &amp; Safety</button>
+    <button class="tab" id="hr-tab-minors" style="display:none" onclick="switchHRTab('minors',this)">Young Workers</button>
+    <button class="tab" id="hr-tab-minwage" style="display:none" onclick="switchHRTab('minwage',this)">Minimum Wage</button>
+    <button class="tab" id="hr-tab-pack" style="display:none" onclick="switchHRTab('pack',this)">Audit Pack</button>
     <button class="tab" onclick="switchHRTab('certs',this)">Certificates &amp; Health</button>
     <button class="tab" onclick="switchHRTab('portal',this)">Company Portal</button>
   </div>
@@ -1994,6 +1997,9 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div id="hr-decisions" style="display:none"></div>
   <div id="hr-statutory" style="display:none"></div>
   <div id="hr-osh" style="display:none"></div>
+  <div id="hr-minors" style="display:none"></div>
+  <div id="hr-minwage" style="display:none"></div>
+  <div id="hr-pack" style="display:none"></div>
   <div id="hr-certs" style="display:none"></div>
 
   <!-- BALANCES -->
@@ -2021,17 +2027,17 @@ window.addEventListener('orientationchange', _setLoginBg);
 
   <!-- EMPLOYEE PROFILES — Full management table -->
   <!-- COMPLIANCE -->
-  <div id="hr-compliance" style="display:none">
-    <div class="card">
-      <div class="card-hdr"><div class="card-title">Compliance &amp; Policy Configuration</div></div>
-      <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Leave entitlement &mdash; flat 12 days; statutory seniority accrual and carry-over <b>not yet implemented</b></span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Overtime premium (150 / 200 / 300%) &mdash; captured and approved, but <b>not yet carried into payroll</b></span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#FEF3C7;border-radius:6px"><span style="color:#92400E"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg></span><span>Annual leave year-end roll-over &mdash; <b>not yet automated</b>; balances are adjusted manually</span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>21 CFR Part&nbsp;11 e-signatures enforced on every submission &amp; approval</span></div>
-        <div style="display:flex;align-items:center;gap:8px;padding:8px;background:#D1FAE5;border-radius:6px"><span style="color:#065F46"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><polyline points="20 6 9 17 4 12"/></svg></span><span>Public holidays and rest days are excluded from annual leave (Art.&nbsp;112)</span></div>
-      </div>
-    </div>
+  <!-- The COMPUTED compliance matrix (tkRenderCompliance -> /api/hr/compliance) paints here.
+       This used to be a hardcoded list of amber and green assertions, and switchHRTab had no
+       branch for this tab — so the tab showed ONLY those claims and the computed matrix was
+       never reachable from it. Two of the claims had also gone stale into outright falsehood:
+       "leave entitlement — flat 12 days, statutory seniority accrual not yet implemented"
+       (leave_entitlement.seniority_days has computed Art. 114 since W2) and "overtime premium
+       not yet carried into payroll" (payroll_calc puts ot_pay into gross_pay). A tab named
+       Compliance asserting a compliance fact the code disproves is worse than an empty tab. -->
+  <div id="hr-compliance-panel" style="display:none">
+    <div id="hr-docreg"></div>
+    <div id="hr-compliance"></div>
   </div>
 
   <!-- Company Portal content manager -->
@@ -6731,9 +6737,16 @@ async function tkAddNewHireGo() {
    Computed on the SERVER because it needs every employee, and staff reads of the acknowledgements
    are correctly scoped to the caller's own. */
 let _hrComp = null, _hrCompDept = '';
+/* Onboarding paints the SAME doc register and compliance matrix as HR Admin, and both markups
+   used id="hr-compliance". Two elements sharing an id means getElementById returns whichever is
+   earlier in the document, so opening Onboarding sent the HR Admin tab's render into an element
+   nobody was looking at. One suffix decides which pair of hosts the render targets; the nested
+   and re-entrant calls below inherit it rather than resetting to the default. */
+let _hrHostSfx = '';
 
-async function tkRenderCompliance() {
-  const host = document.getElementById('hr-compliance'); if (!host) return;
+async function tkRenderCompliance(sfx) {
+  if (typeof sfx === 'string') _hrHostSfx = sfx;
+  const host = document.getElementById('hr-compliance' + _hrHostSfx); if (!host) return;
   host.innerHTML = tkSkeleton();
   // The documents themselves, not just the matrix. Without this _HR.hrdocs is empty on every HR
   // screen — it was only ever loaded in My Space — so the review-date warning below could never
@@ -6893,7 +6906,7 @@ function _hrDocHasFile(d) {
 }
 
 function tkRenderDocRegister() {
-  const host = document.getElementById('hr-docreg'); if (!host) return;
+  const host = document.getElementById('hr-docreg' + _hrHostSfx); if (!host) return;
   const all = (_HR.hrdocs || []).slice()
     .sort((a, b) => String(a.code || a.title || '').localeCompare(String(b.code || b.title || '')));
   const docs = all.filter(d => _hrDocsShowArchived ? d.archived : !d.archived);
@@ -7002,7 +7015,7 @@ async function tkRenderOnboarding() {
   await tkLoadColl('onboarding');
   // Policy compliance renders into its own host below the joiner checklist, so a slow matrix never
   // holds up the list HR uses every day.
-  setTimeout(() => { try { tkRenderCompliance(); } catch (e) { } }, 0);
+  setTimeout(() => { try { tkRenderCompliance('-onb'); } catch (e) { } }, 0);
   const items = _HR.onboarding;
   const totalTasks = items.reduce((s, o) => s + (o.tasks || []).length, 0);
   const doneTasks = items.reduce((s, o) => s + (o.tasks || []).filter(t => t.done).length, 0);
@@ -7036,7 +7049,7 @@ async function tkRenderOnboarding() {
         ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
         : '<span style="font-size:11.5px;color:var(--text-light)">' +
             _t('Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.') + '</span>') +
-    '</div><div id="hr-docreg"></div><div id="hr-compliance"></div>';
+    '</div><div id="hr-docreg-onb"></div><div id="hr-compliance-onb"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
 /* Probation milestone strip with computed due dates + status select. */
@@ -19801,6 +19814,16 @@ function showView(id, navEl, title) {
     // hours. Waiting for an Approver to be at a desk loses the only time that matters.
     const _ot = document.getElementById('hr-tab-osh');
     if (_ot) _ot.style.display = (_lvlRank(_userLevel) >= _lvlRank('manager')) ? '' : 'none';
+    // MANAGEMENT, unlike the accident register: this one lists dates of birth and health results
+    // for named people in one table, which is more than the certificates register discloses.
+    const _mt = document.getElementById('hr-tab-minors');
+    if (_mt) _mt.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
+    // Same gate: it puts every monthly wage on one screen.
+    const _wt = document.getElementById('hr-tab-minwage');
+    if (_wt) _wt.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
+    // It contains every wage, date of birth and health result in the company.
+    const _pk = document.getElementById('hr-tab-pack');
+    if (_pk) _pk.style.display = (_lvlRank(_userLevel) >= _lvlRank('management')) ? '' : 'none';
     Promise.all([tkLoadColl('jobs'), tkLoadColl('onboarding'), tkLoadColl('exits'), tkLoadColl('reviews'), tkLoadColl('talent'), tkLoadColl('courses')]).then(() => { try { tkRenderHrModules(); } catch (e) {} });
   }
   if (id === 'hr-overview') { try { tkRenderHrOverview(); } catch (e) { console.warn('hr-overview:', e.message); } }
@@ -20010,6 +20033,57 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Client social-compliance audit pack. */
+  'The nine sections a customer\'s labour-compliance audit asks for, from the registers that hold them. A section with nothing behind it says so — it is not evidence that there is nothing to report.':
+    'Chín mục mà cuộc đánh giá tuân thủ lao động của khách hàng yêu cầu, lấy từ chính các sổ đăng ký đang lưu. Mục không có dữ liệu sẽ ghi rõ như vậy — đó không phải bằng chứng rằng không có gì để báo cáo.',
+  'Assemble': 'Tổng hợp',
+  'Pack unavailable': 'Không tạo được hồ sơ',
+  'Assemble the pack first': 'Hãy tổng hợp hồ sơ trước',
+  'to answer': 'cần trả lời',
+  'nothing outstanding': 'không còn tồn đọng',
+  'and': 'và',
+  'more': 'mục nữa',
+  'as at': 'tính đến ngày',
+  'The PDF engine did not load. Check your connection and try again.':
+    'Không tải được bộ tạo PDF. Hãy kiểm tra kết nối và thử lại.',
+  /* Minimum wage (Decree 293/2025, Labour Code Art. 90(2)). */
+  'Every wage against the statutory floor for the region the person works in. The floor is set by decree and changes; a wage is always measured against the decree that was in force on the date you ask about.':
+    'Đối chiếu từng mức lương với mức lương tối thiểu của vùng nơi người lao động làm việc. Mức sàn do nghị định quy định và có thay đổi; lương luôn được đối chiếu với nghị định có hiệu lực vào ngày bạn tra cứu.',
+  'As at': 'Tính đến ngày',
+  'Below the minimum': 'Dưới mức tối thiểu',
+  'Could not be checked': 'Chưa đối chiếu được',
+  'no region or no wage on record': 'chưa có vùng hoặc chưa có mức lương',
+  'Checked': 'Đã đối chiếu',
+  'Total shortfall': 'Tổng số tiền còn thiếu',
+  'Region': 'Vùng',
+  'Monthly wage': 'Lương tháng',
+  'Applicable floor': 'Mức sàn áp dụng',
+  'Shortfall': 'Còn thiếu',
+  'At or above': 'Bằng hoặc cao hơn',
+  'Not checked': 'Chưa đối chiếu',
+  'The decrees this is measured against': 'Các nghị định dùng để đối chiếu',
+  'Decree': 'Nghị định',
+  'In force from': 'Hiệu lực từ',
+  /* Young workers (Labour Code 2019 Art. 143/144/146). */
+  'An employee under 18 must appear here with their date of birth, the work they do and their health-examination results. An employee with no date of birth on record appears too — nobody can show they are over 18.':
+    'Người lao động dưới 18 tuổi phải có tên tại đây kèm ngày sinh, công việc đang làm và kết quả khám sức khỏe. Người chưa có ngày sinh trên hồ sơ cũng xuất hiện ở đây — không ai chứng minh được họ đã đủ 18 tuổi.',
+  'Employees under 18': 'Người lao động dưới 18 tuổi',
+  'No date of birth on record': 'Chưa có ngày sinh trên hồ sơ',
+  'age cannot be shown either way': 'không thể xác định tuổi theo hướng nào',
+  'Records with a gap': 'Hồ sơ còn thiếu',
+  'Headcount covered': 'Số lao động đã rà soát',
+  'Date of birth': 'Ngày sinh',
+  'Band': 'Nhóm tuổi',
+  'Work being done': 'Công việc đang làm',
+  'Health examinations': 'Khám sức khỏe',
+  'Art. 146 limits': 'Giới hạn theo Điều 146',
+  'Age not on record': 'Chưa có tuổi',
+  'None on file': 'Chưa có hồ sơ',
+  'No overtime, no night work': 'Không làm thêm giờ, không làm ban đêm',
+  'day': 'ngày',
+  'week': 'tuần',
+  'Nobody on the register is under 18 and every employee has a date of birth on file. There is nothing Art. 144 requires you to keep.':
+    'Không có người lao động nào dưới 18 tuổi và mọi người đều đã có ngày sinh trên hồ sơ. Điều 144 không yêu cầu lập sổ theo dõi.',
   'Concerns you have raised': 'Phản ánh bạn đã gửi',
   'Being looked into. You will be told the outcome when it closes.':
     'Đang được xem xét. Bạn sẽ được thông báo kết quả khi khép lại.',
@@ -23076,19 +23150,25 @@ function switchMgrTab(tab, el) {
 
 function switchHRTab(tab, el) {
   document.querySelectorAll('#view-hradmin .tabs .tab').forEach(b => b.classList.remove('active'));
-  ['balances','benefits','compliance','portal','contracts','decisions','statutory','osh','certs'].forEach(id => {
-    const p = document.getElementById('hr-' + id);
+  ['balances','benefits','compliance','portal','contracts','decisions','statutory','osh','minors','minwage','pack','certs'].forEach(id => {
+    // 'compliance' is a WRAPPER holding the document register and the computed matrix, so the panel
+    // it shows is not the same element the matrix paints into.
+    const p = document.getElementById(id === 'compliance' ? 'hr-compliance-panel' : 'hr-' + id);
     if (p) p.style.display = 'none';
   });
   if (el) el.classList.add('active');
-  const panel = document.getElementById('hr-' + tab);
+  const panel = document.getElementById(tab === 'compliance' ? 'hr-compliance-panel' : 'hr-' + tab);
   if (panel) panel.style.display = 'block';
   if (tab === 'benefits') { try { tkRenderBenefitsAdmin(); } catch (e) { console.warn('benefits:', e.message); } }
   if (tab === 'balances') { try { tkRenderBalances(); } catch (e) {} }
+  if (tab === 'compliance') { try { tkRenderCompliance(''); } catch (e) {} }
   if (tab === 'contracts') { try { tkRenderContracts(); } catch (e) {} }
   if (tab === 'decisions') { try { tkRenderDecisions(); } catch (e) {} }
   if (tab === 'statutory') { try { tkRenderStatutory(); } catch (e) {} }
   if (tab === 'osh') { try { tkRenderOsh(); } catch (e) {} }
+  if (tab === 'minors') { try { tkRenderMinors(); } catch (e) {} }
+  if (tab === 'minwage') { try { tkRenderMinWage(); } catch (e) {} }
+  if (tab === 'pack') { try { tkRenderAuditPack(); } catch (e) {} }
   if (tab === 'certs') { try { tkRenderCerts(); } catch (e) {} }
   if (tab === 'portal') { try { tkRenderPortalEditor(); } catch (e) {} }
   if (tab === 'employees') {
@@ -25426,6 +25506,355 @@ function tkOshCsv() {
                x.correctiveAction || '']);
   });
   _csvSave('accident-register-' + (_oshData.asOf || '') + '.csv', rows);
+}
+
+/* ── YOUNG WORKERS ──────────────────────────────────────────────────────────────────────────────
+   Art. 144 requires a SEPARATE monitoring book for every employee under 18, recording their name,
+   date of birth, the work they do and their periodic health-examination results, produced to a
+   competent authority on request. It is also the first section of an SMETA/RBA-style client audit.
+   Every column already existed on the employee record and in the certificates register — the
+   certificates endpoint even computed minor status per person and discarded it. The register was
+   missing for want of a place to put it, not for want of data. */
+let _minData = null;
+
+async function tkRenderMinors() {
+  const el = document.getElementById('hr-minors'); if (!el) return;
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' +
+      _t2('Young workers — Art. 144 monitoring book', 'Người lao động chưa thành niên — sổ theo dõi riêng (Điều 144)') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('An employee under 18 must appear here with their date of birth, the work they do and their health-examination results. An employee with no date of birth on record appears too — nobody can show they are over 18.') +
+    '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkMinorsCsv()">' + _t('Export CSV') + '</button>' +
+    '</div><div id="min-body">' + tkSkeleton() + '</div>';
+
+  const body = document.getElementById('min-body');
+  let r;
+  try { r = await tkApi('/api/hr/minors'); }
+  catch (e) {
+    _minData = null;
+    body.innerHTML = '<div class="card" style="padding:20px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('Register unavailable') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(_errMsg(e)) + '</div></div>';
+    return;
+  }
+  _minData = r;
+
+  // The finding an auditor writes down leads, in its own colour. A clean answer is also a finding —
+  // "we employ no minors" is the sentence they are asking for, and it needs the dates of birth to
+  // be complete before anybody can say it.
+  const clean = !r.minors && !r.unknownDob;
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid ' +
+    (clean ? 'var(--emerald)' : (r.minors ? '#C53030' : '#B7791F')) + '">' +
+    '<div style="font-weight:700;color:' + (clean ? 'var(--emerald)' : (r.minors ? '#C53030' : '#B7791F')) + '">' +
+      _crmEsc(_t2(r.statement || '', r.statementVn || '')) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _crmEsc(_t2(r.basis || '', r.basisVn || '')) + '</div></div>';
+
+  const kpi = (lbl, val, note) => '<div class="card" style="padding:12px 16px;flex:1;min-width:150px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _t(lbl) + '</div>' +
+    '<div style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _crmEsc(String(val)) + '</div>' +
+    (note ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _crmEsc(note) + '</div>' : '') + '</div>';
+
+  const rows = (r.rows || []).map(x => {
+    const lim = x.limits || {};
+    const unknown = x.band === 'unknown';
+    return '<tr>' +
+      '<td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + '</div></td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _crmEsc(x.dob || '—') +
+        (x.age != null ? ' <span style="font-size:11px;color:var(--text-light)">(' + x.age + ')</span>' : '') + '</td>' +
+      '<td>' + (unknown
+        ? '<span class="badge b-warn" style="font-size:10px">' + _t('Age not on record') + '</span>'
+        : '<span class="badge b-info" style="font-size:10px">' + _crmEsc(_t2(lim.label || '', lim.labelVn || '')) + '</span>') + '</td>' +
+      '<td>' + _crmEsc(x.work || '—') + '</td>' +
+      '<td style="font-size:11px">' + ((x.healthChecks || []).length
+        ? (x.healthChecks || []).map(h => _crmEsc((h.issued || '') + (h.result ? ' · ' + h.result : ''))).join('<br>')
+        : '<span style="color:#C53030">' + _t('None on file') + '</span>') + '</td>' +
+      '<td style="font-size:11px">' + (unknown ? '—'
+        : _crmEsc((lim.maxDaily || '?') + 'h/' + _t('day') + ' · ' + (lim.maxWeekly || '?') + 'h/' + _t('week')) +
+          '<div style="color:#C53030">' + _t('No overtime, no night work') + '</div>') + '</td>' +
+      '</tr>' +
+      ((x.issues || []).length
+        ? '<tr><td colspan="6" style="padding-top:0"><div style="font-size:11px;color:#B7791F">' +
+          ((_t2('en','vn') === 'vn' && (x.issuesVn || []).length ? x.issuesVn : x.issues)
+            .map(i => '· ' + _crmEsc(i)).join('<br>')) + '</div></td></tr>'
+        : '');
+  }).join('');
+
+  body.innerHTML = head +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+    kpi('Employees under 18', r.minors) +
+    kpi('No date of birth on record', r.unknownDob, _t('age cannot be shown either way')) +
+    kpi('Records with a gap', r.gaps) +
+    kpi('Headcount covered', r.headcount) + '</div>' +
+    (rows
+      ? '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:900px"><thead><tr>' +
+        '<th>' + _t('Employee') + '</th><th>' + _t('Date of birth') + '</th><th>' + _t('Band') + '</th>' +
+        '<th>' + _t('Work being done') + '</th><th>' + _t('Health examinations') + '</th>' +
+        '<th>' + _t('Art. 146 limits') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>'
+      : '<div class="card" style="padding:24px;text-align:center;color:var(--text-light)">' +
+        _t('Nobody on the register is under 18 and every employee has a date of birth on file. There is nothing Art. 144 requires you to keep.') +
+        '</div>') +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">' +
+      _crmEsc(_t2(r.listedNote || '', r.listedNoteVn || '')) + '</div>';
+}
+
+function tkMinorsCsv() {
+  if (!_minData) { toast(_t('Load the register first'), 'warn'); return; }
+  const rows = [['Employee ID', 'Full name', 'Date of birth', 'Age', 'Band', 'Department',
+                 'Work being done', 'Health examinations', 'Max hours/day', 'Max hours/week',
+                 'Overtime allowed', 'Findings']];
+  (_minData.rows || []).forEach(x => {
+    const lim = x.limits || {};
+    rows.push([x.empId || '', x.name || '', x.dob || '', x.age == null ? '' : x.age,
+               (lim.label || x.band || ''), x.dept || '', x.work || '',
+               (x.healthChecks || []).map(h => (h.issued || '') + (h.result ? ' ' + h.result : '')).join('; '),
+               lim.maxDaily == null ? '' : lim.maxDaily, lim.maxWeekly == null ? '' : lim.maxWeekly,
+               lim.overtime === true ? 'yes' : (lim.overtime === null ? 'unknown' : 'no'),
+               (x.issues || []).join(' | ')]);
+  });
+  _csvSave('young-workers-art144-' + (_minData.asOf || '') + '.csv', rows);
+}
+
+/* ── MINIMUM WAGE ───────────────────────────────────────────────────────────────────────────────
+   "Is anybody paid below the regional minimum?" is the first line on a client's social-compliance
+   checklist and the portal could not answer it. The table is effective-dated by decree, so a 2025
+   month keeps using the 2025 figures — the server does that; this screen just has to keep the two
+   findings apart, because an employee nobody could check is not an employee who passed. */
+let _mwData = null;
+
+async function tkRenderMinWage() {
+  const el = document.getElementById('hr-minwage'); if (!el) return;
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' +
+      _t2('Minimum wage', 'Lương tối thiểu vùng') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('Every wage against the statutory floor for the region the person works in. The floor is set by decree and changes; a wage is always measured against the decree that was in force on the date you ask about.') +
+    '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">' +
+    '<div><label class="form-label">' + _t('As at') + '</label>' +
+    '<input class="form-control" id="mw-date" type="date" value="' + new Date().toISOString().slice(0, 10) + '" style="width:170px"></div>' +
+    '<button class="btn btn-primary btn-sm" onclick="tkRenderMinWage()">' + _t('Load') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkMinWageCsv()">' + _t('Export CSV') + '</button>' +
+    '</div><div id="mw-body">' + tkSkeleton() + '</div>';
+
+  const when = (document.getElementById('mw-date') || {}).value || '';
+  const body = document.getElementById('mw-body');
+  let r;
+  try { r = await tkApi('/api/hr/minwage' + (when ? '?asOf=' + encodeURIComponent(when) : '')); }
+  catch (e) {
+    _mwData = null;
+    body.innerHTML = '<div class="card" style="padding:20px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('Register unavailable') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(_errMsg(e)) + '</div></div>';
+    return;
+  }
+  _mwData = r;
+
+  const bad = r.below > 0;
+  const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid ' +
+    (bad ? '#C53030' : (r.unchecked ? '#B7791F' : 'var(--emerald)')) + '">' +
+    '<div style="font-weight:700;color:' + (bad ? '#C53030' : (r.unchecked ? '#B7791F' : 'var(--emerald)')) + '">' +
+      _crmEsc(_t2(r.statement || '', r.statementVn || '')) + '</div>' +
+    (r.regionNote ? '<div style="font-size:12px;color:#B7791F;margin-top:6px">' + _crmEsc(r.regionNote) + '</div>' : '') +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _crmEsc(_t2(r.trainedUpliftNote || '', r.trainedUpliftNoteVn || '')) + '</div></div>';
+
+  const kpi = (lbl, val, note) => '<div class="card" style="padding:12px 16px;flex:1;min-width:150px">' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _t(lbl) + '</div>' +
+    '<div style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _crmEsc(String(val)) + '</div>' +
+    (note ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _crmEsc(note) + '</div>' : '') + '</div>';
+
+  const money = v => v == null ? '—' : '₫' + Number(v).toLocaleString('vi-VN');
+  const rows = (r.rows || []).map(x =>
+    '<tr><td><div style="font-weight:600">' + _crmEsc(x.name || x.empId) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(x.dept || '') + '</div></td>' +
+    '<td>' + _crmEsc(x.region || '—') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(x.wage) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + money(x.applies) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' +
+      (x.shortfall ? '#C53030' : 'var(--text-light)') + '">' +
+      (x.shortfall ? money(x.shortfall) : '—') + '</td>' +
+    '<td>' + (x.ok === true
+      ? '<span class="badge b-ok" style="font-size:10px">' + _t('At or above') + '</span>'
+      : x.ok === false
+      ? '<span class="badge b-err" style="font-size:10px">' + _t('Below the minimum') + '</span>'
+      : '<span class="badge b-warn" style="font-size:10px">' + _t('Not checked') + '</span>') +
+    '<div style="font-size:10px;color:var(--text-light);margin-top:2px">' + _crmEsc(_t2(x.why || '', x.whyVn || '')) + '</div></td>' +
+    '</tr>').join('');
+
+  const sched = (r.schedule || []).map(s =>
+    '<tr><td>' + _crmEsc(s.decree) + '</td><td>' + _crmEsc(s['from']) + '</td>' +
+    ['I', 'II', 'III', 'IV'].map(k =>
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' +
+      money(((s.rates || {})[k] || {}).monthly) + '</td>').join('') + '</tr>').join('');
+
+  body.innerHTML = head +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+    kpi('Below the minimum', r.below) +
+    kpi('Could not be checked', r.unchecked, _t('no region or no wage on record')) +
+    kpi('Checked', r.checked) +
+    kpi('Total shortfall', money(r.totalShortfall)) + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="table-wrap"><table style="min-width:880px"><thead><tr>' +
+    '<th>' + _t('Employee') + '</th><th>' + _t('Region') + '</th>' +
+    '<th style="text-align:right">' + _t('Monthly wage') + '</th>' +
+    '<th style="text-align:right">' + _t('Applicable floor') + '</th>' +
+    '<th style="text-align:right">' + _t('Shortfall') + '</th><th>' + _t('Result') + '</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    '<div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:8px">' +
+      _t('The decrees this is measured against') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
+    '<th>' + _t('Decree') + '</th><th>' + _t('In force from') + '</th>' +
+    '<th style="text-align:right">I</th><th style="text-align:right">II</th>' +
+    '<th style="text-align:right">III</th><th style="text-align:right">IV</th>' +
+    '</tr></thead><tbody>' + sched + '</tbody></table></div></div>';
+}
+
+function tkMinWageCsv() {
+  if (!_mwData) { toast(_t('Load the register first'), 'warn'); return; }
+  const rows = [['Employee ID', 'Name', 'Department', 'Title', 'Region', 'Monthly wage',
+                 'Statutory floor', 'Applicable floor', 'Shortfall', 'Result', 'Basis']];
+  (_mwData.rows || []).forEach(x => {
+    rows.push([x.empId || '', x.name || '', x.dept || '', x.title || '', x.region || '',
+               x.wage == null ? '' : x.wage, x.floor == null ? '' : x.floor,
+               x.applies == null ? '' : x.applies, x.shortfall || 0,
+               x.ok === true ? 'At or above' : (x.ok === false ? 'BELOW' : 'Not checked'),
+               x.why || '']);
+  });
+  _csvSave('minimum-wage-' + (_mwData.asOf || '') + '.csv', rows);
+}
+
+/* ── CLIENT SOCIAL-COMPLIANCE AUDIT PACK ────────────────────────────────────────────────────────
+   Nine sections in the order a SMETA/RBA-style labour audit walks them, assembled from the same
+   registers the screens read. Before this, answering a pharma client meant clicking through five
+   screens, downloading five files and stapling them together — and four of the nine sections had
+   no export at all. Nothing here recomputes anything: the pack and the screen cannot disagree. */
+let _packData = null;
+
+async function tkRenderAuditPack() {
+  const el = document.getElementById('hr-pack'); if (!el) return;
+  el.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px">' +
+    '<div style="font-weight:700;color:var(--navy)">' +
+      _t2('Client audit pack', 'Hồ sơ phục vụ đánh giá của khách hàng') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-top:2px">' +
+    _t('The nine sections a customer\'s labour-compliance audit asks for, from the registers that hold them. A section with nothing behind it says so — it is not evidence that there is nothing to report.') +
+    '</div></div>' +
+    '<div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap">' +
+    '<div><label class="form-label">' + _t('As at') + '</label>' +
+    '<input class="form-control" id="pk-date" type="date" value="' + new Date().toISOString().slice(0, 10) + '" style="width:170px"></div>' +
+    '<button class="btn btn-primary btn-sm" onclick="tkRenderAuditPack()">' + _t('Assemble') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkPackPdf()">' + _t('Export PDF') + '</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="tkPackCsv()">' + _t('Export CSV') + '</button>' +
+    '</div><div id="pk-body">' + tkSkeleton() + '</div>';
+
+  const when = (document.getElementById('pk-date') || {}).value || '';
+  const body = document.getElementById('pk-body');
+  let r;
+  try { r = await tkApi('/api/hr/audit-pack' + (when ? '?asOf=' + encodeURIComponent(when) : '')); }
+  catch (e) {
+    _packData = null;
+    body.innerHTML = '<div class="card" style="padding:20px;border-left:3px solid #B7791F">' +
+      '<div style="font-weight:700;color:#B7791F">' + _t('Pack unavailable') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _crmEsc(_errMsg(e)) + '</div></div>';
+    return;
+  }
+  _packData = r;
+
+  const secs = (r.sections || []).map((s, i) => {
+    const n = (s.findings || []).length;
+    return '<div class="card" style="padding:14px 18px;margin-bottom:10px;border-left:3px solid ' +
+      (n ? '#B7791F' : 'var(--emerald)') + '">' +
+      '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-weight:700;color:var(--navy)">' + (i + 1) + '. ' +
+        _crmEsc(_t2(s.label, s.labelVn)) + '</div>' +
+      '<div style="font-size:11px;font-weight:700;color:' + (n ? '#B7791F' : 'var(--emerald)') + '">' +
+        (n ? n + ' ' + _t('to answer') : _t('nothing outstanding')) + '</div></div>' +
+      '<div style="font-size:12px;margin-top:4px">' + _crmEsc(s.statement || '') + '</div>' +
+      (n ? '<div style="font-size:11px;color:#B7791F;margin-top:6px">' +
+        (s.findings || []).slice(0, 8).map(f => '· ' + _crmEsc(f)).join('<br>') +
+        (n > 8 ? '<br>· ' + _t('and') + ' ' + (n - 8) + ' ' + _t('more') : '') + '</div>' : '') +
+      (s.emptyHint && !s.statement ? '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+        _crmEsc(s.emptyHint) + '</div>' : '') +
+      '<div style="font-size:10px;color:var(--text-light);margin-top:8px">' + _crmEsc(s.basis || '') + '</div>' +
+      '</div>';
+  }).join('');
+
+  body.innerHTML =
+    '<div class="card" style="padding:14px 18px;margin-bottom:16px;border-left:3px solid ' +
+    (r.findings ? '#B7791F' : 'var(--emerald)') + '">' +
+    '<div style="font-weight:700;color:var(--navy)">' + _crmEsc(_t2(r.statement || '', r.statementVn || '')) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _crmEsc(_t2(r.caveat || '', r.caveatVn || '')) + '</div></div>' + secs;
+}
+
+/* The pack on the Humiley letterhead — the thing that actually leaves the building. */
+async function tkPackPdf() {
+  if (!_packData) { toast(_t('Assemble the pack first'), 'warn'); return; }
+  // The export engines are lazy-loaded; force and wait, the same way every other PDF here does.
+  const ready = () => (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!ready()) {
+    if (typeof tkEnsureExportLibs === 'function') tkEnsureExportLibs();
+    for (let i = 0; i < 40 && !ready(); i++) await new Promise(r => setTimeout(r, 150));
+  }
+  const J = ready();
+  if (!J) { toast(_t('The PDF engine did not load. Check your connection and try again.'), 'error'); return; }
+  const r = _packData;
+  const doc = new J({ unit: 'mm', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 16;
+  let y = _brandHeader(doc, {
+    title: _t2('Labour compliance pack', 'Hồ sơ tuân thủ pháp luật lao động'),
+    subtitle: ((r.company || {}).displayNameEn || '') + ' · ' + _t('as at') + ' ' + (r.asOf || '') });
+
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(92, 100, 112);
+  doc.splitTextToSize(_pdfSafe(r.caveat || ''), W - M * 2).forEach(l => { doc.text(l, M, y); y += 4.2; });
+  y += 3;
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(31, 41, 55);
+  doc.text(_pdfSafe(r.statement || ''), M, y); y += 8;
+
+  (r.sections || []).forEach((s, i) => {
+    if (y > H - 40) { doc.addPage(); y = 24; }
+    _pdfFont(doc, 'bold'); doc.setFontSize(10.5); doc.setTextColor(32, 80, 144);
+    doc.text(_pdfSafe((i + 1) + '. ' + s.label), M, y); y += 5;
+    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(120, 128, 140);
+    doc.splitTextToSize(_pdfSafe(s.basis || ''), W - M * 2).forEach(l => { doc.text(l, M, y); y += 3.6; });
+    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(31, 41, 55);
+    doc.splitTextToSize(_pdfSafe(s.statement || ''), W - M * 2).forEach(l => { doc.text(l, M, y); y += 4.4; });
+    (s.findings || []).slice(0, 12).forEach(f => {
+      if (y > H - 30) { doc.addPage(); y = 24; }
+      _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(183, 121, 31);
+      doc.splitTextToSize(_pdfSafe('· ' + f), W - M * 2 - 4).forEach(l => { doc.text(l, M + 4, y); y += 3.8; });
+    });
+    y += 4;
+  });
+
+  const total = doc.internal.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    doc.setPage(p);
+    _brandFooter(doc, p, total, 'HML-AUDIT-' + (r.asOf || '').replace(/-/g, ''),
+                 _t2('Labour compliance pack', 'Hồ sơ tuân thủ pháp luật lao động'));
+  }
+  doc.save('humiley-labour-compliance-pack-' + (r.asOf || '') + '.pdf');
+}
+
+function tkPackCsv() {
+  if (!_packData) { toast(_t('Assemble the pack first'), 'warn'); return; }
+  const rows = [['#', 'Section', 'Section (VN)', 'Statement', 'Finding', 'Legal basis']];
+  (_packData.sections || []).forEach((s, i) => {
+    if (!(s.findings || []).length) {
+      rows.push([i + 1, s.label, s.labelVn, s.statement, '', s.basis]);
+      return;
+    }
+    (s.findings || []).forEach((f, k) => {
+      rows.push([k ? '' : i + 1, k ? '' : s.label, k ? '' : s.labelVn,
+                 k ? '' : s.statement, f, k ? '' : s.basis]);
+    });
+  });
+  _csvSave('labour-compliance-pack-' + (_packData.asOf || '') + '.csv', rows);
 }
 
 function tkCertAdd(empId) {

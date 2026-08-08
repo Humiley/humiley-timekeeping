@@ -167,3 +167,26 @@ def test_whether_the_certificate_itself_is_attached_is_part_of_the_answer():
     assert r["items"][0]["hasFile"] is False
     certs = [dict(_c(C.KIND_HEALTH, "2026-05-01"), file="data:application/pdf;base64,AAA")]
     assert C.review(certs, "2026-06-01")["items"][0]["hasFile"] is True
+
+
+# ── an unknown age is not the same fact as an adult ──────────────────────────────────────────────
+
+def test_a_missing_date_of_birth_is_reported_rather_than_treated_as_an_adult():
+    """is_minor() answers False when it does not know, which is the only thing a boolean can say —
+    so the six-monthly minor cadence silently fell to the yearly adult one, and nothing said so."""
+    r = C.review([], "2026-08-08", age_known=False)
+    hit = [i for i in r["issues"] if i["state"] == "unknown"]
+    assert hit, r["issues"]
+    assert "date of birth" in hit[0]["message"].lower()
+    assert "under 18" in hit[0]["message"]
+
+
+def test_a_known_adult_raises_no_such_issue():
+    assert not [i for i in C.review([], "2026-08-08", age_known=True)["issues"]
+                if i["state"] == "unknown"]
+
+
+def test_it_does_not_replace_the_real_findings():
+    """The missing health check is still the high-severity finding; the unknown age is beside it."""
+    r = C.review([], "2026-08-08", age_known=False)
+    assert any(i["severity"] == "high" and i["state"] == "missing" for i in r["issues"])

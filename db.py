@@ -285,6 +285,9 @@ def init_db():
                 # whether the employee is a person with disabilities. Both raise the statutory base.
                 "workConditions TEXT", "disabled INTEGER", "contractExempt TEXT",
                 "oshGroup TEXT",
+                # Decree 293/2025 wage region (I–IV) of the WORKPLACE, and whether the employee
+                # holds a certified vocational qualification. Both drive the minimum-wage check.
+                "wageRegion TEXT", "trained INTEGER",
                 "bankName TEXT", "bankAcc TEXT", "bankHolder TEXT", "bankBranch TEXT"):
         try:
             conn.execute("ALTER TABLE employees ADD COLUMN " + col)
@@ -793,6 +796,15 @@ EMP_FIELDS = ["name", "ini", "clr", "dept", "title", "email", "phone", "startDat
               # Site and factory duty is not automatically heavy work — it is a classification the
               # company makes against the MOLISA list, so it is recorded, not inferred from a title.
               "workConditions", "disabled",
+              # The Decree 293/2025 wage region (I–IV) the person's WORKPLACE is in — the statutory
+              # minimum they must be paid at. It is a property of the district they work in, set by
+              # the decree's own schedule, so it is recorded rather than derived: `zone` next to it
+              # is a GPS check-in geofence and means nothing here. Blank falls back to the company
+              # default; blank with no default means nobody is checked, which the register says.
+              "wageRegion",
+              # Whether they hold a certified vocational qualification, for the 7% uplift IF the
+              # company's collective agreement commits to one. Never a statutory floor on its own.
+              "trained",
               # Art. 20(2)(c) carve-out, where one applies: 'elderly' | 'foreign' | 'state_director'
               # | 'union_officer'. Blank for almost everyone — it is a legal status somebody records,
               # never something to infer from a name or a job title.

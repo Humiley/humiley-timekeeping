@@ -24,6 +24,7 @@ from datetime import date
 
 import company
 import contracts
+import min_wage
 import datespan
 import vn_amount
 
@@ -135,6 +136,33 @@ def probation_cap(band):
     return None if not hit else {"days": hit[0], "basis": "Labour Code 2019 Art. 25 — %s." % hit[1]}
 
 
+def wage_check(terms, as_of=None):
+    """Whether the wage in this draft clears the statutory regional minimum.
+
+    Art. 90(2): the wage agreed must not be lower than the regional minimum. Nothing in this module
+    checked it — `_term_missing` tested only that the wage was above zero, so a contract stating
+    ₫3,000,000 a month in Ho Chi Minh City was issuable, signable and invisible. It is also the
+    first line on a client's social-compliance checklist.
+
+    Silent when the region or the date is not known: `min_wage.check` returns ok=None there, and a
+    wage nobody could measure must not be reported as one that failed. The gap shows up in the
+    wage register instead, where it belongs.
+    """
+    t = terms or {}
+    r = min_wage.check(t.get("wage"), t.get("wageRegion"),
+                       as_of or t.get("startDate"),
+                       trained=bool(t.get("trained")),
+                       apply_trained_uplift=bool(t.get("applyTrainedUplift")))
+    if r["ok"] is not False:
+        return []
+    f = r["floor"]
+    return ["The wage is below the statutory minimum for Region %s. %s states ₫%s a month; this "
+            "contract states ₫%s, which is ₫%s short. Labour Code Art. 90(2) — an agreed wage may "
+            "not be lower than the regional minimum."
+            % (f["region"], f["decree"], "{:,}".format(r["applies"]),
+               "{:,}".format(r["wage"]), "{:,}".format(r["shortfall"]))]
+
+
 def term_check(terms):
     """What Art. 20 says about the term as drafted. Returns problems, not a verdict."""
     out = []
@@ -213,7 +241,7 @@ def blockers(company_settings, employee, terms):
                      for k, lbl, vn in EMPLOYEE_REQUIRED if not _s(emp.get(k))],
         "terms": [{"key": k, "label": lbl, "labelVn": vn}
                   for k, lbl, vn in TERMS_REQUIRED if _term_missing(t, k)],
-        "term": term_check(t),
+        "term": term_check(t) + wage_check(t),
     }
 
 

@@ -108,7 +108,7 @@ def latest(certs, kind=None):
 
 
 def review(certs, as_of, conditions="normal", minor=False, disabled=False, elderly=False,
-           osh_group=None, warn_days=DEFAULT_WARN_DAYS):
+           osh_group=None, warn_days=DEFAULT_WARN_DAYS, age_known=True):
     """One person's certificate position: what they hold, what is lapsing, and what is missing.
 
     `osh_group` is the Decree 44/2016 group the company has classified them into. Blank means the
@@ -117,6 +117,17 @@ def review(certs, as_of, conditions="normal", minor=False, disabled=False, elder
     """
     certs = list(certs or ())
     out = {"items": [], "issues": []}
+
+    # An unrecorded date of birth is not the same fact as "an adult", and the cadence below is one
+    # of the places the difference bites: a minor is due a health check every six months. is_minor()
+    # can only answer False when it does not know, so the caller passes age_known and the gap is
+    # REPORTED rather than silently resolved to the longer interval.
+    if not age_known:
+        out["issues"].append({
+            "kind": KIND_HEALTH, "severity": "medium", "state": "unknown",
+            "message": "No date of birth on record, so the health-check interval is the adult one. "
+                       "Law on OSH 2015 Art. 21(1) requires every 6 months for an employee under "
+                       "18. Record the date of birth."})
 
     hc_months = health_check_months(conditions, minor, disabled, elderly)
     required = [(KIND_HEALTH, "Periodic health examination", hc_months,

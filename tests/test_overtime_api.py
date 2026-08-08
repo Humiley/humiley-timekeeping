@@ -34,6 +34,10 @@ def _clean():
     conn.close()
     db.set_setting("portal_holidays", [])
     db.set_setting("portal_otAnnualCap", "")
+    # These tests are about the ART. 107 ceilings, which only ever apply to an adult. Without a date
+    # of birth the approval path now refuses on Art. 146 first and never reaches them — correctly,
+    # but it makes the test about the wrong article. Say out loud that this employee is an adult.
+    db.update_employee("HML-STF", {"dob": "1990-05-20"})
     yield
     conn = db.get_conn()
     conn.execute("DELETE FROM attendance")

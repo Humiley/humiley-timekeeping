@@ -35,6 +35,9 @@ def _clean():
     conn.commit()
     conn.close()
     db.set_setting("portal_holidays", [])
+    # The overtime tests below are about the Art. 107 / Decree 145 Art. 60 ceilings, which apply to
+    # an adult. Without a date of birth the approval path refuses on Art. 146 first.
+    db.update_employee("HML-STF", {"dob": "1990-05-20"})
     yield
     conn = db.get_conn()
     conn.execute("DELETE FROM attendance")

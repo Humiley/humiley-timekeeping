@@ -79,8 +79,26 @@ def base_days(conditions="normal", minor=False, disabled=False):
     return base
 
 
+def dob_known(dob):
+    """Whether a usable date of birth is on the record.
+
+    is_minor() answers False for a blank date of birth, which is the only thing a boolean CAN say —
+    but "we do not know" and "they are an adult" are different facts with different consequences,
+    and collapsing them is under-protective in every direction the answer is used: a minor is owed
+    14 days' annual leave rather than 12 (Art. 113(1)(b)) and a six-monthly health check rather than
+    a yearly one (Law on OSH Art. 21(1)), and both silently fell to the adult branch.
+
+    Callers use this to SURFACE the gap instead of resolving it. Nothing here guesses an age.
+    """
+    return _d(dob) is not None
+
+
 def is_minor(dob, as_of):
-    """Under 18 on the date in question. Art. 113(1)(b) is about age at the time, not at hire."""
+    """Under 18 on the date in question. Art. 113(1)(b) is about age at the time, not at hire.
+
+    Returns False when the date of birth is unknown — see dob_known(), which callers must check
+    alongside this if the difference matters to them.
+    """
     b, a = _d(dob), _d(as_of)
     if not b or not a:
         return False
