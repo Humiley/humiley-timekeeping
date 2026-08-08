@@ -38,6 +38,7 @@ import leave_entitlement  # Labour Code Art. 113/114 annual-leave entitlement + 
 import company           # the employer's legal identity, as a document has to state it (pure)
 import contract_doc      # Labour Code Art. 21 particulars — drafting the contract itself (pure)
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
+import attendance_days  # what each day WAS: worked / leave / holiday / rest / absent
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3778,6 +3779,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._payroll_journal_ep(u, qs))
         if path == "/api/hr/audit-pack":
             return self._guard(lambda uu: self._audit_pack_ep(uu, qs), manager=True)
+        if path == "/api/hr/timesheet":
+            return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/minwage":
             return self._guard(lambda uu: self._minwage_ep(uu, qs), manager=True)
         if path == "/api/hr/minors":
@@ -9237,6 +9240,60 @@ class Handler(BaseHTTPRequestHandler):
                         "liệu sẽ ghi rõ như vậy — đó không phải là bằng chứng rằng không có gì để "
                         "báo cáo.",
         })
+
+    def _timesheet_ep(self, u, qs):
+        """The per-employee timesheet, and the only honest absence figure this company has had.
+
+        Every screen that reported absence counted attendance rows whose status is 'absent'. Nothing
+        in production writes that value — _checkin writes 'on-time' or 'late', and the only writers
+        of 'absent' are the demo-data generators — so every absence number the company has ever seen
+        was structurally zero. An absence is the ABSENCE of a record and has to be derived.
+
+        This is also the working-time record Decree 145/2020 requires the employer to keep and
+        produce on inspection, per employee and per period.
+
+        Scoped like the roster: your own always, your direct reports' if you manage them,
+        everybody's from management up.
+        """
+        frm = str(qs.get("from", [""])[0] or "")[:10]
+        to = str(qs.get("to", [""])[0] or "")[:10]
+        if not self._RE_DATE.match(frm or "") or not self._RE_DATE.match(to or ""):
+            today = self._vn_day()
+            frm, to = today[:8] + "01", today
+        rank = self._level_rank(self._caller_level(u))
+        emps = [e for e in db.list_employees()
+                if str(e.get("status") or "Active").strip().lower() != "inactive"]
+        if rank < self._level_rank("management"):
+            my_email = (u.get("email") or "").strip().lower()
+            emps = [e for e in emps if e.get("id") == u.get("id")
+                    or (my_email and (e.get("managerEmail") or "").strip().lower() == my_email)]
+        only = str(qs.get("emp", [""])[0] or "").strip()
+        if only:
+            emps = [e for e in emps if e.get("id") == only]
+
+        hols = _ot_holiday_set()
+        scheds = db.list_collection("schedules")
+        rows_by_emp = {}
+        for r in db.list_attendance(start=frm, end=to):
+            rows_by_emp.setdefault(r.get("emp_id"), []).append(r)
+        leave_by_emp = {}
+        for lv in db.list_leave(emp_ids=[e.get("id") for e in emps] or None):
+            leave_by_emp.setdefault(lv.get("emp_id"), []).append(lv)
+
+        # Days that have not happened yet are not absences. Without this, asking for "August" on the
+        # 8th reports the remaining three weeks as everybody being away.
+        today = self._vn_day()
+        sheets = [attendance_days.timesheet(
+            e, rows_by_emp.get(e.get("id")) or [], frm, to,
+            rest_weekdays=_rest_weekdays_for(e, scheds),
+            holidays=hols, leave_rows=leave_by_emp.get(e.get("id")) or [],
+            today=today)
+            for e in emps]
+        r = attendance_days.review(sheets)
+        r.update({"ok": True, "from": frm, "to": to, "sheets": sheets,
+                  "headcount": len(emps), "today": today,
+                  "truncated": bool(to > today)})
+        return self._json(r)
 
     def _minwage_ep(self, u, qs):
         """Is anybody paid below the statutory regional minimum? — a client audit's first line.

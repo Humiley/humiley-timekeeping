@@ -2085,6 +2085,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <button class="tab active" onclick="switchReportTab('attendance',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Attendance</button>
     <button class="tab" onclick="switchReportTab('leave',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Leave Report</button>
     <button class="tab" onclick="switchReportTab('inout',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>In/Out Log</button>
+    <button class="tab" onclick="switchReportTab('timesheet',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/></svg>Timesheet</button>
     <button class="tab" onclick="switchReportTab('recruit',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>Recruitment</button>
     <button class="tab" onclick="switchReportTab('workforce',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Headcount &amp; Turnover</button>
     <button class="tab" onclick="switchReportTab('labour',this)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px"><path d="M2 20h20"/><path d="M5 20V9l7-5 7 5v11"/><path d="M9 20v-5h6v5"/></svg>Labour by Project</button>
@@ -2206,6 +2207,24 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
     </div>
   </div><!-- /rpt-inout -->
+
+  <!-- TIMESHEET — the per-employee working-time record, and the only honest absence figure.
+       Every other screen counted attendance rows with status 'absent'; nothing in production writes
+       that value, so those numbers were structurally zero. An absence is the ABSENCE of a record, so
+       it is derived here from the days the company expected somebody to work. This is also the
+       record Decree 145/2020 requires the employer to keep and produce on inspection. -->
+  <div id="rpt-timesheet" style="display:none">
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+      <label class="form-label" style="margin:0;font-size:12px">From</label>
+      <input type="date" class="form-control" id="ts-from" style="width:auto" onchange="tkRenderTimesheet()">
+      <label class="form-label" style="margin:0;font-size:12px">To</label>
+      <input type="date" class="form-control" id="ts-to" style="width:auto" onchange="tkRenderTimesheet()">
+      <select class="sel-filter" data-dept-select="All Departments" id="ts-dept" onchange="tkRenderTimesheet()"><option value="">All Departments</option></select>
+      <button class="btn btn-outline btn-sm" onclick="tkRenderTimesheet()">Refresh</button>
+      <button class="btn btn-ghost btn-sm" onclick="tkTimesheetCsv()">Export CSV</button>
+    </div>
+    <div id="ts-root"></div>
+  </div><!-- /rpt-timesheet -->
 
   <div id="rpt-recruit" style="display:none"></div>
   <div id="rpt-workforce" style="display:none">
@@ -5618,9 +5637,23 @@ async function _initStaffAnalytics() {
   try { await tkLoadColl('enrollments'); } catch (e) {}
   const me = (_DEMO_EMPLOYEES || []).find(e => e.name === _staffName) || {};
   const recs = (_DEMO_ATTENDANCE || []).filter(r => r.name === _staffName);
-  // Attendance status
-  const att = { ontime: 0, late: 0, absent: 0 };
-  recs.forEach(r => { if (r.status === 'late') att.late++; else if (r.status === 'absent') att.absent++; else if (r.in || r.status === 'on-time') att.ontime++; });
+  /* Attendance status — this month, DERIVED.
+     Counting my own rows can never produce an absence: on a day I did not come in there is no row
+     to count. The server works it out from the days I was expected, minus approved leave, public
+     holidays and my own rest days, and scopes /api/hr/timesheet to me. */
+  const _isoD = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const _now = new Date(), _mFrom = _isoD(new Date(_now.getFullYear(), _now.getMonth(), 1)), _mTo = _isoD(_now);
+  let att = null;
+  try {
+    const ts = await tkApi('/api/hr/timesheet?from=' + _mFrom + '&to=' + _mTo);
+    const c = (((ts.sheets || []).find(s => s.empId === me.id) || (ts.sheets || [])[0] || {}).counts) || {};
+    att = { ontime: c.worked || 0, late: c.late || 0, leave: c.leave || 0, absent: c.absent || 0 };
+  } catch (e) {
+    // No answer from the server: show what the records alone can say, and no absence figure at all
+    // rather than the zero that is merely the shape of the data.
+    att = { ontime: 0, late: 0, leave: 0, absent: 0 };
+    recs.filter(r => String(r.date || '') >= _mFrom).forEach(r => { if (r.status === 'late') att.late++; else if (r.in || r.status === 'on-time') att.ontime++; });
+  }
   // Working hours — most recent sessions (chronological)
   const withHrs = recs.filter(r => r.in && r.out).slice(0, 8).reverse();
   const hLabels = withHrs.map(r => String(r.date || '').slice(5));
@@ -5631,9 +5664,9 @@ async function _initStaffAnalytics() {
   // Training status
   const tr = { Completed: 0, 'In progress': 0, Enrolled: 0 };
   (_HR.enrollments || []).filter(x => x.empId === me.id).forEach(x => { const s = x.status || 'Enrolled'; tr[s] = (tr[s] || 0) + 1; });
-  wrap.innerHTML = _rptChartCard('My Attendance Status', 'sd-att', 190) + _rptChartCard('My Working Hours (recent)', 'sd-hours', 190) + _rptChartCard('My Leave by Type', 'sd-leave', 190) + _rptChartCard('My Training Status', 'sd-training', 190);
+  wrap.innerHTML = _rptChartCard('My Attendance This Month', 'sd-att', 190) + _rptChartCard('My Working Hours (recent)', 'sd-hours', 190) + _rptChartCard('My Leave by Type', 'sd-leave', 190) + _rptChartCard('My Training Status', 'sd-training', 190);
   if (typeof Chart === 'undefined') return;
-  _mkChart('sd-att', { type: 'doughnut', data: { labels: ['On Time', 'Late', 'Absent'], datasets: [{ data: [att.ontime, att.late, att.absent], backgroundColor: ['#00B060', '#f59e0b', '#ef4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
+  _mkChart('sd-att', { type: 'doughnut', data: { labels: [_t('On Time'), _t('Late'), _t2('Approved leave', 'Nghỉ phép đã duyệt'), _t2('Absent', 'Vắng')], datasets: [{ data: [att.ontime, att.late, att.leave, att.absent], backgroundColor: ['#00B060', '#f59e0b', '#8B5CF6', '#ef4444'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
   _mkChart('sd-hours', { type: 'line', data: { labels: hLabels, datasets: [{ data: hVals, borderColor: '#205090', backgroundColor: _grad('rgba(32,80,144,.28)', 'rgba(32,80,144,.02)'), borderWidth: 2.5, fill: true, tension: .4, pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: '#205090', pointBorderColor: '#fff', pointBorderWidth: 1.5 }] }, options: _axisOpts(false, v => v + 'h') });
   if (Object.keys(lt).length) _mkChart('sd-leave', { type: 'doughnut', data: { labels: Object.keys(lt), datasets: [{ data: Object.values(lt), backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Days' } });
   else { const c = document.getElementById('sd-leave'); if (c) c.closest('.card').querySelector('div:last-child').innerHTML = '<div style="font-size:12px;color:var(--text-light);text-align:center;padding:60px 0">No leave records yet</div>'; }
@@ -12194,6 +12227,25 @@ function _inPeriod(dateStr, period, from, to) {
 }
 /* Convenience: read period + custom range for a toolbar control id straight from _crmLF. */
 function _inPeriodLF(dateStr, id) { return _inPeriod(dateStr, _crmLF[id] || '', _crmLF[id + '-from'] || '', _crmLF[id + '-to'] || ''); }
+/* The same presets as _inPeriod, resolved to concrete ISO bounds.
+   _inPeriod answers "is this row in the period?", which is all a filter needs. Anything DERIVED from
+   a period — an absence, which by definition has no row to test — needs the bounds themselves.
+   Returns null when the period does not name a window ('' / unknown / a custom range not yet
+   picked): a caller must then say it cannot answer rather than guess one. */
+function _periodRange(period, from, to) {
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  if (!period) return null;
+  if (period === 'Custom range…' || period === 'Custom') return (from && to) ? { from: from, to: to } : null;
+  if (period === 'Today') return { from: iso(now), to: iso(now) };
+  if (period === 'This week') { const mon = new Date(y, m, now.getDate() - ((now.getDay() + 6) % 7)); return { from: iso(mon), to: iso(new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6)) }; }
+  if (period === 'This month') return { from: iso(new Date(y, m, 1)), to: iso(new Date(y, m + 1, 0)) };
+  if (period === 'Last month') return { from: iso(new Date(y, m - 1, 1)), to: iso(new Date(y, m, 0)) };
+  if (period === 'This quarter') { const q = (m / 3 | 0) * 3; return { from: iso(new Date(y, q, 1)), to: iso(new Date(y, q + 3, 0)) }; }
+  if (period === 'This year') return { from: iso(new Date(y, 0, 1)), to: iso(new Date(y, 11, 31)) };
+  return null;
+}
+function _periodRangeLF(id) { return _periodRange(_crmLF[id] || '', _crmLF[id + '-from'] || '', _crmLF[id + '-to'] || ''); }
 function tkFinDecide(kind, id, status) {
   // Each decision opens the e-signature modal; its onDone re-renders Finance.
   if (kind === 'Payment') tkPaymentDecision(id, status);
@@ -21268,7 +21320,7 @@ const _VI = {
   'Tenure Bands': 'Thâm niên', 'Attendance Status': 'Tình trạng chấm công', 'Leave Days by Type': 'Ngày nghỉ theo loại',
   'Headcount Growth': 'Tăng trưởng nhân sự', 'Employment Type': 'Loại hợp đồng', 'Training Status': 'Tình trạng đào tạo',
   'Avg Performance by Dept': 'Hiệu suất TB theo phòng', 'Items by Category': 'Thiết bị theo loại', 'Status Breakdown': 'Phân loại trạng thái',
-  'Asset Value by Department': 'Giá trị tài sản theo phòng', 'My Attendance Status': 'Chấm công của tôi',
+  'Asset Value by Department': 'Giá trị tài sản theo phòng', 'My Attendance This Month': 'Chấm công của tôi tháng này',
   'My Working Hours (recent)': 'Giờ làm gần đây', 'My Leave by Type': 'Nghỉ phép theo loại', 'My Training Status': 'Đào tạo của tôi',
   'Spend by Department': 'Chi phí theo phòng ban', '9-Box Talent Grid': 'Ma trận nhân tài 9-ô',
   // Profile cards
@@ -22048,6 +22100,7 @@ const _VI = {
   'In Zone': 'Trong vùng',
   'Out of Zone': 'Ngoài vùng',
   'In/Out Log': 'Nhật ký vào/ra',
+  'Timesheet': 'Bảng chấm công',
   'Individual': 'Cá nhân',
   'Individual Pay Run': 'Chạy lương cá nhân',
   'Initiate': 'Khởi tạo',
@@ -24399,10 +24452,155 @@ function tkLabourCostCsv() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+/* ═══ TIMESHEET — the working-time record, and the only honest absence figure ═══════════════════
+   Every absence number in this portal counted attendance rows whose status is 'absent'. Nothing in
+   production writes that value, so all of them were structurally zero. An absence is the ABSENCE of
+   a record: it has to be derived from the days the company expected somebody to work, ruling out
+   approved leave, public holidays and that person's own weekly rest days first. The server does the
+   deriving (attendance_days.py); this screen only presents it. */
+let _tsData = null;
+const _TS_OUTCOME = {
+  worked:  { colour: '#00B060', label: 'Worked' },
+  late:    { colour: '#F59E0B', label: 'Worked, late' },
+  leave:   { colour: '#8B5CF6', label: 'Approved leave' },
+  holiday: { colour: '#3B82F6', label: 'Public holiday' },
+  rest:    { colour: '#CBD5E1', label: 'Weekly rest day' },
+  absent:  { colour: '#EF4444', label: 'Absent, unexplained' }
+};
+const _TS_OUTCOME_VN = {
+  'Worked': 'Có đi làm', 'Worked, late': 'Có đi làm, đi muộn', 'Approved leave': 'Nghỉ phép đã duyệt',
+  'Public holiday': 'Nghỉ lễ', 'Weekly rest day': 'Ngày nghỉ hằng tuần',
+  'Absent, unexplained': 'Vắng không lý do'
+};
+const _tsOutLbl = k => _t2((_TS_OUTCOME[k] || {}).label || k,
+                           _TS_OUTCOME_VN[(_TS_OUTCOME[k] || {}).label] || k);
+
+/* Default window: this month to date — the period a payroll clerk and an inspector both ask for. */
+function _tsWindow() {
+  const f = document.getElementById('ts-from'), t = document.getElementById('ts-to');
+  const now = new Date();
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  if (f && !f.value) f.value = iso(new Date(now.getFullYear(), now.getMonth(), 1));
+  if (t && !t.value) t.value = iso(now);
+  return { from: (f || {}).value || '', to: (t || {}).value || '' };
+}
+
+async function tkRenderTimesheet() {
+  const root = document.getElementById('ts-root'); if (!root) return;
+  tkFillDeptSelects(document.getElementById('rpt-timesheet'));
+  const w = _tsWindow();
+  if (w.from && w.to && w.from > w.to) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B45309">' +
+      _t2('The end of the period is before its start.', 'Ngày kết thúc đang trước ngày bắt đầu.') + '</div>';
+    return;
+  }
+  root.innerHTML = tkSkeleton('kpi', 5);
+  let b;
+  try { b = await tkApi('/api/hr/timesheet?from=' + encodeURIComponent(w.from) + '&to=' + encodeURIComponent(w.to)); }
+  catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load the timesheet', 'Không tải được bảng chấm công') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  // The department filter is applied here, not on the server: the server scopes by WHO may see the
+  // sheet, which is a different question from which slice the user is looking at.
+  const deptF = (document.getElementById('ts-dept') || {}).value || '';
+  const sheets = (b.sheets || []).filter(s => !deptF || deptF === 'All Departments' || s.dept === deptF);
+  const tot = {};
+  Object.keys(_TS_OUTCOME).forEach(k => { tot[k] = sheets.reduce((n, s) => n + ((s.counts || {})[k] || 0), 0); });
+  const openRows = sheets.reduce((n, s) => n + (s.openRows || 0), 0);
+  _tsData = { from: b.from, to: b.to, sheets: sheets, totals: tot, basis: b.basis, basisVn: b.basisVn };
+
+  const basis = '<div class="card" style="padding:11px 14px;margin-bottom:14px;font-size:12.5px;color:var(--text-light)">' +
+    '<b style="color:var(--text-dark)">' + _t2('How an absence is counted', 'Cách tính vắng mặt') + '</b> — ' +
+    _crmEsc(_LANG.cur === 'vi' ? (b.basisVn || b.basis || '') : (b.basis || '')) + '</div>';
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('Days worked', 'Ngày công'), tot.worked + tot.late, '#205090'),
+    _hrKpi(_t2('Late arrivals', 'Đi muộn'), tot.late, tot.late ? '#F59E0B' : 'var(--emerald)'),
+    _hrKpi(_t2('Approved leave', 'Nghỉ phép đã duyệt'), tot.leave, '#8B5CF6'),
+    _hrKpi(_t2('Absent, unexplained', 'Vắng không lý do'), tot.absent, tot.absent ? '#EF4444' : 'var(--emerald)'),
+    _hrKpi(_t2('Missing check-out', 'Thiếu chấm ra'), openRows, openRows ? '#B45309' : 'var(--emerald)')
+  ]);
+
+  const legend = '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-light);margin:0 0 10px">' +
+    Object.keys(_TS_OUTCOME).map(k =>
+      '<span style="display:inline-flex;align-items:center;gap:5px"><i style="width:10px;height:10px;border-radius:2px;background:' +
+      _TS_OUTCOME[k].colour + ';display:inline-block"></i>' + _crmEsc(_tsOutLbl(k)) + '</span>').join('') +
+    '</div>';
+
+  const rows = sheets.map(s => {
+    const c = s.counts || {};
+    const strip = (s.days || []).map(d => {
+      const o = _TS_OUTCOME[d.outcome] || _TS_OUTCOME.rest;
+      const tip = d.date + ' · ' + _tsOutLbl(d.outcome) +
+        (d.clockIn ? ' · ' + d.clockIn + ' → ' + (d.clockOut || _t2('no check-out', 'chưa chấm ra')) : '') +
+        (d.hrs ? ' · ' + d.hrs : '') + (d.location ? ' · ' + d.location : '');
+      return '<i title="' + _tkEscA(tip) + '" style="width:9px;height:16px;border-radius:2px;background:' + o.colour +
+        ';display:inline-block' + (d.open ? ';outline:1.5px solid #B45309;outline-offset:-1.5px' : '') + '"></i>';
+    }).join('');
+    return '<tr>' +
+      '<td><div style="font-weight:600">' + _crmEsc(s.name || s.empId) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(s.dept || '—') + '</div></td>' +
+      '<td><div style="display:flex;gap:1.5px;flex-wrap:wrap;max-width:340px">' + strip + '</div></td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (s.worked || 0) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (c.late || 0) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (c.leave || 0) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:' +
+        (c.absent ? '#B91C1C' : 'var(--text-light)') + '">' + (c.absent || 0) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;color:' +
+        (s.openRows ? '#B45309' : 'var(--text-light)') + '">' + (s.openRows || 0) + '</td>' +
+      '</tr>';
+  }).join('') || tkEmptyRow(7, _t2('Nobody to report on for this period', 'Không có ai để báo cáo trong kỳ này'), { icon: 'inbox' });
+
+  root.innerHTML = basis + kpis + legend +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px">' +
+      '<div><div class="card-title">' + _t2('Working-time record', 'Bảng chấm công') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' +
+      _crmEsc((b.from || '') + ' → ' + (b.truncated ? (b.today || b.to) : (b.to || ''))) +
+      ' · ' + sheets.length + ' ' + _t2('people', 'người') +
+      (b.truncated ? ' · ' + _crmEsc(_t2('stops at today — a day that has not happened is not an absence',
+                                         'chỉ tính đến hôm nay — ngày chưa đến không phải là vắng mặt')) : '') +
+      '</span></div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' +
+      _t2('Decree 145/2020 record', 'Sổ theo Nghị định 145/2020') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+      '<th>' + _t2('Employee', 'Nhân viên') + '</th><th>' + _t2('The period, day by day', 'Từng ngày trong kỳ') + '</th>' +
+      '<th style="text-align:right">' + _t2('Worked', 'Ngày công') + '</th>' +
+      '<th style="text-align:right">' + _t2('Late', 'Muộn') + '</th>' +
+      '<th style="text-align:right">' + _t2('Leave', 'Nghỉ phép') + '</th>' +
+      '<th style="text-align:right">' + _t2('Absent', 'Vắng') + '</th>' +
+      '<th style="text-align:right">' + _t2('No check-out', 'Thiếu chấm ra') + '</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function tkTimesheetCsv() {
+  if (!_tsData) { toast(_t2('Load the report first', 'Hãy tải báo cáo trước'), 'warn'); return; }
+  // One row per employee-day: the shape an inspector, a payroll clerk and a spreadsheet all want.
+  const out = [['Employee ID', 'Name', 'Department', 'Date', 'Outcome', 'Check-in', 'Check-out',
+                'Hours', 'Overtime hours', 'Overtime status', 'Location', 'Project', 'Missing check-out']];
+  (_tsData.sheets || []).forEach(s => (s.days || []).forEach(d => out.push([
+    s.empId, s.name, s.dept, d.date, (_TS_OUTCOME[d.outcome] || {}).label || d.outcome,
+    d.clockIn, d.clockOut, d.hrs, d.otHours || 0, d.otStatus, d.location, d.project,
+    d.open ? 'yes' : ''])));
+  out.push([]);
+  out.push(['Period', _tsData.from + ' to ' + _tsData.to]);
+  Object.keys(_TS_OUTCOME).forEach(k => out.push([_TS_OUTCOME[k].label, (_tsData.totals || {})[k] || 0]));
+  out.push(['Basis', _tsData.basis || '']);
+  const csv = out.map(r => r.map(v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
+  // BOM first, or Excel on Windows reads the Vietnamese as Latin-1.
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'timesheet-' + (_tsData.from || '') + '_' + (_tsData.to || '') + '.csv';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+}
+
 function switchReportTab(tab, el) {
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
-  ['attendance','leave','inout','recruit','payroll','labour','workforce'].forEach(id => {
+  ['attendance','leave','inout','timesheet','recruit','payroll','labour','workforce'].forEach(id => {
     const p = document.getElementById('rpt-' + id); if (p) p.style.display = 'none';
   });
   const active = document.getElementById('rpt-' + tab);
@@ -24410,6 +24608,7 @@ function switchReportTab(tab, el) {
   if (tab === 'attendance') _renderRptAttendance();
   if (tab === 'inout') renderInOutReport();
   if (tab === 'leave') renderLeaveReport();
+  if (tab === 'timesheet') tkRenderTimesheet();
   if (tab === 'recruit') tkRenderRecruitReport();
   if (tab === 'payroll') tkRenderPayrollReport();
   if (tab === 'labour') tkRenderLabourCost();
@@ -24712,9 +24911,54 @@ function renderInOutReport() {
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;
-  document.getElementById('io-absent').textContent = rows.filter(r=>r.status==='absent').length;
+  _ioAbsentTile(deptF, search);
   const validMins = rows.map(_mins).filter(m => m != null);
   document.getElementById('io-avghrs').textContent = validMins.length ? (() => { const avg=Math.round(validMins.reduce((a,b)=>a+b,0)/validMins.length); return Math.floor(avg/60)+'h '+('0'+avg%60).slice(-2)+'m'; })() : '—';
+}
+
+/* The Absent tile on a log of RECORDS.
+   It used to count rows whose status is 'absent'. No production path writes that value — an absent
+   employee never creates a row at all — so the tile read 0 for every filter anyone has ever set.
+   The figure has to be derived over a WINDOW, so this needs the filter bar to name one: an exact
+   date, a month, or a period preset. With no window it says so instead of showing a zero. */
+const _ioAbsCache = {};
+const _TK_ABSENT_TIP = ['Days the company expected somebody to work with no record and no approved leave, public holiday or weekly rest day to explain it.',
+                        'Số ngày công ty yêu cầu làm việc nhưng không có dữ liệu chấm công và không có nghỉ phép đã duyệt, ngày lễ hay ngày nghỉ hằng tuần.'];
+const _TK_ABSENT_NOWIN = ['Pick a date, a month or a period — an absence has no record to count, so it can only be derived over a window.',
+                          'Hãy chọn ngày, tháng hoặc kỳ — vắng mặt không có dữ liệu để đếm nên chỉ có thể suy ra theo một khoảng thời gian.'];
+/* A month input resolved to its first and last day. */
+function _tkMonthRange(ym) {
+  if (!/^\d{4}-\d{2}$/.test(ym || '')) return null;
+  const last = new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0).getDate();
+  return { from: ym + '-01', to: ym + '-' + String(last).padStart(2, '0') };
+}
+/* The derived absence count for a window, optionally narrowed to a department or a name search.
+   Resolves to null when the server cannot be reached, so a caller shows a dash rather than a zero. */
+async function _tkAbsentCount(win, deptF, search) {
+  const key = win.from + '|' + win.to;
+  try {
+    if (!_ioAbsCache[key]) _ioAbsCache[key] = tkApi('/api/hr/timesheet?from=' + encodeURIComponent(win.from) + '&to=' + encodeURIComponent(win.to));
+    const b = await _ioAbsCache[key];
+    const q = (search || '').toLowerCase();
+    return (b.sheets || [])
+      .filter(s => (!deptF || deptF === 'All Departments' || s.dept === deptF) &&
+                   (!q || (s.name || '').toLowerCase().includes(q) || (s.dept || '').toLowerCase().includes(q)))
+      .reduce((n, s) => n + ((s.counts || {}).absent || 0), 0);
+  } catch (e) { delete _ioAbsCache[key]; return null; }
+}
+function _ioAbsentWindow() {
+  const dateF  = (document.getElementById('io-date')  || {}).value || '';
+  if (dateF) return { from: dateF, to: dateF };
+  return _tkMonthRange((document.getElementById('io-month') || {}).value || '') || _periodRangeLF('io-period-f');
+}
+async function _ioAbsentTile(deptF, search) {
+  const el = document.getElementById('io-absent'); if (!el) return;
+  const w = _ioAbsentWindow();
+  if (!w) { el.textContent = '—'; el.parentElement.title = _t2(_TK_ABSENT_NOWIN[0], _TK_ABSENT_NOWIN[1]); return; }
+  el.parentElement.title = _t2(_TK_ABSENT_TIP[0], _TK_ABSENT_TIP[1]);
+  const seq = (window._ioAbsSeq = (window._ioAbsSeq || 0) + 1);   // a slow answer must not overwrite a newer one
+  const n = await _tkAbsentCount(w, deptF, search);
+  if (seq === window._ioAbsSeq) el.textContent = (n == null ? '—' : n);
 }
 
 /* Export whatever report is actually on screen.
@@ -27218,11 +27462,13 @@ function filterTable() {
   // update summary line + KPI dashboard
   const ontime = rows.filter(r=>r.status==='on-time').length;
   const late   = rows.filter(r=>r.status==='late').length;
-  const absent = rows.filter(r=>r.status==='absent').length;
+  // No "· N Absent" here. These lines describe the RECORDS on screen, and an absent employee never
+  // creates one — the tally was always 0 and read as "nobody was absent". The Absent tile below is
+  // derived over the filter's window instead; the Timesheet report carries it per person.
   const summary = document.getElementById('att-summary');
-  if (summary) summary.textContent = rows.length + ' records · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent';
+  if (summary) summary.textContent = rows.length + ' records · ' + ontime + ' On Time · ' + late + ' Late';
   const foot = document.getElementById('att-foot-summary');
-  if (foot) foot.textContent = rows.length ? ('Showing ' + pageRows.length + ' of ' + rows.length + ' · ' + ontime + ' On Time · ' + late + ' Late · ' + absent + ' Absent') : 'No records';
+  if (foot) foot.textContent = rows.length ? ('Showing ' + pageRows.length + ' of ' + rows.length + ' · ' + ontime + ' On Time · ' + late + ' Late') : 'No records';
   const kp = document.getElementById('att-kpis');
   if (kp && typeof _kpiTile === 'function') {
     const rate = rows.length ? Math.round(ontime / rows.length * 100) : 0;
@@ -27230,10 +27476,26 @@ function filterTable() {
       _kpiTile('Total records', rows.length, '#205090', '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>'),
       _kpiTile('On Time', ontime, '#00B060', '<polyline points="20 6 9 17 4 12"/>'),
       _kpiTile('Late', late, '#F59E0B', '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>'),
-      _kpiTile('Absent', absent, '#EF4444', '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
+      _kpiTile('Absent', '—', '#EF4444', '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'),
       _kpiTile('On-time rate', rate + '%', '#8B5CF6', '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>')
     ].join('');
+    _attAbsentKpi(kp, dept, search, dateF);
   }
+}
+
+/* Patch the Attendance view's Absent tile once the derived figure comes back.
+   The tile renders as a dash first so the table never waits on a network call for a number that,
+   until now, was a zero nobody could question. */
+async function _attAbsentKpi(kp, dept, search, dateF) {
+  const tile = kp.children[3]; if (!tile) return;
+  const num = tile.querySelector('.kpi-tile-val');
+  const win = dateF ? { from: dateF, to: dateF } : _periodRangeLF('att-period-f');
+  if (!win) { tile.title = _t2(_TK_ABSENT_NOWIN[0], _TK_ABSENT_NOWIN[1]); return; }
+  tile.title = _t2(_TK_ABSENT_TIP[0], _TK_ABSENT_TIP[1]);
+  const seq = (window._attAbsSeq = (window._attAbsSeq || 0) + 1);
+  const n = await _tkAbsentCount(win, dept, search);
+  if (seq !== window._attAbsSeq || !num || !num.isConnected) return;
+  num.textContent = (n == null ? '—' : n);
 }
 
 function exportAttendance() {
