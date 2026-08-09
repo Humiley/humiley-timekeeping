@@ -3788,6 +3788,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/working-time":
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
+        if path == "/api/sales/receivables":
+            return self._guard(lambda uu: self._receivables_ep(uu, qs), manager=True)
         if path == "/api/sales/compliance":
             return self._guard(lambda uu: self._sales_compliance_ep(uu, qs), manager=True)
         if path == "/api/sales/accounts/review":
@@ -3889,6 +3891,10 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/receipt":
+            return self._guard(lambda uu: self._receipt_ep(uu, body))
+        if path == "/api/sales/einvoice":
+            return self._guard(lambda uu: self._einvoice_ep(uu, body))
         if path == "/api/sales/application":
             return self._guard(lambda uu: self._application_ep(uu, body))
         if path == "/api/sales/contract":
@@ -6442,7 +6448,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6469,7 +6475,7 @@ class Handler(BaseHTTPRequestHandler):
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     # Sell-side documents scoped like the CRM: own / department / everything from management up.
-    SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications"}
+    SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts"}
 
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
@@ -6484,6 +6490,7 @@ class Handler(BaseHTTPRequestHandler):
                    # generic path it would move nothing, and the claim and the contract would
                    # disagree about how much is left.
                    "sales_applications": ("a payment application", "/api/sales/application"),
+                   "sales_receipts": ("a receipt", "/api/sales/receipt"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6502,7 +6509,7 @@ class Handler(BaseHTTPRequestHandler):
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
     ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
-                       "sales_applications": {"_rev", "id"},   # nothing: every change goes through the endpoint
+                       "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
@@ -6522,7 +6529,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -9549,6 +9556,162 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s rev %s · %s" % (doc.get("quoteNo") or "(no number)", doc.get("rev") or 0,
                                           _money_vnd(sales_doc.totals(doc.get("lines"))["amount"])),
             "ts": self._utc_now()})
+
+    def _einvoice_ep(self, u, body):
+        """Record the legal invoice the PROVIDER issued. Stored, never generated.
+
+        The portal cannot issue a Vietnamese VAT invoice — the legal original is the provider's
+        digitally signed XML under Decree 123/2020 and Circular 78/2021. What it can do is hold the
+        number and the file against the claim that justified them, so the two can be reconciled.
+
+        A number typed in by a person with no XML behind it is recorded as EXTERNALLY ISSUED —
+        UNVERIFIED, permanently and visibly, and can never quietly close a receivable as if it were
+        confirmed. That flag is the point: without it, "we have an invoice number" and "we have an
+        invoice" become the same sentence.
+        """
+        a = db.get_collection_item("sales_applications", str((body or {}).get("id") or ""))
+        if not a:
+            return self._err("Payment application not found.", 404)
+        if not self._sales_may_write(u, a):
+            return self._err("You can only change your own payment applications.", 403)
+        if a.get("status") != "certified":
+            return self._err("Attach the legal invoice to a CERTIFIED application — before that "
+                             "there is nothing the invoice could be evidence of.", 400)
+        serial = str((body or {}).get("einvSerial") or "").strip()
+        number = str((body or {}).get("einvNo") or "").strip()
+        xml = (body or {}).get("einvXml")
+        if not serial or not number:
+            return self._err("Both the ký hiệu and the số hóa đơn from the provider are required.", 400)
+        a["einvSerial"] = serial[:32]
+        a["einvNo"] = number[:32]
+        a["einvDate"] = str((body or {}).get("einvDate") or "")[:10]
+        if xml:
+            a["einvXml"] = xml
+        a["einvVerified"] = bool(a.get("einvXml"))
+        a["einvNote"] = ("Reconciled against the provider's signed XML." if a["einvVerified"] else
+                         "Externally issued — UNVERIFIED. The number was typed in and no signed XML "
+                         "from the provider is held against it.")
+        a["einvBy"] = u.get("name")
+        a["einvAt"] = self._utc_now()
+        saved = db.put_collection_item("sales_applications", a)
+        return self._json({"ok": True, "item": saved, "verified": saved["einvVerified"],
+                           "note": saved["einvNote"]})
+
+    def _receipt_ep(self, u, body):
+        """Cash in, allocated against the claims it settles — and short payments explained.
+
+        A receipt that is not allocated is a number in a bank statement. Allocated, it answers the
+        only question that matters here: what is still owed, on what, and since when. A payment
+        short of the claim asks for a reason, because "they paid 90%" with no reason is how a
+        dispute becomes a write-off eighteen months later.
+        """
+        allocs = {str(k): float(v or 0) for k, v in ((body or {}).get("allocations") or {}).items()}
+        if not allocs:
+            return self._err("A receipt has to be allocated to at least one payment application.", 400)
+        amount = round(float((body or {}).get("amount") or 0), 2)
+        if amount <= 0:
+            return self._err("A receipt must be for a positive amount.", 400)
+        if abs(sum(allocs.values()) - amount) > 0.005:
+            return self._err("The allocations come to %.2f but the receipt is %.2f. Every đồng has "
+                             "to land somewhere." % (sum(allocs.values()), amount), 400)
+        apps = {}
+        for aid, amt in allocs.items():
+            a = db.get_collection_item("sales_applications", aid)
+            if not a:
+                return self._err("Payment application %s not found." % aid, 404)
+            if a.get("status") != "certified":
+                return self._err("Cash can only be allocated to a certified application.", 400)
+            owed = round(float(a.get("netPayable") or 0) - float(a.get("settledAmt") or 0), 2)
+            if amt - owed > 0.005:
+                return self._err("Allocating %.2f to %s, which has only %.2f outstanding."
+                                 % (amt, a.get("period") or aid, owed), 400)
+            if amt < owed - 0.005 and not str((body or {}).get("shortReason") or "").strip():
+                return self._err("This settles %.2f of %.2f. A short payment needs a reason — "
+                                 "unexplained is how a dispute becomes a write-off." % (amt, owed), 400)
+            apps[aid] = (a, amt, owed)
+        rec = {"amount": amount, "receivedOn": str((body or {}).get("receivedOn") or self._vn_day())[:10],
+               "method": str((body or {}).get("method") or "")[:32],
+               "reference": str((body or {}).get("reference") or "")[:64],
+               "shortReason": str((body or {}).get("shortReason") or "")[:200],
+               "allocations": allocs, "owner": u.get("name"), "ts": self._utc_now()}
+        saved = db.put_collection_item("sales_receipts", rec)
+        for aid, (a, amt, owed) in apps.items():
+            a["settledAmt"] = round(float(a.get("settledAmt") or 0) + amt, 2)
+            a["settledFully"] = a["settledAmt"] >= float(a.get("netPayable") or 0) - 0.005
+            db.put_collection_item("sales_applications", a)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Recorded customer receipt", "target": "sales_receipts/" + str(saved.get("id")),
+            "detail": "%s across %d application(s)" % (_money_vnd(amount), len(allocs)),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": saved})
+
+    def _receivables_ep(self, u, qs):
+        """Who owes you money, since when, and under which of the three clocks.
+
+        A contractor's receivable is not one number. Trade debt is due on the invoice terms;
+        retention is not due until the warranty ends, sometimes a year later; and an advance is the
+        opposite — money you hold that is owed BACK. Added together they give a figure that is wrong
+        in three directions at once, so they are never added.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required.", 403)
+        from datetime import date
+        today = self._vn_day()
+        apps = [a for a in db.list_collection("sales_applications") if a.get("status") == "certified"]
+        contracts = {c.get("id"): c for c in db.list_collection("sales_contracts")}
+        accounts = {a.get("id"): a for a in db.list_collection("crm_companies")}
+
+        buckets = {"current": 0.0, "d1_30": 0.0, "d31_60": 0.0, "d61_90": 0.0, "d90plus": 0.0}
+        rows, unverified = [], []
+        for a in apps:
+            outstanding = round(float(a.get("netPayable") or 0) - float(a.get("settledAmt") or 0), 2)
+            if outstanding <= 0.005:
+                continue
+            c = contracts.get(a.get("contractId")) or {}
+            acc = accounts.get(c.get("accountId")) or {}
+            days = account.terms_days(acc.get("termsCode"))
+            base = a.get("einvDate") or str(a.get("certifiedAt") or "")[:10]
+            due = account.due_date(base, days) if days is not None else ""
+            age = 0
+            if due:
+                try:
+                    age = (date.fromisoformat(today) - date.fromisoformat(due)).days
+                except ValueError:
+                    age = 0
+            k = ("current" if age <= 0 else "d1_30" if age <= 30 else "d31_60" if age <= 60
+                 else "d61_90" if age <= 90 else "d90plus")
+            buckets[k] += outstanding
+            if a.get("einvNo") and not a.get("einvVerified"):
+                unverified.append({"id": a.get("id"), "einvNo": a.get("einvNo"),
+                                   "amount": outstanding, "note": a.get("einvNote")})
+            rows.append({"id": a.get("id"), "period": a.get("period"),
+                         "contractNo": c.get("contractNo") or "", "accountName": a.get("accountName") or "",
+                         "outstanding": outstanding, "dueOn": due, "daysOverdue": max(0, age),
+                         "termsKnown": days is not None, "einvNo": a.get("einvNo") or "",
+                         "einvVerified": bool(a.get("einvVerified"))})
+        retention = round(sum(float(c.get("retentionHeld") or 0) for c in contracts.values()
+                              if c.get("status") == sales_doc.ACTIVE), 2)
+        advance = round(sum(float(c.get("advanceOutstanding") or 0) for c in contracts.values()
+                            if c.get("status") == sales_doc.ACTIVE), 2)
+        noterms = [r for r in rows if not r["termsKnown"]]
+        return self._json({
+            "ok": True, "asOf": today,
+            "trade": {"total": round(sum(buckets.values()), 2),
+                      "buckets": {k: round(v, 2) for k, v in buckets.items()},
+                      "rows": sorted(rows, key=lambda r: -r["daysOverdue"])},
+            "retentionHeldByCustomers": retention,
+            "advanceOwedBack": advance,
+            "unverifiedInvoices": unverified,
+            "withoutPaymentTerms": [{"id": r["id"], "accountName": r["accountName"]} for r in noterms],
+            "whyNotOneNumber": "Trade debt, retention and advance are three different clocks. "
+                               "Retention is not late — it is not due until the warranty ends. An "
+                               "advance is money you hold that is owed back, not money owed to you. "
+                               "Adding them gives a figure that is wrong in three directions.",
+            "statement": "%s outstanding on trade terms; %s held as retention; %s of advance still "
+                         "to recover." % (_money_vnd(sum(buckets.values())), _money_vnd(retention),
+                                          _money_vnd(advance)),
+        })
 
     def _application_ep(self, u, body):
         """The progress claim — and the only place a contract's balances are allowed to move.
