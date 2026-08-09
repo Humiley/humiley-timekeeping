@@ -60,21 +60,36 @@ EDITABLE = (DRAFT,)
 TERMINAL = (LOST, SUPERSEDED, CANCELLED, CLOSED)
 
 
-def can_transition(frm, to):
-    return to in TRANSITIONS.get(str(frm or DRAFT), ())
+# A CONTRACT does not have a quotation's life. It is drafted, signed into force, and closed —
+# there is no "issued to the customer for consideration" step, and "accepted" is not a thing that
+# happens to it. Written as its own table rather than bent out of the quotation's, because the
+# whole value of a status machine is that somebody can read what is allowed.
+ACTIVE = "active"
+
+CONTRACT_TRANSITIONS = {
+    DRAFT: (ACTIVE, CANCELLED),
+    ACTIVE: (CLOSED, CANCELLED),
+    CLOSED: (),
+    CANCELLED: (),
+}
 
 
-def transition(doc, to, reason=""):
+def can_transition(frm, to, table=None):
+    return to in (table or TRANSITIONS).get(str(frm or DRAFT), ())
+
+
+def transition(doc, to, reason="", table=None):
     """Move a document's status, or explain precisely why it cannot move.
 
     A refusal names both states. "Invalid status" tells somebody nothing they can act on.
     """
+    table = table or TRANSITIONS
     cur = str((doc or {}).get("status") or DRAFT)
     to = str(to or "")
     if cur == to:
         return {"ok": False, "why": "The document is already %s." % cur}
-    if not can_transition(cur, to):
-        allowed = TRANSITIONS.get(cur, ())
+    if not can_transition(cur, to, table):
+        allowed = table.get(cur, ())
         return {"ok": False, "why": "A %s document cannot become %s. It can only become: %s."
                                     % (cur, to, ", ".join(allowed) or "nothing — this is final")}
     if to in (LOST, CANCELLED) and not str(reason or "").strip():

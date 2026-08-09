@@ -3889,6 +3889,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/contract":
+            return self._guard(lambda uu: self._contract_ep(uu, body))
         if path == "/api/sales/quote":
             return self._guard(lambda uu: self._quote_ep(uu, body))
         if path == "/api/sales/accounts/backfill":
@@ -6438,7 +6440,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6465,13 +6467,17 @@ class Handler(BaseHTTPRequestHandler):
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     # Sell-side documents scoped like the CRM: own / department / everything from management up.
-    SALES_SCOPED = {"sales_quotes"}
+    SALES_SCOPED = {"sales_quotes", "sales_contracts"}
 
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
                    # replace, so a one-key write would delete a 300-line bill of quantities and
                    # every open balance on it. Writes go through /api/sales/quote, which merges.
                    "sales_quotes": ("a quotation", "/api/sales/quote"),
+                   # A contract carries the advance and retention balances that every later
+                   # claim is computed from. A blind whole-document PATCH would silently reset
+                   # them to whatever the browser last saw.
+                   "sales_contracts": ("a contract", "/api/sales/contract"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6489,7 +6495,7 @@ class Handler(BaseHTTPRequestHandler):
     # administrator is deliberately not a way in. Listing the collection would hand every concern
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
-    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"},   # nothing: every change goes through the endpoint
+    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
@@ -6509,7 +6515,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -9535,6 +9541,141 @@ class Handler(BaseHTTPRequestHandler):
             "action": action, "target": "sales_quotes/" + str((doc or {}).get("id")),
             "detail": "%s rev %s · %s" % (doc.get("quoteNo") or "(no number)", doc.get("rev") or 0,
                                           _money_vnd(sales_doc.totals(doc.get("lines"))["amount"])),
+            "ts": self._utc_now()})
+
+    def _contract_ep(self, u, body):
+        """The contract: what was actually agreed, and the two balances every claim is computed from.
+
+        Created FROM an accepted quotation, so the lines carry a per-line link back to the quotation
+        line they came from and the trace holds. Created any other way it would be a second, unlinked
+        version of the same numbers.
+
+        Actions:
+          from_quote   build a draft contract from an accepted quotation
+          terms        set the advance, retention, warranty and the rules that govern them
+          opening      load an IN-FLIGHT contract's balances, so the module is useful on day one
+                       rather than showing structurally-zero figures until the next stage
+          activate     the contract is signed and live; the balances stop being editable
+          close        final account
+        """
+        act = str((body or {}).get("action") or "").strip().lower()
+        cid = str((body or {}).get("id") or "").strip()
+        cur = db.get_collection_item("sales_contracts", cid) if cid else None
+        if cid and not cur:
+            return self._err("Contract not found.", 404)
+        if cur and not self._sales_may_write(u, cur):
+            return self._err("You can only change your own contracts.", 403)
+
+        if act == "from_quote":
+            q = db.get_collection_item("sales_quotes", str((body or {}).get("quoteId") or ""))
+            if not q:
+                return self._err("Quotation not found.", 404)
+            if q.get("status") != sales_doc.ACCEPTED:
+                return self._err("Only an ACCEPTED quotation becomes a contract. This one is %s — "
+                                 "record the customer's decision first, so the contract can say "
+                                 "which offer it came from." % (q.get("status") or "draft"), 400)
+            if [c for c in db.list_collection("sales_contracts") if c.get("quoteId") == q.get("id")]:
+                return self._err("A contract already exists for this quotation.", 400)
+            lines = sales_doc.copy_to(q.get("lines"), "sales_quotes", q.get("id"))
+            doc = {
+                "status": sales_doc.DRAFT, "quoteId": q.get("id"), "quoteNo": q.get("quoteNo"),
+                "accountId": q.get("accountId") or "", "accountName": q.get("accountName") or "",
+                "title": q.get("title") or "", "owner": q.get("owner") or u.get("name"),
+                "lines": lines, "value": sales_doc.totals(lines)["amount"],
+                "createdAt": self._utc_now(),
+            }
+            saved = db.put_collection_item("sales_contracts", doc)
+            return self._json({"ok": True, "item": saved, "totals": sales_doc.totals(lines)})
+
+        if not cur:
+            return self._err("A contract id is required for '%s'." % (act or "(none)"), 400)
+
+        if act == "terms":
+            if cur.get("status") != sales_doc.DRAFT:
+                return self._err("The terms of a signed contract cannot be changed here — they are "
+                                 "what the customer signed. Raise a variation instead.", 400)
+            for k in ("advancePct", "retentionPct", "retentionCapPct", "warrantyMonths",
+                      "releaseRule", "recoveryRule", "recoveryFromPct", "value",
+                      "retentionTaxPoint", "advanceTaxPoint", "signedOn", "contractNo"):
+                if k in (body or {}):
+                    cur[k] = body[k]
+            saved = db.put_collection_item("sales_contracts", cur)
+            return self._json({"ok": True, "item": saved,
+                               "terms": sales_contract.terms(saved),
+                               "advance": sales_contract.advance_amount(saved),
+                               "retentionCap": sales_contract.retention_cap(saved),
+                               "vat": sales_contract.vat_ready(saved, self._company_settings())})
+
+        if act == "opening":
+            # In-flight contracts. Without this the module shows zero advance outstanding and zero
+            # retention held for every job already running — figures that are structurally zero on
+            # an authoritative-looking screen, which is the failure this codebase keeps hitting.
+            if cur.get("status") not in (sales_doc.DRAFT,):
+                return self._err("Opening balances can only be loaded before the contract is "
+                                 "activated. After that they move only through certified claims.", 400)
+            for k in ("certifiedToDate", "advanceOutstanding", "retentionHeld", "billedToDate"):
+                if k in (body or {}):
+                    cur[k] = max(0.0, float(body.get(k) or 0))
+            cur["openingLoaded"] = True
+            cur["openingBy"] = u.get("name")
+            cur["openingAt"] = self._utc_now()
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Loaded contract opening balances", saved)
+            return self._json({"ok": True, "item": saved})
+
+        if act == "activate":
+            t = sales_doc.transition(cur, sales_doc.ACTIVE, table=sales_doc.CONTRACT_TRANSITIONS)
+            if not t["ok"]:
+                return self._err(t["why"], 400)
+            probe = sales_contract.application(cur, 0, self._contract_state(cur))
+            if not probe["ok"]:
+                return self._err("This contract cannot be activated: " + probe["why"], 400)
+            cur["status"] = sales_doc.ACTIVE
+            cur["activatedAt"] = self._utc_now()
+            cur["activatedBy"] = u.get("name")
+            cur.setdefault("advanceOutstanding", sales_contract.advance_amount(cur))
+            if not str(cur.get("contractNo") or "").strip():
+                year = int(self._vn_day()[:4])
+                n = db.next_doc_no("SO", year, lambda: doc_number.highest(
+                    doc_number.numbers_in(db.list_collection("sales_contracts"), "contractNo"), "SO", year))
+                cur["contractNo"] = doc_number.format_no("SO", year, n)
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Activated contract", saved)
+            return self._json({"ok": True, "item": saved})
+
+        if act == "close":
+            t = sales_doc.transition(cur, sales_doc.CLOSED, table=sales_doc.CONTRACT_TRANSITIONS)
+            if not t["ok"]:
+                return self._err(t["why"], 400)
+            final = sales_contract.final_settlement(cur, self._contract_state(cur))
+            if not final["clean"] and not (body or {}).get("acknowledge"):
+                return self._json({"ok": True, "blocked": True, "final": final,
+                                   "why": "This contract does not close cleanly. Acknowledge the "
+                                          "outstanding items to close it anyway."})
+            cur["status"] = sales_doc.CLOSED
+            cur["closedAt"] = self._utc_now()
+            cur["closedBy"] = u.get("name")
+            cur["finalAccount"] = final
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Closed contract", saved)
+            return self._json({"ok": True, "item": saved, "final": final})
+
+        return self._err("Unknown action. Use from_quote, terms, opening, activate or close.", 400)
+
+    @staticmethod
+    def _contract_state(c):
+        c = c or {}
+        return {"certifiedToDate": c.get("certifiedToDate") or 0,
+                "advanceOutstanding": c.get("advanceOutstanding",
+                                            sales_contract.advance_amount(c)),
+                "retentionHeld": c.get("retentionHeld") or 0}
+
+    def _sales_audit_c(self, u, action, doc):
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": action, "target": "sales_contracts/" + str((doc or {}).get("id")),
+            "detail": "%s · %s" % (doc.get("contractNo") or doc.get("quoteNo") or "(no number)",
+                                   _money_vnd(doc.get("value"))),
             "ts": self._utc_now()})
 
     def _sales_compliance_ep(self, u, qs):

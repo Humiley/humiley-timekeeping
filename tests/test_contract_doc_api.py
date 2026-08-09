@@ -1,279 +1,234 @@
-"""Company identity and contract drafting, end to end.
+"""The contract record — Stage 3 over the wire.
 
-company.py and contract_doc.py prove the rules. This proves what only the server can: that the legal
-identity is admin-only and audited, that a contract with an Art. 21 gap in it is refused at the
-server rather than by a hopeful form, and that the draft arrives already knowing what Art. 20 says
-about this person's history.
+sales_contract.py proves the arithmetic. These prove the document: that it can only come from an
+ACCEPTED quotation with the trace intact, that an in-flight job can have its real balances loaded so
+the screen is not structurally zero on day one, and that it cannot be activated on terms the engine
+would refuse to compute.
 """
 import pytest
 
-import company
-import contract_doc as cd
-import contracts
 import db
-
-FULL_CO = {
-    "legalNameVn": "Công ty TNHH Humiley Việt Nam", "regNo": "0316123456",
-    "addressVn": "123 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh",
-    "repName": "Nguyễn Văn A", "repTitle": "Giám đốc",
-}
+import sales_contract as SC
+import sales_doc as S
 
 
 @pytest.fixture(autouse=True)
 def _clean():
-    # Every field _setup_employee writes has to be restored, INCLUDING the name. Leaving it renamed
-    # broke three unrelated suites that look people up by name — the sixth time order-dependence has
-    # come from a fixture restoring less than it changed.
-    before_emp = {e["id"]: {k: e.get(k) for k in
-                            ("name", "dob", "gender", "address", "personalId", "salary", "title",
-                             "startDate", "contractExempt")}
-                  for e in db.list_employees()}
-    conn = db.get_conn()
-    conn.execute("DELETE FROM collections WHERE coll = 'contracts'")
-    conn.commit()
-    conn.close()
-    for k in company.FIELD_KEYS:
-        db.set_setting("portal_co_" + k, None)
-    yield
-    conn = db.get_conn()
-    conn.execute("DELETE FROM collections WHERE coll = 'contracts'")
-    conn.commit()
-    conn.close()
-    for k in company.FIELD_KEYS:
-        db.set_setting("portal_co_" + k, None)
-    for eid, v in before_emp.items():
-        db.update_employee(eid, v)
+    def wipe():
+        conn = db.get_conn()
+        for c in ("sales_quotes", "sales_contracts"):
+            conn.execute("DELETE FROM collections WHERE coll = ?", (c,))
+        conn.execute("DELETE FROM doc_counters WHERE series IN ('QT','SO')")
+        conn.commit(); conn.close()
+    wipe(); yield; wipe()
 
 
-def _setup_company(api, tokens, **kw):
-    st, b = api("POST", "/api/hr/company", tokens["admin"], dict(FULL_CO, **kw))
-    assert st == 200, b
-    return b
+LINES = [{"desc": "Cleanroom AHU", "qty": 2, "unitPrice": 500_000_000}]
 
 
-def _setup_employee(eid="HML-STF"):
-    db.update_employee(eid, {"name": "Nguyễn Đức Huy", "dob": "1995-04-12", "gender": "Male",
-                             "address": "45 Lê Lợi, Quận 1", "personalId": "079095001234",
-                             "title": "Kỹ sư Cơ điện", "salary": 20_000_000,
-                             "startDate": "2026-01-01", "contractExempt": ""})
+def _q(api, token, **b):
+    return api("POST", "/api/sales/quote", token, b)
 
 
-def _terms(**kw):
-    base = {"empId": "HML-STF", "jobTitle": "Kỹ sư Cơ điện", "workplace": "123 Nguyễn Huệ",
-            "contractType": contracts.DEFINITE, "startDate": "2026-01-01",
-            "endDate": "2028-12-31", "wage": 20_000_000}
-    base.update(kw)
-    return base
+def _c(api, token, **b):
+    return api("POST", "/api/sales/contract", token, b)
 
 
-# ── the legal identity ───────────────────────────────────────────────────────────────────────────
-
-def test_an_empty_identity_reports_which_documents_it_blocks(api, tokens):
-    code, b = api("GET", "/api/hr/company", tokens["admin"])
-    assert code == 200
-    assert b["filled"] == 0 and "Labour contract" in b["blocked"]
-
-
-def test_setting_it_unblocks_the_contract(api, tokens):
-    _setup_company(api, tokens)
-    _, b = api("GET", "/api/hr/company", tokens["admin"])
-    assert b["blocked"] == [] and b["identity"]["signatory"] == "Nguyễn Văn A — Giám đốc"
+def _accepted_quote(api, token):
+    q = _q(api, token, action="draft", title="AHU supply", accountName="Pharma Co", lines=LINES)[1]["item"]
+    _q(api, token, action="issue", id=q["id"])
+    _q(api, token, action="accept", id=q["id"])
+    return db.get_collection_item("sales_quotes", q["id"])
 
 
-def test_only_an_admin_may_change_who_signs_for_the_company(api, tokens):
-    """Changing the legal representative silently would leave every contract issued afterwards
-    naming somebody who did not sign it."""
-    for who in ("management", "mgr", "staff"):
-        assert api("POST", "/api/hr/company", tokens[who], FULL_CO)[0] == 403
-    assert api("POST", "/api/hr/company", tokens["admin"], FULL_CO)[0] == 200
+TERMS = dict(action="terms", advancePct=30, retentionPct=5, warrantyMonths=12,
+             releaseRule=SC.REL_WARRANTY_END, recoveryRule=SC.REC_PRORATA)
 
 
-def test_management_may_read_it_but_staff_may_not(api, tokens):
-    assert api("GET", "/api/hr/company", tokens["management"])[0] == 200
-    assert api("GET", "/api/hr/company", tokens["staff"])[0] == 403
+# ── it can only come from an accepted offer ──────────────────────────────────────────────────────
+
+def test_a_contract_is_built_from_an_accepted_quotation(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    st, r = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])
+    assert st == 200, r
+    assert r["item"]["value"] == 1_000_000_000
+    assert r["item"]["quoteNo"] == q["quoteNo"]
 
 
-def test_every_change_is_written_to_the_audit_chain_with_both_values(api, tokens):
-    _setup_company(api, tokens)
-    _setup_company(api, tokens, repName="Trần Thị B")
-    trail = [a for a in db.list_collection("audit")
-             if a.get("action") == "Company legal identity changed"]
-    assert any("Nguyễn Văn A" in a["detail"] and "Trần Thị B" in a["detail"] for a in trail)
+def test_every_contract_line_points_back_at_the_quotation_line(api, tokens):
+    """Per LINE, not per document — it is what makes a trace possible at all."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    assert all(l["src"]["coll"] == "sales_quotes" and l["src"]["id"] == q["id"] for l in c["lines"])
 
 
-def test_an_unchanged_save_records_nothing(api, tokens):
-    """Otherwise the audit trail fills with saves that changed nothing and hides the one that did."""
-    _setup_company(api, tokens)
-    n = len([a for a in db.list_collection("audit")
-             if a.get("action") == "Company legal identity changed"])
-    _, b = api("POST", "/api/hr/company", tokens["admin"], FULL_CO)
-    assert b["changed"] == []
-    assert len([a for a in db.list_collection("audit")
-                if a.get("action") == "Company legal identity changed"]) == n
+def test_an_unaccepted_quotation_cannot_become_a_contract(api, tokens):
+    """Otherwise the contract cannot say which offer the customer actually agreed to."""
+    q = _q(api, tokens["staff"], action="draft", title="X", lines=LINES)[1]["item"]
+    _q(api, tokens["staff"], action="issue", id=q["id"])
+    st, r = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])
+    assert st == 400 and "ACCEPTED" in r["error"]
 
 
-def test_a_field_that_is_not_a_field_is_refused_rather_than_stored(api, tokens):
-    st, b = api("POST", "/api/hr/company", tokens["admin"], {"legalNameVn": "X", "sneaky": "y"})
-    assert st == 400 and "sneaky" in (b.get("error") or "")
+def test_one_quotation_makes_only_one_contract(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])
+    st, r = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])
+    assert st == 400 and "already exists" in r["error"]
 
 
-# ── the draft ────────────────────────────────────────────────────────────────────────────────────
+# ── terms ────────────────────────────────────────────────────────────────────────────────────────
 
-def test_a_draft_offers_what_the_portal_already_knows(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    code, b = api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["admin"])
-    assert code == 200
-    assert b["defaults"]["jobTitle"] == "Kỹ sư Cơ điện"
-    assert b["defaults"]["wage"] == 20_000_000
-    assert b["defaults"]["workplace"] == FULL_CO["addressVn"]
-
-
-def test_a_draft_states_its_own_gaps_rather_than_failing(api, tokens):
-    """The drafter needs to see the rest of the document to know what to go and find."""
-    _setup_employee()
-    db.update_employee("HML-STF", {"personalId": ""})
-    code, b = api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["admin"])
-    assert code == 200 and b["canIssue"] is False
-    assert "personalId" in {m["key"] for m in b["blockers"]["employee"]}
-    assert b["blockers"]["company"], "the identity was never set either"
+def test_setting_the_terms_returns_what_they_are_worth(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    st, r = _c(api, tokens["staff"], id=c["id"], **TERMS)
+    assert st == 200, r
+    assert r["advance"] == 300_000_000, "30% of the ₫1bn carried from the quotation"
+    assert r["retentionCap"] == 50_000_000
 
 
-def test_the_draft_arrives_knowing_a_third_fixed_term_is_unlawful(api, tokens):
-    """Art. 20(2)(c). The drafter should not have to remember; the default flips to indefinite."""
-    _setup_company(api, tokens)
-    _setup_employee()
-    for i, (s, e) in enumerate((("2022-01-01", "2023-12-31"), ("2024-01-01", "2025-12-31"))):
-        db.put_collection_item("contracts", {"id": "old-%d" % i, "empId": "HML-STF",
-                                             "type": contracts.DEFINITE,
-                                             "startDate": s, "endDate": e})
-    _, b = api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["admin"])
-    assert b["position"]["mustBeIndefinite"] is True
-    assert b["defaults"]["contractType"] == contracts.INDEFINITE
+def test_the_terms_answer_carries_the_vat_refusal(api, tokens):
+    """The screen must be able to show the blocker at the point the terms are set, not later."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    r = _c(api, tokens["staff"], id=c["id"], **TERMS)[1]
+    assert r["vat"]["ready"] is False
 
 
-def test_the_probation_ceilings_travel_with_the_draft(api, tokens):
-    _setup_employee()
-    _, b = api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["admin"])
-    assert {x["key"]: x["days"] for x in b["probationBands"]}["degree"] == 60
-    assert b["probationBands"][0]["days"] == 180, "longest first"
+def test_a_signed_contract_cannot_have_its_terms_rewritten(api, tokens):
+    """They are what the customer signed. A variation raises them; an edit rewrites history."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    st, r = _c(api, tokens["staff"], id=c["id"], action="terms", advancePct=50)
+    assert st == 400 and "variation" in r["error"]
 
 
-def test_a_draft_for_nobody_is_a_404(api, tokens):
-    assert api("GET", "/api/hr/contract/draft?emp=NOPE", tokens["admin"])[0] == 404
-    assert api("GET", "/api/hr/contract/draft", tokens["admin"])[0] == 404
+# ── the in-flight load ───────────────────────────────────────────────────────────────────────────
+
+def test_an_in_flight_contract_can_have_its_real_balances_loaded(api, tokens):
+    """Without it, every job already running shows zero advance outstanding and zero retention held
+    — figures that are structurally zero on an authoritative-looking screen."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    st, r = _c(api, tokens["staff"], action="opening", id=c["id"],
+               certifiedToDate=400_000_000, advanceOutstanding=180_000_000, retentionHeld=20_000_000)
+    assert st == 200, r
+    assert r["item"]["retentionHeld"] == 20_000_000 and r["item"]["openingLoaded"] is True
+    assert r["item"]["openingBy"]
 
 
-# ── issuing ──────────────────────────────────────────────────────────────────────────────────────
-
-def test_a_complete_contract_is_recorded_and_audited(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    code, b = api("POST", "/api/hr/contract", tokens["admin"], _terms(no="HD-2026-001"))
-    assert code == 200, b
-    assert b["contract"]["empId"] == "HML-STF" and b["contract"]["type"] == contracts.DEFINITE
-    assert b["document"]["content"]["đ"]["wageInWords"] == "Hai mươi triệu đồng"
-    trail = [a for a in db.list_collection("audit") if a.get("action") == "Labour contract issued"]
-    assert any("HML-STF" in a["detail"] for a in trail)
+def test_the_opening_load_is_audited(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], action="opening", id=c["id"], retentionHeld=1)
+    assert any(x.get("action") == "Loaded contract opening balances" for x in db.list_collection("audit"))
 
 
-def test_the_contract_reaches_the_register_the_warnings_read(api, tokens):
-    """The register was a reader with no writer. This is the whole point of the endpoint."""
-    _setup_company(api, tokens)
-    _setup_employee()
-    api("POST", "/api/hr/contract", tokens["admin"], _terms())
-    _, rev = api("GET", "/api/hr/contracts/review", tokens["admin"])
-    row = [r for r in rev["rows"] if r["empId"] == "HML-STF"][0]
-    assert row["status"] in ("active", "expiring") and row["to"] == "2028-12-31"
+def test_balances_cannot_be_loaded_after_activation(api, tokens):
+    """After that they move only through certified claims. A back door here would let somebody
+    type over what the claims computed."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    st, r = _c(api, tokens["staff"], action="opening", id=c["id"], retentionHeld=99)
+    assert st == 400 and "certified claims" in r["error"]
 
 
-def test_a_contract_with_no_company_identity_is_refused_by_the_server(api, tokens):
-    """Not by a hopeful form — the form can be bypassed."""
-    _setup_employee()
-    code, b = api("POST", "/api/hr/contract", tokens["admin"], _terms())
-    assert code == 400
-    assert {m["key"] for m in b["blockers"]["company"]} >= {"legalNameVn", "repName"}
-    assert db.list_collection("contracts") == []
+# ── activation ───────────────────────────────────────────────────────────────────────────────────
+
+def test_activating_takes_a_contract_number_and_opens_the_advance(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    st, r = _c(api, tokens["staff"], action="activate", id=c["id"])
+    assert st == 200, r
+    assert r["item"]["contractNo"].startswith("SO-")
+    assert r["item"]["advanceOutstanding"] == 300_000_000
 
 
-def test_a_contract_with_no_wage_is_refused(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    code, b = api("POST", "/api/hr/contract", tokens["admin"], _terms(wage=0))
-    assert code == 400 and "wage" in {m["key"] for m in b["blockers"]["terms"]}
+def test_a_contract_with_an_advance_but_no_recovery_rule_cannot_be_activated(api, tokens):
+    """The engine would refuse to compute a claim on it, so activating it would create a contract
+    that can never be billed — a dead end discovered a month later."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], action="terms", advancePct=30)
+    st, r = _c(api, tokens["staff"], action="activate", id=c["id"])
+    assert st == 400 and "recovery rule" in r["error"]
 
 
-def test_a_fixed_term_beyond_thirty_six_months_is_refused_with_the_lawful_date(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    code, b = api("POST", "/api/hr/contract", tokens["admin"], _terms(endDate="2029-06-30"))
-    assert code == 400
-    assert any("2028-12-31" in msg for msg in b["blockers"]["term"])
+# ── closing ──────────────────────────────────────────────────────────────────────────────────────
+
+def test_a_contract_that_does_not_close_cleanly_is_blocked_and_says_why(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    st, r = _c(api, tokens["staff"], action="close", id=c["id"])
+    assert st == 200 and r.get("blocked") is True
+    assert any("never recovered" in i for i in r["final"]["issues"])
 
 
-def test_probation_beyond_the_art_25_ceiling_is_refused(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    code, b = api("POST", "/api/hr/contract", tokens["admin"],
-                  _terms(probationDays=90, probationBand="degree"))
-    assert code == 400 and any("Art. 25" in m for m in b["blockers"]["term"])
+def test_it_can_be_closed_once_the_outstanding_items_are_acknowledged(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    st, r = _c(api, tokens["staff"], action="close", id=c["id"], acknowledge=True)
+    assert st == 200 and r["item"]["status"] == S.CLOSED
+    assert r["item"]["finalAccount"]["advanceOutstanding"] == 300_000_000
 
 
-def test_an_employee_missing_their_id_number_blocks_the_contract(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    db.update_employee("HML-STF", {"personalId": ""})
-    code, b = api("POST", "/api/hr/contract", tokens["admin"], _terms())
-    assert code == 400 and "personalId" in {m["key"] for m in b["blockers"]["employee"]}
+# ── the generic route stays shut ─────────────────────────────────────────────────────────────────
+
+def test_the_collection_route_cannot_rewrite_the_balances(api, tokens):
+    """A blind whole-document PATCH would reset the advance and retention to whatever the browser
+    last saw — the balances every later claim is computed from."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    cur = db.get_collection_item("sales_contracts", c["id"])
+    st, r = api("PATCH", "/api/coll/sales_contracts/" + c["id"], tokens["management"],
+                dict(cur, retentionHeld=0, advanceOutstanding=0))
+    assert st == 400 and "/api/sales/contract" in r["error"]
 
 
-# ── who may do what ──────────────────────────────────────────────────────────────────────────────
-
-def test_below_management_can_neither_draft_nor_issue(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    for who in ("mgr", "staff"):
-        assert api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens[who])[0] == 403
-        assert api("POST", "/api/hr/contract", tokens[who], _terms())[0] == 403
+def test_you_cannot_touch_somebody_elses_contract(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    assert _c(api, tokens["other"], action="activate", id=c["id"])[0] == 403
 
 
-def test_management_can(api, tokens):
-    _setup_company(api, tokens)
-    _setup_employee()
-    assert api("GET", "/api/hr/contract/draft?emp=HML-STF", tokens["management"])[0] == 200
-    assert api("POST", "/api/hr/contract", tokens["management"], _terms())[0] == 200
+def test_it_needs_a_session(api, tokens):
+    assert _c(api, None, action="from_quote", quoteId="x")[0] == 401
 
 
-# ── the second door ──────────────────────────────────────────────────────────────────────────────
+# ── the contract's own status machine ────────────────────────────────────────────────────────────
 
-def test_the_generic_collection_route_cannot_create_a_contract_with_no_particulars(api, tokens):
-    """Measured before it was fixed: this returned 200 and stored a labour contract with none of the
-    ten Art. 21 particulars and no Art. 20 term check. Every check in contract_doc.py was one URL
-    away from irrelevant — the same hole that decisions, letters, concerns and accidents had."""
-    code, b = api("POST", "/api/coll/contracts", tokens["management"],
-                  {"empId": "HML-STF", "type": "definite", "terms": {}})
-    assert code in (400, 403), b
-    assert "labour contract" in str(b.get("error", "")).lower()
-
-
-def test_what_was_agreed_cannot_be_edited_after_the_contract_is_issued(api, tokens):
-    """A change to the wage, the term or the job is an annex or a new contract, not an edit."""
-    _setup_company(api, tokens); _setup_employee()
-    code, made = api("POST", "/api/hr/contract", tokens["management"], _terms())
-    assert code == 200, made
-    cid = made["contract"]["id"]
-    code, b = api("PATCH", "/api/coll/contracts/" + cid, tokens["management"],
-                  dict(made["contract"], terms=dict(made["contract"]["terms"], wage=1)))
-    assert code == 400, b
-    assert "cannot be rewritten" in str(b.get("error", ""))
+def test_a_contract_goes_draft_to_active_to_closed_not_the_quotations_path(api, tokens):
+    """A contract is drafted, signed into force and closed. There is no "issued to the customer for
+    consideration" step and "accepted" is not a thing that happens to it — so it has its own table
+    rather than being bent through the quotation's."""
+    assert S.CONTRACT_TRANSITIONS[S.DRAFT] == (S.ACTIVE, S.CANCELLED)
+    assert S.CONTRACT_TRANSITIONS[S.ACTIVE] == (S.CLOSED, S.CANCELLED)
+    assert S.CONTRACT_TRANSITIONS[S.CLOSED] == ()
 
 
-def test_the_signed_scan_and_the_ending_can_still_be_attached(api, tokens):
-    _setup_company(api, tokens); _setup_employee()
-    code, made = api("POST", "/api/hr/contract", tokens["management"], _terms())
-    assert code == 200, made
-    rec = made["contract"]
-    code, b = api("PATCH", "/api/coll/contracts/" + rec["id"], tokens["management"],
-                  dict(rec, fileUrl="https://sp/contract.pdf", signedAt="2026-08-08",
-                       status="Signed"))
-    assert code == 200, b
+def test_a_contract_cannot_be_closed_before_it_is_active(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    st, r = _c(api, tokens["staff"], action="close", id=c["id"], acknowledge=True)
+    assert st == 400 and "draft" in r["error"]
+
+
+def test_a_closed_contract_is_final(api, tokens):
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    _c(api, tokens["staff"], action="close", id=c["id"], acknowledge=True)
+    st, r = _c(api, tokens["staff"], action="activate", id=c["id"])
+    assert st == 400 and "final" in r["error"]
