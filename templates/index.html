@@ -16135,7 +16135,10 @@ function _tkPeriodTog(id) {
 }
 
 /* Sales targets: each member has a quota; a healthy pipeline carries 4× the quota. */
-const _CRM_DEFAULT_TARGET = 300000000;   // ₫ default per-member quota (editable per person)
+/* There is deliberately no default quota. A salesperson with no AOP plan was measured against a
+   hardcoded ₫300,000,000 nobody ever agreed, and the team total gained ₫300m per unplanned person —
+   so both the individual bar and the company figure were partly invented. No plan now means no
+   attainment bar, which is a question ("who has no plan?") rather than a wrong answer. */
 const _CRM_COVERAGE_X = 4;               // pipeline target = coverage × quota
 let _crmPipeOwners = [];
 function _crmDealDate(d) { return (d && (d.closeDate || d.wonDate || d.activityDate || d.ts)) || ''; }
@@ -16157,7 +16160,7 @@ function _crmUndatedNote(n, what) {
 function _crmChartMoney(v) { v = +v || 0; return '₫' + (Math.abs(v) >= 1e9 ? (v / 1e9).toFixed(1) + 'b' : (v / 1e6).toFixed(0) + 'm'); }
 /* Pipeline coverage always uses the CURRENT fiscal year's member AOP plan — independent of whichever
    fiscal year a manager happens to be browsing on the AOP tab (_aopFY). */
-function _crmTargetFor(owner) { const p = _aopPlan(new Date().getFullYear(), 'member', owner); return p || _CRM_DEFAULT_TARGET; }
+function _crmTargetFor(owner) { return _aopPlan(new Date().getFullYear(), 'member', owner) || 0; }   // 0 = no plan set; never a stand-in figure
 const _CRM_COMPANY_KEY = '__company__';   // reserved "owner" row that holds the company-wide target
 function _crmCompanyTarget() { const t = (_HR.crm_targets || []).find(x => (x.owner || '') === _CRM_COMPANY_KEY); return t ? (+t.target || 0) : 0; }
 function _crmSaveTargetIdx(i, val) { const o = _crmPipeOwners[i]; if (o != null) _crmSaveTarget(o, val); }
@@ -16366,16 +16369,22 @@ async function crmRenderPipeline() {
     const clr = cov >= 100 ? '#00B060' : cov >= 60 ? '#f59e0b' : '#ef4444';
     return { o, i, quota, pipeTarget, actual, cov, clr };
   });
-  const totQuota = rows.reduce((s, r) => s + r.quota, 0), totPT = totQuota * _CRM_COVERAGE_X, totAct = rows.reduce((s, r) => s + r.actual, 0);
+  // Only people who HAVE a plan can be totalled against one. Including the unplanned would either
+  // invent their quota or divide by a denominator that omits their pipeline — both silently wrong.
+  const planned = rows.filter(r => r.quota > 0), unplanned = rows.length - planned.length;
+  const totQuota = planned.reduce((s, r) => s + r.quota, 0), totPT = totQuota * _CRM_COVERAGE_X;
+  const totAct = planned.reduce((s, r) => s + r.actual, 0);
   const totCov = totPT ? Math.round(totAct / totPT * 100) : 0, totClr = totCov >= 100 ? '#00B060' : totCov >= 60 ? '#f59e0b' : '#ef4444';
-  const qCell = r => '<span style="font-weight:600">' + _crmMoney(r.quota) + '</span>';
+  const qCell = r => r.quota > 0
+    ? '<span style="font-weight:600">' + _crmMoney(r.quota) + '</span>'
+    : '<span style="font-size:11.5px;color:#B45309" title="' + _tkEscA(_t2('No AOP plan for this person, so there is nothing to measure attainment against.', 'Chưa có kế hoạch AOP cho người này nên không có cơ sở để đo mức đạt.')) + '">' + _t2('No plan set', 'Chưa đặt kế hoạch') + '</span>';
   const setTargetsBtn = canSetTargets ? '<button class="btn btn-outline btn-sm" onclick="showView(\'crm-targets\',null,\'Annual Operating Plan (AOP)\')" style="font-size:11px">' + tkIcon('settings') + _t2('Set AOP', 'Đặt AOP') + '</button>' : '';
   const targetCard = '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div><div class="card-title">' + _t('Sales Targets & Pipeline Coverage') + '</div><div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _t2('Healthy pipeline = 4× the sales-member AOP plan. Plans are set in the AOP tab.', 'Pipeline lành mạnh = 4× kế hoạch AOP của nhân viên. Kế hoạch được thiết lập trong tab AOP.') + '</div></div>' +
     '<div style="display:flex;align-items:center;gap:14px">' + setTargetsBtn + '<div style="text-align:right"><div style="font-size:11px;color:var(--text-light)">' + _t('Team coverage') + '</div><div style="font-size:20px;font-weight:800;color:' + totClr + '">' + totCov + '%</div></div></div></div>' +
     '<div class="table-wrap"><table style="min-width:640px"><thead><tr><th>' + _t('Salesperson') + '</th><th style="text-align:right">' + _t('Quota (target)') + '</th><th style="text-align:right">' + _t('Pipeline target') + ' (4×)</th><th style="text-align:right">' + _t('Open pipeline') + '</th><th style="width:190px">' + _t('Coverage') + '</th></tr></thead><tbody>' +
-    (rows.length ? rows.map(r => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(r.o) + '<span style="font-weight:600">' + _crmEsc(r.o) + '</span></div></td><td style="text-align:right">' + qCell(r) + '</td><td style="text-align:right;font-weight:600;color:var(--navy)">' + _crmMoney(r.pipeTarget) + '</td><td style="text-align:right;font-weight:700">' + _crmMoney(r.actual) + '</td><td><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:8px;background:#eef1f4;border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.min(100, r.cov) + '%;background:' + r.clr + '"></div></div><span style="font-size:12px;font-weight:700;color:' + r.clr + ';white-space:nowrap">' + r.cov + '%</span></div></td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);font-size:12px;padding:14px">' + _t('No deals with an owner yet.') + '</td></tr>') +
-    '</tbody>' + (rows.length ? '<tfoot><tr style="font-weight:800;background:var(--soft-bg)"><td>' + _t('Team total') + '</td><td style="text-align:right">' + _crmMoney(totQuota) + '</td><td style="text-align:right;color:var(--navy)">' + _crmMoney(totPT) + '</td><td style="text-align:right">' + _crmMoney(totAct) + '</td><td style="color:' + totClr + '">' + totCov + '%</td></tr></tfoot>' : '') + '</table></div></div>';
+    (rows.length ? rows.map(r => '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _crmAva(r.o) + '<span style="font-weight:600">' + _crmEsc(r.o) + '</span></div></td><td style="text-align:right">' + qCell(r) + '</td><td style="text-align:right;font-weight:600;color:var(--navy)">' + (r.quota > 0 ? _crmMoney(r.pipeTarget) : '<span style="color:var(--text-light);font-weight:400">—</span>') + '</td><td style="text-align:right;font-weight:700">' + _crmMoney(r.actual) + '</td><td>' + (r.quota > 0 ? '<div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:8px;background:#eef1f4;border-radius:6px;overflow:hidden"><div style="height:100%;width:' + Math.min(100, r.cov) + '%;background:' + r.clr + '"></div></div><span style="font-size:12px;font-weight:700;color:' + r.clr + ';white-space:nowrap">' + r.cov + '%</span></div>' : '<span style="font-size:12px;color:var(--text-light)">—</span>') + '</td></tr>').join('') : '<tr><td colspan="5" style="text-align:center;color:var(--text-light);font-size:12px;padding:14px">' + _t('No deals with an owner yet.') + '</td></tr>') +
+    '</tbody>' + (rows.length ? '<tfoot><tr style="font-weight:800;background:var(--soft-bg)"><td>' + _t('Team total') + (unplanned ? '<div style="font-size:10.5px;font-weight:400;color:#B45309">' + _crmEsc(_t2(unplanned + ' with no plan, not counted', unplanned + ' người chưa có kế hoạch, không tính vào đây')) + '</div>' : '') + '</td><td style="text-align:right">' + _crmMoney(totQuota) + '</td><td style="text-align:right;color:var(--navy)">' + _crmMoney(totPT) + '</td><td style="text-align:right">' + _crmMoney(totAct) + '</td><td style="color:' + totClr + '">' + totCov + '%</td></tr></tfoot>' : '') + '</table></div></div>';
 
   // ── PowerBI-style charts ──
   const chartRow = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px">' +
@@ -16583,16 +16592,44 @@ function crmFillProducts() {
 }
 /* ── Quotation builder (multi-line, catalog picker, live totals) ── */
 let _crmQB = null;
+/* VAT rates offered on a quotation. A list, not a literal: the rate was hardcoded at 10% in four
+   places, so a quote to a customer on any other rate could only be right by luck. Vietnam has run
+   an 8% reduction alongside the standard 10% for several periods, and a sale to an export-processing
+   enterprise is 0% — which of these applies to a given customer is the accountant's call, not the
+   code's, so the seller picks it and the document records what was picked.
+   `legal` is shown to the user; it is a pointer to who owns the answer, not a claim by the portal. */
+const _CRM_VAT_RATES = [
+  { v: 10, label: '10%', labelVn: '10%', note: 'Standard rate', noteVn: 'Thuế suất phổ thông' },
+  { v: 8,  label: '8%',  labelVn: '8%',  note: 'Reduced rate — confirm it applies to this supply and this date', noteVn: 'Thuế suất giảm — xác nhận áp dụng cho hàng hóa/dịch vụ và thời điểm này' },
+  { v: 0,  label: '0%',  labelVn: '0%',  note: 'Export / export-processing enterprise — keep the evidence on file', noteVn: 'Xuất khẩu / doanh nghiệp chế xuất — lưu hồ sơ chứng minh' }
+];
+const _CRM_VAT_DEFAULT = 10;
+/* The rate on a deal, as a number. Never falls back silently to a different rate than the document
+   was saved with: an absent value means the quote predates the selector and was priced at 10%. */
+function _crmVatRate(d) {
+  const v = (d && d.vatRate);
+  return (v === 0 || v) && isFinite(+v) ? +v : _CRM_VAT_DEFAULT;
+}
+function _crmVatMeta(rate) { return _CRM_VAT_RATES.find(r => r.v === +rate) || { v: +rate, label: (+rate) + '%', labelVn: (+rate) + '%', note: '', noteVn: '' }; }
+
 function crmQuoteBuilder(id) {
   const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
   const base = (Array.isArray(d.lines) && d.lines.length) ? d.lines : [{ desc: d.title || '', qty: 1, unit: 'lot', price: Math.round(+d.value || 0), disc: 0 }];
-  _crmQB = { id: id, lines: base.map(l => ({ desc: l.desc || l.description || '', qty: +l.qty || 1, unit: l.unit || 'lot', price: Math.round(+l.price || +l.unitPrice || 0), disc: +l.disc || 0 })) };
+  _crmQB = { id: id, vatRate: _crmVatRate(d), discount: Math.round(+d.discount || 0), lines: base.map(l => ({ desc: l.desc || l.description || '', qty: +l.qty || 1, unit: l.unit || 'lot', price: Math.round(+l.price || +l.unitPrice || 0), disc: +l.disc || 0 })) };
   document.getElementById('crmQBOverlay')?.remove();
   const cat = (_HR.crm_products || []).map((p, i) => '<option value="' + i + '">' + _crmEsc(p.name) + ' — ' + _crmMoney(p.price) + '</option>').join('');
   const el = document.createElement('div'); el.id = 'crmQBOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:980px;width:96vw">' +
     '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
+    '<div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">' +
+      '<div><label class="form-label" style="font-size:11.5px;margin-bottom:3px">' + _t2('VAT rate', 'Thuế suất GTGT') + '</label>' +
+        '<select id="crm-qb-vat" class="form-control" style="width:150px" onchange="_crmQB.vatRate=+this.value;crmQBTotals()">' +
+        _CRM_VAT_RATES.map(r => '<option value="' + r.v + '"' + (r.v === _crmQB.vatRate ? ' selected' : '') + '>' + (_LANG.cur === 'vi' ? r.labelVn : r.label) + '</option>').join('') + '</select></div>' +
+      '<div><label class="form-label" style="font-size:11.5px;margin-bottom:3px">' + _t2('Project discount (₫)', 'Chiết khấu dự án (₫)') + '</label>' +
+        '<input id="crm-qb-disc" class="form-control" inputmode="numeric" style="width:170px;text-align:right" placeholder="0" value="' + _qaMoneyFmt(_crmQB.discount || 0) + '" oninput="_crmQB.discount=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this);crmQBTotals()"></div>' +
+      '<div id="crm-qb-vatnote" style="font-size:11px;color:var(--text-light);flex:1;min-width:180px;padding-bottom:8px"></div>' +
+    '</div>' +
     '<div class="table-wrap dense"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px;text-align:right">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
     '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
@@ -16614,8 +16651,17 @@ function crmQBRender() {
 function crmQBTotals() {
   if (!_crmQB) return; let sub = 0;
   _crmQB.lines.forEach((l, i) => { const amt = Math.round((+l.qty || 0) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)); const c = document.getElementById('crm-qb-amt-' + i); if (c) c.textContent = _crmMoney(amt); sub += amt; });
-  const vat = Math.round(sub * 0.1), grand = sub + vat;
-  const t = document.getElementById('crm-qb-totals'); if (t) t.innerHTML = 'Subtotal: <b style="color:var(--text)">' + _crmMoney(sub) + '</b> &nbsp;·&nbsp; VAT 10%: <b style="color:var(--text)">' + _crmMoney(vat) + '</b> &nbsp;·&nbsp; <span style="color:var(--navy);font-size:15px">Grand total: <b>' + _crmMoney(grand) + '</b></span>';
+  const rate = _crmVatRate(_crmQB), disc = Math.max(0, Math.round(+_crmQB.discount || 0));
+  const net = Math.max(0, sub - disc);
+  const vat = Math.round(net * rate / 100), grand = net + vat;
+  const meta = _crmVatMeta(rate);
+  const nb = document.getElementById('crm-qb-vatnote');
+  if (nb) nb.textContent = _LANG.cur === 'vi' ? (meta.noteVn || '') : (meta.note || '');
+  const t = document.getElementById('crm-qb-totals');
+  if (t) t.innerHTML = _t2('Subtotal', 'Tạm tính') + ': <b style="color:var(--text)">' + _crmMoney(sub) + '</b>' +
+    (disc ? ' &nbsp;·&nbsp; ' + _t2('Discount', 'Chiết khấu') + ': <b style="color:var(--text)">-' + _crmMoney(disc) + '</b>' : '') +
+    ' &nbsp;·&nbsp; ' + _t2('VAT', 'Thuế GTGT') + ' ' + meta.label + ': <b style="color:var(--text)">' + _crmMoney(vat) + '</b>' +
+    ' &nbsp;·&nbsp; <span style="color:var(--navy);font-size:15px">' + _t2('Grand total', 'Tổng cộng') + ': <b>' + _crmMoney(grand) + '</b></span>';
 }
 function crmQBAddLine() { if (!_crmQB) return; _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
 function crmQBRemoveLine(i) { if (!_crmQB) return; _crmQB.lines.splice(i, 1); if (!_crmQB.lines.length) _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
@@ -16628,7 +16674,8 @@ async function crmQBSave(thenExport, fmt) {
   const lines = started.filter(l => (l.desc || '').trim() && +l.price > 0).map(l => Object.assign({}, l, { qty: +l.qty > 0 ? +l.qty : 1 }));
   if (!lines.length) { toast('Add at least one line with a description and a unit price before saving.', 'warn', 6000); return; }
   const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 1) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
-  try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub }) }); d.lines = lines; d.value = sub; }
+  try { const _vr = _crmVatRate(_crmQB), _dc = Math.max(0, Math.round(+_crmQB.discount || 0));
+    await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub, vatRate: _vr, discount: _dc }) }); d.lines = lines; d.value = sub; d.vatRate = _vr; d.discount = _dc; }
   catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error'); return; }
   toast('Quotation saved (' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ')');
   document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
@@ -16817,12 +16864,13 @@ function _crmQuoteModel(deal) {
   lines.forEach(l => l.amount = Math.round(l.qty * l.price * (1 - (l.disc || 0) / 100)));
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const discount = Math.round(+deal.discount || 0);
-  const vat = Math.round((subtotal - discount) * 0.10);
+  const vatRate = _crmVatRate(deal);
+  const vat = Math.round(Math.max(0, subtotal - discount) * vatRate / 100);
   const grand = subtotal - discount + vat;
   const today = new Date(); const valid = new Date(today.getTime() + 30 * 86400000);
   let h = 0; const ids = String(deal.id || 'crm'); for (let i = 0; i < ids.length; i++) h = (h * 31 + ids.charCodeAt(i)) >>> 0;
   const ref = 'HML-QT-' + today.getFullYear() + '-' + (1000 + (h % 9000));
-  return { d: deal, ref: ref, dateStr: tkFmtDateObj(today), validStr: tkFmtDateObj(valid), lines: lines, subtotal: subtotal, discount: discount, vat: vat, grand: grand, signName: deal.owner || 'Humiley Sales', signTitle: (owner && owner.title) || 'Sales Representative' };
+  return { d: deal, ref: ref, dateStr: tkFmtDateObj(today), validStr: tkFmtDateObj(valid), lines: lines, subtotal: subtotal, discount: discount, vatRate: vatRate, vatLabel: _crmVatMeta(vatRate).label, vat: vat, grand: grand, signName: deal.owner || 'Humiley Sales', signTitle: (owner && owner.title) || 'Sales Representative' };
 }
 
 function crmQuotePDF(deal) {
@@ -16863,7 +16911,7 @@ function crmQuotePDF(deal) {
   const totRow = (lab, val, bold) => { _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 9 : 8.5); if (bold) { doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(tx, y, tw, 7, 'F'); doc.setTextColor(255, 255, 255); } else { doc.setTextColor.apply(doc, _LH_DARK); } doc.text(lab, tx + 2, y + 5); doc.text(val, W - M - 2, y + 5, { align: 'right' }); if (!bold) { doc.setDrawColor(225, 229, 234); doc.line(tx, y + 7, W - M, y + 7); } y += 7; };
   totRow('Subtotal', money(m.subtotal));
   if (m.discount) totRow('Project Discount', '-' + money(m.discount));
-  totRow('VAT 10%', money(m.vat));
+  totRow('VAT ' + m.vatLabel, money(m.vat));
   totRow('GRAND TOTAL (VND)', money(m.grand), true);
   y += 8;
   _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_DARK);
@@ -16898,7 +16946,7 @@ function crmQuoteXLS(deal) {
     '<tr><td colspan="7">Dear Sir / Madam, thank you for your enquiry. We are pleased to submit Humiley\'s quotation as set out below.</td></tr>' +
     '<tr><td colspan="7" style="height:8px"></td></tr>' +
     th + rows +
-    tot('SUBTOTAL', money(m.subtotal)) + (m.discount ? tot('Project Discount', '-' + money(m.discount)) : '') + tot('VAT 10%', money(m.vat)) + tot('GRAND TOTAL', money(m.grand), true) +
+    tot('SUBTOTAL', money(m.subtotal)) + (m.discount ? tot('Project Discount', '-' + money(m.discount)) : '') + tot('VAT ' + m.vatLabel, money(m.vat)) + tot('GRAND TOTAL', money(m.grand), true) +
     '<tr><td colspan="7" style="height:12px"></td></tr>' +
     '<tr><td colspan="7">This quotation is valid until ' + esc(m.validStr) + ', quoted EXW, in VND. Payment terms: 30 days net.</td></tr>' +
     '<tr><td colspan="7" style="height:16px"></td></tr>' +
