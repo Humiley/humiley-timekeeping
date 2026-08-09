@@ -1249,6 +1249,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-crm-pipeline" class="view"><div class="page-header"><div><h1>Pipeline</h1><p>Your deals across every sales stage</p></div></div><div id="crm-pipeline-root"></div></div>
 <div id="view-crm-leads" class="view"><div class="page-header"><div><h1>Leads</h1><p>Inbound and prospected leads to qualify</p></div></div><div id="crm-leads-root"></div></div>
 <div id="view-crm-compliance" class="view"><div class="page-header"><div><h1>Sales Compliance</h1><p>What has to be true before you can bill a customer — and what this portal will never claim</p></div></div><div id="crm-compliance-root"></div></div>
+<div id="view-crm-contracts" class="view"><div class="page-header"><div><h1>Contracts</h1><p>What was agreed, what is still to bill, and what is being held back</p></div></div><div id="crm-contracts-root"></div></div>
 <div id="view-crm-quotes" class="view"><div class="page-header"><div><h1>Quotations</h1><p>Every quotation you have issued, what happened to it, and why</p></div></div><div id="crm-quotes-root"></div></div>
 <div id="view-crm-companies" class="view"><div class="page-header"><div><h1>Companies</h1><p>The accounts you sell to</p></div></div><div id="crm-companies-root"></div></div>
 <div id="view-crm-contacts" class="view"><div class="page-header"><div><h1>Contacts</h1><p>People at your accounts</p></div></div><div id="crm-contacts-root"></div></div>
@@ -11806,9 +11807,9 @@ function _hrEnsureTabBar(viewId) {
 }
 
 /* ══ Sales / CRM hub — one tabbed page (Sales Dashboard stays pinned separately) ══ */
-const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
-const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
-const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
+const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-contracts', 'Contracts'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
+const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-contracts': 'Contracts', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
+const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-contracts', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
 /* The Targets tab is a Sales-Manager tool — only Approver (management) level and above see it. */
 /* AOP and Compliance are management tools — the second lists every customer's tax identity and
    every contract value, so it is gated exactly like the endpoint behind it. */
@@ -16664,6 +16665,130 @@ function _crmBillable(c) {
            why: names.length ? (_t2('Cannot bill yet: ', 'Chưa thể xuất hóa đơn: ') + names.join(', ')) : _t2('Ready to bill.', 'Đủ điều kiện xuất hóa đơn.') };
 }
 
+/* ═══ Contracts ═════════════════════════════════════════════════════════════════════════════════
+   The two balances a contractor loses money through quietly, on a screen for the first time: how
+   much of the advance is still owed back, and how much retention the customer is holding. Both
+   lived in a spreadsheet or somebody's head until now. */
+const _SCT_STATUS = { draft: ['Draft', 'Nháp', 'b-grey'], active: ['Active', 'Đang thực hiện', 'b-ok'],
+                     closed: ['Closed', 'Đã đóng', 'b-navy'], cancelled: ['Cancelled', 'Đã huỷ', 'b-grey'] };
+const _SCT_RECOVERY = [['prorata', 'A fixed share of every claim'], ['from_pct', 'Nothing until a set % complete'], ['manual', 'Decided per claim']];
+const _SCT_RELEASE = [['warranty_end', 'All of it at the end of the warranty period'], ['half_at_completion', 'Half at completion, half at warranty end']];
+
+async function crmRenderContracts() {
+  const root = document.getElementById('crm-contracts-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  try { await tkLoadColl('sales_contracts'); } catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load contracts', 'Không tải được hợp đồng') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const all = (_HR.sales_contracts || []).slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  const live = all.filter(c => c.status === 'active');
+  const advOut = live.reduce((s, c) => s + (+c.advanceOutstanding || 0), 0);
+  const retHeld = live.reduce((s, c) => s + (+c.retentionHeld || 0), 0);
+  const toBill = live.reduce((s, c) => s + Math.max(0, (+c.value || 0) - (+c.certifiedToDate || 0)), 0);
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('Live contract value', 'Giá trị hợp đồng đang chạy'), _crmMoney(live.reduce((s, c) => s + (+c.value || 0), 0)), '#205090'),
+    _hrKpi(_t2('Still to certify', 'Chưa nghiệm thu'), _crmMoney(toBill), '#0ea5e9'),
+    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hoàn'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Retention being held', 'Đang bị giữ lại'), _crmMoney(retHeld), retHeld ? '#8B5CF6' : 'var(--emerald)')
+  ]);
+
+  const rows = all.length ? all.map(c => {
+    const st = _SCT_STATUS[c.status || 'draft'] || _SCT_STATUS.draft;
+    const pct = (+c.value) ? Math.round((+c.certifiedToDate || 0) / (+c.value) * 100) : 0;
+    return '<tr style="cursor:pointer" onclick="crmOpenContract(\'' + c.id + '\')">' +
+      '<td style="white-space:nowrap"><b style="font-variant-numeric:tabular-nums">' + _crmEsc(c.contractNo || _t2('(draft)', '(nháp)')) + '</b>' +
+        (c.quoteNo ? '<div style="font-size:10.5px;color:var(--text-light)">' + _crmEsc(c.quoteNo) + '</div>' : '') + '</td>' +
+      '<td><div style="font-weight:600">' + _crmEsc(c.title || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(c.accountName || '—') + '</div></td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(c.value) + '</td>' +
+      '<td style="min-width:110px"><div class="prog-wrap"><div class="prog-fill prog-navy" style="width:' + Math.min(100, pct) + '%"></div></div><span style="font-size:10.5px;color:var(--text-light)">' + pct + '%</span></td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((+c.advanceOutstanding) ? '#B45309' : 'var(--text-light)') + '">' + _crmMoney(c.advanceOutstanding) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + ((+c.retentionHeld) ? '#8B5CF6' : 'var(--text-light)') + '">' + _crmMoney(c.retentionHeld) + '</td>' +
+      '<td><span class="badge ' + st[2] + '" style="font-size:10px">' + _crmEsc(_LANG.cur === 'vi' ? st[1] : st[0]) + '</span></td></tr>';
+  }).join('') : tkEmptyRow(7, _t2('No contracts yet. Accept a quotation, then build the contract from it.', 'Chưa có hợp đồng. Hãy chấp nhận một báo giá rồi lập hợp đồng từ đó.'), { icon: 'inbox' });
+
+  root.innerHTML = kpis +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px">' +
+      '<div class="card-title">' + _t2('Contract register', 'Sổ hợp đồng') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _t2('Figures are exclusive of VAT', 'Số liệu chưa bao gồm thuế GTGT') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:900px"><thead><tr>' +
+      '<th>' + _t2('Number', 'Số') + '</th><th>' + _t2('Contract', 'Hợp đồng') + '</th>' +
+      '<th style="text-align:right">' + _t2('Value', 'Giá trị') + '</th><th>' + _t2('Certified', 'Đã nghiệm thu') + '</th>' +
+      '<th style="text-align:right">' + _t2('Advance owed back', 'Tạm ứng còn lại') + '</th>' +
+      '<th style="text-align:right">' + _t2('Retention held', 'Giữ lại') + '</th><th>' + _t2('Status', 'Trạng thái') + '</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
+}
+
+async function crmOpenContract(id) {
+  await tkLoadColl('sales_contracts');
+  const c = (_HR.sales_contracts || []).find(x => x.id === id); if (!c) return;
+  const draft = (c.status || 'draft') === 'draft';
+  const opt = (list, cur) => list.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + _crmEsc(o[1]) + '</option>').join('');
+  const num = (k, label, v, suffix) => '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _crmEsc(label) + (suffix ? ' (' + suffix + ')' : '') + '</label>' +
+    '<input class="form-control" id="ct-' + k + '" inputmode="numeric" value="' + _tkEscA(v == null ? '' : v) + '"' + (draft ? '' : ' disabled') + '></div>';
+
+  document.getElementById('ctOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'ctOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:780px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _crmEsc(c.contractNo || c.title || '') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(c.accountName || '') + (c.quoteNo ? ' · ' + _crmEsc(c.quoteNo) : '') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'ctOverlay\').remove()">&times;</button></div>' +
+    (draft ? '' : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(32,80,144,.08);color:var(--navy)">' +
+      _crmEsc(_t2('Signed and live. The terms are what the customer agreed — raise a variation to change them, and the balances now move only through certified claims.', 'Đã ký và đang thực hiện. Điều khoản là những gì khách hàng đã đồng ý — muốn đổi phải lập phụ lục; số dư chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>') +
+    '<div class="grid-2" style="gap:12px">' +
+      num('value', _t2('Contract value', 'Giá trị hợp đồng'), c.value, '₫') +
+      num('advancePct', _t2('Advance', 'Tạm ứng'), c.advancePct, '%') +
+      num('retentionPct', _t2('Retention', 'Giữ lại bảo hành'), c.retentionPct, '%') +
+      num('warrantyMonths', _t2('Warranty', 'Bảo hành'), c.warrantyMonths, _t2('months', 'tháng')) +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('How the advance is recovered', 'Cách khấu trừ tạm ứng') + '</label>' +
+        '<select class="form-control" id="ct-recoveryRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RECOVERY, c.recoveryRule) + '</select></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('When retention comes back', 'Khi nào hoàn trả giữ lại') + '</label>' +
+        '<select class="form-control" id="ct-releaseRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RELEASE, c.releaseRule) + '</select></div>' +
+    '</div>' +
+    (draft ? '<div class="card" style="padding:12px 14px;margin:6px 0 12px;background:var(--soft-bg)">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t2('Already running? Load where it has got to', 'Đang chạy dở? Nhập số liệu hiện tại') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' + _crmEsc(_t2('Only before activation. Afterwards these move only through certified claims.', 'Chỉ trước khi kích hoạt. Sau đó các số này chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>' +
+      '<div class="grid-3" style="gap:10px">' + num('certifiedToDate', _t2('Certified to date', 'Đã nghiệm thu'), c.certifiedToDate) +
+        num('advanceOutstanding', _t2('Advance still owed', 'Tạm ứng còn lại'), c.advanceOutstanding) +
+        num('retentionHeld', _t2('Retention held', 'Đang giữ lại'), c.retentionHeld) + '</div></div>' : '') +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'ctOverlay\').remove()">' + _t('Close') + '</button>' +
+      (draft ? '<button class="btn btn-ghost" onclick="crmContractAct(\'' + id + '\',\'terms\')">' + _t2('Save terms', 'Lưu điều khoản') + '</button>' +
+               '<button class="btn btn-ghost" onclick="crmContractAct(\'' + id + '\',\'opening\')">' + _t2('Load balances', 'Nhập số dư') + '</button>' +
+               '<button class="btn btn-primary" onclick="crmContractAct(\'' + id + '\',\'activate\')">' + _t2('Activate', 'Kích hoạt') + '</button>' : '') +
+      (c.status === 'active' ? '<button class="btn btn-primary" onclick="crmContractAct(\'' + id + '\',\'close\')">' + _t2('Close out', 'Đóng hợp đồng') + '</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+async function crmContractAct(id, action) {
+  const g = k => { const e = document.getElementById('ct-' + k); return e ? e.value : undefined; };
+  const numv = k => { const v = g(k); return v === undefined || v === '' ? undefined : +String(v).replace(/[^0-9.]/g, ''); };
+  let body = { id: id, action: action };
+  if (action === 'terms') body = Object.assign(body, { value: numv('value'), advancePct: numv('advancePct'),
+      retentionPct: numv('retentionPct'), warrantyMonths: numv('warrantyMonths'),
+      recoveryRule: g('recoveryRule'), releaseRule: g('releaseRule') });
+  if (action === 'opening') body = Object.assign(body, { certifiedToDate: numv('certifiedToDate'),
+      advanceOutstanding: numv('advanceOutstanding'), retentionHeld: numv('retentionHeld') });
+  try {
+    const r = await tkApi('/api/sales/contract', { method: 'POST', body: body });
+    if (r.blocked) {
+      const ok = await tkConfirm(_t2('This contract does not close cleanly.', 'Hợp đồng này chưa đóng sạch.') + '\n\n' +
+        (r.final.issues || []).join('\n') + '\n\n' + _t2('Close it anyway?', 'Vẫn đóng?'));
+      if (!ok) return;
+      await tkApi('/api/sales/contract', { method: 'POST', body: { id: id, action: 'close', acknowledge: true } });
+    }
+    toast(_t2('Saved', 'Đã lưu'));
+    _COLL_TS['sales_contracts'] = 0;
+    document.getElementById('ctOverlay')?.remove();
+    crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 8000); }
+}
+
 /* ═══ Sales Compliance ══════════════════════════════════════════════════════════════════════════
    Two endpoints had no door before this screen: /api/sales/compliance and
    /api/sales/accounts/review. A check nobody can reach is a check nobody runs.
@@ -20559,6 +20684,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-pipeline') { try { crmRenderPipeline(); } catch (e) { console.warn('crm-pipe:', e.message); } }
   if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
   if (id === 'crm-compliance') { try { crmRenderCompliance(); } catch (e) { console.warn('crm-compliance:', e.message); } }
+  if (id === 'crm-contracts') { try { crmRenderContracts(); } catch (e) { console.warn('crm-contracts:', e.message); } }
   if (id === 'crm-quotes') { try { crmRenderQuotes(); } catch (e) { console.warn('crm-quotes:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
