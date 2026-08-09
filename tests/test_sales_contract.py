@@ -129,6 +129,14 @@ def test_the_statement_reads_like_the_claim_a_person_signs():
     assert "retention" in r["statement"] and "payable" in r["statement"]
 
 
+def test_the_statement_is_written_in_dong_not_in_floats():
+    """It is stored on the record and printed on the claim. "277225000.00 payable" is a figure
+    nobody can read at a glance or check against a bank advice."""
+    s = C.application(_c(), 200_000_000)["statement"]
+    assert "\u20ab200,000,000" in s and "\u20ab130,000,000" in s
+    assert ".00" not in s
+
+
 # ── the rules that may not be invented ───────────────────────────────────────────────────────────
 
 def test_an_advance_with_no_recovery_rule_refuses_to_compute():

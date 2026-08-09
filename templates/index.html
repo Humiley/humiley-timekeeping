@@ -1249,6 +1249,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-crm-pipeline" class="view"><div class="page-header"><div><h1>Pipeline</h1><p>Your deals across every sales stage</p></div></div><div id="crm-pipeline-root"></div></div>
 <div id="view-crm-leads" class="view"><div class="page-header"><div><h1>Leads</h1><p>Inbound and prospected leads to qualify</p></div></div><div id="crm-leads-root"></div></div>
 <div id="view-crm-compliance" class="view"><div class="page-header"><div><h1>Sales Compliance</h1><p>What has to be true before you can bill a customer — and what this portal will never claim</p></div></div><div id="crm-compliance-root"></div></div>
+<div id="view-crm-billing" class="view"><div class="page-header"><div><h1>Billing &amp; Cash</h1><p>Progress claims, the invoice your provider issued, and who owes you what — on three separate clocks</p></div></div><div id="crm-billing-root"></div></div>
 <div id="view-crm-contracts" class="view"><div class="page-header"><div><h1>Contracts</h1><p>What was agreed, what is still to bill, and what is being held back</p></div></div><div id="crm-contracts-root"></div></div>
 <div id="view-crm-quotes" class="view"><div class="page-header"><div><h1>Quotations</h1><p>Every quotation you have issued, what happened to it, and why</p></div></div><div id="crm-quotes-root"></div></div>
 <div id="view-crm-companies" class="view"><div class="page-header"><div><h1>Companies</h1><p>The accounts you sell to</p></div></div><div id="crm-companies-root"></div></div>
@@ -11807,9 +11808,9 @@ function _hrEnsureTabBar(viewId) {
 }
 
 /* ══ Sales / CRM hub — one tabbed page (Sales Dashboard stays pinned separately) ══ */
-const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-contracts', 'Contracts'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
-const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-contracts': 'Contracts', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
-const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-contracts', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
+const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-contracts', 'Contracts'], ['crm-billing', 'Billing'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
+const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-contracts': 'Contracts', 'crm-billing': 'Billing & Cash', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
+const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-contracts', 'crm-billing', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
 /* The Targets tab is a Sales-Manager tool — only Approver (management) level and above see it. */
 /* AOP and Compliance are management tools — the second lists every customer's tax identity and
    every contract value, so it is gated exactly like the endpoint behind it. */
@@ -16789,6 +16790,343 @@ async function crmContractAct(id, action) {
   } catch (e) { toast(_errMsg(e), 'error', 8000); }
 }
 
+/* ═══ Billing & cash ════════════════════════════════════════════════════════════════════════════
+   Four endpoints shipped before this screen with no door on them: /api/sales/application,
+   /api/sales/einvoice, /api/sales/receipt and /api/sales/receivables. A claim nobody can raise is
+   a claim nobody raises, and the balances on the contract register would sit at their opening
+   figures for ever while somebody kept the real ones in a spreadsheet.
+
+   Two things this screen says out loud, because both are easy to get quietly wrong:
+     · the portal does NOT issue the VAT invoice. It records the provider's ký hiệu and số hóa đơn,
+       and a number typed in with no signed XML behind it is marked UNVERIFIED and stays marked.
+     · the receivable is not one number. Trade debt, retention and advance are shown apart, with
+       the reason they are apart, because adding them is wrong in three directions. */
+const _SAP_ST = { draft: ['Draft', 'Nháp', 'b-grey'], certified: ['Certified', 'Đã nghiệm thu', 'b-ok'] };
+
+function _sdAmt(l) {
+  if (!l || (l.kind && l.kind !== 'item' && l.kind !== 'service')) return 0;
+  const disc = Math.max(0, Math.min(100, +l.discPct || 0));
+  return Math.round((+l.qty || 0) * (+l.unitPrice || 0) * (1 - disc / 100) * 100) / 100;
+}
+function _sdOpen(l) { return Math.max(0, Math.round((_sdAmt(l) - (+(l || {}).certifiedAmt || 0)) * 100) / 100); }
+
+async function crmRenderBilling() {
+  const root = document.getElementById('crm-billing-root'); if (!root) return;
+  root.innerHTML = tkSkeleton('kpi', 4);
+  try { await tkLoadColl('sales_applications'); await tkLoadColl('sales_contracts'); } catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load billing', 'Không tải được dữ liệu thanh toán') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const apps = (_HR.sales_applications || []).slice()
+    .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+  const contracts = _HR.sales_contracts || [];
+  const live = contracts.filter(c => c.status === 'active');
+
+  const certified = apps.filter(a => a.status === 'certified');
+  const owed = certified.reduce((s, a) => s + Math.max(0, (+a.netPayable || 0) - (+a.settledAmt || 0)), 0);
+  const noInvoice = certified.filter(a => !a.einvNo)
+    .reduce((s, a) => s + Math.max(0, (+a.netPayable || 0) - (+a.settledAmt || 0)), 0);
+  const retHeld = live.reduce((s, c) => s + (+c.retentionHeld || 0), 0);
+  const advOut = live.reduce((s, c) => s + (+c.advanceOutstanding || 0), 0);
+
+  let aging = '';
+  if (_crmSeeAll()) {
+    try {
+      const r = await tkApi('/api/sales/receivables');
+      const B = (r.trade || {}).buckets || {};
+      /* An empty bucket is good news. Painting a ₫0 in overdue-red makes a clean ledger look
+         like five problems. Colour is reserved for a figure that is actually there. */
+      const cell = (label, v, color) => '<div style="flex:1 1 110px;min-width:104px">' +
+        '<div style="font-size:10.5px;color:var(--text-light);text-transform:uppercase;letter-spacing:.4px">' + _crmEsc(label) + '</div>' +
+        '<div style="font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:' + ((+v || 0) ? color : 'var(--text-light)') + '">' + _crmMoney(v) + '</div></div>';
+      const flags = [];
+      if ((r.unverifiedInvoices || []).length)
+        flags.push((r.unverifiedInvoices.length === 1
+          ? _t2('One invoice number is held with no signed XML behind it — recorded as UNVERIFIED.',
+                'Một số hoá đơn chưa có XML ký số kèm theo — được ghi nhận là CHƯA XÁC MINH.')
+          : _t2('%n invoice numbers are held with no signed XML behind them — recorded as UNVERIFIED.',
+                '%n số hoá đơn chưa có XML ký số kèm theo — được ghi nhận là CHƯA XÁC MINH.'))
+            .replace('%n', r.unverifiedInvoices.length));
+      if ((r.withoutPaymentTerms || []).length)
+        flags.push((r.withoutPaymentTerms.length === 1
+          ? _t2('One claim is on a customer with no payment terms recorded — it is not aged, because an invented due date makes this report confidently wrong.',
+                'Một đề nghị thanh toán thuộc khách hàng chưa khai báo điều khoản thanh toán — không tính tuổi nợ, vì hạn thanh toán bịa ra sẽ khiến báo cáo sai một cách tự tin.')
+          : _t2('%n claims are on customers with no payment terms recorded — they are not aged, because an invented due date makes this report confidently wrong.',
+                '%n đề nghị thanh toán thuộc khách hàng chưa khai báo điều khoản thanh toán — không tính tuổi nợ, vì hạn thanh toán bịa ra sẽ khiến báo cáo sai một cách tự tin.'))
+            .replace('%n', r.withoutPaymentTerms.length));
+      aging = '<div class="card" style="padding:16px 18px;margin-bottom:16px">' +
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">' +
+          '<div class="card-title">' + _t2('Aged trade debt', 'Tuổi nợ phải thu') + '</div>' +
+          '<span style="font-size:11px;color:var(--text-light)">' + _t2('as at', 'tại ngày') + ' ' + _crmEsc(r.asOf || '') + '</span></div>' +
+        '<div style="display:flex;gap:14px;flex-wrap:wrap">' +
+          cell(_t2('Not yet due', 'Chưa đến hạn'), B.current, 'var(--navy)') +
+          cell('1–30 ' + _t2('days', 'ngày'), B.d1_30, '#0ea5e9') +
+          cell('31–60 ' + _t2('days', 'ngày'), B.d31_60, '#B45309') +
+          cell('61–90 ' + _t2('days', 'ngày'), B.d61_90, '#EA580C') +
+          cell('90+ ' + _t2('days', 'ngày'), B.d90plus, '#B91C1C') + '</div>' +
+        '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap">' +
+          '<div><div style="font-size:10.5px;color:var(--text-light)">' + _t2('Retention held by customers', 'Khách hàng đang giữ lại') + '</div>' +
+            '<div style="font-size:14px;font-weight:700;color:' + ((+r.retentionHeldByCustomers || 0) ? '#8B5CF6' : 'var(--text-light)') + ';font-variant-numeric:tabular-nums">' + _crmMoney(r.retentionHeldByCustomers) + '</div></div>' +
+          '<div><div style="font-size:10.5px;color:var(--text-light)">' + _t2('Advance still owed back', 'Tạm ứng còn phải hoàn') + '</div>' +
+            '<div style="font-size:14px;font-weight:700;color:' + ((+r.advanceOwedBack || 0) ? '#B45309' : 'var(--text-light)') + ';font-variant-numeric:tabular-nums">' + _crmMoney(r.advanceOwedBack) + '</div></div></div>' +
+        '<div style="margin-top:10px;font-size:11.5px;color:var(--text-light);line-height:1.55">' +
+          _crmEsc(_t2(r.whyNotOneNumber || '',
+                      'Nợ thương mại, tiền giữ lại và tạm ứng là ba chiếc đồng hồ khác nhau. Tiền giữ lại không phải là quá hạn — nó chưa đến hạn cho tới khi hết bảo hành. Tạm ứng là tiền mình đang giữ và phải hoàn lại, không phải tiền người ta nợ mình. Cộng chúng lại sẽ ra một con số sai theo ba hướng.')) + '</div>' +
+        (flags.length ? '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:rgba(180,83,9,.09);font-size:11.5px;color:#8a4a00;line-height:1.55">' +
+          flags.map(f => '<div>' + _crmEsc(f) + '</div>').join('') + '</div>' : '') +
+      '</div>';
+    } catch (e) { /* the aging strip is management-only; its absence is not an error for anybody else */ }
+  }
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('Certified, awaiting cash', 'Đã nghiệm thu, chờ thu tiền'), _crmMoney(owed), owed ? '#0ea5e9' : 'var(--emerald)'),
+    _hrKpi(_t2('Certified, not yet invoiced', 'Đã nghiệm thu, chưa xuất hoá đơn'), _crmMoney(noInvoice), noInvoice ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Retention being held', 'Đang bị giữ lại'), _crmMoney(retHeld), retHeld ? '#8B5CF6' : 'var(--emerald)'),
+    _hrKpi(_t2('Advance still owed back', 'Tạm ứng còn phải hoàn'), _crmMoney(advOut), advOut ? '#B45309' : 'var(--emerald)')
+  ]);
+
+  const rows = apps.length ? apps.map(a => {
+    const st = _SAP_ST[a.status || 'draft'] || _SAP_ST.draft;
+    const out = Math.max(0, (+a.netPayable || 0) - (+a.settledAmt || 0));
+    const inv = a.einvNo
+      ? '<div style="font-variant-numeric:tabular-nums">' + _crmEsc((a.einvSerial || '') + ' ' + a.einvNo) + '</div>' +
+        (a.einvVerified ? '' : '<span class="badge b-warn" style="font-size:9.5px">' + _t2('UNVERIFIED', 'CHƯA XÁC MINH') + '</span>')
+      : '<span style="color:var(--text-light)">—</span>';
+    return '<tr style="cursor:pointer" onclick="crmOpenClaim(\'' + a.id + '\')">' +
+      '<td><div style="font-weight:600">' + _crmEsc(a.period || _t2('(no period)', '(chưa có kỳ)')) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(a.contractNo || '') + '</div></td>' +
+      '<td>' + _crmEsc(a.accountName || '—') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + _crmMoney(a.certifiedThis) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(a.netPayable) + '</td>' +
+      '<td style="font-size:11.5px">' + inv + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:' + (out ? '#B45309' : 'var(--emerald)') + '">' + _crmMoney(out) + '</td>' +
+      '<td><span class="badge ' + st[2] + '" style="font-size:10px">' + _crmEsc(_LANG.cur === 'vi' ? st[1] : st[0]) + '</span></td></tr>';
+  }).join('') : tkEmptyRow(7, _t2('No payment applications yet. Activate a contract, then raise a claim against it.',
+                                  'Chưa có đề nghị thanh toán. Hãy kích hoạt hợp đồng rồi lập đợt nghiệm thu.'), { icon: 'inbox' });
+
+  root.innerHTML = kpis + aging +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px">' +
+      '<div><div class="card-title">' + _t2('Payment applications', 'Đề nghị thanh toán') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _t2('Amounts are exclusive of VAT', 'Số liệu chưa bao gồm thuế GTGT') + '</div></div>' +
+      (live.length ? '<button class="btn btn-primary btn-sm" onclick="crmNewClaim()">' + tkIcon('plus') + _t2('New claim', 'Lập đợt') + '</button>' : '') + '</div>' +
+    '<div class="table-wrap"><table style="min-width:880px"><thead><tr>' +
+      '<th>' + _t2('Period', 'Kỳ') + '</th><th>' + _t2('Customer', 'Khách hàng') + '</th>' +
+      '<th style="text-align:right">' + _t2('Certified', 'Nghiệm thu') + '</th>' +
+      '<th style="text-align:right">' + _t2('Net payable', 'Còn phải trả') + '</th>' +
+      '<th>' + _t2('Legal invoice', 'Hoá đơn') + '</th>' +
+      '<th style="text-align:right">' + _t2('Outstanding', 'Còn nợ') + '</th>' +
+      '<th>' + _t2('Status', 'Trạng thái') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
+}
+
+async function crmNewClaim() {
+  await tkLoadColl('sales_contracts');
+  const live = (_HR.sales_contracts || []).filter(c => c.status === 'active');
+  if (!live.length) { toast(_t2('No active contract to claim against.', 'Chưa có hợp đồng đang thực hiện.'), 'warn'); return; }
+  if (live.length === 1) return crmClaimForm(live[0].id, '');
+  document.getElementById('sapPick')?.remove();
+  const el = document.createElement('div'); el.id = 'sapPick'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:520px;width:94vw">' +
+    '<div class="modal-header"><div class="modal-title">' + _t2('Claim against which contract?', 'Lập đợt cho hợp đồng nào?') + '</div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'sapPick\').remove()">&times;</button></div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto">' +
+      live.map(c => '<button class="btn btn-ghost" style="justify-content:flex-start;text-align:left;padding:10px 12px" ' +
+        'onclick="document.getElementById(\'sapPick\').remove();crmClaimForm(\'' + c.id + '\',\'\')">' +
+        '<span><b style="font-variant-numeric:tabular-nums">' + _crmEsc(c.contractNo || '') + '</b> · ' + _crmEsc(c.title || '') +
+        '<div style="font-size:11px;color:var(--text-light);font-weight:400">' + _crmEsc(c.accountName || '') + ' · ' +
+        _t2('still to certify', 'chưa nghiệm thu') + ' ' + _crmMoney(Math.max(0, (+c.value || 0) - (+c.certifiedToDate || 0))) + '</div></span></button>').join('') +
+    '</div></div>';
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+async function crmClaimForm(contractId, appId) {
+  await tkLoadColl('sales_contracts');
+  const c = (_HR.sales_contracts || []).find(x => x.id === contractId); if (!c) return;
+  const a = appId ? (_HR.sales_applications || []).find(x => x.id === appId) : null;
+  const claims = (a && a.claims) || {};
+  const lines = (c.lines || []).filter(l => (l.kind || 'item') === 'item' || l.kind === 'service');
+
+  document.getElementById('sapOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'sapOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:860px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _t2('Payment application', 'Đề nghị thanh toán') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc((c.contractNo || '') + ' · ' + (c.accountName || '')) + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'sapOverlay\').remove()">&times;</button></div>' +
+    '<div class="form-group" style="max-width:220px"><label class="form-label" style="font-size:11.5px">' + _t2('Period', 'Kỳ') + '</label>' +
+      '<input class="form-control" id="sap-period" placeholder="2026-08" value="' + _tkEscA((a && a.period) || '') + '"></div>' +
+    '<div class="table-wrap" style="margin-bottom:12px"><table style="min-width:640px"><thead><tr>' +
+      '<th>' + _t2('Line', 'Hạng mục') + '</th><th style="text-align:right">' + _t2('Line value', 'Giá trị') + '</th>' +
+      '<th style="text-align:right">' + _t2('Already certified', 'Đã nghiệm thu') + '</th>' +
+      '<th style="text-align:right">' + _t2('Open', 'Còn lại') + '</th>' +
+      '<th style="text-align:right;min-width:140px">' + _t2('Claim now', 'Đợt này') + '</th></tr></thead><tbody>' +
+      (lines.length ? lines.map(l => '<tr><td>' + _crmEsc(l.desc || '') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _crmMoney(_sdAmt(l)) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _crmMoney(l.certifiedAmt) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _crmMoney(_sdOpen(l)) + '</td>' +
+        '<td style="text-align:right"><input class="form-control sap-claim" data-uid="' + _tkEscA(l.uid) + '" inputmode="numeric" ' +
+          'style="text-align:right;font-variant-numeric:tabular-nums" value="' + _tkEscA(claims[l.uid] || '') + '"></td></tr>').join('')
+        : tkEmptyRow(5, _t2('This contract has no priced lines.', 'Hợp đồng này không có hạng mục có giá.'))) +
+      '</tbody></table></div>' +
+    '<div class="card" style="padding:10px 13px;font-size:11.5px;color:var(--text-light);line-height:1.55;background:var(--soft-bg)">' +
+      _crmEsc(_t2('Amounts are exclusive of VAT. Nothing is clamped — a line claimed past what is left on it is refused and told by how much, because a silently trimmed total is one somebody signs.',
+                  'Số liệu chưa gồm thuế GTGT. Không tự động cắt gọt — hạng mục vượt quá phần còn lại sẽ bị từ chối và báo rõ vượt bao nhiêu, vì tổng bị lặng lẽ cắt bớt là tổng sẽ có người ký.')) + '</div>' +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'sapOverlay\').remove()">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" onclick="crmClaimSave(\'' + contractId + '\',\'' + (appId || '') + '\')">' + _t2('Save claim', 'Lưu đợt') + '</button>' +
+    '</div></div>';
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+async function crmClaimSave(contractId, appId) {
+  const claims = {};
+  document.querySelectorAll('#sapOverlay .sap-claim').forEach(i => {
+    const v = +String(i.value || '').replace(/[^0-9.]/g, '');
+    if (v) claims[i.getAttribute('data-uid')] = v;
+  });
+  if (!Object.keys(claims).length) { toast(_t2('Nothing claimed on any line.', 'Chưa nhập giá trị nào.'), 'warn'); return; }
+  const body = { action: 'draft', contractId: contractId, claims: claims,
+                 period: (document.getElementById('sap-period') || {}).value || '' };
+  if (appId) body.id = appId;
+  try {
+    const r = await tkApi('/api/sales/application', { method: 'POST', body: body });
+    toast(_t2('Claim saved', 'Đã lưu đợt'));
+    _COLL_TS['sales_applications'] = 0;
+    document.getElementById('sapOverlay')?.remove();
+    await crmRenderBilling();
+    if (r && r.item) crmOpenClaim(r.item.id);
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmOpenClaim(id) {
+  await tkLoadColl('sales_applications');
+  const a = (_HR.sales_applications || []).find(x => x.id === id); if (!a) return;
+  const draft = (a.status || 'draft') === 'draft';
+  const out = Math.max(0, (+a.netPayable || 0) - (+a.settledAmt || 0));
+  /* A deduction is shown in brackets, the way a statement of account does it — never as a
+     ₫-54,000,000, which puts the minus sign on the wrong side of the currency and reads as a typo. */
+  const line = (label, v, strong, less) => '<div style="display:flex;justify-content:space-between;gap:14px;padding:5px 0' +
+    (strong ? ';border-top:1px solid var(--border);margin-top:4px;padding-top:8px' : '') + '">' +
+    '<span style="font-size:12.5px;color:' + (strong ? 'var(--navy)' : 'var(--text-light)') + (strong ? ';font-weight:700' : '') + '">' + _crmEsc(label) + '</span>' +
+    '<span style="font-variant-numeric:tabular-nums;font-weight:' + (strong ? '700' : '600') + (less ? ';color:#B45309' : '') + '">' +
+    (less ? '(' + _crmMoney(Math.abs(+v || 0)) + ')' : _crmMoney(v)) + '</span></div>';
+
+  const invBlock = draft ? '' :
+    '<div class="card" style="padding:13px 15px;margin-top:12px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px">' + _t2('Legal invoice (hoá đơn GTGT)', 'Hoá đơn GTGT') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-bottom:10px">' +
+        _crmEsc(_t2('This portal does not issue the invoice — the legal original is the signed XML your e-invoice provider produces. Record its ký hiệu and số here so the two can be reconciled. A number with no XML behind it stays marked UNVERIFIED.',
+                    'Cổng thông tin này không phát hành hoá đơn — bản gốc hợp pháp là tệp XML có ký số do nhà cung cấp hoá đơn điện tử phát hành. Hãy ghi ký hiệu và số ở đây để đối chiếu. Số hoá đơn không có XML kèm theo sẽ luôn được đánh dấu CHƯA XÁC MINH.')) + '</div>' +
+      (a.einvNo ? '<div style="margin-bottom:10px;font-size:12.5px"><b style="font-variant-numeric:tabular-nums">' +
+          _crmEsc((a.einvSerial || '') + ' ' + a.einvNo) + '</b>' + (a.einvDate ? ' · ' + _crmEsc(a.einvDate) : '') +
+          (a.einvVerified ? ' <span class="badge b-ok" style="font-size:9.5px">' + _t2('Verified', 'Đã xác minh') + '</span>'
+                          : ' <span class="badge b-warn" style="font-size:9.5px">' + _t2('UNVERIFIED', 'CHƯA XÁC MINH') + '</span>') +
+          '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' +
+            _crmEsc(a.einvVerified
+              ? _t2('Reconciled against the provider\'s signed XML.', 'Đã đối chiếu với tệp XML ký số của nhà cung cấp.')
+              : _t2('Externally issued — UNVERIFIED. The number was typed in and no signed XML from the provider is held against it.',
+                    'Do bên ngoài phát hành — CHƯA XÁC MINH. Số hoá đơn được nhập tay và chưa có tệp XML ký số của nhà cung cấp kèm theo.')) +
+            '</div></div>' : '') +
+      '<div class="grid-3" style="gap:10px">' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Ký hiệu (serial)', 'Ký hiệu') + '</label>' +
+          '<input class="form-control" id="ei-serial" placeholder="C26TAA" value="' + _tkEscA(a.einvSerial || '') + '"></div>' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Số hóa đơn', 'Số hoá đơn') + '</label>' +
+          '<input class="form-control" id="ei-no" inputmode="numeric" value="' + _tkEscA(a.einvNo || '') + '"></div>' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Invoice date', 'Ngày hoá đơn') + '</label>' +
+          '<input class="form-control" id="ei-date" type="date" value="' + _tkEscA(a.einvDate || '') + '"></div>' +
+      '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="crmInvoiceSave(\'' + id + '\')">' + _t2('Record invoice number', 'Ghi số hoá đơn') + '</button>' +
+    '</div>';
+
+  const cashBlock = (draft || out <= 0) ? '' :
+    '<div class="card" style="padding:13px 15px;margin-top:12px">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px">' + _t2('Record a receipt', 'Ghi nhận tiền về') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-bottom:10px">' +
+        _crmEsc(_t2('Outstanding on this claim: ', 'Còn nợ đợt này: ')) + _crmMoney(out) + '. ' +
+        _crmEsc(_t2('A payment short of the claim needs a reason — unexplained is how a dispute becomes a write-off.',
+                    'Thanh toán thiếu so với đề nghị cần nêu lý do — không giải thích là cách một tranh chấp trở thành khoản xoá sổ.')) + '</div>' +
+      '<div class="grid-3" style="gap:10px">' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Amount received', 'Số tiền') + '</label>' +
+          '<input class="form-control" id="rc-amount" inputmode="numeric" value="' + _tkEscA(Math.round(out)) + '"></div>' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Received on', 'Ngày nhận') + '</label>' +
+          '<input class="form-control" id="rc-date" type="date"></div>' +
+        '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Bank reference', 'Số tham chiếu') + '</label>' +
+          '<input class="form-control" id="rc-ref"></div>' +
+      '</div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Reason, if short paid', 'Lý do nếu trả thiếu') + '</label>' +
+        '<input class="form-control" id="rc-short" placeholder="' + _tkEscA(_t2('e.g. disputed variation VO-3', 'vd: tranh chấp phụ lục VO-3')) + '"></div>' +
+      '<button class="btn btn-primary btn-sm" onclick="crmReceiptSave(\'' + id + '\')">' + _t2('Record receipt', 'Ghi nhận') + '</button>' +
+    '</div>';
+
+  document.getElementById('sapDetail')?.remove();
+  const el = document.createElement('div'); el.id = 'sapDetail'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:700px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _crmEsc((a.contractNo || '') + ' · ' + (a.period || '')) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(a.accountName || '') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'sapDetail\').remove()">&times;</button></div>' +
+    '<div class="card" style="padding:14px 16px">' +
+      line(_t2('Certified this period', 'Nghiệm thu kỳ này'), a.certifiedThis) +
+      line(_t2('Less advance recovery', 'Trừ khấu trừ tạm ứng'), a.advanceRecovered, false, true) +
+      line(_t2('Less retention', 'Trừ giữ lại bảo hành'), a.retentionThis, false, true) +
+      line(_t2('Net payable (ex-VAT)', 'Còn phải trả (chưa VAT)'), a.netPayable, true) +
+      (draft ? '' : line(_t2('Settled', 'Đã thu'), a.settledAmt) + line(_t2('Outstanding', 'Còn nợ'), out)) +
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-light);line-height:1.55">' +
+        _crmEsc(_t2('%c certified, less %a advance recovery and %r retention = %n payable.',
+                    '%c nghiệm thu, trừ %a khấu trừ tạm ứng và %r giữ lại bảo hành = %n phải trả.')
+                  .replace('%c', _crmMoney(a.certifiedThis)).replace('%a', _crmMoney(a.advanceRecovered))
+                  .replace('%r', _crmMoney(a.retentionThis)).replace('%n', _crmMoney(a.netPayable))) + '</div>' +
+    '</div>' + invBlock + cashBlock +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove()">' + _t('Close') + '</button>' +
+      (draft ? '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove();crmClaimForm(\'' + _crmEsc(a.contractId) + '\',\'' + id + '\')">' + _t2('Edit', 'Sửa') + '</button>' +
+               '<button class="btn btn-primary" onclick="crmClaimCertify(\'' + id + '\')">' + _t2('Certify', 'Nghiệm thu') + '</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+async function crmClaimCertify(id) {
+  if (!await tkConfirm(_t2('Certifying moves the contract balances — the advance recovers, retention is withheld, and the lines are consumed. It cannot be edited afterwards.',
+                           'Nghiệm thu sẽ làm thay đổi số dư hợp đồng — khấu trừ tạm ứng, giữ lại bảo hành và trừ vào hạng mục. Sau đó không sửa được.'))) return;
+  try {
+    await tkApi('/api/sales/application', { method: 'POST', body: { id: id, action: 'certify' } });
+    toast(_t2('Certified', 'Đã nghiệm thu'));
+    _COLL_TS['sales_applications'] = 0; _COLL_TS['sales_contracts'] = 0;
+    document.getElementById('sapDetail')?.remove();
+    await crmRenderBilling();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmInvoiceSave(id) {
+  const g = k => (document.getElementById('ei-' + k) || {}).value || '';
+  try {
+    const r = await tkApi('/api/sales/einvoice', { method: 'POST', body: { id: id, einvSerial: g('serial'), einvNo: g('no'), einvDate: g('date') } });
+    toast(r.verified ? _t2('Invoice recorded', 'Đã ghi hoá đơn')
+                     : _t2('Recorded — UNVERIFIED, no signed XML held', 'Đã ghi — CHƯA XÁC MINH, chưa có XML ký số'), r.verified ? 'success' : 'warn', 7000);
+    _COLL_TS['sales_applications'] = 0;
+    document.getElementById('sapDetail')?.remove();
+    await crmRenderBilling();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmReceiptSave(id) {
+  const g = k => (document.getElementById('rc-' + k) || {}).value || '';
+  const amt = +String(g('amount')).replace(/[^0-9.]/g, '');
+  if (!amt) { toast(_t2('Enter the amount received.', 'Nhập số tiền đã nhận.'), 'warn'); return; }
+  const body = { amount: amt, allocations: {}, receivedOn: g('date'), reference: g('ref'),
+                 method: 'Bank', shortReason: g('short') };
+  body.allocations[id] = amt;
+  try {
+    await tkApi('/api/sales/receipt', { method: 'POST', body: body });
+    toast(_t2('Receipt recorded', 'Đã ghi nhận tiền về'));
+    _COLL_TS['sales_applications'] = 0;
+    document.getElementById('sapDetail')?.remove();
+    await crmRenderBilling();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
 /* ═══ Sales Compliance ══════════════════════════════════════════════════════════════════════════
    Two endpoints had no door before this screen: /api/sales/compliance and
    /api/sales/accounts/review. A check nobody can reach is a check nobody runs.
@@ -16866,10 +17204,16 @@ async function crmRenderCompliance() {
         li(c.unresolved.map(u => '<b>' + _crmEsc(u.topic) + '</b> — ' + _crmEsc(u.action || u.question || ''))), '#8B5CF6')
     : '';
 
+  const linkBox = _crmSeeAll() ? box(_t2('Old records still keyed on a typed-in name', 'Bản ghi cũ vẫn ghi tên khách hàng bằng tay'),
+    '<div style="font-size:12.5px;line-height:1.6;margin-bottom:8px">' +
+    _crmEsc(_t2('Deals, contacts, leads and projects created before customers were records of their own still carry the name somebody typed. Linking them to a real account is what makes "everything for this customer" answerable.',
+                'Cơ hội, liên hệ, khách hàng tiềm năng và dự án tạo trước khi khách hàng trở thành bản ghi riêng vẫn chỉ có tên gõ tay. Liên kết chúng với khách hàng thật là điều khiến câu hỏi "tất cả của khách hàng này" trả lời được.')) + '</div>' +
+    '<button class="btn btn-ghost btn-sm" onclick="crmBackfillPreview()">' + _t2('Preview linking…', 'Xem trước liên kết…') + '</button>', 'var(--navy)') : '';
+
   root.innerHTML = kpis +
     '<div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' + _crmEsc(c.statement || '') +
     ' &nbsp;·&nbsp; ' + _crmEsc(_t2('as at ', 'tính đến ') + (c.asOf || '')) + '</div>' +
-    taxBox + billBox + dupBox + staleBox + notBox + openBox;
+    taxBox + billBox + dupBox + linkBox + staleBox + notBox + openBox;
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
 }
 
@@ -16888,6 +17232,31 @@ async function crmMergePreview(primaryId, duplicateId) {
     const r = await tkApi('/api/sales/accounts/merge', { method: 'POST', body: { primaryId: primaryId, duplicateId: duplicateId, confirm: true } });
     toast(_t2('Merged — ', 'Đã gộp — ') + r.moved + ' ' + _t2('record(s) moved', 'bản ghi được chuyển'));
     ['crm_companies', 'crm_deals', 'crm_contacts', 'crm_leads', 'pm_projects'].forEach(k => { try { _COLL_TS[k] = 0; } catch (e) {} });
+    crmRenderCompliance();
+  } catch (e) { toast(_errMsg(e), 'error', 7000); }
+}
+
+/* The old free-text customer names, linked to real account ids. Previewed first, and every row it
+   cannot resolve WITH CERTAINTY is handed back for a person to look at rather than guessed —
+   a confident wrong id disappears into the joins and is never seen again. */
+async function crmBackfillPreview() {
+  let plan;
+  try { plan = await tkApi('/api/sales/accounts/backfill', { method: 'POST', body: {} }); }
+  catch (e) { toast(_errMsg(e), 'error', 7000); return; }
+  if (!plan.link || !plan.link.length) {
+    tkAlert({ title: _t2('Nothing to link', 'Không có gì để liên kết'), body: plan.why || '' });
+    return;
+  }
+  const ok = await tkConfirm(_t2('Link these records to their customers?', 'Liên kết các bản ghi này với khách hàng?') +
+    '\n\n' + (plan.why || '') + '\n\n' +
+    _t2('The name is left exactly as it is — this only adds the link alongside it, so nothing that reads the name today breaks.',
+        'Tên được giữ nguyên — thao tác này chỉ thêm liên kết bên cạnh, nên mọi thứ đang đọc theo tên vẫn chạy.'));
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/sales/accounts/backfill', { method: 'POST', body: { confirm: true } });
+    toast(_t2('Linked ', 'Đã liên kết ') + r.linked + ' ' + _t2('record(s)', 'bản ghi') +
+      ((r.exceptions || []).length ? ' · ' + (r.exceptions || []).length + ' ' + _t2('left for a human', 'cần người xem') : ''), 'success', 7000);
+    ['crm_deals', 'crm_contacts', 'crm_leads', 'pm_projects'].forEach(k => { try { _COLL_TS[k] = 0; } catch (e) {} });
     crmRenderCompliance();
   } catch (e) { toast(_errMsg(e), 'error', 7000); }
 }
@@ -20685,6 +21054,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
   if (id === 'crm-compliance') { try { crmRenderCompliance(); } catch (e) { console.warn('crm-compliance:', e.message); } }
   if (id === 'crm-contracts') { try { crmRenderContracts(); } catch (e) { console.warn('crm-contracts:', e.message); } }
+  if (id === 'crm-billing') { try { crmRenderBilling(); } catch (e) { console.warn('crm-billing:', e.message); } }
   if (id === 'crm-quotes') { try { crmRenderQuotes(); } catch (e) { console.warn('crm-quotes:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }

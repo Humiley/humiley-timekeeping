@@ -111,6 +111,17 @@ def test_a_short_payment_needs_a_reason(api, tokens):
     assert st == 200, r
 
 
+def test_the_refusals_are_written_in_dong_a_person_can_read(api, tokens):
+    """These are read by whoever just got it wrong. "This settles 100000000.00 of 117000000.00" is
+    a sentence you have to count digits in before you can act on it."""
+    a, _ = _certified(api, tokens)
+    part = round(a["netPayable"] * 0.9, 2)
+    _, r = _post(api, tokens["staff"], "/api/sales/receipt", amount=part, allocations={a["id"]: part})
+    assert "\u20ab" in r["error"] and ".00" not in r["error"], r["error"]
+    _, r2 = _post(api, tokens["staff"], "/api/sales/receipt", amount=part, allocations={a["id"]: 1})
+    assert "\u20ab" in r2["error"] and ".00" not in r2["error"], r2["error"]
+
+
 def test_you_cannot_allocate_more_than_is_outstanding(api, tokens):
     a, _ = _certified(api, tokens)
     over = a["netPayable"] + 1_000

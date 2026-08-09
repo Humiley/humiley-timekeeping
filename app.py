@@ -9612,8 +9612,9 @@ class Handler(BaseHTTPRequestHandler):
         if amount <= 0:
             return self._err("A receipt must be for a positive amount.", 400)
         if abs(sum(allocs.values()) - amount) > 0.005:
-            return self._err("The allocations come to %.2f but the receipt is %.2f. Every đồng has "
-                             "to land somewhere." % (sum(allocs.values()), amount), 400)
+            return self._err("The allocations come to %s but the receipt is %s. Every đồng has "
+                             "to land somewhere." % (_money_vnd(sum(allocs.values())),
+                                                     _money_vnd(amount)), 400)
         apps = {}
         for aid, amt in allocs.items():
             a = db.get_collection_item("sales_applications", aid)
@@ -9623,11 +9624,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("Cash can only be allocated to a certified application.", 400)
             owed = round(float(a.get("netPayable") or 0) - float(a.get("settledAmt") or 0), 2)
             if amt - owed > 0.005:
-                return self._err("Allocating %.2f to %s, which has only %.2f outstanding."
-                                 % (amt, a.get("period") or aid, owed), 400)
+                return self._err("Allocating %s to %s, which has only %s outstanding."
+                                 % (_money_vnd(amt), a.get("period") or aid, _money_vnd(owed)), 400)
             if amt < owed - 0.005 and not str((body or {}).get("shortReason") or "").strip():
-                return self._err("This settles %.2f of %.2f. A short payment needs a reason — "
-                                 "unexplained is how a dispute becomes a write-off." % (amt, owed), 400)
+                return self._err("This settles %s of %s. A short payment needs a reason — "
+                                 "unexplained is how a dispute becomes a write-off."
+                                 % (_money_vnd(amt), _money_vnd(owed)), 400)
             apps[aid] = (a, amt, owed)
         rec = {"amount": amount, "receivedOn": str((body or {}).get("receivedOn") or self._vn_day())[:10],
                "method": str((body or {}).get("method") or "")[:32],

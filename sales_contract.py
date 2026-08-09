@@ -62,6 +62,15 @@ RECOVERY_RULES = (
 )
 
 
+def _vnd(n):
+    """The statement is a sentence a person signs, so the figures in it are đồng, not floats.
+
+    "277225000.00 payable" is a number nobody can read at a glance and nobody can check against a
+    bank advice; ₫277,225,000 is. Whole đồng — the currency has no subunit in practice.
+    """
+    return "\u20ab{:,.0f}".format(round(_num(n)))
+
+
 def _num(v):
     try:
         n = float(v)
@@ -184,8 +193,8 @@ def application(c, certified_this, state=None):
         "retentionCap": cap,
         "netPayable": r2(max(0.0, net)),
         "pctComplete": round(pct_complete, 2),
-        "statement": "%.2f certified, less %.2f advance recovery and %.2f retention = %.2f payable."
-                     % (this, rec, ret_this, max(0.0, net)),
+        "statement": "%s certified, less %s advance recovery and %s retention = %s payable."
+                     % (_vnd(this), _vnd(rec), _vnd(ret_this), _vnd(max(0.0, net))),
         # Stated, never assumed: this is the commercial arithmetic only.
         "taxNote": "Amounts are exclusive of VAT. What is invoiced, and when, depends on the tax "
                    "treatment of the advance and of retention — see vat_ready().",
