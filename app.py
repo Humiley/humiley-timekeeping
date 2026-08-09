@@ -3788,6 +3788,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/working-time":
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
+        if path == "/api/sales/trace":
+            return self._guard(lambda uu: self._trace_ep(uu, qs))
         if path == "/api/sales/retention":
             # Not manager-gated: a salesperson chasing their own customer's retention is the whole
             # point, and the endpoint scopes every row to what the caller may see anyway.
@@ -9651,6 +9653,153 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s across %d application(s)" % (_money_vnd(amount), len(allocs)),
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": saved})
+
+    def _trace_ep(self, u, qs):
+        """One order, end to end: quotation → contract → acceptance → claims → invoice → cash.
+
+        This is the question a pharma or electronics customer's auditor actually asks — "show me
+        this order, and show me it hangs together" — and until now the answer lived in five screens
+        and somebody's memory. Hand it any sell-side document id and it walks the whole chain.
+
+        The gaps are the useful half. A quotation accepted with no contract behind it, work
+        certified that was never invoiced, an invoice number with no signed XML, cash short of the
+        claim: each one is a real thing somebody has to go and do, and each is invisible until you
+        line the documents up next to each other.
+        """
+        doc_id = str((qs.get("id") or [""])[0]).strip()
+        if not doc_id:
+            return self._err("Which document? Pass ?id=", 400)
+        quotes = {q.get("id"): q for q in db.list_collection("sales_quotes")}
+        contracts = {c.get("id"): c for c in db.list_collection("sales_contracts")}
+        apps = db.list_collection("sales_applications")
+        receipts = db.list_collection("sales_receipts")
+
+        # Resolve whatever was handed in back to the contract (or, before there is one, the quote).
+        quote = quotes.get(doc_id)
+        contract = contracts.get(doc_id)
+        if not quote and not contract:
+            hit = next((a for a in apps if a.get("id") == doc_id), None)
+            if hit:
+                contract = contracts.get(hit.get("contractId"))
+            else:
+                r = next((x for x in receipts if x.get("id") == doc_id), None)
+                if r:
+                    first = next(iter((r.get("allocations") or {}).keys()), "")
+                    a = next((x for x in apps if x.get("id") == first), None)
+                    contract = contracts.get((a or {}).get("contractId"))
+        if contract and not quote:
+            quote = quotes.get(contract.get("quoteId"))
+        if not quote and not contract:
+            return self._err("Nothing on the sell side matches that id.", 404)
+
+        # The whole family of a quotation, both directions. Handed revision 1 you still want the
+        # contract, which was raised from revision 3 — and handed revision 3 you still want to see
+        # what was sent and superseded before it. Walking only `supersedes` finds one of those.
+        revisions = []
+        if quote:
+            forward = {}
+            for q in quotes.values():
+                if q.get("supersedes"):
+                    forward[q["supersedes"]] = q
+            first, seen = quote, set()
+            while first and first.get("supersedes") in quotes and first.get("id") not in seen:
+                seen.add(first.get("id"))
+                first = quotes[first["supersedes"]]
+            cur, seen = first, set()
+            while cur and cur.get("id") not in seen:
+                seen.add(cur.get("id"))
+                revisions.append(cur)
+                cur = forward.get(cur.get("id"))
+        if not contract:
+            fam = {q.get("id") for q in revisions}
+            contract = next((c for c in contracts.values() if c.get("quoteId") in fam), None)
+        quote = revisions[-1] if revisions else quote
+
+        subject = contract or quote
+        if not self._sales_may_write(u, subject):
+            return self._err("That order belongs to somebody else.", 403)
+
+        steps, gaps = [], []
+        for q in revisions:
+            steps.append({"kind": "quotation", "id": q.get("id"), "ref": q.get("quoteNo") or "",
+                          "rev": q.get("rev") or 0, "on": (q.get("issuedAt") or "")[:10],
+                          "by": q.get("issuedBy") or q.get("owner") or "",
+                          "amount": sales_doc.totals(q.get("lines") or [])["amount"],
+                          "status": q.get("status") or "draft"})
+        if quote and quote.get("status") == sales_doc.ACCEPTED and not contract:
+            gaps.append({"what": "accepted-no-contract",
+                         "why": "The customer accepted this quotation and no contract was raised "
+                                "from it, so nothing is tracking what is owed on it."})
+        if contract:
+            steps.append({"kind": "contract", "id": contract.get("id"),
+                          "ref": contract.get("contractNo") or "", "on": (contract.get("activatedAt") or "")[:10],
+                          "by": contract.get("activatedBy") or contract.get("owner") or "",
+                          "amount": float(contract.get("value") or 0),
+                          "status": contract.get("status") or "draft"})
+            if contract.get("acceptedOn"):
+                steps.append({"kind": "acceptance", "id": contract.get("id"), "ref": "",
+                              "on": contract.get("acceptedOn"), "by": contract.get("acceptedBy") or "",
+                              "amount": 0, "status": "recorded"})
+
+            mine = sorted([a for a in apps if a.get("contractId") == contract.get("id")],
+                          key=lambda a: str(a.get("period") or ""))
+            by_app = {}
+            for a in mine:
+                by_app[a.get("id")] = a
+                steps.append({"kind": "claim", "id": a.get("id"), "ref": a.get("period") or "",
+                              "on": (a.get("certifiedAt") or a.get("updatedAt") or "")[:10],
+                              "by": a.get("certifiedBy") or a.get("owner") or "",
+                              "amount": float(a.get("netPayable") or 0),
+                              "status": a.get("status") or "draft"})
+                if a.get("einvNo"):
+                    steps.append({"kind": "invoice", "id": a.get("id"),
+                                  "ref": ((a.get("einvSerial") or "") + " " + a.get("einvNo")).strip(),
+                                  "on": a.get("einvDate") or (a.get("einvAt") or "")[:10],
+                                  "by": a.get("einvBy") or "", "amount": float(a.get("netPayable") or 0),
+                                  "status": "verified" if a.get("einvVerified") else "unverified"})
+                    if not a.get("einvVerified"):
+                        gaps.append({"what": "invoice-unverified", "ref": a.get("einvNo"),
+                                     "why": "The invoice number was typed in and no signed XML from "
+                                            "the provider is held against it."})
+                elif a.get("status") == "certified":
+                    gaps.append({"what": "certified-not-invoiced", "ref": a.get("period"),
+                                 "why": "Work certified with no legal invoice recorded against it."})
+
+            for r in sorted(receipts, key=lambda x: str(x.get("receivedOn") or "")):
+                for aid, amt in (r.get("allocations") or {}).items():
+                    if aid in by_app:
+                        steps.append({"kind": "receipt", "id": r.get("id"),
+                                      "ref": r.get("reference") or "", "on": r.get("receivedOn") or "",
+                                      "by": r.get("owner") or "", "amount": float(amt or 0),
+                                      "status": "short" if r.get("shortReason") else "received",
+                                      "note": r.get("shortReason") or ""})
+            for a in mine:
+                if a.get("status") != "certified":
+                    continue
+                short = round(float(a.get("netPayable") or 0) - float(a.get("settledAmt") or 0), 2)
+                if short > 0.005:
+                    # The amount travels as a number so the screen can write it in the same currency
+                    # format as everything beside it; `why` stays for anything reading the API.
+                    gaps.append({"what": "unpaid", "ref": a.get("period"), "amount": short,
+                                 "why": "%s of this claim has not been paid." % _money_vnd(short)})
+            ret = sales_contract.retention_release(contract, self._contract_state(contract), self._vn_day())
+            if ret["status"] != "ok" and ret["outstanding"] > 0.005:
+                # Two different problems with two different fixes, so two different codes: the
+                # screen can name the actual missing thing instead of "cannot be dated".
+                gaps.append({"what": "retention-no-acceptance" if not ret["acceptedOn"]
+                                     else "retention-no-rule",
+                             "amount": ret["outstanding"], "why": ret["why"]})
+            elif ret.get("dueNow", 0) > 0.005:
+                gaps.append({"what": "retention-due", "amount": ret["dueNow"], "why": ret["why"]})
+
+        return self._json({
+            "ok": True, "accountName": (subject or {}).get("accountName") or "",
+            "accountId": (subject or {}).get("accountId") or "",
+            "title": (subject or {}).get("title") or "",
+            "steps": steps, "gaps": gaps,
+            "statement": "%d document(s) in this trail%s." % (
+                len(steps), "" if not gaps else "; %d thing(s) need attention" % len(gaps)),
+        })
 
     def _retention_ep(self, u, qs):
         """Every contract's retention, when each slice falls due, and what nothing else is chasing.

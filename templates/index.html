@@ -16775,6 +16775,7 @@ async function crmOpenContract(id) {
         num('retentionHeld', _t2('Retention held', 'Đang giữ lại'), c.retentionHeld) + '</div></div>' : '') +
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'ctOverlay\').remove()">' + _t('Close') + '</button>' +
+      (draft ? '' : '<button class="btn btn-ghost" onclick="crmTrace(\'' + id + '\')">' + _t2('The trail', 'Nhật ký') + '</button>') +
       (draft ? '<button class="btn btn-ghost" onclick="crmContractAct(\'' + id + '\',\'terms\')">' + _t2('Save terms', 'Lưu điều khoản') + '</button>' +
                '<button class="btn btn-ghost" onclick="crmContractAct(\'' + id + '\',\'opening\')">' + _t2('Load balances', 'Nhập số dư') + '</button>' +
                '<button class="btn btn-primary" onclick="crmContractAct(\'' + id + '\',\'activate\')">' + _t2('Activate', 'Kích hoạt') + '</button>' : '') +
@@ -17098,6 +17099,7 @@ async function crmOpenClaim(id) {
     '</div>' + invBlock + cashBlock +
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove()">' + _t('Close') + '</button>' +
+      '<button class="btn btn-ghost" onclick="crmTrace(\'' + id + '\')">' + _t2('The trail', 'Nhật ký') + '</button>' +
       (draft ? '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove();crmClaimForm(\'' + _crmEsc(a.contractId) + '\',\'' + id + '\')">' + _t2('Edit', 'Sửa') + '</button>' +
                '<button class="btn btn-primary" onclick="crmClaimCertify(\'' + id + '\')">' + _t2('Certify', 'Nghiệm thu') + '</button>' : '') +
     '</div></div>';
@@ -17143,6 +17145,108 @@ async function crmReceiptSave(id) {
     document.getElementById('sapDetail')?.remove();
     await crmRenderBilling();
   } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+/* ═══ The trail ═════════════════════════════════════════════════════════════════════════════════
+   One order end to end, on one screen: what was quoted, what was signed, when the works were
+   accepted, what was claimed, what was invoiced and what came back. It is the question a pharma or
+   electronics customer's auditor actually asks, and until now the answer lived in five screens.
+
+   The gaps are the useful half, and they are shown FIRST. Each one is a real thing somebody has to
+   go and do, and each is invisible on the screen that would otherwise show it — a certified claim
+   looks finished on the billing list, and only the trail shows that no invoice was ever raised. */
+const _TR_STEP = {
+  quotation:  ['Quotation', 'Báo giá', '#205090'],
+  contract:   ['Contract', 'Hợp đồng', '#205090'],
+  acceptance: ['Works accepted', 'Nghiệm thu', 'var(--emerald)'],
+  claim:      ['Payment application', 'Đề nghị thanh toán', '#0ea5e9'],
+  invoice:    ['Legal invoice', 'Hoá đơn GTGT', '#8B5CF6'],
+  receipt:    ['Cash received', 'Tiền về', 'var(--emerald)']
+};
+/* Both lines live here, not on the server: the headline AND the explanation, so a Vietnamese
+   reader is not told in English what is wrong with their order. The server's `why` stays as the
+   fallback for any code this table has not caught up with. %m is the amount, formatted here. */
+const _TR_GAP = {
+  'accepted-no-contract': {
+    en: 'No contract was raised from an accepted quotation', vn: 'Báo giá đã được chấp nhận nhưng chưa lập hợp đồng',
+    enWhy: 'The customer accepted this quotation and nothing is tracking what is owed on it.',
+    vnWhy: 'Khách hàng đã chấp nhận báo giá này nhưng chưa có gì theo dõi khoản phải thu của nó.' },
+  'certified-not-invoiced': {
+    en: 'Work certified with no legal invoice against it', vn: 'Đã nghiệm thu nhưng chưa có hoá đơn',
+    enWhy: 'The work is signed off and no invoice has been recorded, so nothing is due yet in the customer\'s books.',
+    vnWhy: 'Công việc đã được nghiệm thu nhưng chưa ghi nhận hoá đơn, nên phía khách hàng chưa phát sinh khoản phải trả.' },
+  'invoice-unverified': {
+    en: 'An invoice number with no signed XML behind it', vn: 'Số hoá đơn chưa có XML ký số kèm theo',
+    enWhy: 'The number was typed in. The legal original is the provider\'s signed XML, and it is not held here.',
+    vnWhy: 'Số hoá đơn được nhập tay. Bản gốc hợp pháp là tệp XML ký số của nhà cung cấp, hiện chưa được lưu ở đây.' },
+  'unpaid': {
+    en: 'A claim that has not been paid', vn: 'Đề nghị thanh toán chưa được trả',
+    enWhy: '%m of this claim has not been paid.', vnWhy: 'Còn %m chưa được thanh toán trên đợt này.' },
+  'retention-no-acceptance': {
+    en: 'Retention held with no acceptance date', vn: 'Đang giữ tiền nhưng chưa có ngày nghiệm thu',
+    enWhy: '%m is being held and the warranty clock starts at acceptance, which nobody has recorded.',
+    vnWhy: 'Đang giữ %m và đồng hồ bảo hành tính từ ngày nghiệm thu — ngày đó chưa được ghi nhận.' },
+  'retention-no-rule': {
+    en: 'Retention held and the contract does not say when it comes back',
+    vn: 'Đang giữ tiền nhưng hợp đồng chưa quy định khi nào hoàn trả',
+    enWhy: '%m is being held with no release rule recorded.', vnWhy: 'Đang giữ %m nhưng chưa có quy định hoàn trả.' },
+  'retention-due': {
+    en: 'Retention due back now', vn: 'Tiền giữ lại đã đến hạn hoàn trả',
+    enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hoàn trả %m tiền giữ lại.' }
+};
+
+async function crmTrace(docId) {
+  let r;
+  try { r = await tkApi('/api/sales/trace?id=' + encodeURIComponent(docId)); }
+  catch (e) { toast(_errMsg(e), 'error', 8000); return; }
+
+  const step = s => {
+    const meta = _TR_STEP[s.kind] || [s.kind, s.kind, 'var(--text-light)'];
+    return '<div style="display:flex;gap:12px;padding:10px 0;border-top:1px solid var(--border)">' +
+      '<div style="flex:0 0 8px;padding-top:5px"><div style="width:8px;height:8px;border-radius:50%;background:' + meta[2] + '"></div></div>' +
+      '<div style="flex:1 1 auto;min-width:0">' +
+        '<div style="font-size:12.5px;font-weight:700;color:var(--navy)">' + _crmEsc(_LANG.cur === 'vi' ? meta[1] : meta[0]) +
+          (s.ref ? ' <span style="font-weight:600;font-variant-numeric:tabular-nums;color:var(--text-light)">' + _crmEsc(s.ref) + '</span>' : '') +
+          (s.rev > 1 ? ' <span style="font-size:10.5px;color:var(--text-light)">rev ' + s.rev + '</span>' : '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc([s.on || '—', s.by || ''].filter(Boolean).join(' · ')) +
+          (s.status === 'unverified' ? ' · <b style="color:#B45309">' + _t2('UNVERIFIED', 'CHƯA XÁC MINH') + '</b>' : '') +
+          (s.note ? ' · ' + _crmEsc(s.note) : '') + '</div>' +
+      '</div>' +
+      '<div style="flex:0 0 auto;text-align:right;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap">' +
+        (s.amount ? _crmMoney(s.amount) : '') + '</div>' +
+    '</div>';
+  };
+
+  const gapBox = (r.gaps || []).length
+    ? '<div class="card" style="padding:13px 15px;margin-bottom:14px;border-left:3px solid #B45309">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">' +
+          _t2('Still to do on this order', 'Còn phải xử lý trên đơn hàng này') + '</div>' +
+        (r.gaps || []).map(g => {
+          const m = _TR_GAP[g.what];
+          const vi = _LANG.cur === 'vi';
+          const head = m ? (vi ? m.vn : m.en) : g.what;
+          const why = m ? (vi ? m.vnWhy : m.enWhy).replace('%m', _crmMoney(g.amount)) : (g.why || '');
+          return '<div style="font-size:12.5px;line-height:1.6;margin-bottom:6px">' +
+            '<b>' + _crmEsc(head) + '</b>' +
+            (g.ref ? ' <span style="color:var(--text-light);font-variant-numeric:tabular-nums">' + _crmEsc(g.ref) + '</span>' : '') +
+            '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(why) + '</div></div>';
+        }).join('') +
+      '</div>'
+    : '<div class="card" style="padding:13px 15px;margin-bottom:14px;border-left:3px solid var(--emerald);font-size:12.5px;color:var(--emerald)">✓ ' +
+        _crmEsc(_t2('Nothing outstanding on this order.', 'Đơn hàng này không còn việc tồn.')) + '</div>';
+
+  document.getElementById('trOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'trOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:720px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _t2('The trail', 'Nhật ký đơn hàng') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc([r.accountName, r.title].filter(Boolean).join(' · ')) + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'trOverlay\').remove()">&times;</button></div>' +
+    gapBox +
+    '<div class="card" style="padding:6px 16px 14px">' + (r.steps || []).map(step).join('') + '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'trOverlay\').remove()">' + _t('Close') + '</button></div>' +
+  '</div>';
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
 }
 
 /* ═══ Retention ═════════════════════════════════════════════════════════════════════════════════

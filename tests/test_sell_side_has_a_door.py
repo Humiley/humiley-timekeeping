@@ -26,9 +26,21 @@ def test_the_routes_were_actually_found():
     assert len(ROUTES) >= 10, ROUTES
 
 
+def _called_from_a_screen(route):
+    """A call site is the path in a quoted string, closed or continued by a query string —
+    tkApi('/api/sales/trace?id=' + id) is a call, and so is tkApi('/api/sales/retention')."""
+    return re.search(r"""['"]%s(\?|['"])""" % re.escape(route), INDEX) is not None
+
+
 def test_every_sell_side_endpoint_has_something_that_calls_it():
-    orphans = [r for r in ROUTES if ("'" + r + "'") not in INDEX and ('"' + r + '"') not in INDEX]
+    orphans = [r for r in ROUTES if not _called_from_a_screen(r)]
     assert not orphans, "no screen calls: %s" % ", ".join(orphans)
+
+
+def test_the_orphan_check_can_actually_fail():
+    """The guard is worth nothing if it matches anything. A route nobody has ever written must not
+    look called."""
+    assert not _called_from_a_screen("/api/sales/does-not-exist")
 
 
 # ── the Billing screen is present, not merely defined ───────────────────────────────────────────
@@ -133,3 +145,28 @@ def test_the_undateable_group_is_shown_rather_than_filtered_out():
     lost. Hiding it because it doesn't fit the table is how it stays lost."""
     r = INDEX[INDEX.find("async function crmRenderRetention"):INDEX.find("async function crmContractAccept")]
     assert "undateable" in r and "cannot yet be dated" in r
+
+
+def test_the_trail_is_reachable_from_both_places_a_person_would_look_for_it():
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    cl = INDEX[INDEX.find("async function crmOpenClaim"):INDEX.find("async function crmClaimCertify")]
+    assert "crmTrace(" in ct and "crmTrace(" in cl
+
+
+def test_the_trail_shows_the_gaps_before_the_documents():
+    """A list of documents is reassuring. The thing worth reading is what is missing from it, so it
+    goes first."""
+    fn = INDEX[INDEX.find("async function crmTrace"):INDEX.find("\n/* ═══ Retention ══")]
+    assert fn, "the trail moved — re-point this test"
+    assert fn.index("gapBox +") < fn.index("(r.steps || []).map(step)")
+
+
+def test_every_gap_code_the_server_can_emit_has_a_bilingual_entry_on_the_screen():
+    """The server's `why` is English. A code with no entry here falls back to it and tells a
+    Vietnamese reader in English what is wrong with their order."""
+    codes = set(re.findall(r'"what": "([a-z\-]+)"', APP))
+    table = INDEX[INDEX.find("const _TR_GAP"):INDEX.find("async function crmTrace")]
+    assert table, "the gap table moved — re-point this test"
+    missing = [c for c in codes if ("'%s'" % c) not in table]
+    assert not missing, "no bilingual entry for: %s" % ", ".join(sorted(missing))
+    assert len(codes) >= 6, codes
