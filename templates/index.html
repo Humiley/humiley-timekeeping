@@ -1248,6 +1248,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-crm-dashboard" class="view"><div id="crm-dashboard-root"></div></div>
 <div id="view-crm-pipeline" class="view"><div class="page-header"><div><h1>Pipeline</h1><p>Your deals across every sales stage</p></div></div><div id="crm-pipeline-root"></div></div>
 <div id="view-crm-leads" class="view"><div class="page-header"><div><h1>Leads</h1><p>Inbound and prospected leads to qualify</p></div></div><div id="crm-leads-root"></div></div>
+<div id="view-crm-quotes" class="view"><div class="page-header"><div><h1>Quotations</h1><p>Every quotation you have issued, what happened to it, and why</p></div></div><div id="crm-quotes-root"></div></div>
 <div id="view-crm-companies" class="view"><div class="page-header"><div><h1>Companies</h1><p>The accounts you sell to</p></div></div><div id="crm-companies-root"></div></div>
 <div id="view-crm-contacts" class="view"><div class="page-header"><div><h1>Contacts</h1><p>People at your accounts</p></div></div><div id="crm-contacts-root"></div></div>
 <div id="view-crm-products" class="view"><div class="page-header"><div><h1>Products</h1><p>Your product catalogue and pricing</p></div></div><div id="crm-products-root"></div></div>
@@ -11804,9 +11805,9 @@ function _hrEnsureTabBar(viewId) {
 }
 
 /* ══ Sales / CRM hub — one tabbed page (Sales Dashboard stays pinned separately) ══ */
-const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP']];
-const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)' };
-const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets']);
+const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP']];
+const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)' };
+const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets']);
 /* The Targets tab is a Sales-Manager tool — only Approver (management) level and above see it. */
 function _crmTabVisible(id) { return id !== 'crm-targets' || (typeof _crmSeeAll === 'function' && _crmSeeAll()); }
 function _crmTabBar(active) {
@@ -16660,6 +16661,123 @@ function _crmBillable(c) {
            why: names.length ? (_t2('Cannot bill yet: ', 'Chưa thể xuất hóa đơn: ') + names.join(', ')) : _t2('Ready to bill.', 'Đủ điều kiện xuất hóa đơn.') };
 }
 
+/* ═══ Quotations ════════════════════════════════════════════════════════════════════════════════
+   The register the sell side never had. A quotation used to be lines on a deal that the next quote
+   overwrote, so there was no list of what you had offered, no way to reprint what a customer is
+   holding, and no answer to "why did we lose that one". */
+const _QT_STATUS = {
+  draft:      { label: 'Draft',      labelVn: 'Nháp',        cls: 'b-grey' },
+  issued:     { label: 'Issued',     labelVn: 'Đã gửi',      cls: 'b-navy' },
+  accepted:   { label: 'Accepted',   labelVn: 'Đã chấp nhận', cls: 'b-ok' },
+  lost:       { label: 'Lost',       labelVn: 'Thua',        cls: 'b-danger' },
+  expired:    { label: 'Expired',    labelVn: 'Hết hạn',     cls: 'b-warn' },
+  superseded: { label: 'Superseded', labelVn: 'Đã thay thế', cls: 'b-grey' },
+  cancelled:  { label: 'Cancelled',  labelVn: 'Đã huỷ',      cls: 'b-grey' }
+};
+const _QT_LOST_REASONS = ['Price', 'Lead time', 'Scope / specification', 'Relationship',
+                          'No budget', 'Cancelled by customer', 'No decision', 'Other'];
+function _qtTotal(q) {
+  return (q.lines || []).filter(l => l.kind === 'item' || l.kind === 'service')
+    .reduce((s, l) => s + Math.round((+l.qty || 0) * (+l.unitPrice || 0) * (1 - (+l.discPct || 0) / 100)), 0);
+}
+async function crmRenderQuotes() {
+  const root = document.getElementById('crm-quotes-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  try { await tkLoadColl('sales_quotes'); } catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load quotations', 'Không tải được báo giá') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const all = (_HR.sales_quotes || []).slice()
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  const live = all.filter(q => q.status !== 'superseded');
+  const issued = live.filter(q => q.status === 'issued');
+  const won = live.filter(q => q.status === 'accepted');
+  const lost = live.filter(q => q.status === 'lost');
+  const decided = won.length + lost.length;
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('Out with customers', 'Đang chờ khách'), _crmMoney(issued.reduce((s, q) => s + _qtTotal(q), 0)), '#205090'),
+    _hrKpi(_t2('Accepted', 'Đã chấp nhận'), _crmMoney(won.reduce((s, q) => s + _qtTotal(q), 0)), 'var(--emerald)'),
+    _hrKpi(_t2('Win rate', 'Tỷ lệ thắng'), decided ? Math.round(won.length / decided * 100) + '%' : '—', '#8B5CF6'),
+    _hrKpi(_t2('Quotations', 'Số báo giá'), live.length, '#0ea5e9')
+  ]);
+
+  // Why you lose, which is the thing a win rate on its own can never tell you.
+  const byReason = {};
+  lost.forEach(q => { const k = q.lostReason || _t2('(no reason given)', '(không có lý do)'); byReason[k] = (byReason[k] || 0) + 1; });
+  const reasons = Object.keys(byReason).sort((a, b) => byReason[b] - byReason[a]);
+  const lostCard = lost.length
+    ? '<div class="card" style="padding:14px 16px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">' +
+      _t2('Why you lost', 'Lý do thua') + '</div><div style="display:flex;gap:8px;flex-wrap:wrap">' +
+      reasons.map(r => '<span class="badge b-grey" style="font-size:11px">' + _crmEsc(r) + ' · ' + byReason[r] + '</span>').join('') +
+      '</div></div>' : '';
+
+  const rows = live.length ? live.map(q => {
+    const st = _QT_STATUS[q.status || 'draft'] || _QT_STATUS.draft;
+    const acts = [];
+    if (q.status === 'draft') acts.push('<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'issue\')">' + _t2('Issue', 'Gửi') + '</button>');
+    if (q.status === 'issued') {
+      acts.push('<button class="btn btn-emerald btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'accept\')">' + _t2('Accepted', 'Chấp nhận') + '</button>');
+      acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--danger)" onclick="crmQuoteLose(\'' + q.id + '\')">' + _t2('Lost', 'Thua') + '</button>');
+      acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'revise\')">' + _t2('Revise', 'Sửa đổi') + '</button>');
+    }
+    return '<tr><td style="white-space:nowrap"><span style="font-weight:700;font-variant-numeric:tabular-nums">' + _crmEsc(q.quoteNo || _t2('(not issued)', '(chưa cấp số)')) + '</span>' +
+      (q.rev ? '<div style="font-size:10.5px;color:var(--text-light)">rev ' + q.rev + '</div>' : '') + '</td>' +
+      '<td><div style="font-weight:600">' + _crmEsc(q.title || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(q.accountName || '—') + '</div></td>' +
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">' + _crmMoney(_qtTotal(q)) + '</td>' +
+      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _crmEsc(_LANG.cur === 'vi' ? st.labelVn : st.label) + '</span>' +
+      (q.lostReason ? '<div style="font-size:10.5px;color:var(--text-light)">' + _crmEsc(q.lostReason) + (q.competitor ? ' · ' + _crmEsc(q.competitor) : '') + '</div>' : '') + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light);white-space:nowrap">' + _crmEsc(q.validUntil || '—') + '</td>' +
+      '<td style="font-size:11.5px">' + _crmEsc(q.owner || '—') + '</td>' +
+      '<td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">' + acts.join('') + '</td></tr>';
+  }).join('') : tkEmptyRow(7, _t2('No quotations yet. Build one from a deal in the Pipeline.', 'Chưa có báo giá nào. Hãy lập từ một cơ hội trong Pipeline.'), { icon: 'inbox' });
+
+  root.innerHTML = kpis + lostCard +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px">' +
+      '<div class="card-title">' + _t2('Quotation register', 'Sổ báo giá') + '</div>' +
+      '<span style="font-size:11px;color:var(--text-light)">' + _t2('A superseded revision stays on file — what the customer holds must stay provable.', 'Bản đã thay thế vẫn được lưu — bản khách hàng đang giữ phải chứng minh được.') + '</span></div>' +
+    '<div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+      '<th>' + _t2('Number', 'Số') + '</th><th>' + _t2('Quotation', 'Báo giá') + '</th>' +
+      '<th style="text-align:right">' + _t2('Value', 'Giá trị') + '</th><th>' + _t2('Status', 'Trạng thái') + '</th>' +
+      '<th>' + _t2('Valid until', 'Hiệu lực đến') + '</th><th>' + _t2('Owner', 'Phụ trách') + '</th><th></th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
+}
+
+async function crmQuoteAction(id, action, extra) {
+  try {
+    const r = await tkApi('/api/sales/quote', { method: 'POST', body: Object.assign({ id: id, action: action }, extra || {}) });
+    toast(_t2('Quotation ', 'Báo giá ') + (r.item.quoteNo || '') + ' — ' + (_QT_STATUS[r.item.status] || {}).label);
+    _COLL_TS['sales_quotes'] = 0;
+    crmRenderQuotes();
+  } catch (e) { toast(_errMsg(e), 'error', 7000); }
+}
+
+/* Losing needs a reason. The register charts a win rate already; without this it can only ever say
+   THAT you lost, never why — so nothing about it is actionable. */
+function crmQuoteLose(id) {
+  document.getElementById('qtLoseOverlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'qtLoseOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px">' +
+    '<div class="modal-header"><div class="modal-title">' + _t2('Mark this quotation lost', 'Đánh dấu thua báo giá này') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'qtLoseOverlay\').remove()">&times;</button></div>' +
+    '<div class="form-group"><label class="form-label">' + _t2('Why did we lose it?', 'Vì sao thua?') + '</label>' +
+      '<select class="form-control" id="qt-lose-reason">' + _QT_LOST_REASONS.map(r => '<option>' + r + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t2('Who won it (if known)', 'Ai thắng (nếu biết)') + '</label>' +
+      '<input class="form-control" id="qt-lose-competitor" placeholder="' + _tkEscA(_t2('Competitor', 'Đối thủ')) + '"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'qtLoseOverlay\').remove()">' + _t('Cancel') + '</button>' +
+      '<button class="btn btn-primary" onclick="crmQuoteLoseGo(\'' + id + '\')">' + _t2('Record it', 'Ghi nhận') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+function crmQuoteLoseGo(id) {
+  const reason = (document.getElementById('qt-lose-reason') || {}).value || '';
+  const competitor = (document.getElementById('qt-lose-competitor') || {}).value || '';
+  document.getElementById('qtLoseOverlay')?.remove();
+  crmQuoteAction(id, 'lose', { reason: reason, competitor: competitor });
+}
+
 /* ═══ Account 360 ═══════════════════════════════════════════════════════════════════════════════
    Everything about one customer on one screen. Until now a company row was a dead end: you could
    not open an account to see who you know there, what is in the pipeline, what you are building for
@@ -16826,6 +16944,26 @@ async function crmQBSave(thenExport, fmt) {
                                        quoteRev: _revs.length, quoteRevs: _revs });
   try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: _body }); Object.assign(d, _body); }
   catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error'); return; }
+  // The quotation is also written as a DOCUMENT, in its own register with its own status and
+  // history. The deal keeps its copy so the pipeline card and the existing PDF keep working while
+  // the register takes over; the document is what an outcome, a revision or a reprint hangs off.
+  try {
+    const qb = {
+      action: 'draft', id: d.quoteDocId || undefined,
+      dealId: d.id, title: d.title || '', accountName: d.company || '', accountId: d.accountId || '',
+      vatRate: _vr, discount: _dc,
+      lines: lines.map(l => ({ desc: l.desc, qty: l.qty, unitPrice: l.price, discPct: l.disc, uom: l.unit }))
+    };
+    const qr = await tkApi('/api/sales/quote', { method: 'POST', body: qb });
+    if (qr && qr.item && qr.item.id !== d.quoteDocId) {
+      d.quoteDocId = qr.item.id;
+      await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d) });
+    }
+    _COLL_TS['sales_quotes'] = 0;
+  } catch (e) {
+    // The deal saved; only the register copy failed. Say so rather than implying nothing was kept.
+    toast(_t2('Saved on the deal, but the quotation register did not accept it', 'Đã lưu trên cơ hội, nhưng sổ báo giá chưa nhận') + ': ' + _errMsg(e), 'warn', 7000);
+  }
   toast(_t2('Quotation saved', 'Đã lưu báo giá') + ' — ' + _no + ' rev ' + _revs.length + ' · ' + lines.length + ' ' + _t2('line(s)', 'dòng'));
   document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
   if (thenExport) { if (fmt === 'xls') crmDownloadQuoteXLS(d.id); else crmDownloadQuote(d.id); }
@@ -20314,6 +20452,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-dashboard') { try { crmRenderDashboard(); } catch (e) { console.warn('crm-dash:', e.message); } }
   if (id === 'crm-pipeline') { try { crmRenderPipeline(); } catch (e) { console.warn('crm-pipe:', e.message); } }
   if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
+  if (id === 'crm-quotes') { try { crmRenderQuotes(); } catch (e) { console.warn('crm-quotes:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
   if (id === 'crm-products') { try { crmRenderProducts(); } catch (e) { console.warn('crm-prod:', e.message); } }
