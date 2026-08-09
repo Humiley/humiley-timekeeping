@@ -214,16 +214,105 @@ def final_settlement(c, state=None):
     certified = r2(st.get("certifiedToDate"))
     issues = []
     if adv_out > 0.005:
-        issues.append("%.2f of the advance was never recovered — it is owed back." % adv_out)
+        issues.append("%s of the advance was never recovered — it is owed back." % _vnd(adv_out))
     if t["value"] and abs(certified - t["value"]) > 0.005:
-        issues.append("%.2f certified against a contract value of %.2f." % (certified, t["value"]))
+        issues.append("%s certified against a contract value of %s." % (_vnd(certified), _vnd(t["value"])))
     return {
         "retentionToRelease": ret_held, "advanceOutstanding": adv_out,
         "certifiedToDate": certified, "contractValue": t["value"],
         "releaseRule": t["releaseRule"], "warrantyMonths": t["warrantyMonths"],
         "clean": not issues, "issues": issues,
-        "why": "Retention of %.2f to release%s." % (ret_held, "" if not issues else "; " + " ".join(issues)),
+        "why": "Retention of %s to release%s." % (_vnd(ret_held), "" if not issues else "; " + " ".join(issues)),
     }
+
+
+
+# ── when the retention actually comes back ───────────────────────────────────────────────────────
+# The single most-forgotten receivable a contractor has. It is withheld a slice at a time over a
+# year of claims, and then falls due once, quietly, twelve months after everybody stopped thinking
+# about the job. Nothing chases it, because nothing knows when it is due.
+
+INDETERMINATE = "indeterminate"
+
+
+def _add_months(iso, months):
+    """The same day, n months on — clamped to the end of a shorter month.
+
+    31 January + 1 month is 28 February, not 3 March. A warranty that ends on a date that does not
+    exist has to land somewhere, and landing early would make a release look due before it is.
+    """
+    try:
+        y, m, d = (int(x) for x in str(iso)[:10].split("-"))
+    except (ValueError, TypeError):
+        return ""
+    m0 = (m - 1) + int(months or 0)
+    y2, m2 = y + m0 // 12, m0 % 12 + 1
+    last = [31, 29 if (y2 % 4 == 0 and (y2 % 100 != 0 or y2 % 400 == 0)) else 28,
+            31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m2 - 1]
+    return "%04d-%02d-%02d" % (y2, m2, min(d, last))
+
+
+def retention_release(c, state=None, today=""):
+    """When each slice of the retention falls due, and how much of it is still being held.
+
+    Refuses rather than guesses, in two places that matter:
+
+      · with no release rule, nothing can be said — that is a term of the contract.
+      · with no ACCEPTANCE DATE, the clock has not started. A warranty period runs from the works
+        being accepted, not from the contract being signed or the last claim being certified, and
+        computing a due date off any of those would put a real receivable on a wrong day. The
+        honest output is "record the acceptance date", not a date nobody agreed to.
+    """
+    t = terms(c)
+    st = state or {}
+    held = r2(st.get("retentionHeld", (c or {}).get("retentionHeld")))
+    released = r2(st.get("retentionReleased", (c or {}).get("retentionReleased")))
+    outstanding = r2(max(0.0, held - released))
+    accepted = str((c or {}).get("acceptedOn") or "")[:10]
+    out = {"retentionHeld": held, "retentionReleased": released, "outstanding": outstanding,
+           "acceptedOn": accepted, "releaseRule": t["releaseRule"],
+           "warrantyMonths": t["warrantyMonths"], "tranches": [], "dueNow": 0.0, "status": "ok"}
+    if outstanding <= 0.005:
+        out["why"] = "No retention is being held on this contract."
+        return out
+    if not t["releaseRule"]:
+        out["status"] = INDETERMINATE
+        out["why"] = ("%s is being held and the contract does not say when it comes back. Record "
+                      "the release rule." % _vnd(outstanding))
+        return out
+    if not accepted:
+        out["status"] = INDETERMINATE
+        out["why"] = ("%s is being held, but the warranty clock starts at ACCEPTANCE and no "
+                      "acceptance date is recorded. Nothing is due until the works were accepted — "
+                      "record the date rather than dating this off the contract or the last claim."
+                      % _vnd(outstanding))
+        return out
+
+    if t["releaseRule"] == REL_HALF_AT_COMPLETION:
+        parts = [("At practical completion", accepted, r2(held / 2.0)),
+                 ("At the end of the warranty period",
+                  _add_months(accepted, t["warrantyMonths"]), r2(held - r2(held / 2.0)))]
+    else:
+        parts = [("At the end of the warranty period",
+                  _add_months(accepted, t["warrantyMonths"]), held)]
+
+    # Releases are applied to the earliest tranche first: the customer pays back in order, and
+    # spreading a part-release evenly would make a later tranche look partly settled before its
+    # own date and hide the fact that the first one is short.
+    left = released
+    cutoff = str(today or "")[:10]
+    for label, due, amount in parts:
+        applied = min(left, amount)
+        left = r2(left - applied)
+        still = r2(amount - applied)
+        overdue = bool(cutoff and due and due < cutoff and still > 0.005)
+        out["tranches"].append({"label": label, "dueOn": due, "amount": amount,
+                                "released": applied, "outstanding": still, "overdue": overdue,
+                                "due": bool(cutoff and due and due <= cutoff and still > 0.005)})
+    out["dueNow"] = r2(sum(x["outstanding"] for x in out["tranches"] if x["due"]))
+    out["why"] = ("%s of retention outstanding; %s of it is due back now."
+                  % (_vnd(outstanding), _vnd(out["dueNow"])))
+    return out
 
 
 # ── the part this module refuses to compute ─────────────────────────────────────────────────────

@@ -3788,6 +3788,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/working-time":
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
+        if path == "/api/sales/retention":
+            # Not manager-gated: a salesperson chasing their own customer's retention is the whole
+            # point, and the endpoint scopes every row to what the caller may see anyway.
+            return self._guard(lambda uu: self._retention_ep(uu, qs))
         if path == "/api/sales/receivables":
             return self._guard(lambda uu: self._receivables_ep(uu, qs), manager=True)
         if path == "/api/sales/compliance":
@@ -9648,6 +9652,47 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": saved})
 
+    def _retention_ep(self, u, qs):
+        """Every contract's retention, when each slice falls due, and what nothing else is chasing.
+
+        This is the receivable that goes missing. It is withheld a little at a time across a year of
+        claims and then falls due once, twelve months after the job finished and everybody moved on.
+        The two INDETERMINATE groups are the useful half of this screen: a contract holding money
+        with no release rule, or with no acceptance date, has a receivable nobody can even date.
+        """
+        today = self._vn_day()
+        rows, blocked = [], []
+        held = due = 0.0
+        for c in db.list_collection("sales_contracts"):
+            if c.get("status") not in (sales_doc.ACTIVE, sales_doc.CLOSED):
+                continue
+            if not self._sales_may_write(u, c):
+                continue
+            r = sales_contract.retention_release(c, self._contract_state(c), today)
+            if r["outstanding"] <= 0.005:
+                continue
+            held += r["outstanding"]
+            row = {"id": c.get("id"), "contractNo": c.get("contractNo") or "",
+                   "title": c.get("title") or "", "accountName": c.get("accountName") or "",
+                   "outstanding": r["outstanding"], "acceptedOn": r["acceptedOn"],
+                   "status": r["status"], "why": r["why"], "tranches": r["tranches"],
+                   "dueNow": r["dueNow"]}
+            if r["status"] != "ok":
+                blocked.append(row)
+            else:
+                due += r["dueNow"]
+                rows.append(row)
+        rows.sort(key=lambda r: (-r["dueNow"], r["tranches"][0]["dueOn"] if r["tranches"] else ""))
+        return self._json({
+            "ok": True, "asOf": today,
+            "totalHeld": round(held, 2), "dueNow": round(due, 2),
+            "contracts": rows, "undateable": blocked,
+            "statement": "%s of retention is being held by customers; %s of it is due back now%s."
+                         % (_money_vnd(held), _money_vnd(due),
+                            "" if not blocked else "; %d contract(s) hold retention that cannot yet "
+                            "be dated" % len(blocked)),
+        })
+
     def _receivables_ep(self, u, qs):
         """Who owes you money, since when, and under which of the three clocks.
 
@@ -9952,7 +9997,60 @@ class Handler(BaseHTTPRequestHandler):
             self._sales_audit_c(u, "Closed contract", saved)
             return self._json({"ok": True, "item": saved, "final": final})
 
-        return self._err("Unknown action. Use from_quote, terms, opening, activate or close.", 400)
+        if act == "accept":
+            # The acceptance date is what starts the warranty clock, and therefore the only thing
+            # that makes a retention release date real. It is recorded as its own act rather than
+            # inferred from the last claim or from closing the contract, because those are different
+            # events on different days and the retention falls due off this one.
+            if cur.get("status") not in (sales_doc.ACTIVE, sales_doc.CLOSED):
+                return self._err("Only an active or closed contract can be accepted — this one is "
+                                 "%s." % (cur.get("status") or "draft"), 400)
+            day = str((body or {}).get("acceptedOn") or "")[:10]
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+                return self._err("Record the date the works were accepted (YYYY-MM-DD).", 400)
+            if day > self._vn_day():
+                return self._err("The acceptance date is in the future. A warranty cannot start "
+                                 "before the works were accepted.", 400)
+            cur["acceptedOn"] = day
+            cur["acceptedBy"] = u.get("name")
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Recorded works acceptance", saved)
+            return self._json({"ok": True, "item": saved,
+                               "retention": sales_contract.retention_release(
+                                   saved, self._contract_state(saved), self._vn_day())})
+
+        if act == "release_retention":
+            r = sales_contract.retention_release(cur, self._contract_state(cur), self._vn_day())
+            if r["status"] != "ok":
+                return self._err(r["why"], 400)
+            amt = round(float((body or {}).get("amount") or 0), 2)
+            if amt <= 0:
+                return self._err("A retention release must be for a positive amount.", 400)
+            if amt - r["outstanding"] > 0.005:
+                return self._err("Releasing %s against %s still held."
+                                 % (_money_vnd(amt), _money_vnd(r["outstanding"])), 400)
+            # Early is allowed — a customer sometimes pays retention back ahead of the warranty —
+            # but it is recorded as early rather than silently treated as due, because "released"
+            # and "was owed" are different facts and only one of them chases a customer.
+            early = amt - r["dueNow"] > 0.005
+            if early and not str((body or {}).get("earlyReason") or "").strip():
+                return self._err("Only %s of retention is due back today. Releasing more than that "
+                                 "is early — say why." % _money_vnd(r["dueNow"]), 400)
+            cur["retentionReleased"] = round(float(cur.get("retentionReleased") or 0) + amt, 2)
+            hist = list(cur.get("retentionReleases") or [])
+            hist.append({"amount": amt, "on": str((body or {}).get("releasedOn") or self._vn_day())[:10],
+                         "by": u.get("name"), "early": early,
+                         "reason": str((body or {}).get("earlyReason") or "")[:200],
+                         "ts": self._utc_now()})
+            cur["retentionReleases"] = hist
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Released retention", saved)
+            return self._json({"ok": True, "item": saved,
+                               "retention": sales_contract.retention_release(
+                                   saved, self._contract_state(saved), self._vn_day())})
+
+        return self._err("Unknown action. Use from_quote, terms, opening, activate, accept, "
+                         "release_retention or close.", 400)
 
     @staticmethod
     def _contract_state(c):

@@ -112,3 +112,24 @@ def test_the_unverified_note_speaks_the_readers_language():
     modal = INDEX[INDEX.find("async function crmOpenClaim"):INDEX.find("async function crmClaimCertify")]
     assert "_crmEsc(a.einvNote" not in modal
     assert "CHƯA XÁC MINH" in modal
+
+
+def test_the_retention_screen_is_present_and_wired():
+    assert _in_markup('id="view-crm-retention"')
+    assert "['crm-retention', 'Retention']" in INDEX
+    assert "if (id === 'crm-retention') { try { crmRenderRetention();" in INDEX
+    assert re.search(r"^async function crmRenderRetention\(\)", INDEX, re.M)
+
+
+def test_the_two_retention_actions_are_reachable_from_the_contract():
+    """Recording acceptance and recording a release both live on the contract modal — the screen
+    where somebody is already looking at the money."""
+    modal = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    assert "crmContractAccept(" in modal and "crmReleaseRetention(" in modal
+
+
+def test_the_undateable_group_is_shown_rather_than_filtered_out():
+    """A contract holding money whose release date cannot be computed is the one most likely to be
+    lost. Hiding it because it doesn't fit the table is how it stays lost."""
+    r = INDEX[INDEX.find("async function crmRenderRetention"):INDEX.find("async function crmContractAccept")]
+    assert "undateable" in r and "cannot yet be dated" in r

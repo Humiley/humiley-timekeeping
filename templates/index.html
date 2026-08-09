@@ -1249,6 +1249,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-crm-pipeline" class="view"><div class="page-header"><div><h1>Pipeline</h1><p>Your deals across every sales stage</p></div></div><div id="crm-pipeline-root"></div></div>
 <div id="view-crm-leads" class="view"><div class="page-header"><div><h1>Leads</h1><p>Inbound and prospected leads to qualify</p></div></div><div id="crm-leads-root"></div></div>
 <div id="view-crm-compliance" class="view"><div class="page-header"><div><h1>Sales Compliance</h1><p>What has to be true before you can bill a customer — and what this portal will never claim</p></div></div><div id="crm-compliance-root"></div></div>
+<div id="view-crm-retention" class="view"><div class="page-header"><div><h1>Retention</h1><p>The 5% your customers are holding, when each slice falls due, and the ones nothing can date yet</p></div></div><div id="crm-retention-root"></div></div>
 <div id="view-crm-billing" class="view"><div class="page-header"><div><h1>Billing &amp; Cash</h1><p>Progress claims, the invoice your provider issued, and who owes you what — on three separate clocks</p></div></div><div id="crm-billing-root"></div></div>
 <div id="view-crm-contracts" class="view"><div class="page-header"><div><h1>Contracts</h1><p>What was agreed, what is still to bill, and what is being held back</p></div></div><div id="crm-contracts-root"></div></div>
 <div id="view-crm-quotes" class="view"><div class="page-header"><div><h1>Quotations</h1><p>Every quotation you have issued, what happened to it, and why</p></div></div><div id="crm-quotes-root"></div></div>
@@ -11808,9 +11809,9 @@ function _hrEnsureTabBar(viewId) {
 }
 
 /* ══ Sales / CRM hub — one tabbed page (Sales Dashboard stays pinned separately) ══ */
-const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-contracts', 'Contracts'], ['crm-billing', 'Billing'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
-const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-contracts': 'Contracts', 'crm-billing': 'Billing & Cash', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
-const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-contracts', 'crm-billing', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
+const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-contracts', 'Contracts'], ['crm-billing', 'Billing'], ['crm-retention', 'Retention'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
+const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-contracts': 'Contracts', 'crm-billing': 'Billing & Cash', 'crm-retention': 'Retention', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
+const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-contracts', 'crm-billing', 'crm-retention', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
 /* The Targets tab is a Sales-Manager tool — only Approver (management) level and above see it. */
 /* AOP and Compliance are management tools — the second lists every customer's tax identity and
    every contract value, so it is gated exactly like the endpoint behind it. */
@@ -16749,6 +16750,23 @@ async function crmOpenContract(id) {
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('When retention comes back', 'Khi nào hoàn trả giữ lại') + '</label>' +
         '<select class="form-control" id="ct-releaseRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RELEASE, c.releaseRule) + '</select></div>' +
     '</div>' +
+    (draft || !(+c.retentionHeld) ? '' : (function () {
+      /* Retention has its own clock, and it is the one that gets forgotten. The panel states where
+         it is rather than leaving the number sitting in a column with no date against it. */
+      const rel = (c.retentionReleased || 0), held = (+c.retentionHeld || 0), out = Math.max(0, held - rel);
+      return '<div class="card" style="padding:12px 14px;margin:6px 0 12px;background:var(--soft-bg)">' +
+        '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t2('Retention', 'Tiền giữ lại bảo hành') + '</div>' +
+        '<div style="font-size:12.5px;line-height:1.6;margin-bottom:8px">' +
+          _t2('Held', 'Đang giữ') + ' <b>' + _crmMoney(out) + '</b>' + (rel ? ' · ' + _t2('already released', 'đã hoàn trả') + ' ' + _crmMoney(rel) : '') +
+          (c.acceptedOn ? ' · ' + _t2('accepted', 'nghiệm thu') + ' ' + _crmEsc(c.acceptedOn)
+                        : '<div style="color:#B45309;margin-top:4px">' + _crmEsc(_t2('No acceptance date, so nothing can be dated — the warranty period runs from the day the works were accepted.', 'Chưa có ngày nghiệm thu nên chưa xác định được hạn — thời hạn bảo hành tính từ ngày nghiệm thu.')) + '</div>') +
+        '</div>' +
+        '<button class="btn btn-ghost btn-sm" onclick="crmContractAccept(\'' + id + '\')">' +
+          (c.acceptedOn ? _t2('Change acceptance date', 'Sửa ngày nghiệm thu') : _t2('Record acceptance date', 'Ghi ngày nghiệm thu')) + '</button>' +
+        (out > 0 && c.acceptedOn ? '<button class="btn btn-ghost btn-sm" onclick="crmReleaseRetention(\'' + id + '\')">' +
+          _t2('Record a release', 'Ghi hoàn trả') + '</button>' : '') +
+      '</div>';
+    })()) +
     (draft ? '<div class="card" style="padding:12px 14px;margin:6px 0 12px;background:var(--soft-bg)">' +
       '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' + _t2('Already running? Load where it has got to', 'Đang chạy dở? Nhập số liệu hiện tại') + '</div>' +
       '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' + _crmEsc(_t2('Only before activation. Afterwards these move only through certified claims.', 'Chỉ trước khi kích hoạt. Sau đó các số này chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>' +
@@ -17125,6 +17143,132 @@ async function crmReceiptSave(id) {
     document.getElementById('sapDetail')?.remove();
     await crmRenderBilling();
   } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+/* ═══ Retention ═════════════════════════════════════════════════════════════════════════════════
+   The receivable that goes missing. 5% is withheld a little at a time across a year of claims, then
+   falls due once — twelve months after the job finished and everybody moved on. Nothing chased it
+   before this screen, because nothing knew when it was due.
+
+   The second table is the useful half: contracts holding real money whose release date CANNOT be
+   computed, because the contract never said when retention comes back or nobody recorded the day
+   the works were accepted. Those are not errors to hide; they are the ones most likely to be lost. */
+async function crmRenderRetention() {
+  const root = document.getElementById('crm-retention-root'); if (!root) return;
+  root.innerHTML = tkSkeleton('kpi', 3);
+  let r;
+  try { r = await tkApi('/api/sales/retention'); } catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load retention', 'Không tải được dữ liệu giữ lại') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const overdue = (r.contracts || []).reduce((s, c) =>
+    s + (c.tranches || []).filter(t => t.overdue).reduce((a, t) => a + (+t.outstanding || 0), 0), 0);
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('Held by customers', 'Khách hàng đang giữ'), _crmMoney(r.totalHeld), r.totalHeld ? '#8B5CF6' : 'var(--emerald)'),
+    _hrKpi(_t2('Due back now', 'Đến hạn hoàn trả'), _crmMoney(r.dueNow), r.dueNow ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Past its release date', 'Quá hạn hoàn trả'), _crmMoney(overdue), overdue ? '#B91C1C' : 'var(--emerald)'),
+    _hrKpi(_t2('Cannot be dated', 'Chưa xác định được hạn'), (r.undateable || []).length, (r.undateable || []).length ? '#B45309' : 'var(--emerald)')
+  ]);
+
+  const trancheCell = c => (c.tranches || []).map(t =>
+    '<div style="font-size:11.5px;white-space:nowrap;color:' + (t.overdue ? '#B91C1C' : t.due ? '#B45309' : 'var(--text-light)') + '">' +
+      _crmEsc(t.dueOn || '—') + ' · ' + _crmMoney(t.outstanding) +
+      (t.overdue ? ' <b>' + _t2('overdue', 'quá hạn') + '</b>' : t.due ? ' <b>' + _t2('due', 'đến hạn') + '</b>' : '') +
+    '</div>').join('') || '<span style="color:var(--text-light)">—</span>';
+
+  const rows = (r.contracts || []).length ? r.contracts.map(c =>
+    '<tr style="cursor:pointer" onclick="crmOpenContract(\'' + c.id + '\')">' +
+      '<td style="white-space:nowrap"><b style="font-variant-numeric:tabular-nums">' + _crmEsc(c.contractNo) + '</b>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(c.accountName || '') + '</div></td>' +
+      '<td>' + _crmEsc(c.title || '') + '</td>' +
+      '<td style="white-space:nowrap;font-size:11.5px;color:var(--text-light)">' + _crmEsc(c.acceptedOn || '—') + '</td>' +
+      '<td>' + trancheCell(c) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(c.outstanding) + '</td>' +
+    '</tr>').join('')
+    : tkEmptyRow(5, _t2('No retention is being held on a dated contract.', 'Không có khoản giữ lại nào trên hợp đồng đã xác định ngày.'), { icon: 'check' });
+
+  const blocked = (r.undateable || []).length ? '<div class="card" style="padding:0;overflow:hidden;margin-top:16px;border-left:3px solid #B45309">' +
+    '<div class="card-hdr" style="padding:14px 18px"><div>' +
+      '<div class="card-title">' + _t2('Holding money that cannot yet be dated', 'Đang giữ tiền nhưng chưa xác định được hạn') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);max-width:62ch;line-height:1.55">' +
+        _crmEsc(_t2('These are the ones most likely to be lost. Nothing is due until the works were accepted — so record the acceptance date, or the rule that says when retention comes back. Neither is guessed here: a date nobody agreed to would chase a customer on the wrong day.',
+                    'Đây là những khoản dễ bị bỏ quên nhất. Chưa có gì đến hạn cho tới khi nghiệm thu — hãy ghi ngày nghiệm thu, hoặc quy định về thời điểm hoàn trả. Không suy đoán ở đây: một ngày không ai thống nhất sẽ khiến đòi khách hàng sai thời điểm.')) +
+      '</div></div></div>' +
+    '<div class="table-wrap"><table style="min-width:720px"><thead><tr>' +
+      '<th>' + _t2('Contract', 'Hợp đồng') + '</th><th>' + _t2('What is missing', 'Còn thiếu') + '</th>' +
+      '<th style="text-align:right">' + _t2('Held', 'Đang giữ') + '</th></tr></thead><tbody>' +
+      r.undateable.map(c => '<tr style="cursor:pointer" onclick="crmOpenContract(\'' + c.id + '\')">' +
+        '<td style="white-space:nowrap"><b style="font-variant-numeric:tabular-nums">' + _crmEsc(c.contractNo) + '</b>' +
+          '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(c.accountName || '') + '</div></td>' +
+        '<td style="font-size:11.5px;line-height:1.5">' + _crmEsc(c.acceptedOn ? _t2('The contract does not say when retention comes back.', 'Hợp đồng chưa quy định khi nào hoàn trả tiền giữ lại.')
+                                                                                : _t2('No acceptance date — the warranty clock has not started.', 'Chưa có ngày nghiệm thu — đồng hồ bảo hành chưa chạy.')) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(c.outstanding) + '</td>' +
+      '</tr>').join('') + '</tbody></table></div></div>' : '';
+
+  root.innerHTML = kpis +
+    /* Composed here, not echoed from the server: _money_vnd writes "30,325,000 ₫" and every other
+       figure on this page is "₫30,325,000". Two currency formats in one paragraph reads as a bug. */
+    '<div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' +
+      _crmEsc(_t2('%h of retention is being held by customers; %d of it is due back now.',
+                  '%h tiền giữ lại đang do khách hàng nắm; %d trong đó đã đến hạn hoàn trả.')
+                .replace('%h', _crmMoney(r.totalHeld)).replace('%d', _crmMoney(r.dueNow))) +
+      ((r.undateable || []).length ? ' ' + _crmEsc(
+        ((r.undateable.length === 1)
+          ? _t2('One more contract holds retention that cannot yet be dated.', 'Còn một hợp đồng giữ tiền nhưng chưa xác định được hạn.')
+          : _t2('%n more contracts hold retention that cannot yet be dated.', 'Còn %n hợp đồng giữ tiền nhưng chưa xác định được hạn.'))
+            .replace('%n', r.undateable.length)) : '') +
+      ' &nbsp;·&nbsp; ' + _crmEsc(_t2('as at ', 'tính đến ') + (r.asOf || '')) + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px">' +
+      '<div class="card-title">' + _t2('Retention held, by release date', 'Tiền giữ lại theo ngày hoàn trả') + '</div></div>' +
+    '<div class="table-wrap"><table style="min-width:840px"><thead><tr>' +
+      '<th>' + _t2('Contract', 'Hợp đồng') + '</th><th>' + _t2('Job', 'Công trình') + '</th>' +
+      '<th>' + _t2('Accepted', 'Nghiệm thu') + '</th><th>' + _t2('Falls due', 'Đến hạn') + '</th>' +
+      '<th style="text-align:right">' + _t2('Outstanding', 'Còn lại') + '</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>' +
+    blocked;
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
+}
+
+/* Recording acceptance is its own act, not a side effect of closing the contract: the warranty runs
+   from the day the works were accepted, and that is usually months before anybody closes anything. */
+async function crmContractAccept(id) {
+  const day = await tkPrompt({ title: _t2('When were the works accepted?', 'Nghiệm thu ngày nào?'),
+    body: _t2('The warranty period runs from this date, so it is what makes the retention release date real. It is not the contract date and not the last claim.',
+              'Thời hạn bảo hành tính từ ngày này, nên đây là căn cứ để xác định ngày hoàn trả tiền giữ lại. Không phải ngày ký hợp đồng, cũng không phải đợt nghiệm thu cuối.'),
+    type: 'date' });
+  if (!day) return;
+  try {
+    await tkApi('/api/sales/contract', { method: 'POST', body: { id: id, action: 'accept', acceptedOn: day } });
+    toast(_t2('Acceptance recorded', 'Đã ghi ngày nghiệm thu'));
+    _COLL_TS['sales_contracts'] = 0;
+    document.getElementById('ctOverlay')?.remove();
+    if (document.getElementById('crm-retention-root')) crmRenderRetention(); else crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmReleaseRetention(id) {
+  const amt = await tkPrompt({ title: _t2('How much retention is coming back?', 'Hoàn trả bao nhiêu tiền giữ lại?'),
+    body: _t2('Releasing more than is due today is allowed — customers do pay it back early — but it is recorded as early, with the reason.',
+              'Được phép hoàn trả sớm hơn hạn — khách hàng đôi khi trả sớm — nhưng sẽ được ghi nhận là sớm, kèm lý do.'),
+    type: 'number' });
+  if (!amt) return;
+  const body = { id: id, action: 'release_retention', amount: +String(amt).replace(/[^0-9.]/g, '') };
+  try {
+    await tkApi('/api/sales/contract', { method: 'POST', body: body });
+  } catch (e) {
+    if (!/early/i.test(_errMsg(e))) { toast(_errMsg(e), 'error', 9000); return; }
+    const why = await tkPrompt({ title: _t2('That is more than is due today', 'Nhiều hơn số đến hạn hôm nay'),
+      body: _errMsg(e) });
+    if (!why) return;
+    body.earlyReason = why;
+    try { await tkApi('/api/sales/contract', { method: 'POST', body: body }); }
+    catch (e2) { toast(_errMsg(e2), 'error', 9000); return; }
+  }
+  toast(_t2('Retention released', 'Đã hoàn trả tiền giữ lại'));
+  _COLL_TS['sales_contracts'] = 0;
+  document.getElementById('ctOverlay')?.remove();
+  if (document.getElementById('crm-retention-root')) crmRenderRetention(); else crmRenderContracts();
 }
 
 /* ═══ Sales Compliance ══════════════════════════════════════════════════════════════════════════
@@ -21055,6 +21199,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-compliance') { try { crmRenderCompliance(); } catch (e) { console.warn('crm-compliance:', e.message); } }
   if (id === 'crm-contracts') { try { crmRenderContracts(); } catch (e) { console.warn('crm-contracts:', e.message); } }
   if (id === 'crm-billing') { try { crmRenderBilling(); } catch (e) { console.warn('crm-billing:', e.message); } }
+  if (id === 'crm-retention') { try { crmRenderRetention(); } catch (e) { console.warn('crm-retention:', e.message); } }
   if (id === 'crm-quotes') { try { crmRenderQuotes(); } catch (e) { console.warn('crm-quotes:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
@@ -24571,24 +24716,35 @@ function _tkDialog(opts) {
     const danger = !!opts.danger;
     const ov = document.createElement('div');
     ov.className = 'modal-overlay open'; ov.style.display = 'flex'; ov.style.zIndex = '2000';
+    const isPrompt = opts.mode === 'prompt';
     ov.innerHTML = '<div class="modal" role="' + (isConfirm ? 'alertdialog' : 'dialog') + '" aria-modal="true" style="width:420px;max-width:92vw">' +
       '<div style="font-size:17px;font-weight:800;color:var(--navy);margin-bottom:8px">' + esc(_t(opts.title || (isConfirm ? 'Please confirm' : 'Notice'))) + '</div>' +
-      (opts.body ? '<div style="font-size:14px;color:var(--text-dark);line-height:1.6;margin-bottom:22px;white-space:pre-line">' + esc(_t(opts.body)) + '</div>' : '') +
+      (opts.body ? '<div style="font-size:14px;color:var(--text-dark);line-height:1.6;margin-bottom:' + (isPrompt ? '14px' : '22px') + ';white-space:pre-line">' + esc(_t(opts.body)) + '</div>' : '') +
+      (isPrompt ? '<input class="form-control" id="_tkPromptIn" type="' + esc(opts.type || 'text') + '"' +
+        (opts.placeholder ? ' placeholder="' + esc(_t(opts.placeholder)) + '"' : '') +
+        (opts.value ? ' value="' + esc(opts.value) + '"' : '') +
+        (opts.type === 'number' ? ' inputmode="numeric"' : '') + ' style="margin-bottom:22px">' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:10px">' +
-        (isConfirm ? '<button type="button" class="btn btn-outline" data-act="cancel">' + esc(_t(opts.cancelText || 'Cancel')) + '</button>' : '') +
+        (isConfirm || isPrompt ? '<button type="button" class="btn btn-outline" data-act="cancel">' + esc(_t(opts.cancelText || 'Cancel')) + '</button>' : '') +
         '<button type="button" class="btn ' + (danger ? 'btn-danger' : 'btn-primary') + '" data-act="ok">' + esc(_t(opts.confirmText || (isConfirm ? 'Confirm' : 'OK'))) + '</button>' +
       '</div></div>';
     const prevFocus = document.activeElement;
     let done = false;
     const finish = (val) => {
       if (done) return; done = true;
+      if (isPrompt) {
+        /* A prompt resolves to what was typed, or null. Empty is a dismissal too — "OK" on a blank
+           box is not an answer, and treating it as one would post an empty date. */
+        const box = ov.querySelector('#_tkPromptIn');
+        val = (val && box && String(box.value || '').trim()) ? String(box.value).trim() : null;
+      }
       document.removeEventListener('keydown', onKey, true);
       ov.classList.remove('open'); setTimeout(() => ov.remove(), 200);
       try { if (prevFocus && prevFocus.focus) prevFocus.focus(); } catch (e) {}
       resolve(val);
     };
     const onKey = (ev) => {
-      if (ev.key === 'Escape') { ev.preventDefault(); finish(isConfirm ? false : true); }
+      if (ev.key === 'Escape') { ev.preventDefault(); finish(isConfirm || isPrompt ? false : true); }
       else if (ev.key === 'Enter') { ev.preventDefault(); finish(true); }
       else if (ev.key === 'Tab') {
         const f = ov.querySelectorAll('button'); if (!f.length) return;
@@ -24597,16 +24753,19 @@ function _tkDialog(opts) {
         else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
       }
     };
-    ov.addEventListener('click', ev => { if (ev.target === ov) finish(isConfirm ? false : true); });
+    ov.addEventListener('click', ev => { if (ev.target === ov) finish(isConfirm || isPrompt ? false : true); });
     ov.querySelector('[data-act="ok"]').addEventListener('click', () => finish(true));
     const c = ov.querySelector('[data-act="cancel"]'); if (c) c.addEventListener('click', () => finish(false));
     document.addEventListener('keydown', onKey, true);
     document.body.appendChild(ov);
-    setTimeout(() => { const b = ov.querySelector(danger ? '[data-act="cancel"]' : '[data-act="ok"]') || ov.querySelector('button'); if (b) b.focus(); }, 30);
+    setTimeout(() => { const b = ov.querySelector('#_tkPromptIn') || ov.querySelector(danger ? '[data-act="cancel"]' : '[data-act="ok"]') || ov.querySelector('button'); if (b) b.focus(); }, 30);
   });
 }
 function tkConfirm(opts) { return _tkDialog(Object.assign({}, typeof opts === 'string' ? { body: opts } : opts, { mode: 'confirm' })); }
 function tkAlert(opts)   { return _tkDialog(Object.assign({}, typeof opts === 'string' ? { body: opts } : opts, { mode: 'alert' })); }
+/* Ask for one value. Resolves to the trimmed string, or null if cancelled or left blank —
+   so a caller can always treat a falsy answer as "they didn't say". */
+function tkPrompt(opts)  { return _tkDialog(Object.assign({}, typeof opts === 'string' ? { body: opts } : opts, { mode: 'prompt' })); }
 
 /* Shimmer skeleton shaped like the incoming content — feels faster than bare "Loading…" text. */
 function tkSkeleton(kind, n) {
