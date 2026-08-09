@@ -3889,6 +3889,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/application":
+            return self._guard(lambda uu: self._application_ep(uu, body))
         if path == "/api/sales/contract":
             return self._guard(lambda uu: self._contract_ep(uu, body))
         if path == "/api/sales/quote":
@@ -6440,7 +6442,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6467,7 +6469,7 @@ class Handler(BaseHTTPRequestHandler):
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     # Sell-side documents scoped like the CRM: own / department / everything from management up.
-    SALES_SCOPED = {"sales_quotes", "sales_contracts"}
+    SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications"}
 
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
@@ -6478,6 +6480,10 @@ class Handler(BaseHTTPRequestHandler):
                    # claim is computed from. A blind whole-document PATCH would silently reset
                    # them to whatever the browser last saw.
                    "sales_contracts": ("a contract", "/api/sales/contract"),
+                   # A payment application MOVES the contract balances. Written through the
+                   # generic path it would move nothing, and the claim and the contract would
+                   # disagree about how much is left.
+                   "sales_applications": ("a payment application", "/api/sales/application"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6495,7 +6501,8 @@ class Handler(BaseHTTPRequestHandler):
     # administrator is deliberately not a way in. Listing the collection would hand every concern
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
-    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},   # nothing: every change goes through the endpoint
+    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
+                       "sales_applications": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
@@ -6515,7 +6522,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -9542,6 +9549,126 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s rev %s · %s" % (doc.get("quoteNo") or "(no number)", doc.get("rev") or 0,
                                           _money_vnd(sales_doc.totals(doc.get("lines"))["amount"])),
             "ts": self._utc_now()})
+
+    def _application_ep(self, u, body):
+        """The progress claim — and the only place a contract's balances are allowed to move.
+
+        This is the money path. Everything else on the sell side describes intent; this changes what
+        the customer owes. Three things it has to get right, and all three have bitten real systems:
+
+        IT MUST NOT OVERSHOOT. sales_doc.apply refuses a line claimed past its open balance and says
+        by how much; sales_contract.application refuses a claim that would take the contract past
+        its value. Neither clamps. A clamp turns "you are claiming ₫50m more than this is worth"
+        into a clean-looking total that somebody signs.
+
+        IT MUST NOT DOUBLE-SPEND UNDER CONCURRENCY. Two claims certified at the same moment must not
+        both consume the same remaining balance. The contract row is moved by COMPARE-AND-SWAP on
+        its _rev, re-reading and recomputing if it moved — the shape already used for device
+        acknowledgements. A read-then-write would leave the second claim overwriting the first's
+        deduction and the advance recovering twice as slowly as the money went out.
+
+        IT MUST NOT STATE A VAT FIGURE IT CANNOT DEFEND. Amounts are ex-VAT and say so, until the
+        retention and advance tax points are recorded.
+        """
+        act = str((body or {}).get("action") or "").strip().lower()
+        aid = str((body or {}).get("id") or "").strip()
+        cur = db.get_collection_item("sales_applications", aid) if aid else None
+        if aid and not cur:
+            return self._err("Payment application not found.", 404)
+        if cur and not self._sales_may_write(u, cur):
+            return self._err("You can only change your own payment applications.", 403)
+
+        if act == "draft":
+            c = db.get_collection_item("sales_contracts", str((body or {}).get("contractId") or "")
+                                       or (cur or {}).get("contractId") or "")
+            if not c:
+                return self._err("Contract not found.", 404)
+            if c.get("status") != sales_doc.ACTIVE:
+                return self._err("A claim can only be raised against an ACTIVE contract — this one "
+                                 "is %s." % (c.get("status") or "draft"), 400)
+            if cur and cur.get("status") not in (sales_doc.DRAFT,):
+                return self._err("A certified application cannot be edited. Raise the next one.", 400)
+            claims = {str(k): float(v or 0) for k, v in ((body or {}).get("claims") or {}).items()}
+            preview = self._application_compute(c, claims)
+            if not preview["ok"]:
+                return self._err(preview["why"], 400)
+            doc = dict(cur or {})
+            doc.update({"contractId": c.get("id"), "contractNo": c.get("contractNo"),
+                        "accountName": c.get("accountName"), "accountId": c.get("accountId") or "",
+                        "period": (body or {}).get("period") or doc.get("period") or "",
+                        "claims": claims, "status": doc.get("status") or sales_doc.DRAFT,
+                        "owner": doc.get("owner") or u.get("name"),
+                        "updatedAt": self._utc_now()})
+            doc.update({k: preview[k] for k in ("certifiedThis", "advanceRecovered", "retentionThis",
+                                                "netPayable", "statement")})
+            saved = db.put_collection_item("sales_applications", doc)
+            return self._json({"ok": True, "item": saved, "preview": preview,
+                               "vat": sales_contract.vat_ready(c, self._company_settings())})
+
+        if not cur:
+            return self._err("An application id is required for '%s'." % (act or "(none)"), 400)
+
+        if act == "certify":
+            if cur.get("status") != sales_doc.DRAFT:
+                return self._err("This application is already %s." % cur.get("status"), 400)
+            # Certifying somebody's own claim is the sell-side equivalent of approving your own
+            # expense. The buy side has enforced payer != approver for months.
+            if not self._is_mgmt(u) and (cur.get("owner") or "") == u.get("name"):
+                return self._err("A payment application is certified by somebody other than the "
+                                 "person who raised it.", 403)
+            claims = {str(k): float(v or 0) for k, v in (cur.get("claims") or {}).items()}
+            for attempt in range(5):
+                c = db.get_collection_item("sales_contracts", cur.get("contractId"))
+                if not c:
+                    return self._err("Contract not found.", 404)
+                if c.get("status") != sales_doc.ACTIVE:
+                    return self._err("The contract is no longer active.", 400)
+                rev0 = c.get("_rev")
+                out = self._application_compute(c, claims)
+                if not out["ok"]:
+                    return self._err(out["why"], 400)
+                c["lines"] = out["lines"]
+                c["certifiedToDate"] = out["certifiedToDate"]
+                c["advanceOutstanding"] = out["advanceOutstanding"]
+                c["retentionHeld"] = out["retentionHeld"]
+                saved_c = db.put_collection_item_if_rev("sales_contracts", c, rev0)
+                if saved_c is not None:
+                    break
+            else:
+                return self._err("The contract was being changed by somebody else. Nothing was "
+                                 "certified — open the application again and re-submit.", 409)
+            cur["status"] = "certified"
+            cur["certifiedAt"] = self._utc_now()
+            cur["certifiedBy"] = u.get("name")
+            for k in ("certifiedThis", "advanceRecovered", "retentionThis", "netPayable", "statement"):
+                cur[k] = out[k]
+            saved = db.put_collection_item("sales_applications", cur)
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": "Certified payment application",
+                "target": "sales_applications/" + str(saved.get("id")),
+                "detail": "%s · %s net" % (c.get("contractNo") or "", _money_vnd(out["netPayable"])),
+                "ts": self._utc_now()})
+            return self._json({"ok": True, "item": saved, "contract": saved_c})
+
+        return self._err("Unknown action. Use draft or certify.", 400)
+
+    def _application_compute(self, c, claims):
+        """What this claim comes to, against the contract as it stands right now.
+
+        Both guards run: the per-LINE open balance and the CONTRACT-level advance and retention. A
+        claim can be fine on every line and still be wrong for the contract, and vice versa.
+        """
+        applied = sales_doc.apply(c.get("lines") or [], claims, counter="certifiedAmt")
+        if not applied["ok"]:
+            first = (applied.get("problems") or [{}])[0]
+            return {"ok": False, "why": first.get("why") or applied["why"], "problems": applied.get("problems")}
+        total = round(sum(float(v or 0) for v in (claims or {}).values()), 2)
+        res = sales_contract.application(c, total, self._contract_state(c))
+        if not res["ok"]:
+            return res
+        res["lines"] = applied["lines"]
+        return res
 
     def _contract_ep(self, u, body):
         """The contract: what was actually agreed, and the two balances every claim is computed from.
