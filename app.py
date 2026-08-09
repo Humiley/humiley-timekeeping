@@ -42,6 +42,7 @@ import attendance_days  # what each day WAS: worked / leave / holiday / rest / a
 import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hours and the rest owed (pure)
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
+import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3885,6 +3886,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/quote":
+            return self._guard(lambda uu: self._quote_ep(uu, body))
         if path == "/api/sales/accounts/backfill":
             return self._guard(lambda uu: self._accounts_backfill_ep(uu, body), manager=True)
         if path == "/api/sales/accounts/merge":
@@ -6432,7 +6435,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6458,7 +6461,14 @@ class Handler(BaseHTTPRequestHandler):
     # POST /api/coll/decisions, and a letter could be marked Issued with no purpose at all.
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
+    # Sell-side documents scoped like the CRM: own / department / everything from management up.
+    SALES_SCOPED = {"sales_quotes"}
+
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
+                   # A quotation carries LINES. A PATCH through /api/coll is a whole-document
+                   # replace, so a one-key write would delete a 300-line bill of quantities and
+                   # every open balance on it. Writes go through /api/sales/quote, which merges.
+                   "sales_quotes": ("a quotation", "/api/sales/quote"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6476,7 +6486,8 @@ class Handler(BaseHTTPRequestHandler):
     # administrator is deliberately not a way in. Listing the collection would hand every concern
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
-    ISSUED_EDITABLE = {"decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
+    ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"},   # nothing: every change goes through the endpoint
+                       "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
                        # What happened is evidence and is not rewritten afterwards. What was
@@ -6495,7 +6506,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -6777,7 +6788,13 @@ class Handler(BaseHTTPRequestHandler):
             items = [it for it in items if _in_dept(it)]
         # CRM records: salesperson (staff) sees own, manager sees their department,
         # management+ sees all. crm_products is a shared catalogue and is never scoped.
-        if name.startswith("crm_") and name != "crm_products":
+        #
+        # sales_* is scoped the SAME WAY and by name rather than by prefix, because reads here are
+        # default-allow: an unlisted collection returns everything to every authenticated account.
+        # A quotation carries the contract value, the per-line price and the margin the discount was
+        # approved against, so an unscoped sales_quotes would show every salesperson what every
+        # other one is selling and at what.
+        if (name.startswith("crm_") or name in self.SALES_SCOPED) and name != "crm_products":
             lvl = self._caller_level(u)
             if self._level_rank(lvl) < self._level_rank("management"):
                 myname = u.get("name") or ""
@@ -9371,6 +9388,151 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     return None
         return None
+
+    def _quote_ep(self, u, body):
+        """The quotation as a DOCUMENT: draft, issue, revise, accept, lose.
+
+        Until now a quotation was a scratchpad on the deal — crmQBSave overwrote deal.lines, so
+        re-quoting destroyed what the customer had been sent and there was no way to prove which
+        version they accepted. A quotation is the first document that leaves the building with a
+        price on it; it has to be a record.
+
+        Actions:
+          draft    create or update a DRAFT (the only status that may be edited in place)
+          issue    freeze it, take a document number, start the validity clock
+          revise   supersede an issued quotation with a new revision under the SAME number
+          accept   the customer said yes — this is what a contract is later built from
+          lose     the customer said no, with a reason, because a win rate nobody can diagnose is
+                   a chart rather than information
+        """
+        act = str((body or {}).get("action") or "").strip().lower()
+        qid = str((body or {}).get("id") or "").strip()
+        cur = db.get_collection_item("sales_quotes", qid) if qid else None
+        if qid and not cur:
+            return self._err("Quotation not found.", 404)
+        if cur and not self._sales_may_write(u, cur):
+            return self._err("You can only change your own quotations.", 403)
+
+        if act == "draft":
+            lines = self._sales_lines((body or {}).get("lines"), (cur or {}).get("lines"))
+            if cur and str(cur.get("status") or sales_doc.DRAFT) not in sales_doc.EDITABLE:
+                return self._err("This quotation has been issued. Issuing a REVISION keeps the "
+                                 "number and preserves what the customer already has; editing it "
+                                 "in place would change what you can prove you sent.", 400)
+            doc = dict(cur or {})
+            for k in ("accountId", "accountName", "dealId", "title", "currency", "vatRate",
+                      "discount", "validDays", "note"):
+                if k in (body or {}):
+                    doc[k] = body[k]
+            doc["lines"] = lines
+            doc.setdefault("status", sales_doc.DRAFT)
+            doc.setdefault("owner", u.get("name"))
+            doc.setdefault("rev", 0)
+            doc["updatedAt"] = self._utc_now()
+            saved = db.put_collection_item("sales_quotes", doc)
+            return self._json({"ok": True, "item": saved, "totals": sales_doc.totals(lines)})
+
+        if not cur:
+            return self._err("A quotation id is required for '%s'." % (act or "(none)"), 400)
+
+        if act == "issue":
+            t = sales_doc.transition(cur, sales_doc.ISSUED)
+            if not t["ok"]:
+                return self._err(t["why"], 400)
+            if not sales_doc.totals(cur.get("lines")).get("lines"):
+                return self._err("A quotation with no priced line cannot be issued.", 400)
+            # The number is taken ONCE and kept across every later revision: the customer refers to
+            # one reference for the whole negotiation.
+            if not str(cur.get("quoteNo") or "").strip():
+                year = int(self._vn_day()[:4])
+                n = db.next_doc_no("QT", year, lambda: doc_number.highest(
+                    doc_number.numbers_in(db.list_collection("sales_quotes"), "quoteNo"), "QT", year))
+                cur["quoteNo"] = doc_number.format_no("QT", year, n)
+            cur["status"] = sales_doc.ISSUED
+            cur["rev"] = int(cur.get("rev") or 0) + 1
+            cur["issuedAt"] = cur.get("issuedAt") or self._utc_now()
+            cur["revIssuedAt"] = self._utc_now()
+            cur["issuedBy"] = u.get("name")
+            cur["validUntil"] = account.due_date(self._vn_day(), int(cur.get("validDays") or 30))
+            saved = db.put_collection_item("sales_quotes", cur)
+            self._sales_audit(u, "Issued quotation", saved)
+            return self._json({"ok": True, "item": saved})
+
+        if act == "revise":
+            t = sales_doc.transition(cur, sales_doc.SUPERSEDED)
+            if not t["ok"]:
+                return self._err(t["why"], 400)
+            cur["status"] = sales_doc.SUPERSEDED
+            db.put_collection_item("sales_quotes", cur)
+            nxt = {k: v for k, v in cur.items() if k not in ("id", "_rev")}
+            nxt.update({"status": sales_doc.DRAFT, "supersedes": cur.get("id"),
+                        "rev": int(cur.get("rev") or 1), "updatedAt": self._utc_now()})
+            if (body or {}).get("lines") is not None:
+                nxt["lines"] = self._sales_lines(body["lines"], cur.get("lines"))
+            saved = db.put_collection_item("sales_quotes", nxt)
+            self._sales_audit(u, "Revised quotation", saved)
+            return self._json({"ok": True, "item": saved, "supersededId": cur.get("id")})
+
+        if act in ("accept", "lose"):
+            to = sales_doc.ACCEPTED if act == "accept" else sales_doc.LOST
+            reason = str((body or {}).get("reason") or "").strip()
+            t = sales_doc.transition(cur, to, reason)
+            if not t["ok"]:
+                return self._err(t["why"], 400)
+            cur["status"] = to
+            cur["outcomeAt"] = self._utc_now()
+            cur["outcomeBy"] = u.get("name")
+            if to == sales_doc.LOST:
+                cur["lostReason"] = reason
+                cur["competitor"] = str((body or {}).get("competitor") or "").strip()
+            saved = db.put_collection_item("sales_quotes", cur)
+            self._sales_audit(u, "Quotation " + to, saved)
+            return self._json({"ok": True, "item": saved})
+
+        return self._err("Unknown action. Use draft, issue, revise, accept or lose.", 400)
+
+    def _sales_lines(self, raw, existing=None):
+        """Rebuild the line list server-side, minting a stable uid for anything new.
+
+        A uid the client sends is honoured ONLY if the document already has that line — that is how
+        an edit keeps a line's identity across a save. A uid it invents is discarded and replaced,
+        because history points at these: a browser free to choose one could attach a brand-new line
+        to a claim or a certificate that was signed against a different line entirely.
+        """
+        known = {str(l.get("uid")) for l in (existing or []) if isinstance(l, dict) and l.get("uid")}
+        out = []
+        for ln in (raw or []):
+            if not isinstance(ln, dict):
+                continue
+            sent = str(ln.get("uid") or "").strip()
+            uid = sent if sent in known else sales_doc.next_uid(out + [{"uid": u} for u in known])
+            out.append(sales_doc.new_line(
+                uid=uid, desc=str(ln.get("desc") or "")[:400], kind=ln.get("kind") or sales_doc.ITEM,
+                qty=ln.get("qty"), unitPrice=ln.get("unitPrice"), discPct=ln.get("discPct"),
+                uom=str(ln.get("uom") or "lot")[:16], src=ln.get("src")))
+        return out
+
+    def _sales_may_write(self, u, doc):
+        """A sell-side document follows the CRM's own rule: your own, your department if you manage
+        it, anything from management up."""
+        if self._is_mgmt(u):
+            return True
+        owner = str((doc or {}).get("owner") or "")
+        if owner == u.get("name"):
+            return True
+        if u.get("role") == "manager":
+            mydept = u.get("dept") or u.get("department") or ""
+            deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+            return bool(mydept) and deptof.get(owner) == mydept
+        return False
+
+    def _sales_audit(self, u, action, doc):
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": action, "target": "sales_quotes/" + str((doc or {}).get("id")),
+            "detail": "%s rev %s · %s" % (doc.get("quoteNo") or "(no number)", doc.get("rev") or 0,
+                                          _money_vnd(sales_doc.totals(doc.get("lines"))["amount"])),
+            "ts": self._utc_now()})
 
     def _accounts_review_ep(self, u, qs):
         """The state of the customer master — the screen that tells you what Stage 1 still needs.
