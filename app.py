@@ -41,6 +41,7 @@ import employment_letter # the confirmation letter, and what its PURPOSE lets it
 import attendance_days  # what each day WAS: worked / leave / holiday / rest / absent
 import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hours and the rest owed (pure)
 import doc_number       # controlled-document numbering: the format and the series (pure)
+import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3785,6 +3786,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/working-time":
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
+        if path == "/api/sales/accounts/review":
+            return self._guard(lambda uu: self._accounts_review_ep(uu, qs), manager=True)
         if path == "/api/hr/minwage":
             return self._guard(lambda uu: self._minwage_ep(uu, qs), manager=True)
         if path == "/api/hr/minors":
@@ -3882,6 +3885,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/accounts/merge":
+            return self._guard(lambda uu: self._accounts_merge_ep(uu, body), manager=True)
         if path == "/api/sales/quote-number":
             return self._guard(lambda uu: self._quote_number_ep(uu, body))
         if path == "/api/hr/contract":
@@ -9364,6 +9369,124 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     return None
         return None
+
+    def _accounts_review_ep(self, u, qs):
+        """The state of the customer master — the screen that tells you what Stage 1 still needs.
+
+        Four questions nobody could ask before: which customers are the same customer twice, which
+        cannot legally be billed, whose qualification pack has lapsed, and which records belong to
+        nobody. All read-only. It changes nothing and fixes nothing; it makes the work visible.
+
+        MANAGEMENT and above: it lists every account with its credit limit and tax identity.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this lists every "
+                             "customer's legal and credit details.", 403)
+        today = self._vn_day()
+        accs = db.list_collection("crm_companies")
+        live = [a for a in accs if not a.get("mergedInto")]
+
+        dupes = []
+        for g in account.duplicate_groups(accs):
+            dupes.append({"reason": g["reason"], "key": g["key"],
+                          "accounts": [{"id": a.get("id"), "name": a.get("name"),
+                                        "mst": a.get("mst") or "", "owner": a.get("owner") or ""}
+                                       for a in g["accounts"]]})
+
+        not_billable, lapsed = [], []
+        for a in live:
+            r = account.invoice_readiness(a)
+            if not r["ready"]:
+                not_billable.append({"id": a.get("id"), "name": a.get("name"),
+                                     "missing": [m["label"] for m in r["missing"]],
+                                     "mstProblem": (not r["mst"]["ok"] and str(a.get("mst") or "").strip()) and r["mst"]["why"] or "",
+                                     "why": r["why"]})
+            q = account.qualification_status(a, today)
+            if q.get("expired") or q.get("expiring"):
+                lapsed.append({"id": a.get("id"), "name": a.get("name"),
+                               "expired": [i["label"] for i in q["expired"]],
+                               "expiring": [{"label": i["label"], "daysLeft": i["daysLeft"]}
+                                            for i in q["expiring"]]})
+
+        # Records nobody owns are invisible to every staff and manager account — they exist, they are
+        # in nobody's pipeline, and only management can even see that they are there.
+        unassigned = {}
+        for coll in ("crm_companies", "crm_deals", "crm_contacts", "crm_leads"):
+            unassigned[coll] = len([r for r in db.list_collection(coll)
+                                    if not str(r.get("owner") or "").strip()
+                                    and not r.get("mergedInto")])
+
+        return self._json({
+            "ok": True, "asOf": today, "accounts": len(live),
+            "tombstones": len(accs) - len(live),
+            "duplicates": dupes, "notBillable": not_billable, "qualifications": lapsed,
+            "unassigned": unassigned,
+            "terms": [dict(t) for t in account.TERMS],
+            "dueBasis": [dict(b) for b in account.DUE_BASIS],
+            "unverified": [dict(x) for x in account.UNVERIFIED],
+            "statement": ("%d account(s). %d look like duplicates, %d cannot be billed yet, "
+                          "%d have a qualification lapsed or lapsing."
+                          % (len(live), len(dupes), len(not_billable), len(lapsed))),
+        })
+
+    def _accounts_merge_ep(self, u, body):
+        """Merge two records that are one customer. Never a delete.
+
+        The duplicate is kept as a tombstone pointing at the survivor, so a link, a report or a
+        printed document that names the old account still resolves — that history is exactly what
+        this stage exists to protect. Children are repointed by name AND given the survivor's id, so
+        the next stage can stop joining on a spelling.
+
+        Refused outright when the two carry different tax codes: those are different legal entities
+        and merging them would fuse two customers' contracts, which nothing downstream could undo.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Merging customers is an Approver (management) action — it moves every "
+                             "deal, contact and project attached to one of them.", 403)
+        pid = str((body or {}).get("primaryId") or "").strip()
+        did = str((body or {}).get("duplicateId") or "").strip()
+        primary = db.get_collection_item("crm_companies", pid) if pid else None
+        dup = db.get_collection_item("crm_companies", did) if did else None
+        if not primary or not dup:
+            return self._err("Both accounts must exist.", 404)
+
+        children = {l["coll"]: db.list_collection(l["coll"]) for l in account.CHILD_LINKS}
+        plan = account.merge_plan(primary, dup, children)
+        if not plan["ok"]:
+            return self._err(plan["why"], 400)
+        if not (body or {}).get("confirm"):
+            return self._json({"ok": True, "preview": True, "plan": plan})
+
+        moved = 0
+        for m in plan["moves"]:
+            rows = {r.get("id"): r for r in children[m["coll"]]}
+            for rid in m["ids"]:
+                row = rows.get(rid)
+                if not row:
+                    continue
+                row[m["nameField"]] = primary.get("name")
+                row[m["idField"]] = primary.get("id")
+                db.put_collection_item(m["coll"], row)
+                moved += 1
+        for k, v in (plan["fills"] or {}).items():
+            primary[k] = v
+        db.put_collection_item("crm_companies", primary)
+        dup["mergedInto"] = primary.get("id")
+        dup["mergedAt"] = self._utc_now()
+        dup["mergedBy"] = u.get("name") or u.get("email") or ""
+        db.put_collection_item("crm_companies", dup)
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Merged customer account",
+            "target": "crm_companies/" + str(dup.get("id")),
+            "detail": "%s -> %s; %d record(s) moved; filled %s"
+                      % (dup.get("name"), primary.get("name"), moved,
+                         ", ".join(sorted(plan["fills"].keys())) or "nothing"),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "merged": True, "moved": moved,
+                           "primaryId": primary.get("id"), "duplicateId": dup.get("id"),
+                           "filled": sorted(plan["fills"].keys())})
 
     def _quote_number_ep(self, u, body):
         """Give this deal its quotation number, once and for good.

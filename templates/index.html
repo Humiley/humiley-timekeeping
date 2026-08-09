@@ -14926,15 +14926,35 @@ const _QA_SPECS = {
     { k: 'ptype', label: 'Product / Service type', type: 'select', options: ['', 'PMC', 'ENG', 'SAL', 'CSM', 'Products', 'Other'] },
     { k: 'owner', label: 'Owner (sales rep)', type: 'select', options: 'employees' },
     { k: 'closeDate', label: 'Expected close', type: 'date' }, { k: 'tags', label: 'Tags (comma-separated)' }, { k: 'activityType', label: 'Next activity', type: 'select', options: ['', 'Call', 'Email', 'Meeting', 'To-do'] }, { k: 'activityDate', label: 'Activity date', type: 'date' }, { k: 'note', label: 'Notes' }] },
+  /* The account master. The legal block is what a Vietnamese VAT invoice must say about the BUYER —
+     the portal knows the tax code of every vendor it PAYS and, until now, of nobody who pays it. The
+     commercial block is what decides when a payment is late, which is currently in nobody's head in
+     a consistent form. Nothing downstream (contract, billing, receivable) can exist without these. */
   crm_companies: { title: 'Company / Account', coll: 'crm_companies', reload: 'crm_companies', fields: [
-    { k: 'name', label: 'Company name' },
+    { k: 'name', label: 'Company name (trading)' },
+    { k: 'legalNameVn', label: 'Legal name — Vietnamese' },
+    { k: 'legalNameEn', label: 'Legal name — English' },
+    { k: 'mst', label: 'Tax code (MST)' },
+    { k: 'regAddress', label: 'Registered address' },
+    { k: 'bizRegNo', label: 'Business registration no.' },
+    { k: 'repName', label: 'Legal representative' }, { k: 'repTitle', label: 'Representative title' },
     { k: 'industry', label: 'Industry', type: 'select', options: ['Construction', 'Manufacturing', 'Real Estate', 'Infrastructure', 'Technology', 'Government', 'Retail', 'Energy', 'Other'] },
-    { k: 'website', label: 'Website', type: 'url' }, { k: 'phone', label: 'Phone' }, { k: 'address', label: 'Address' },
-    { k: 'owner', label: 'Account owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
+    { k: 'accountType', label: 'Account type', type: 'select', options: ['Customer', 'Prospect', 'Main contractor', 'Consultant', 'Partner'] },
+    { k: 'vatProfile', label: 'VAT profile', type: 'select', options: ['Domestic (standard)', 'Export-processing enterprise (EPE)', 'Exempt'] },
+    { k: 'termsCode', label: 'Payment terms', type: 'select', options: ['NET0', 'NET15', 'NET30', 'NET45', 'NET60', 'NET90'] },
+    { k: 'dueBasis', label: 'Payment clock starts on', type: 'select', options: ['Invoice date', 'Acceptance (biên bản nghiệm thu)', 'Customer AP receives the invoice'] },
+    { k: 'creditLimit', label: 'Credit limit (₫)', type: 'money' },
+    { k: 'einvEmail', label: 'E-invoice / AP email' },
+    { k: 'website', label: 'Website', type: 'url' }, { k: 'phone', label: 'Phone' }, { k: 'address', label: 'Correspondence address' },
+    { k: 'owner', label: 'Account owner', type: 'select', options: 'employees' },
+    { k: 'note', label: 'Notes', type: 'textarea' }] },
   crm_contacts: { title: 'Contact', coll: 'crm_contacts', reload: 'crm_contacts', fields: [
     { k: 'name', label: 'Full name' }, { k: 'title', label: 'Job title' }, { k: 'company', label: 'Account / Company', type: 'combo', dyn: 'companies' },
     { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
-    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes' }] },
+    /* The person who accepts the work is never the person who pays for it. Without a role, a
+       payment chase goes to the site engineer and an acceptance request goes to accounts. */
+    { k: 'role', label: 'Role at the account', type: 'select', options: ['Project manager', 'QA / Validation', 'Procurement', 'Accounts payable', 'Site contact', 'Management', 'Other'] },
+    { k: 'owner', label: 'Owner', type: 'select', options: 'employees' }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   crm_leads: { title: 'Lead', coll: 'crm_leads', reload: 'crm_leads', fields: [
     { k: 'name', label: 'Lead name / contact' }, { k: 'company', label: 'Account / Company', type: 'combo', dyn: 'companies' }, { k: 'email', label: 'Email' }, { k: 'phone', label: 'Phone' },
     { k: 'source', label: 'Source', type: 'select', options: ['Website', 'Referral', 'Cold call', 'Event', 'LinkedIn', 'Email campaign', 'Partner', 'Other'] },
