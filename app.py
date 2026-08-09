@@ -43,6 +43,7 @@ import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hou
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
+import sales_contract   # advance recovery, retention, and the tax points it refuses to choose (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3787,6 +3788,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._timesheet_ep(uu, qs))
         if path == "/api/hr/working-time":
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
+        if path == "/api/sales/compliance":
+            return self._guard(lambda uu: self._sales_compliance_ep(uu, qs), manager=True)
         if path == "/api/sales/accounts/review":
             return self._guard(lambda uu: self._accounts_review_ep(uu, qs), manager=True)
         if path == "/api/hr/minwage":
@@ -9533,6 +9536,92 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s rev %s · %s" % (doc.get("quoteNo") or "(no number)", doc.get("rev") or 0,
                                           _money_vnd(sales_doc.totals(doc.get("lines"))["amount"])),
             "ts": self._utc_now()})
+
+    def _sales_compliance_ep(self, u, qs):
+        """Is the revenue side fit to be looked at by a tax inspector or a client auditor?
+
+        The HR audit pack answers this for the people side. Nothing answered it for the money side,
+        because until this week there was no money side to answer for. Five questions, each one a
+        thing somebody has to go and fix rather than a score:
+
+          · can we legally bill our customers at all — legal name, MST, registered address
+          · does the portal know its OWN legal identity, which every document it prints must state
+          · which contracts cannot have a VAT figure stated because nobody has recorded the tax
+            treatment of retention and of advances
+          · which quotations went out and were never closed, so the win rate is measured on a subset
+          · what this portal explicitly does NOT do, stated plainly so nobody assumes otherwise
+
+        MANAGEMENT and above: it lists every customer's tax identity and every contract value.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required — this lists every "
+                             "customer's tax identity and every contract value.", 403)
+        today = self._vn_day()
+        settings = self._company_settings()
+
+        # 1. Customers we cannot bill.
+        accs = [a for a in db.list_collection("crm_companies") if not a.get("mergedInto")]
+        cannot_bill = []
+        for a in accs:
+            r = account.invoice_readiness(a)
+            if not r["ready"]:
+                cannot_bill.append({"id": a.get("id"), "name": a.get("name"),
+                                    "missing": [m["label"] for m in r["missing"]], "why": r["why"]})
+
+        # 2. Our own legal identity — a document that cannot name its seller is not a document.
+        seller = company.review(settings) if hasattr(company, "review") else {}
+
+        # 3. Contracts with no tax treatment recorded.
+        contracts = db.list_collection("sales_contracts") if "sales_contracts" in self.COLLECTIONS else []
+        no_tax = []
+        for c in contracts:
+            v = sales_contract.vat_ready(c, settings)
+            if not v["ready"]:
+                no_tax.append({"id": c.get("id"), "name": c.get("title") or c.get("contractNo"),
+                               "missing": [m["question"] for m in v["missing"]]})
+        tax_settings = sales_contract.vat_ready({}, settings)
+
+        # 4. Quotations issued and never closed. A win rate measured only on the ones somebody
+        #    remembered to close is measured on a subset, and always flatters.
+        quotes = db.list_collection("sales_quotes")
+        stale = [{"id": q.get("id"), "quoteNo": q.get("quoteNo"), "title": q.get("title"),
+                  "accountName": q.get("accountName"), "validUntil": q.get("validUntil") or "",
+                  "owner": q.get("owner") or ""}
+                 for q in quotes
+                 if q.get("status") == sales_doc.ISSUED
+                 and q.get("validUntil") and str(q["validUntil"])[:10] < today]
+        decided = [q for q in quotes if q.get("status") in (sales_doc.ACCEPTED, sales_doc.LOST)]
+        no_reason = [q.get("quoteNo") for q in quotes
+                     if q.get("status") == sales_doc.LOST and not str(q.get("lostReason") or "").strip()]
+
+        findings = (len(cannot_bill) + len(no_tax) + len(stale) + len(no_reason)
+                    + (0 if tax_settings["ready"] else 1)
+                    + (0 if seller.get("ok", True) else 1))
+        return self._json({
+            "ok": True, "asOf": today, "findings": findings,
+            "cannotBill": cannot_bill,
+            "seller": seller,
+            "taxTreatment": tax_settings,
+            "contractsWithoutTaxTreatment": no_tax,
+            "quotationsPastValidity": stale,
+            "lostWithoutReason": no_reason,
+            "decidedQuotations": len(decided),
+            "unresolved": ([dict(x) for x in sales_contract.UNRESOLVED]
+                           + [dict(x) for x in account.UNVERIFIED]),
+            "doesNotDo": [
+                "Issue a Vietnamese VAT e-invoice. The legal original is the provider-issued, "
+                "digitally signed XML under Decree 123/2020 and Circular 78/2021. Nothing here can "
+                "mint a ký hiệu or a số hóa đơn, and a test fails the build if that changes.",
+                "Verify a legal invoice number typed in by a person. Without the provider's XML "
+                "behind it, it is recorded as stated, never as confirmed.",
+                "Choose a VAT rate. The seller picks from the rates in force and the document "
+                "records what was picked.",
+                "Decide when retention or an advance becomes taxable. Those are your accountant's "
+                "answers; until they are recorded no VAT figure is stated at all.",
+            ],
+            "statement": ("%d thing(s) to answer on the revenue side." % findings
+                          if findings else "Nothing outstanding on the revenue side."),
+        })
 
     def _accounts_review_ep(self, u, qs):
         """The state of the customer master — the screen that tells you what Stage 1 still needs.
