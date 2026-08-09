@@ -1248,6 +1248,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-crm-dashboard" class="view"><div id="crm-dashboard-root"></div></div>
 <div id="view-crm-pipeline" class="view"><div class="page-header"><div><h1>Pipeline</h1><p>Your deals across every sales stage</p></div></div><div id="crm-pipeline-root"></div></div>
 <div id="view-crm-leads" class="view"><div class="page-header"><div><h1>Leads</h1><p>Inbound and prospected leads to qualify</p></div></div><div id="crm-leads-root"></div></div>
+<div id="view-crm-compliance" class="view"><div class="page-header"><div><h1>Sales Compliance</h1><p>What has to be true before you can bill a customer — and what this portal will never claim</p></div></div><div id="crm-compliance-root"></div></div>
 <div id="view-crm-quotes" class="view"><div class="page-header"><div><h1>Quotations</h1><p>Every quotation you have issued, what happened to it, and why</p></div></div><div id="crm-quotes-root"></div></div>
 <div id="view-crm-companies" class="view"><div class="page-header"><div><h1>Companies</h1><p>The accounts you sell to</p></div></div><div id="crm-companies-root"></div></div>
 <div id="view-crm-contacts" class="view"><div class="page-header"><div><h1>Contacts</h1><p>People at your accounts</p></div></div><div id="crm-contacts-root"></div></div>
@@ -11805,11 +11806,13 @@ function _hrEnsureTabBar(viewId) {
 }
 
 /* ══ Sales / CRM hub — one tabbed page (Sales Dashboard stays pinned separately) ══ */
-const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP']];
-const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)' };
-const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets']);
+const _CRM_TABS = [['crm-overview', 'Overview'], ['crm-leads', 'Leads'], ['crm-pipeline', 'Pipeline'], ['crm-quotes', 'Quotations'], ['crm-companies', 'Companies'], ['crm-contacts', 'Contacts'], ['crm-products', 'Products'], ['crm-targets', 'AOP'], ['crm-compliance', 'Compliance']];
+const _CRM_TAB_TITLE = { 'crm-overview': 'CRM', 'crm-pipeline': 'Pipeline', 'crm-quotes': 'Quotations', 'crm-leads': 'Leads', 'crm-companies': 'Companies', 'crm-contacts': 'Contacts', 'crm-products': 'Products', 'crm-targets': 'Annual Operating Plan (AOP)', 'crm-compliance': 'Sales Compliance' };
+const _CRM_HUB_VIEWS = new Set(['crm-overview', 'crm-pipeline', 'crm-leads', 'crm-quotes', 'crm-companies', 'crm-contacts', 'crm-products', 'crm-targets', 'crm-compliance']);
 /* The Targets tab is a Sales-Manager tool — only Approver (management) level and above see it. */
-function _crmTabVisible(id) { return id !== 'crm-targets' || (typeof _crmSeeAll === 'function' && _crmSeeAll()); }
+/* AOP and Compliance are management tools — the second lists every customer's tax identity and
+   every contract value, so it is gated exactly like the endpoint behind it. */
+function _crmTabVisible(id) { return (id !== 'crm-targets' && id !== 'crm-compliance') || (typeof _crmSeeAll === 'function' && _crmSeeAll()); }
 function _crmTabBar(active) {
   return '<div class="tabs" style="margin:0 0 16px" data-html2canvas-ignore="true">' + _CRM_TABS.filter(t => _crmTabVisible(t[0])).map(t => '<button class="tab' + (t[0] === active ? ' active' : '') + '" onclick="showView(\'' + t[0] + '\',null,\'' + _CRM_TAB_TITLE[t[0]] + '\')">' + _t(t[1]) + '</button>').join('') + '</div>';
 }
@@ -16661,6 +16664,109 @@ function _crmBillable(c) {
            why: names.length ? (_t2('Cannot bill yet: ', 'Chưa thể xuất hóa đơn: ') + names.join(', ')) : _t2('Ready to bill.', 'Đủ điều kiện xuất hóa đơn.') };
 }
 
+/* ═══ Sales Compliance ══════════════════════════════════════════════════════════════════════════
+   Two endpoints had no door before this screen: /api/sales/compliance and
+   /api/sales/accounts/review. A check nobody can reach is a check nobody runs.
+
+   It shows work, not a score. Every block is something a named person has to go and do, and the
+   biggest one — the tax treatment — blocks a VAT figure on every contract until it is answered. */
+async function crmRenderCompliance() {
+  const root = document.getElementById('crm-compliance-root'); if (!root) return;
+  root.innerHTML = tkSkeleton('kpi', 4);
+  let c, a;
+  try { [c, a] = await Promise.all([tkApi('/api/sales/compliance'), tkApi('/api/sales/accounts/review')]); }
+  catch (e) {
+    root.innerHTML = '<div class="card" style="padding:18px;font-size:13px;color:#B91C1C">' +
+      _crmEsc(_t2('Could not load the compliance check', 'Không tải được phần kiểm tra tuân thủ') + ': ' + _errMsg(e)) + '</div>';
+    return;
+  }
+  const box = (title, body, tone) => '<div class="card" style="padding:14px 16px;margin-bottom:14px' +
+    (tone ? ';border-left:3px solid ' + tone : '') + '"><div class="card-title" style="margin-bottom:8px">' +
+    _crmEsc(title) + '</div>' + body + '</div>';
+  const li = rows => '<ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">' +
+    rows.map(r => '<li>' + r + '</li>').join('') + '</ul>';
+  const none = msg => '<div style="font-size:12.5px;color:var(--emerald)">✓ ' + _crmEsc(msg) + '</div>';
+
+  const kpis = _hrKpiRow([
+    _hrKpi(_t2('To answer', 'Cần xử lý'), c.findings, c.findings ? '#B91C1C' : 'var(--emerald)'),
+    _hrKpi(_t2('Cannot be billed', 'Chưa thể xuất hóa đơn'), (c.cannotBill || []).length, (c.cannotBill || []).length ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Duplicate customers', 'Khách hàng trùng'), (a.duplicates || []).length, (a.duplicates || []).length ? '#B45309' : 'var(--emerald)'),
+    _hrKpi(_t2('Quotes past validity', 'Báo giá quá hạn'), (c.quotationsPastValidity || []).length, (c.quotationsPastValidity || []).length ? '#B45309' : 'var(--emerald)')
+  ]);
+
+  // The blocker, first, because nothing downstream can state a VAT figure until it is answered.
+  const tax = c.taxTreatment || {};
+  const taxBox = tax.ready
+    ? box(_t2('Tax treatment', 'Xử lý thuế'), none(_t2('Recorded — a VAT figure can be stated.', 'Đã ghi nhận — có thể ghi số thuế GTGT.')), 'var(--emerald)')
+    : box(_t2('Tax treatment — nothing can be billed with VAT until this is answered', 'Xử lý thuế — chưa thể xuất hóa đơn GTGT cho đến khi có câu trả lời'),
+        '<div style="font-size:13px;margin-bottom:8px">' + _crmEsc(tax.why || '') + '</div>' +
+        li((tax.missing || []).map(m => _crmEsc(m.question))) +
+        '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _crmEsc(tax.whoDecides || '') + '</div>', '#B91C1C');
+
+  const billBox = box(_t2('Customers you cannot legally bill', 'Khách hàng chưa đủ điều kiện xuất hóa đơn'),
+    (c.cannotBill || []).length
+      ? li(c.cannotBill.map(x => '<a href="#" onclick="crmOpenAccount(\'' + x.id + '\');return false" style="color:var(--navy)">' +
+          _crmEsc(x.name || '') + '</a> — <span style="color:var(--text-light)">' + _crmEsc((x.missing || []).join(', ')) + '</span>'))
+      : none(_t2('Every customer carries a legal name, a tax code and a registered address.', 'Mọi khách hàng đều có tên pháp nhân, mã số thuế và địa chỉ đăng ký.')),
+    (c.cannotBill || []).length ? '#B45309' : '');
+
+  const dupBox = box(_t2('Customers recorded twice', 'Khách hàng bị ghi trùng'),
+    (a.duplicates || []).length
+      ? li(a.duplicates.map(g => _crmEsc(g.accounts.map(x => x.name).join('  ·  ')) +
+          ' <span style="font-size:11px;color:var(--text-light)">(' + _crmEsc(g.reason === 'mst' ? _t2('same tax code', 'trùng mã số thuế') : _t2('same name', 'trùng tên')) + ')</span>' +
+          ' <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="crmMergePreview(\'' + g.accounts[0].id + '\',\'' + g.accounts[1].id + '\')">' + _t2('Merge…', 'Gộp…') + '</button>'))
+      : none(_t2('No duplicate customers found.', 'Không có khách hàng trùng.')),
+    (a.duplicates || []).length ? '#B45309' : '');
+
+  const staleBox = box(_t2('Quotations past their validity and still open', 'Báo giá quá hạn nhưng chưa đóng'),
+    (c.quotationsPastValidity || []).length
+      ? li(c.quotationsPastValidity.map(q => '<b>' + _crmEsc(q.quoteNo || '') + '</b> · ' + _crmEsc(q.title || '') +
+          ' · ' + _crmEsc(q.accountName || '') + ' <span style="color:var(--text-light)">' + _crmEsc(q.validUntil) + '</span>'))
+      : none(_t2('Nothing has been left open past its validity.', 'Không có báo giá nào quá hạn còn mở.')),
+    (c.quotationsPastValidity || []).length ? '#B45309' : '') +
+    ((c.lostWithoutReason || []).length
+      ? box(_t2('Losses recorded with no reason', 'Thua nhưng chưa ghi lý do'),
+          li(c.lostWithoutReason.map(n => _crmEsc(n || '(no number)'))) +
+          '<div style="font-size:11.5px;color:var(--text-light);margin-top:6px">' +
+          _crmEsc(_t2('These predate the rule that a loss needs a reason. Your win rate is charted on all of them.', 'Các bản ghi này có trước quy định bắt buộc ghi lý do. Tỷ lệ thắng đang tính cả chúng.')) + '</div>', '#B45309')
+      : '');
+
+  const notBox = box(_t2('What this portal does NOT do', 'Những việc cổng thông tin KHÔNG làm'),
+    li((c.doesNotDo || []).map(x => _crmEsc(x))) +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' +
+    _crmEsc(_t2('Enforced by tests, not by policy — the build fails if any of it becomes possible.', 'Được kiểm soát bằng test, không chỉ bằng quy định — build sẽ hỏng nếu điều đó trở nên khả thi.')) + '</div>', 'var(--navy)');
+
+  const openBox = (c.unresolved || []).length
+    ? box(_t2('Questions nobody has answered yet', 'Câu hỏi chưa có lời giải'),
+        li(c.unresolved.map(u => '<b>' + _crmEsc(u.topic) + '</b> — ' + _crmEsc(u.action || u.question || ''))), '#8B5CF6')
+    : '';
+
+  root.innerHTML = kpis +
+    '<div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' + _crmEsc(c.statement || '') +
+    ' &nbsp;·&nbsp; ' + _crmEsc(_t2('as at ', 'tính đến ') + (c.asOf || '')) + '</div>' +
+    taxBox + billBox + dupBox + staleBox + notBox + openBox;
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
+}
+
+/* Merging two customers moves every deal, contact and project attached to one of them. It previews
+   first and states what will move, because it is not the kind of thing to find out afterwards. */
+async function crmMergePreview(primaryId, duplicateId) {
+  let plan;
+  try { plan = (await tkApi('/api/sales/accounts/merge', { method: 'POST', body: { primaryId: primaryId, duplicateId: duplicateId } })).plan; }
+  catch (e) { toast(_errMsg(e), 'error', 7000); return; }
+  const ok = await tkConfirm(
+    _t2('Merge these two customers?', 'Gộp hai khách hàng này?') + '\n\n' + (plan.why || '') +
+    '\n\n' + _t2('The duplicate is kept as a tombstone, never deleted, so any document that names it still resolves.',
+                   'Bản trùng được giữ lại làm bản ghi mộ, không xoá, để mọi tài liệu có tên nó vẫn tra cứu được.'));
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/sales/accounts/merge', { method: 'POST', body: { primaryId: primaryId, duplicateId: duplicateId, confirm: true } });
+    toast(_t2('Merged — ', 'Đã gộp — ') + r.moved + ' ' + _t2('record(s) moved', 'bản ghi được chuyển'));
+    ['crm_companies', 'crm_deals', 'crm_contacts', 'crm_leads', 'pm_projects'].forEach(k => { try { _COLL_TS[k] = 0; } catch (e) {} });
+    crmRenderCompliance();
+  } catch (e) { toast(_errMsg(e), 'error', 7000); }
+}
+
 /* ═══ Quotations ════════════════════════════════════════════════════════════════════════════════
    The register the sell side never had. A quotation used to be lines on a deal that the next quote
    overwrote, so there was no list of what you had offered, no way to reprint what a customer is
@@ -20452,6 +20558,7 @@ function showView(id, navEl, title) {
   if (id === 'crm-dashboard') { try { crmRenderDashboard(); } catch (e) { console.warn('crm-dash:', e.message); } }
   if (id === 'crm-pipeline') { try { crmRenderPipeline(); } catch (e) { console.warn('crm-pipe:', e.message); } }
   if (id === 'crm-leads') { try { crmRenderLeads(); } catch (e) { console.warn('crm-leads:', e.message); } }
+  if (id === 'crm-compliance') { try { crmRenderCompliance(); } catch (e) { console.warn('crm-compliance:', e.message); } }
   if (id === 'crm-quotes') { try { crmRenderQuotes(); } catch (e) { console.warn('crm-quotes:', e.message); } }
   if (id === 'crm-companies') { try { crmRenderCompanies(); } catch (e) { console.warn('crm-co:', e.message); } }
   if (id === 'crm-contacts') { try { crmRenderContacts(); } catch (e) { console.warn('crm-ct:', e.message); } }
