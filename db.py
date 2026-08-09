@@ -169,6 +169,18 @@ def init_db():
             key_fp    TEXT                           -- fingerprint of the sealing key (key-change ≠ tamper)
         );
 
+        -- Document number sequences. One row per (series, year); `n` is the last number ISSUED.
+        -- The counter lives in the database rather than being derived from the documents because a
+        -- number must be unique across everybody, and a browser can only see its own rows: payment
+        -- requests numbered themselves client-side from `max(mine) + 1`, so on a SELF_OWNED
+        -- collection every user's first request was PR-YYYY-001.
+        CREATE TABLE IF NOT EXISTS doc_counters (
+            series TEXT    NOT NULL,
+            year   INTEGER NOT NULL,
+            n      INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (series, year)
+        );
+
         -- 21 CFR Part 11 signature PIN (second signing component). Salted PBKDF2 hash only;
         -- kept in its own table so it can never leak through a `SELECT * FROM employees` read path.
         CREATE TABLE IF NOT EXISTS esign_pin (
@@ -1623,6 +1635,54 @@ def set_setting(key, value):
                  (key, json.dumps(value)))
     conn.commit()
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Document numbers
+# ---------------------------------------------------------------------------
+
+def next_doc_no(series, year, floor_fn=None):
+    """Allocate the next number in a series, atomically. Returns the integer.
+
+    BEGIN IMMEDIATE takes the write lock before the read, so two concurrent creates cannot both see
+    the same `n` and both claim it. This is the whole point of the function: the arithmetic is
+    trivial, the exclusion is not, and doing it in the browser is how the payment-request numbers
+    ended up colliding by construction.
+
+    `floor_fn` is called ONLY the first time a (series, year) is allocated, and returns the highest
+    number the existing documents already show. That is how a live database is adopted without
+    re-issuing a number a supplier or a customer is already holding a PDF of. It is a callable
+    rather than a value so the scan does not run on every create for the rest of the year.
+    """
+    conn = get_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT n FROM doc_counters WHERE series = ? AND year = ?",
+                           (series, int(year))).fetchone()
+        if row is None:
+            floor = 0
+            if floor_fn is not None:
+                try:
+                    floor = int(floor_fn() or 0)
+                except Exception:
+                    floor = 0          # a bad scan must not block the document; it can only re-use
+            nxt = max(0, floor) + 1    # a number, which the duplicate report will then surface
+            conn.execute("INSERT INTO doc_counters (series, year, n) VALUES (?,?,?)",
+                         (series, int(year), nxt))
+        else:
+            nxt = int(row["n"]) + 1
+            conn.execute("UPDATE doc_counters SET n = ? WHERE series = ? AND year = ?",
+                         (nxt, series, int(year)))
+        conn.commit()
+        return nxt
+    finally:
+        conn.close()
+
+
+def peek_doc_no(series, year):
+    """The last number issued, without allocating one. For the admin/health view only."""
+    row = _row("SELECT n FROM doc_counters WHERE series = ? AND year = ?", (series, int(year)))
+    return int(row["n"]) if row else 0
 
 
 # ── Web Push subscriptions (OS notifications) ──

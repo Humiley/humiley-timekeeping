@@ -4,12 +4,17 @@ import threading
 import db
 
 
-def _count(reqno):
-    return sum(1 for x in db.list_collection("payments") if x.get("reqNo") == reqno)
+def _count(tag):
+    """Count by PAYEE, not by reqNo.
+
+    The document number is allocated by the server now (a client-supplied one is discarded — see
+    tests/test_doc_number_api.py), so it can no longer be used to find the row a test created. The
+    payee is still the client's, so it is the handle that survives."""
+    return sum(1 for x in db.list_collection("payments") if x.get("payee") == tag)
 
 
-def _pay(reqno, amount=1000):
-    return {"reqNo": reqno, "payee": "Vendor X", "amount": amount, "purpose": "parts",
+def _pay(tag, amount=1000):
+    return {"payee": tag, "amount": amount, "purpose": "parts",
             "attachment": "data:application/pdf;base64,QQ==", "status": "Submitted"}
 
 

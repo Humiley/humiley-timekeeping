@@ -40,6 +40,7 @@ import contract_doc      # Labour Code Art. 21 particulars — drafting the cont
 import employment_letter # the confirmation letter, and what its PURPOSE lets it disclose (pure)
 import attendance_days  # what each day WAS: worked / leave / holiday / rest / absent
 import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hours and the rest owed (pure)
+import doc_number       # controlled-document numbering: the format and the series (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -7336,6 +7337,37 @@ class Handler(BaseHTTPRequestHandler):
                        + (" · net " + str(item.get("net")) if item.get("net") is not None else "")),
             "ts": self._utc_now()})
 
+    # The field each numbered collection keeps its document number in. One place, so the allocator
+    # and every reader agree on where to look.
+    DOC_NO_FIELD = {"payments": "reqNo"}
+
+    def _assign_doc_no(self, name, item):
+        """Stamp a server-allocated document number, replacing whatever the client sent.
+
+        The client's number is DISCARDED rather than trusted. `_payNextNo` computed it in the
+        browser as max(the rows this browser can see) + 1, and payments is SELF_OWNED — a staff
+        member sees only their own — so every user's first request was PR-YYYY-001 and nothing on
+        the server noticed. Honouring a client-supplied number would keep that door open for anyone
+        who can post JSON.
+
+        Silent no-op for collections that are not numbered documents.
+        """
+        prefix = doc_number.series_for(name)
+        if not prefix:
+            return None
+        field = self.DOC_NO_FIELD.get(name, "reqNo")
+        year = int(self._vn_day()[:4])
+
+        def _floor():
+            # First allocation of this series/year only: never re-issue a number the data already
+            # shows, whatever it was numbered by before.
+            return doc_number.highest(
+                doc_number.numbers_in(db.list_collection(name), field), prefix, year)
+
+        n = db.next_doc_no(prefix, year, _floor)
+        item[field] = doc_number.format_no(prefix, year, n)
+        return item[field]
+
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
@@ -7422,6 +7454,14 @@ class Handler(BaseHTTPRequestHandler):
             item["actor"] = u.get("name") or "System"
             item["actorId"] = u.get("id") or ""
             item["ts"] = self._utc_now()   # server-stamp the time — a client-supplied ts could backdate an event
+        # When a CRM record was created. Nothing stamped it, and both CRM period filters read a date
+        # off the record — _crmLeadDate reads date|created|createdDate|ts and the Add Lead form
+        # writes none of them. So selecting any period on the Leads screen, even "This year", hid
+        # every lead including one created seconds earlier. A lead you cannot see is a lead nobody
+        # calls. Server-stamped, not client-supplied: a create date is evidence of when work
+        # arrived, and a browser that could choose it could backdate a lead out of an aging report.
+        if name.startswith("crm_"):
+            item["ts"] = self._utc_now()
         if name.startswith("pm_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
@@ -7575,6 +7615,9 @@ class Handler(BaseHTTPRequestHandler):
                 _prev = _IDEM.get(_ik)
                 if _prev and time.time() - _prev[1] < _IDEM_WINDOW:
                     return self._json({"ok": True, "item": _prev[0], "idempotent": True})
+                # Numbered AFTER the idempotency check, so a retried submit returns the first
+                # record rather than burning a second number and leaving a hole in the sequence.
+                self._assign_doc_no(name, item)
                 created = db.put_collection_item(name, item)
                 _IDEM[_ik] = (created, time.time())
                 if len(_IDEM) > 2000:                                  # bound memory: drop entries past the window
@@ -7583,6 +7626,7 @@ class Handler(BaseHTTPRequestHandler):
                         _IDEM.pop(_k, None)
             self._finsp_file(name, created)
             return self._json({"ok": True, "item": created})
+        self._assign_doc_no(name, item)
         _created = db.put_collection_item(name, item)
         # A mention is the ONLY thing in the conversation that reaches somebody's phone. Not every
         # message, not a reply — a direct mention. An engineer standing on a site who gets one false
