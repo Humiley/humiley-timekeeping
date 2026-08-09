@@ -276,6 +276,84 @@ def merge_plan(primary, duplicate, children_by_coll):
     }
 
 
+def resolve_name(name, accounts):
+    """Which account is this free-text name? An answer, an honest "I don't know", or "which one?".
+
+    Exact name wins over a folded match, and a folded match only counts when it is UNIQUE. Anything
+    ambiguous returns candidates and no decision, because the whole point of the backfill is to stop
+    the system joining records on a guess — replacing a bad guess with a confident one would be
+    worse than the free text it is fixing.
+
+    A name that resolves to a tombstone follows the pointer to the survivor: that is what the
+    tombstone is for.
+    """
+    n = str(name or "").strip()
+    if not n:
+        return {"status": "blank", "accountId": None, "candidates": []}
+    by_id = {a.get("id"): a for a in (accounts or []) if a.get("id")}
+
+    def survivor(a):
+        seen = set()
+        while a and a.get("mergedInto") and a["mergedInto"] not in seen:
+            seen.add(a["mergedInto"])
+            a = by_id.get(a["mergedInto"])
+        return a
+
+    exact = [a for a in (accounts or []) if str(a.get("name") or "").strip() == n]
+    if len(exact) == 1:
+        s = survivor(exact[0])
+        return {"status": "exact", "accountId": s and s.get("id"), "candidates": []}
+    if len(exact) > 1:
+        # Two live accounts with the identical name. Merge them first; do not pick one.
+        return {"status": "ambiguous", "accountId": None,
+                "candidates": [{"id": a.get("id"), "name": a.get("name")} for a in exact]}
+    key = fold_name(n)
+    if not key:
+        return {"status": "unmatched", "accountId": None, "candidates": []}
+    folded = [a for a in (accounts or []) if fold_name(a.get("name")) == key]
+    live = [a for a in folded if not a.get("mergedInto")]
+    pool = live or folded
+    if len(pool) == 1:
+        s = survivor(pool[0])
+        return {"status": "folded", "accountId": s and s.get("id"), "candidates": []}
+    if len(pool) > 1:
+        return {"status": "ambiguous", "accountId": None,
+                "candidates": [{"id": a.get("id"), "name": a.get("name")} for a in pool]}
+    return {"status": "unmatched", "accountId": None, "candidates": []}
+
+
+def backfill_plan(accounts, children_by_coll):
+    """What linking the existing data to real account ids would do, before it does it.
+
+    Every row that cannot be resolved is REPORTED, never guessed. An exception list somebody has to
+    work through is the honest output here; a silent best guess would bake today's typos into the
+    joins and be invisible forever after.
+    """
+    link, ex, already, blank = [], [], 0, 0
+    for l in CHILD_LINKS:
+        for r in (children_by_coll or {}).get(l["coll"]) or []:
+            if r.get(l["idField"]):
+                already += 1
+                continue
+            nm = str(r.get(l["nameField"]) or "").strip()
+            res = resolve_name(nm, accounts)
+            if res["status"] == "blank":
+                blank += 1
+            elif res["accountId"]:
+                link.append({"coll": l["coll"], "id": r.get("id"), "idField": l["idField"],
+                             "name": nm, "accountId": res["accountId"], "how": res["status"]})
+            else:
+                ex.append({"coll": l["coll"], "id": r.get("id"), "name": nm,
+                           "reason": res["status"], "candidates": res["candidates"]})
+    return {
+        "link": link, "exceptions": ex, "alreadyLinked": already, "noName": blank,
+        "why": "%d record(s) can be linked; %d need a human (%d ambiguous, %d with no matching "
+               "account); %d already linked and %d carry no customer name."
+               % (len(link), len(ex), len([e for e in ex if e["reason"] == "ambiguous"]),
+                  len([e for e in ex if e["reason"] == "unmatched"]), already, blank),
+    }
+
+
 # ── the qualification pack ───────────────────────────────────────────────────────────────────────
 # A pharma or electronics customer audits its contractors. An expired certificate on their file is
 # a thing that stops you invoicing, and it expires quietly.

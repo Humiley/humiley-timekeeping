@@ -16570,7 +16570,13 @@ function crmFillCompanies() {
     const dv = deals.filter(d => (d.company || '') === c.name).reduce((s, d) => s + (+d.value || 0), 0);
     const href = _crmHref(c.website);
     const web = c.website ? (href ? '<a href="' + _crmEsc(href) + '" target="_blank" rel="noopener" style="color:var(--navy)">' + _crmEsc(c.website) + '</a>' : _crmEsc(c.website)) : '—';
-    return '<tr><td style="font-weight:600">' + _crmEsc(c.name || '') + '</td><td>' + _crmEsc(c.industry || '—') + '</td><td style="font-size:12px">' + web + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="font-weight:600">' + _crmMoney(dv) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_companies', c.id, 'crm_companies') + '</td></tr>';
+    // The name opens the account. Companies has never had a drill-down: you could not click a
+    // customer to see its contacts, deals, projects and whether it can legally be billed.
+    const rdy = _crmBillable(c);
+    return '<tr><td style="font-weight:600"><a href="#" onclick="crmOpenAccount(\'' + c.id + '\');return false" style="color:var(--navy);text-decoration:none">' + _crmEsc(c.name || '') + '</a>'
+      + (rdy.ready ? '' : '<div style="font-size:10.5px;color:#B45309" title="' + _tkEscA(rdy.why) + '">' + _t2('Cannot be billed yet', 'Chưa đủ điều kiện xuất hóa đơn') + '</div>')
+      + (c.mergedInto ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t2('merged', 'đã gộp') + '</div>' : '')
+      + '</td><td>' + _crmEsc(c.industry || '—') + '</td><td style="font-size:12px">' + web + '</td><td style="font-size:12px">' + _crmEsc(c.phone || '—') + '</td><td>' + _crmEsc(c.owner || '—') + '</td><td style="font-weight:600">' + _crmMoney(dv) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_companies', c.id, 'crm_companies') + '</td></tr>';
   }).join('') : tkEmptyRow(7, 'No companies match your filters.', { icon: 'search' });
 }
 /* ── Contacts ── */
@@ -16631,6 +16637,105 @@ function _crmVatRate(d) {
   return (v === 0 || v) && isFinite(+v) ? +v : _CRM_VAT_DEFAULT;
 }
 function _crmVatMeta(rate) { return _CRM_VAT_RATES.find(r => r.v === +rate) || { v: +rate, label: (+rate) + '%', labelVn: (+rate) + '%', note: '', noteVn: '' }; }
+
+/* Can this customer legally be billed? Mirrors account.invoice_readiness on the server — a
+   Vietnamese VAT invoice must name the buyer's legal name, tax code and registered address, and the
+   portal has always known that about every vendor it PAYS and about nobody who pays it. */
+const _CRM_BILL_FIELDS = [
+  { k: 'legalNameVn', label: 'Legal name (Vietnamese)', labelVn: 'Tên pháp nhân (tiếng Việt)' },
+  { k: 'mst', label: 'Tax code (MST)', labelVn: 'Mã số thuế' },
+  { k: 'regAddress', label: 'Registered address', labelVn: 'Địa chỉ đăng ký' }
+];
+function _crmMstOk(v) {
+  const s = String(v == null ? '' : v).replace(/[^0-9-]/g, '');
+  return /^\d{10}$/.test(s) || /^\d{10}-\d{3}$/.test(s);
+}
+function _crmBillable(c) {
+  c = c || {};
+  const missing = _CRM_BILL_FIELDS.filter(f => !String(c[f.k] || '').trim());
+  const badMst = !!String(c.mst || '').trim() && !_crmMstOk(c.mst);
+  const names = missing.map(f => _LANG.cur === 'vi' ? f.labelVn : f.label)
+    .concat(badMst ? [_t2('the tax code is not a valid format', 'mã số thuế sai định dạng')] : []);
+  return { ready: !names.length, missing: missing, badMst: badMst,
+           why: names.length ? (_t2('Cannot bill yet: ', 'Chưa thể xuất hóa đơn: ') + names.join(', ')) : _t2('Ready to bill.', 'Đủ điều kiện xuất hóa đơn.') };
+}
+
+/* ═══ Account 360 ═══════════════════════════════════════════════════════════════════════════════
+   Everything about one customer on one screen. Until now a company row was a dead end: you could
+   not open an account to see who you know there, what is in the pipeline, what you are building for
+   them, or whether you are able to invoice them at all. */
+async function crmOpenAccount(id) {
+  await Promise.all([tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'),
+                     tkLoadColl('crm_deals'), tkLoadColl('crm_leads')]);
+  try { await tkLoadColl('pm_projects'); } catch (e) {}
+  const all = _HR.crm_companies || [];
+  let c = all.find(x => x.id === id);
+  if (!c) { toast(_t2('Account not found', 'Không tìm thấy khách hàng'), 'warn'); return; }
+  // A tombstone forwards to the survivor — that is what it is for.
+  const seen = new Set();
+  while (c && c.mergedInto && !seen.has(c.mergedInto)) { seen.add(c.mergedInto); c = all.find(x => x.id === c.mergedInto) || c; }
+
+  const mine = (rows, nameField) => (rows || []).filter(r =>
+    (r.accountId && r.accountId === c.id) || String(r[nameField] || '').trim() === String(c.name || '').trim());
+  const contacts = mine(_HR.crm_contacts, 'company');
+  const deals = mine(_HR.crm_deals, 'company');
+  const leads = mine(_HR.crm_leads, 'company');
+  const projects = mine(_HR.pm_projects, 'account');
+  const open = deals.filter(d => (_CRM_OPEN || []).includes(d.stage || 'New'));
+  const won = deals.filter(d => d.stage === 'Won');
+  const rdy = _crmBillable(c);
+
+  const row = (l, v) => v ? '<div style="display:flex;gap:10px;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--line)"><span style="color:var(--text-light);min-width:150px">' + _crmEsc(l) + '</span><span style="font-weight:600">' + _crmEsc(v) + '</span></div>' : '';
+  const list = (rows, render, empty) => rows.length
+    ? '<div>' + rows.slice(0, 12).map(render).join('') + (rows.length > 12 ? '<div style="font-size:11px;color:var(--text-light);padding:6px 0">+ ' + (rows.length - 12) + ' ' + _t2('more', 'nữa') + '</div>' : '') + '</div>'
+    : '<div style="font-size:12px;color:var(--text-light);padding:10px 0">' + _crmEsc(empty) + '</div>';
+
+  const el = document.createElement('div');
+  el.id = 'crmAcctOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:940px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _crmEsc(c.name || '') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' + _crmEsc(c.legalNameVn || c.legalNameEn || '') + (c.mst ? ' · MST ' + _crmEsc(c.mst) : '') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'crmAcctOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    (rdy.ready
+      ? '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(0,176,96,.08);color:var(--emerald)">✓ ' + _crmEsc(rdy.why) + '</div>'
+      : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(180,83,9,.10);color:#B45309">' + _crmEsc(rdy.why) + '</div>') +
+    _hrKpiRow([
+      _hrKpi(_t2('Open pipeline', 'Pipeline đang mở'), _crmMoney(open.reduce((s, d) => s + (+d.value || 0), 0)), '#205090'),
+      _hrKpi(_t2('Won', 'Đã thắng'), _crmMoney(won.reduce((s, d) => s + (+d.value || 0), 0)), 'var(--emerald)'),
+      _hrKpi(_t2('Contacts', 'Người liên hệ'), contacts.length, '#8B5CF6'),
+      _hrKpi(_t2('Projects', 'Dự án'), projects.length, '#3B82F6')
+    ]) +
+    '<div class="grid-2" style="gap:14px">' +
+      '<div class="card" style="padding:14px 16px"><div class="card-title" style="margin-bottom:8px">' + _t2('Legal & commercial', 'Pháp lý & thương mại') + '</div>' +
+        (row(_t2('Legal name (VN)', 'Tên pháp nhân (VN)'), c.legalNameVn) + row(_t2('Legal name (EN)', 'Tên pháp nhân (EN)'), c.legalNameEn) +
+         row(_t2('Tax code', 'Mã số thuế'), c.mst) + row(_t2('Registered address', 'Địa chỉ đăng ký'), c.regAddress) +
+         row(_t2('Business reg. no.', 'Số ĐKKD'), c.bizRegNo) + row(_t2('Representative', 'Người đại diện'), c.repName ? (c.repName + (c.repTitle ? ' — ' + c.repTitle : '')) : '') +
+         row(_t2('Payment terms', 'Điều khoản thanh toán'), c.termsCode) + row(_t2('Clock starts on', 'Bắt đầu tính từ'), c.dueBasis) +
+         row(_t2('Credit limit', 'Hạn mức tín dụng'), c.creditLimit ? _crmMoney(c.creditLimit) : '') +
+         row(_t2('VAT profile', 'Hồ sơ thuế GTGT'), c.vatProfile) + row(_t2('E-invoice / AP email', 'Email hóa đơn / AP'), c.einvEmail) +
+         row(_t2('Account owner', 'Phụ trách'), c.owner) ||
+         '<div style="font-size:12px;color:var(--text-light)">' + _t2('Nothing recorded yet.', 'Chưa có thông tin.') + '</div>') +
+        '</div>' +
+      '<div class="card" style="padding:14px 16px"><div class="card-title" style="margin-bottom:8px">' + _t2('People', 'Người liên hệ') + '</div>' +
+        list(contacts, k => '<div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px"><b>' + _crmEsc(k.name || '') + '</b>' + (k.role ? ' <span class="badge b-navy" style="font-size:9.5px">' + _crmEsc(k.role) + '</span>' : '') + (k.title ? '<div style="color:var(--text-light);font-size:11px">' + _crmEsc(k.title) + '</div>' : '') + (k.email ? '<div style="font-size:11px">' + _crmEsc(k.email) + '</div>' : '') + '</div>',
+             _t2('No contacts recorded at this account.', 'Chưa có người liên hệ.')) + '</div>' +
+    '</div>' +
+    '<div class="grid-2" style="gap:14px;margin-top:14px">' +
+      '<div class="card" style="padding:14px 16px"><div class="card-title" style="margin-bottom:8px">' + _t2('Deals', 'Cơ hội') + '</div>' +
+        list(deals, d => '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px"><span>' + _crmEsc(d.title || '') + '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(d.stage || '') + (d.quoteNo ? ' · ' + _crmEsc(d.quoteNo) : '') + '</div></span><b style="white-space:nowrap">' + _crmMoney(d.value) + '</b></div>',
+             _t2('No deals yet.', 'Chưa có cơ hội nào.')) + '</div>' +
+      '<div class="card" style="padding:14px 16px"><div class="card-title" style="margin-bottom:8px">' + _t2('Projects', 'Dự án') + '</div>' +
+        list(projects, pr => '<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px"><span>' + _crmEsc(pr.name || '') + '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(pr.status || '') + '</div></span><b style="white-space:nowrap">' + _crmMoney(pr.contractValue) + '</b></div>',
+             _t2('No projects for this customer.', 'Chưa có dự án nào.')) +
+        (leads.length ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + leads.length + ' ' + _t2('open lead(s)', 'khách hàng tiềm năng') + '</div>' : '') + '</div>' +
+    '</div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmAcctOverlay\').remove()">' + _t('Close') + '</button>' +
+      '<button class="btn btn-primary" onclick="document.getElementById(\'crmAcctOverlay\').remove();tkQuickAdd(\'crm_companies\',\'' + c.id + '\')">' + _t('Edit') + '</button></div>' +
+    '</div>';
+  document.getElementById('crmAcctOverlay')?.remove();
+  document.body.appendChild(el);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
 
 function crmQuoteBuilder(id) {
   const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }

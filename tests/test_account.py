@@ -245,3 +245,59 @@ def test_an_unreadable_date_counts_as_absent_not_valid():
 
 def test_no_today_refuses_rather_than_reporting_everything_valid():
     assert A.qualification_status({}, "")["ok"] is False
+
+
+# ── resolving a free-text name to an account ─────────────────────────────────────────────────────
+
+ACCS = [{"id": "a1", "name": "ABC Corp"},
+        {"id": "a2", "name": "XYZ Ltd"},
+        {"id": "a3", "name": "ABC Corp.", "mergedInto": "a1"}]
+
+
+def test_an_exact_name_resolves():
+    assert A.resolve_name("ABC Corp", ACCS)["accountId"] == "a1"
+
+
+def test_a_different_spelling_resolves_when_it_is_unambiguous():
+    r = A.resolve_name("abc  corp", ACCS)
+    assert r["accountId"] == "a1" and r["how" if "how" in r else "status"] in ("folded", "exact")
+
+
+def test_a_name_that_points_at_a_tombstone_follows_it_to_the_survivor():
+    """That is what the tombstone is for — an old document naming the merged account still lands."""
+    assert A.resolve_name("ABC Corp.", ACCS)["accountId"] == "a1"
+
+
+def test_two_live_accounts_with_the_same_name_refuse_to_resolve():
+    """Merge them first. Picking one would bake the wrong join in permanently."""
+    accs = [{"id": "x", "name": "Same"}, {"id": "y", "name": "Same"}]
+    r = A.resolve_name("Same", accs)
+    assert r["status"] == "ambiguous" and r["accountId"] is None
+    assert {c["id"] for c in r["candidates"]} == {"x", "y"}
+
+
+def test_an_unknown_name_is_unmatched_not_guessed():
+    assert A.resolve_name("Nobody Ltd", ACCS)["status"] == "unmatched"
+
+
+def test_a_blank_name_is_its_own_answer():
+    assert A.resolve_name("", ACCS)["status"] == "blank"
+    assert A.resolve_name(None, ACCS)["status"] == "blank"
+
+
+def test_the_backfill_plan_separates_what_it_can_do_from_what_a_human_must():
+    children = {"crm_deals": [{"id": "d1", "company": "ABC Corp"},
+                              {"id": "d2", "company": "Nobody Ltd"},
+                              {"id": "d3", "company": "", },
+                              {"id": "d4", "company": "XYZ Ltd", "accountId": "a2"}]}
+    plan = A.backfill_plan(ACCS, children)
+    assert [x["id"] for x in plan["link"]] == ["d1"]
+    assert [x["id"] for x in plan["exceptions"]] == ["d2"]
+    assert plan["alreadyLinked"] == 1 and plan["noName"] == 1
+
+
+def test_the_plan_never_invents_a_link_for_an_ambiguous_name():
+    accs = [{"id": "x", "name": "Same"}, {"id": "y", "name": "Same"}]
+    plan = A.backfill_plan(accs, {"crm_deals": [{"id": "d1", "company": "Same"}]})
+    assert plan["link"] == []
+    assert plan["exceptions"][0]["reason"] == "ambiguous"

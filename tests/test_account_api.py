@@ -191,3 +191,67 @@ def test_a_line_manager_cannot_merge_customers(api, tokens):
     a, b = _acc(name="ABC Corp"), _acc(name="ABC Corp.")
     assert _merge(api, tokens["mgr"], a["id"], b["id"], confirm=True)[0] == 403
     assert db.get_collection_item("crm_companies", b["id"]).get("mergedInto") is None
+
+
+# ── the backfill ─────────────────────────────────────────────────────────────────────────────────
+
+def _backfill(api, token, confirm=False):
+    return api("POST", "/api/sales/accounts/backfill", token, {"confirm": confirm})
+
+
+def test_the_backfill_previews_before_it_writes(api, tokens):
+    a = _acc(name="ABC Corp")
+    d = db.put_collection_item("crm_deals", {"title": "D", "company": "ABC Corp"})
+    code, r = _backfill(api, tokens["management"])
+    assert code == 200 and r["preview"] is True
+    assert [x["id"] for x in r["link"]] == [d["id"]]
+    assert db.get_collection_item("crm_deals", d["id"]).get("accountId") is None
+
+
+def test_a_confirmed_backfill_links_the_records(api, tokens):
+    a = _acc(name="ABC Corp")
+    d = db.put_collection_item("crm_deals", {"title": "D", "company": "ABC Corp"})
+    p = db.put_collection_item("pm_projects", {"name": "P", "account": "ABC Corp"})
+    _, r = _backfill(api, tokens["management"], confirm=True)
+    assert r["linked"] == 2, r
+    assert db.get_collection_item("crm_deals", d["id"])["accountId"] == a["id"]
+    assert db.get_collection_item("pm_projects", p["id"])["accountId"] == a["id"]
+
+
+def test_the_customer_name_is_left_alone(api, tokens):
+    """accountId is added ALONGSIDE the name, so nothing that reads the name breaks mid-migration."""
+    _acc(name="ABC Corp")
+    d = db.put_collection_item("crm_deals", {"title": "D", "company": "ABC Corp"})
+    _backfill(api, tokens["management"], confirm=True)
+    assert db.get_collection_item("crm_deals", d["id"])["company"] == "ABC Corp"
+
+
+def test_an_unresolvable_name_is_reported_and_never_guessed(api, tokens):
+    """Replacing free text with a confident WRONG id would bake today's typos into the joins where
+    nobody would ever see them again."""
+    _acc(name="ABC Corp")
+    d = db.put_collection_item("crm_deals", {"title": "D", "company": "Somebody Else Ltd"})
+    _, r = _backfill(api, tokens["management"], confirm=True)
+    assert any(x["id"] == d["id"] and x["reason"] == "unmatched" for x in r["exceptions"])
+    assert db.get_collection_item("crm_deals", d["id"]).get("accountId") is None
+
+
+def test_two_accounts_with_the_same_name_stop_the_backfill_choosing(api, tokens):
+    _acc(name="Same Co"); _acc(name="Same Co")
+    d = db.put_collection_item("crm_deals", {"title": "D", "company": "Same Co"})
+    _, r = _backfill(api, tokens["management"], confirm=True)
+    assert any(x["id"] == d["id"] and x["reason"] == "ambiguous" for x in r["exceptions"])
+    assert db.get_collection_item("crm_deals", d["id"]).get("accountId") is None
+
+
+def test_a_record_pointing_at_a_merged_account_lands_on_the_survivor(api, tokens):
+    a, b = _acc(name="ABC Corp"), _acc(name="ABC Corp.")
+    _merge(api, tokens["management"], a["id"], b["id"], confirm=True)
+    d = db.put_collection_item("crm_deals", {"title": "Late", "company": "ABC Corp."})
+    _backfill(api, tokens["management"], confirm=True)
+    assert db.get_collection_item("crm_deals", d["id"])["accountId"] == a["id"]
+
+
+def test_the_backfill_is_not_for_staff(api, tokens):
+    assert _backfill(api, tokens["staff"], confirm=True)[0] == 403
+    assert _backfill(api, tokens["mgr"], confirm=True)[0] == 403

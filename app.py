@@ -3885,6 +3885,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/accounts/backfill":
+            return self._guard(lambda uu: self._accounts_backfill_ep(uu, body), manager=True)
         if path == "/api/sales/accounts/merge":
             return self._guard(lambda uu: self._accounts_merge_ep(uu, body), manager=True)
         if path == "/api/sales/quote-number":
@@ -9487,6 +9489,44 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "merged": True, "moved": moved,
                            "primaryId": primary.get("id"), "duplicateId": dup.get("id"),
                            "filled": sorted(plan["fills"].keys())})
+
+    def _accounts_backfill_ep(self, u, body):
+        """Link the deals, contacts, leads and projects you already have to real account ids.
+
+        Runs as a preview by default. Every row it cannot resolve with certainty is REPORTED for a
+        human, never guessed: replacing free text with a confident wrong id would bake today's typos
+        into the joins where nobody would ever see them again. An exception list somebody has to work
+        through is the honest output.
+
+        The name is left alone. This adds accountId ALONGSIDE it, so nothing that currently reads the
+        name breaks while the sell side moves over to ids.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Linking customer records is an Approver (management) action.", 403)
+        accs = db.list_collection("crm_companies")
+        children = {l["coll"]: db.list_collection(l["coll"]) for l in account.CHILD_LINKS}
+        plan = account.backfill_plan(accs, children)
+        if not (body or {}).get("confirm"):
+            return self._json({"ok": True, "preview": True, **plan})
+
+        rows = {c: {r.get("id"): r for r in v} for c, v in children.items()}
+        done = 0
+        for item in plan["link"]:
+            row = rows.get(item["coll"], {}).get(item["id"])
+            if not row:
+                continue
+            row[item["idField"]] = item["accountId"]
+            db.put_collection_item(item["coll"], row)
+            done += 1
+        if done:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": "Linked records to customer accounts",
+                "target": "crm_companies",
+                "detail": "%d record(s) linked; %d left for a human" % (done, len(plan["exceptions"])),
+                "ts": self._utc_now()})
+        return self._json({"ok": True, "linked": done, "exceptions": plan["exceptions"],
+                           "why": plan["why"]})
 
     def _quote_number_ep(self, u, body):
         """Give this deal its quotation number, once and for good.
