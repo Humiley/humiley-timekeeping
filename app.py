@@ -3882,6 +3882,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/quote-number":
+            return self._guard(lambda uu: self._quote_number_ep(uu, body))
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
         if path == "/api/hr/incidents":
@@ -9362,6 +9364,59 @@ class Handler(BaseHTTPRequestHandler):
                 except (TypeError, ValueError):
                     return None
         return None
+
+    def _quote_number_ep(self, u, body):
+        """Give this deal its quotation number, once and for good.
+
+        The reference was 'HML-QT-' + year + (1000 + hash(dealId) % 9000). Two failures in one
+        expression. Re-quoting the same deal reproduces the same number, so a revised price goes out
+        under the reference of the price it replaced and there is no v1/v2. And 9,000 slots hashed
+        means two unrelated deals collide outright at around 112 quotes — a customer and an auditor
+        both refer to a document by its number, so two documents sharing one is not cosmetic.
+
+        IDEMPOTENT BY DESIGN. A deal that already has a number gets that number back. Without that,
+        a double-clicked Save or a retried request would burn a second number and leave a hole in
+        the register, and a missing number is a question somebody has to answer.
+
+        Only the number is minted here; the revision content is frozen by the caller. This writes to
+        crm_deals through the same store the CRM already uses rather than inventing a collection —
+        the sales documents proper are Stage 2 of the plan, and this must not pre-empt their shape.
+        """
+        did = str((body or {}).get("dealId") or "").strip()
+        if not did:
+            return self._err("A deal id is required.", 400)
+        deal = db.get_collection_item("crm_deals", did)
+        if not deal:
+            return self._err("Deal not found.", 404)
+        if "crm" in self._apps_denied(u):
+            return self._err("Access restricted — the CRM app is not enabled for your account.", 403)
+        # Numbering a deal WRITES to it, so it needs exactly what editing it needs. Without this the
+        # endpoint was a way to modify a colleague's deal — and to consume a document number against
+        # it — through a door the CRM's own write path keeps shut.
+        if not self._is_mgmt(u):
+            owner = deal.get("owner") or ""
+            mine = owner == u.get("name")
+            if not mine and u.get("role") == "manager":
+                mydept = u.get("dept") or u.get("department") or ""
+                deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
+                mine = bool(mydept) and deptof.get(owner) == mydept
+            if not mine:
+                return self._err("You can only edit your own CRM records.", 403)
+        existing = str(deal.get("quoteNo") or "").strip()
+        if existing:
+            return self._json({"ok": True, "no": existing, "issued": False,
+                               "rev": deal.get("_rev")})
+        year = int(self._vn_day()[:4])
+        n = db.next_doc_no("QT", year, lambda: doc_number.highest(
+            doc_number.numbers_in(db.list_collection("crm_deals"), "quoteNo"), "QT", year))
+        no = doc_number.format_no("QT", year, n)
+        deal["quoteNo"] = no
+        saved = db.put_collection_item("crm_deals", deal)
+        # The new _rev goes back with the number. Writing the number here bumps the revision, so a
+        # caller that then PATCHed the rest of the quotation with the _rev it started with would be
+        # refused as a conflict — by its own change. Optimistic concurrency caught exactly that.
+        return self._json({"ok": True, "no": no, "issued": True,
+                           "rev": (saved or deal).get("_rev")})
 
     def _working_time_ep(self, u, qs):
         """Arts. 105, 110 and 111 against the attendance register — the rest nobody was checking.

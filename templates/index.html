@@ -16674,10 +16674,34 @@ async function crmQBSave(thenExport, fmt) {
   const lines = started.filter(l => (l.desc || '').trim() && +l.price > 0).map(l => Object.assign({}, l, { qty: +l.qty > 0 ? +l.qty : 1 }));
   if (!lines.length) { toast('Add at least one line with a description and a unit price before saving.', 'warn', 6000); return; }
   const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 1) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
-  try { const _vr = _crmVatRate(_crmQB), _dc = Math.max(0, Math.round(+_crmQB.discount || 0));
-    await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d, { lines: lines, value: sub, vatRate: _vr, discount: _dc }) }); d.lines = lines; d.value = sub; d.vatRate = _vr; d.discount = _dc; }
+  const _vr = _crmVatRate(_crmQB), _dc = Math.max(0, Math.round(+_crmQB.discount || 0));
+  // The number is issued by the SERVER, once per deal, and the call is idempotent — a double-clicked
+  // Save gets back the number the deal already has instead of burning another and leaving a gap in
+  // the register. It replaces a hash of the deal id that repeated on every re-quote and collided
+  // outright between unrelated deals at around 112 quotations.
+  let _no = String(d.quoteNo || '').trim();
+  if (!_no) {
+    // The server writes the number onto the deal, which bumps its revision — so take the new one
+    // back, or the PATCH below is refused as a conflict with our own change.
+    try { const rn = await tkApi('/api/sales/quote-number', { method: 'POST', body: { dealId: d.id } }); _no = (rn && rn.no) || ''; if (rn && rn.rev) d._rev = rn.rev; }
+    catch (e) { toast(_t2('Could not issue a quotation number', 'Không cấp được số báo giá') + ': ' + _errMsg(e), 'error', 6000); return; }
+  }
+  if (!_no) { toast(_t2('Could not issue a quotation number', 'Không cấp được số báo giá'), 'error'); return; }
+  const _now = new Date().toISOString();
+  // Freeze this revision. Re-downloading an old quotation rebuilt it from the CURRENT lines with
+  // TODAY's dates, so your copy and the customer's could differ with nothing on either to show it.
+  const _revs = Array.isArray(d.quoteRevs) ? d.quoteRevs.slice() : [];
+  const _net = Math.max(0, sub - _dc), _vat = Math.round(_net * _vr / 100);
+  _revs.push({ rev: _revs.length + 1, no: _no, ts: _now, by: ((typeof TK !== 'undefined' && TK.user) || {}).name || '',
+               lines: lines.map(l => Object.assign({}, l)), vatRate: _vr, discount: _dc,
+               subtotal: sub, vat: _vat, grand: _net + _vat });
+  while (_revs.length > 20) _revs.shift();   // bound the record; the newest 20 revisions are kept
+  const _body = Object.assign({}, d, { lines: lines, value: sub, vatRate: _vr, discount: _dc,
+                                       quoteNo: _no, quoteIssuedAt: d.quoteIssuedAt || _now,
+                                       quoteRev: _revs.length, quoteRevs: _revs });
+  try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: _body }); Object.assign(d, _body); }
   catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error'); return; }
-  toast('Quotation saved (' + lines.length + ' line' + (lines.length === 1 ? '' : 's') + ')');
+  toast(_t2('Quotation saved', 'Đã lưu báo giá') + ' — ' + _no + ' rev ' + _revs.length + ' · ' + lines.length + ' ' + _t2('line(s)', 'dòng'));
   document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
   if (thenExport) { if (fmt === 'xls') crmDownloadQuoteXLS(d.id); else crmDownloadQuote(d.id); }
 }
@@ -16867,9 +16891,15 @@ function _crmQuoteModel(deal) {
   const vatRate = _crmVatRate(deal);
   const vat = Math.round(Math.max(0, subtotal - discount) * vatRate / 100);
   const grand = subtotal - discount + vat;
-  const today = new Date(); const valid = new Date(today.getTime() + 30 * 86400000);
-  let h = 0; const ids = String(deal.id || 'crm'); for (let i = 0; i < ids.length; i++) h = (h * 31 + ids.charCodeAt(i)) >>> 0;
-  const ref = 'HML-QT-' + today.getFullYear() + '-' + (1000 + (h % 9000));
+  // Frozen at issue, not recomputed at download. A customer opening the PDF you sent last quarter
+  // must see the date you sent it and the validity you promised, not today's.
+  const issued = deal.quoteIssuedAt ? new Date(deal.quoteIssuedAt) : new Date();
+  const today = issued; const valid = new Date(issued.getTime() + 30 * 86400000);
+  // The reference the customer quotes back at you. Server-issued and stored on the deal, so it is
+  // stable across re-downloads and unique across deals. The old expression hashed the deal id into
+  // 9,000 slots: the same deal always regenerated the same number (no v1/v2 after a price change)
+  // and two unrelated deals collided at around 112 quotes.
+  const ref = String(deal.quoteNo || '').trim() || _t2('(not yet issued)', '(chưa cấp số)');
   return { d: deal, ref: ref, dateStr: tkFmtDateObj(today), validStr: tkFmtDateObj(valid), lines: lines, subtotal: subtotal, discount: discount, vatRate: vatRate, vatLabel: _crmVatMeta(vatRate).label, vat: vat, grand: grand, signName: deal.owner || 'Humiley Sales', signTitle: (owner && owner.title) || 'Sales Representative' };
 }
 
