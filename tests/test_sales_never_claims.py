@@ -135,3 +135,29 @@ def test_each_module_carries_its_unsettled_questions(mod):
 def test_the_contract_module_states_that_its_figures_are_ex_vat():
     r = sales_contract.application({"value": 100, "recoveryRule": "prorata"}, 10)
     assert "exclusive of VAT" in r["taxNote"]
+
+
+def test_a_quotation_with_no_rate_prints_EX_VAT_not_zero_percent():
+    """The regression this file exists to catch, in its newest form. Making the rate optional made
+    `_crmVatRate` return null, and `_crmVatMeta(null)` matched the 0% entry — so a quotation nobody
+    had priced printed "VAT 0%  ₫0" on a PDF going to a customer. A 0% line is a CLAIM that the
+    supply is zero-rated (export / EPZ), and the portal is not entitled to make it."""
+    m = INDEX[INDEX.find("function _crmQuoteModel"):INDEX.find("function crmQuotePDF")]
+    assert m, "the quote model moved — re-point this test"
+    assert "_crmVatRate(deal)" not in m, "the null-returning helper must not feed the printed model"
+    assert "vatStated" in m
+    assert "exclusive of VAT" in m
+    pdf = INDEX[INDEX.find("function crmQuotePDF"):INDEX.find("function crmQuoteXLS")]
+    assert "m.vatStated ?" in pdf, "the printed tax row has to know the difference"
+    assert "'GRAND TOTAL (VND)'" not in pdf, "the total is labelled ex-VAT when no rate was stated"
+
+
+def test_the_quotation_a_customer_receives_can_still_be_produced():
+    """Retiring the deal-side builder left the exporters reading crm_deals only, so a quotation in
+    the register — the only place quotations live now — could not be turned into the document you
+    actually send."""
+    assert "function _crmQuoteDoc(" in INDEX
+    doc = INDEX[INDEX.find("function _crmQuoteDoc"):INDEX.find("function crmDownloadQuote(")]
+    assert "sales_quotes" in doc and "crm_deals" in doc, "the register first, old deals still readable"
+    reg = INDEX[INDEX.find("async function crmRenderQuotes"):INDEX.find("async function crmQuoteAction")]
+    assert "crmDownloadQuote(" in reg, "and there is a button on the register"

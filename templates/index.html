@@ -16189,23 +16189,6 @@ function _crmChartMoney(v) { v = +v || 0; return '₫' + (Math.abs(v) >= 1e9 ? (
    fiscal year a manager happens to be browsing on the AOP tab (_aopFY). */
 function _crmTargetFor(owner) { return _aopPlan(new Date().getFullYear(), 'member', owner) || 0; }   // 0 = no plan set; never a stand-in figure
 const _CRM_COMPANY_KEY = '__company__';   // reserved "owner" row that holds the company-wide target
-function _crmCompanyTarget() { const t = (_HR.crm_targets || []).find(x => (x.owner || '') === _CRM_COMPANY_KEY); return t ? (+t.target || 0) : 0; }
-function _crmSaveTargetIdx(i, val) { const o = _crmPipeOwners[i]; if (o != null) _crmSaveTarget(o, val); }
-function _crmSaveCompanyTarget(val) { _crmSaveTarget(_CRM_COMPANY_KEY, val); }
-async function _crmSaveTarget(owner, val) {
-  // Targets are a Sales-Manager function — Approver (management) level and above only.
-  if (!_crmSeeAll()) { toast('Only Sales Manager (Approver) level and above can set targets.', 'warn'); return; }
-  val = Math.max(0, Math.round(+val || 0));
-  const arr = (_HR.crm_targets = _HR.crm_targets || []);
-  const t = arr.find(x => (x.owner || '') === owner);
-  const label = owner === _CRM_COMPANY_KEY ? _t('Company') : owner;
-  try {
-    if (t) { await tkApi('/api/coll/crm_targets/' + t.id, { method: 'PATCH', body: Object.assign({}, t, { target: val }) }); t.target = val; }
-    else { const r = await tkApi('/api/coll/crm_targets', { method: 'POST', body: { owner: owner, target: val } }); arr.push(r && r.id ? r : { owner: owner, target: val }); }
-    toast('Target saved · ' + label + ' · ' + _crmMoney(val));
-    if (_currentView === 'crm-targets' && typeof tkRenderCrmTargets === 'function') tkRenderCrmTargets(); else crmRenderPipeline();
-  } catch (e) { toast('Could not save target: ' + _errMsg(e), 'warn'); }
-}
 /* ══ Annual Operating Plan (AOP) — Company → Business Segment → Sales-member plan vs actual, by fiscal year.
    Segments (PMC/Eng/SAL/CSM) are configurable in _AOP_SEGMENTS. Sales-member actuals auto-compute from Won
    deals in the fiscal year; other segments' actuals are entered in Settings; company rolls up from segments. */
@@ -16639,13 +16622,6 @@ const _CRM_VAT_RATES = [
 ];
 /* The rate on a deal, as a number. Never falls back silently to a different rate than the document
    was saved with: an absent value means the quote predates the selector and was priced at 10%. */
-/* A quotation with no rate is EX-VAT and says so on the document — it does not quietly become 10%.
-   The fallback predates the rate being selectable at all, and keeping it would mean a quotation
-   priced under the 8% reduction printed a 10% tax line the moment somebody reopened it. */
-function _crmVatRate(d) {
-  const v = (d && d.vatRate);
-  return (v === 0 || v) && isFinite(+v) ? +v : null;
-}
 function _crmVatMeta(rate) { return _CRM_VAT_RATES.find(r => r.v === +rate) || { v: +rate, label: (+rate) + '%', labelVn: (+rate) + '%', note: '', noteVn: '' }; }
 
 /* Can this customer legally be billed? Mirrors account.invoice_readiness on the server — a
@@ -17801,6 +17777,8 @@ async function crmOpenQuote(id) {
     '</div>' +
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'qtOverlay\').remove()">' + _t('Close') + '</button>' +
+      '<button class="btn btn-ghost" onclick="crmDownloadQuote(\'' + id + '\')">' + _t2('PDF', 'PDF') + '</button>' +
+      '<button class="btn btn-ghost" onclick="crmDownloadQuoteXLS(\'' + id + '\')">' + _t2('Excel', 'Excel') + '</button>' +
       (editable ? '<button class="btn btn-ghost" onclick="crmQtSave(\'' + id + '\',false)">' + _t2('Save draft', 'Lưu nháp') + '</button>' +
                   '<button class="btn btn-primary" onclick="crmQtSave(\'' + id + '\',true)">' + _t2('Issue', 'Gửi khách') + '</button>' : '') +
     '</div></div>';
@@ -18397,6 +18375,7 @@ async function crmRenderQuotes() {
     const st = _QT_STATUS[q.status || 'draft'] || _QT_STATUS.draft;
     const acts = [];
     acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmOpenQuote(\'' + q.id + '\')">' + (q.status === 'draft' ? _t2('Edit', 'Sửa') : _t2('View', 'Xem')) + '</button>');
+    acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" title="' + _tkEscA(_t2('Download the quotation as a PDF', 'Tải báo giá dạng PDF')) + '" onclick="crmDownloadQuote(\'' + q.id + '\')">PDF</button>');
     if (q.status === 'draft' && _crmSeeAll() && !q.discountApprovedBy)
       acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmApproveDiscount(\'' + q.id + '\')">' + _t2('Approve discount', 'Duyệt giảm giá') + '</button>');
     if (q.status === 'draft') acts.push('<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'issue\')">' + _t2('Issue', 'Gửi') + '</button>');
@@ -18560,8 +18539,6 @@ function crmSetPeriod(p) {
   if (p === 'year' && !_crmPeriodYear) _crmPeriodYear = String(now.getFullYear());
   crmRenderDashboard();
 }
-function crmSetPeriodMonth(v) { _crmPeriodMonth = v; crmRenderDashboard(); }
-function crmSetPeriodYear(v) { _crmPeriodYear = v; crmRenderDashboard(); }
 function _crmInPeriod(dateStr) {
   if (_crmPeriod === 'all') return true;
   const ds = String(dateStr || ''); const p = ds.split('-'); if (p.length < 3) return false;
@@ -18717,17 +18694,29 @@ async function _crmEnsureAccount(name, owner) {
 }
 
 /* ── Quotation (Humiley official template HML-QT-YYYY-####) ── */
+/* Takes a QUOTATION from the register (and still reads an old deal, because deals carry the
+   quotations issued before the register existed and those must stay printable). */
 function _crmQuoteModel(deal) {
   const owner = (_DEMO_EMPLOYEES || []).find(e => e.name === deal.owner);
-  const lines = (Array.isArray(deal.lines) && deal.lines.length)
-    ? deal.lines.map((ln, i) => ({ item: ln.item || (i + 1), desc: ln.desc || ln.description || '', qty: +ln.qty || 1, unit: ln.unit || 'lot', price: Math.round(+ln.price || +ln.unitPrice || 0), disc: +ln.disc || 0 }))
+  const src = (Array.isArray(deal.lines) ? deal.lines : []).filter(l => l && (l.kind || 'item') !== 'heading' && (l.kind || 'item') !== 'note');
+  const lines = src.length
+    ? src.map((ln, i) => ({ item: ln.item || (i + 1), desc: ln.desc || ln.description || '', qty: +ln.qty || 1, unit: ln.unit || ln.uom || 'lot', price: Math.round(+ln.price || +ln.unitPrice || 0), disc: +ln.disc || +ln.discPct || 0 }))
     : [{ item: 1, desc: deal.title || 'Engineering services & equipment', qty: 1, unit: 'lot', price: Math.round(+deal.value || 0), disc: 0 }];
   lines.forEach(l => l.amount = Math.round(l.qty * l.price * (1 - (l.disc || 0) / 100)));
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
   const discount = Math.round(+deal.discount || 0);
-  const vatRate = _crmVatRate(deal);
-  const vat = Math.round(Math.max(0, subtotal - discount) * vatRate / 100);
+  /* THREE states, never two. A rate that was picked; an explicit "not a VAT supply"; and NOTHING
+     RECORDED — which must print as ex-VAT, not as 0%. A 0% line on a document going to a customer
+     is a claim that the supply is zero-rated (export / EPZ), and this portal is not entitled to
+     make it on the seller's behalf. */
+  const rawRate = (deal.vatRate === 0 || deal.vatRate) ? String(deal.vatRate) : '';
+  const stated = rawRate !== '' && (rawRate === 'na' || isFinite(+rawRate));
+  const vatRate = (stated && rawRate !== 'na') ? +rawRate : null;
+  const vat = vatRate == null ? 0 : Math.round(Math.max(0, subtotal - discount) * vatRate / 100);
   const grand = subtotal - discount + vat;
+  const vatLabel = !stated ? _t2('not stated — this quotation is exclusive of VAT', 'chưa ghi — báo giá chưa gồm thuế GTGT')
+                 : rawRate === 'na' ? _t2('not a VAT supply', 'không chịu thuế GTGT')
+                 : _crmVatMeta(vatRate).label;
   // Frozen at issue, not recomputed at download. A customer opening the PDF you sent last quarter
   // must see the date you sent it and the validity you promised, not today's.
   const issued = deal.quoteIssuedAt ? new Date(deal.quoteIssuedAt) : new Date();
@@ -18737,7 +18726,12 @@ function _crmQuoteModel(deal) {
   // 9,000 slots: the same deal always regenerated the same number (no v1/v2 after a price change)
   // and two unrelated deals collided at around 112 quotes.
   const ref = String(deal.quoteNo || '').trim() || _t2('(not yet issued)', '(chưa cấp số)');
-  return { d: deal, ref: ref, dateStr: tkFmtDateObj(today), validStr: tkFmtDateObj(valid), lines: lines, subtotal: subtotal, discount: discount, vatRate: vatRate, vatLabel: _crmVatMeta(vatRate).label, vat: vat, grand: grand, signName: deal.owner || 'Humiley Sales', signTitle: (owner && owner.title) || 'Sales Representative' };
+  return { d: deal, ref: ref, dateStr: tkFmtDateObj(today), validStr: tkFmtDateObj(valid), lines: lines,
+           subtotal: subtotal, discount: discount, vatRate: vatRate, vatStated: stated, vatLabel: vatLabel,
+           vat: vat, grand: grand, grandLabel: stated ? _t2('GRAND TOTAL (VND)', 'TỔNG CỘNG (VND)')
+                                                     : _t2('TOTAL, EXCLUDING VAT (VND)', 'TỔNG CỘNG, CHƯA GỒM THUẾ (VND)'),
+           company: deal.accountName || deal.company || '',
+           signName: deal.owner || 'Humiley Sales', signTitle: (owner && owner.title) || 'Sales Representative' };
 }
 
 function crmQuotePDF(deal) {
@@ -18778,8 +18772,8 @@ function crmQuotePDF(deal) {
   const totRow = (lab, val, bold) => { _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 9 : 8.5); if (bold) { doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(tx, y, tw, 7, 'F'); doc.setTextColor(255, 255, 255); } else { doc.setTextColor.apply(doc, _LH_DARK); } doc.text(lab, tx + 2, y + 5); doc.text(val, W - M - 2, y + 5, { align: 'right' }); if (!bold) { doc.setDrawColor(225, 229, 234); doc.line(tx, y + 7, W - M, y + 7); } y += 7; };
   totRow('Subtotal', money(m.subtotal));
   if (m.discount) totRow('Project Discount', '-' + money(m.discount));
-  totRow('VAT ' + m.vatLabel, money(m.vat));
-  totRow('GRAND TOTAL (VND)', money(m.grand), true);
+  totRow(m.vatStated ? 'VAT ' + m.vatLabel : 'VAT — ' + m.vatLabel, m.vatStated ? money(m.vat) : '—');
+  totRow(m.grandLabel, money(m.grand), true);
   y += 8;
   _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_DARK);
   doc.text(doc.splitTextToSize('This quotation is valid until ' + m.validStr + ' and is quoted EXW. Prices are in Vietnamese Dong (VND). Payment terms: 30 days net unless otherwise agreed.', W - 2 * M), M, y); y += 9;
@@ -18813,7 +18807,7 @@ function crmQuoteXLS(deal) {
     '<tr><td colspan="7">Dear Sir / Madam, thank you for your enquiry. We are pleased to submit Humiley\'s quotation as set out below.</td></tr>' +
     '<tr><td colspan="7" style="height:8px"></td></tr>' +
     th + rows +
-    tot('SUBTOTAL', money(m.subtotal)) + (m.discount ? tot('Project Discount', '-' + money(m.discount)) : '') + tot('VAT ' + m.vatLabel, money(m.vat)) + tot('GRAND TOTAL', money(m.grand), true) +
+    tot('SUBTOTAL', money(m.subtotal)) + (m.discount ? tot('Project Discount', '-' + money(m.discount)) : '') + tot(m.vatStated ? 'VAT ' + m.vatLabel : 'VAT — ' + m.vatLabel, m.vatStated ? money(m.vat) : '—') + tot('GRAND TOTAL', money(m.grand), true) +
     '<tr><td colspan="7" style="height:12px"></td></tr>' +
     '<tr><td colspan="7">This quotation is valid until ' + esc(m.validStr) + ', quoted EXW, in VND. Payment terms: 30 days net.</td></tr>' +
     '<tr><td colspan="7" style="height:16px"></td></tr>' +
@@ -18828,17 +18822,22 @@ function _crmDownloadBlob(filename, content, mime) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename;
   document.body.appendChild(a); a.click(); setTimeout(() => { try { URL.revokeObjectURL(a.href); a.remove(); } catch (e) {} }, 1000);
 }
+function _crmQuoteDoc(id) {
+  return (_HR.sales_quotes || []).find(x => x.id === id)
+      || (_HR.crm_deals || []).find(x => x.id === id);   // quotations issued before the register
+}
+
 function crmDownloadQuote(id) {
-  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
+  const d = _crmQuoteDoc(id); if (!d) { toast(_t2('Quotation not found', 'Không tìm thấy báo giá'), 'warn'); return; }
   const doc = crmQuotePDF(d); if (!doc) { toast('PDF engine not ready', 'error'); return; }
   const m = _crmQuoteModel(d);
-  doc.save(m.ref + ' - ' + (d.company || 'deal').replace(/[^a-z0-9]+/gi, '_') + '.pdf');
+  doc.save(m.ref + ' - ' + (d.accountName || d.company || 'customer').replace(/[^a-z0-9]+/gi, '_') + '.pdf');
   try { tkAudit('Quotation PDF', d.title || '', m.ref); } catch (e) {}
 }
 function crmDownloadQuoteXLS(id) {
-  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
+  const d = _crmQuoteDoc(id); if (!d) { toast(_t2('Quotation not found', 'Không tìm thấy báo giá'), 'warn'); return; }
   const m = _crmQuoteModel(d);
-  _crmDownloadBlob(m.ref + ' - ' + (d.company || 'deal').replace(/[^a-z0-9]+/gi, '_') + '.xls', crmQuoteXLS(d), 'application/vnd.ms-excel');
+  _crmDownloadBlob(m.ref + ' - ' + (d.accountName || d.company || 'customer').replace(/[^a-z0-9]+/gi, '_') + '.xls', crmQuoteXLS(d), 'application/vnd.ms-excel');
   try { tkAudit('Quotation Excel', d.title || '', m.ref); } catch (e) {}
   toast('Excel quotation downloaded — opens in Excel', 'success', 5000);
 }
@@ -31321,3 +31320,9 @@ async function tkForceUpdate() {
 </script>
 </body>
 </html>
+
+
+
+
+
+
