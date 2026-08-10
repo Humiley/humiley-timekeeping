@@ -82,3 +82,30 @@ def test_the_contract_rule_dropdowns_offer_exactly_the_codes_the_engine_READS():
         known = {r["code"] for r in rules}
         assert offered == known, ("the %s dropdown offers %s but the engine reads %s"
                                   % (what, sorted(offered), sorted(known)))
+
+
+def _email_builder():
+    """The approval-request email body, sliced out of index.html."""
+    i = INDEX.index("function _tkApprovalEmailHtml")
+    return INDEX[i:INDEX.index("\nasync function tkEmailApprovalRequest", i)]
+
+
+def test_the_approval_email_uses_the_REVERSE_mark_on_its_navy_header():
+    """The header is #205090. The full-colour logo is an emerald H beside a NAVY wordmark, so on
+    navy only the H survives and the company's name vanishes from its own approval email."""
+    body = _email_builder()
+    assert "_LH.logoWhite" in body, "the email header must take the reverse (white) mark"
+    assert "_LH.logo\b" not in body and "_LH.logo " not in body and "_LH.logo)" not in body, \
+        "the full-colour letterhead logo belongs on paper, not on the navy email header"
+    assert "#205090" in body or "navy" in body
+
+
+def test_no_email_style_depends_on_a_CSS_VARIABLE():
+    """Outlook, Gmail and Apple Mail do not resolve custom properties, and none of these
+    declarations carries a fallback. `background:var(--card)` left the card with NO background —
+    it only looked right because the client's default happened to be white, and went dark behind
+    dark ink in a dark-mode mailbox. This markup is read by mail clients, not by our stylesheet.
+    """
+    body = _email_builder()
+    leaks = re.findall(r"[a-z-]+:\s*var\(--[a-z-]+\)", body)
+    assert not leaks, "CSS variables cannot be resolved by a mail client: %s" % leaks
