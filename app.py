@@ -9611,9 +9611,12 @@ class Handler(BaseHTTPRequestHandler):
         short of the claim asks for a reason, because "they paid 90%" with no reason is how a
         dispute becomes a write-off eighteen months later.
         """
+        if str((body or {}).get("kind") or "").strip().lower() == "advance":
+            return self._deposit_receipt(u, body)
         allocs = {str(k): float(v or 0) for k, v in ((body or {}).get("allocations") or {}).items()}
         if not allocs:
-            return self._err("A receipt has to be allocated to at least one payment application.", 400)
+            return self._err("A receipt has to be allocated to at least one payment application, "
+                             "or recorded as a deposit against a contract.", 400)
         amount = round(float((body or {}).get("amount") or 0), 2)
         if amount <= 0:
             return self._err("A receipt must be for a positive amount.", 400)
@@ -9731,6 +9734,10 @@ class Handler(BaseHTTPRequestHandler):
                          "why": "The customer accepted this quotation and no contract was raised "
                                 "from it, so nothing is tracking what is owed on it."})
         if contract:
+            if contract.get("poNo"):
+                steps.append({"kind": "po", "id": contract.get("id"), "ref": contract.get("poNo"),
+                              "on": contract.get("poDate") or "", "by": "",
+                              "amount": float(contract.get("poValue") or 0), "status": "recorded"})
             steps.append({"kind": "contract", "id": contract.get("id"),
                           "ref": contract.get("contractNo") or "", "on": (contract.get("activatedAt") or "")[:10],
                           "by": contract.get("activatedBy") or contract.get("owner") or "",
@@ -9740,6 +9747,32 @@ class Handler(BaseHTTPRequestHandler):
                 steps.append({"kind": "acceptance", "id": contract.get("id"), "ref": "",
                               "on": contract.get("acceptedOn"), "by": contract.get("acceptedBy") or "",
                               "amount": 0, "status": "recorded"})
+
+            sched = sales_contract.advance_schedule(contract)
+            got = round(float(contract.get("advanceReceived") or 0), 2)
+            for d in sorted([x for x in receipts if x.get("kind") == "advance"
+                             and x.get("contractId") == contract.get("id")],
+                            key=lambda x: str(x.get("receivedOn") or "")):
+                steps.append({"kind": "deposit", "id": d.get("id"), "ref": d.get("reference") or "",
+                              "on": d.get("receivedOn") or "", "by": d.get("owner") or "",
+                              "amount": float(d.get("amount") or 0),
+                              "status": "over" if d.get("overReason") else "received",
+                              "note": d.get("overReason") or d.get("tranche") or ""})
+            if sched["ok"] and sched["total"] - got > 0.005:
+                gaps.append({"what": "deposit-not-received",
+                             "amount": round(sched["total"] - got, 2),
+                             "why": "%s of the agreed deposit has not arrived. That part is not "
+                                    "recovered out of any claim until it does."
+                                    % _money_vnd(sched["total"] - got)})
+            if not contract.get("poNo"):
+                gaps.append({"what": "no-po", "amount": 0,
+                             "why": "No customer PO number is recorded. Their accounts payable will "
+                                    "reject an invoice that does not quote one."})
+            elif contract.get("poValue") and abs(float(contract["poValue"]) - float(contract.get("value") or 0)) > 0.005:
+                gaps.append({"what": "po-value-differs",
+                             "ref": contract.get("poNo"),
+                             "amount": round(float(contract["poValue"]) - float(contract.get("value") or 0), 2),
+                             "why": "The PO and the contract are for different amounts."})
 
             mine = sorted([a for a in apps if a.get("contractId") == contract.get("id")],
                           key=lambda a: str(a.get("period") or ""))
@@ -9841,6 +9874,67 @@ class Handler(BaseHTTPRequestHandler):
                             "" if not blocked else "; %d contract(s) hold retention that cannot yet "
                             "be dated" % len(blocked)),
         })
+
+    def _deposit_receipt(self, u, body):
+        """The deposit arriving — cash that lands before there is any claim to land on.
+
+        This is the shape the receipt path could not express. A tạm ứng arrives on signing, weeks
+        before the first progress claim exists, so requiring an allocation to a certified
+        application made it impossible to record the single largest payment on most contracts. It
+        was going in as "somebody will remember".
+
+        It is NOT revenue and NOT a payment on account. It is money held and owed back, and it is
+        what the recovery on every later claim winds down — which is why the balance it moves is
+        `advanceReceived`, not the agreed figure. Recovering a deposit that never arrived
+        understates every claim and reports an advance owed back that the company is not holding.
+        """
+        c = db.get_collection_item("sales_contracts", str((body or {}).get("contractId") or ""))
+        if not c:
+            return self._err("Contract not found.", 404)
+        if not self._sales_may_write(u, c):
+            return self._err("You can only record cash on your own contracts.", 403)
+        if c.get("status") != sales_doc.ACTIVE:
+            return self._err("A deposit is recorded against an ACTIVE contract — this one is %s."
+                             % (c.get("status") or "draft"), 400)
+        sched = sales_contract.advance_schedule(c)
+        if not sched["ok"]:
+            return self._err(sched["why"], 400)
+        if sched["total"] <= 0.005:
+            return self._err("This contract does not have a deposit. Record the terms first, or "
+                             "allocate this receipt to a payment application.", 400)
+        amount = round(float((body or {}).get("amount") or 0), 2)
+        if amount <= 0:
+            return self._err("A deposit must be for a positive amount.", 400)
+        had = round(float(c.get("advanceReceived") or 0), 2)
+        room = round(sched["total"] - had, 2)
+        # More than was agreed is allowed — customers do round up, and a PO can be varied after the
+        # contract was typed — but it is recorded AS more than agreed, with a reason. Silently
+        # accepting it would leave a deposit balance nobody could reconcile to any document.
+        if amount - room > 0.005 and not str((body or {}).get("overReason") or "").strip():
+            return self._err("The agreed deposit is %s and %s has already arrived, leaving %s. "
+                             "Taking more than that is fine, but say why."
+                             % (_money_vnd(sched["total"]), _money_vnd(had), _money_vnd(room)), 400)
+        rec = {"kind": "advance", "contractId": c.get("id"), "contractNo": c.get("contractNo") or "",
+               "accountName": c.get("accountName") or "", "accountId": c.get("accountId") or "",
+               "amount": amount,
+               "receivedOn": str((body or {}).get("receivedOn") or self._vn_day())[:10],
+               "method": str((body or {}).get("method") or "")[:32],
+               "reference": str((body or {}).get("reference") or "")[:64],
+               "overReason": str((body or {}).get("overReason") or "")[:200],
+               "tranche": str((body or {}).get("tranche") or "")[:64],
+               "allocations": {}, "owner": u.get("name"), "ts": self._utc_now()}
+        saved = db.put_collection_item("sales_receipts", rec)
+        c["advanceReceived"] = round(had + amount, 2)
+        c["advanceOutstanding"] = round(float(c.get("advanceOutstanding") or 0) + amount, 2)
+        db.put_collection_item("sales_contracts", c)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": "Recorded deposit received", "target": "sales_receipts/" + str(saved.get("id")),
+            "detail": "%s on %s" % (_money_vnd(amount), c.get("contractNo") or c.get("id")),
+            "ts": self._utc_now()})
+        return self._json({"ok": True, "item": saved, "advanceReceived": c["advanceReceived"],
+                           "agreed": sched["total"],
+                           "stillToArrive": round(max(0.0, sched["total"] - c["advanceReceived"]), 2)})
 
     def _receivables_ep(self, u, qs):
         """Who owes you money, since when, and under which of the three clocks.
@@ -9953,6 +10047,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err(preview["why"], 400)
             doc = dict(cur or {})
             doc.update({"contractId": c.get("id"), "contractNo": c.get("contractNo"),
+                        # Copied onto the claim, not looked up later: the invoice raised from this
+                        # claim must quote the PO the customer ordered against, and their accounts
+                        # payable rejects it without one.
+                        "poNo": c.get("poNo") or "",
                         "accountName": c.get("accountName"), "accountId": c.get("accountId") or "",
                         "period": (body or {}).get("period") or doc.get("period") or "",
                         "claims": claims, "status": doc.get("status") or sales_doc.DRAFT,
@@ -10085,10 +10183,23 @@ class Handler(BaseHTTPRequestHandler):
                       "retentionTaxPoint", "advanceTaxPoint", "signedOn", "contractNo"):
                 if k in (body or {}):
                     cur[k] = body[k]
+            if "advanceSchedule" in (body or {}):
+                # A deposit is a term of the PO and the contract, so it can be a percentage, a
+                # stated sum, or several staged tranches. Validated here rather than at claim time:
+                # a schedule the engine will later refuse is a contract that can never be billed,
+                # and finding that out a month in is the expensive way.
+                rows = (body or {}).get("advanceSchedule") or []
+                if not isinstance(rows, list):
+                    return self._err("The deposit schedule is a list of tranches.", 400)
+                cur["advanceSchedule"] = rows[:12]
+                probe = sales_contract.advance_schedule(cur)
+                if not probe["ok"]:
+                    return self._err(probe["why"], 400)
             saved = db.put_collection_item("sales_contracts", cur)
             return self._json({"ok": True, "item": saved,
                                "terms": sales_contract.terms(saved),
                                "advance": sales_contract.advance_amount(saved),
+                               "advanceSchedule": sales_contract.advance_schedule(saved),
                                "retentionCap": sales_contract.retention_cap(saved),
                                "vat": sales_contract.vat_ready(saved, self._company_settings())})
 
@@ -10099,7 +10210,8 @@ class Handler(BaseHTTPRequestHandler):
             if cur.get("status") not in (sales_doc.DRAFT,):
                 return self._err("Opening balances can only be loaded before the contract is "
                                  "activated. After that they move only through certified claims.", 400)
-            for k in ("certifiedToDate", "advanceOutstanding", "retentionHeld", "billedToDate"):
+            for k in ("certifiedToDate", "advanceOutstanding", "advanceReceived", "retentionHeld",
+                      "billedToDate"):
                 if k in (body or {}):
                     cur[k] = max(0.0, float(body.get(k) or 0))
             cur["openingLoaded"] = True
@@ -10119,7 +10231,13 @@ class Handler(BaseHTTPRequestHandler):
             cur["status"] = sales_doc.ACTIVE
             cur["activatedAt"] = self._utc_now()
             cur["activatedBy"] = u.get("name")
-            cur.setdefault("advanceOutstanding", sales_contract.advance_amount(cur))
+            # A deposit is recoverable only once it has actually ARRIVED. Seeding this from the
+            # agreed amount treated every contract as if the customer had already paid, so the
+            # first claim recovered money that was never received — understating the net payable
+            # and reporting an advance owed back that the company was not holding. `opening` can
+            # still load an in-flight contract's real position.
+            cur.setdefault("advanceReceived", round(float(cur.get("advanceOutstanding") or 0), 2))
+            cur.setdefault("advanceOutstanding", round(float(cur.get("advanceReceived") or 0), 2))
             if not str(cur.get("contractNo") or "").strip():
                 year = int(self._vn_day()[:4])
                 n = db.next_doc_no("SO", year, lambda: doc_number.highest(
@@ -10145,6 +10263,36 @@ class Handler(BaseHTTPRequestHandler):
             saved = db.put_collection_item("sales_contracts", cur)
             self._sales_audit_c(u, "Closed contract", saved)
             return self._json({"ok": True, "item": saved, "final": final})
+
+        if act == "po":
+            """The customer's own order — the number that has to appear on the invoice.
+
+            A pharma or electronics customer accepts by issuing a PO, not by signing the quotation
+            back, and their accounts payable will reject an invoice that does not quote its number.
+            The PO is also where a deposit is actually agreed, which is why it is recorded here
+            rather than left in an email.
+
+            A PO value that differs from the contract is NOT blocked. It happens — reduced scope,
+            a negotiated round-down, a variation issued as a second PO — and the useful thing is to
+            see the difference, not to be stopped by it or to have it quietly overwrite the
+            contract."""
+            no = str((body or {}).get("poNo") or "").strip()
+            if not no:
+                return self._err("The customer's PO number is what has to appear on the invoice — "
+                                 "record it, or leave the PO blank entirely.", 400)
+            day = str((body or {}).get("poDate") or "")[:10]
+            if day and not re.match(r"^\d{4}-\d{2}-\d{2}$", day):
+                return self._err("The PO date should be YYYY-MM-DD.", 400)
+            cur["poNo"] = no[:64]
+            cur["poDate"] = day
+            cur["poValue"] = round(float((body or {}).get("poValue") or 0), 2)
+            cur["poNote"] = str((body or {}).get("poNote") or "")[:300]
+            saved = db.put_collection_item("sales_contracts", cur)
+            self._sales_audit_c(u, "Recorded customer PO", saved)
+            gap = round(float(saved.get("poValue") or 0) - float(saved.get("value") or 0), 2)
+            return self._json({"ok": True, "item": saved,
+                               "differsFromContract": bool(saved.get("poValue")) and abs(gap) > 0.005,
+                               "difference": gap})
 
         if act == "accept":
             # The acceptance date is what starts the warranty clock, and therefore the only thing
@@ -10198,15 +10346,15 @@ class Handler(BaseHTTPRequestHandler):
                                "retention": sales_contract.retention_release(
                                    saved, self._contract_state(saved), self._vn_day())})
 
-        return self._err("Unknown action. Use from_quote, terms, opening, activate, accept, "
-                         "release_retention or close.", 400)
+        return self._err("Unknown action. Use from_quote, terms, opening, activate, po, "
+                         "accept, release_retention or close.", 400)
 
     @staticmethod
     def _contract_state(c):
         c = c or {}
         return {"certifiedToDate": c.get("certifiedToDate") or 0,
-                "advanceOutstanding": c.get("advanceOutstanding",
-                                            sales_contract.advance_amount(c)),
+                # Not the agreed deposit — what is actually held and still to recover.
+                "advanceOutstanding": round(float(c.get("advanceOutstanding") or 0), 2),
                 "retentionHeld": c.get("retentionHeld") or 0}
 
     def _sales_audit_c(self, u, action, doc):

@@ -39,6 +39,9 @@ def _certified(api, tokens, claim=200_000_000, terms_code="NET30"):
     _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"], advancePct=30,
           retentionPct=5, warrantyMonths=12, recoveryRule=SC.REC_PRORATA, releaseRule=SC.REL_WARRANTY_END)
     _post(api, tokens["staff"], "/api/sales/contract", action="activate", id=c["id"])
+    # The deposit is a balance that moves when cash moves — bank it, or no claim recovers any of it.
+    _post(api, tokens["staff"], "/api/sales/receipt", kind="advance", contractId=c["id"],
+          amount=300_000_000)
     c = db.get_collection_item("sales_contracts", c["id"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
               period="2026-08", claims={c["lines"][0]["uid"]: claim})[1]["item"]
@@ -191,3 +194,21 @@ def test_a_department_manager_is_past_the_route_guard_and_still_refused(api, tok
     management-level check is the only thing standing between a line manager and the company's whole
     order book. Testing this with `staff` proves nothing — the route guard refuses first."""
     assert _recv(api, tokens["mgr"])[0] == 403
+
+
+def test_an_advance_that_never_arrived_is_not_reported_as_owed_back(api, tokens):
+    """`advanceOwedBack` is money the company is HOLDING. Seeding it from the agreed figure put a
+    liability on the report for cash that never came in."""
+    acc = db.put_collection_item("crm_companies", {"name": "P", "termsCode": "NET30"})
+    q = _post(api, tokens["staff"], "/api/sales/quote", action="draft", title="J",
+              accountName="P", accountId=acc["id"],
+              lines=[{"desc": "W", "qty": 1, "unitPrice": 1_000_000_000}])[1]["item"]
+    _post(api, tokens["staff"], "/api/sales/quote", action="issue", id=q["id"])
+    _post(api, tokens["staff"], "/api/sales/quote", action="accept", id=q["id"])
+    c = _post(api, tokens["staff"], "/api/sales/contract", action="from_quote", quoteId=q["id"])[1]["item"]
+    _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"], advancePct=30,
+          retentionPct=5, warrantyMonths=12, recoveryRule=SC.REC_PRORATA,
+          releaseRule=SC.REL_WARRANTY_END)
+    _post(api, tokens["staff"], "/api/sales/contract", action="activate", id=c["id"])
+    _, r = _recv(api, tokens["management"])
+    assert r["advanceOwedBack"] == 0

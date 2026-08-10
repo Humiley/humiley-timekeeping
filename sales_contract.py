@@ -109,10 +109,92 @@ def terms(c):
     }
 
 
-def advance_amount(c):
-    """What the advance is worth on this contract."""
+# ── the deposit ──────────────────────────────────────────────────────────────────────────────────
+# A deposit is a term of the customer's PO and of the contract, not a house rule. Three shapes turn
+# up on real jobs and all three have to survive the same arithmetic downstream:
+#
+#   a percentage of the contract value  — "30% tạm ứng"          (the common one)
+#   a stated sum                        — "₫200,000,000 on signing", straight off the PO
+#   staged tranches                     — "20% on signing, 10% on delivery of materials to site"
+#
+# Everything downstream works off the TOTAL and the share of the contract it represents, so a fixed
+# sum recovers pro-rata exactly like a percentage does. Encoding the deposit as a percentage only
+# would force somebody to convert ₫200,000,000 into "20.3%" by hand, and then the recovery would be
+# wrong by whatever the rounding lost.
+
+ADV_PCT = "pct"        # a share of the contract value
+ADV_FIXED = "fixed"    # a stated sum, usually straight off the purchase order
+
+ADVANCE_BASES = (
+    {"code": ADV_PCT, "label": "% of contract value", "labelVn": "% giá trị hợp đồng"},
+    {"code": ADV_FIXED, "label": "A stated amount", "labelVn": "Số tiền cụ thể"},
+)
+
+
+def advance_schedule(c):
+    """The deposit as it was actually agreed, normalised into dated tranches with a total.
+
+    A contract carrying only the old `advancePct` still works: it reads as a single percentage
+    tranche. That is deliberate — every contract already in the database has that shape, and a
+    migration that reinterpreted them would rewrite live balances.
+
+    Refuses a deposit larger than the job. It is always a typo, and left alone it makes every claim
+    recover more than it certifies until the arithmetic gives up.
+    """
+    c = c or {}
     t = terms(c)
-    return r2(t["value"] * t["advancePct"] / 100.0)
+    raw = c.get("advanceSchedule")
+    rows = []
+    if isinstance(raw, list) and raw:
+        for i, x in enumerate(raw):
+            x = x or {}
+            basis = str(x.get("basis") or ADV_PCT).strip().lower()
+            if basis not in (ADV_PCT, ADV_FIXED):
+                return {"ok": False, "tranches": [], "total": 0.0, "pctOfValue": 0.0,
+                        "why": "Tranche %d has an unknown basis %r. A deposit is either a "
+                               "percentage of the contract or a stated amount." % (i + 1, basis)}
+            val = _num(x.get("value"))
+            if val < 0:
+                return {"ok": False, "tranches": [], "total": 0.0, "pctOfValue": 0.0,
+                        "why": "Tranche %d is negative. A deposit that pays the customer is not a "
+                               "deposit." % (i + 1)}
+            amount = r2(t["value"] * min(100.0, val) / 100.0) if basis == ADV_PCT else r2(val)
+            rows.append({"label": str(x.get("label") or "").strip() or "Tranche %d" % (i + 1),
+                         "basis": basis, "value": r2(val), "amount": amount,
+                         "trigger": str(x.get("trigger") or "").strip(),
+                         "dueOn": str(x.get("dueOn") or "")[:10]})
+    elif t["advancePct"]:
+        rows.append({"label": "Advance", "basis": ADV_PCT, "value": t["advancePct"],
+                     "amount": r2(t["value"] * t["advancePct"] / 100.0),
+                     "trigger": "", "dueOn": ""})
+
+    total = r2(sum(x["amount"] for x in rows))
+    if t["value"] and total - t["value"] > 0.005:
+        return {"ok": False, "tranches": rows, "total": total, "pctOfValue": 0.0,
+                "why": "The deposit comes to %s against a contract worth %s. A deposit larger than "
+                       "the job would make every claim recover more than it certifies."
+                       % (_vnd(total), _vnd(t["value"]))}
+    return {
+        "ok": True, "tranches": rows, "total": total,
+        "pctOfValue": round(total / t["value"] * 100.0, 4) if t["value"] else 0.0,
+        "why": ("No deposit on this contract." if not rows else
+                "%s deposit across %d tranche(s), %.4g%% of the contract."
+                % (_vnd(total), len(rows), total / t["value"] * 100.0 if t["value"] else 0.0)),
+    }
+
+
+def advance_amount(c):
+    """What the deposit is worth on this contract, whichever way it was expressed."""
+    return advance_schedule(c)["total"]
+
+
+def advance_pct_effective(c):
+    """The deposit as a share of the contract — what pro-rata recovery actually winds down against.
+
+    Derived, never typed. A ₫200,000,000 deposit on a ₫986,000,000 job recovers at 20.28…%, and
+    asking a person to round that into the contract is asking for a balance that never reaches zero.
+    """
+    return advance_schedule(c)["pctOfValue"]
 
 
 def retention_cap(c):
@@ -144,13 +226,17 @@ def application(c, certified_this, state=None):
         return {"ok": False, "why": "A negative certification is a credit note, not a claim."}
     if t["value"] and certified_prev + this - t["value"] > 0.005:
         return {"ok": False,
-                "why": "Certifying %.2f would take the contract to %.2f against a value of %.2f. "
+                "why": "Certifying %s would take the contract to %s against a value of %s. "
                        "Raise a variation first, or certify less."
-                       % (this, certified_prev + this, t["value"])}
-    if t["advancePct"] and not t["recoveryRule"]:
-        return {"ok": False, "why": "This contract has a %.4g%% advance but no recovery rule. How "
-                                    "the advance winds down is a term of the contract, not "
-                                    "something the portal may choose." % t["advancePct"]}
+                       % (_vnd(this), _vnd(certified_prev + this), _vnd(t["value"]))}
+    sched = advance_schedule(c)
+    if not sched["ok"]:
+        return {"ok": False, "why": sched["why"]}
+    adv_pct = sched["pctOfValue"]
+    if sched["total"] and not t["recoveryRule"]:
+        return {"ok": False, "why": "This contract has a %s deposit but no recovery rule. How the "
+                                    "deposit winds down is a term of the contract, not something "
+                                    "the portal may choose." % _vnd(sched["total"])}
     if t["retentionPct"] and not t["releaseRule"]:
         return {"ok": False, "why": "This contract withholds %.4g%% retention but does not say when "
                                     "it comes back. That is a term of the contract."
@@ -165,9 +251,9 @@ def application(c, certified_this, state=None):
     # Advance recovery: a share of this claim, never more than is still outstanding.
     pct_complete = (certified_prev + this) / t["value"] * 100.0 if t["value"] else 0.0
     if t["recoveryRule"] == REC_PRORATA:
-        rec = r2(this * t["advancePct"] / 100.0)
+        rec = r2(this * adv_pct / 100.0)
     elif t["recoveryRule"] == REC_FROM_PCT:
-        rec = r2(this * t["advancePct"] / 100.0) if pct_complete >= t["recoveryFromPct"] else 0.0
+        rec = r2(this * adv_pct / 100.0) if pct_complete >= t["recoveryFromPct"] else 0.0
     else:                                   # manual — the caller says, the balance still binds
         rec = r2(st.get("recoverNow"))
     rec = r2(min(rec, adv_out))
@@ -179,8 +265,9 @@ def application(c, certified_this, state=None):
     # thing that happens — it means the recovery rule and the claim size disagree.
     if net < -0.005:
         return {"ok": False,
-                "why": "Deductions (%.2f recovery + %.2f retention) exceed the %.2f certified. "
-                       "Reduce the recovery on this claim." % (rec, ret_this, this)}
+                "why": "Deductions (%s recovery + %s retention) exceed the %s certified. "
+                       "Reduce the recovery on this claim."
+                       % (_vnd(rec), _vnd(ret_this), _vnd(this))}
 
     return {
         "ok": True,

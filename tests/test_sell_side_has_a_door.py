@@ -161,12 +161,55 @@ def test_the_trail_shows_the_gaps_before_the_documents():
     assert fn.index("gapBox +") < fn.index("(r.steps || []).map(step)")
 
 
+def _method_body(name):
+    """Just that one method — sliced to the next def at the same indentation.
+
+    Slicing to a named later method is how this test quietly started reading a neighbour's code:
+    a method inserted in between put `"kind": "advance"` (a stored receipt's type, not a trail step)
+    inside the window, and the check failed on something it was never meant to see."""
+    a = APP.find("    def %s(" % name)
+    assert a >= 0, name
+    b = APP.find("\n    def ", a + 1)
+    return APP[a:b if b > 0 else len(APP)]
+
+
+TRACE = _method_body("_trace_ep")
+
+
+def test_the_trace_body_was_actually_found():
+    assert TRACE and '"kind": "quotation"' in TRACE, "the trace endpoint moved — re-point these"
+
+
 def test_every_gap_code_the_server_can_emit_has_a_bilingual_entry_on_the_screen():
     """The server's `why` is English. A code with no entry here falls back to it and tells a
     Vietnamese reader in English what is wrong with their order."""
-    codes = set(re.findall(r'"what": "([a-z\-]+)"', APP))
+    codes = set(re.findall(r'"what": "([a-z\-]+)"', TRACE))
     table = INDEX[INDEX.find("const _TR_GAP"):INDEX.find("async function crmTrace")]
     assert table, "the gap table moved — re-point this test"
     missing = [c for c in codes if ("'%s'" % c) not in table]
     assert not missing, "no bilingual entry for: %s" % ", ".join(sorted(missing))
     assert len(codes) >= 6, codes
+
+
+def test_every_step_kind_the_trail_can_emit_has_a_bilingual_label():
+    """Same rule as the gap codes. A kind with no entry falls back to the raw machine string, so a
+    Vietnamese reader gets "po" instead of "Đơn đặt hàng của khách"."""
+    kinds = set(re.findall(r'"kind": "([a-z\-]+)"', TRACE))
+    table = INDEX[INDEX.find("const _TR_STEP"):INDEX.find("const _TR_GAP")]
+    assert table, "the step table moved — re-point this test"
+    missing = [k for k in kinds if (k + ":") not in table]
+    assert not missing, "no bilingual label for: %s" % ", ".join(sorted(missing))
+    assert len(kinds) >= 7, kinds
+
+
+def test_the_purchase_order_and_the_deposit_are_on_the_contract_screen():
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    assert "_ctPoBlock(c, id)" in ct and "_ctDepositBlock(c, id, draft)" in ct
+
+
+def test_the_deposit_is_no_longer_a_single_percentage_box():
+    """One "Advance %" box forced anybody with a "₫200,000,000 on signing" PO to convert it into a
+    percentage by hand, and the recovery was then wrong by whatever the rounding lost."""
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    assert "num('advancePct'" not in ct
+    assert "advanceSchedule: _ctDepositRead()" in INDEX

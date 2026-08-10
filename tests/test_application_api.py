@@ -29,7 +29,13 @@ def _post(api, token, path, **b):
     return api("POST", path, token, b)
 
 
-def _live_contract(api, token, value=1_000_000_000, **terms):
+def _live_contract(api, token, value=1_000_000_000, deposit=None, **terms):
+    """A contract with its deposit already received, unless a test says otherwise.
+
+    The deposit is a balance that moves when CASH moves, so a claim can only recover what actually
+    arrived. These tests are about the claim arithmetic, so the money is banked up front; the test
+    that cares about the other case passes deposit=0.
+    """
     q = _post(api, token, "/api/sales/quote", action="draft", title="Job",
               accountName="Pharma Co", lines=[{"desc": "Works", "qty": 1, "unitPrice": value}])[1]["item"]
     _post(api, token, "/api/sales/quote", action="issue", id=q["id"])
@@ -39,6 +45,10 @@ def _live_contract(api, token, value=1_000_000_000, **terms):
               "recoveryRule": SC.REC_PRORATA, "releaseRule": SC.REL_WARRANTY_END}, **terms)
     _post(api, token, "/api/sales/contract", action="terms", id=c["id"], **t)
     _post(api, token, "/api/sales/contract", action="activate", id=c["id"])
+    live = db.get_collection_item("sales_contracts", c["id"])
+    want = SC.advance_amount(live) if deposit is None else deposit
+    if want:
+        _post(api, token, "/api/sales/receipt", kind="advance", contractId=c["id"], amount=want)
     return db.get_collection_item("sales_contracts", c["id"])
 
 
@@ -304,3 +314,39 @@ def test_the_contract_ceiling_binds_even_when_the_LINE_still_has_room(api, token
                   contractId=c["id"], claims={_uid(c): 600_000_000})
     assert st == 400, r
     assert "variation" in r["error"], r["error"]
+
+
+# ── the deposit is a balance that moves when cash moves ─────────────────────────────────────────
+
+def test_a_claim_recovers_nothing_until_the_deposit_has_actually_arrived(api, tokens):
+    """Recovering a deposit that never came understates the claim — the customer is told less is
+    payable because of money they never paid — and reports an advance owed back that the company is
+    not holding. Two wrong numbers from one assumption."""
+    c = _live_contract(api, tokens["staff"], deposit=0)
+    st, r = _post(api, tokens["staff"], "/api/sales/application", action="draft",
+                  contractId=c["id"], period="2026-08", claims={_uid(c): 200_000_000})
+    assert st == 200, r
+    assert r["preview"]["advanceRecovered"] == 0
+    assert r["preview"]["netPayable"] == 190_000_000, "certified less retention only"
+
+
+def test_the_deposit_arriving_makes_it_recoverable(api, tokens):
+    c = _live_contract(api, tokens["staff"], deposit=0)
+    st, r = _post(api, tokens["staff"], "/api/sales/receipt", kind="advance",
+                  contractId=c["id"], amount=300_000_000, reference="FT-DEP-1")
+    assert st == 200, r
+    assert r["advanceReceived"] == 300_000_000 and r["stillToArrive"] == 0
+    _, d = _post(api, tokens["staff"], "/api/sales/application", action="draft",
+                 contractId=c["id"], period="2026-08", claims={_uid(c): 200_000_000})
+    assert d["preview"]["advanceRecovered"] == 60_000_000
+
+
+def test_a_part_deposit_only_makes_that_part_recoverable(api, tokens):
+    """Staged deposits are the point of the whole change: 20% on signing, 10% on delivery. Until the
+    second tranche lands, only the first is winding down."""
+    c = _live_contract(api, tokens["staff"], deposit=0)
+    _post(api, tokens["staff"], "/api/sales/receipt", kind="advance", contractId=c["id"],
+          amount=200_000_000)
+    _, r = _post(api, tokens["staff"], "/api/sales/application", action="draft",
+                 contractId=c["id"], period="2026-08", claims={_uid(c): 900_000_000})
+    assert r["preview"]["advanceRecovered"] == 200_000_000, "capped by what actually arrived"

@@ -45,6 +45,13 @@ TERMS = dict(action="terms", advancePct=30, retentionPct=5, warrantyMonths=12,
              releaseRule=SC.REL_WARRANTY_END, recoveryRule=SC.REC_PRORATA)
 
 
+def _deposit(api, token, contract_id, amount):
+    """The deposit arriving. It is a balance that moves when cash moves, so a test that wants an
+    advance outstanding has to say the money turned up."""
+    return api("POST", "/api/sales/receipt", token,
+               {"kind": "advance", "contractId": contract_id, "amount": amount})
+
+
 # ── it can only come from an accepted offer ──────────────────────────────────────────────────────
 
 def test_a_contract_is_built_from_an_accepted_quotation(api, tokens):
@@ -141,14 +148,33 @@ def test_balances_cannot_be_loaded_after_activation(api, tokens):
 
 # ── activation ───────────────────────────────────────────────────────────────────────────────────
 
-def test_activating_takes_a_contract_number_and_opens_the_advance(api, tokens):
+def test_activating_takes_a_contract_number_and_opens_no_advance_until_the_money_lands(api, tokens):
+    """Activation used to open the advance at the full agreed figure, as if the customer had already
+    paid it. That made the first claim recover money that never arrived — understating what was
+    payable — and reported an advance owed back that the company was not holding. The deposit is a
+    balance that moves when cash moves."""
     q = _accepted_quote(api, tokens["staff"])
     c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
     _c(api, tokens["staff"], id=c["id"], **TERMS)
     st, r = _c(api, tokens["staff"], action="activate", id=c["id"])
     assert st == 200, r
     assert r["item"]["contractNo"].startswith("SO-")
-    assert r["item"]["advanceOutstanding"] == 300_000_000
+    assert r["item"]["advanceOutstanding"] == 0
+    assert r["item"]["advanceReceived"] == 0
+
+
+def test_an_in_flight_contract_can_still_be_loaded_with_the_deposit_it_already_took(api, tokens):
+    """`opening` is how a job that started before the portal gets its real position — and that
+    position includes a deposit that arrived last quarter."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="opening", id=c["id"], advanceReceived=300_000_000,
+       advanceOutstanding=180_000_000, certifiedToDate=400_000_000)
+    st, r = _c(api, tokens["staff"], action="activate", id=c["id"])
+    assert st == 200, r
+    assert r["item"]["advanceReceived"] == 300_000_000
+    assert r["item"]["advanceOutstanding"] == 180_000_000, "activation must not overwrite it"
 
 
 def test_a_contract_with_an_advance_but_no_recovery_rule_cannot_be_activated(api, tokens):
@@ -164,13 +190,28 @@ def test_a_contract_with_an_advance_but_no_recovery_rule_cannot_be_activated(api
 # ── closing ──────────────────────────────────────────────────────────────────────────────────────
 
 def test_a_contract_that_does_not_close_cleanly_is_blocked_and_says_why(api, tokens):
+    """A deposit that arrived and was never recovered is money the customer paid for work. Leaving
+    it out of the closing statement is how it gets written off by accident."""
+    q = _accepted_quote(api, tokens["staff"])
+    c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
+    _c(api, tokens["staff"], id=c["id"], **TERMS)
+    _c(api, tokens["staff"], action="activate", id=c["id"])
+    assert _deposit(api, tokens["staff"], c["id"], 300_000_000)[0] == 200
+    st, r = _c(api, tokens["staff"], action="close", id=c["id"])
+    assert st == 200 and r.get("blocked") is True
+    assert any("never recovered" in i for i in r["final"]["issues"])
+
+
+def test_a_contract_whose_deposit_never_arrived_does_not_claim_one_was_lost(api, tokens):
+    """The other half of the same rule. Closing with nothing received must not report an advance
+    that was never paid as an advance that was never recovered."""
     q = _accepted_quote(api, tokens["staff"])
     c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
     _c(api, tokens["staff"], id=c["id"], **TERMS)
     _c(api, tokens["staff"], action="activate", id=c["id"])
     st, r = _c(api, tokens["staff"], action="close", id=c["id"])
-    assert st == 200 and r.get("blocked") is True
-    assert any("never recovered" in i for i in r["final"]["issues"])
+    assert st == 200 and r.get("blocked") is True, "still blocked — nothing was ever certified"
+    assert not any("never recovered" in i for i in r["final"]["issues"])
 
 
 def test_it_can_be_closed_once_the_outstanding_items_are_acknowledged(api, tokens):
@@ -178,6 +219,7 @@ def test_it_can_be_closed_once_the_outstanding_items_are_acknowledged(api, token
     c = _c(api, tokens["staff"], action="from_quote", quoteId=q["id"])[1]["item"]
     _c(api, tokens["staff"], id=c["id"], **TERMS)
     _c(api, tokens["staff"], action="activate", id=c["id"])
+    _deposit(api, tokens["staff"], c["id"], 300_000_000)
     st, r = _c(api, tokens["staff"], action="close", id=c["id"], acknowledge=True)
     assert st == 200 and r["item"]["status"] == S.CLOSED
     assert r["item"]["finalAccount"]["advanceOutstanding"] == 300_000_000

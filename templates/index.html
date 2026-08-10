@@ -16724,6 +16724,141 @@ async function crmRenderContracts() {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
 }
 
+/* The customer's own order. A pharma or electronics customer accepts by issuing a PO, not by
+   signing the quotation back, and their accounts payable rejects an invoice that does not quote its
+   number. It is also where the deposit is usually actually agreed — which is why a PO value that
+   differs from the contract is SHOWN rather than blocked or quietly copied over the contract. */
+function _ctPoBlock(c, id) {
+  const gap = (+c.poValue || 0) && Math.abs((+c.poValue) - (+c.value || 0)) > 0.005
+    ? (+c.poValue) - (+c.value || 0) : 0;
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' +
+      _t2('Customer purchase order', 'Đơn đặt hàng của khách') + '</div>' +
+    '<div class="grid-3" style="gap:10px">' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('PO number', 'Số đơn hàng') + '</label>' +
+        '<input class="form-control" id="ct-poNo" value="' + _tkEscA(c.poNo || '') + '"></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('PO date', 'Ngày đơn hàng') + '</label>' +
+        '<input class="form-control" id="ct-poDate" type="date" value="' + _tkEscA(c.poDate || '') + '"></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('PO value', 'Giá trị đơn hàng') + ' (₫)</label>' +
+        '<input class="form-control" id="ct-poValue" inputmode="numeric" value="' + _tkEscA(c.poValue || '') + '"></div>' +
+    '</div>' +
+    (gap ? '<div style="font-size:11.5px;color:#B45309;line-height:1.55;margin-bottom:8px">' +
+      _crmEsc(_t2('The PO differs from the contract by %m. That is allowed — reduced scope, a negotiated round-down, a variation issued as a second PO — but bill against the one the customer ordered.',
+                  'Đơn đặt hàng lệch %m so với hợp đồng. Điều này được phép — giảm phạm vi, thương lượng làm tròn, hoặc phụ lục phát hành thành đơn hàng thứ hai — nhưng hãy xuất hoá đơn theo đúng cái khách đã đặt.')
+        .replace('%m', _crmMoney(Math.abs(gap)))) + '</div>' : '') +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-bottom:8px">' +
+      _crmEsc(_t2('This number goes on every claim and every invoice raised from this contract.',
+                  'Số này sẽ xuất hiện trên mọi đợt thanh toán và mọi hoá đơn của hợp đồng.')) + '</div>' +
+    '<button class="btn btn-ghost btn-sm" onclick="crmContractPo(\'' + id + '\')">' +
+      (c.poNo ? _t2('Update PO', 'Cập nhật đơn hàng') : _t2('Record PO', 'Ghi đơn hàng')) + '</button>' +
+  '</div>';
+}
+
+/* The deposit, however the PO and the contract actually expressed it: a percentage, a stated sum,
+   or staged tranches. It used to be a single "Advance %" box, which forced anybody with a
+   "₫200,000,000 on signing" PO to convert it into a percentage by hand — and then the recovery was
+   wrong by whatever the rounding lost, for ever, because the balance never reached zero. */
+const _CT_ADV_BASIS = [['pct', '% of contract value', '% giá trị hợp đồng'], ['fixed', 'A stated amount', 'Số tiền cụ thể']];
+
+function _ctDepositRow(i, r) {
+  const vi = _LANG.cur === 'vi';
+  return '<div class="grid-3 ct-dep-row" style="gap:8px;margin-bottom:6px">' +
+    '<div class="form-group" style="margin:0"><select class="form-control ct-dep-basis">' +
+      _CT_ADV_BASIS.map(o => '<option value="' + o[0] + '"' + (o[0] === (r.basis || 'pct') ? ' selected' : '') + '>' +
+        _crmEsc(vi ? o[2] : o[1]) + '</option>').join('') + '</select></div>' +
+    '<div class="form-group" style="margin:0"><input class="form-control ct-dep-value" inputmode="numeric" ' +
+      'placeholder="' + _tkEscA(_t2('Amount or %', 'Số tiền hoặc %')) + '" value="' + _tkEscA(r.value == null ? '' : r.value) + '"></div>' +
+    '<div class="form-group" style="margin:0"><input class="form-control ct-dep-trigger" ' +
+      'placeholder="' + _tkEscA(_t2('When (e.g. on signing)', 'Khi nào (vd: khi ký)')) + '" value="' + _tkEscA(r.trigger || '') + '"></div>' +
+  '</div>';
+}
+
+function _ctDepositBlock(c, id, draft) {
+  const rows = (c.advanceSchedule && c.advanceSchedule.length) ? c.advanceSchedule
+             : ((+c.advancePct) ? [{ basis: 'pct', value: c.advancePct }] : []);
+  const agreed = rows.reduce((s, r) => s + (String(r.basis) === 'fixed' ? (+r.value || 0)
+                                          : (+c.value || 0) * Math.min(100, +r.value || 0) / 100), 0);
+  const got = +c.advanceReceived || 0;
+  const held = +c.advanceOutstanding || 0;
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px">' +
+      _t2('Deposit (tạm ứng)', 'Tạm ứng') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-bottom:8px">' +
+      _crmEsc(_t2('However the PO and the contract expressed it — a percentage, a stated amount, or staged tranches. It is not revenue: it is money you hold and owe back, recovered out of each claim.',
+                  'Theo đúng cách đơn hàng và hợp đồng quy định — theo %, một số tiền cụ thể, hoặc chia nhiều đợt. Đây không phải doanh thu: đây là tiền mình đang giữ và phải hoàn lại, được khấu trừ dần qua từng đợt thanh toán.')) + '</div>' +
+    (draft ? '<div id="ct-dep-rows">' + (rows.length ? rows.map((r, i) => _ctDepositRow(i, r)).join('') : _ctDepositRow(0, {})) + '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="crmDepositAddRow()">' + _t2('+ Another tranche', '+ Thêm đợt') + '</button>'
+      : '<div style="font-size:12.5px;line-height:1.7">' +
+          rows.map(r => '<div>' + _crmEsc(r.trigger || _t2('Deposit', 'Tạm ứng')) + ' — <b>' +
+            (String(r.basis) === 'fixed' ? _crmMoney(r.value) : (+r.value || 0) + '%') + '</b></div>').join('') +
+        '</div>') +
+    '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12.5px;display:flex;gap:18px;flex-wrap:wrap">' +
+      '<div><span style="color:var(--text-light)">' + _t2('Agreed', 'Đã thoả thuận') + '</span> <b style="font-variant-numeric:tabular-nums">' + _crmMoney(agreed) + '</b></div>' +
+      '<div><span style="color:var(--text-light)">' + _t2('Received', 'Đã nhận') + '</span> <b style="font-variant-numeric:tabular-nums;color:' + (got ? 'var(--emerald)' : '#B45309') + '">' + _crmMoney(got) + '</b></div>' +
+      '<div><span style="color:var(--text-light)">' + _t2('Still to recover', 'Còn phải khấu trừ') + '</span> <b style="font-variant-numeric:tabular-nums">' + _crmMoney(held) + '</b></div>' +
+    '</div>' +
+    (!draft && agreed - got > 0.005
+      ? '<div style="font-size:11.5px;color:#B45309;margin-top:8px;line-height:1.55">' +
+          _crmEsc(_t2('%m of the deposit has not arrived. That part is not recovered out of any claim until it does — recovering money that never came understates every claim.',
+                      'Còn %m tạm ứng chưa về. Phần đó chưa được khấu trừ vào đợt nào cho tới khi nhận được — khấu trừ khoản tiền chưa nhận sẽ làm mọi đợt thanh toán bị tính thiếu.')
+            .replace('%m', _crmMoney(agreed - got))) + '</div>' : '') +
+    (!draft && agreed > 0 ? '<button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="crmDepositReceived(\'' + id + '\')">' +
+      _t2('Record deposit received', 'Ghi nhận tạm ứng đã về') + '</button>' : '') +
+  '</div>';
+}
+
+function crmDepositAddRow() {
+  const box = document.getElementById('ct-dep-rows'); if (!box) return;
+  box.insertAdjacentHTML('beforeend', _ctDepositRow(box.children.length, {}));
+}
+
+function _ctDepositRead() {
+  return [...document.querySelectorAll('#ct-dep-rows .ct-dep-row')].map(row => ({
+    basis: row.querySelector('.ct-dep-basis').value,
+    value: +String(row.querySelector('.ct-dep-value').value || '').replace(/[^0-9.]/g, ''),
+    trigger: row.querySelector('.ct-dep-trigger').value || ''
+  })).filter(r => r.value > 0);
+}
+
+async function crmContractPo(id) {
+  const g = k => (document.getElementById('ct-' + k) || {}).value || '';
+  try {
+    const r = await tkApi('/api/sales/contract', { method: 'POST', body: { id: id, action: 'po',
+      poNo: g('poNo'), poDate: g('poDate'), poValue: +String(g('poValue')).replace(/[^0-9.]/g, '') } });
+    toast(r.differsFromContract
+      ? _t2('PO recorded — it differs from the contract value', 'Đã ghi đơn hàng — giá trị lệch so với hợp đồng')
+      : _t2('PO recorded', 'Đã ghi đơn hàng'), r.differsFromContract ? 'warn' : 'success', 6000);
+    _COLL_TS['sales_contracts'] = 0;
+    document.getElementById('ctOverlay')?.remove();
+    crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmDepositReceived(id) {
+  const amt = await tkPrompt({ title: _t2('How much of the deposit arrived?', 'Tạm ứng về bao nhiêu?'),
+    body: _t2('Only what has actually landed. A deposit is recovered out of later claims, so recording money that has not come in understates every one of them.',
+              'Chỉ nhập số tiền thực nhận. Tạm ứng sẽ được khấu trừ vào các đợt sau, nên ghi nhận tiền chưa về sẽ làm mọi đợt bị tính thiếu.'),
+    type: 'number' });
+  if (!amt) return;
+  const body = { kind: 'advance', contractId: id, amount: +String(amt).replace(/[^0-9.]/g, ''), method: 'Bank' };
+  const ref = await tkPrompt({ title: _t2('Bank reference', 'Số tham chiếu'), body: _t2('Optional.', 'Không bắt buộc.') });
+  if (ref) body.reference = ref;
+  try {
+    await tkApi('/api/sales/receipt', { method: 'POST', body: body });
+  } catch (e) {
+    if (!/say why/i.test(_errMsg(e))) { toast(_errMsg(e), 'error', 9000); return; }
+    const why = await tkPrompt({ title: _t2('That is more than was agreed', 'Nhiều hơn số đã thoả thuận'), body: _errMsg(e) });
+    if (!why) return;
+    body.overReason = why;
+    try { await tkApi('/api/sales/receipt', { method: 'POST', body: body }); }
+    catch (e2) { toast(_errMsg(e2), 'error', 9000); return; }
+  }
+  toast(_t2('Deposit recorded', 'Đã ghi nhận tạm ứng'));
+  _COLL_TS['sales_contracts'] = 0;
+  document.getElementById('ctOverlay')?.remove();
+  if (document.getElementById('crm-billing-root')) crmRenderBilling(); else crmRenderContracts();
+}
+
 async function crmOpenContract(id) {
   await tkLoadColl('sales_contracts');
   const c = (_HR.sales_contracts || []).find(x => x.id === id); if (!c) return;
@@ -16740,9 +16875,9 @@ async function crmOpenContract(id) {
       '<button class="modal-close" onclick="document.getElementById(\'ctOverlay\').remove()">&times;</button></div>' +
     (draft ? '' : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(32,80,144,.08);color:var(--navy)">' +
       _crmEsc(_t2('Signed and live. The terms are what the customer agreed — raise a variation to change them, and the balances now move only through certified claims.', 'Đã ký và đang thực hiện. Điều khoản là những gì khách hàng đã đồng ý — muốn đổi phải lập phụ lục; số dư chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>') +
+    _ctPoBlock(c, id) + _ctDepositBlock(c, id, draft) +
     '<div class="grid-2" style="gap:12px">' +
       num('value', _t2('Contract value', 'Giá trị hợp đồng'), c.value, '₫') +
-      num('advancePct', _t2('Advance', 'Tạm ứng'), c.advancePct, '%') +
       num('retentionPct', _t2('Retention', 'Giữ lại bảo hành'), c.retentionPct, '%') +
       num('warrantyMonths', _t2('Warranty', 'Bảo hành'), c.warrantyMonths, _t2('months', 'tháng')) +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('How the advance is recovered', 'Cách khấu trừ tạm ứng') + '</label>' +
@@ -16789,7 +16924,8 @@ async function crmContractAct(id, action) {
   const g = k => { const e = document.getElementById('ct-' + k); return e ? e.value : undefined; };
   const numv = k => { const v = g(k); return v === undefined || v === '' ? undefined : +String(v).replace(/[^0-9.]/g, ''); };
   let body = { id: id, action: action };
-  if (action === 'terms') body = Object.assign(body, { value: numv('value'), advancePct: numv('advancePct'),
+  if (action === 'terms') body = Object.assign(body, { value: numv('value'),
+      advanceSchedule: _ctDepositRead(), advancePct: 0,
       retentionPct: numv('retentionPct'), warrantyMonths: numv('warrantyMonths'),
       recoveryRule: g('recoveryRule'), releaseRule: g('releaseRule') });
   if (action === 'opening') body = Object.assign(body, { certifiedToDate: numv('certifiedToDate'),
@@ -17157,7 +17293,9 @@ async function crmReceiptSave(id) {
    looks finished on the billing list, and only the trail shows that no invoice was ever raised. */
 const _TR_STEP = {
   quotation:  ['Quotation', 'Báo giá', '#205090'],
+  po:         ['Customer PO', 'Đơn đặt hàng của khách', '#0ea5e9'],
   contract:   ['Contract', 'Hợp đồng', '#205090'],
+  deposit:    ['Deposit received', 'Tạm ứng đã nhận', 'var(--emerald)'],
   acceptance: ['Works accepted', 'Nghiệm thu', 'var(--emerald)'],
   claim:      ['Payment application', 'Đề nghị thanh toán', '#0ea5e9'],
   invoice:    ['Legal invoice', 'Hoá đơn GTGT', '#8B5CF6'],
@@ -17192,7 +17330,19 @@ const _TR_GAP = {
     enWhy: '%m is being held with no release rule recorded.', vnWhy: 'Đang giữ %m nhưng chưa có quy định hoàn trả.' },
   'retention-due': {
     en: 'Retention due back now', vn: 'Tiền giữ lại đã đến hạn hoàn trả',
-    enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hoàn trả %m tiền giữ lại.' }
+    enWhy: '%m of retention is due back from the customer.', vnWhy: 'Khách hàng phải hoàn trả %m tiền giữ lại.' },
+  'deposit-not-received': {
+    en: 'The agreed deposit has not arrived', vn: 'Tạm ứng đã thoả thuận chưa về',
+    enWhy: '%m of the deposit has not arrived. That part is not recovered out of any claim until it does.',
+    vnWhy: 'Còn %m tạm ứng chưa về. Phần đó chưa được khấu trừ vào đợt nào cho tới khi nhận được.' },
+  'no-po': {
+    en: 'No customer PO number recorded', vn: 'Chưa ghi số đơn đặt hàng của khách',
+    enWhy: 'Their accounts payable will reject an invoice that does not quote one.',
+    vnWhy: 'Bộ phận công nợ của khách sẽ từ chối hoá đơn không ghi số đơn đặt hàng.' },
+  'po-value-differs': {
+    en: 'The PO and the contract are for different amounts', vn: 'Đơn đặt hàng và hợp đồng lệch giá trị',
+    enWhy: 'The PO differs from the contract by %m. That is allowed — but bill the one the customer ordered against.',
+    vnWhy: 'Đơn đặt hàng lệch %m so với hợp đồng. Điều này được phép — nhưng hãy xuất hoá đơn theo đúng cái khách đã đặt.' }
 };
 
 async function crmTrace(docId) {
