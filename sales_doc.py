@@ -130,6 +130,12 @@ def _num(v):
     return 0.0 if n != n else n          # NaN in a money field is worse than zero
 
 
+def _vnd(n):
+    """Money in a sentence a person reads. "Claiming 1050000000.00" is a figure you have to count
+    digits in before you can act on it."""
+    return "₫{:,.0f}".format(round(_num(n)))
+
+
 def line_amount(ln):
     """What this line is worth. A heading or a note is worth nothing, whatever is typed on it."""
     ln = ln or {}
@@ -193,8 +199,8 @@ def apply(lines, claims, counter="billedAmt"):
         if a - avail > TOL:
             problems.append({"uid": uid, "amount": a, "available": avail,
                              "over": round(a - avail, 2),
-                             "why": "Claiming %.2f against %.2f still open — over by %.2f."
-                                    % (a, avail, a - avail)})
+                             "why": "Claiming %s against %s still open — over by %s."
+                                    % (_vnd(a), _vnd(avail), _vnd(a - avail))})
     if problems:
         return {"ok": False, "problems": problems,
                 "why": "%d line(s) cannot be claimed as asked; nothing was applied."

@@ -37,6 +37,9 @@ SERIES = {
     "DO": {"name": "Delivery note", "nameVn": "Phiếu giao hàng", "coll": None, "width": 4},
     "IN": {"name": "A/R invoice", "nameVn": "Hóa đơn bán hàng", "coll": None, "width": 4},
     "CN": {"name": "A/R credit memo", "nameVn": "Giấy báo có", "coll": None, "width": 4},
+    # A contractor's variation. SAP has no direct equivalent because a distributor's order does not
+    # grow mid-delivery; a fit-out contract does, most of the time.
+    "VO": {"name": "Variation order", "nameVn": "Phụ lục hợp đồng", "coll": None, "width": 4},
     "RC": {"name": "Incoming payment", "nameVn": "Phiếu thu", "coll": None, "width": 4},
 }
 

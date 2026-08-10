@@ -43,8 +43,9 @@ import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hou
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
-import sales_contract
-import vat as vat_mod   # advance recovery, retention, and the tax points it refuses to choose (pure)
+import sales_contract   # advance recovery, retention, the final account (pure)
+import sales_variation  # the phụ lục: what a variation does to a contract (pure)
+import vat as vat_mod   # the rate and base somebody fills in, and the arithmetic on them (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3908,6 +3909,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._einvoice_ep(uu, body))
         if path == "/api/sales/application":
             return self._guard(lambda uu: self._application_ep(uu, body))
+        if path == "/api/sales/variation":
+            return self._guard(lambda uu: self._variation_ep(uu, body or {}))
         if path == "/api/sales/contract":
             return self._guard(lambda uu: self._contract_ep(uu, body))
         if path == "/api/sales/quote":
@@ -4955,6 +4958,11 @@ class Handler(BaseHTTPRequestHandler):
         elif not set_status:
             sig["undoKind"] = "submission" if not (item.get("signatures") or []) else "amendment"
         item.setdefault("signatures", []).append(sig)
+        # The status BEFORE this signature. Everything below runs after `item["status"]` has been
+        # overwritten, so any branch that needs to know what the record WAS — rather than what this
+        # request is asking it to become — has to read this instead. A guard that checks
+        # item["status"] here is checking its own write.
+        pre_status = item.get("status")
         if set_status:
             item["status"] = set_status
             if coll == "claims" and isinstance(item.get("items"), list):
@@ -4974,6 +4982,30 @@ class Handler(BaseHTTPRequestHandler):
                 item["decision"] = set_status
                 item["decidedBy"] = signer_name
                 item.setdefault("decidedOn", time.strftime("%Y-%m-%d"))
+            # A sell-side variation RAISES THE VALUE every later claim is measured against. It is
+            # applied here and nowhere else, for the same reason the PMC variation order above is:
+            # the act that moves the ceiling is a signature, or it is somebody typing in a box.
+            # The apply runs BEFORE the signature is written, so a contract that has moved under us
+            # leaves no orphan "Applied" e-signature on a variation that was never applied.
+            if coll == "sales_variations" and set_status == sales_variation.APPLIED:
+                if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+                    return self._err("Applying a variation changes the contract value — that is an "
+                                     "Approver (management) act.", 403)
+                # No management exemption. Applying already REQUIRES management, so an
+                # "unless they are management" clause here would make this unreachable — a
+                # segregation-of-duties rule that never runs. Raising the value every later claim
+                # is measured against is precisely the act that needs a second person, the same way
+                # a pay run's preparer cannot be its signer.
+                if (item.get("owner") or "") == signer_name:
+                    return self._err("A variation is applied by somebody other than the person who "
+                                     "raised it — the same rule as a pay run's preparer and "
+                                     "signer.", 403)
+                why = self._variation_apply(u, dict(item, status=pre_status))
+                if why:
+                    return self._err(why, 400)
+                item["appliedBy"] = signer_name
+                item.setdefault("appliedOn", time.strftime("%Y-%m-%d"))
+
             if coll == "pm_procurement_payments" and set_status == "Certified":
                 item["certifiedBy"] = signer_name
                 item.setdefault("certDate", time.strftime("%Y-%m-%d"))
@@ -6459,7 +6491,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6486,7 +6518,8 @@ class Handler(BaseHTTPRequestHandler):
     # Creation is refused and pointed at the endpoint that checks; editing is limited to fields that
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     # Sell-side documents scoped like the CRM: own / department / everything from management up.
-    SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts"}
+    SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts",
+                    "sales_variations"}
 
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
@@ -6502,6 +6535,9 @@ class Handler(BaseHTTPRequestHandler):
                    # disagree about how much is left.
                    "sales_applications": ("a payment application", "/api/sales/application"),
                    "sales_receipts": ("a receipt", "/api/sales/receipt"),
+                   # A variation CHANGES THE CONTRACT VALUE. Through the generic path it would be an
+                   # in-place edit of the one thing a contract exists to make un-editable.
+                   "sales_variations": ("a variation", "/api/sales/variation"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6520,7 +6556,8 @@ class Handler(BaseHTTPRequestHandler):
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
     ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
-                       "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},   # nothing: every change goes through the endpoint
+                       "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
+                       "sales_variations": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
@@ -6540,7 +6577,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -10212,6 +10249,135 @@ class Handler(BaseHTTPRequestHandler):
             return res
         res["lines"] = applied["lines"]
         return res
+
+    def _variation_ep(self, u, body):
+        """The variation (phụ lục) — the document two refusals in this codebase already name.
+
+        A contract that grows is most fit-out jobs, and until now the only ways past the value
+        ceiling were to certify less than was built or to quietly edit the contract. The second
+        destroys the thing a contract is for.
+
+        APPLYING IS NOT AN ACTION HERE. It happens through /api/esign, exactly like a PMC variation
+        order and an interim payment certificate: raising the value every later claim is measured
+        against is a signed act, or it is somebody typing in a box.
+        """
+        act = str((body or {}).get("action") or "").strip().lower()
+        vid = str((body or {}).get("id") or "").strip()
+        cur = db.get_collection_item("sales_variations", vid) if vid else None
+        if vid and not cur:
+            return self._err("Variation not found.", 404)
+        if cur and not self._sales_may_write(u, cur):
+            return self._err("You can only change your own variations.", 403)
+
+        if act == "draft":
+            c = db.get_collection_item("sales_contracts", str((body or {}).get("contractId") or "")
+                                       or (cur or {}).get("contractId") or "")
+            if not c:
+                return self._err("Contract not found.", 404)
+            if c.get("status") != sales_doc.ACTIVE:
+                return self._err("A variation belongs to an ACTIVE contract — this one is %s."
+                                 % (c.get("status") or "draft"), 400)
+            if cur and cur.get("status") != sales_variation.DRAFT:
+                return self._err("An issued variation cannot be edited. Raise the next one.", 400)
+            lines = [l for l in ((body or {}).get("lines") or []) if l][:200]
+            doc = dict(cur or {})
+            doc.update({
+                "contractId": c.get("id"), "contractNo": c.get("contractNo"),
+                "accountName": c.get("accountName"), "accountId": c.get("accountId") or "",
+                "title": str((body or {}).get("title") or doc.get("title") or "")[:200],
+                "reason": str((body or {}).get("reason") or doc.get("reason") or "")[:500],
+                "valueDelta": (body or {}).get("valueDelta", doc.get("valueDelta", "")),
+                "lines": lines, "status": doc.get("status") or sales_variation.DRAFT,
+                "owner": doc.get("owner") or u.get("name"), "updatedAt": self._utc_now()})
+            e = sales_variation.effect(c, doc)
+            if not e["ok"]:
+                return self._err(e["why"], 400)
+            doc["delta"] = e["delta"]
+            saved = db.put_collection_item("sales_variations", doc)
+            return self._json({"ok": True, "item": saved, "effect": e})
+
+        if not cur:
+            return self._err("A variation id is required for '%s'." % (act or "(none)"), 400)
+        c = db.get_collection_item("sales_contracts", cur.get("contractId")) or {}
+
+        if act == "issue":
+            tr = sales_doc.transition(cur, sales_variation.ISSUED,
+                                      table=sales_variation.TRANSITIONS)
+            if not tr["ok"]:
+                return self._err(tr["why"], 400)
+            if not str(cur.get("title") or "").strip():
+                return self._err("A variation needs a title. What changed is the whole point of "
+                                 "the document.", 400)
+            e = sales_variation.effect(c, cur)
+            if not e["ok"]:
+                return self._err(e["why"], 400)
+            if not str(cur.get("variationNo") or "").strip():
+                year = int(self._vn_day()[:4])
+                n = db.next_doc_no("VO", year, lambda: doc_number.highest(
+                    doc_number.numbers_in(db.list_collection("sales_variations"), "variationNo"),
+                    "VO", year))
+                cur["variationNo"] = doc_number.format_no("VO", year, n)
+            cur["status"] = sales_variation.ISSUED
+            cur["issuedAt"] = self._utc_now()
+            cur["issuedBy"] = u.get("name")
+            cur["delta"] = e["delta"]
+            saved = db.put_collection_item("sales_variations", cur)
+            self._sales_audit_c(u, "Issued variation", saved)
+            return self._json({"ok": True, "item": saved, "effect": e,
+                               "next": "Applying it changes the contract value, so it is signed — "
+                                       "not saved."})
+
+        if act in ("reject", "cancel"):
+            want = sales_variation.REJECTED if act == "reject" else sales_variation.CANCELLED
+            tr = sales_doc.transition(cur, want, table=sales_variation.TRANSITIONS)
+            if not tr["ok"]:
+                return self._err(tr["why"], 400)
+            if act == "reject" and not str((body or {}).get("reason") or "").strip():
+                return self._err("Say why the customer rejected it — an unexplained rejection is "
+                                 "the one somebody re-raises next month.", 400)
+            cur["status"] = want
+            cur["outcomeAt"] = self._utc_now()
+            cur["outcomeBy"] = u.get("name")
+            if (body or {}).get("reason"):
+                cur["rejectReason"] = str(body["reason"])[:500]
+            saved = db.put_collection_item("sales_variations", cur)
+            self._sales_audit_c(u, "Variation " + want, saved)
+            return self._json({"ok": True, "item": saved})
+
+        if act == "preview":
+            return self._json({"ok": True, "effect": sales_variation.effect(c, cur),
+                               "register": sales_variation.register(
+                                   c, db.list_collection("sales_variations"))})
+
+        return self._err("Unknown action. Use draft, issue, preview, reject or cancel — applying a "
+                         "variation is an e-signature, not an action.", 400)
+
+    def _variation_apply(self, u, v):
+        """Apply a signed variation to its contract, exactly once, under compare-and-swap.
+
+        Called from the e-signature path only. The contract is re-read and re-checked inside the
+        loop because the value ceiling it is about to raise is the same one another claim may be
+        consuming right now — and a variation applied against a stale contract would either lose a
+        concurrent claim's deduction or double the value.
+        """
+        if v.get("status") != sales_variation.ISSUED:
+            return "Only an issued variation can be applied — this one is %s." % (v.get("status") or "draft")
+        for _ in range(5):
+            c = db.get_collection_item("sales_contracts", v.get("contractId"))
+            if not c:
+                return "Contract not found."
+            if c.get("status") != sales_doc.ACTIVE:
+                return "The contract is no longer active."
+            rev0 = c.get("_rev")
+            out = sales_variation.apply_to(
+                c, v, lambda i: "%s-%d" % (str(v.get("id"))[-8:], i + 1))
+            if not out["ok"]:
+                return out["why"]
+            saved = db.put_collection_item_if_rev("sales_contracts", out["contract"], rev0)
+            if saved is not None:
+                return None
+        return ("The contract was being changed by somebody else. Nothing was applied — open the "
+                "variation again and sign it once more.")
 
     def _contract_ep(self, u, body):
         """The contract: what was actually agreed, and the two balances every claim is computed from.

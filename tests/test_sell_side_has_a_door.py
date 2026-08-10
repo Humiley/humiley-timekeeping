@@ -235,3 +235,16 @@ def test_the_claim_shows_its_tax_line_or_says_there_is_none():
     cl = INDEX[INDEX.find("async function crmOpenClaim"):INDEX.find("async function crmClaimCertify")]
     assert "a.vatSet" in cl and "grossPayable" in cl
     assert "Ex-VAT" in cl, "a claim with no rate must say so rather than looking tax-free"
+
+
+def test_the_variation_is_reachable_from_the_contract_it_changes():
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    assert "_ctVariationBlock(c)" in ct
+    assert re.search(r"^async function crmOpenVariation\(", INDEX, re.M)
+
+
+def test_applying_a_variation_goes_through_the_e_signature_not_a_save():
+    """If it were a plain POST the contract value would move on an unsigned click."""
+    fn = INDEX[INDEX.find("function crmVoApply"):INDEX.find("function crmVoApply") + 900]
+    assert "tkESign({" in fn and "setStatus: 'applied'" in fn
+    assert "/api/sales/variation" not in fn

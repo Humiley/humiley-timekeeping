@@ -16724,6 +16724,168 @@ async function crmRenderContracts() {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
 }
 
+/* ═══ Variations (phụ lục) ══════════════════════════════════════════════════════════════════════
+   The document two refusals in this codebase have been naming for weeks with nowhere to send you:
+   "Raise a variation first, or certify less" on an over-value claim, and "Raise a variation
+   instead" on a terms change. A contract that grows is most fit-out jobs.
+
+   Applying one is an E-SIGNATURE, not a button that saves. It raises the value every later claim
+   is measured against, so it goes through the same path as a PMC variation order — and is applied
+   by somebody other than the person who raised it. */
+const _VO_STATUS = { draft: ['Draft', 'Nháp', 'b-grey'], issued: ['Issued', 'Đã gửi', 'b-navy'],
+                     applied: ['Applied', 'Đã áp dụng', 'b-ok'],
+                     rejected: ['Rejected', 'Bị từ chối', 'b-danger'],
+                     cancelled: ['Cancelled', 'Đã huỷ', 'b-grey'] };
+
+async function _ctVariationBlock(c) {
+  let list = [];
+  try { await tkLoadColl('sales_variations'); list = (_HR.sales_variations || []).filter(v => v.contractId === c.id); }
+  catch (e) {}
+  const applied = list.filter(v => v.status === 'applied');
+  const original = (+c.value || 0) - applied.reduce((s, v) => s + (+v.delta || 0), 0);
+  const rows = list.length ? list.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))).map(v => {
+    const st = _VO_STATUS[v.status || 'draft'] || _VO_STATUS.draft;
+    const d = +v.delta || 0;
+    return '<div style="display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--border)">' +
+      '<div style="flex:1 1 auto;min-width:0">' +
+        '<b style="font-variant-numeric:tabular-nums">' + _crmEsc(v.variationNo || _t2('(draft)', '(nháp)')) + '</b> ' +
+        _crmEsc(v.title || '') +
+        (v.rejectReason ? '<div style="font-size:11px;color:var(--text-light)">' + _crmEsc(v.rejectReason) + '</div>' : '') +
+      '</div>' +
+      '<div style="font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;color:' + (d < 0 ? '#B45309' : 'var(--navy)') + '">' +
+        (d < 0 ? '(' + _crmMoney(Math.abs(d)) + ')' : _crmMoney(d)) + '</div>' +
+      '<span class="badge ' + st[2] + '" style="font-size:9.5px">' + _crmEsc(_LANG.cur === 'vi' ? st[1] : st[0]) + '</span>' +
+      (v.status === 'draft' || v.status === 'issued'
+        ? '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="crmOpenVariation(\'' + v.id + '\')">' + _t2('Open', 'Mở') + '</button>' : '') +
+    '</div>';
+  }).join('') : '<div style="font-size:12px;color:var(--text-light);padding:6px 0">' +
+      _crmEsc(_t2('No variations — the contract is what was quoted.', 'Chưa có phụ lục — hợp đồng đúng như báo giá.')) + '</div>';
+
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy)">' + _t2('Variations', 'Phụ lục hợp đồng') + '</div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="crmOpenVariation(\'\',\'' + c.id + '\')">' + _t2('+ Raise a variation', '+ Lập phụ lục') + '</button>' +
+    '</div>' +
+    (applied.length ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:4px">' +
+      _crmEsc(_t2('%n variation(s) took the contract from %a to %b.', '%n phụ lục đã đưa hợp đồng từ %a lên %b.')
+        .replace('%n', applied.length).replace('%a', _crmMoney(original)).replace('%b', _crmMoney(c.value))) + '</div>' : '') +
+    rows + '</div>';
+}
+
+async function crmOpenVariation(id, contractId) {
+  await tkLoadColl('sales_variations');
+  const v = id ? (_HR.sales_variations || []).find(x => x.id === id) : null;
+  const cid = contractId || (v || {}).contractId;
+  const draft = !v || (v.status || 'draft') === 'draft';
+  const issued = v && v.status === 'issued';
+  const lines = (v && v.lines && v.lines.length) ? v.lines : [{}];
+  const row = l => '<div class="grid-3 vo-row" style="gap:8px;margin-bottom:6px">' +
+    '<div class="form-group" style="margin:0"><input class="form-control vo-desc" placeholder="' + _tkEscA(_t2('What was added', 'Hạng mục thêm')) + '" value="' + _tkEscA(l.desc || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div class="form-group" style="margin:0"><input class="form-control vo-qty" inputmode="numeric" placeholder="' + _tkEscA(_t2('Qty', 'SL')) + '" value="' + _tkEscA(l.qty == null ? '' : l.qty) + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div class="form-group" style="margin:0"><input class="form-control vo-price" inputmode="numeric" placeholder="' + _tkEscA(_t2('Unit price', 'Đơn giá')) + '" value="' + _tkEscA(l.unitPrice == null ? '' : l.unitPrice) + '"' + (draft ? '' : ' disabled') + '></div>' +
+  '</div>';
+
+  document.getElementById('voOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'voOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:780px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' +
+      _crmEsc((v && v.variationNo) || _t2('New variation', 'Phụ lục mới')) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _t2('Phụ lục hợp đồng', 'Phụ lục hợp đồng') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'voOverlay\').remove()">&times;</button></div>' +
+    '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('What changed', 'Nội dung thay đổi') + '</label>' +
+      '<input class="form-control" id="vo-title" value="' + _tkEscA((v && v.title) || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Why', 'Lý do') + '</label>' +
+      '<input class="form-control" id="vo-reason" value="' + _tkEscA((v && v.reason) || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:6px">' +
+      _crmEsc(_t2('New scope arrives as new lines — existing lines already carry claimed balances and are never repriced here.',
+                  'Phạm vi mới được thêm thành hạng mục mới — hạng mục cũ đã có giá trị đã nghiệm thu nên không sửa giá ở đây.')) + '</div>' +
+    '<div id="vo-rows">' + lines.map(row).join('') + '</div>' +
+    (draft ? '<button class="btn btn-ghost btn-sm" onclick="crmVoAddRow()">' + _t2('+ Another line', '+ Thêm dòng') + '</button>' : '') +
+    '<div class="form-group" style="max-width:280px;margin-top:10px"><label class="form-label" style="font-size:11.5px">' +
+      _t2('Value change (₫) — leave blank to follow the lines', 'Thay đổi giá trị (₫) — để trống thì tính theo hạng mục') + '</label>' +
+      '<input class="form-control" id="vo-delta" inputmode="numeric" value="' + _tkEscA((v && v.valueDelta) || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div id="vo-effect" style="font-size:12.5px;color:var(--navy);font-weight:600;margin:8px 0;line-height:1.55"></div>' +
+    (issued ? '<div class="card" style="padding:10px 13px;font-size:11.5px;line-height:1.55;background:rgba(32,80,144,.08);color:var(--navy)">' +
+      _crmEsc(_t2('Applying this raises the value every later claim is measured against, so it is signed — and signed by somebody other than whoever raised it.',
+                  'Áp dụng phụ lục sẽ nâng giá trị mà mọi đợt thanh toán sau được đối chiếu, nên phải ký số — và người ký phải khác người lập.')) + '</div>' : '') +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'voOverlay\').remove()">' + _t('Close') + '</button>' +
+      (draft ? '<button class="btn btn-ghost" onclick="crmVoSave(\'' + (id || '') + '\',\'' + cid + '\',false)">' + _t2('Save draft', 'Lưu nháp') + '</button>' +
+               '<button class="btn btn-primary" onclick="crmVoSave(\'' + (id || '') + '\',\'' + cid + '\',true)">' + _t2('Issue', 'Phát hành') + '</button>' : '') +
+      (issued ? '<button class="btn btn-ghost" onclick="crmVoReject(\'' + id + '\')">' + _t2('Customer rejected it', 'Khách từ chối') + '</button>' +
+                '<button class="btn btn-primary" onclick="crmVoApply(\'' + id + '\')">' + _t2('Sign and apply', 'Ký và áp dụng') + '</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(el);
+  if (v) crmVoPreview(v.id);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+function crmVoAddRow() {
+  const box = document.getElementById('vo-rows'); if (!box) return;
+  box.insertAdjacentHTML('beforeend', box.firstElementChild.outerHTML.replace(/value="[^"]*"/g, 'value=""'));
+}
+
+function _crmVoRead() {
+  return [...document.querySelectorAll('#vo-rows .vo-row')].map(r => ({
+    desc: r.querySelector('.vo-desc').value,
+    qty: +String(r.querySelector('.vo-qty').value || '').replace(/[^0-9.]/g, '') || 0,
+    unitPrice: +String(r.querySelector('.vo-price').value || '').replace(/[^0-9.]/g, '') || 0
+  })).filter(l => l.desc || l.unitPrice);
+}
+
+async function crmVoPreview(id) {
+  try {
+    const r = await tkApi('/api/sales/variation', { method: 'POST', body: { action: 'preview', id: id } });
+    const box = document.getElementById('vo-effect');
+    if (box) box.textContent = (r.effect && (r.effect.statement || r.effect.why)) || '';
+  } catch (e) {}
+}
+
+async function crmVoSave(id, contractId, issue) {
+  const g = k => (document.getElementById('vo-' + k) || {}).value || '';
+  const body = { action: 'draft', contractId: contractId, title: g('title'), reason: g('reason'),
+                 lines: _crmVoRead(), valueDelta: g('delta') };
+  if (id) body.id = id;
+  try {
+    const r = await tkApi('/api/sales/variation', { method: 'POST', body: body });
+    if (issue) await tkApi('/api/sales/variation', { method: 'POST', body: { action: 'issue', id: r.item.id } });
+    toast(issue ? _t2('Variation issued', 'Đã phát hành phụ lục') : _t2('Saved', 'Đã lưu'));
+    _COLL_TS['sales_variations'] = 0;
+    document.getElementById('voOverlay')?.remove();
+    document.getElementById('ctOverlay')?.remove();
+    crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+async function crmVoReject(id) {
+  const why = await tkPrompt({ title: _t2('Why was it rejected?', 'Vì sao bị từ chối?'),
+    body: _t2('An unexplained rejection is the one somebody re-raises next month.',
+              'Từ chối mà không nêu lý do là phụ lục sẽ bị lập lại vào tháng sau.') });
+  if (!why) return;
+  try {
+    await tkApi('/api/sales/variation', { method: 'POST', body: { action: 'reject', id: id, reason: why } });
+    toast(_t2('Recorded', 'Đã ghi nhận'));
+    _COLL_TS['sales_variations'] = 0;
+    document.getElementById('voOverlay')?.remove();
+    crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+function crmVoApply(id) {
+  const v = (_HR.sales_variations || []).find(x => x.id === id) || {};
+  tkESign({
+    coll: 'sales_variations', id: id, setStatus: 'applied',
+    meaning: 'Applied variation ' + (v.variationNo || '') + ' — ' + (v.title || ''),
+    onDone: () => {
+      toast(_t2('Variation applied — the contract value has moved', 'Đã áp dụng — giá trị hợp đồng đã thay đổi'), 'success', 7000);
+      _COLL_TS['sales_variations'] = 0; _COLL_TS['sales_contracts'] = 0;
+      document.getElementById('voOverlay')?.remove();
+      document.getElementById('ctOverlay')?.remove();
+      crmRenderContracts();
+    }
+  });
+}
+
 /* The customer's own order. A pharma or electronics customer accepts by issuing a PO, not by
    signing the quotation back, and their accounts payable rejects an invoice that does not quote its
    number. It is also where the deposit is usually actually agreed — which is why a PO value that
@@ -16875,7 +17037,7 @@ async function crmOpenContract(id) {
       '<button class="modal-close" onclick="document.getElementById(\'ctOverlay\').remove()">&times;</button></div>' +
     (draft ? '' : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(32,80,144,.08);color:var(--navy)">' +
       _crmEsc(_t2('Signed and live. The terms are what the customer agreed — raise a variation to change them, and the balances now move only through certified claims.', 'Đã ký và đang thực hiện. Điều khoản là những gì khách hàng đã đồng ý — muốn đổi phải lập phụ lục; số dư chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>') +
-    _ctPoBlock(c, id) + _ctDepositBlock(c, id, draft) +
+    _ctPoBlock(c, id) + _ctDepositBlock(c, id, draft) + (draft ? '' : await _ctVariationBlock(c)) +
     '<div class="grid-2" style="gap:12px">' +
       num('value', _t2('Contract value', 'Giá trị hợp đồng'), c.value, '₫') +
       num('retentionPct', _t2('Retention', 'Giữ lại bảo hành'), c.retentionPct, '%') +
