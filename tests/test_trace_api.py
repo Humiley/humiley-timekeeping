@@ -10,6 +10,7 @@ billing list, and only the trail shows that no invoice was ever raised against i
 """
 import pytest
 
+import app
 import db
 import sales_contract as SC
 
@@ -25,6 +26,14 @@ def _clean():
         conn.commit(); conn.close()
     wipe(); yield; wipe()
 
+
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying, applying a variation and applying a credit note are all e-signatures now, so
+    every test in this file drives /api/esign. The M365 re-auth is skipped here — the Part 11
+    identity component has its own tests; these are about what the signature DOES."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
 
 def _post(api, t, path, **b):
     return api("POST", path, t, b)
@@ -47,7 +56,7 @@ def _full_chain(api, tokens, claim=400_000_000):
     c = db.get_collection_item("sales_contracts", c["id"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
               period="2026-07", claims={c["lines"][0]["uid"]: claim})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     return q, c, db.get_collection_item("sales_applications", a["id"])
 
 
@@ -58,6 +67,14 @@ def _trace(api, t, doc_id):
 def _kinds(r):
     return [s["kind"] for s in r["steps"]]
 
+
+
+def _certify(api, token, aid, monkey=None):
+    """Certifying is an e-signature now — the same act PMC's interim payment certificate has
+    required for months. Tests drive it through /api/esign."""
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified payment application",
+                "setStatus": "certified"})
 
 # ── the trail ────────────────────────────────────────────────────────────────────────────────────
 

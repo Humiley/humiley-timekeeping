@@ -9,6 +9,7 @@ can call.
 """
 import pytest
 
+import app
 import db
 import sales_contract as SC
 import vat
@@ -26,6 +27,14 @@ def _clean():
         conn.commit(); conn.close()
     wipe(); yield; wipe()
 
+
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying, applying a variation and applying a credit note are all e-signatures now, so
+    every test in this file drives /api/esign. The M365 re-auth is skipped here — the Part 11
+    identity component has its own tests; these are about what the signature DOES."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
 
 def _post(api, t, path, **b):
     return api("POST", path, t, b)
@@ -52,6 +61,14 @@ def _claim(api, tokens, c, amount=200_000_000, **kw):
                  contractId=c["id"], period="2026-08",
                  claims={c["lines"][0]["uid"]: amount}, **kw)
 
+
+
+def _certify(api, token, aid, monkey=None):
+    """Certifying is an e-signature now — the same act PMC's interim payment certificate has
+    required for months. Tests drive it through /api/esign."""
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified payment application",
+                "setStatus": "certified"})
 
 # ── the settings can actually be set ────────────────────────────────────────────────────────────
 
@@ -194,7 +211,7 @@ def test_certifying_recomputes_the_tax_against_what_was_actually_certified(api, 
           vatBase=vat.BASE_CERTIFIED)
     c = _live(api, tokens)
     a = _claim(api, tokens, c)[1]["item"]
-    st, r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    st, r = _certify(api, tokens["management"], a["id"])
     assert st == 200, r
     assert r["item"]["vatAmount"] == 20_000_000 and r["item"]["grossPayable"] == 150_000_000
 
@@ -206,7 +223,7 @@ def test_the_portal_still_cannot_issue_the_invoice(api, tokens):
           vatBase=vat.BASE_CERTIFIED)
     c = _live(api, tokens)
     a = _claim(api, tokens, c)[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     st, r = _post(api, tokens["staff"], "/api/sales/einvoice", id=a["id"], einvSerial="C26TAA",
                   einvNo="0001")
     assert st == 200 and r["verified"] is False, "a typed number is still UNVERIFIED"

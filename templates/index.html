@@ -17532,16 +17532,22 @@ async function crmOpenClaim(id) {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
 }
 
-async function crmClaimCertify(id) {
-  if (!await tkConfirm(_t2('Certifying moves the contract balances — the advance recovers, retention is withheld, and the lines are consumed. It cannot be edited afterwards.',
-                           'Nghiệm thu sẽ làm thay đổi số dư hợp đồng — khấu trừ tạm ứng, giữ lại bảo hành và trừ vào hạng mục. Sau đó không sửa được.'))) return;
-  try {
-    await tkApi('/api/sales/application', { method: 'POST', body: { id: id, action: 'certify' } });
-    toast(_t2('Certified', 'Đã nghiệm thu'));
-    _COLL_TS['sales_applications'] = 0; _COLL_TS['sales_contracts'] = 0;
-    document.getElementById('sapDetail')?.remove();
-    await crmRenderBilling();
-  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+/* Certifying is the interim payment certificate of the sell side: it moves the contract's balances
+   and tells a customer what to pay. PMC's equivalent has been e-signed for months; this one went
+   through on an unsigned POST until now. */
+function crmClaimCertify(id) {
+  const a = (_HR.sales_applications || []).find(x => x.id === id) || {};
+  tkESign({
+    coll: 'sales_applications', id: id, setStatus: 'certified',
+    meaning: 'Certified payment application ' + (a.period || '') + ' — ' + (a.contractNo || '') +
+             ' · ' + _crmMoney(a.netPayable) + ' net',
+    onDone: () => {
+      toast(_t2('Certified — the contract balances have moved', 'Đã nghiệm thu — số dư hợp đồng đã thay đổi'), 'success', 7000);
+      _COLL_TS['sales_applications'] = 0; _COLL_TS['sales_contracts'] = 0;
+      document.getElementById('sapDetail')?.remove();
+      crmRenderBilling();
+    }
+  });
 }
 
 async function crmInvoiceSave(id) {

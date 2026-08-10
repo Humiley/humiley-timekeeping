@@ -18,10 +18,15 @@ def _clean():
     wipe(); yield; wipe()
 
 
-@pytest.fixture
-def signing(monkeypatch):
-    monkeypatch.setattr(app, "DEMO_MODE", True)
 
+
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying, applying a variation and applying a credit note are all e-signatures now, so
+    every test in this file drives /api/esign. The M365 re-auth is skipped here — the Part 11
+    identity component has its own tests; these are about what the signature DOES."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
 
 def _post(api, t, path, **b):
     return api("POST", path, t, b)
@@ -43,7 +48,7 @@ def _certified(api, tokens, claim=200_000_000):
     c = db.get_collection_item("sales_contracts", c["id"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
               period="2026-08", claims={c["lines"][0]["uid"]: claim})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     return db.get_collection_item("sales_contracts", c["id"]), \
         db.get_collection_item("sales_applications", a["id"])
 
@@ -58,6 +63,14 @@ def _sign(api, token, cid):
                {"coll": "sales_credits", "id": cid, "meaning": "Applied credit note",
                 "setStatus": CN.APPLIED})
 
+
+
+def _certify(api, token, aid, monkey=None):
+    """Certifying is an e-signature now — the same act PMC's interim payment certificate has
+    required for months. Tests drive it through /api/esign."""
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified payment application",
+                "setStatus": "certified"})
 
 # ── raising one ──────────────────────────────────────────────────────────────────────────────────
 
@@ -113,7 +126,7 @@ def test_applying_is_not_an_action_on_this_endpoint(api, tokens):
     assert st == 400 and "e-signature, not an action" in r["error"]
 
 
-def test_a_signed_credit_moves_every_balance_the_claim_moved(api, tokens, signing):
+def test_a_signed_credit_moves_every_balance_the_claim_moved(api, tokens):
     c, a = _certified(api, tokens)
     cn = _cn(api, tokens, a)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/credit", action="issue", id=cn["id"])
@@ -128,7 +141,7 @@ def test_a_signed_credit_moves_every_balance_the_claim_moved(api, tokens, signin
     assert a2["creditedAmt"] == 100_000_000 and a2["netPayable"] == 65_000_000
 
 
-def test_the_credited_work_can_be_certified_again(api, tokens, signing):
+def test_the_credited_work_can_be_certified_again(api, tokens):
     """The point of restoring the line balance: work rejected, redone, and re-certified."""
     c, a = _certified(api, tokens)
     cn = _cn(api, tokens, a)[1]["item"]
@@ -141,7 +154,7 @@ def test_the_credited_work_can_be_certified_again(api, tokens, signing):
     assert st == 200, r
 
 
-def test_a_draft_credit_note_cannot_be_signed_into_effect(api, tokens, signing):
+def test_a_draft_credit_note_cannot_be_signed_into_effect(api, tokens):
     c, a = _certified(api, tokens)
     cn = _cn(api, tokens, a)[1]["item"]
     st, r = _sign(api, tokens["management"], cn["id"])
@@ -149,7 +162,7 @@ def test_a_draft_credit_note_cannot_be_signed_into_effect(api, tokens, signing):
     assert db.get_collection_item("sales_contracts", c["id"])["certifiedToDate"] == 200_000_000
 
 
-def test_signing_it_twice_does_not_credit_twice(api, tokens, signing):
+def test_signing_it_twice_does_not_credit_twice(api, tokens):
     c, a = _certified(api, tokens)
     cn = _cn(api, tokens, a)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/credit", action="issue", id=cn["id"])
@@ -158,7 +171,7 @@ def test_signing_it_twice_does_not_credit_twice(api, tokens, signing):
     assert db.get_collection_item("sales_contracts", c["id"])["certifiedToDate"] == 100_000_000
 
 
-def test_management_cannot_apply_a_credit_note_IT_raised(api, tokens, signing):
+def test_management_cannot_apply_a_credit_note_IT_raised(api, tokens):
     c, a = _certified(api, tokens)
     cn = _post(api, tokens["management"], "/api/sales/credit", action="draft",
                applicationId=a["id"], amount=10_000_000, reason="pricing")[1]["item"]
@@ -167,7 +180,7 @@ def test_management_cannot_apply_a_credit_note_IT_raised(api, tokens, signing):
     assert st == 403 and "other than the person who raised it" in r["error"]
 
 
-def test_applying_is_a_management_act(api, tokens, signing):
+def test_applying_is_a_management_act(api, tokens):
     c, a = _certified(api, tokens)
     cn = _cn(api, tokens, a)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/credit", action="issue", id=cn["id"])
@@ -191,7 +204,7 @@ def test_an_issued_credit_note_cannot_be_edited(api, tokens):
     assert db.get_collection_item("sales_credits", cn["id"])["amount"] == 100_000_000
 
 
-def test_a_contract_that_moved_under_the_signature_is_retried_not_overwritten(api, tokens, signing,
+def test_a_contract_that_moved_under_the_signature_is_retried_not_overwritten(api, tokens,
                                                                               monkeypatch):
     """Same compare-and-swap as the variation: a plain write loses a concurrent claim's deduction."""
     import db as _db

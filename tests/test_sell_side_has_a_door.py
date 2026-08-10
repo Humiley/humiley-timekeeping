@@ -259,3 +259,21 @@ def test_the_credit_note_is_reachable_from_the_claim_it_reverses():
 def test_applying_a_credit_note_goes_through_the_e_signature():
     fn = INDEX[INDEX.find("function crmCnApply"):INDEX.find("function crmCnApply") + 800]
     assert "tkESign({" in fn and "setStatus: 'applied'" in fn
+
+
+def test_certifying_a_claim_goes_through_the_e_signature():
+    """The last consequential sell-side act that was still a plain POST."""
+    fn = INDEX[INDEX.find("function crmClaimCertify"):INDEX.find("function crmClaimCertify") + 900]
+    assert "tkESign({" in fn and "setStatus: 'certified'" in fn
+    assert "/api/sales/application" not in fn
+
+
+def test_every_act_that_moves_money_on_the_sell_side_is_signed():
+    """Certify a claim, apply a variation, apply a credit note — one rule, three documents."""
+    for fn_name, status in (("crmClaimCertify", "certified"), ("crmVoApply", "applied"),
+                            ("crmCnApply", "applied")):
+        at = INDEX.find("function " + fn_name)
+        assert at > 0, fn_name
+        body = INDEX[at:at + 900]
+        assert "tkESign({" in body, fn_name
+        assert ("setStatus: '%s'" % status) in body, fn_name

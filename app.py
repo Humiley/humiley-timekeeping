@@ -5003,14 +5003,30 @@ class Handler(BaseHTTPRequestHandler):
                     return self._err("A variation is applied by somebody other than the person who "
                                      "raised it — the same rule as a pay run's preparer and "
                                      "signer.", 403)
-                why = self._variation_apply(u, dict(item, status=pre_status))
+                why, code = self._variation_apply(u, dict(item, status=pre_status))
                 if why:
-                    return self._err(why, 400)
+                    return self._err(why, code)
                 item["appliedBy"] = signer_name
                 item.setdefault("appliedOn", time.strftime("%Y-%m-%d"))
 
             # A credit note reverses four balances on a certified claim. Same reasoning as the
             # variation above: the act that moves them is a signature.
+            # The interim payment certificate of the sell side. PMC's has been signed for months;
+            # this one moved the same money on an unsigned POST until now.
+            if coll == "sales_applications" and set_status == "certified":
+                if (item.get("owner") or "") == signer_name and not self._is_mgmt(u):
+                    return self._err("A payment application is certified by somebody other than "
+                                     "the person who raised it.", 403)
+                saved, why, code = self._certify_application(u, dict(item, status=pre_status),
+                                                             signer_name)
+                if why:
+                    return self._err(why, code)
+                # _certify_application wrote the claim; carry its computed figures onto the record
+                # this path is about to write, so the signature and the balances land together.
+                item.update({k: v for k, v in (saved or {}).items()
+                             if k not in ("signatures", "_rev")})
+                item["status"] = set_status
+
             if coll == "sales_credits" and set_status == sales_credit.APPLIED:
                 if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
                     return self._err("Applying a credit note reverses a certified claim — that is "
@@ -5018,9 +5034,9 @@ class Handler(BaseHTTPRequestHandler):
                 if (item.get("owner") or "") == signer_name:
                     return self._err("A credit note is applied by somebody other than the person "
                                      "who raised it.", 403)
-                why = self._credit_apply(u, dict(item, status=pre_status))
+                why, code = self._credit_apply(u, dict(item, status=pre_status))
                 if why:
-                    return self._err(why, 400)
+                    return self._err(why, code)
                 item["appliedBy"] = signer_name
                 item.setdefault("appliedOn", time.strftime("%Y-%m-%d"))
 
@@ -10205,54 +10221,71 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("An application id is required for '%s'." % (act or "(none)"), 400)
 
         if act == "certify":
-            if cur.get("status") != sales_doc.DRAFT:
-                return self._err("This application is already %s." % cur.get("status"), 400)
-            # Certifying somebody's own claim is the sell-side equivalent of approving your own
-            # expense. The buy side has enforced payer != approver for months.
-            if not self._is_mgmt(u) and (cur.get("owner") or "") == u.get("name"):
-                return self._err("A payment application is certified by somebody other than the "
-                                 "person who raised it.", 403)
-            claims = {str(k): float(v or 0) for k, v in (cur.get("claims") or {}).items()}
-            for attempt in range(5):
-                c = db.get_collection_item("sales_contracts", cur.get("contractId"))
-                if not c:
-                    return self._err("Contract not found.", 404)
-                if c.get("status") != sales_doc.ACTIVE:
-                    return self._err("The contract is no longer active.", 400)
-                rev0 = c.get("_rev")
-                out = self._application_compute(c, claims)
-                if not out["ok"]:
-                    return self._err(out["why"], 400)
-                c["lines"] = out["lines"]
-                c["certifiedToDate"] = out["certifiedToDate"]
-                c["advanceOutstanding"] = out["advanceOutstanding"]
-                c["retentionHeld"] = out["retentionHeld"]
-                saved_c = db.put_collection_item_if_rev("sales_contracts", c, rev0)
-                if saved_c is not None:
-                    break
-            else:
-                return self._err("The contract was being changed by somebody else. Nothing was "
-                                 "certified — open the application again and re-submit.", 409)
-            cur["status"] = "certified"
-            cur["certifiedAt"] = self._utc_now()
-            cur["certifiedBy"] = u.get("name")
-            for k in ("certifiedThis", "advanceRecovered", "retentionThis", "netPayable", "statement"):
-                cur[k] = out[k]
-            tax = vat_mod.compute(out["certifiedThis"], out["netPayable"], cur, c,
-                                  self._company_settings())
-            cur.update({"vatRateUsed": tax["rate"], "vatBaseUsed": tax["base"],
-                        "vatFrom": tax["rateFrom"], "vatAmount": tax["vat"],
-                        "grossPayable": tax["gross"], "vatSet": tax["ok"]})
-            saved = db.put_collection_item("sales_applications", cur)
-            db.put_collection_item("audit", {
-                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
-                "action": "Certified payment application",
-                "target": "sales_applications/" + str(saved.get("id")),
-                "detail": "%s · %s net" % (c.get("contractNo") or "", _money_vnd(out["netPayable"])),
-                "ts": self._utc_now()})
-            return self._json({"ok": True, "item": saved, "contract": saved_c})
+            # Certifying is what MOVES THE CONTRACT'S BALANCES and tells a customer what to pay. It
+            # is the most consequential act on the sell side and it was the only one still
+            # unsigned, while PMC's interim payment certificate — the same document, on the project
+            # side — has required a signature for months.
+            return self._err("Certifying a claim moves the contract's balances and tells a customer "
+                             "what to pay, so it is an e-signature, not an action. Sign it from the "
+                             "claim.", 400)
 
-        return self._err("Unknown action. Use draft or certify.", 400)
+        return self._err("Unknown action. Use draft — certifying is an e-signature.", 400)
+
+    def _certify_application(self, u, cur, signer_name=None):
+        """Certify a claim: move the contract's balances, price the tax line, audit it.
+
+        Returns (saved_claim, error_string, http_status). It does NOT write a response, because it
+        is called from the e-signature path — and `_json` writes straight to the socket, so an
+        endpoint that returns a response cannot be reused inside another one without sending two.
+
+        The status travels with the reason because losing the compare-and-swap is a 409 CONFLICT,
+        not a 400: nothing the caller sent was wrong, and a client that retries a 409 is behaving
+        correctly while one that retries a 400 is looping on its own mistake.
+        """
+        who = signer_name or u.get("name")
+        if cur.get("status") != sales_doc.DRAFT:
+            return None, "This application is already %s." % cur.get("status"), 400
+        claims = {str(k): float(v or 0) for k, v in (cur.get("claims") or {}).items()}
+        saved_c = out = c = None
+        for _ in range(5):
+            c = db.get_collection_item("sales_contracts", cur.get("contractId"))
+            if not c:
+                return None, "Contract not found.", 404
+            if c.get("status") != sales_doc.ACTIVE:
+                return None, "The contract is no longer active.", 400
+            rev0 = c.get("_rev")
+            out = self._application_compute(c, claims)
+            if not out["ok"]:
+                return None, out["why"], 400
+            c["lines"] = out["lines"]
+            c["certifiedToDate"] = out["certifiedToDate"]
+            c["advanceOutstanding"] = out["advanceOutstanding"]
+            c["retentionHeld"] = out["retentionHeld"]
+            saved_c = db.put_collection_item_if_rev("sales_contracts", c, rev0)
+            if saved_c is not None:
+                break
+        else:
+            return None, ("The contract was being changed by somebody else. Nothing was certified "
+                          "— open the application again and sign it once more."), 409
+        cur["status"] = "certified"
+        cur["certifiedAt"] = self._utc_now()
+        cur["certifiedBy"] = who
+        for k in ("certifiedThis", "advanceRecovered", "retentionThis", "netPayable", "statement"):
+            cur[k] = out[k]
+        tax = vat_mod.compute(out["certifiedThis"], out["netPayable"], cur, c,
+                              self._company_settings())
+        cur.update({"vatRateUsed": tax["rate"], "vatBaseUsed": tax["base"],
+                    "vatFrom": tax["rateFrom"], "vatAmount": tax["vat"],
+                    "grossPayable": tax["gross"], "vatSet": tax["ok"]})
+        saved = db.put_collection_item("sales_applications", cur)
+        db.put_collection_item("audit", {
+            "actor": who or "System", "actorId": u.get("id") or "",
+            "action": "Certified payment application",
+            "target": "sales_applications/" + str(saved.get("id")),
+            "detail": "%s · %s net" % (c.get("contractNo") or "", _money_vnd(out["netPayable"])),
+            "ts": self._utc_now()})
+        return saved, None, 200
+
 
     def _application_compute(self, c, claims):
         """What this claim comes to, against the contract as it stands right now.
@@ -10360,22 +10393,23 @@ class Handler(BaseHTTPRequestHandler):
     def _credit_apply(self, u, cn):
         """Apply a signed credit note to its claim and contract, once, under compare-and-swap."""
         if cn.get("status") != sales_credit.ISSUED:
-            return "Only an issued credit note can be applied — this one is %s." % (cn.get("status") or "draft")
+            return ("Only an issued credit note can be applied — this one is %s."
+                    % (cn.get("status") or "draft"), 400)
         for _ in range(5):
             a = db.get_collection_item("sales_applications", cn.get("applicationId"))
             c = db.get_collection_item("sales_contracts", cn.get("contractId"))
             if not a or not c:
-                return "The claim or its contract is missing."
+                return ("The claim or its contract is missing.", 400)
             rev0 = c.get("_rev")
             out = sales_credit.apply_to(c, a, cn.get("amount"))
             if not out["ok"]:
-                return out["why"]
+                return out["why"], 400
             saved = db.put_collection_item_if_rev("sales_contracts", out["contract"], rev0)
             if saved is not None:
                 db.put_collection_item("sales_applications", out["application"])
-                return None
+                return None, 200
         return ("The contract was being changed by somebody else. Nothing was credited — open the "
-                "credit note again and sign it once more.")
+                "credit note again and sign it once more.", 409)
 
     def _variation_ep(self, u, body):
         """The variation (phụ lục) — the document two refusals in this codebase already name.
@@ -10488,23 +10522,24 @@ class Handler(BaseHTTPRequestHandler):
         concurrent claim's deduction or double the value.
         """
         if v.get("status") != sales_variation.ISSUED:
-            return "Only an issued variation can be applied — this one is %s." % (v.get("status") or "draft")
+            return ("Only an issued variation can be applied — this one is %s."
+                    % (v.get("status") or "draft"), 400)
         for _ in range(5):
             c = db.get_collection_item("sales_contracts", v.get("contractId"))
             if not c:
-                return "Contract not found."
+                return ("Contract not found.", 400)
             if c.get("status") != sales_doc.ACTIVE:
-                return "The contract is no longer active."
+                return ("The contract is no longer active.", 400)
             rev0 = c.get("_rev")
             out = sales_variation.apply_to(
                 c, v, lambda i: "%s-%d" % (str(v.get("id"))[-8:], i + 1))
             if not out["ok"]:
-                return out["why"]
+                return out["why"], 400
             saved = db.put_collection_item_if_rev("sales_contracts", out["contract"], rev0)
             if saved is not None:
-                return None
+                return None, 200
         return ("The contract was being changed by somebody else. Nothing was applied — open the "
-                "variation again and sign it once more.")
+                "variation again and sign it once more.", 409)
 
     def _contract_ep(self, u, body):
         """The contract: what was actually agreed, and the two balances every claim is computed from.

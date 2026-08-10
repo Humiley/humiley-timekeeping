@@ -25,6 +25,14 @@ def _clean():
     wipe(); yield; wipe()
 
 
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying, applying a variation and applying a credit note are all e-signatures now, so
+    every test in this file drives /api/esign. The M365 re-auth is skipped here — the Part 11
+    identity component has its own tests; these are about what the signature DOES."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
+
 def _post(api, t, path, **b):
     return api("POST", path, t, b)
 
@@ -48,18 +56,20 @@ def _var(api, tokens, c, **kw):
     return _post(api, tokens["staff"], "/api/sales/variation", **b)
 
 
-@pytest.fixture
-def signing(monkeypatch):
-    """Skip the M365 re-auth so a test can drive the e-signature — the same shim the bank-slip
-    tests use. The Part 11 identity component is exercised by its own tests; what these are about
-    is what the signature DOES."""
-    monkeypatch.setattr(app, "DEMO_MODE", True)
 
 
 def _sign(api, token, vid, status=V.APPLIED, meaning="Applied variation"):
     return api("POST", "/api/esign", token,
                {"coll": "sales_variations", "id": vid, "meaning": meaning, "setStatus": status})
 
+
+
+def _certify(api, token, aid, monkey=None):
+    """Certifying is an e-signature now — the same act PMC's interim payment certificate has
+    required for months. Tests drive it through /api/esign."""
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified payment application",
+                "setStatus": "certified"})
 
 # ── raising one ──────────────────────────────────────────────────────────────────────────────────
 
@@ -121,7 +131,7 @@ def test_applying_is_not_an_action_on_this_endpoint(api, tokens):
     assert st == 400 and "e-signature, not an action" in r["error"]
 
 
-def test_a_signed_variation_raises_the_contract_and_appends_its_lines(api, tokens, signing):
+def test_a_signed_variation_raises_the_contract_and_appends_its_lines(api, tokens):
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/variation", action="issue", id=v["id"])
@@ -133,7 +143,7 @@ def test_a_signed_variation_raises_the_contract_and_appends_its_lines(api, token
     assert after["lines"][1]["src"]["doc"] == "variation"
 
 
-def test_the_signature_is_on_the_variation(api, tokens, signing):
+def test_the_signature_is_on_the_variation(api, tokens):
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/variation", action="issue", id=v["id"])
@@ -143,7 +153,7 @@ def test_the_signature_is_on_the_variation(api, tokens, signing):
     assert after["appliedBy"]
 
 
-def test_the_raised_ceiling_is_what_the_claim_engine_now_measures_against(api, tokens, signing):
+def test_the_raised_ceiling_is_what_the_claim_engine_now_measures_against(api, tokens):
     """The refusal that named the variation in the first place. Before: certifying ₫1.05bn against
     a ₫1bn contract is refused. After a signed ₫80m variation, it is fine."""
     c = _live(api, tokens)
@@ -164,7 +174,7 @@ def test_the_raised_ceiling_is_what_the_claim_engine_now_measures_against(api, t
     assert r["preview"]["certifiedThis"] == 1_050_000_000
 
 
-def test_a_draft_variation_cannot_be_signed_into_effect(api, tokens, signing):
+def test_a_draft_variation_cannot_be_signed_into_effect(api, tokens):
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
     st, r = _sign(api, tokens["management"], v["id"])
@@ -172,7 +182,7 @@ def test_a_draft_variation_cannot_be_signed_into_effect(api, tokens, signing):
     assert db.get_collection_item("sales_contracts", c["id"])["value"] == 1_000_000_000
 
 
-def test_applying_it_twice_does_not_raise_the_contract_twice(api, tokens, signing):
+def test_applying_it_twice_does_not_raise_the_contract_twice(api, tokens):
     """A retry or a double click on a signature must not add ₫160,000,000."""
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
@@ -182,7 +192,7 @@ def test_applying_it_twice_does_not_raise_the_contract_twice(api, tokens, signin
     assert db.get_collection_item("sales_contracts", c["id"])["value"] == 1_080_000_000, second
 
 
-def test_it_is_applied_by_somebody_other_than_the_person_who_raised_it(api, tokens, signing):
+def test_it_is_applied_by_somebody_other_than_the_person_who_raised_it(api, tokens):
     """Same rule the payment application already enforces: the sell-side equivalent of approving
     your own expense."""
     c = _live(api, tokens)
@@ -192,7 +202,7 @@ def test_it_is_applied_by_somebody_other_than_the_person_who_raised_it(api, toke
     assert st == 403
 
 
-def test_applying_is_a_management_act(api, tokens, signing):
+def test_applying_is_a_management_act(api, tokens):
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/variation", action="issue", id=v["id"])
@@ -212,7 +222,7 @@ def test_a_rejection_needs_a_reason(api, tokens):
     assert st == 200 and r["item"]["status"] == V.REJECTED
 
 
-def test_a_rejected_variation_never_touched_the_contract(api, tokens, signing):
+def test_a_rejected_variation_never_touched_the_contract(api, tokens):
     c = _live(api, tokens)
     v = _var(api, tokens, c)[1]["item"]
     _post(api, tokens["staff"], "/api/sales/variation", action="issue", id=v["id"])
@@ -244,7 +254,7 @@ def test_a_staff_user_sees_only_their_own(api, tokens):
 
 # ── the three the first mutation pass walked straight through ───────────────────────────────────
 
-def test_management_cannot_apply_a_variation_IT_raised(api, tokens, signing):
+def test_management_cannot_apply_a_variation_IT_raised(api, tokens):
     """Testing this with `staff` proves nothing: the management-level check refuses them first, so
     the author rule was never reached. It only bites when the author IS management."""
     c = _live(api, tokens)
@@ -257,7 +267,7 @@ def test_management_cannot_apply_a_variation_IT_raised(api, tokens, signing):
     assert db.get_collection_item("sales_contracts", c["id"])["value"] == 1_000_000_000
 
 
-def test_a_variation_that_became_invalid_between_issue_and_signature_is_refused(api, tokens, signing):
+def test_a_variation_that_became_invalid_between_issue_and_signature_is_refused(api, tokens):
     """It is issued while the contract has nothing certified, and signed after ₫900,000,000 has
     been. The reduction is now impossible, and the signature must not apply it anyway."""
     c = _live(api, tokens)
@@ -267,7 +277,7 @@ def test_a_variation_that_became_invalid_between_issue_and_signature_is_refused(
 
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
               period="2026-08", claims={c["lines"][0]["uid"]: 900_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
 
     st, r = _sign(api, tokens["management"], v["id"])
     assert st == 400 and "already certified" in r["error"]
@@ -276,7 +286,7 @@ def test_a_variation_that_became_invalid_between_issue_and_signature_is_refused(
     assert db.get_collection_item("sales_variations", v["id"])["status"] == V.ISSUED
 
 
-def test_a_contract_that_moved_under_the_signature_is_retried_not_overwritten(api, tokens, signing,
+def test_a_contract_that_moved_under_the_signature_is_retried_not_overwritten(api, tokens,
                                                                               monkeypatch):
     """Applying is compare-and-swap. A plain write would lose whatever a concurrent claim had just
     deducted — deterministic here rather than racing threads and hoping they overlap."""

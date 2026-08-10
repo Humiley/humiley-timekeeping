@@ -9,6 +9,7 @@ import threading
 
 import pytest
 
+import app
 import db
 import sales_contract as SC
 import sales_doc as S
@@ -24,6 +25,14 @@ def _clean():
         conn.commit(); conn.close()
     wipe(); yield; wipe()
 
+
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying, applying a variation and applying a credit note are all e-signatures now, so
+    every test in this file drives /api/esign. The M365 re-auth is skipped here — the Part 11
+    identity component has its own tests; these are about what the signature DOES."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
 
 def _post(api, token, path, **b):
     return api("POST", path, token, b)
@@ -56,6 +65,14 @@ def _uid(c):
     return c["lines"][0]["uid"]
 
 
+
+def _certify(api, token, aid, monkey=None):
+    """Certifying is an e-signature now — the same act PMC's interim payment certificate has
+    required for months. Tests drive it through /api/esign."""
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified payment application",
+                "setStatus": "certified"})
+
 # ── the arithmetic a person signs ────────────────────────────────────────────────────────────────
 
 def test_a_claim_shows_the_deductions_before_anybody_certifies_it(api, tokens):
@@ -80,7 +97,7 @@ def test_certifying_moves_the_balances_once(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 200_000_000})[1]["item"]
-    st, r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    st, r = _certify(api, tokens["management"], a["id"])
     assert st == 200, r
     after = db.get_collection_item("sales_contracts", c["id"])
     assert after["certifiedToDate"] == 200_000_000
@@ -92,7 +109,7 @@ def test_the_line_counter_moves_too_so_the_next_claim_starts_from_the_remainder(
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 200_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     after = db.get_collection_item("sales_contracts", c["id"])
     assert S.open_amount(after["lines"][0], "certifiedAmt") == 800_000_000
 
@@ -110,7 +127,7 @@ def test_a_second_claim_cannot_take_the_contract_past_its_value(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 900_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     st, r = _post(api, tokens["staff"], "/api/sales/application", action="draft",
                   contractId=c["id"], claims={_uid(c): 200_000_000})
     assert st == 400, r
@@ -139,7 +156,7 @@ def test_you_cannot_certify_your_own_claim(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 100_000_000})[1]["item"]
-    st, r = _post(api, tokens["staff"], "/api/sales/application", action="certify", id=a["id"])
+    st, r = _certify(api, tokens["staff"], a["id"])
     assert st == 403 and "somebody other than" in r["error"]
 
 
@@ -147,7 +164,7 @@ def test_a_certified_application_cannot_be_edited(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 100_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     st, r = _post(api, tokens["staff"], "/api/sales/application", action="draft", id=a["id"],
                   contractId=c["id"], claims={_uid(c): 999_000_000})
     assert st == 400 and "cannot be edited" in r["error"]
@@ -157,8 +174,8 @@ def test_certifying_twice_is_refused_so_the_balances_move_once(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 100_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
-    st, r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
+    st, r = _certify(api, tokens["management"], a["id"])
     assert st == 400 and "already" in r["error"]
     assert db.get_collection_item("sales_contracts", c["id"])["certifiedToDate"] == 100_000_000
 
@@ -167,7 +184,7 @@ def test_certifying_is_audited(api, tokens):
     c = _live_contract(api, tokens["staff"])
     a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
               contractId=c["id"], claims={_uid(c): 100_000_000})[1]["item"]
-    _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+    _certify(api, tokens["management"], a["id"])
     assert any(x.get("action") == "Certified payment application" for x in db.list_collection("audit"))
 
 
@@ -185,7 +202,7 @@ def test_two_claims_certified_at_once_cannot_both_spend_the_same_balance(api, to
     results, lock = [], threading.Lock()
 
     def go(a):
-        r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+        r = _certify(api, tokens["management"], a["id"])
         with lock:
             results.append(r)
 
@@ -213,7 +230,7 @@ def test_the_contract_never_ends_up_certifying_more_than_it_is_worth(api, tokens
     lock = threading.Lock(); results = []
 
     def go(a):
-        r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+        r = _certify(api, tokens["management"], a["id"])
         with lock:
             results.append(r)
 
@@ -262,7 +279,7 @@ def test_a_lost_compare_and_swap_is_retried_not_pushed_back_at_the_user(api, tok
 
     db.put_collection_item_if_rev = flaky
     try:
-        st, r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+        st, r = _certify(api, tokens["management"], a["id"])
     finally:
         db.put_collection_item_if_rev = real
     assert st == 200, r
@@ -279,7 +296,7 @@ def test_persistent_contention_gives_up_cleanly_and_certifies_nothing(api, token
     real = db.put_collection_item_if_rev
     db.put_collection_item_if_rev = lambda coll, item, rev: None if coll == "sales_contracts" else real(coll, item, rev)
     try:
-        st, r = _post(api, tokens["management"], "/api/sales/application", action="certify", id=a["id"])
+        st, r = _certify(api, tokens["management"], a["id"])
     finally:
         db.put_collection_item_if_rev = real
     assert st == 409 and "Nothing was certified" in r["error"]
@@ -350,3 +367,42 @@ def test_a_part_deposit_only_makes_that_part_recoverable(api, tokens):
     _, r = _post(api, tokens["staff"], "/api/sales/application", action="draft",
                  contractId=c["id"], period="2026-08", claims={_uid(c): 900_000_000})
     assert r["preview"]["advanceRecovered"] == 200_000_000, "capped by what actually arrived"
+
+
+def test_certifying_is_refused_as_an_unsigned_action_and_says_where_to_sign(api, tokens):
+    """It moves the contract's balances and tells a customer what to pay. It was the last
+    consequential sell-side act still going through on a plain POST, while PMC's interim payment
+    certificate — the same document on the project side — has been signed for months."""
+    c = _live_contract(api, tokens["staff"])
+    a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
+              contractId=c["id"], period="2026-08", claims={_uid(c): 100_000_000})[1]["item"]
+    st, r = _post(api, tokens["staff"], "/api/sales/application", action="certify", id=a["id"])
+    assert st == 400
+    assert "e-signature, not an action" in r["error"]
+    assert db.get_collection_item("sales_applications", a["id"])["status"] == "draft"
+    assert db.get_collection_item("sales_contracts", c["id"]).get("certifiedToDate", 0) == 0
+
+
+def test_the_signature_records_who_certified_it(api, tokens):
+    c = _live_contract(api, tokens["staff"])
+    a = _post(api, tokens["staff"], "/api/sales/application", action="draft",
+              contractId=c["id"], period="2026-08", claims={_uid(c): 100_000_000})[1]["item"]
+    assert _certify(api, tokens["management"], a["id"])[0] == 200
+    row = db.get_collection_item("sales_applications", a["id"])
+    assert row["status"] == "certified" and row["certifiedBy"]
+    assert any((s.get("setStatus") or "") == "certified" for s in row.get("signatures") or [])
+
+
+def test_a_claim_that_became_uncertifiable_between_draft_and_signature_is_refused(api, tokens):
+    """Two claims drafted against the same open balance; the first is signed, so the second no
+    longer fits. The signature must refuse rather than certify what is no longer there."""
+    c = _live_contract(api, tokens["staff"])
+    a1 = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
+               period="2026-08", claims={_uid(c): 700_000_000})[1]["item"]
+    a2 = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
+               period="2026-09", claims={_uid(c): 700_000_000})[1]["item"]
+    assert _certify(api, tokens["management"], a1["id"])[0] == 200
+    st, r = _certify(api, tokens["management"], a2["id"])
+    assert st == 400 and "over by" in r["error"], r
+    assert db.get_collection_item("sales_applications", a2["id"])["status"] == "draft"
+    assert db.get_collection_item("sales_contracts", c["id"])["certifiedToDate"] == 700_000_000
