@@ -3795,6 +3795,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._trace_ep(uu, qs))
         if path == "/api/sales/vat-settings":
             return self._guard(lambda uu: self._vat_settings_ep(uu))
+        if path == "/api/sales/statement":
+            return self._guard(lambda uu: self._statement_ep(uu, qs))
         if path == "/api/sales/retention":
             # Not manager-gated: a salesperson chasing their own customer's retention is the whole
             # point, and the endpoint scopes every row to what the caller may see anyway.
@@ -8494,6 +8496,7 @@ class Handler(BaseHTTPRequestHandler):
         out = {k: db.get_setting("portal_co_" + k) or "" for k in company.FIELD_KEYS}
         for k in ("vatRate", "vatBase") + vat_mod.TAX_POINT_KEYS:
             out[k] = db.get_setting("portal_vat_" + k) or ""
+        out["quoteDiscountMax"] = db.get_setting("portal_sales_quoteDiscountMax") or ""
         return out
 
     def _vat_settings_ep(self, u, body=None):
@@ -8509,7 +8512,8 @@ class Handler(BaseHTTPRequestHandler):
             s = self._company_settings()
             r = vat_mod.settings_review(s)
             r.update({"ok": True, "rates": vat_mod.RATES, "bases": vat_mod.BASES,
-                      "taxPoints": vat_mod.TAX_POINTS, "notApplicable": vat_mod.NOT_APPLICABLE})
+                      "taxPoints": vat_mod.TAX_POINTS, "notApplicable": vat_mod.NOT_APPLICABLE,
+                      "quoteDiscountMax": s.get("quoteDiscountMax") or ""})
             return self._json(r)
         changed = []
         if "vatRate" in body:
@@ -8525,6 +8529,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("VAT is charged either on the value certified or on the net "
                                  "payable. %r is neither." % v, 400)
             db.set_setting("portal_vat_vatBase", v); changed.append("base")
+        if "quoteDiscountMax" in body:
+            v = str(body.get("quoteDiscountMax") or "").strip()
+            if v:
+                try:
+                    f = float(v)
+                except ValueError:
+                    return self._err("The discount threshold is a percentage, e.g. 15.", 400)
+                if not 0 <= f <= 100:
+                    return self._err("A discount threshold outside 0–100%% is not a threshold.", 400)
+                v = ("%g" % f)
+            db.set_setting("portal_sales_quoteDiscountMax", v); changed.append("discount threshold")
         for k in vat_mod.TAX_POINT_KEYS:
             if k in body:
                 v = str(body.get(k) or "").strip()
@@ -8537,8 +8552,10 @@ class Handler(BaseHTTPRequestHandler):
                 "actor": u.get("name") or "System", "actorId": u.get("id") or "",
                 "action": "Recorded company VAT treatment", "target": "settings/vat",
                 "detail": ", ".join(changed), "ts": self._utc_now()})
-        r = vat_mod.settings_review(self._company_settings())
-        r.update({"ok": True, "changed": changed})
+        s2 = self._company_settings()
+        r = vat_mod.settings_review(s2)
+        r.update({"ok": True, "changed": changed,
+                  "quoteDiscountMax": s2.get("quoteDiscountMax") or ""})
         return self._json(r)
 
     def _company_get_ep(self, u):
@@ -9550,6 +9567,38 @@ class Handler(BaseHTTPRequestHandler):
                     return None
         return None
 
+    def _discount_gate(self, q):
+        """May this quotation be issued at the discount it carries?
+
+        The approval is pinned to the PERCENTAGE that was approved, not to a boolean. Approve 15%
+        and then edit the quotation to 25% and a flag would sail straight through — which is the
+        only way this control fails in practice.
+        """
+        d = sales_doc.discount(q.get("lines"))
+        cap = str(self._company_settings().get("quoteDiscountMax") or "").strip()
+        if not cap:
+            return {"ok": True, "discount": d, "capped": False,
+                    "why": "No discount threshold is set, so any discount may be issued."}
+        try:
+            cap_pct = float(cap)
+        except ValueError:
+            return {"ok": True, "discount": d, "capped": False,
+                    "why": "The discount threshold is not a number and is being ignored."}
+        worst = max(d["pct"], d["maxLinePct"])
+        if worst - cap_pct <= 0.0001:
+            return {"ok": True, "discount": d, "capped": True, "cap": cap_pct}
+        approved = q.get("discountApprovedPct")
+        if approved is not None and float(approved) + 0.0001 >= worst:
+            return {"ok": True, "discount": d, "capped": True, "cap": cap_pct,
+                    "approvedPct": float(approved), "approvedBy": q.get("discountApprovedBy")}
+        return {"ok": False, "discount": d, "capped": True, "cap": cap_pct,
+                "why": ("This quotation gives away %.4g%% (steepest line %.4g%%) against a threshold "
+                        "of %.4g%%. An Approver has to approve the discount before it is issued%s."
+                        % (d["pct"], d["maxLinePct"], cap_pct,
+                           "" if approved is None else
+                           " — %.4g%% was approved, and it has been discounted further since"
+                           % float(approved)))}
+
     def _quote_ep(self, u, body):
         """The quotation as a DOCUMENT: draft, issue, revise, accept, lose.
 
@@ -9596,12 +9645,37 @@ class Handler(BaseHTTPRequestHandler):
         if not cur:
             return self._err("A quotation id is required for '%s'." % (act or "(none)"), 400)
 
+        if act == "approve_discount":
+            if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+                return self._err("Approving a discount is an Approver (management) act.", 403)
+            if cur.get("status") != sales_doc.DRAFT:
+                return self._err("Approve the discount before the quotation is issued — after that "
+                                 "the customer already has the price.", 400)
+            d = sales_doc.discount(cur.get("lines"))
+            worst = max(d["pct"], d["maxLinePct"])
+            cur["discountApprovedPct"] = worst
+            cur["discountApprovedBy"] = u.get("name")
+            cur["discountApprovedAt"] = self._utc_now()
+            cur["discountApprovedNote"] = str((body or {}).get("note") or "")[:300]
+            saved = db.put_collection_item("sales_quotes", cur)
+            self._sales_audit(u, "Approved quotation discount", saved)
+            return self._json({"ok": True, "item": saved, "approvedPct": worst, "discount": d})
+
+        if act == "discount":
+            return self._json({"ok": True, **self._discount_gate(cur)})
+
         if act == "issue":
             t = sales_doc.transition(cur, sales_doc.ISSUED)
             if not t["ok"]:
                 return self._err(t["why"], 400)
             if not sales_doc.totals(cur.get("lines")).get("lines"):
                 return self._err("A quotation with no priced line cannot be issued.", 400)
+            # A discount is a price decision, and issuing is the moment it leaves the building. The
+            # threshold is a company SETTING: unset means no threshold, because a limit this code
+            # invented would be a policy nobody agreed to. The Compliance screen names it if unset.
+            gate = self._discount_gate(cur)
+            if not gate["ok"]:
+                return self._err(gate["why"], 403)
             # The number is taken ONCE and kept across every later revision: the customer refers to
             # one reference for the whole negotiation.
             if not str(cur.get("quoteNo") or "").strip():
@@ -9650,7 +9724,7 @@ class Handler(BaseHTTPRequestHandler):
             self._sales_audit(u, "Quotation " + to, saved)
             return self._json({"ok": True, "item": saved})
 
-        return self._err("Unknown action. Use draft, issue, revise, accept or lose.", 400)
+        return self._err("Unknown action. Use draft, discount, approve_discount, issue, revise, accept or lose.", 400)
 
     def _sales_lines(self, raw, existing=None):
         """Rebuild the line list server-side, minting a stable uid for anything new.
@@ -10076,6 +10150,91 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "item": saved, "advanceReceived": c["advanceReceived"],
                            "agreed": sched["total"],
                            "stillToArrive": round(max(0.0, sched["total"] - c["advanceReceived"]), 2)})
+
+    def _statement_ep(self, u, qs):
+        """The customer statement (bảng đối chiếu công nợ) — everything owed one account, dated.
+
+        A contractor sends this to reconcile before the customer will release a payment run, and it
+        is the first thing an auditor asks for. It was being assembled by hand from four screens.
+
+        It is a LEDGER, not a total: every line is a document with a date, a reference and a
+        movement, and the closing balance is what those movements come to. A statement that shows
+        only a balance is a statement nobody can dispute — which sounds good until the customer
+        disputes it anyway and there is nothing to point at.
+        """
+        acc_id = str((qs.get("accountId") or [""])[0]).strip()
+        acc_name = str((qs.get("accountName") or [""])[0]).strip()
+        if not acc_id and not acc_name:
+            return self._err("Which customer? Pass ?accountId= or ?accountName=", 400)
+        acc = db.get_collection_item("crm_companies", acc_id) if acc_id else None
+        if acc_id and not acc:
+            return self._err("Customer not found.", 404)
+        name = (acc or {}).get("name") or acc_name
+
+        def mine(coll, key="accountId"):
+            rows = []
+            for r in db.list_collection(coll):
+                if (acc_id and r.get(key) == acc_id) or (not acc_id and r.get("accountName") == name):
+                    if self._sales_may_write(u, r):
+                        rows.append(r)
+            return rows
+
+        contracts = mine("sales_contracts")
+        cids = {c.get("id") for c in contracts}
+        apps = [a for a in db.list_collection("sales_applications")
+                if a.get("contractId") in cids and a.get("status") == "certified"]
+        credits = [c for c in db.list_collection("sales_credits")
+                   if c.get("contractId") in cids and c.get("status") == sales_credit.APPLIED]
+        receipts = [r for r in db.list_collection("sales_receipts")
+                    if (r.get("contractId") in cids)
+                    or any(aid in {a.get("id") for a in apps} for aid in (r.get("allocations") or {}))]
+
+        rows = []
+        for a in apps:
+            rows.append({"on": (a.get("certifiedAt") or "")[:10], "kind": "claim",
+                         "ref": "%s %s" % (a.get("contractNo") or "", a.get("period") or ""),
+                         "einvNo": a.get("einvNo") or "", "debit": float(a.get("netPayable") or 0),
+                         # NOT the claim's stored `statement`. It restates the same figure in a
+                         # different format, and — being stored — it is whatever the formatting was
+                         # on the day it was certified. A customer statement showing "277225000.00"
+                         # next to a column reading ₫277,225,000 is the stale-string trap on the one
+                         # document that goes outside the company.
+                         "credit": 0.0, "note": ""})
+        for c in credits:
+            rows.append({"on": (c.get("appliedOn") or c.get("issuedAt") or "")[:10], "kind": "credit",
+                         "ref": c.get("creditNo") or "", "einvNo": "", "debit": 0.0,
+                         "credit": float(c.get("netCredit") or 0), "note": c.get("note") or ""})
+        for r in receipts:
+            rows.append({"on": r.get("receivedOn") or "",
+                         "kind": "deposit" if r.get("kind") == "advance" else "receipt",
+                         "ref": r.get("reference") or "", "einvNo": "",
+                         "debit": 0.0, "credit": float(r.get("amount") or 0),
+                         "note": r.get("shortReason") or r.get("overReason") or ""})
+        rows.sort(key=lambda x: (x["on"] or "9999", x["kind"]))
+        bal = 0.0
+        for x in rows:
+            bal = round(bal + x["debit"] - x["credit"], 2)
+            x["balance"] = bal
+
+        retention = round(sum(float(c.get("retentionHeld") or 0) - float(c.get("retentionReleased") or 0)
+                              for c in contracts if c.get("status") in (sales_doc.ACTIVE, sales_doc.CLOSED)), 2)
+        advance = round(sum(float(c.get("advanceOutstanding") or 0) for c in contracts
+                            if c.get("status") == sales_doc.ACTIVE), 2)
+        return self._json({
+            "ok": True, "asOf": self._vn_day(), "accountId": acc_id, "accountName": name,
+            "legalNameVn": (acc or {}).get("legalNameVn") or "", "mst": (acc or {}).get("mst") or "",
+            "contracts": [{"id": c.get("id"), "contractNo": c.get("contractNo") or "",
+                           "title": c.get("title") or "", "value": float(c.get("value") or 0),
+                           "status": c.get("status") or ""} for c in contracts],
+            "rows": rows, "closingBalance": bal,
+            "retentionHeldByCustomer": retention, "advanceOwedBack": advance,
+            "statement": "%s owed on trade terms as at %s." % (_money_vnd(bal), self._vn_day()),
+            # The same rule the receivables screen holds, restated where a customer will read it.
+            "whyNotOneNumber": "Retention and the advance are NOT part of this balance. Retention is "
+                               "not late — it is not due until the warranty ends. An advance is "
+                               "money held that is owed back, not owed to us. They are shown "
+                               "separately so this figure can be agreed without arguing about them.",
+        })
 
     def _receivables_ep(self, u, qs):
         """Who owes you money, since when, and under which of the three clocks.

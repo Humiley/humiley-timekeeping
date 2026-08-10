@@ -291,3 +291,11 @@ def test_there_is_ONE_way_to_start_a_quotation():
     # the name survives only in the tombstone comment that says where it went
     assert "function crmQuoteBuilder" not in INDEX
     assert "onclick=\"crmQuoteBuilder" not in INDEX
+
+
+def test_the_discount_threshold_and_the_statement_both_have_a_door():
+    assert 'id="vat-quoteDiscountMax"' in INDEX
+    assert "async function crmApproveDiscount" in INDEX
+    assert "async function crmStatement(" in INDEX
+    acct = INDEX[INDEX.find("async function crmOpenAccount"):INDEX.find("async function crmOpenAccount") + 9000]
+    assert "crmStatement(" in acct, "the statement belongs on the customer's own screen"

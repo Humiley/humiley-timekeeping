@@ -213,7 +213,10 @@ def test_a_staff_user_sees_only_their_own_quotations(api, tokens):
 def test_an_unknown_action_is_named_rather_than_ignored(api, tokens):
     q = _draft(api, tokens["staff"])
     st, r = _q(api, tokens["staff"], action="frobnicate", id=q["id"])
-    assert st == 400 and "draft, issue, revise" in r["error"]
+    assert st == 400
+    # every action, named — including the two that guard the discount
+    for verb in ("draft", "discount", "approve_discount", "issue", "revise", "accept", "lose"):
+        assert verb in r["error"], verb
 
 
 def test_issuing_is_audited(api, tokens):

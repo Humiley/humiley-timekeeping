@@ -17733,6 +17733,111 @@ async function crmTrace(docId) {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
 }
 
+/* A discount is a price decision, and issuing is the moment it leaves the building. The approval is
+   pinned to the PERCENTAGE approved, not a flag — approve 15%, edit to 40%, and a boolean would
+   sail straight through, which is the only way this control fails in practice. */
+async function crmApproveDiscount(id) {
+  let g;
+  try { g = await tkApi('/api/sales/quote', { method: 'POST', body: { action: 'discount', id: id } }); }
+  catch (e) { toast(_errMsg(e), 'error', 8000); return; }
+  const d = g.discount || {};
+  const ok = await tkConfirm({
+    title: _t2('Approve this discount?', 'Duyệt mức giảm giá này?'),
+    body: _t2('%g% off list (%m), steepest line %s%.', 'Giảm %g% so với giá gốc (%m), hạng mục sâu nhất %s%.')
+            .replace('%g', (+d.pct || 0).toFixed(2)).replace('%m', _crmMoney(d.given))
+            .replace('%s', (+d.maxLinePct || 0).toFixed(2)) + '\n\n' +
+          _t2('The approval is recorded at this percentage. Discount it further afterwards and it will need approving again.',
+              'Phê duyệt được ghi nhận ở đúng mức này. Nếu sau đó giảm sâu hơn thì phải duyệt lại.') });
+  if (!ok) return;
+  try {
+    const r = await tkApi('/api/sales/quote', { method: 'POST', body: { action: 'approve_discount', id: id } });
+    toast(_t2('Discount approved at %p%', 'Đã duyệt mức giảm %p%').replace('%p', (+r.approvedPct || 0).toFixed(2)));
+    _COLL_TS['sales_quotes'] = 0;
+    crmRenderQuotes();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+/* ═══ The customer statement (bảng đối chiếu công nợ) ═══════════════════════════════════════════
+   What a customer reconciles against before releasing a payment run, and the first thing an auditor
+   asks for. It was being assembled by hand from four screens.
+
+   A LEDGER, not a total: every line is a document with a date, a reference and a movement. A
+   statement showing only a balance is one nobody can dispute — which sounds fine until the customer
+   disputes it anyway and there is nothing to point at. */
+const _ST_KIND = { claim: ['Payment application', 'Đề nghị thanh toán'],
+                   credit: ['Credit note', 'Giấy báo có'],
+                   receipt: ['Payment received', 'Đã thu tiền'],
+                   deposit: ['Deposit received', 'Tạm ứng đã nhận'] };
+
+async function crmStatement(accountId, accountName) {
+  let r;
+  const qs = accountId ? 'accountId=' + encodeURIComponent(accountId)
+                       : 'accountName=' + encodeURIComponent(accountName || '');
+  try { r = await tkApi('/api/sales/statement?' + qs); }
+  catch (e) { toast(_errMsg(e), 'error', 8000); return; }
+  const vi = _LANG.cur === 'vi';
+
+  const rows = (r.rows || []).length ? r.rows.map(x => {
+    const k = _ST_KIND[x.kind] || [x.kind, x.kind];
+    return '<tr><td style="white-space:nowrap">' + _crmEsc(x.on || '—') + '</td>' +
+      '<td>' + _crmEsc(vi ? k[1] : k[0]) +
+        (x.ref ? ' <span style="color:var(--text-light);font-variant-numeric:tabular-nums">' + _crmEsc(x.ref) + '</span>' : '') +
+        (x.einvNo ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t2('Invoice', 'Hoá đơn') + ' ' + _crmEsc(x.einvNo) + '</div>' : '') +
+        (x.note ? '<div style="font-size:10.5px;color:var(--text-light)">' + _crmEsc(x.note) + '</div>' : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap">' + (x.debit ? _crmMoney(x.debit) : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--emerald)">' + (x.credit ? _crmMoney(x.credit) : '') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap">' + _crmMoney(x.balance) + '</td></tr>';
+  }).join('') : tkEmptyRow(5, _t2('Nothing has been certified or received on this customer yet.',
+                                  'Chưa có nghiệm thu hay thu tiền nào với khách hàng này.'), { icon: 'inbox' });
+
+  document.getElementById('stOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'stOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:900px;width:97vw;max-height:92vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' + _t2('Statement of account', 'Bảng đối chiếu công nợ') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(r.legalNameVn || r.accountName || '') +
+        (r.mst ? ' · ' + _t2('Tax code', 'MST') + ' ' + _crmEsc(r.mst) : '') +
+        ' · ' + _t2('as at', 'tính đến') + ' ' + _crmEsc(r.asOf || '') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'stOverlay\').remove()">&times;</button></div>' +
+    '<div class="table-wrap"><table style="min-width:720px"><thead><tr>' +
+      '<th>' + _t2('Date', 'Ngày') + '</th><th>' + _t2('Document', 'Chứng từ') + '</th>' +
+      '<th style="text-align:right">' + _t2('Charged', 'Phát sinh') + '</th>' +
+      '<th style="text-align:right">' + _t2('Paid / credited', 'Đã trả / ghi giảm') + '</th>' +
+      '<th style="text-align:right">' + _t2('Balance', 'Số dư') + '</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>' +
+    '<div class="card" style="padding:13px 15px;margin-top:12px">' +
+      '<div style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">' +
+        '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + _t2('Owed on trade terms', 'Còn nợ theo điều khoản thanh toán') + '</div>' +
+        '<div style="font-size:15px;font-weight:800;font-variant-numeric:tabular-nums">' + _crmMoney(r.closingBalance) + '</div></div>' +
+      '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px">' +
+        '<div><span style="color:var(--text-light)">' + _t2('Retention we are holding for you', 'Tiền giữ lại bảo hành') + '</span> ' +
+          '<b style="font-variant-numeric:tabular-nums">' + _crmMoney(r.retentionHeldByCustomer) + '</b></div>' +
+        '<div><span style="color:var(--text-light)">' + _t2('Advance still to recover', 'Tạm ứng chưa khấu trừ hết') + '</span> ' +
+          '<b style="font-variant-numeric:tabular-nums">' + _crmMoney(r.advanceOwedBack) + '</b></div></div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-top:8px">' +
+        _crmEsc(_t2('Retention and the advance are not part of the balance above. Retention is not late — it is not due until the warranty ends; an advance is money held that is owed back. They are shown separately so the balance can be agreed without arguing about them.',
+                    'Tiền giữ lại và tạm ứng không nằm trong số dư ở trên. Tiền giữ lại chưa đến hạn cho tới khi hết bảo hành; tạm ứng là tiền đang giữ và phải hoàn lại. Tách riêng để hai bên chốt được số dư mà không phải tranh luận về chúng.')) + '</div>' +
+    '</div>' +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'stOverlay\').remove()">' + _t('Close') + '</button>' +
+      '<button class="btn btn-ghost" onclick="crmStatementCsv()">' + _t2('Download CSV', 'Tải CSV') + '</button>' +
+    '</div></div>';
+  document.body.appendChild(el);
+  window._STMT = r;
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+function crmStatementCsv() {
+  const r = window._STMT; if (!r) return;
+  const esc = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const head = ['Date', 'Document', 'Reference', 'Invoice', 'Charged', 'Paid/credited', 'Balance'];
+  const body = (r.rows || []).map(x => [x.on, (_ST_KIND[x.kind] || [x.kind])[0], x.ref, x.einvNo,
+                                        x.debit || '', x.credit || '', x.balance].map(esc).join(','));
+  const tail = ['', esc('Owed on trade terms'), '', '', '', '', esc(r.closingBalance)].join(',');
+  const csv = [head.map(esc).join(','), ...body, tail].join('\n');
+  _crmDownloadBlob('Statement - ' + String(r.accountName || 'customer').replace(/[^a-z0-9]+/gi, '_') +
+                   ' - ' + (r.asOf || '') + '.csv', csv, 'text/csv;charset=utf-8');
+}
+
 /* ═══ Retention ═════════════════════════════════════════════════════════════════════════════════
    The receivable that goes missing. 5% is withheld a little at a time across a year of claims, then
    falls due once — twelve months after the job finished and everybody moved on. Nothing chased it
@@ -17908,6 +18013,11 @@ async function crmRenderVatSettings() {
     '<div class="grid-2" style="gap:12px">' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Default VAT rate', 'Thuế suất GTGT mặc định') + '</label>' +
         sel('vat-vatRate', r.rate, rateOpts, _t2('— not recorded —', '— chưa ghi nhận —')) + '</div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Discount a salesperson may issue without approval (%)', 'Mức giảm giá được phát hành không cần duyệt (%)') + '</label>' +
+        '<input class="form-control" id="vat-quoteDiscountMax" inputmode="numeric" placeholder="' + _tkEscA(_t2('blank = no threshold', 'để trống = không giới hạn')) + '" value="' + _tkEscA(r.quoteDiscountMax || '') + '">' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' +
+          _crmEsc(_t2('Checked when a quotation is ISSUED, on the weighted discount AND on the steepest single line — one deep line inside a big total is what an average smooths away. Blank means no threshold: a limit the portal invented would be a policy nobody agreed to.',
+                      'Kiểm tra khi PHÁT HÀNH báo giá, theo mức giảm bình quân VÀ theo hạng mục giảm sâu nhất — một dòng giảm sâu nằm trong tổng lớn chính là thứ bị số bình quân che mất. Để trống là không giới hạn: giới hạn do phần mềm tự đặt là quy định không ai đồng ý.')) + '</div></div>' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT is charged on', 'Tính thuế GTGT trên') + '</label>' +
         sel('vat-vatBase', r.base, baseOpts, _t2('— not recorded —', '— chưa ghi nhận —')) +
         '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' +
@@ -17922,7 +18032,7 @@ async function crmRenderVatSettings() {
 
 async function crmSaveVatSettings() {
   const g = k => (document.getElementById('vat-' + k) || {}).value || '';
-  const body = { vatRate: g('vatRate'), vatBase: g('vatBase') };
+  const body = { vatRate: g('vatRate'), vatBase: g('vatBase'), quoteDiscountMax: g('quoteDiscountMax') };
   Object.keys((_VAT_CFG || {}).taxPoints || {}).forEach(k => { body[k] = g(k); });
   try {
     const r = await tkApi('/api/sales/vat-settings', { method: 'POST', body: body });
@@ -18135,6 +18245,8 @@ async function crmRenderQuotes() {
   const rows = live.length ? live.map(q => {
     const st = _QT_STATUS[q.status || 'draft'] || _QT_STATUS.draft;
     const acts = [];
+    if (q.status === 'draft' && _crmSeeAll() && !q.discountApprovedBy)
+      acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmApproveDiscount(\'' + q.id + '\')">' + _t2('Approve discount', 'Duyệt giảm giá') + '</button>');
     if (q.status === 'draft') acts.push('<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'issue\')">' + _t2('Issue', 'Gửi') + '</button>');
     if (q.status === 'issued') {
       acts.push('<button class="btn btn-emerald btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'accept\')">' + _t2('Accepted', 'Chấp nhận') + '</button>');
@@ -18267,6 +18379,7 @@ async function crmOpenAccount(id) {
         (leads.length ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + leads.length + ' ' + _t2('open lead(s)', 'khách hàng tiềm năng') + '</div>' : '') + '</div>' +
     '</div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmAcctOverlay\').remove()">' + _t('Close') + '</button>' +
+      '<button class="btn btn-ghost" onclick="crmStatement(\'' + c.id + '\')">' + _t2('Statement of account', 'Bảng đối chiếu công nợ') + '</button>' +
       '<button class="btn btn-primary" onclick="document.getElementById(\'crmAcctOverlay\').remove();tkQuickAdd(\'crm_companies\',\'' + c.id + '\')">' + _t('Edit') + '</button></div>' +
     '</div>';
   document.getElementById('crmAcctOverlay')?.remove();

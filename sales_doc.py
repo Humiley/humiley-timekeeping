@@ -164,6 +164,28 @@ def totals(lines, counter="billedAmt"):
             "pct": round(done / gross * 100, 2) if gross else 0.0}
 
 
+
+def discount(lines):
+    """What this document gives away, against what it would be at list.
+
+    `totals()["amount"]` is already NET of every per-line discount, so it cannot answer "how much
+    did we come off list to win this" — the question an approval threshold is about. A weighted
+    effective percentage is the honest single number: three lines at 5% and one enormous line at 40%
+    is not "an average of 15% discount", it is whatever the money says it is.
+    """
+    val = [l for l in (lines or []) if (l or {}).get("kind") in VALUED]
+    at_list = round(sum(_num(l.get("qty")) * _num(l.get("unitPrice")) for l in val), 2)
+    quoted = round(sum(line_amount(l) for l in val), 2)
+    given = round(at_list - quoted, 2)
+    return {
+        "atList": at_list, "quoted": quoted, "given": given,
+        "pct": round(given / at_list * 100, 4) if at_list else 0.0,
+        # The single steepest line, because one deep discount hidden inside a big total is exactly
+        # what a weighted average smooths away.
+        "maxLinePct": round(max([_num(l.get("discPct")) for l in val] or [0.0]), 4),
+    }
+
+
 # ── moving the counters, which is where money is either right or silently wrong ─────────────────
 
 TOL = 0.005      # half a cent: absorbs float noise, never a real overclaim
