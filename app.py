@@ -45,6 +45,7 @@ import account          # the customer as one identity: MST, terms, duplicates, 
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
 import sales_variation  # the phụ lục: what a variation does to a contract (pure)
+import sales_credit     # the giấy báo có: what crediting a certified claim reverses (pure)
 import vat as vat_mod   # the rate and base somebody fills in, and the arithmetic on them (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
@@ -3909,6 +3910,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._einvoice_ep(uu, body))
         if path == "/api/sales/application":
             return self._guard(lambda uu: self._application_ep(uu, body))
+        if path == "/api/sales/credit":
+            return self._guard(lambda uu: self._credit_ep(uu, body or {}))
         if path == "/api/sales/variation":
             return self._guard(lambda uu: self._variation_ep(uu, body or {}))
         if path == "/api/sales/contract":
@@ -5001,6 +5004,21 @@ class Handler(BaseHTTPRequestHandler):
                                      "raised it — the same rule as a pay run's preparer and "
                                      "signer.", 403)
                 why = self._variation_apply(u, dict(item, status=pre_status))
+                if why:
+                    return self._err(why, 400)
+                item["appliedBy"] = signer_name
+                item.setdefault("appliedOn", time.strftime("%Y-%m-%d"))
+
+            # A credit note reverses four balances on a certified claim. Same reasoning as the
+            # variation above: the act that moves them is a signature.
+            if coll == "sales_credits" and set_status == sales_credit.APPLIED:
+                if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+                    return self._err("Applying a credit note reverses a certified claim — that is "
+                                     "an Approver (management) act.", 403)
+                if (item.get("owner") or "") == signer_name:
+                    return self._err("A credit note is applied by somebody other than the person "
+                                     "who raised it.", 403)
+                why = self._credit_apply(u, dict(item, status=pre_status))
                 if why:
                     return self._err(why, 400)
                 item["appliedBy"] = signer_name
@@ -6491,7 +6509,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -6519,7 +6537,7 @@ class Handler(BaseHTTPRequestHandler):
     # do not change what was decided — a wrong decision is superseded, not rewritten.
     # Sell-side documents scoped like the CRM: own / department / everything from management up.
     SALES_SCOPED = {"sales_quotes", "sales_contracts", "sales_applications", "sales_receipts",
-                    "sales_variations"}
+                    "sales_variations", "sales_credits"}
 
     ISSUED_ONLY = {"decisions": ("a decision", "/api/hr/decision"),
                    # A quotation carries LINES. A PATCH through /api/coll is a whole-document
@@ -6538,6 +6556,9 @@ class Handler(BaseHTTPRequestHandler):
                    # A variation CHANGES THE CONTRACT VALUE. Through the generic path it would be an
                    # in-place edit of the one thing a contract exists to make un-editable.
                    "sales_variations": ("a variation", "/api/sales/variation"),
+                   # A credit note reverses four balances at once. Written any other way it
+                   # would move one of them and let the other three drift.
+                   "sales_credits": ("a credit note", "/api/sales/credit"),
                    "hrletters": ("a confirmation letter", "/api/hr/letter"),
                    "concerns": ("a concern", "/api/hr/speakup"),
                    # An accident record decides, from its class and the number hurt, whether the
@@ -6557,7 +6578,7 @@ class Handler(BaseHTTPRequestHandler):
     CONFIDENTIAL = {"concerns"}
     ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
                        "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
-                       "sales_variations": {"_rev", "id"},   # nothing: every change goes through the endpoint
+                       "sales_variations": {"_rev", "id"}, "sales_credits": {"_rev", "id"},   # nothing: every change goes through the endpoint
                        "decisions": {"file", "fileUrl", "fileName", "spUrl", "note", "_rev", "id"},
                        "hrletters": {"file", "fileUrl", "fileName", "spUrl", "note", "status",
                                      "issuedBy", "issuedById", "issuedAt", "_rev", "id"},
@@ -6577,7 +6598,7 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -10249,6 +10270,112 @@ class Handler(BaseHTTPRequestHandler):
             return res
         res["lines"] = applied["lines"]
         return res
+
+    def _credit_ep(self, u, body):
+        """The credit note (giấy báo có) — raised against a CERTIFIED claim, applied by signature.
+
+        Not a negative claim. A progress claim moves four balances at once, and undoing it with a
+        minus sign moves one of them: retention would stay withheld on work that was credited back,
+        and the advance would show as recovered out of money the customer no longer owes.
+        """
+        act = str((body or {}).get("action") or "").strip().lower()
+        cid = str((body or {}).get("id") or "").strip()
+        cur = db.get_collection_item("sales_credits", cid) if cid else None
+        if cid and not cur:
+            return self._err("Credit note not found.", 404)
+        if cur and not self._sales_may_write(u, cur):
+            return self._err("You can only change your own credit notes.", 403)
+
+        if act == "draft":
+            a = db.get_collection_item("sales_applications",
+                                       str((body or {}).get("applicationId") or "")
+                                       or (cur or {}).get("applicationId") or "")
+            if not a:
+                return self._err("Payment application not found.", 404)
+            if cur and cur.get("status") != sales_credit.DRAFT:
+                return self._err("An issued credit note cannot be edited. Raise the next one.", 400)
+            reason = str((body or {}).get("reason") or (cur or {}).get("reason") or "").strip()
+            if reason and reason not in sales_credit.REASON_CODES:
+                return self._err("%r is not one of the credit reasons." % reason, 400)
+            amount = round(float((body or {}).get("amount")
+                                 if (body or {}).get("amount") is not None
+                                 else (cur or {}).get("amount") or 0), 2)
+            e = sales_credit.effect(a, amount)
+            if not e["ok"]:
+                return self._err(e["why"], 400)
+            doc = dict(cur or {})
+            doc.update({"applicationId": a.get("id"), "contractId": a.get("contractId"),
+                        "contractNo": a.get("contractNo"), "period": a.get("period"),
+                        "accountName": a.get("accountName"), "accountId": a.get("accountId") or "",
+                        "amount": amount, "reason": reason,
+                        "note": str((body or {}).get("note") or doc.get("note") or "")[:500],
+                        "status": doc.get("status") or sales_credit.DRAFT,
+                        "owner": doc.get("owner") or u.get("name"), "updatedAt": self._utc_now()})
+            doc.update({k: e[k] for k in ("retentionReleased", "advanceRestored", "netCredit")})
+            saved = db.put_collection_item("sales_credits", doc)
+            return self._json({"ok": True, "item": saved, "effect": e})
+
+        if not cur:
+            return self._err("A credit note id is required for '%s'." % (act or "(none)"), 400)
+        a = db.get_collection_item("sales_applications", cur.get("applicationId")) or {}
+
+        if act == "issue":
+            tr = sales_doc.transition(cur, sales_credit.ISSUED, table=sales_credit.TRANSITIONS)
+            if not tr["ok"]:
+                return self._err(tr["why"], 400)
+            if not str(cur.get("reason") or "").strip():
+                return self._err("A credit note records WHY it was raised. The amount alone and the "
+                                 "amount with a reason are different facts at an audit, and only "
+                                 "the second one stops it happening again.", 400)
+            e = sales_credit.effect(a, cur.get("amount"))
+            if not e["ok"]:
+                return self._err(e["why"], 400)
+            if not str(cur.get("creditNo") or "").strip():
+                year = int(self._vn_day()[:4])
+                n = db.next_doc_no("CN", year, lambda: doc_number.highest(
+                    doc_number.numbers_in(db.list_collection("sales_credits"), "creditNo"),
+                    "CN", year))
+                cur["creditNo"] = doc_number.format_no("CN", year, n)
+            cur["status"] = sales_credit.ISSUED
+            cur["issuedAt"] = self._utc_now()
+            cur["issuedBy"] = u.get("name")
+            saved = db.put_collection_item("sales_credits", cur)
+            self._sales_audit_c(u, "Issued credit note", saved)
+            return self._json({"ok": True, "item": saved, "effect": e})
+
+        if act == "cancel":
+            tr = sales_doc.transition(cur, sales_credit.CANCELLED, table=sales_credit.TRANSITIONS)
+            if not tr["ok"]:
+                return self._err(tr["why"], 400)
+            cur["status"] = sales_credit.CANCELLED
+            saved = db.put_collection_item("sales_credits", cur)
+            return self._json({"ok": True, "item": saved})
+
+        if act == "preview":
+            return self._json({"ok": True, "effect": sales_credit.effect(a, cur.get("amount"))})
+
+        return self._err("Unknown action. Use draft, issue, preview or cancel — applying a credit "
+                         "note is an e-signature, not an action.", 400)
+
+    def _credit_apply(self, u, cn):
+        """Apply a signed credit note to its claim and contract, once, under compare-and-swap."""
+        if cn.get("status") != sales_credit.ISSUED:
+            return "Only an issued credit note can be applied — this one is %s." % (cn.get("status") or "draft")
+        for _ in range(5):
+            a = db.get_collection_item("sales_applications", cn.get("applicationId"))
+            c = db.get_collection_item("sales_contracts", cn.get("contractId"))
+            if not a or not c:
+                return "The claim or its contract is missing."
+            rev0 = c.get("_rev")
+            out = sales_credit.apply_to(c, a, cn.get("amount"))
+            if not out["ok"]:
+                return out["why"]
+            saved = db.put_collection_item_if_rev("sales_contracts", out["contract"], rev0)
+            if saved is not None:
+                db.put_collection_item("sales_applications", out["application"])
+                return None
+        return ("The contract was being changed by somebody else. Nothing was credited — open the "
+                "credit note again and sign it once more.")
 
     def _variation_ep(self, u, body):
         """The variation (phụ lục) — the document two refusals in this codebase already name.

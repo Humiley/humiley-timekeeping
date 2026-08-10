@@ -248,3 +248,14 @@ def test_applying_a_variation_goes_through_the_e_signature_not_a_save():
     fn = INDEX[INDEX.find("function crmVoApply"):INDEX.find("function crmVoApply") + 900]
     assert "tkESign({" in fn and "setStatus: 'applied'" in fn
     assert "/api/sales/variation" not in fn
+
+
+def test_the_credit_note_is_reachable_from_the_claim_it_reverses():
+    cl = INDEX[INDEX.find("async function crmOpenClaim"):INDEX.find("async function crmClaimCertify")]
+    assert "crmOpenCredit(" in cl
+    assert re.search(r"^async function crmOpenCredit\(", INDEX, re.M)
+
+
+def test_applying_a_credit_note_goes_through_the_e_signature():
+    fn = INDEX[INDEX.find("function crmCnApply"):INDEX.find("function crmCnApply") + 800]
+    assert "tkESign({" in fn and "setStatus: 'applied'" in fn

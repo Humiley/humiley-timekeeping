@@ -16724,6 +16724,105 @@ async function crmRenderContracts() {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
 }
 
+/* ═══ Credit notes (giấy báo có) ════════════════════════════════════════════════════════════════
+   The destination of three refusals: "a negative claim is a credit note, not a claim", twice, and
+   "raise a credit note against the claim instead" from the variation.
+
+   Not a negative claim. A progress claim moves four balances at once, and undoing it with a minus
+   sign moves one — retention would stay withheld on work credited back, and the advance would show
+   as recovered out of money the customer no longer owes. Applying it is signed, like a variation. */
+const _CN_REASONS = [['over_certified', 'Over-certified in error', 'Nghiệm thu nhầm vượt giá trị'],
+                     ['rejected_work', 'Work rejected or not accepted', 'Công việc bị từ chối / không được nghiệm thu'],
+                     ['descoped', 'Scope removed after certification', 'Cắt giảm phạm vi sau khi đã nghiệm thu'],
+                     ['pricing', 'Pricing corrected', 'Điều chỉnh đơn giá'],
+                     ['goodwill', 'Commercial settlement', 'Thoả thuận thương mại']];
+
+async function crmOpenCredit(applicationId, id) {
+  await tkLoadColl('sales_credits'); await tkLoadColl('sales_applications');
+  const cn = id ? (_HR.sales_credits || []).find(x => x.id === id) : null;
+  const a = (_HR.sales_applications || []).find(x => x.id === (applicationId || (cn || {}).applicationId));
+  if (!a) return;
+  const draft = !cn || (cn.status || 'draft') === 'draft';
+  const issued = cn && cn.status === 'issued';
+  const left = Math.max(0, (+a.certifiedThis || 0) - (+a.creditedAmt || 0));
+  const vi = _LANG.cur === 'vi';
+
+  document.getElementById('cnOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'cnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:660px;width:96vw;max-height:90vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' +
+      _crmEsc((cn && cn.creditNo) || _t2('Credit note', 'Giấy báo có')) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc((a.contractNo || '') + ' · ' + (a.period || '')) + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'cnOverlay\').remove()">&times;</button></div>' +
+    '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6;margin-bottom:10px">' +
+      _crmEsc(_t2('This claim certified %c, of which %l is still creditable. A credit reverses the retention and the advance recovery in the same proportion — that is what keeps the final account reconcilable.',
+                  'Đợt này đã nghiệm thu %c, còn %l có thể ghi giảm. Việc ghi giảm sẽ hoàn lại tiền giữ lại và khấu trừ tạm ứng theo đúng tỷ lệ — đó là điều giữ cho quyết toán khớp nhau.')
+        .replace('%c', _crmMoney(a.certifiedThis)).replace('%l', _crmMoney(left))) + '</div>' +
+    '<div class="grid-2" style="gap:12px">' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Amount to credit (₫)', 'Số tiền ghi giảm (₫)') + '</label>' +
+        '<input class="form-control" id="cn-amount" inputmode="numeric" value="' + _tkEscA((cn && cn.amount) || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Why', 'Lý do') + '</label>' +
+        '<select class="form-control" id="cn-reason"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' +
+          _CN_REASONS.map(r => '<option value="' + r[0] + '"' + (((cn || {}).reason === r[0]) ? ' selected' : '') + '>' + _crmEsc(vi ? r[2] : r[1]) + '</option>').join('') +
+        '</select></div>' +
+    '</div>' +
+    '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Note', 'Ghi chú') + '</label>' +
+      '<input class="form-control" id="cn-note" value="' + _tkEscA((cn && cn.note) || '') + '"' + (draft ? '' : ' disabled') + '></div>' +
+    '<div id="cn-effect" style="font-size:12.5px;color:var(--navy);font-weight:600;margin:8px 0;line-height:1.55"></div>' +
+    (issued ? '<div class="card" style="padding:10px 13px;font-size:11.5px;line-height:1.55;background:rgba(32,80,144,.08);color:var(--navy)">' +
+      _crmEsc(_t2('Applying this reverses a certified claim, so it is signed — and signed by somebody other than whoever raised it. The legal credit invoice remains your provider\'s to issue.',
+                  'Áp dụng sẽ đảo ngược một đợt đã nghiệm thu, nên phải ký số — và người ký phải khác người lập. Hoá đơn điều chỉnh hợp pháp vẫn do nhà cung cấp hoá đơn phát hành.')) + '</div>' : '') +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'cnOverlay\').remove()">' + _t('Close') + '</button>' +
+      (draft ? '<button class="btn btn-ghost" onclick="crmCnSave(\'' + a.id + '\',\'' + (id || '') + '\',false)">' + _t2('Save draft', 'Lưu nháp') + '</button>' +
+               '<button class="btn btn-primary" onclick="crmCnSave(\'' + a.id + '\',\'' + (id || '') + '\',true)">' + _t2('Issue', 'Phát hành') + '</button>' : '') +
+      (issued ? '<button class="btn btn-primary" onclick="crmCnApply(\'' + id + '\')">' + _t2('Sign and apply', 'Ký và áp dụng') + '</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(el);
+  if (cn) crmCnPreview(cn.id);
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+async function crmCnPreview(id) {
+  try {
+    const r = await tkApi('/api/sales/credit', { method: 'POST', body: { action: 'preview', id: id } });
+    const box = document.getElementById('cn-effect');
+    if (box) box.textContent = (r.effect && (r.effect.statement || r.effect.why)) || '';
+  } catch (e) {}
+}
+
+async function crmCnSave(applicationId, id, issue) {
+  const g = k => (document.getElementById('cn-' + k) || {}).value || '';
+  const body = { action: 'draft', applicationId: applicationId,
+                 amount: +String(g('amount')).replace(/[^0-9.]/g, ''),
+                 reason: g('reason'), note: g('note') };
+  if (id) body.id = id;
+  try {
+    const r = await tkApi('/api/sales/credit', { method: 'POST', body: body });
+    if (issue) await tkApi('/api/sales/credit', { method: 'POST', body: { action: 'issue', id: r.item.id } });
+    toast(issue ? _t2('Credit note issued', 'Đã phát hành giấy báo có') : _t2('Saved', 'Đã lưu'));
+    _COLL_TS['sales_credits'] = 0;
+    document.getElementById('cnOverlay')?.remove();
+    document.getElementById('sapDetail')?.remove();
+    crmRenderBilling();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
+function crmCnApply(id) {
+  const cn = (_HR.sales_credits || []).find(x => x.id === id) || {};
+  tkESign({
+    coll: 'sales_credits', id: id, setStatus: 'applied',
+    meaning: 'Applied credit note ' + (cn.creditNo || '') + ' — ' + _crmMoney(cn.amount),
+    onDone: () => {
+      toast(_t2('Credit applied — the claim and the contract have both moved', 'Đã ghi giảm — cả đợt thanh toán và hợp đồng đều đã thay đổi'), 'success', 7000);
+      ['sales_credits', 'sales_applications', 'sales_contracts'].forEach(k => { try { _COLL_TS[k] = 0; } catch (e) {} });
+      document.getElementById('cnOverlay')?.remove();
+      document.getElementById('sapDetail')?.remove();
+      crmRenderBilling();
+    }
+  });
+}
+
 /* ═══ Variations (phụ lục) ══════════════════════════════════════════════════════════════════════
    The document two refusals in this codebase have been naming for weeks with nowhere to send you:
    "Raise a variation first, or certify less" on an over-value claim, and "Raise a variation
@@ -17414,6 +17513,7 @@ async function crmOpenClaim(id) {
         : '<div style="font-size:11.5px;color:#B45309;padding:6px 0;line-height:1.55">' +
             _crmEsc(_t2('Ex-VAT — no rate has been recorded for this claim, its contract or the company. Set it on Sales Compliance and every contract inherits it.',
                         'Chưa gồm thuế GTGT — chưa khai báo thuế suất cho đợt này, cho hợp đồng hay cho công ty. Hãy khai báo ở màn hình Tuân thủ bán hàng để mọi hợp đồng cùng áp dụng.')) + '</div>') +
+      ((+a.creditedAmt || 0) ? line(_t2('Credited off this claim', 'Đã ghi giảm'), a.creditedAmt, false, true) : '') +
       (draft ? '' : line(_t2('Settled', 'Đã thu'), a.settledAmt) + line(_t2('Outstanding', 'Còn nợ'), out)) +
       '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-light);line-height:1.55">' +
         _crmEsc(_t2('%c certified, less %a advance recovery and %r retention = %n payable.',
@@ -17424,6 +17524,7 @@ async function crmOpenClaim(id) {
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove()">' + _t('Close') + '</button>' +
       '<button class="btn btn-ghost" onclick="crmTrace(\'' + id + '\')">' + _t2('The trail', 'Nhật ký') + '</button>' +
+      (draft ? '' : '<button class="btn btn-ghost" onclick="crmOpenCredit(\'' + id + '\')">' + _t2('Credit note', 'Giấy báo có') + '</button>') +
       (draft ? '<button class="btn btn-ghost" onclick="document.getElementById(\'sapDetail\').remove();crmClaimForm(\'' + _crmEsc(a.contractId) + '\',\'' + id + '\')">' + _t2('Edit', 'Sửa') + '</button>' +
                '<button class="btn btn-primary" onclick="crmClaimCertify(\'' + id + '\')">' + _t2('Certify', 'Nghiệm thu') + '</button>' : '') +
     '</div></div>';
