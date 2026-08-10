@@ -62,3 +62,23 @@ def test_no_screen_prints_a_raw_float_as_money():
         assert at > 0, name
         body = INDEX[at:at + 6000]
         assert ".toFixed(2)" not in body, "%s formats money by hand" % name
+
+
+def test_the_contract_rule_dropdowns_offer_exactly_the_codes_the_engine_READS():
+    """The select in index.html and the tuples in sales_contract.py are two copies of one list.
+
+    They are matched by exact string, and the engine now REFUSES a rule it cannot read rather than
+    silently recovering nothing. That makes drift expensive in a new way: rename a code in Python,
+    leave the dropdown alone, and every contract signed afterwards cannot be claimed at all. Cheap
+    to check, so check it.
+    """
+    import sales_contract as SC
+    html = INDEX
+    for const, rules, what in (("_SCT_RECOVERY", SC.RECOVERY_RULES, "advance recovery"),
+                               ("_SCT_RELEASE", SC.RELEASE_RULES, "retention release")):
+        m = re.search(r"const %s\s*=\s*\[(.*?)\];" % const, html)
+        assert m, "%s is not defined in index.html" % const
+        offered = set(re.findall(r"\['([a-z_]+)'", m.group(1)))
+        known = {r["code"] for r in rules}
+        assert offered == known, ("the %s dropdown offers %s but the engine reads %s"
+                                  % (what, sorted(offered), sorted(known)))

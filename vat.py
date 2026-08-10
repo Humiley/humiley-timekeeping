@@ -216,6 +216,37 @@ def on_amount(rate, amount):
     return out
 
 
+def split_inclusive(gross, rate):
+    """Pull the VAT back out of a tax-INCLUSIVE amount: ₫330,000,000 at 10% is ₫300,000,000 + ₫30m.
+
+    This exists because of the deposit. Where the company's treatment is that a tạm ứng carries VAT
+    on receipt, the cash that lands is gross — and everything downstream is EX-VAT: the contract
+    value, the certified amounts, the recovery. Recording the gross figure as the recoverable
+    advance makes it impossible to clear: on a ₫1bn contract with a 30% deposit, ₫30,000,000 of VAT
+    would sit as "advance still owed back" for ever and the final account would never close.
+
+    Returns ok False when no usable rate is stated, rather than dividing by a rate nobody chose.
+    """
+    gross = r2(gross)
+    out = {"ok": False, "gross": gross, "net": gross, "vat": 0.0, "rate": rate}
+    if str(rate).strip() == "" or not rate_ok(rate):
+        out["why"] = ("No VAT rate is stated, so a tax-inclusive amount cannot be split. Record the "
+                      "rate, or enter the amount excluding VAT.")
+        return out
+    out["ok"] = True
+    if str(rate).strip().lower() == NOT_APPLICABLE or _num(rate) == 0:
+        out.update({"rate": rate, "why": "No VAT on this supply, so the whole amount is the advance."})
+        return out
+    net = r2(gross / (1.0 + _num(rate) / 100.0))
+    # The VAT is the REMAINDER, never computed independently: net + vat must equal the cash that
+    # actually arrived, to the đồng. Two roundings that each look right can leave a stray unit that
+    # nothing ever clears.
+    out.update({"net": net, "vat": r2(gross - net),
+                "why": "%s received includes %.4g%% VAT: %s advance + %s tax."
+                       % (_vnd(gross), _num(rate), _vnd(net), _vnd(gross - net))})
+    return out
+
+
 def settings_review(settings=None):
     """What the company has actually recorded, and what is still blank.
 
@@ -231,6 +262,8 @@ def settings_review(settings=None):
     if base not in BASE_CODES:
         missing.append({"key": "vatBase", "label": "What VAT is charged on",
                         "labelVn": "Tính thuế GTGT trên"})
+    # depositVatInclusive is NOT in `missing`: it only matters once advanceTaxPoint says a deposit
+    # carries VAT on receipt, and a company that answers "on_certification" never needs it.
     for k in TAX_POINT_KEYS:
         if not str(s.get(k) or "").strip():
             missing.append({"key": k, "label": TAX_POINTS[k]["question"],

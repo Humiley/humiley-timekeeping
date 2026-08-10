@@ -254,8 +254,21 @@ def application(c, certified_this, state=None):
         rec = r2(this * adv_pct / 100.0)
     elif t["recoveryRule"] == REC_FROM_PCT:
         rec = r2(this * adv_pct / 100.0) if pct_complete >= t["recoveryFromPct"] else 0.0
-    else:                                   # manual — the caller says, the balance still binds
+    elif t["recoveryRule"] == REC_MANUAL:   # the caller says, and the balance still binds
         rec = r2(st.get("recoverNow"))
+    elif not t["recoveryRule"]:
+        # No rule AND no deposit — there is nothing to recover, so ₫0 is the answer, not a default.
+        # A blank rule on a contract that HAS a deposit was refused above, so this cannot swallow one.
+        rec = 0.0
+    else:
+        # An `else: recover manually` catch-all turns any unrecognised rule into "recover nothing",
+        # and nothing about the claim looks wrong: it certifies, it pays, it just never winds the
+        # deposit down. A ₫300,000,000 advance then sits outstanding to the end of the job, and the
+        # first sign is the final account refusing to close. Name it instead.
+        return {"ok": False,
+                "why": "This contract's advance recovery rule (%s) is not one this portal knows, so "
+                       "it cannot say how much of the %s deposit this claim recovers. Set the rule "
+                       "on the contract." % (t["recoveryRule"], _vnd(adv_out))}
     rec = r2(min(rec, adv_out))
     if rec < 0:
         return {"ok": False, "why": "A negative advance recovery would increase the advance."}

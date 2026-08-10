@@ -104,3 +104,34 @@ def _reset_global_state():
     except Exception:
         pass
     yield
+
+
+@pytest.fixture(autouse=True)
+def _company_tax_settings_are_not_shared_between_tests():
+    """Restore every `portal_vat_*` setting after each test.
+
+    These are COMPANY-level settings in one shared test database, so a test that records "deposits
+    include VAT" or a discount threshold silently rewrote the tax treatment for every test that ran
+    after it — which is how a receivables test came to report ₫212,727,272.73 of advance owed back
+    instead of ₫240,000,000, with nothing wrong in the code it was testing. Save and restore rather
+    than wipe, so the per-file cleanup fixtures still do their own thing.
+    """
+    def _has_settings(conn):
+        # Pure-module test files never boot the server, so the schema may not exist yet. Checked
+        # explicitly rather than caught: a bare except here would also swallow a real DB failure
+        # and quietly stop restoring anything.
+        return bool(conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").fetchone())
+
+    conn = db.get_conn()
+    live = _has_settings(conn)
+    before = {} if not live else {k: v for k, v in conn.execute(
+        "SELECT key, value FROM settings WHERE key LIKE 'portal_vat_%'").fetchall()}
+    conn.close()
+    yield
+    conn = db.get_conn()
+    if not _has_settings(conn):
+        conn.close(); return
+    conn.execute("DELETE FROM settings WHERE key LIKE 'portal_vat_%'")
+    for k, v in before.items():
+        conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
+    conn.commit(); conn.close()

@@ -12,6 +12,7 @@ could not express before:
 """
 import pytest
 
+import app
 import db
 import sales_contract as SC
 
@@ -25,6 +26,17 @@ def _clean():
         conn.execute("DELETE FROM doc_counters WHERE series IN ('QT','SO')")
         conn.commit(); conn.close()
     wipe(); yield; wipe()
+
+
+@pytest.fixture(autouse=True)
+def _signable(monkeypatch):
+    """Certifying is an e-signature; these tests drive /api/esign to prove the advance clears."""
+    monkeypatch.setattr(app, "DEMO_MODE", True)
+
+
+def _certify(api, token, aid):
+    return api("POST", "/api/esign", token,
+               {"coll": "sales_applications", "id": aid, "meaning": "Certified", "setStatus": "certified"})
 
 
 def _post(api, t, path, **b):
@@ -282,3 +294,118 @@ def test_an_unlinked_contract_is_a_gap_on_the_trail(api, tokens):
     c = _live(api, tokens)
     _, r = api("GET", "/api/sales/trace?id=" + c["id"], tokens["staff"])
     assert "no-project" in [g["what"] for g in r["gaps"]]
+
+
+# ── a deposit that carries VAT on receipt ───────────────────────────────────────────────────────
+
+def _vatcfg(api, tokens, **kw):
+    return _post(api, tokens["management"], "/api/sales/vat-settings", **kw)
+
+
+def test_a_vat_inclusive_deposit_only_makes_its_EX_VAT_half_recoverable(api, tokens):
+    """The company's stated treatment: a tạm ứng carries VAT on receipt, so the cash that lands is
+    gross. Everything it winds down against — the contract, the claims — is ex-VAT. Recording the
+    gross figure would leave the tax sitting as "advance still owed back" for ever."""
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="1")
+    c = _live(api, tokens)                                   # ₫1bn contract, 30% deposit
+    st, r = _dep(api, tokens["staff"], c["id"], 330_000_000)
+    assert st == 200, r
+    assert r["cashReceived"] == 330_000_000
+    assert r["advanceNet"] == 300_000_000 and r["advanceVat"] == 30_000_000
+    assert r["stillToArrive"] == 0, "the agreed ₫300m advance is fully received"
+    after = db.get_collection_item("sales_contracts", c["id"])
+    assert after["advanceReceived"] == 300_000_000
+    assert after["advanceOutstanding"] == 300_000_000
+
+
+def test_the_advance_then_actually_CLEARS_against_ex_vat_claims(api, tokens):
+    """The whole point. With the gross figure recorded, ₫30,000,000 would never come off."""
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="1")
+    c = _live(api, tokens)
+    _dep(api, tokens["staff"], c["id"], 330_000_000)
+    c = db.get_collection_item("sales_contracts", c["id"])
+    uid = c["lines"][0]["uid"]
+    for period in ("2026-01", "2026-02", "2026-03", "2026-04"):
+        a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
+                  period=period, claims={uid: 250_000_000})[1]["item"]
+        _certify(api, tokens["management"], a["id"])
+    done = db.get_collection_item("sales_contracts", c["id"])
+    assert done["advanceOutstanding"] == 0, "the advance clears exactly when the job does"
+
+
+def test_the_cash_that_arrived_is_still_recorded_in_full(api, tokens):
+    """The bank statement says ₫330,000,000. A receipt that quietly records ₫300,000,000 cannot be
+    reconciled against it."""
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="1")
+    c = _live(api, tokens)
+    _dep(api, tokens["staff"], c["id"], 330_000_000, reference="FT-DEP")
+    rec = [r for r in db.list_collection("sales_receipts") if r.get("kind") == "advance"][0]
+    assert rec["amount"] == 330_000_000
+    assert rec["advanceNet"] == 300_000_000 and rec["advanceVat"] == 30_000_000
+    assert rec["vatInclusive"] is True
+
+
+def test_without_the_setting_the_amount_is_taken_as_ex_vat(api, tokens):
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="")
+    c = _live(api, tokens)
+    _, r = _dep(api, tokens["staff"], c["id"], 300_000_000)
+    assert r["vatInclusive"] is False and r["advanceNet"] == 300_000_000
+    assert "ex-VAT advance" in r["why"]
+
+
+def test_one_receipt_can_override_the_company_setting(api, tokens):
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="")
+    c = _live(api, tokens)
+    _, r = _dep(api, tokens["staff"], c["id"], 330_000_000, vatInclusive="1")
+    assert r["advanceNet"] == 300_000_000
+
+
+def test_a_gross_deposit_with_no_rate_recorded_is_refused_rather_than_guessed(api, tokens):
+    _vatcfg(api, tokens, vatRate="", vatBase="", depositVatInclusive="1")
+    c = _live(api, tokens)
+    st, r = _dep(api, tokens["staff"], c["id"], 330_000_000)
+    assert st == 400 and "Record the rate" in r["error"]
+
+
+def test_the_over_deposit_check_measures_the_EX_VAT_half(api, tokens):
+    """₫330,000,000 gross is exactly the agreed ₫300,000,000 advance — it must not read as ₫30m
+    over and demand a reason."""
+    _vatcfg(api, tokens, vatRate=10, vatBase="certified", depositVatInclusive="1")
+    c = _live(api, tokens)
+    assert _dep(api, tokens["staff"], c["id"], 330_000_000)[0] == 200
+
+
+# ── the two rules that decide how money moves ───────────────────────────────────────────────────
+
+def test_a_recovery_rule_the_engine_cannot_read_is_refused_AT_THE_CONTRACT(api, tokens):
+    """'pro_rata' is not 'prorata', and the difference is ₫300,000,000.
+
+    Stored, it activates cleanly and then every claim recovers ₫0 — no error, no warning, just a
+    deposit that never winds down and a final account that will not close. Caught here, at the one
+    moment somebody is looking at the terms.
+    """
+    c = _live(api, tokens, activate=False)
+    st, r = _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"],
+                  recoveryRule="pro_rata")
+    assert st == 400
+    assert "pro_rata" in r["error"] and "prorata" in r["error"], r["error"]
+    assert (db.get_collection_item("sales_contracts", c["id"]).get("recoveryRule") or "") != "pro_rata"
+
+
+def test_a_release_rule_the_engine_cannot_read_is_refused_too(api, tokens):
+    """The same shape on retention: an unreadable rule releases nothing and the money sits."""
+    c = _live(api, tokens, activate=False)
+    st, r = _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"],
+                  releaseRule="at_the_end")
+    assert st == 400 and "at_the_end" in r["error"]
+
+
+def test_the_real_rules_are_still_accepted(api, tokens):
+    """A validator that refuses everything is not a validator."""
+    c = _live(api, tokens, activate=False)
+    for rec in [x["code"] for x in SC.RECOVERY_RULES]:
+        assert _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"],
+                     recoveryRule=rec)[0] == 200, rec
+    for rel in [x["code"] for x in SC.RELEASE_RULES]:
+        assert _post(api, tokens["staff"], "/api/sales/contract", action="terms", id=c["id"],
+                     releaseRule=rel)[0] == 200, rel

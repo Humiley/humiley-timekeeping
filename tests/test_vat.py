@@ -224,3 +224,48 @@ def test_zero_percent_is_a_rate_and_charges_nothing():
 
 def test_not_a_vat_supply_says_so():
     assert "Not a VAT supply" in vat.on_amount(vat.NOT_APPLICABLE, 100_000_000)["statement"]
+
+
+# ── the VAT-inclusive deposit ───────────────────────────────────────────────────────────────────
+
+def test_a_gross_deposit_splits_into_the_recoverable_advance_and_the_tax():
+    """₫330,000,000 at 10% is a ₫300,000,000 advance plus ₫30,000,000 of tax. Only the first is
+    recoverable, because everything it winds down against is ex-VAT."""
+    o = vat.split_inclusive(330_000_000, 10)
+    assert o["ok"] is True and o["net"] == 300_000_000 and o["vat"] == 30_000_000
+
+
+def test_the_two_halves_always_add_back_to_the_cash_that_arrived():
+    """The VAT is the REMAINDER, never computed independently: two roundings that each look right
+    can leave a stray đồng that nothing ever clears."""
+    for gross, rate in ((330_000_000, 10), (324_000_000, 8), (1_000_000_003, 8), (7, 10)):
+        o = vat.split_inclusive(gross, rate)
+        assert round(o["net"] + o["vat"], 2) == round(float(gross), 2), (gross, rate)
+
+
+def test_the_eight_percent_case_the_company_actually_uses():
+    o = vat.split_inclusive(324_000_000, 8)
+    assert o["net"] == 300_000_000 and o["vat"] == 24_000_000
+
+
+def test_a_zero_rated_or_exempt_deposit_is_all_advance_AND_SAYS_WHY():
+    """The arithmetic is the same either way, so only the reason distinguishes them: telling
+    somebody a ₫300,000,000 exempt deposit "includes 0% VAT" is a statement about tax treatment
+    that nobody made."""
+    for r in (0, vat.NOT_APPLICABLE):
+        o = vat.split_inclusive(300_000_000, r)
+        assert o["ok"] is True and o["net"] == 300_000_000 and o["vat"] == 0
+        assert "No VAT on this supply" in o["why"], (r, o["why"])
+        assert "includes" not in o["why"], (r, o["why"])
+
+
+def test_it_refuses_to_split_by_a_rate_nobody_stated():
+    o = vat.split_inclusive(330_000_000, "")
+    assert o["ok"] is False and o["net"] == 330_000_000
+    assert "Record the rate" in o["why"]
+
+
+def test_the_split_says_what_it_did_in_dong():
+    o = vat.split_inclusive(330_000_000, 10)
+    assert "₫330,000,000 received includes 10% VAT" in o["why"]
+    assert "₫300,000,000 advance" in o["why"]

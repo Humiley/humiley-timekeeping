@@ -11,6 +11,7 @@ than choose a Vietnamese tax treatment it is not entitled to choose.
 import pytest
 
 import sales_contract as C
+import sales_doc
 
 
 def _c(**kw):
@@ -215,3 +216,37 @@ def test_every_claim_states_that_it_is_ex_vat():
 
 def test_the_open_questions_travel_with_the_module():
     assert {u["topic"] for u in C.UNRESOLVED} >= {"The retention tax point", "VAT on an advance"}
+
+
+def test_an_unrecognised_recovery_rule_is_REFUSED_never_treated_as_recover_nothing():
+    """The rule is read by exact string match, and 'pro_rata' is not 'prorata'.
+
+    An `else:` catch-all made every unknown rule behave like manual recovery, which recovers ₫0
+    unless the claim says otherwise. Nothing looks wrong at any point: the claim certifies, it
+    pays, the customer is invoiced — and a ₫300,000,000 deposit stays outstanding to the last day
+    of the job, where the only symptom is a final account that will not close.
+    """
+    c = dict(_c(), recoveryRule="pro_rata")
+    out = C.application(c, 250_000_000, {"advanceOutstanding": 300_000_000})
+    assert out["ok"] is False
+    assert "pro_rata" in out["why"] and "recovery" in out["why"].lower()
+
+
+def test_the_three_recovery_rules_it_DOES_know_still_work():
+    """The refusal above must not swallow the real rules — including manual, which legitimately
+    recovers nothing unless the claim says so, and a contract with no deposit at all, which needs
+    no rule and correctly recovers ₫0."""
+    st = {"advanceOutstanding": 300_000_000}
+    prorata = C.application(dict(_c(), recoveryRule=C.REC_PRORATA), 250_000_000, st)
+    assert prorata["ok"] and prorata["advanceRecovered"] == 75_000_000
+
+    early = C.application(dict(_c(), recoveryRule=C.REC_FROM_PCT, recoveryFromPct=50),
+                          250_000_000, st)
+    assert early["ok"] and early["advanceRecovered"] == 0        # only 25% complete
+
+    manual = C.application(dict(_c(), recoveryRule=C.REC_MANUAL), 250_000_000,
+                           dict(st, recoverNow=100_000_000))
+    assert manual["ok"] and manual["advanceRecovered"] == 100_000_000
+
+    none = C.application({"value": 1_000_000_000, "retentionPct": 0}, 250_000_000, {})
+    assert none["ok"] and none["advanceRecovered"] == 0

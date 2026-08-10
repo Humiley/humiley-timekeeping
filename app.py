@@ -8497,6 +8497,7 @@ class Handler(BaseHTTPRequestHandler):
         for k in ("vatRate", "vatBase") + vat_mod.TAX_POINT_KEYS:
             out[k] = db.get_setting("portal_vat_" + k) or ""
         out["quoteDiscountMax"] = db.get_setting("portal_sales_quoteDiscountMax") or ""
+        out["depositVatInclusive"] = db.get_setting("portal_vat_depositVatInclusive") or ""
         return out
 
     def _vat_settings_ep(self, u, body=None):
@@ -8513,7 +8514,8 @@ class Handler(BaseHTTPRequestHandler):
             r = vat_mod.settings_review(s)
             r.update({"ok": True, "rates": vat_mod.RATES, "bases": vat_mod.BASES,
                       "taxPoints": vat_mod.TAX_POINTS, "notApplicable": vat_mod.NOT_APPLICABLE,
-                      "quoteDiscountMax": s.get("quoteDiscountMax") or ""})
+                      "quoteDiscountMax": s.get("quoteDiscountMax") or "",
+                      "depositVatInclusive": s.get("depositVatInclusive") or ""})
             return self._json(r)
         changed = []
         if "vatRate" in body:
@@ -8529,6 +8531,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("VAT is charged either on the value certified or on the net "
                                  "payable. %r is neither." % v, 400)
             db.set_setting("portal_vat_vatBase", v); changed.append("base")
+        if "depositVatInclusive" in body:
+            v = "1" if str(body.get("depositVatInclusive") or "").strip() in ("1", "true", "yes") else ""
+            db.set_setting("portal_vat_depositVatInclusive", v); changed.append("deposit VAT basis")
         if "quoteDiscountMax" in body:
             v = str(body.get("quoteDiscountMax") or "").strip()
             if v:
@@ -8555,7 +8560,8 @@ class Handler(BaseHTTPRequestHandler):
         s2 = self._company_settings()
         r = vat_mod.settings_review(s2)
         r.update({"ok": True, "changed": changed,
-                  "quoteDiscountMax": s2.get("quoteDiscountMax") or ""})
+                  "quoteDiscountMax": s2.get("quoteDiscountMax") or "",
+                  "depositVatInclusive": s2.get("depositVatInclusive") or ""})
         return self._json(r)
 
     def _company_get_ep(self, u):
@@ -10140,15 +10146,27 @@ class Handler(BaseHTTPRequestHandler):
         amount = round(float((body or {}).get("amount") or 0), 2)
         if amount <= 0:
             return self._err("A deposit must be for a positive amount.", 400)
+        # Where the company's treatment is that a tạm ứng carries VAT on receipt, the cash that
+        # lands is GROSS and everything it will be recovered against is ex-VAT. Recording the gross
+        # figure as the recoverable advance makes it impossible to clear — the VAT would sit as
+        # "advance still owed back" for ever and the final account would never close.
+        settings = self._company_settings()
+        incl = str((body or {}).get("vatInclusive", settings.get("depositVatInclusive") or "")).strip()
+        incl = incl in ("1", "true", "yes")
+        rate = vat_mod.resolve({}, c, settings)["rate"]
+        split = vat_mod.split_inclusive(amount, rate) if incl else None
+        if incl and not split["ok"]:
+            return self._err(split["why"], 400)
+        advance_net = split["net"] if incl else amount
         had = round(float(c.get("advanceReceived") or 0), 2)
         room = round(sched["total"] - had, 2)
         # More than was agreed is allowed — customers do round up, and a PO can be varied after the
         # contract was typed — but it is recorded AS more than agreed, with a reason. Silently
         # accepting it would leave a deposit balance nobody could reconcile to any document.
-        if amount - room > 0.005 and not str((body or {}).get("overReason") or "").strip():
+        if advance_net - room > 0.005 and not str((body or {}).get("overReason") or "").strip():
             return self._err("The agreed deposit is %s and %s has already arrived, leaving %s. "
                              "Taking more than that is fine, but say why."
-                             % (_money_vnd(sched["total"]), _money_vnd(had), _money_vnd(room)), 400)
+                             % (_money_vnd(sched["total"]), _money_vnd(had), _money_vnd(room)), 400)  # noqa: E501
         rec = {"kind": "advance", "contractId": c.get("id"), "contractNo": c.get("contractNo") or "",
                "accountName": c.get("accountName") or "", "accountId": c.get("accountId") or "",
                "amount": amount,
@@ -10157,10 +10175,17 @@ class Handler(BaseHTTPRequestHandler):
                "reference": str((body or {}).get("reference") or "")[:64],
                "overReason": str((body or {}).get("overReason") or "")[:200],
                "tranche": str((body or {}).get("tranche") or "")[:64],
+               "vatInclusive": bool(incl), "advanceNet": advance_net,
+               "advanceVat": round(amount - advance_net, 2), "vatRate": rate if incl else "",
                "allocations": {}, "owner": u.get("name"), "ts": self._utc_now()}
         saved = db.put_collection_item("sales_receipts", rec)
-        c["advanceReceived"] = round(had + amount, 2)
-        c["advanceOutstanding"] = round(float(c.get("advanceOutstanding") or 0) + amount, 2)
+        c["advanceReceived"] = round(had + advance_net, 2)
+        c["advanceOutstanding"] = round(float(c.get("advanceOutstanding") or 0) + advance_net, 2)
+        # The VAT inside a tax-inclusive deposit is real cash that arrived and is NOT recoverable out
+        # of a claim. Kept apart so the contract can still say what landed in the bank — a "Received"
+        # figure of ₫300,000,000 against a ₫330,000,000 bank credit reads as a missing ₫30m.
+        c["advanceVatReceived"] = round(float(c.get("advanceVatReceived") or 0)
+                                        + round(amount - advance_net, 2), 2)
         db.put_collection_item("sales_contracts", c)
         db.put_collection_item("audit", {
             "actor": u.get("name") or "System", "actorId": u.get("id") or "",
@@ -10168,7 +10193,11 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s on %s" % (_money_vnd(amount), c.get("contractNo") or c.get("id")),
             "ts": self._utc_now()})
         return self._json({"ok": True, "item": saved, "advanceReceived": c["advanceReceived"],
-                           "agreed": sched["total"],
+                           "agreed": sched["total"], "cashReceived": amount,
+                           "vatInclusive": bool(incl), "advanceNet": advance_net,
+                           "advanceVat": round(amount - advance_net, 2),
+                           "why": (split["why"] if incl else
+                                   "Recorded as an ex-VAT advance — the whole amount is recoverable."),
                            "stillToArrive": round(max(0.0, sched["total"] - c["advanceReceived"]), 2)})
 
     def _statement_ep(self, u, qs):
@@ -10791,6 +10820,16 @@ class Handler(BaseHTTPRequestHandler):
                       "signedOn", "contractNo"):
                 if k in (body or {}):
                     cur[k] = body[k]
+            # The two rules decide how money moves, and both are read by exact string match. A
+            # rule the engine does not recognise is not a harmless typo: it stores cleanly, the
+            # contract activates, and then every claim quietly recovers or releases nothing.
+            for k, allowed, what in (("recoveryRule", sales_contract.RECOVERY_RULES, "advance recovery"),
+                                     ("releaseRule", sales_contract.RELEASE_RULES, "retention release")):
+                v = str(cur.get(k) or "").strip()
+                codes = [r["code"] for r in allowed]
+                if v and v not in codes:
+                    return self._err("'%s' is not an %s rule this portal knows. Use one of: %s."
+                                     % (v, what, ", ".join(codes)), 400)
             if "advanceSchedule" in (body or {}):
                 # A deposit is a term of the PO and the contract, so it can be a percentage, a
                 # stated sum, or several staged tranches. Validated here rather than at claim time:
