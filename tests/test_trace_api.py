@@ -86,11 +86,15 @@ def test_the_whole_chain_is_walked_from_the_quotation(api, tokens):
           allocations={a["id"]: a["netPayable"]}, reference="FT01")
     _post(api, tokens["staff"], "/api/sales/contract", action="po", id=c["id"],
           poNo="4500123456", poDate="2026-06-01", poValue=1_000_000_000)
+    pr = db.put_collection_item("pm_projects", {"name": "Block B fitout"})
+    _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+          projectId=pr["id"])
     _post(api, tokens["staff"], "/api/sales/contract", action="accept", id=c["id"],
           acceptedOn="2026-07-31")
     st, r = _trace(api, tokens["staff"], q["id"])
     assert st == 200, r
-    assert _kinds(r) == ["quotation", "po", "contract", "acceptance", "claim", "invoice", "receipt"]
+    assert _kinds(r) == ["quotation", "po", "project", "contract", "acceptance", "claim",
+                         "invoice", "receipt"]
     assert r["gaps"] == [], r["gaps"]
 
 
@@ -104,6 +108,9 @@ def test_an_order_billed_and_paid_in_full_still_has_an_open_item_until_acceptanc
     _post(api, tokens["staff"], "/api/sales/receipt", amount=a["netPayable"],
           allocations={a["id"]: a["netPayable"]})
     _post(api, tokens["staff"], "/api/sales/contract", action="po", id=c["id"], poNo="PO-1")
+    pr = db.put_collection_item("pm_projects", {"name": "Block B fitout"})
+    _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+          projectId=pr["id"])
     r = _trace(api, tokens["staff"], c["id"])[1]
     assert [g["what"] for g in r["gaps"]] == ["retention-no-acceptance"]
 

@@ -257,3 +257,11 @@ def test_a_lost_quotation_cannot_be_issued_again(api, tokens):
     _q(api, tokens["staff"], action="issue", id=q["id"])
     _q(api, tokens["staff"], action="lose", id=q["id"], reason="price")
     assert _q(api, tokens["staff"], action="issue", id=q["id"])[0] == 400
+
+
+def test_the_deal_side_numbering_endpoint_is_gone(api, tokens):
+    """/api/sales/quote-number numbered a quotation held on the DEAL, for the builder that has been
+    retired. tests/test_quote_number_api.py went with it. The number is minted here, at ISSUE — the
+    point at which it starts meaning something — and an endpoint whose only caller has gone is not
+    "unused", it is a second way to do the thing, waiting to disagree with this one."""
+    assert api("POST", "/api/sales/quote-number", tokens["staff"], {"dealId": "x"})[0] == 404

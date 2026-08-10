@@ -16459,7 +16459,7 @@ function crmFillPipe() {
       const i = _CRM_OPEN.indexOf(d.stage || 'New');
       const adv = (i >= 0 && i < _CRM_OPEN.length - 1) ? '<button class="btn btn-ghost btn-sm" title="Advance stage" style="font-size:11px;padding:2px 7px" onclick="crmDealMove(\'' + d.id + '\',\'' + _CRM_OPEN[i + 1] + '\')">→</button>' : '';
       const close = _CRM_OPEN.includes(d.stage || 'New') ? '<button class="btn btn-emerald btn-sm" title="Mark Won" style="font-size:10px;padding:2px 8px" onclick="crmDealMove(\'' + d.id + '\',\'Won\')">Won</button><button class="btn btn-ghost btn-sm" title="Mark Lost" style="font-size:10px;padding:2px 8px;color:#C00000" onclick="crmDealMove(\'' + d.id + '\',\'Lost\')">Lost</button>' : '';
-      const quote = '<button class="btn btn-ghost btn-sm" title="Build quotation (PDF / Excel)" style="font-size:10px;padding:2px 8px" onclick="crmQuoteBuilder(\'' + d.id + '\')">Quote</button>';
+      const quote = '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t2('Start a quotation in the register', 'Lập báo giá trong sổ báo giá')) + '" style="font-size:10px;padding:2px 8px" onclick="event.stopPropagation();crmQuoteFromDeal(\'' + d.id + '\')">' + _t2('Quote', 'Báo giá') + '</button>';
       const pmBtn = (d.stage === 'Won' && typeof _appDeniedCurrent === 'function' && !_appDeniedCurrent('pm') && typeof _pmSeeAll === 'function' && _pmSeeAll()) ? '<button class="btn btn-ghost btn-sm" title="Create a PMC project from this won deal" style="font-size:10px;padding:2px 8px;color:var(--navy);font-weight:700" onclick="event.stopPropagation();pmFromDeal(\'' + d.id + '\')">+ Project</button>' : '';
       const pr = +d.priority || 0;
       const stars = [1, 2, 3].map(n => '<span title="Set priority" onclick="event.stopPropagation();crmSetPriority(\'' + d.id + '\',' + (pr === n ? n - 1 : n) + ')" style="cursor:pointer;font-size:13px;color:' + (n <= pr ? '#f59e0b' : '#cbd5e1') + '">★</span>').join('');
@@ -16985,6 +16985,39 @@ function crmVoApply(id) {
   });
 }
 
+/* A won deal already creates a PMC project and an accepted quotation already creates a contract,
+   and nothing joined them — so the value a project manager plans against and the value a claim is
+   measured against were the same money in two places, with no way to notice a disagreement. */
+function _ctProjectBlock(c, id) {
+  const projects = (_HR.pm_projects || []).slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  return '<div class="card" style="padding:12px 14px;margin-bottom:12px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:6px">' +
+      _t2('Delivered by', 'Dự án thực hiện') + '</div>' +
+    '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">' +
+      '<div class="form-group" style="flex:1 1 260px;margin:0"><select class="form-control" id="ct-projectId">' +
+        '<option value="">' + _t2('— not linked —', '— chưa liên kết —') + '</option>' +
+        projects.map(p => '<option value="' + _tkEscA(p.id) + '"' + (p.id === c.projectId ? ' selected' : '') + '>' +
+          _crmEsc(p.name || p.id) + '</option>').join('') + '</select></div>' +
+      '<button class="btn btn-ghost btn-sm" onclick="crmContractLinkProject(\'' + id + '\')">' +
+        (c.projectId ? _t2('Update link', 'Cập nhật liên kết') : _t2('Link project', 'Liên kết dự án')) + '</button>' +
+    '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);line-height:1.55;margin-top:6px">' +
+      _crmEsc(_t2('The contract number and value are written onto the project too, so both screens are talking about the same money.',
+                  'Số và giá trị hợp đồng cũng được ghi lên dự án, để hai màn hình cùng nói về một khoản tiền.')) + '</div>' +
+  '</div>';
+}
+
+async function crmContractLinkProject(id) {
+  const pid = (document.getElementById('ct-projectId') || {}).value || '';
+  try {
+    await tkApi('/api/sales/contract', { method: 'POST', body: { id: id, action: 'link_project', projectId: pid } });
+    toast(pid ? _t2('Linked to the project', 'Đã liên kết dự án') : _t2('Unlinked', 'Đã bỏ liên kết'));
+    _COLL_TS['sales_contracts'] = 0; _COLL_TS['pm_projects'] = 0;
+    document.getElementById('ctOverlay')?.remove();
+    crmRenderContracts();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
 /* The customer's own order. A pharma or electronics customer accepts by issuing a PO, not by
    signing the quotation back, and their accounts payable rejects an invoice that does not quote its
    number. It is also where the deposit is usually actually agreed — which is why a PO value that
@@ -17122,6 +17155,7 @@ async function crmDepositReceived(id) {
 
 async function crmOpenContract(id) {
   await tkLoadColl('sales_contracts');
+  try { await tkLoadColl('pm_projects'); } catch (e) {}   // the project picker; not fatal if denied
   const c = (_HR.sales_contracts || []).find(x => x.id === id); if (!c) return;
   const draft = (c.status || 'draft') === 'draft';
   const opt = (list, cur) => list.map(o => '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + _crmEsc(o[1]) + '</option>').join('');
@@ -17136,7 +17170,7 @@ async function crmOpenContract(id) {
       '<button class="modal-close" onclick="document.getElementById(\'ctOverlay\').remove()">&times;</button></div>' +
     (draft ? '' : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(32,80,144,.08);color:var(--navy)">' +
       _crmEsc(_t2('Signed and live. The terms are what the customer agreed — raise a variation to change them, and the balances now move only through certified claims.', 'Đã ký và đang thực hiện. Điều khoản là những gì khách hàng đã đồng ý — muốn đổi phải lập phụ lục; số dư chỉ thay đổi qua các đợt nghiệm thu.')) + '</div>') +
-    _ctPoBlock(c, id) + _ctDepositBlock(c, id, draft) + (draft ? '' : await _ctVariationBlock(c)) +
+    _ctPoBlock(c, id) + _ctProjectBlock(c, id) + _ctDepositBlock(c, id, draft) + (draft ? '' : await _ctVariationBlock(c)) +
     '<div class="grid-2" style="gap:12px">' +
       num('value', _t2('Contract value', 'Giá trị hợp đồng'), c.value, '₫') +
       num('retentionPct', _t2('Retention', 'Giữ lại bảo hành'), c.retentionPct, '%') +
@@ -17589,6 +17623,7 @@ async function crmReceiptSave(id) {
 const _TR_STEP = {
   quotation:  ['Quotation', 'Báo giá', '#205090'],
   po:         ['Customer PO', 'Đơn đặt hàng của khách', '#0ea5e9'],
+  project:    ['PMC project', 'Dự án PMC', '#8B5CF6'],
   contract:   ['Contract', 'Hợp đồng', '#205090'],
   deposit:    ['Deposit received', 'Tạm ứng đã nhận', 'var(--emerald)'],
   acceptance: ['Works accepted', 'Nghiệm thu', 'var(--emerald)'],
@@ -17634,6 +17669,10 @@ const _TR_GAP = {
     en: 'No customer PO number recorded', vn: 'Chưa ghi số đơn đặt hàng của khách',
     enWhy: 'Their accounts payable will reject an invoice that does not quote one.',
     vnWhy: 'Bộ phận công nợ của khách sẽ từ chối hoá đơn không ghi số đơn đặt hàng.' },
+  'no-project': {
+    en: 'Not linked to a PMC project', vn: 'Chưa liên kết với dự án PMC',
+    enWhy: 'The value the project plans against and the value claims are measured against can drift apart unnoticed.',
+    vnWhy: 'Giá trị dự án lập kế hoạch và giá trị đối chiếu các đợt thanh toán có thể lệch nhau mà không ai phát hiện.' },
   'po-value-differs': {
     en: 'The PO and the contract are for different amounts', vn: 'Đơn đặt hàng và hợp đồng lệch giá trị',
     enWhy: 'The PO differs from the contract by %m. That is allowed — but bill the one the customer ordered against.',
@@ -18017,6 +18056,30 @@ async function crmBackfillPreview() {
   } catch (e) { toast(_errMsg(e), 'error', 7000); }
 }
 
+/* The deal's "Quote" button used to open a builder that wrote its lines back onto the DEAL, with
+   its own revisions and its own numbering — a second quoting path alongside the register, which is
+   the opposite of what a CRM is for. It now starts a real quotation: the deal's lines are carried
+   across, and everything after that is the register's job (one number, revisions that supersede an
+   earlier one, an outcome that needs a reason). */
+async function crmQuoteFromDeal(dealId) {
+  await tkLoadColl('crm_deals');
+  const d = (_HR.crm_deals || []).find(x => x.id === dealId); if (!d) return;
+  const lines = (d.lines || []).filter(l => l && (l.desc || l.unitPrice)).map(l => ({
+    desc: l.desc || '', kind: l.kind || 'item', qty: +l.qty || 1,
+    unitPrice: +l.unitPrice || 0, discPct: +l.discPct || 0, uom: l.uom || 'lot'
+  }));
+  try {
+    await tkApi('/api/sales/quote', { method: 'POST', body: {
+      action: 'draft', title: d.title || d.name || '', accountName: d.company || '',
+      accountId: d.accountId || '', dealId: d.id,
+      lines: lines.length ? lines : [{ desc: '', qty: 1, unitPrice: 0 }] } });
+    _COLL_TS['sales_quotes'] = 0;
+    toast(lines.length ? _t2('Quotation started from this deal', 'Đã tạo báo giá từ cơ hội này')
+                       : _t2('Quotation started — add the lines', 'Đã tạo báo giá — hãy thêm hạng mục'));
+    showView('crm-quotes', null, 'Quotations');
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
 /* ═══ Quotations ════════════════════════════════════════════════════════════════════════════════
    The register the sell side never had. A quotation used to be lines on a deal that the next quote
    overwrote, so there was no list of what you had offered, no way to reprint what a customer is
@@ -18211,119 +18274,9 @@ async function crmOpenAccount(id) {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
 }
 
-function crmQuoteBuilder(id) {
-  const d = (_HR.crm_deals || []).find(x => x.id === id); if (!d) { toast('Deal not found', 'warn'); return; }
-  const base = (Array.isArray(d.lines) && d.lines.length) ? d.lines : [{ desc: d.title || '', qty: 1, unit: 'lot', price: Math.round(+d.value || 0), disc: 0 }];
-  _crmQB = { id: id, vatRate: _crmVatRate(d), discount: Math.round(+d.discount || 0), lines: base.map(l => ({ desc: l.desc || l.description || '', qty: +l.qty || 1, unit: l.unit || 'lot', price: Math.round(+l.price || +l.unitPrice || 0), disc: +l.disc || 0 })) };
-  document.getElementById('crmQBOverlay')?.remove();
-  const cat = (_HR.crm_products || []).map((p, i) => '<option value="' + i + '">' + _crmEsc(p.name) + ' — ' + _crmMoney(p.price) + '</option>').join('');
-  const el = document.createElement('div'); el.id = 'crmQBOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:980px;width:96vw">' +
-    '<div class="modal-header"><div class="modal-title">Quotation builder — ' + _crmEsc(d.company || d.title || '') + '</div><button class="modal-close" onclick="document.getElementById(\'crmQBOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap"><select id="crm-qb-cat" class="form-control" style="max-width:320px" onchange="crmQBAddFromCatalog()"><option value="">+ Add product from catalog…</option>' + cat + '</select><button class="btn btn-ghost btn-sm" onclick="crmQBAddLine()">' + _PLUS_SVG + ' Add blank line</button></div>' +
-    '<div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">' +
-      '<div><label class="form-label" style="font-size:11.5px;margin-bottom:3px">' + _t2('VAT rate', 'Thuế suất GTGT') + '</label>' +
-        '<select id="crm-qb-vat" class="form-control" style="width:150px" onchange="_crmQB.vatRate=+this.value;crmQBTotals()">' +
-        _CRM_VAT_RATES.map(r => '<option value="' + r.v + '"' + (r.v === _crmQB.vatRate ? ' selected' : '') + '>' + (_LANG.cur === 'vi' ? r.labelVn : r.label) + '</option>').join('') + '</select></div>' +
-      '<div><label class="form-label" style="font-size:11.5px;margin-bottom:3px">' + _t2('Project discount (₫)', 'Chiết khấu dự án (₫)') + '</label>' +
-        '<input id="crm-qb-disc" class="form-control" inputmode="numeric" style="width:170px;text-align:right" placeholder="0" value="' + _qaMoneyFmt(_crmQB.discount || 0) + '" oninput="_crmQB.discount=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this);crmQBTotals()"></div>' +
-      '<div id="crm-qb-vatnote" style="font-size:11px;color:var(--text-light);flex:1;min-width:180px;padding-bottom:8px"></div>' +
-    '</div>' +
-    '<div class="table-wrap dense"><table style="font-size:12px;width:100%;table-layout:fixed"><thead><tr><th>Description</th><th style="width:62px">Qty</th><th style="width:56px">Unit</th><th style="width:120px;text-align:right">Unit price</th><th style="width:62px">Disc%</th><th style="width:104px;text-align:right">Amount</th><th style="width:28px"></th></tr></thead><tbody id="crm-qb-rows"></tbody></table></div>' +
-    '<div id="crm-qb-totals" style="text-align:right;margin-top:12px;font-size:13px;color:var(--text-light)"></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'crmQBOverlay\').remove()">Cancel</button><button class="btn btn-ghost" onclick="crmQBSave(false)">Save</button><button class="btn btn-ghost" onclick="crmQBSave(true,\'pdf\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; PDF</button><button class="btn btn-primary" onclick="crmQBSave(true,\'xls\')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Save &amp; Excel</button></div></div>';
-  document.body.appendChild(el);
-  crmQBRender();
-}
-function crmQBRender() {
-  const tb = document.getElementById('crm-qb-rows'); if (!tb || !_crmQB) return;
-  tb.innerHTML = _crmQB.lines.map((l, i) => '<tr>' +
-    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0" placeholder="Item / service description" value="' + _tkEscA(l.desc) + '" oninput="_crmQB.lines[' + i + '].desc=this.value"></td>' +
-    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:center;padding:6px 2px" value="' + l.qty + '" oninput="_crmQB.lines[' + i + '].qty=+(this.value.replace(/[^0-9.]/g,\'\'))||0;crmQBTotals()"></td>' +
-    '<td><input class="form-control" style="font-size:12px;width:100%;min-width:0;text-align:center;padding:6px 2px" value="' + _tkEscA(l.unit) + '" oninput="_crmQB.lines[' + i + '].unit=this.value"></td>' +
-    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:right" placeholder="0" value="' + _qaMoneyFmt(l.price) + '" oninput="_crmQB.lines[' + i + '].price=+this.value.replace(/[^0-9]/g,\'\')||0;_qaMoney(this);crmQBTotals()"></td>' +
-    '<td><input class="form-control" inputmode="numeric" style="font-size:12px;width:100%;min-width:0;text-align:center;padding:6px 2px" value="' + l.disc + '" oninput="_crmQB.lines[' + i + '].disc=Math.min(100,+(this.value.replace(/[^0-9.]/g,\'\'))||0);crmQBTotals()"></td>' +
-    '<td style="text-align:right;font-weight:600;white-space:nowrap" id="crm-qb-amt-' + i + '">' + _crmMoney(l.qty * l.price * (1 - l.disc / 100)) + '</td>' +
-    '<td><button class="btn btn-ghost btn-sm" title="Remove line" style="color:#C00000;padding:2px 6px" onclick="crmQBRemoveLine(' + i + ')">' + _TRASH + '</button></td></tr>').join('');
-  crmQBTotals();
-}
-function crmQBTotals() {
-  if (!_crmQB) return; let sub = 0;
-  _crmQB.lines.forEach((l, i) => { const amt = Math.round((+l.qty || 0) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)); const c = document.getElementById('crm-qb-amt-' + i); if (c) c.textContent = _crmMoney(amt); sub += amt; });
-  const rate = _crmVatRate(_crmQB), disc = Math.max(0, Math.round(+_crmQB.discount || 0));
-  const net = Math.max(0, sub - disc);
-  const vat = Math.round(net * rate / 100), grand = net + vat;
-  const meta = _crmVatMeta(rate);
-  const nb = document.getElementById('crm-qb-vatnote');
-  if (nb) nb.textContent = _LANG.cur === 'vi' ? (meta.noteVn || '') : (meta.note || '');
-  const t = document.getElementById('crm-qb-totals');
-  if (t) t.innerHTML = _t2('Subtotal', 'Tạm tính') + ': <b style="color:var(--text)">' + _crmMoney(sub) + '</b>' +
-    (disc ? ' &nbsp;·&nbsp; ' + _t2('Discount', 'Chiết khấu') + ': <b style="color:var(--text)">-' + _crmMoney(disc) + '</b>' : '') +
-    ' &nbsp;·&nbsp; ' + _t2('VAT', 'Thuế GTGT') + ' ' + meta.label + ': <b style="color:var(--text)">' + _crmMoney(vat) + '</b>' +
-    ' &nbsp;·&nbsp; <span style="color:var(--navy);font-size:15px">' + _t2('Grand total', 'Tổng cộng') + ': <b>' + _crmMoney(grand) + '</b></span>';
-}
-function crmQBAddLine() { if (!_crmQB) return; _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
-function crmQBRemoveLine(i) { if (!_crmQB) return; _crmQB.lines.splice(i, 1); if (!_crmQB.lines.length) _crmQB.lines.push({ desc: '', qty: 1, unit: 'lot', price: 0, disc: 0 }); crmQBRender(); }
-function crmQBAddFromCatalog() { const sel = document.getElementById('crm-qb-cat'); const p = (_HR.crm_products || [])[+sel.value]; if (p) { _crmQB.lines.push({ desc: p.name + (p.code ? ' [' + p.code + ']' : ''), qty: 1, unit: p.unit || 'pcs', price: Math.round(+p.price || 0), disc: 0 }); crmQBRender(); } sel.value = ''; }
-async function crmQBSave(thenExport, fmt) {
-  if (!_crmQB) return; const d = (_HR.crm_deals || []).find(x => x.id === _crmQB.id); if (!d) return;
-  const started = _crmQB.lines.filter(l => (l.desc || '').trim() || +l.price > 0);
-  const bad = started.filter(l => !(l.desc || '').trim() || !(+l.price > 0));
-  if (bad.length) { toast('Each line needs a description and a unit price greater than 0.', 'warn', 6000); return; }
-  const lines = started.filter(l => (l.desc || '').trim() && +l.price > 0).map(l => Object.assign({}, l, { qty: +l.qty > 0 ? +l.qty : 1 }));
-  if (!lines.length) { toast('Add at least one line with a description and a unit price before saving.', 'warn', 6000); return; }
-  const sub = lines.reduce((s, l) => s + Math.round((+l.qty || 1) * (+l.price || 0) * (1 - (+l.disc || 0) / 100)), 0);
-  const _vr = _crmVatRate(_crmQB), _dc = Math.max(0, Math.round(+_crmQB.discount || 0));
-  // The number is issued by the SERVER, once per deal, and the call is idempotent — a double-clicked
-  // Save gets back the number the deal already has instead of burning another and leaving a gap in
-  // the register. It replaces a hash of the deal id that repeated on every re-quote and collided
-  // outright between unrelated deals at around 112 quotations.
-  let _no = String(d.quoteNo || '').trim();
-  if (!_no) {
-    // The server writes the number onto the deal, which bumps its revision — so take the new one
-    // back, or the PATCH below is refused as a conflict with our own change.
-    try { const rn = await tkApi('/api/sales/quote-number', { method: 'POST', body: { dealId: d.id } }); _no = (rn && rn.no) || ''; if (rn && rn.rev) d._rev = rn.rev; }
-    catch (e) { toast(_t2('Could not issue a quotation number', 'Không cấp được số báo giá') + ': ' + _errMsg(e), 'error', 6000); return; }
-  }
-  if (!_no) { toast(_t2('Could not issue a quotation number', 'Không cấp được số báo giá'), 'error'); return; }
-  const _now = new Date().toISOString();
-  // Freeze this revision. Re-downloading an old quotation rebuilt it from the CURRENT lines with
-  // TODAY's dates, so your copy and the customer's could differ with nothing on either to show it.
-  const _revs = Array.isArray(d.quoteRevs) ? d.quoteRevs.slice() : [];
-  const _net = Math.max(0, sub - _dc), _vat = Math.round(_net * _vr / 100);
-  _revs.push({ rev: _revs.length + 1, no: _no, ts: _now, by: ((typeof TK !== 'undefined' && TK.user) || {}).name || '',
-               lines: lines.map(l => Object.assign({}, l)), vatRate: _vr, discount: _dc,
-               subtotal: sub, vat: _vat, grand: _net + _vat });
-  while (_revs.length > 20) _revs.shift();   // bound the record; the newest 20 revisions are kept
-  const _body = Object.assign({}, d, { lines: lines, value: sub, vatRate: _vr, discount: _dc,
-                                       quoteNo: _no, quoteIssuedAt: d.quoteIssuedAt || _now,
-                                       quoteRev: _revs.length, quoteRevs: _revs });
-  try { await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: _body }); Object.assign(d, _body); }
-  catch (e) { toast(_t('Save failed') + ': ' + _errMsg(e), 'error'); return; }
-  // The quotation is also written as a DOCUMENT, in its own register with its own status and
-  // history. The deal keeps its copy so the pipeline card and the existing PDF keep working while
-  // the register takes over; the document is what an outcome, a revision or a reprint hangs off.
-  try {
-    const qb = {
-      action: 'draft', id: d.quoteDocId || undefined,
-      dealId: d.id, title: d.title || '', accountName: d.company || '', accountId: d.accountId || '',
-      vatRate: _vr, discount: _dc,
-      lines: lines.map(l => ({ desc: l.desc, qty: l.qty, unitPrice: l.price, discPct: l.disc, uom: l.unit }))
-    };
-    const qr = await tkApi('/api/sales/quote', { method: 'POST', body: qb });
-    if (qr && qr.item && qr.item.id !== d.quoteDocId) {
-      d.quoteDocId = qr.item.id;
-      await tkApi('/api/coll/crm_deals/' + d.id, { method: 'PATCH', body: Object.assign({}, d) });
-    }
-    _COLL_TS['sales_quotes'] = 0;
-  } catch (e) {
-    // The deal saved; only the register copy failed. Say so rather than implying nothing was kept.
-    toast(_t2('Saved on the deal, but the quotation register did not accept it', 'Đã lưu trên cơ hội, nhưng sổ báo giá chưa nhận') + ': ' + _errMsg(e), 'warn', 7000);
-  }
-  toast(_t2('Quotation saved', 'Đã lưu báo giá') + ' — ' + _no + ' rev ' + _revs.length + ' · ' + lines.length + ' ' + _t2('line(s)', 'dòng'));
-  document.getElementById('crmQBOverlay')?.remove(); crmRenderPipeline();
-  if (thenExport) { if (fmt === 'xls') crmDownloadQuoteXLS(d.id); else crmDownloadQuote(d.id); }
-}
+/* The deal-side quotation builder lived here (crmQuoteBuilder + six crmQB* helpers).
+   Retired with the second quoting path it belonged to — crmQuoteFromDeal() carries a
+   deal into the register instead. Quotations saved on old deals stay readable. */
 
 /* ── Sales dashboard ── */
 let _crmDashData = null;

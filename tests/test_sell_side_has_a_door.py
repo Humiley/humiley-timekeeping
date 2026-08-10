@@ -277,3 +277,17 @@ def test_every_act_that_moves_money_on_the_sell_side_is_signed():
         body = INDEX[at:at + 900]
         assert "tkESign({" in body, fn_name
         assert ("setStatus: '%s'" % status) in body, fn_name
+
+
+def test_the_contract_can_be_joined_to_the_project_that_delivers_it():
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    assert "_ctProjectBlock(c, id)" in ct
+    assert "async function crmContractLinkProject" in INDEX
+
+
+def test_there_is_ONE_way_to_start_a_quotation():
+    """The deal's button and the register were two paths with two numbering schemes."""
+    assert "crmQuoteFromDeal(" in INDEX
+    # the name survives only in the tombstone comment that says where it went
+    assert "function crmQuoteBuilder" not in INDEX
+    assert "onclick=\"crmQuoteBuilder" not in INDEX

@@ -85,10 +85,21 @@ def test_the_quotation_vat_rate_is_a_list_not_a_literal():
     assert "VAT 10%" not in INDEX, "a hardcoded VAT label is back"
 
 
-def test_no_bare_ten_percent_multiplier_survives_in_the_quotation_path():
-    qb = INDEX[INDEX.find("function crmQBTotals"):INDEX.find("function crmQBAddLine")]
-    assert qb, "the totals function moved — re-point this test"
-    assert "* 0.1" not in qb and "*0.1" not in qb
+def test_the_deal_side_quotation_builder_is_retired():
+    """It wrote lines back onto the DEAL with its own revisions and its own numbering — a second
+    quoting path alongside the register. Two ways to quote is the opposite of what a CRM is for."""
+    for gone in ("function crmQuoteBuilder", "function crmQBTotals", "function crmQBSave"):
+        assert gone not in INDEX, gone
+    assert "async function crmQuoteFromDeal" in INDEX, "and the deal must still be able to start one"
+
+
+def test_no_bare_ten_percent_multiplier_survives_anywhere_in_the_crm():
+    """The original point of this test, no longer tied to a function that has been deleted: a
+    quotation could only be right when 10% happened to be right."""
+    crm = INDEX[INDEX.find("const _CRM_TABS"):INDEX.find("/* ═══ Sales Compliance ══")]
+    assert crm, "the CRM block moved — re-point this test"
+    for bad in ("* 0.10", "*0.10", "* 0.1;", "*0.1;"):
+        assert bad not in crm, bad
 
 
 # ── 3. It cannot state a customer's identity it does not hold ───────────────────────────────────

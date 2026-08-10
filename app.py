@@ -3922,8 +3922,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._accounts_backfill_ep(uu, body), manager=True)
         if path == "/api/sales/accounts/merge":
             return self._guard(lambda uu: self._accounts_merge_ep(uu, body), manager=True)
-        if path == "/api/sales/quote-number":
-            return self._guard(lambda uu: self._quote_number_ep(uu, body))
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
         if path == "/api/hr/incidents":
@@ -9872,6 +9870,10 @@ class Handler(BaseHTTPRequestHandler):
                 steps.append({"kind": "po", "id": contract.get("id"), "ref": contract.get("poNo"),
                               "on": contract.get("poDate") or "", "by": "",
                               "amount": float(contract.get("poValue") or 0), "status": "recorded"})
+            if contract.get("projectId"):
+                steps.append({"kind": "project", "id": contract.get("projectId"),
+                              "ref": contract.get("projectName") or "", "on": "", "by": "",
+                              "amount": 0, "status": "linked"})
             steps.append({"kind": "contract", "id": contract.get("id"),
                           "ref": contract.get("contractNo") or "", "on": (contract.get("activatedAt") or "")[:10],
                           "by": contract.get("activatedBy") or contract.get("owner") or "",
@@ -9898,6 +9900,11 @@ class Handler(BaseHTTPRequestHandler):
                              "why": "%s of the agreed deposit has not arrived. That part is not "
                                     "recovered out of any claim until it does."
                                     % _money_vnd(sched["total"] - got)})
+            if not contract.get("projectId"):
+                gaps.append({"what": "no-project", "amount": 0,
+                             "why": "This contract is not linked to a PMC project, so the value "
+                                    "the project plans against and the value claims are measured "
+                                    "against can drift apart unnoticed."})
             if not contract.get("poNo"):
                 gaps.append({"what": "no-po", "amount": 0,
                              "why": "No customer PO number is recorded. Their accounts payable will "
@@ -10709,6 +10716,50 @@ class Handler(BaseHTTPRequestHandler):
                                "differsFromContract": bool(saved.get("poValue")) and abs(gap) > 0.005,
                                "difference": gap})
 
+        if act == "link_project":
+            """Join the contract to the PMC project that delivers it.
+
+            A won deal already creates a project and an accepted quotation already creates a
+            contract, and nothing joined the two — so the value a project manager plans against and
+            the value a claim is measured against were the same money held in two places with no
+            way to notice when they disagreed. Stored on BOTH records, because a link you can only
+            follow one way is a link somebody has to remember exists.
+            """
+            pid = str((body or {}).get("projectId") or "").strip()
+            if not pid:
+                # Unlinking is a real act — a project cancelled, or the wrong one picked.
+                old_pid = cur.get("projectId")
+                cur["projectId"] = ""
+                cur["projectName"] = ""
+                saved = db.put_collection_item("sales_contracts", cur)
+                if old_pid:
+                    pr = db.get_collection_item("pm_projects", old_pid)
+                    if pr and pr.get("contractId") == cur.get("id"):
+                        pr["contractId"] = ""
+                        pr["contractNo"] = ""
+                        db.put_collection_item("pm_projects", pr)
+                self._sales_audit_c(u, "Unlinked contract from project", saved)
+                return self._json({"ok": True, "item": saved})
+            pr = db.get_collection_item("pm_projects", pid)
+            if not pr:
+                return self._err("Project not found.", 404)
+            other = next((c2 for c2 in db.list_collection("sales_contracts")
+                          if c2.get("projectId") == pid and c2.get("id") != cur.get("id")), None)
+            if other:
+                return self._err("%s is already linked to that project. One project delivers one "
+                                 "contract here — link the other one first, or raise a variation "
+                                 "on it instead of a second contract."
+                                 % (other.get("contractNo") or "Another contract"), 400)
+            cur["projectId"] = pid
+            cur["projectName"] = pr.get("name") or ""
+            saved = db.put_collection_item("sales_contracts", cur)
+            pr["contractId"] = cur.get("id")
+            pr["contractNo"] = cur.get("contractNo") or ""
+            pr["contractValue"] = float(cur.get("value") or 0)
+            db.put_collection_item("pm_projects", pr)
+            self._sales_audit_c(u, "Linked contract to project", saved)
+            return self._json({"ok": True, "item": saved, "project": {"id": pid, "name": pr.get("name")}})
+
         if act == "accept":
             # The acceptance date is what starts the warranty clock, and therefore the only thing
             # that makes a retention release date real. It is recorded as its own act rather than
@@ -10762,7 +10813,7 @@ class Handler(BaseHTTPRequestHandler):
                                    saved, self._contract_state(saved), self._vn_day())})
 
         return self._err("Unknown action. Use from_quote, terms, opening, activate, po, "
-                         "accept, release_retention or close.", 400)
+                         "link_project, accept, release_retention or close.", 400)
 
     @staticmethod
     def _contract_state(c):
@@ -11022,58 +11073,10 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "linked": done, "exceptions": plan["exceptions"],
                            "why": plan["why"]})
 
-    def _quote_number_ep(self, u, body):
-        """Give this deal its quotation number, once and for good.
-
-        The reference was 'HML-QT-' + year + (1000 + hash(dealId) % 9000). Two failures in one
-        expression. Re-quoting the same deal reproduces the same number, so a revised price goes out
-        under the reference of the price it replaced and there is no v1/v2. And 9,000 slots hashed
-        means two unrelated deals collide outright at around 112 quotes — a customer and an auditor
-        both refer to a document by its number, so two documents sharing one is not cosmetic.
-
-        IDEMPOTENT BY DESIGN. A deal that already has a number gets that number back. Without that,
-        a double-clicked Save or a retried request would burn a second number and leave a hole in
-        the register, and a missing number is a question somebody has to answer.
-
-        Only the number is minted here; the revision content is frozen by the caller. This writes to
-        crm_deals through the same store the CRM already uses rather than inventing a collection —
-        the sales documents proper are Stage 2 of the plan, and this must not pre-empt their shape.
-        """
-        did = str((body or {}).get("dealId") or "").strip()
-        if not did:
-            return self._err("A deal id is required.", 400)
-        deal = db.get_collection_item("crm_deals", did)
-        if not deal:
-            return self._err("Deal not found.", 404)
-        if "crm" in self._apps_denied(u):
-            return self._err("Access restricted — the CRM app is not enabled for your account.", 403)
-        # Numbering a deal WRITES to it, so it needs exactly what editing it needs. Without this the
-        # endpoint was a way to modify a colleague's deal — and to consume a document number against
-        # it — through a door the CRM's own write path keeps shut.
-        if not self._is_mgmt(u):
-            owner = deal.get("owner") or ""
-            mine = owner == u.get("name")
-            if not mine and u.get("role") == "manager":
-                mydept = u.get("dept") or u.get("department") or ""
-                deptof = {e.get("name"): (e.get("dept") or "") for e in db.list_employees()}
-                mine = bool(mydept) and deptof.get(owner) == mydept
-            if not mine:
-                return self._err("You can only edit your own CRM records.", 403)
-        existing = str(deal.get("quoteNo") or "").strip()
-        if existing:
-            return self._json({"ok": True, "no": existing, "issued": False,
-                               "rev": deal.get("_rev")})
-        year = int(self._vn_day()[:4])
-        n = db.next_doc_no("QT", year, lambda: doc_number.highest(
-            doc_number.numbers_in(db.list_collection("crm_deals"), "quoteNo"), "QT", year))
-        no = doc_number.format_no("QT", year, n)
-        deal["quoteNo"] = no
-        saved = db.put_collection_item("crm_deals", deal)
-        # The new _rev goes back with the number. Writing the number here bumps the revision, so a
-        # caller that then PATCHed the rest of the quotation with the _rev it started with would be
-        # refused as a conflict — by its own change. Optimistic concurrency caught exactly that.
-        return self._json({"ok": True, "no": no, "issued": True,
-                           "rev": (saved or deal).get("_rev")})
+    # _quote_number_ep lived here. It numbered a quotation held on the DEAL, for the deal-side
+    # builder that has now been retired: the register mints QT numbers itself when a quotation is
+    # ISSUED, which is the point at which a number starts meaning something. An endpoint whose only
+    # caller has gone is not "unused" — it is a second way to do the thing, waiting to disagree.
 
     def _working_time_ep(self, u, qs):
         """Arts. 105, 110 and 111 against the attendance register — the rest nobody was checking.

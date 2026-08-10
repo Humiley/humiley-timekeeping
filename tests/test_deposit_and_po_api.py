@@ -224,3 +224,61 @@ def test_a_valid_schedule_comes_back_priced(api, tokens):
     assert st == 200, r
     assert r["advanceSchedule"]["total"] == 250_000_000
     assert [x["amount"] for x in r["advanceSchedule"]["tranches"]] == [200_000_000, 50_000_000]
+
+
+# ── the contract and the project it is delivered by ─────────────────────────────────────────────
+
+def test_linking_a_contract_to_a_project_writes_BOTH_directions(api, tokens):
+    """A link you can only follow one way is a link somebody has to remember exists."""
+    c = _live(api, tokens)
+    pr = db.put_collection_item("pm_projects", {"name": "Block B fitout"})
+    st, r = _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+                  projectId=pr["id"])
+    assert st == 200, r
+    assert r["item"]["projectId"] == pr["id"] and r["item"]["projectName"] == "Block B fitout"
+    back = db.get_collection_item("pm_projects", pr["id"])
+    assert back["contractId"] == c["id"] and back["contractValue"] == 1_000_000_000
+
+
+def test_one_project_cannot_deliver_two_contracts(api, tokens):
+    """Two contracts on one project is how the value a PM plans against stops matching the value
+    claims are measured against — the exact drift the link exists to prevent."""
+    c1 = _live(api, tokens)
+    c2 = _live(api, tokens)
+    pr = db.put_collection_item("pm_projects", {"name": "Block B fitout"})
+    assert _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c1["id"],
+                 projectId=pr["id"])[0] == 200
+    st, r = _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c2["id"],
+                  projectId=pr["id"])
+    assert st == 400 and "already linked" in r["error"]
+
+
+def test_unlinking_clears_both_sides(api, tokens):
+    c = _live(api, tokens)
+    pr = db.put_collection_item("pm_projects", {"name": "Block B fitout"})
+    _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+          projectId=pr["id"])
+    st, r = _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+                  projectId="")
+    assert st == 200 and r["item"]["projectId"] == ""
+    assert db.get_collection_item("pm_projects", pr["id"])["contractId"] == ""
+
+
+def test_an_unknown_project_is_refused(api, tokens):
+    c = _live(api, tokens)
+    assert _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+                 projectId="pm-nope")[0] == 404
+
+
+def test_linking_is_audited(api, tokens):
+    c = _live(api, tokens)
+    pr = db.put_collection_item("pm_projects", {"name": "P"})
+    _post(api, tokens["staff"], "/api/sales/contract", action="link_project", id=c["id"],
+          projectId=pr["id"])
+    assert any(x.get("action") == "Linked contract to project" for x in db.list_collection("audit"))
+
+
+def test_an_unlinked_contract_is_a_gap_on_the_trail(api, tokens):
+    c = _live(api, tokens)
+    _, r = api("GET", "/api/sales/trace?id=" + c["id"], tokens["staff"])
+    assert "no-project" in [g["what"] for g in r["gaps"]]
