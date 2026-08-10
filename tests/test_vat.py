@@ -188,3 +188,39 @@ def test_every_question_is_asked_in_vietnamese_too():
 
 def test_the_module_still_refuses_to_issue_an_invoice_and_says_so():
     assert any("signed XML" in u["question"] for u in vat.UNRESOLVED)
+
+
+# ── a document with only one possible base ──────────────────────────────────────────────────────
+
+def test_a_quotation_is_taxed_on_its_total_without_being_asked_which_base():
+    """The certified-vs-net question belongs to a progress claim, where the advance recovery and the
+    retention make the two genuinely different. On a quotation there is nothing to choose."""
+    out = vat.on_amount(8, 276_500_000)
+    assert out["ok"] is True and out["vat"] == 22_120_000
+    assert out["gross"] == 298_620_000
+
+
+def test_both_rates_the_company_actually_uses_work(   ):
+    assert vat.on_amount(10, 100_000_000)["vat"] == 10_000_000
+    assert vat.on_amount(8, 100_000_000)["vat"] == 8_000_000
+
+
+def test_no_rate_stated_is_ex_vat_and_carries_no_statement():
+    out = vat.on_amount("", 100_000_000)
+    assert out["ok"] is False and out["vat"] == 0 and out["gross"] == 100_000_000
+    assert "statement" not in out
+    assert "8% and 10%" in out["why"]
+
+
+def test_a_nonsense_rate_is_ex_vat_rather_than_a_tiny_wrong_tax_line():
+    out = vat.on_amount(1, 100_000_000)
+    assert out["ok"] is False and out["vat"] == 0
+
+
+def test_zero_percent_is_a_rate_and_charges_nothing():
+    out = vat.on_amount(0, 100_000_000)
+    assert out["ok"] is True and out["vat"] == 0 and "statement" in out
+
+
+def test_not_a_vat_supply_says_so():
+    assert "Not a VAT supply" in vat.on_amount(vat.NOT_APPLICABLE, 100_000_000)["statement"]

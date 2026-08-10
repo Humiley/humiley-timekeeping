@@ -16634,14 +16634,17 @@ let _crmQB = null;
 const _CRM_VAT_RATES = [
   { v: 10, label: '10%', labelVn: '10%', note: 'Standard rate', noteVn: 'Thuế suất phổ thông' },
   { v: 8,  label: '8%',  labelVn: '8%',  note: 'Reduced rate — confirm it applies to this supply and this date', noteVn: 'Thuế suất giảm — xác nhận áp dụng cho hàng hóa/dịch vụ và thời điểm này' },
+  { v: 5,  label: '5%',  labelVn: '5%',  note: 'Applies to certain supplies only', noteVn: 'Chỉ áp dụng cho một số hàng hóa/dịch vụ' },
   { v: 0,  label: '0%',  labelVn: '0%',  note: 'Export / export-processing enterprise — keep the evidence on file', noteVn: 'Xuất khẩu / doanh nghiệp chế xuất — lưu hồ sơ chứng minh' }
 ];
-const _CRM_VAT_DEFAULT = 10;
 /* The rate on a deal, as a number. Never falls back silently to a different rate than the document
    was saved with: an absent value means the quote predates the selector and was priced at 10%. */
+/* A quotation with no rate is EX-VAT and says so on the document — it does not quietly become 10%.
+   The fallback predates the rate being selectable at all, and keeping it would mean a quotation
+   priced under the 8% reduction printed a 10% tax line the moment somebody reopened it. */
 function _crmVatRate(d) {
   const v = (d && d.vatRate);
-  return (v === 0 || v) && isFinite(+v) ? +v : _CRM_VAT_DEFAULT;
+  return (v === 0 || v) && isFinite(+v) ? +v : null;
 }
 function _crmVatMeta(rate) { return _CRM_VAT_RATES.find(r => r.v === +rate) || { v: +rate, label: (+rate) + '%', labelVn: (+rate) + '%', note: '', noteVn: '' }; }
 
@@ -17733,6 +17736,153 @@ async function crmTrace(docId) {
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
 }
 
+/* ═══ The quotation editor ══════════════════════════════════════════════════════════════════════
+   The register could create a quotation and decide its fate, but not EDIT it: the only line editor
+   was the deal-side builder, and retiring that took the lines and the VAT rate with it. This is the
+   same editor, writing to sales_quotes through /api/sales/quote instead of onto the deal.
+
+   The rate is picked, never defaulted. 8% has run alongside 10% under successive reduction
+   resolutions and an export-processing customer is 0% — which applies to a given supply on a given
+   date is the accountant's call. A quotation with no rate is EX-VAT and says so, exactly like a
+   claim: the old code quietly assumed 10%, which is the one thing this design refuses. */
+function _qtLineRow(l, editable) {
+  const dis = editable ? '' : ' disabled';
+  return '<tr class="qt-row">' +
+    '<td><input class="form-control qt-desc" value="' + _tkEscA((l || {}).desc || '') + '"' + dis + '></td>' +
+    '<td style="width:90px"><input class="form-control qt-qty" inputmode="numeric" style="text-align:right" value="' + _tkEscA((l || {}).qty == null ? 1 : l.qty) + '"' + dis + '></td>' +
+    '<td style="width:150px"><input class="form-control qt-price" inputmode="numeric" style="text-align:right" value="' + _tkEscA((l || {}).unitPrice == null ? '' : l.unitPrice) + '"' + dis + '></td>' +
+    '<td style="width:80px"><input class="form-control qt-disc" inputmode="numeric" style="text-align:right" value="' + _tkEscA((l || {}).discPct || '') + '"' + dis + '></td>' +
+    '<td style="width:130px;text-align:right;font-variant-numeric:tabular-nums" class="qt-amt">—</td>' +
+    (editable ? '<td style="width:34px"><button class="btn btn-ghost btn-sm" style="padding:2px 6px" onclick="this.closest(\'tr\').remove();crmQtRecalc()">×</button></td>' : '') +
+  '</tr>';
+}
+
+async function crmOpenQuote(id) {
+  await tkLoadColl('sales_quotes');
+  const q = (_HR.sales_quotes || []).find(x => x.id === id); if (!q) return;
+  const editable = (q.status || 'draft') === 'draft';
+  const lines = (q.lines || []).filter(l => (l.kind || 'item') === 'item' || l.kind === 'service');
+  const vi = _LANG.cur === 'vi';
+  const rate = String(q.vatRate == null ? '' : q.vatRate);
+
+  document.getElementById('qtOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'qtOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:900px;width:97vw;max-height:92vh;overflow:auto">' +
+    '<div class="modal-header"><div><div class="modal-title">' +
+      _crmEsc(q.quoteNo || _t2('Draft quotation', 'Báo giá nháp')) + (q.rev > 1 ? ' · rev ' + q.rev : '') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _crmEsc(q.accountName || '') + '</div></div>' +
+      '<button class="modal-close" onclick="document.getElementById(\'qtOverlay\').remove()">&times;</button></div>' +
+    (editable ? '' : '<div class="card" style="padding:9px 13px;margin-bottom:12px;font-size:12.5px;background:rgba(32,80,144,.08);color:var(--navy)">' +
+      _crmEsc(_t2('Issued — this is what the customer is holding. Revise it to change the price; the revision keeps the same number and supersedes this one.',
+                  'Đã gửi — đây là bản khách hàng đang giữ. Muốn đổi giá thì tạo bản sửa đổi; bản mới giữ nguyên số và thay thế bản này.')) + '</div>') +
+    '<div class="grid-2" style="gap:12px">' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Title', 'Tiêu đề') + '</label>' +
+        '<input class="form-control" id="qt-title" value="' + _tkEscA(q.title || '') + '"' + (editable ? '' : ' disabled') + '></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT rate', 'Thuế suất GTGT') + '</label>' +
+        '<select class="form-control" id="qt-vatRate" onchange="crmQtRecalc()"' + (editable ? '' : ' disabled') + '>' +
+          '<option value="">' + _t2('— not stated (ex-VAT) —', '— chưa ghi (chưa gồm thuế) —') + '</option>' +
+          _CRM_VAT_RATES.map(r => '<option value="' + r.v + '"' + (rate === String(r.v) ? ' selected' : '') + '>' +
+            _crmEsc((vi ? r.labelVn : r.label) + ' — ' + (vi ? r.noteVn : r.note)) + '</option>').join('') +
+          '<option value="na"' + (rate === 'na' ? ' selected' : '') + '>' + _t2('Not a VAT supply', 'Không chịu thuế GTGT') + '</option>' +
+        '</select></div>' +
+    '</div>' +
+    '<div class="table-wrap"><table style="min-width:660px"><thead><tr>' +
+      '<th>' + _t2('Description', 'Nội dung') + '</th><th style="text-align:right">' + _t2('Qty', 'SL') + '</th>' +
+      '<th style="text-align:right">' + _t2('Unit price', 'Đơn giá') + '</th>' +
+      '<th style="text-align:right">' + _t2('Disc %', 'CK %') + '</th>' +
+      '<th style="text-align:right">' + _t2('Amount', 'Thành tiền') + '</th>' + (editable ? '<th></th>' : '') +
+      '</tr></thead><tbody id="qt-rows">' +
+      (lines.length ? lines.map(l => _qtLineRow(l, editable)).join('') : _qtLineRow({}, editable)) +
+      '</tbody></table></div>' +
+    (editable ? '<button class="btn btn-ghost btn-sm" onclick="crmQtAddRow()">' + _t2('+ Line', '+ Dòng') + '</button>' : '') +
+    '<div class="card" style="padding:12px 15px;margin-top:12px">' +
+      '<div id="qt-totals" style="font-size:13px;line-height:1.9"></div>' +
+      '<div id="qt-disc" style="font-size:11.5px;color:var(--text-light);margin-top:6px;line-height:1.55"></div>' +
+    '</div>' +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-ghost" onclick="document.getElementById(\'qtOverlay\').remove()">' + _t('Close') + '</button>' +
+      (editable ? '<button class="btn btn-ghost" onclick="crmQtSave(\'' + id + '\',false)">' + _t2('Save draft', 'Lưu nháp') + '</button>' +
+                  '<button class="btn btn-primary" onclick="crmQtSave(\'' + id + '\',true)">' + _t2('Issue', 'Gửi khách') + '</button>' : '') +
+    '</div></div>';
+  document.body.appendChild(el);
+  document.querySelectorAll('#qt-rows input').forEach(i => i.addEventListener('input', crmQtRecalc));
+  crmQtRecalc();
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(el); } catch (e) {}
+}
+
+function crmQtAddRow() {
+  const box = document.getElementById('qt-rows'); if (!box) return;
+  box.insertAdjacentHTML('beforeend', _qtLineRow({}, true));
+  box.lastElementChild.querySelectorAll('input').forEach(i => i.addEventListener('input', crmQtRecalc));
+  crmQtRecalc();
+}
+
+function _crmQtRead() {
+  return [...document.querySelectorAll('#qt-rows .qt-row')].map(r => {
+    const n = c => +String((r.querySelector(c) || {}).value || '').replace(/[^0-9.]/g, '') || 0;
+    return { desc: (r.querySelector('.qt-desc') || {}).value || '', kind: 'item',
+             qty: n('.qt-qty'), unitPrice: n('.qt-price'), discPct: n('.qt-disc') };
+  }).filter(l => l.desc || l.unitPrice);
+}
+
+/* Live, in the browser, from the same shape the server prices: ex-VAT, the tax line, inc-VAT. The
+   number a customer argues about is the one at the bottom, and it should never first appear after
+   a save. */
+function crmQtRecalc() {
+  const rows = [...document.querySelectorAll('#qt-rows .qt-row')];
+  let net = 0, atList = 0, worst = 0;
+  rows.forEach(r => {
+    const n = c => +String((r.querySelector(c) || {}).value || '').replace(/[^0-9.]/g, '') || 0;
+    const gross = n('.qt-qty') * n('.qt-price');
+    const d = Math.max(0, Math.min(100, n('.qt-disc')));
+    const amt = Math.round(gross * (1 - d / 100) * 100) / 100;
+    atList += gross; net += amt; worst = Math.max(worst, d);
+    const cell = r.querySelector('.qt-amt'); if (cell) cell.textContent = _crmMoney(amt);
+  });
+  const raw = (document.getElementById('qt-vatRate') || {}).value || '';
+  const box = document.getElementById('qt-totals'); if (!box) return;
+  const row = (l, v, strong) => '<div style="display:flex;justify-content:space-between;gap:16px' +
+    (strong ? ';border-top:1px solid var(--border);margin-top:4px;padding-top:6px;font-weight:800' : '') + '">' +
+    '<span style="color:' + (strong ? 'var(--navy)' : 'var(--text-light)') + '">' + _crmEsc(l) + '</span>' +
+    '<span style="font-variant-numeric:tabular-nums">' + _crmMoney(v) + '</span></div>';
+  let html = row(_t2('Total before VAT', 'Cộng tiền hàng'), net);
+  if (raw === '' ) {
+    html += '<div style="font-size:11.5px;color:#B45309;padding-top:4px;line-height:1.55">' +
+      _crmEsc(_t2('No VAT rate stated — this quotation is ex-VAT. 8% and 10% have both applied in recent periods, so the rate is picked, never assumed.',
+                  'Chưa chọn thuế suất — báo giá này chưa gồm thuế GTGT. Cả 8% và 10% đều từng áp dụng gần đây, nên thuế suất phải được chọn, không mặc định.')) + '</div>';
+    html += row(_t2('Total', 'Tổng cộng'), net, true);
+  } else if (raw === 'na') {
+    html += '<div style="font-size:11.5px;color:var(--text-light);padding-top:4px">' +
+      _crmEsc(_t2('Not a VAT supply.', 'Không thuộc diện chịu thuế GTGT.')) + '</div>';
+    html += row(_t2('Total', 'Tổng cộng'), net, true);
+  } else {
+    const vat = Math.round(net * (+raw) / 100 * 100) / 100;
+    html += row('VAT ' + (+raw) + '%', vat) + row(_t2('Total including VAT', 'Tổng cộng đã gồm thuế'), net + vat, true);
+  }
+  box.innerHTML = html;
+  const dbox = document.getElementById('qt-disc');
+  if (dbox) dbox.textContent = atList > net + 0.005
+    ? _t2('Discount given: %m (%p% of list, steepest line %s%).', 'Đã giảm: %m (%p% so với giá gốc, hạng mục sâu nhất %s%).')
+        .replace('%m', _crmMoney(atList - net)).replace('%p', ((atList - net) / atList * 100).toFixed(2))
+        .replace('%s', worst.toFixed(2))
+    : '';
+}
+
+async function crmQtSave(id, issue) {
+  const g = k => (document.getElementById('qt-' + k) || {}).value || '';
+  const lines = _crmQtRead();
+  if (!lines.length) { toast(_t2('Add at least one priced line.', 'Cần ít nhất một hạng mục có giá.'), 'warn'); return; }
+  try {
+    await tkApi('/api/sales/quote', { method: 'POST', body: {
+      action: 'draft', id: id, title: g('title'), vatRate: g('vatRate'), lines: lines } });
+    if (issue) await tkApi('/api/sales/quote', { method: 'POST', body: { action: 'issue', id: id } });
+    toast(issue ? _t2('Issued', 'Đã gửi khách') : _t2('Saved', 'Đã lưu'));
+    _COLL_TS['sales_quotes'] = 0;
+    document.getElementById('qtOverlay')?.remove();
+    crmRenderQuotes();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
 /* A discount is a price decision, and issuing is the moment it leaves the building. The approval is
    pinned to the PERCENTAGE approved, not a flag — approve 15%, edit to 40%, and a boolean would
    sail straight through, which is the only way this control fails in practice. */
@@ -18179,7 +18329,7 @@ async function crmQuoteFromDeal(dealId) {
     unitPrice: +l.unitPrice || 0, discPct: +l.discPct || 0, uom: l.uom || 'lot'
   }));
   try {
-    await tkApi('/api/sales/quote', { method: 'POST', body: {
+    const r = await tkApi('/api/sales/quote', { method: 'POST', body: {
       action: 'draft', title: d.title || d.name || '', accountName: d.company || '',
       accountId: d.accountId || '', dealId: d.id,
       lines: lines.length ? lines : [{ desc: '', qty: 1, unitPrice: 0 }] } });
@@ -18187,6 +18337,7 @@ async function crmQuoteFromDeal(dealId) {
     toast(lines.length ? _t2('Quotation started from this deal', 'Đã tạo báo giá từ cơ hội này')
                        : _t2('Quotation started — add the lines', 'Đã tạo báo giá — hãy thêm hạng mục'));
     showView('crm-quotes', null, 'Quotations');
+    setTimeout(() => { try { crmOpenQuote(r.item.id); } catch (e) {} }, 500);   // straight into the lines
   } catch (e) { toast(_errMsg(e), 'error', 9000); }
 }
 
@@ -18245,6 +18396,7 @@ async function crmRenderQuotes() {
   const rows = live.length ? live.map(q => {
     const st = _QT_STATUS[q.status || 'draft'] || _QT_STATUS.draft;
     const acts = [];
+    acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmOpenQuote(\'' + q.id + '\')">' + (q.status === 'draft' ? _t2('Edit', 'Sửa') : _t2('View', 'Xem')) + '</button>');
     if (q.status === 'draft' && _crmSeeAll() && !q.discountApprovedBy)
       acts.push('<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmApproveDiscount(\'' + q.id + '\')">' + _t2('Approve discount', 'Duyệt giảm giá') + '</button>');
     if (q.status === 'draft') acts.push('<button class="btn btn-primary btn-sm" style="font-size:10px;padding:3px 8px" onclick="crmQuoteAction(\'' + q.id + '\',\'issue\')">' + _t2('Issue', 'Gửi') + '</button>');

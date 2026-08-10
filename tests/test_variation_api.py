@@ -308,3 +308,12 @@ def test_a_contract_that_moved_under_the_signature_is_retried_not_overwritten(ap
     assert st == 200, r
     assert calls["n"] >= 2, "it must have re-read and retried, not given up or written blindly"
     assert db.get_collection_item("sales_contracts", c["id"])["value"] == 1_080_000_000
+
+
+def test_a_partial_variation_update_does_not_wipe_its_lines(api, tokens):
+    c = _live(api, tokens)
+    v = _var(api, tokens, c)[1]["item"]
+    _post(api, tokens["staff"], "/api/sales/variation", action="draft", contractId=c["id"],
+          id=v["id"], title="Retitled only")
+    after = db.get_collection_item("sales_variations", v["id"])
+    assert len(after["lines"]) == 1 and after["title"] == "Retitled only"

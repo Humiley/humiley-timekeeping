@@ -268,3 +268,56 @@ def test_the_deal_side_numbering_endpoint_is_gone(api, tokens):
     point at which it starts meaning something — and an endpoint whose only caller has gone is not
     "unused", it is a second way to do the thing, waiting to disagree with this one."""
     assert api("POST", "/api/sales/quote-number", tokens["staff"], {"dealId": "x"})[0] == 404
+
+
+def test_the_rate_the_customer_was_QUOTED_reaches_the_contract(api, tokens):
+    """Otherwise a quotation priced at 8% becomes a contract on the company default, and every claim
+    under it is 2% wrong — on a document that goes into a tax return."""
+    q = _draft(api, tokens["staff"])
+    _q(api, tokens["staff"], action="draft", id=q["id"], vatRate=8)
+    _q(api, tokens["staff"], action="issue", id=q["id"])
+    _q(api, tokens["staff"], action="accept", id=q["id"])
+    st, r = api("POST", "/api/sales/contract", tokens["staff"],
+                {"action": "from_quote", "quoteId": q["id"]})
+    assert st == 200, r
+    assert str(r["item"]["vatRate"]) == "8"
+
+
+def test_a_rate_that_is_not_a_rate_is_refused_on_a_quotation(api, tokens):
+    q = _draft(api, tokens["staff"])
+    assert _q(api, tokens["staff"], action="draft", id=q["id"], vatRate=12)[0] == 400
+
+
+def test_zero_percent_survives_being_saved(api, tokens):
+    """0% is exports and export-processing zones — a real answer, and falsy."""
+    q = _draft(api, tokens["staff"])
+    _q(api, tokens["staff"], action="draft", id=q["id"], vatRate=0)
+    assert str(db.get_collection_item("sales_quotes", q["id"])["vatRate"]) == "0"
+
+
+def test_the_draft_response_prices_the_tax_line_for_the_screen(api, tokens):
+    q = _draft(api, tokens["staff"])
+    st, r = _q(api, tokens["staff"], action="draft", id=q["id"], vatRate=8)
+    assert st == 200 and r["tax"]["rate"] == "8"
+    assert r["tax"]["vat"] == round(r["totals"]["amount"] * 0.08, 2)
+
+
+def test_a_partial_update_does_NOT_wipe_the_bill_of_quantities(api, tokens):
+    """The bug this endpoint exists to prevent, inside the endpoint. Setting just the VAT rate sent
+    no `lines`, and an absent key was read as "there are none" — deleting a 300-line BOQ on a save
+    that was only ever meant to change a percentage."""
+    q = _draft(api, tokens["staff"])
+    before = len(db.get_collection_item("sales_quotes", q["id"])["lines"])
+    assert before >= 3
+    _q(api, tokens["staff"], action="draft", id=q["id"], vatRate=8)
+    after = db.get_collection_item("sales_quotes", q["id"])
+    assert len(after["lines"]) == before, "an absent key means leave them alone"
+    assert str(after["vatRate"]) == "8"
+
+
+def test_an_EMPTY_list_still_means_there_are_none(api, tokens):
+    """The other half: absent and empty must not collapse into one meaning, or clearing a quotation
+    becomes impossible."""
+    q = _draft(api, tokens["staff"])
+    _q(api, tokens["staff"], action="draft", id=q["id"], lines=[])
+    assert db.get_collection_item("sales_quotes", q["id"])["lines"] == []

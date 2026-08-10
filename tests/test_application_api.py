@@ -406,3 +406,15 @@ def test_a_claim_that_became_uncertifiable_between_draft_and_signature_is_refuse
     assert st == 400 and "over by" in r["error"], r
     assert db.get_collection_item("sales_applications", a2["id"])["status"] == "draft"
     assert db.get_collection_item("sales_contracts", c["id"])["certifiedToDate"] == 700_000_000
+
+
+def test_a_partial_claim_update_does_not_zero_the_claims(api, tokens):
+    """Same absent-vs-empty trap as the quotation's lines: a save that only set the VAT rate would
+    have re-priced the claim at zero."""
+    c = _live_contract(api, tokens["staff"])
+    a = _post(api, tokens["staff"], "/api/sales/application", action="draft", contractId=c["id"],
+              period="2026-08", claims={_uid(c): 200_000_000})[1]["item"]
+    _post(api, tokens["staff"], "/api/sales/application", action="draft", id=a["id"],
+          contractId=c["id"], vatRate=8)
+    after = db.get_collection_item("sales_applications", a["id"])
+    assert after["certifiedThis"] == 200_000_000, "the claim must survive a partial save"

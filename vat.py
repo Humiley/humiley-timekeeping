@@ -187,6 +187,35 @@ def _vnd(n):
     return "₫{:,.0f}".format(round(_num(n)))
 
 
+def on_amount(rate, amount):
+    """VAT on a single stated amount — for documents where there is only one possible base.
+
+    A quotation is priced at a total; there is nothing to choose between. The certified-vs-net
+    question belongs to a progress claim, where the advance recovery and the retention make the two
+    genuinely different, and asking it here would be inventing a decision to make the caller answer.
+
+    Still refuses when no rate has been stated: ok is False, no tax is added, and no `statement` is
+    produced — the same rule as compute(), because "0% VAT = ₫0" on a document nobody has priced is
+    a claim that nothing is taxable.
+    """
+    amount = r2(amount)
+    out = {"ok": False, "rate": rate, "base": None, "baseAmount": amount, "vat": 0.0,
+           "gross": amount}
+    if str(rate).strip() == "" or not rate_ok(rate):
+        out["why"] = ("No VAT rate is stated on this document, so it is ex-VAT. 8% and 10% have "
+                      "both applied in recent periods — the rate is picked, never assumed.")
+        return out
+    out["ok"] = True
+    if str(rate).strip().lower() == NOT_APPLICABLE:
+        out.update({"rate": NOT_APPLICABLE, "statement": "Not a VAT supply — no tax charged."})
+        return out
+    vat = r2(amount * _num(rate) / 100.0)
+    out.update({"vat": vat, "gross": r2(amount + vat),
+                "statement": "%.4g%% VAT on %s = %s; %s including tax."
+                             % (_num(rate), _vnd(amount), _vnd(vat), _vnd(amount + vat))})
+    return out
+
+
 def settings_review(settings=None):
     """What the company has actually recorded, and what is still blank.
 

@@ -299,3 +299,25 @@ def test_the_discount_threshold_and_the_statement_both_have_a_door():
     assert "async function crmStatement(" in INDEX
     acct = INDEX[INDEX.find("async function crmOpenAccount"):INDEX.find("async function crmOpenAccount") + 9000]
     assert "crmStatement(" in acct, "the statement belongs on the customer's own screen"
+
+
+def test_a_draft_quotation_can_actually_be_EDITED():
+    """Retiring the deal-side builder took the only line editor with it: the register could create a
+    quotation and decide its fate, but not change a line or price one. A register you cannot edit in
+    is a list, not a document."""
+    assert re.search(r"^async function crmOpenQuote\(", INDEX, re.M)
+    assert "function _crmQtRead" in INDEX and "function crmQtAddRow" in INDEX
+    reg = INDEX[INDEX.find("async function crmRenderQuotes"):INDEX.find("async function crmQuoteAction")]
+    assert "crmOpenQuote(" in reg, "the register has to open it"
+
+
+def test_the_quotation_states_its_VAT_rate_rather_than_assuming_one():
+    """8% has run alongside 10% under successive reduction resolutions. The old helper fell back to
+    10% for any quotation without a rate — so a quotation priced under the reduction printed a 10%
+    tax line the moment somebody reopened it."""
+    assert "_CRM_VAT_DEFAULT" not in INDEX
+    ed = INDEX[INDEX.find("async function crmOpenQuote"):INDEX.find("function crmQtAddRow")]
+    assert 'id="qt-vatRate"' in ed
+    assert "_CRM_VAT_RATES.map" in ed, "the picker is driven by the rate list, not a literal"
+    calc = INDEX[INDEX.find("function crmQtRecalc"):INDEX.find("async function crmQtSave")]
+    assert "ex-VAT" in calc, "no rate stated must SAY the quotation is ex-VAT"

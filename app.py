@@ -9624,11 +9624,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("You can only change your own quotations.", 403)
 
         if act == "draft":
-            lines = self._sales_lines((body or {}).get("lines"), (cur or {}).get("lines"))
+            # ABSENT means "leave them alone"; an empty list means "there are none". Collapsing the
+            # two made a partial update — setting just the VAT rate, say — silently delete a
+            # 300-line bill of quantities. This endpoint exists precisely because a blind
+            # whole-document write does that, and it was doing it itself.
+            lines = (self._sales_lines(body["lines"], (cur or {}).get("lines"))
+                     if "lines" in (body or {}) else list((cur or {}).get("lines") or []))
             if cur and str(cur.get("status") or sales_doc.DRAFT) not in sales_doc.EDITABLE:
                 return self._err("This quotation has been issued. Issuing a REVISION keeps the "
                                  "number and preserves what the customer already has; editing it "
                                  "in place would change what you can prove you sent.", 400)
+            # The rate the quotation is PRICED at. It was already stored and never validated, and
+            # nothing offered it — the picker lived in the deal-side builder that has been retired.
+            # 0 is a rate (export / EPZ) and falsy, so never `or ""`.
+            if "vatRate" in (body or {}):
+                raw = (body or {}).get("vatRate")
+                v = "" if raw is None else str(raw).strip()
+                if v and not vat_mod.rate_ok(v):
+                    return self._err("%r is not one of the VAT rates." % v, 400)
+                (body or {})["vatRate"] = v
             doc = dict(cur or {})
             for k in ("accountId", "accountName", "dealId", "title", "currency", "vatRate",
                       "discount", "validDays", "note"):
@@ -9640,7 +9654,13 @@ class Handler(BaseHTTPRequestHandler):
             doc.setdefault("rev", 0)
             doc["updatedAt"] = self._utc_now()
             saved = db.put_collection_item("sales_quotes", doc)
-            return self._json({"ok": True, "item": saved, "totals": sales_doc.totals(lines)})
+            tot = sales_doc.totals(lines)
+            return self._json({"ok": True, "item": saved, "totals": tot,
+                               # on_amount, not compute(): a quotation is priced at a total and has
+                               # only one possible base. Certified-vs-net is a progress-claim
+                               # question, and asking it here would invent a decision.
+                               "tax": vat_mod.on_amount(saved.get("vatRate", ""), tot["amount"]),
+                               "discount": sales_doc.discount(lines)})
 
         if not cur:
             return self._err("A quotation id is required for '%s'." % (act or "(none)"), 400)
@@ -10341,7 +10361,9 @@ class Handler(BaseHTTPRequestHandler):
                                  "is %s." % (c.get("status") or "draft"), 400)
             if cur and cur.get("status") not in (sales_doc.DRAFT,):
                 return self._err("A certified application cannot be edited. Raise the next one.", 400)
-            claims = {str(k): float(v or 0) for k, v in ((body or {}).get("claims") or {}).items()}
+            claims = ({str(k): float(v or 0) for k, v in (body.get("claims") or {}).items()}
+                      if "claims" in (body or {})
+                      else {str(k): float(v or 0) for k, v in ((cur or {}).get("claims") or {}).items()})
             preview = self._application_compute(c, claims)
             if not preview["ok"]:
                 return self._err(preview["why"], 400)
@@ -10606,7 +10628,8 @@ class Handler(BaseHTTPRequestHandler):
                                  % (c.get("status") or "draft"), 400)
             if cur and cur.get("status") != sales_variation.DRAFT:
                 return self._err("An issued variation cannot be edited. Raise the next one.", 400)
-            lines = [l for l in ((body or {}).get("lines") or []) if l][:200]
+            lines = ([l for l in (body.get("lines") or []) if l][:200] if "lines" in (body or {})
+                     else list((cur or {}).get("lines") or []))
             doc = dict(cur or {})
             doc.update({
                 "contractId": c.get("id"), "contractNo": c.get("contractNo"),
@@ -10746,6 +10769,10 @@ class Handler(BaseHTTPRequestHandler):
                 "accountId": q.get("accountId") or "", "accountName": q.get("accountName") or "",
                 "title": q.get("title") or "", "owner": q.get("owner") or u.get("name"),
                 "lines": lines, "value": sales_doc.totals(lines)["amount"],
+                # The rate the customer was quoted at. Without this a quotation priced at 8% becomes
+                # a contract on the company default, and every claim under it is 2% wrong — on a
+                # document that goes into a tax return.
+                "vatRate": q.get("vatRate", ""),
                 "createdAt": self._utc_now(),
             }
             saved = db.put_collection_item("sales_contracts", doc)

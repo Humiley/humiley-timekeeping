@@ -80,9 +80,12 @@ def test_the_quotation_vat_rate_is_a_list_not_a_literal():
     """Four hardcoded `* 0.10` sites meant a quotation could only be right when 10% happened to be
     right. Vietnam has run 8% alongside 10%, and an export-processing customer is 0%."""
     assert "_CRM_VAT_RATES" in INDEX
-    for rate in ("8", "10", "0"):
+    for rate in ("10", "8", "5", "0"):
         assert ("{ v: %s," % rate) in INDEX, rate
-    assert "VAT 10%" not in INDEX, "a hardcoded VAT label is back"
+    # the picker is built FROM the list, so the list is the single source of order and of notes
+    ed = INDEX[INDEX.find("async function crmOpenQuote"):INDEX.find("function crmQtAddRow")]
+    assert "_CRM_VAT_RATES.map" in ed
+    assert "'<option value=\"5\"" not in ed, "a rate tacked on outside the list will drift from it"
 
 
 def test_the_deal_side_quotation_builder_is_retired():
