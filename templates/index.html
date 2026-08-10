@@ -16882,6 +16882,10 @@ async function crmOpenContract(id) {
       num('warrantyMonths', _t2('Warranty', 'Bảo hành'), c.warrantyMonths, _t2('months', 'tháng')) +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('How the advance is recovered', 'Cách khấu trừ tạm ứng') + '</label>' +
         '<select class="form-control" id="ct-recoveryRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RECOVERY, c.recoveryRule) + '</select></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT rate for this contract', 'Thuế suất GTGT cho hợp đồng này') + '</label>' +
+        '<select class="form-control" id="ct-vatRate"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— company default —', '— mặc định công ty —') + '</option>' +
+          [0, 5, 8, 10].map(v => '<option value="' + v + '"' + (String(c.vatRate || '') === String(v) ? ' selected' : '') + '>' + v + '%</option>').join('') +
+          '<option value="na"' + (String(c.vatRate || '') === 'na' ? ' selected' : '') + '>' + _t2('Not a VAT supply', 'Không chịu thuế GTGT') + '</option>' + '</select></div>' +
       '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('When retention comes back', 'Khi nào hoàn trả giữ lại') + '</label>' +
         '<select class="form-control" id="ct-releaseRule"' + (draft ? '' : ' disabled') + '><option value="">' + _t2('— choose —', '— chọn —') + '</option>' + opt(_SCT_RELEASE, c.releaseRule) + '</select></div>' +
     '</div>' +
@@ -16927,7 +16931,7 @@ async function crmContractAct(id, action) {
   if (action === 'terms') body = Object.assign(body, { value: numv('value'),
       advanceSchedule: _ctDepositRead(), advancePct: 0,
       retentionPct: numv('retentionPct'), warrantyMonths: numv('warrantyMonths'),
-      recoveryRule: g('recoveryRule'), releaseRule: g('releaseRule') });
+      recoveryRule: g('recoveryRule'), releaseRule: g('releaseRule'), vatRate: g('vatRate') });
   if (action === 'opening') body = Object.assign(body, { certifiedToDate: numv('certifiedToDate'),
       advanceOutstanding: numv('advanceOutstanding'), retentionHeld: numv('retentionHeld') });
   try {
@@ -17124,9 +17128,22 @@ async function crmClaimForm(contractId, appId) {
           'style="text-align:right;font-variant-numeric:tabular-nums" value="' + _tkEscA(claims[l.uid] || '') + '"></td></tr>').join('')
         : tkEmptyRow(5, _t2('This contract has no priced lines.', 'Hợp đồng này không có hạng mục có giá.'))) +
       '</tbody></table></div>' +
+    '<div class="grid-2" style="gap:12px;margin-bottom:10px">' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT rate for this claim', 'Thuế suất GTGT cho đợt này') + '</label>' +
+        '<select class="form-control" id="sap-vatRate"><option value="">' + _t2('— use the contract or company default —', '— theo hợp đồng hoặc mặc định công ty —') + '</option>' +
+          [0, 5, 8, 10].map(v => '<option value="' + v + '"' + (String((a && a.vatRate) || '') === String(v) ? ' selected' : '') + '>' + v + '%</option>').join('') +
+          '<option value="na"' + (String((a && a.vatRate) || '') === 'na' ? ' selected' : '') + '>' + _t2('Not a VAT supply', 'Không chịu thuế GTGT') + '</option>' +
+        '</select></div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT is charged on', 'Tính thuế GTGT trên') + '</label>' +
+        '<select class="form-control" id="sap-vatBase"><option value="">' + _t2('— use the contract or company default —', '— theo hợp đồng hoặc mặc định công ty —') + '</option>' +
+          [['certified', _t2('The value certified this period', 'Giá trị nghiệm thu trong kỳ')],
+           ['net', _t2('The net payable after recovery and retention', 'Số còn phải trả sau khấu trừ')]]
+            .map(o => '<option value="' + o[0] + '"' + (String((a && a.vatBase) || '') === o[0] ? ' selected' : '') + '>' + _crmEsc(o[1]) + '</option>').join('') +
+        '</select></div>' +
+    '</div>' +
     '<div class="card" style="padding:10px 13px;font-size:11.5px;color:var(--text-light);line-height:1.55;background:var(--soft-bg)">' +
-      _crmEsc(_t2('Amounts are exclusive of VAT. Nothing is clamped — a line claimed past what is left on it is refused and told by how much, because a silently trimmed total is one somebody signs.',
-                  'Số liệu chưa gồm thuế GTGT. Không tự động cắt gọt — hạng mục vượt quá phần còn lại sẽ bị từ chối và báo rõ vượt bao nhiêu, vì tổng bị lặng lẽ cắt bớt là tổng sẽ có người ký.')) + '</div>' +
+      _crmEsc(_t2('Leave both blank to inherit. Nothing is clamped — a line claimed past what is left on it is refused and told by how much, because a silently trimmed total is one somebody signs.',
+                  'Để trống để kế thừa. Không tự động cắt gọt — hạng mục vượt quá phần còn lại sẽ bị từ chối và báo rõ vượt bao nhiêu, vì tổng bị lặng lẽ cắt bớt là tổng sẽ có người ký.')) + '</div>' +
     '<div class="modal-footer">' +
       '<button class="btn btn-ghost" onclick="document.getElementById(\'sapOverlay\').remove()">' + _t('Cancel') + '</button>' +
       '<button class="btn btn-primary" onclick="crmClaimSave(\'' + contractId + '\',\'' + (appId || '') + '\')">' + _t2('Save claim', 'Lưu đợt') + '</button>' +
@@ -17142,8 +17159,9 @@ async function crmClaimSave(contractId, appId) {
     if (v) claims[i.getAttribute('data-uid')] = v;
   });
   if (!Object.keys(claims).length) { toast(_t2('Nothing claimed on any line.', 'Chưa nhập giá trị nào.'), 'warn'); return; }
+  const g = k => (document.getElementById('sap-' + k) || {}).value || '';
   const body = { action: 'draft', contractId: contractId, claims: claims,
-                 period: (document.getElementById('sap-period') || {}).value || '' };
+                 period: g('period'), vatRate: g('vatRate'), vatBase: g('vatBase') };
   if (appId) body.id = appId;
   try {
     const r = await tkApi('/api/sales/application', { method: 'POST', body: body });
@@ -17226,6 +17244,14 @@ async function crmOpenClaim(id) {
       line(_t2('Less advance recovery', 'Trừ khấu trừ tạm ứng'), a.advanceRecovered, false, true) +
       line(_t2('Less retention', 'Trừ giữ lại bảo hành'), a.retentionThis, false, true) +
       line(_t2('Net payable (ex-VAT)', 'Còn phải trả (chưa VAT)'), a.netPayable, true) +
+      (a.vatSet
+        ? (String(a.vatRateUsed) === 'na'
+            ? line(_t2('VAT — not a VAT supply', 'Thuế GTGT — không chịu thuế'), 0)
+            : line(_t2('VAT', 'Thuế GTGT') + ' ' + (+a.vatRateUsed || 0) + '%', a.vatAmount)) +
+          line(_t2('Payable with tax', 'Tổng phải trả gồm thuế'), a.grossPayable, true)
+        : '<div style="font-size:11.5px;color:#B45309;padding:6px 0;line-height:1.55">' +
+            _crmEsc(_t2('Ex-VAT — no rate has been recorded for this claim, its contract or the company. Set it on Sales Compliance and every contract inherits it.',
+                        'Chưa gồm thuế GTGT — chưa khai báo thuế suất cho đợt này, cho hợp đồng hay cho công ty. Hãy khai báo ở màn hình Tuân thủ bán hàng để mọi hợp đồng cùng áp dụng.')) + '</div>') +
       (draft ? '' : line(_t2('Settled', 'Đã thu'), a.settledAmt) + line(_t2('Outstanding', 'Còn nợ'), out)) +
       '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:11.5px;color:var(--text-light);line-height:1.55">' +
         _crmEsc(_t2('%c certified, less %a advance recovery and %r retention = %n payable.',
@@ -17531,6 +17557,74 @@ async function crmReleaseRetention(id) {
 
    It shows work, not a score. Every block is something a named person has to go and do, and the
    biggest one — the tax treatment — blocks a VAT figure on every contract until it is answered. */
+/* The four things the portal will not choose, as four things you can fill in.
+   It used to name these questions and offer nowhere to answer them — and worse, the "company
+   settings" the check read could never have contained them, so they were unanswerable at company
+   level no matter what anybody typed. Set once here; every contract inherits it; override on a
+   contract or a single claim where it differs. */
+let _VAT_CFG = null;
+
+async function crmRenderVatSettings() {
+  const box = document.getElementById('crm-vat-box'); if (!box) return;
+  let r;
+  try { r = await tkApi('/api/sales/vat-settings'); } catch (e) {
+    box.innerHTML = ''; return;   // staff cannot see this; that is not an error for them
+  }
+  _VAT_CFG = r;
+  const vi = _LANG.cur === 'vi';
+  const sel = (id, cur, opts, blank) => '<select class="form-control" id="' + id + '">' +
+    '<option value="">' + _crmEsc(blank) + '</option>' +
+    opts.map(o => '<option value="' + _tkEscA(o.v) + '"' + (String(o.v) === String(cur || '') ? ' selected' : '') +
+      '>' + _crmEsc(o.l) + '</option>').join('') + '</select>';
+
+  const rateOpts = (r.rates || []).map(x => ({ v: x.rate, l: vi ? x.labelVn : x.label }))
+    .concat([{ v: r.notApplicable, l: _t2('Not a VAT supply', 'Không thuộc diện chịu thuế GTGT') }]);
+  const baseOpts = (r.bases || []).map(x => ({ v: x.code, l: vi ? x.labelVn : x.label }));
+  const tp = r.taxPoints || {};
+  const tpBlock = Object.keys(tp).map(k => {
+    const q = tp[k];
+    return '<div class="form-group"><label class="form-label" style="font-size:11.5px;line-height:1.5">' +
+      _crmEsc(vi ? q.questionVn : q.question) + '</label>' +
+      sel('vat-' + k, r[k], (q.options || []).map(o => ({ v: o.code, l: vi ? o.labelVn : o.label })),
+          _t2('— not recorded —', '— chưa ghi nhận —')) +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _crmEsc((vi && q.whyVn) || q.why || '') + '</div></div>';
+  }).join('');
+
+  box.innerHTML = '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid ' +
+      (r.complete ? 'var(--emerald)' : '#B45309') + '">' +
+    '<div class="card-title" style="margin-bottom:6px">' + _t2('VAT and tax treatment', 'Thuế GTGT và cách xử lý thuế') + '</div>' +
+    '<div style="font-size:12.5px;color:' + (r.complete ? 'var(--emerald)' : '#B45309') + ';line-height:1.6;margin-bottom:10px">' +
+      _crmEsc(r.complete ? _t2('Recorded — claims carry a VAT line.', 'Đã ghi nhận — các đợt thanh toán sẽ có dòng thuế GTGT.')
+                         : _t2('Claims stay ex-VAT until these are recorded. The portal will not choose a tax treatment on your behalf, but it will apply the one you choose.',
+                               'Các đợt thanh toán sẽ chưa có thuế cho tới khi khai báo. Cổng thông tin không tự chọn cách xử lý thuế thay bạn, nhưng sẽ áp dụng đúng cách bạn chọn.')) + '</div>' +
+    '<div class="grid-2" style="gap:12px">' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('Default VAT rate', 'Thuế suất GTGT mặc định') + '</label>' +
+        sel('vat-vatRate', r.rate, rateOpts, _t2('— not recorded —', '— chưa ghi nhận —')) + '</div>' +
+      '<div class="form-group"><label class="form-label" style="font-size:11.5px">' + _t2('VAT is charged on', 'Tính thuế GTGT trên') + '</label>' +
+        sel('vat-vatBase', r.base, baseOpts, _t2('— not recorded —', '— chưa ghi nhận —')) +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' +
+          _crmEsc(_t2('These differ by the advance recovery and the retention — on a ₫200,000,000 claim with a 30% advance and 5% retention that is ₫7,000,000 of tax, every month.',
+                      'Hai cách này lệch nhau đúng bằng phần khấu trừ tạm ứng và giữ lại — với đợt ₫200.000.000, tạm ứng 30% và giữ lại 5% thì chênh ₫7.000.000 tiền thuế, mỗi tháng.')) + '</div></div>' +
+    '</div>' + tpBlock +
+    '<div style="font-size:11.5px;color:var(--text-light);margin:6px 0 10px;line-height:1.55">' + _crmEsc(r.whoDecides || '') + '</div>' +
+    '<button class="btn btn-primary btn-sm" onclick="crmSaveVatSettings()">' + _t2('Save tax treatment', 'Lưu cách xử lý thuế') + '</button>' +
+  '</div>';
+  try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(box); } catch (e) {}
+}
+
+async function crmSaveVatSettings() {
+  const g = k => (document.getElementById('vat-' + k) || {}).value || '';
+  const body = { vatRate: g('vatRate'), vatBase: g('vatBase') };
+  Object.keys((_VAT_CFG || {}).taxPoints || {}).forEach(k => { body[k] = g(k); });
+  try {
+    const r = await tkApi('/api/sales/vat-settings', { method: 'POST', body: body });
+    toast(r.complete ? _t2('Saved — claims now carry a VAT line', 'Đã lưu — các đợt sẽ có dòng thuế GTGT')
+                     : _t2('Saved — some answers are still blank', 'Đã lưu — vẫn còn mục chưa khai báo'),
+          r.complete ? 'success' : 'warn', 6000);
+    crmRenderVatSettings();
+  } catch (e) { toast(_errMsg(e), 'error', 9000); }
+}
+
 async function crmRenderCompliance() {
   const root = document.getElementById('crm-compliance-root'); if (!root) return;
   root.innerHTML = tkSkeleton('kpi', 4);
@@ -17556,13 +17650,7 @@ async function crmRenderCompliance() {
   ]);
 
   // The blocker, first, because nothing downstream can state a VAT figure until it is answered.
-  const tax = c.taxTreatment || {};
-  const taxBox = tax.ready
-    ? box(_t2('Tax treatment', 'Xử lý thuế'), none(_t2('Recorded — a VAT figure can be stated.', 'Đã ghi nhận — có thể ghi số thuế GTGT.')), 'var(--emerald)')
-    : box(_t2('Tax treatment — nothing can be billed with VAT until this is answered', 'Xử lý thuế — chưa thể xuất hóa đơn GTGT cho đến khi có câu trả lời'),
-        '<div style="font-size:13px;margin-bottom:8px">' + _crmEsc(tax.why || '') + '</div>' +
-        li((tax.missing || []).map(m => _crmEsc(m.question))) +
-        '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _crmEsc(tax.whoDecides || '') + '</div>', '#B91C1C');
+  const taxBox = '<div id="crm-vat-box"></div>';
 
   const billBox = box(_t2('Customers you cannot legally bill', 'Khách hàng chưa đủ điều kiện xuất hóa đơn'),
     (c.cannotBill || []).length
@@ -17612,6 +17700,7 @@ async function crmRenderCompliance() {
     '<div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' + _crmEsc(c.statement || '') +
     ' &nbsp;·&nbsp; ' + _crmEsc(_t2('as at ', 'tính đến ') + (c.asOf || '')) + '</div>' +
     taxBox + billBox + dupBox + linkBox + staleBox + notBox + openBox;
+  try { crmRenderVatSettings(); } catch (e) { console.warn('vat-settings:', e.message); }
   try { if (_LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(root); } catch (e) {}
 }
 

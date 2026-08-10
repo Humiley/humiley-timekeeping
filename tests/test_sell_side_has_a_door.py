@@ -213,3 +213,25 @@ def test_the_deposit_is_no_longer_a_single_percentage_box():
     ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
     assert "num('advancePct'" not in ct
     assert "advanceSchedule: _ctDepositRead()" in INDEX
+
+
+def test_the_vat_treatment_can_be_filled_in_from_a_screen():
+    """It named two tax questions for weeks and offered nowhere to answer them."""
+    assert re.search(r"^async function crmRenderVatSettings\(\)", INDEX, re.M)
+    assert 'id="crm-vat-box"' in INDEX
+    assert "crmSaveVatSettings()" in INDEX
+
+
+def test_the_rate_can_be_overridden_where_a_real_contract_would_differ():
+    """Company default, contract, single claim — an export-processing-zone job is 0% on a contract
+    whose company default is 10%."""
+    ct = INDEX[INDEX.find("async function crmOpenContract"):INDEX.find("async function crmContractAct")]
+    cf = INDEX[INDEX.find("async function crmClaimForm"):INDEX.find("async function crmClaimSave")]
+    assert 'id="ct-vatRate"' in ct
+    assert 'id="sap-vatRate"' in cf and 'id="sap-vatBase"' in cf
+
+
+def test_the_claim_shows_its_tax_line_or_says_there_is_none():
+    cl = INDEX[INDEX.find("async function crmOpenClaim"):INDEX.find("async function crmClaimCertify")]
+    assert "a.vatSet" in cl and "grossPayable" in cl
+    assert "Ex-VAT" in cl, "a claim with no rate must say so rather than looking tax-free"

@@ -43,7 +43,8 @@ import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hou
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
-import sales_contract   # advance recovery, retention, and the tax points it refuses to choose (pure)
+import sales_contract
+import vat as vat_mod   # advance recovery, retention, and the tax points it refuses to choose (pure)
 import min_wage         # the statutory wage floor, effective-dated by decree
 import minors           # young workers: Art. 143/144 register + the Art. 146 hour limits
 import osh_incident      # occupational accidents: Decree 39/2016 declaration + Art. 35(4) clock
@@ -3790,6 +3791,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._working_time_ep(uu, qs))
         if path == "/api/sales/trace":
             return self._guard(lambda uu: self._trace_ep(uu, qs))
+        if path == "/api/sales/vat-settings":
+            return self._guard(lambda uu: self._vat_settings_ep(uu))
         if path == "/api/sales/retention":
             # Not manager-gated: a salesperson chasing their own customer's retention is the whole
             # point, and the endpoint scopes every row to what the caller may see anyway.
@@ -3897,6 +3900,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            run=True, body=body), manager=True)
         if path == "/api/hr/company":
             return self._guard(lambda u: self._company_put_ep(u, body), manager=True)
+        if path == "/api/sales/vat-settings":
+            return self._guard(lambda uu: self._vat_settings_ep(uu, body or {}))
         if path == "/api/sales/receipt":
             return self._guard(lambda uu: self._receipt_ep(uu, body))
         if path == "/api/sales/einvoice":
@@ -8407,7 +8412,62 @@ class Handler(BaseHTTPRequestHandler):
     # ── the employer's legal identity, and the documents that need it ────────────────────────────
 
     def _company_settings(self):
-        return {k: db.get_setting("portal_co_" + k) or "" for k in company.FIELD_KEYS}
+        """The company's legal identity AND its recorded tax treatment.
+
+        The tax keys belong here because vat_ready() and vat.resolve() both take "company settings"
+        and were being handed a dict that could never contain them — so the two questions they name
+        were unanswerable at company level no matter what anybody typed. A setting nothing can set
+        is the same bug as an endpoint nothing can call.
+        """
+        out = {k: db.get_setting("portal_co_" + k) or "" for k in company.FIELD_KEYS}
+        for k in ("vatRate", "vatBase") + vat_mod.TAX_POINT_KEYS:
+            out[k] = db.get_setting("portal_vat_" + k) or ""
+        return out
+
+    def _vat_settings_ep(self, u, body=None):
+        """Read or record the company's VAT treatment — the four things the portal will not choose.
+
+        Recording them is a management act because it changes the tax line on every contract that
+        inherits it, and it is audited for the same reason.
+        """
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required for the company's "
+                             "tax treatment.", 403)
+        if body is None:
+            s = self._company_settings()
+            r = vat_mod.settings_review(s)
+            r.update({"ok": True, "rates": vat_mod.RATES, "bases": vat_mod.BASES,
+                      "taxPoints": vat_mod.TAX_POINTS, "notApplicable": vat_mod.NOT_APPLICABLE})
+            return self._json(r)
+        changed = []
+        if "vatRate" in body:
+            raw = body.get("vatRate")          # 0 is a rate, and falsy — see the claim path
+            v = "" if raw is None else str(raw).strip()
+            if v and not vat_mod.rate_ok(v):
+                return self._err("%r is not one of the VAT rates. Pick one of 0, 5, 8 or 10, or "
+                                 "record that it is not a VAT supply." % v, 400)
+            db.set_setting("portal_vat_vatRate", v); changed.append("rate")
+        if "vatBase" in body:
+            v = str(body.get("vatBase") or "").strip()
+            if v and v not in vat_mod.BASE_CODES:
+                return self._err("VAT is charged either on the value certified or on the net "
+                                 "payable. %r is neither." % v, 400)
+            db.set_setting("portal_vat_vatBase", v); changed.append("base")
+        for k in vat_mod.TAX_POINT_KEYS:
+            if k in body:
+                v = str(body.get(k) or "").strip()
+                allowed = [o["code"] for o in vat_mod.TAX_POINTS[k]["options"]]
+                if v and v not in allowed:
+                    return self._err("%r is not one of the answers to that question." % v, 400)
+                db.set_setting("portal_vat_" + k, v); changed.append(k)
+        if changed:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": "Recorded company VAT treatment", "target": "settings/vat",
+                "detail": ", ".join(changed), "ts": self._utc_now()})
+        r = vat_mod.settings_review(self._company_settings())
+        r.update({"ok": True, "changed": changed})
+        return self._json(r)
 
     def _company_get_ep(self, u):
         """Who the employer is, in the terms a document has to state it.
@@ -10058,8 +10118,29 @@ class Handler(BaseHTTPRequestHandler):
                         "updatedAt": self._utc_now()})
             doc.update({k: preview[k] for k in ("certifiedThis", "advanceRecovered", "retentionThis",
                                                 "netPayable", "statement")})
+            # The tax line, from a rate somebody stated — on the claim, else the contract, else the
+            # company. Stored WITH its provenance, because "why was this one 8%" is asked a year
+            # later and "that claim says so" and "the company default says so" need different fixes.
+            for k in ("vatRate", "vatBase"):
+                if k in (body or {}):
+                    # NOT `or ""` — 0 is a real rate (exports and EPZ customers) and falsy, so the
+                    # idiom would blank it and silently fall through to the company default, taxing
+                    # an export at 10%.
+                    raw = (body or {}).get(k)
+                    v = "" if raw is None else str(raw).strip()
+                    if k == "vatRate" and v and not vat_mod.rate_ok(v):
+                        return self._err("%r is not one of the VAT rates." % v, 400)
+                    if k == "vatBase" and v and v not in vat_mod.BASE_CODES:
+                        return self._err("VAT is charged on the certified value or on the net "
+                                         "payable. %r is neither." % v, 400)
+                    doc[k] = v
+            tax = vat_mod.compute(preview["certifiedThis"], preview["netPayable"],
+                                  doc, c, self._company_settings())
+            doc.update({"vatRateUsed": tax["rate"], "vatBaseUsed": tax["base"],
+                        "vatFrom": tax["rateFrom"], "vatAmount": tax["vat"],
+                        "grossPayable": tax["gross"], "vatSet": tax["ok"]})
             saved = db.put_collection_item("sales_applications", doc)
-            return self._json({"ok": True, "item": saved, "preview": preview,
+            return self._json({"ok": True, "item": saved, "preview": preview, "tax": tax,
                                "vat": sales_contract.vat_ready(c, self._company_settings())})
 
         if not cur:
@@ -10099,6 +10180,11 @@ class Handler(BaseHTTPRequestHandler):
             cur["certifiedBy"] = u.get("name")
             for k in ("certifiedThis", "advanceRecovered", "retentionThis", "netPayable", "statement"):
                 cur[k] = out[k]
+            tax = vat_mod.compute(out["certifiedThis"], out["netPayable"], cur, c,
+                                  self._company_settings())
+            cur.update({"vatRateUsed": tax["rate"], "vatBaseUsed": tax["base"],
+                        "vatFrom": tax["rateFrom"], "vatAmount": tax["vat"],
+                        "grossPayable": tax["gross"], "vatSet": tax["ok"]})
             saved = db.put_collection_item("sales_applications", cur)
             db.put_collection_item("audit", {
                 "actor": u.get("name") or "System", "actorId": u.get("id") or "",
@@ -10180,7 +10266,8 @@ class Handler(BaseHTTPRequestHandler):
                                  "what the customer signed. Raise a variation instead.", 400)
             for k in ("advancePct", "retentionPct", "retentionCapPct", "warrantyMonths",
                       "releaseRule", "recoveryRule", "recoveryFromPct", "value",
-                      "retentionTaxPoint", "advanceTaxPoint", "signedOn", "contractNo"):
+                      "retentionTaxPoint", "advanceTaxPoint", "vatRate", "vatBase",
+                      "signedOn", "contractNo"):
                 if k in (body or {}):
                     cur[k] = body[k]
             if "advanceSchedule" in (body or {}):
