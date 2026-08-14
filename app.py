@@ -1580,6 +1580,30 @@ _GRAPH_APP_TOK = {"tok": "", "exp": 0.0}
 # Lives beside the DB on the persistent data volume (never committed; the .db dir is gitignored).
 _INVTRACK_FILE_DIR = os.path.join(os.path.dirname(os.path.abspath(db.DB_PATH)), "invtrack_files")
 _INVTRACK_FILE_MAX = 8 * 1024 * 1024       # don't persist an attachment larger than this
+
+
+_SW_BUILD_CACHE = {"id": "", "mtime": 0.0}
+
+
+def _sw_build_id():
+    """The build this server is serving, taken from the service worker's CACHE constant.
+
+    Read from disk, but only when sw.js has actually changed — this is polled by every open client,
+    so it must not re-read a file on each call. Falls back to "" rather than raising: a client that
+    cannot learn the build should carry on with what it has, never reload-loop on a broken read.
+    """
+    try:
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "sw.js")
+        m = os.path.getmtime(p)
+        if m != _SW_BUILD_CACHE["mtime"]:
+            with open(p, "r", encoding="utf-8") as fh:
+                head = fh.read(4096)
+            hit = re.search(r"CACHE\s*=\s*['\"]([^'\"]+)['\"]", head)
+            _SW_BUILD_CACHE["id"] = hit.group(1) if hit else ""
+            _SW_BUILD_CACHE["mtime"] = m
+        return _SW_BUILD_CACHE["id"]
+    except Exception:
+        return ""
 _INVTRACK_FILE_CT = {"pdf": "application/pdf", "xml": "application/xml", "zip": "application/zip"}
 
 
@@ -3762,6 +3786,17 @@ class Handler(BaseHTTPRequestHandler):
     def _do_get(self):
         p = urlparse(self.path)
         path, qs = p.path, parse_qs(p.query)
+
+        # Which build this server is serving. Public and deliberately tiny: an installed PWA polls it
+        # to notice it is running a stale shell and reload itself. No auth, because a client that is
+        # too old to authenticate correctly is exactly the one that most needs to update.
+        #
+        # The service worker's CACHE constant is the source of truth rather than a second version
+        # string: it is already bumped on every deploy and it is what actually decides which cached
+        # shell a device keeps serving, so comparing anything else could report "up to date" while
+        # the old shell was still on screen.
+        if path == "/api/build":
+            return self._json({"ok": True, "build": _sw_build_id()})
 
         # Public health probe for uptime monitors (UptimeRobot/Pingdom/etc.) — no auth, cheap DB ping.
         if path == "/api/health":
