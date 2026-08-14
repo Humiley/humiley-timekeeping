@@ -1318,7 +1318,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search name, ID, email…" oninput="clearTimeout(window._hrSrchT);window._hrSrchT=setTimeout(_renderEmployeeTable,180)"></div>
       <select class="sel-filter" data-dept-select="All Departments" onchange="_renderEmployeeTable()"><option value="">All Departments</option></select>
-      <select class="sel-filter" onchange="_renderEmployeeTable()"><option>Active</option><option>All</option><option>Inactive</option></select>
+      <select class="sel-filter" onchange="_renderEmployeeTable()"><option value="Active">Active</option><option value="All">All</option><option value="Inactive">Inactive</option></select>
       <span id="hr-period-slot" style="display:contents"></span>
       <span style="font-size:12px;color:var(--text-light);white-space:nowrap" id="emp-count-label">15 employees</span>
     </div>
@@ -2012,7 +2012,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="filter-bar">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="text" placeholder="Search employee…"></div>
       <select class="sel-filter" data-dept-select="All Departments"><option value="">All Departments</option></select>
-      <select class="sel-filter"><option>2026</option><option>2025</option></select>
+      <select class="sel-filter"><option value="2026">2026</option><option value="2025">2025</option></select>
     </div>
     <div class="card">
       <div class="table-wrap">
@@ -2080,7 +2080,7 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Reports &amp; Analytics</h1><p>Attendance · Leave · Employee In/Out · Department KPIs</p></div>
     <div style="display:flex;gap:8px">
-      <select class="sel-filter" id="rpt-period"><option>May 2026</option><option>April 2026</option><option>Q1 2026</option></select>
+      <select class="sel-filter" id="rpt-period"><option value="May 2026">May 2026</option><option value="April 2026">April 2026</option><option value="Q1 2026">Q1 2026</option></select>
       <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
     </div>
   </div>
@@ -2134,9 +2134,9 @@ window.addEventListener('orientationchange', _setLoginBg);
   <!-- LEAVE REPORT -->
   <div id="rpt-leave" style="display:none">
     <div class="filter-bar" style="margin-bottom:14px">
-      <select class="sel-filter" onchange="renderLeaveReport()"><option>All Employees</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
-      <select class="sel-filter" id="rpt-leave-type" onchange="renderLeaveReport()"><option>All Types</option><option>Annual Leave</option><option>Sick Leave</option><option>Comp-off</option><option>Unpaid</option></select>
-      <select class="sel-filter" id="rpt-leave-status" onchange="renderLeaveReport()"><option>All Status</option><option>Approved</option><option>Pending</option><option>Rejected</option></select>
+      <select class="sel-filter" onchange="renderLeaveReport()"><option value="All Employees">All Employees</option><option value="Human Resource &amp; Operation (HRO)">Human Resource &amp; Operation (HRO)</option><option value="Project Management Consultant (PMC)">Project Management Consultant (PMC)</option><option value="Engineering Consultant (ENG)">Engineering Consultant (ENG)</option><option value="Solution Sales (SAL)">Solution Sales (SAL)</option><option value="Customer Service &amp; Maintenance (CSM)">Customer Service &amp; Maintenance (CSM)</option><option value="Factory (FAC)">Factory (FAC)</option><option value="Finance Accountant (FA)">Finance Accountant (FA)</option><option value="Board Management (BM)">Board Management (BM)</option></select>
+      <select class="sel-filter" id="rpt-leave-type" onchange="renderLeaveReport()"><option value="All Types">All Types</option><option value="Annual Leave">Annual Leave</option><option value="Sick Leave">Sick Leave</option><option value="Comp-off">Comp-off</option><option value="Unpaid">Unpaid</option></select>
+      <select class="sel-filter" id="rpt-leave-status" onchange="renderLeaveReport()"><option value="All Status">All Status</option><option value="Approved">Approved</option><option value="Pending">Pending</option><option value="Rejected">Rejected</option></select>
     </div>
     <!-- Summary KPIs -->
     <div class="stat-boxes" style="margin-bottom:16px">
@@ -2182,7 +2182,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     <div class="filter-bar" style="margin-bottom:14px">
       <div class="search-box"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5C6470" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input type="search" aria-label="Search employee" placeholder="Search employee…" oninput="clearTimeout(window._ioSrchT);window._ioSrchT=setTimeout(renderInOutReport,180)"></div>
       <select class="sel-filter" data-dept-select="All Departments" onchange="renderInOutReport()"><option value="">All Departments</option></select>
-      <select class="sel-filter" onchange="renderInOutReport()"><option>All Status</option><option>On Time</option><option>Late</option><option>Absent</option><option>Early Leave</option></select>
+      <select class="sel-filter" onchange="renderInOutReport()"><option value="All Status">All Status</option><option value="On Time">On Time</option><option value="Late">Late</option><option value="Absent">Absent</option><option value="Early Leave">Early Leave</option></select>
       <input type="month" class="sel-filter" id="io-month" onchange="renderInOutReport()" style="font-size:12px" title="Filter by month">
       <input type="date" class="sel-filter" id="io-date" onchange="renderInOutReport()" style="font-size:12px" title="Filter by exact date">
       <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="var m=document.getElementById('io-month');var d=document.getElementById('io-date');if(m)m.value='';if(d)d.value='';renderInOutReport()" title="Clear date filters">Clear dates</button>
@@ -2460,7 +2460,7 @@ window.addEventListener('orientationchange', _setLoginBg);
           </div>
           <div class="grid-2">
             <div class="form-group"><label class="form-label">Overtime Threshold (hrs/day)</label><input type="number" class="form-control" value="8" min="6" max="12"></div>
-            <div class="form-group"><label class="form-label">Overtime Rate</label><select class="form-control"><option>1.5×</option><option>2.0×</option><option>Custom</option></select></div>
+            <div class="form-group"><label class="form-label">Overtime Rate</label><select class="form-control"><option value="1.5×">1.5×</option><option value="2.0×">2.0×</option><option value="Custom">Custom</option></select></div>
           </div>
         </div>
         <div class="card">
@@ -2752,14 +2752,14 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="form-group">
         <label class="form-label">Leave Type</label>
         <select class="form-control" id="leave-type-select">
-          <option>Annual Leave</option><option>Sick Leave</option><option>Maternity Leave</option>
-          <option>Paternity Leave</option><option>Comp-off</option><option>Unpaid Leave</option><option>Bereavement</option>
+          <option value="Annual Leave">Annual Leave</option><option value="Sick Leave">Sick Leave</option><option value="Maternity Leave">Maternity Leave</option>
+          <option value="Paternity Leave">Paternity Leave</option><option value="Comp-off">Comp-off</option><option value="Unpaid Leave">Unpaid Leave</option><option value="Bereavement">Bereavement</option>
         </select>
       </div>
       <div class="form-group">
         <label class="form-label">Half Day?</label>
         <select class="form-control">
-          <option>No – Full days</option><option>Morning only</option><option>Afternoon only</option>
+          <option value="No – Full days">No – Full days</option><option value="Morning only">Morning only</option><option value="Afternoon only">Afternoon only</option>
         </select>
       </div>
     </div>
@@ -2795,8 +2795,8 @@ window.addEventListener('orientationchange', _setLoginBg);
       <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" id="my-dob"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="my-gender"><option value="">—</option><option>Male</option><option>Female</option><option>Other</option></select></div>
-      <div class="form-group"><label class="form-label">Marital Status</label><select class="form-control" id="my-family"><option value="">—</option><option>Single</option><option>Married</option><option>Other</option></select></div>
+      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="my-gender"><option value="">—</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option></select></div>
+      <div class="form-group"><label class="form-label">Marital Status</label><select class="form-control" id="my-family"><option value="">—</option><option value="Single">Single</option><option value="Married">Married</option><option value="Other">Other</option></select></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">ID / Passport</label><input class="form-control" id="my-personalId"></div>
@@ -3091,7 +3091,7 @@ function tkFillSchedSelects(root) {
     // different statements, and only one of them is a decision somebody made.
     const blank = sel.hasAttribute('data-sched-select')
       ? '<option value="">— ' + (typeof _t === 'function' ? _t('Standard office (Mon–Fri)') : 'Standard office (Mon–Fri)') + ' —</option>' : '';
-    sel.innerHTML = blank + names.map(n => '<option>' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
+    sel.innerHTML = blank + names.map(n => '<option value="' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '">' + (typeof _crmEsc === 'function' ? _crmEsc(n) : n) + '</option>').join('');
     if (prev && names.indexOf(prev) >= 0) sel.value = prev;
   });
 }
@@ -6064,7 +6064,7 @@ function _tkPortalRenderRows() {
   const rm = (t, i) => '<button class="btn btn-ghost btn-sm" onclick="tkPortalRemove(\'' + t + '\',' + i + ')" style="flex-shrink:0">Remove</button>';
   const depts = ['All'].concat([...new Set((_DEMO_EMPLOYEES || []).map(e => e.dept).filter(Boolean))].sort());
   const audSel = (i, sel) => '<select class="form-control" style="flex:0 0 150px" title="Show to" onchange="tkPortalSet(\'announcements\',' + i + ',\'audience\',this)">' +
-    depts.map(d => '<option' + (((sel || 'All') === d) ? ' selected' : '') + '>' + d + '</option>').join('') + '</select>';
+    depts.map(d => '<option value="' + d + '"' + (((sel || 'All') === d) ? ' selected' : '') + '>' + d + '</option>').join('') + '</select>';
   I('portal-announcements', m.announcements.map((it, i) =>
     '<div style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
     '<div style="display:flex;gap:8px;margin-bottom:6px">' +
@@ -6822,12 +6822,12 @@ function tkInterviewEval(id) {
   const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
   const ev = c.eval || {};
   document.getElementById('evalOverlay')?.remove();
-  const rows = _EVAL_CRIT.map(cr => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:13px">' + cr.label + ' <span style="color:var(--text-light)">(' + cr.w + '%)</span></div><select class="form-control" style="width:70px" id="eval-' + cr.k + '" onchange="tkEvalCalc()"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option' + ((ev[cr.k] || 0) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>').join('');
+  const rows = _EVAL_CRIT.map(cr => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:13px">' + cr.label + ' <span style="color:var(--text-light)">(' + cr.w + '%)</span></div><select class="form-control" style="width:70px" id="eval-' + cr.k + '" onchange="tkEvalCalc()"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + ((ev[cr.k] || 0) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>').join('');
   const el = document.createElement('div'); el.id = 'evalOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">Interview Evaluation — ' + (c.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'evalOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + (c.role || '') + ' · score each 1–5 (BM.HR-01-04)</div>' + rows +
     '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:10px 0"><span style="font-size:13px;font-weight:600">Weighted score</span><span id="eval-total" style="font-size:18px;font-weight:800;color:var(--navy)">—</span></div>' +
-    '<div class="form-group"><label class="form-label">Recommendation</label><select class="form-control" id="eval-rec"><option value="">—</option><option' + (ev.rec === 'Strong Hire' ? ' selected' : '') + '>Strong Hire</option><option' + (ev.rec === 'Hire' ? ' selected' : '') + '>Hire</option><option' + (ev.rec === 'Conditional' ? ' selected' : '') + '>Conditional</option><option' + (ev.rec === 'No Hire' ? ' selected' : '') + '>No Hire</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Recommendation</label><select class="form-control" id="eval-rec"><option value="">—</option><option value="Strong Hire"' + (ev.rec === 'Strong Hire' ? ' selected' : '') + '>Strong Hire</option><option value="Hire"' + (ev.rec === 'Hire' ? ' selected' : '') + '>Hire</option><option value="Conditional"' + (ev.rec === 'Conditional' ? ' selected' : '') + '>Conditional</option><option value="No Hire"' + (ev.rec === 'No Hire' ? ' selected' : '') + '>No Hire</option></select></div>' +
     '<div class="form-group"><label class="form-label">Comments</label><textarea class="form-control" id="eval-comment">' + _tkEscT(ev.comment || '') + '</textarea></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'evalOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkEvalSave(\'' + id + '\')">Save evaluation</button></div></div>';
   document.body.appendChild(el); tkEvalCalc();
@@ -7386,7 +7386,7 @@ function _onboardMilestoneHtml(o) {
     else if (du < 0) { badge = 'Overdue'; cls = 'b-danger'; }
     else if (du <= 7) { badge = 'Due in ' + du + 'd'; cls = 'b-warn'; }
     else { badge = 'in ' + du + 'd'; cls = 'b-info'; }
-    const sel = '<select onchange="tkOnboardMilestone(\'' + o.id + '\',' + mi + ',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--line);border-radius:5px">' + ['Pending', 'Confirmed', 'Extended', 'Ended'].map(s => '<option' + (s === m.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>';
+    const sel = '<select onchange="tkOnboardMilestone(\'' + o.id + '\',' + mi + ',this.value)" style="font-size:10px;padding:2px 4px;border:1px solid var(--line);border-radius:5px">' + ['Pending', 'Confirmed', 'Extended', 'Ended'].map(s => '<option value="' + s + '"' + (s === m.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select>';
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11.5px;padding:3px 0"><span>' + m.label.replace(/ —.*/, '') + ' · ' + tkFmtDate(due) + '</span><span style="display:inline-flex;align-items:center;gap:5px"><span class="badge ' + cls + '" style="font-size:9px">' + badge + '</span>' + sel + '</span></div>';
   }).join('');
   return '<div style="background:var(--soft-bg);border-radius:8px;padding:8px 10px;margin-bottom:10px"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--navy);margin-bottom:3px">Probation milestones</div>' + rows + '</div>';
@@ -7565,7 +7565,7 @@ function tkPadrManage(id) {
   const p = (_HR.padr || []).find(x => x.id === id); if (!p) return;
   _normGoals(p);
   document.getElementById('padrOverlay')?.remove();
-  const goalRows = (p.goals || []).map(g => '<tr><td style="font-size:12px">' + _crmEsc(g.objective || '') + ' ' + _goalSourceBadge(g) + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:42px;text-align:center" data-mgr="' + g.id + '"></td><td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td><td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkPadrDelGoal(\'' + id + '\',\'' + g.id + '\')">' + _TRASH + '</button></td></tr>').join('');
+  const goalRows = (p.goals || []).map(g => '<tr><td style="font-size:12px">' + _crmEsc(g.objective || '') + ' ' + _goalSourceBadge(g) + '</td><td style="text-align:center">' + (g.weight || 0) + '%</td><td style="text-align:center">' + (g.selfScore || '—') + '</td><td style="text-align:center"><input type="number" min="1" max="5" value="' + (g.mgrScore || '') + '" style="width:42px;text-align:center" data-mgr="' + g.id + '"></td><td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option value="' + s + '"' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td><td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkPadrDelGoal(\'' + id + '\',\'' + g.id + '\')">' + _TRASH + '</button></td></tr>').join('');
   const totalW = (p.goals || []).reduce((s, g) => s + (+g.weight || 0), 0);
   const el = document.createElement('div'); el.id = 'padrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:680px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div class="modal-title">PADR — ' + (p.name || '') + ' (' + (p.cycle || '') + ')</div><button class="modal-close" onclick="document.getElementById(\'padrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
@@ -7574,8 +7574,8 @@ function tkPadrManage(id) {
     '<div class="card" style="padding:10px 12px;margin-top:10px;background:var(--soft-bg)"><div style="font-size:11px;font-weight:700;color:var(--navy);margin-bottom:6px">Assign a new goal</div>' +
     '<div style="display:flex;gap:6px;margin-bottom:6px"><select class="form-control" id="padr-lib" style="flex:1;font-size:12px" onchange="tkPadrLib(\'' + id + '\')"><option value="">— pick from library —</option>' + _GOAL_LIBRARY.map((l, i) => '<option value="' + i + '">' + l.cat + ': ' + l.objective + '</option>').join('') + '</select></div>' +
     '<input class="form-control" id="padr-ng-obj" placeholder="Objective" style="font-size:12px;margin-bottom:6px"><div style="display:flex;gap:6px"><input class="form-control" id="padr-ng-wt" type="number" placeholder="Weight %" style="width:90px;font-size:12px"><input class="form-control" id="padr-ng-tgt" placeholder="Target / KPI" style="flex:1;font-size:12px"><button class="btn btn-outline btn-sm" onclick="tkPadrAddGoal(\'' + id + '\')">' + tkIcon('plus') + 'Add</button></div></div>' +
-    '<div class="grid-2" style="margin-top:12px"><div class="form-group"><label class="form-label">Stage</label><select class="form-control" id="padr-status"><option>Goal-setting</option><option>Mid-year</option><option>Self-assessment</option><option>Calibrated</option><option>Finalized</option></select></div>' +
-    '<div class="form-group"><label class="form-label">Final rating (1–5)</label><select class="form-control" id="padr-rating"><option value="0">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div></div>' +
+    '<div class="grid-2" style="margin-top:12px"><div class="form-group"><label class="form-label">Stage</label><select class="form-control" id="padr-status"><option value="Goal-setting">Goal-setting</option><option value="Mid-year">Mid-year</option><option value="Self-assessment">Self-assessment</option><option value="Calibrated">Calibrated</option><option value="Finalized">Finalized</option></select></div>' +
+    '<div class="form-group"><label class="form-label">Final rating (1–5)</label><select class="form-control" id="padr-rating"><option value="0">—</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option></select></div></div>' +
     '<div class="form-group"><label class="form-label">IDP / development note</label><textarea class="form-control" id="padr-idp">' + _tkEscT(p.idp || '') + '</textarea></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'padrOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkPadrSave(\'' + id + '\')">Save</button></div></div>';
   document.body.appendChild(el);
@@ -8232,8 +8232,8 @@ function _devLineHtml() {
   const cats = _devCats(), sts = _devStatuses();
   return '<div class="dev-line" data-di="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Device / Equipment Name</label><input class="form-control dev-name" placeholder="e.g. Dell Latitude 5440"></div>' +
-    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control dev-cat">' + cats.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
-    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Status</label><select class="form-control dev-status">' + sts.map(o => '<option' + (o === 'Available' ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control dev-cat">' + cats.map(o => '<option value="' + o + '">' + o + '</option>').join('') + '</select></div>' +
+    '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Status</label><select class="form-control dev-status">' + sts.map(o => '<option value="' + o + '"' + (o === 'Available' ? ' selected' : '') + '>' + o + '</option>').join('') + '</select></div></div>' +
     '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Serial / Asset Tag</label><input class="form-control dev-serial"></div>' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Department</label><input class="form-control dev-dept"></div></div>' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Assigned To (employee)</label><input class="form-control dev-assigned" list="dev-batch-emps" placeholder="— unassigned"></div>' +
@@ -8349,7 +8349,7 @@ async function tkAssetReturn(empId, exitId) {
       // all-or-nothing and the two lost units were either hidden or wrongly written off with the rest.
       '<td><input type="number" data-ar-qty="' + x.id + '" min="1" max="' + held + '" value="' + held + '" style="width:64px;font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;font-variant-numeric:tabular-nums">' +
         (held > 1 ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('of') + ' ' + held + '</div>' : '') + '</td>' +
-      '<td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></td></tr>';
+      '<td><select data-ar-cond="' + x.id + '" style="font-size:12px;padding:5px 7px;border:1px solid var(--line);border-radius:6px"><option value="Good">Good</option><option value="Minor wear">Minor wear</option><option value="Damaged">Damaged</option><option value="Lost">Lost</option></select></td></tr>';
   }).join('') : tkEmptyRow(3, 'No assigned devices to return.', { icon: 'inbox' });
   const el = document.createElement('div'); el.id = 'assetReturnOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">Asset Return &amp; Sign-off — ' + _crmEsc(e.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'assetReturnOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
@@ -8500,7 +8500,7 @@ async function tkDeviceAssign(id) {
     '<div class="form-group"><label class="form-label">' + _t('Assign to (employee)') + '</label><select class="form-control" id="asg-emp">' + opts + '</select></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t('Quantity') + '</label><input class="form-control" type="number" id="asg-qty" min="1" max="' + Math.max(1, rem) + '" value="1"' + (rem <= 0 ? ' disabled' : '') + '></div>' +
     '<div class="form-group"><label class="form-label">' + _t('Provided date') + '</label><input class="form-control" type="date" id="asg-date" value="' + _today() + '"></div></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t('Condition') + '</label><select class="form-control" id="asg-cond"><option>Good / New</option><option>Used — good</option><option>Used — fair</option></select></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">' + _t('Condition') + '</label><select class="form-control" id="asg-cond"><option value="Good / New">Good / New</option><option value="Used — good">Used — good</option><option value="Used — fair">Used — fair</option></select></div>' +
     '<div class="form-group"><label class="form-label">' + _t('Note (optional)') + '</label><input class="form-control" id="asg-note" placeholder="' + _tkEscA(_t('e.g. charger + bag included')) + '"></div></div>' +
     '<div class="form-group" style="margin-bottom:6px"><label class="form-label">' + _t('Employee signature — sign to acknowledge receipt') + '</label>' +
       '<div style="position:relative;border:1px solid var(--line);border-radius:8px;background:#fff;overflow:hidden"><canvas id="asg-sigpad" style="display:block;width:100%;height:150px;touch-action:none;cursor:crosshair"></canvas>' +
@@ -8570,13 +8570,13 @@ async function tkDeviceUnassign(devId, asgId) {
       '<div class="form-group" style="margin:0"><label class="form-label">' + _t('Quantity to release') + '</label>' +
         '<input class="form-control" id="unasg-qty" type="number" min="1" max="' + held + '" value="' + held + '"></div>' +
       '<div class="form-group" style="margin:0"><label class="form-label">' + _t('Condition') + '</label>' +
-        '<select class="form-control" id="unasg-cond"><option>Good</option><option>Minor wear</option><option>Damaged</option><option>Lost</option></select></div>' +
+        '<select class="form-control" id="unasg-cond"><option value="Good">Good</option><option value="Minor wear">Minor wear</option><option value="Damaged">Damaged</option><option value="Lost">Lost</option></select></div>' +
     '</div>' +
     '<div class="form-group"><label class="form-label">' + _t('Reason') + '</label>' +
       '<select class="form-control" id="unasg-reason">' +
-        '<option>' + _t('Returned to stock') + '</option>' +
-        '<option>' + _t('Correction — assigned in error') + '</option>' +
-        '<option>' + _t('Written off — lost or damaged') + '</option>' +
+        '<option value="' + _t('Returned to stock') + '">' + _t('Returned to stock') + '</option>' +
+        '<option value="' + _t('Correction — assigned in error') + '">' + _t('Correction — assigned in error') + '</option>' +
+        '<option value="' + _t('Written off — lost or damaged') + '">' + _t('Written off — lost or damaged') + '</option>' +
       '</select></div>' +
     '<div class="form-group"><label class="form-label">' + _t('Note') + '</label>' +
       '<input class="form-control" id="unasg-note" placeholder="' + _tkEscA(_t('What happened, for the record')) + '"></div>' +
@@ -8654,7 +8654,7 @@ async function tkRenderMyGoals() {
   let years = Array.from(new Set(mine.map(yearOf))).sort().reverse();
   if (!years.includes(curY)) years.unshift(curY);
   if (!_myGoalsYear || !years.includes(_myGoalsYear)) _myGoalsYear = years.includes(curY) ? curY : years[0];
-  const yearSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px"><span style="font-size:12px;color:var(--text-light)">PADR year</span><select class="sel-filter" onchange="tkMyGoalsYear(this.value)" style="font-size:13px;padding:6px 10px">' + years.map(y => '<option' + (y === _myGoalsYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div>';
+  const yearSel = '<div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:14px"><span style="font-size:12px;color:var(--text-light)">PADR year</span><select class="sel-filter" onchange="tkMyGoalsYear(this.value)" style="font-size:13px;padding:6px 10px">' + years.map(y => '<option value="' + y + '"' + (y === _myGoalsYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div>';
   let p = mine.find(x => yearOf(x) === _myGoalsYear);
   if (!p) {
     root.innerHTML = yearSel + '<div class="card" style="padding:24px;text-align:center"><div style="font-weight:700;color:var(--navy);margin-bottom:6px">No PADR cycle for ' + _myGoalsYear + '</div><div style="font-size:13px;color:var(--text-light);margin-bottom:14px">' + (_myGoalsYear === curY ? 'Start your own goal cycle now, or wait for your manager to assign goals.' : 'There is no appraisal on record for this year.') + '</div>' + (_myGoalsYear === curY ? '<button class="btn btn-primary btn-sm" onclick="tkMyGoalsStart()">' + tkIcon('plus') + 'Start my goal cycle</button>' : '') + '</div>';
@@ -8676,7 +8676,7 @@ async function tkRenderMyGoals() {
       '<td style="text-align:center"><input type="number" min="0" max="5" value="' + (g.selfScore || '') + '" data-self="' + g.id + '" style="width:42px;text-align:center"></td>' +
       '<td style="text-align:center">' + (g.mgrScore || '—') + '</td>' +
       '<td><input type="number" min="0" max="100" value="' + (g.progress || 0) + '" data-prog="' + g.id + '" style="width:52px;text-align:center">%</td>' +
-      '<td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td>' +
+      '<td><select data-st="' + g.id + '" style="font-size:11px">' + _GOAL_STATUSES.map(s => '<option value="' + s + '"' + (s === g.status ? ' selected' : '') + '>' + s + '</option>').join('') + '</select></td>' +
       (editable ? '<td style="text-align:right"><button class="btn btn-ghost btn-sm" style="color:#C00000;font-size:10px;padding:2px 5px" onclick="tkMyGoalDel(\'' + g.id + '\')">' + _TRASH + '</button></td>' : '') + '</tr>').join('') +
     '</tbody></table></div>' : '<div style="padding:14px;color:var(--text-light);font-size:12px">None yet.</div>';
   const card = (title, hint, inner) => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:18px"><div class="card-hdr" style="padding:14px 18px"><div class="card-title">' + title + '</div><span style="font-size:11px;color:var(--text-light)">' + hint + '</span></div>' + inner + '</div>';
@@ -8762,7 +8762,7 @@ function tkPipManage(id) {
   const el = document.createElement('div'); el.id = 'pipOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:560px"><div class="modal-header"><div class="modal-title">PIP — ' + (p.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'pipOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div class="form-group"><label class="form-label">Performance concern (measurable)</label><textarea class="form-control" id="pip-concern">' + _tkEscT(p.concern || '') + '</textarea></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Duration</label><select class="form-control" id="pip-duration"><option' + (p.duration == 30 ? ' selected' : '') + '>30</option><option' + (p.duration == 60 ? ' selected' : '') + '>60</option><option' + (p.duration == 90 ? ' selected' : '') + '>90</option></select></div><div class="form-group"><label class="form-label">Outcome</label><select class="form-control" id="pip-outcome"><option value="">In progress</option><option' + (p.outcome === 'Pass' ? ' selected' : '') + '>Pass</option><option' + (p.outcome === 'Extend' ? ' selected' : '') + '>Extend</option><option' + (p.outcome === 'Fail' ? ' selected' : '') + '>Fail</option></select></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Duration</label><select class="form-control" id="pip-duration"><option value="30"' + (p.duration == 30 ? ' selected' : '') + '>30</option><option value="60"' + (p.duration == 60 ? ' selected' : '') + '>60</option><option value="90"' + (p.duration == 90 ? ' selected' : '') + '>90</option></select></div><div class="form-group"><label class="form-label">Outcome</label><select class="form-control" id="pip-outcome"><option value="">In progress</option><option value="Pass"' + (p.outcome === 'Pass' ? ' selected' : '') + '>Pass</option><option value="Extend"' + (p.outcome === 'Extend' ? ' selected' : '') + '>Extend</option><option value="Fail"' + (p.outcome === 'Fail' ? ' selected' : '') + '>Fail</option></select></div></div>' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin:6px 0 4px">Improvement actions</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Action</th><th>Measure of success</th></tr></thead><tbody>' + acts + '</tbody></table></div>' +
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text-light);margin:10px 0 4px">Weekly check-ins</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Week</th><th>Date</th><th>Progress / blocker</th></tr></thead><tbody>' + checks + '</tbody></table></div>' +
     '<div style="display:flex;gap:8px;margin-top:8px"><input class="form-control" id="pip-newcheck" placeholder="Add this week\'s progress note…" style="flex:1"><button class="btn btn-outline btn-sm" onclick="tkPipAddCheck(\'' + id + '\')">+ Check-in</button></div>' +
@@ -8872,7 +8872,7 @@ function tkEnrollCourse(course) {
   const depts = [...new Set(emps.map(e => e.dept).filter(Boolean))].sort();
   const el = document.createElement('div'); el.id = 'enrollOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:520px;max-height:88vh;display:flex;flex-direction:column"><div class="modal-header"><div class="modal-title">Enroll — ' + course + '</div><button class="modal-close" onclick="document.getElementById(\'enrollOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
-    '<div class="form-group"><label class="form-label">Enroll a whole department</label><select class="form-control" id="enr-dept"><option value="">— none —</option>' + depts.map(d => '<option>' + d + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">Enroll a whole department</label><select class="form-control" id="enr-dept"><option value="">— none —</option>' + depts.map(d => '<option value="' + d + '">' + d + '</option>').join('') + '</select></div>' +
     '<div style="font-size:11px;color:var(--text-light);margin:2px 0 6px">…and / or pick individual employees:</div>' +
     '<div style="overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px;max-height:34vh">' + emps.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(e => '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;cursor:pointer"><input type="checkbox" class="enr-emp" value="' + e.id + '"><span>' + e.name + ' <span style="color:var(--text-light)">· ' + (e.dept || '') + '</span></span></label>').join('') + '</div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'enrollOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkEnrollGo(\'' + course.replace(/'/g, "\\'") + '\')">' + tkIcon('check') + 'Enroll</button></div></div>';
@@ -9151,7 +9151,7 @@ async function tkRenderPayroll() {
   await _payLoadOT(_payYM.y, _payMonthsOf(_payYM));   // approved overtime, before anything is costed
   await _payBuild();
   const monthSel = '<select class="sel-filter" id="pay-month" onchange="tkPaySetYM()"><option value="-1"' + (_payYM.m === -1 ? ' selected' : '') + '>Whole Year</option>' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select>';
-  const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+  const yearSel = '<select class="sel-filter" id="pay-year" onchange="tkPaySetYM()">' + [2025, 2026, 2027].map(y => '<option value="' + y + '"' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
   root.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px"><div style="display:flex;gap:8px;align-items:center"><span style="font-size:12px;color:var(--text-light)">Period</span>' + monthSel + yearSel + '</div>' +
     '<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="tkExportPayroll()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>' + (_lvlRank(_userLevel) >= _lvlRank('editor') ? ('<button class="btn btn-outline btn-sm" onclick="tkIndivPayRun()">' + tkIcon('plus') + 'Individual Pay Run</button><button class="btn btn-emerald btn-sm" onclick="tkCreatePayRun()">' + tkIcon('plus') + 'Create Pay Run</button>') : '') + '</div></div>' +
@@ -9368,7 +9368,7 @@ function tkIndivPayRun() {
   el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Individual Pay Run</div><button class="modal-close" onclick="document.getElementById(\'indivPayOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div class="form-group"><label class="form-label">Employee</label><select class="form-control" id="ipr-emp">' + emps.map(e => '<option value="' + e.id + '">' + e.name + ' — ' + (e.title || '') + '</option>').join('') + '</select></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">Month</label><select class="form-control" id="ipr-month">' + _PAY_MONTHS.map((mn, i) => '<option value="' + i + '"' + (i === _payYM.m ? ' selected' : '') + '>' + mn + '</option>').join('') + '</select></div>' +
-    '<div class="form-group"><label class="form-label">Year</label><select class="form-control" id="ipr-year">' + [2025, 2026, 2027].map(y => '<option' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div></div>' +
+    '<div class="form-group"><label class="form-label">Year</label><select class="form-control" id="ipr-year">' + [2025, 2026, 2027].map(y => '<option value="' + y + '"' + (y === _payYM.y ? ' selected' : '') + '>' + y + '</option>').join('') + '</select></div></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'indivPayOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkIndivPayRunGo()">' + tkIcon('check') + 'Generate &amp; payslip</button></div></div>';
   document.body.appendChild(el);
 }
@@ -10916,7 +10916,7 @@ let _claimRowSeq = 0;
 function _claimLineHtml() {
   const i = _claimRowSeq++;
   return '<div class="claim-line" data-ci="' + i + '" style="border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px">' +
-    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control claim-cat">' + _CLAIM_CATS.map(o => '<option>' + o + '</option>').join('') + '</select></div>' +
+    '<div class="grid-2"><div class="form-group" style="margin-bottom:8px"><label class="form-label">Category</label><select class="form-control claim-cat">' + _CLAIM_CATS.map(o => '<option value="' + o + '">' + o + '</option>').join('') + '</select></div>' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Amount (VND)</label><input class="form-control claim-amt" type="number" inputmode="numeric" oninput="tkClaimRecalc()"></div></div>' +
     '<div class="form-group" style="margin-bottom:8px"><label class="form-label">Note</label><input class="form-control claim-note" placeholder="e.g. dinner with client"></div>' +
     _ATTACH_FIELD('claim-att-' + i, 'Attach bill / receipt') +
@@ -11322,7 +11322,7 @@ function tkNewTravel() {
     '<div class="form-group"><label class="form-label">Destination</label><input class="form-control" id="tr-dest"></div>' +
     '<div class="form-group"><label class="form-label">Purpose</label><input class="form-control" id="tr-purpose"></div>' +
     '<div class="grid-2"><div class="form-group"><label class="form-label">From</label><input type="date" class="form-control" id="tr-from"></div><div class="form-group"><label class="form-label">To</label><input type="date" class="form-control" id="tr-to"></div></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option>Company car</option><option>Flight</option><option>Train</option><option>Taxi / Grab</option><option>Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" inputmode="numeric" class="form-control" id="tr-cost"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Transport</label><select class="form-control" id="tr-transport"><option value="Company car">Company car</option><option value="Flight">Flight</option><option value="Train">Train</option><option value="Taxi / Grab">Taxi / Grab</option><option value="Other">Other</option></select></div><div class="form-group"><label class="form-label">Est. cost (VND)</label><input type="number" inputmode="numeric" class="form-control" id="tr-cost"></div></div>' +
     '<div class="form-group"><label class="form-label">Advance requested (VND)</label><input type="number" inputmode="numeric" class="form-control" id="tr-advance"></div>' +
     _ATTACH_MULTI('tr-attach', 'Tickets / quotes / photos — combined into one PDF') +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'travelOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkTravelSave()">Submit</button></div></div>';
@@ -11488,8 +11488,8 @@ function tkNewPayment(editId) {
   document.getElementById('paymentOverlay')?.remove();
   const el = document.createElement('div'); el.id = 'paymentOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   const V = k => p ? _tkEscA(p[k] == null ? '' : String(p[k])) : '';
-  const catOpts = _PAY_CATS.map(c => '<option' + (p && p.category === c ? ' selected' : '') + '>' + c + '</option>').join('');
-  const methOpts = _PAY_METHODS.map(m => '<option' + (p && p.method === m ? ' selected' : '') + '>' + m + '</option>').join('');
+  const catOpts = _PAY_CATS.map(c => '<option value="' + c + '"' + (p && p.category === c ? ' selected' : '') + '>' + c + '</option>').join('');
+  const methOpts = _PAY_METHODS.map(m => '<option value="' + m + '"' + (p && p.method === m ? ' selected' : '') + '>' + m + '</option>').join('');
   const attBlock = p
     ? '<div class="form-group"><label class="form-label">Invoice / bill</label><div style="font-size:12px;color:var(--text-light);margin-bottom:6px">' + _t('Your current bill is kept. Only add files if you want to replace it.') + '</div>' + _ATTACH_MULTI('pay-attach', 'Replace invoice / bill (optional)') + '</div>'
     : _ATTACH_MULTI('pay-attach', 'Invoice / bill (REQUIRED) — combined with the request form into one PDF');
@@ -13126,7 +13126,11 @@ function _invItemsTable(items) {
       '<th style="padding:6px 8px">#</th><th style="padding:6px 8px">' + _t('Description') + '</th>' +
       '<th style="padding:6px 8px">' + _t('Unit') + '</th><th style="padding:6px 8px;text-align:right">' + _t('Qty') + '</th>' +
       '<th style="padding:6px 8px;text-align:right">' + _t('Unit price') + '</th><th style="padding:6px 8px;text-align:center">' + _t('Tax') + '</th>' +
-      '<th style="padding:6px 8px;text-align:right">' + _t('Amount') + '</th></tr></thead>' +
+      // This column is the LINE TOTAL — it follows Qty × Unit price + Tax — which in Vietnamese is
+      // "Thành tiền". The bare 'Amount' key means a plain sum ("Số tiền"), correct on the payment
+      // and claim registers where it labels what one request is worth. Same _t2 pattern the
+      // quotation editor already uses for this identical column.
+      '<th style="padding:6px 8px;text-align:right">' + _t2('Amount', 'Thành tiền') + '</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div></div>';
 }
 function _invDetailHTML(i, idx) {
@@ -14007,7 +14011,7 @@ function tkInitExit() {
   const el = document.createElement('div'); el.id = 'exitOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:480px"><div class="modal-header"><div class="modal-title">Initiate Exit</div><button class="modal-close" onclick="document.getElementById(\'exitOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div class="form-group"><label class="form-label">Employee</label><select class="form-control" id="ex-emp">' + opts + '</select></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-type">' + _EXIT_TYPES.map(t => '<option>' + t + '</option>').join('') + '</select></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-type">' + _EXIT_TYPES.map(t => '<option value="' + t + '">' + t + '</option>').join('') + '</select></div>' +
     '<div class="form-group"><label class="form-label">Notice (days)</label><input type="number" class="form-control" id="ex-notice" value="30"></div></div>' +
     '<div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-last"></div>' +
     '<div class="form-group"><label class="form-label">Reason</label><textarea class="form-control" id="ex-reason" rows="2" placeholder="Reason for leaving"></textarea></div>' +
@@ -14048,7 +14052,7 @@ function tkExitManage(id) {
   const fld = (lbl, hid, val, ph) => '<div class="form-group"><label class="form-label">' + lbl + '</label><input type="number" class="form-control" id="' + hid + '" value="' + (val || 0) + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '></div>';
   const el = document.createElement('div'); el.id = 'exitMgrOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
   el.innerHTML = '<div class="modal" style="max-width:600px;max-height:90vh;max-height:90dvh;overflow:auto"><div class="modal-header"><div style="display:flex;align-items:center;gap:10px">' + _hrAv(e) + '<div><div class="modal-title" style="margin:0">' + (r.name || e.name) + '</div><div style="font-size:11px;color:var(--text-light)">' + (r.type || '') + ' · last day ' + tkFmtDate(r.lastDay) + ' · ' + _exitYears(r) + ' yrs service</div></div></div><button class="modal-close" onclick="document.getElementById(\'exitMgrOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-m-type">' + _EXIT_TYPES.map(t => '<option' + (t === r.type ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-m-last" value="' + (r.lastDay || '') + '"></div></div>' +
+    '<div class="grid-2"><div class="form-group"><label class="form-label">Exit type</label><select class="form-control" id="ex-m-type">' + _EXIT_TYPES.map(t => '<option value="' + t + '"' + (t === r.type ? ' selected' : '') + '>' + t + '</option>').join('') + '</select></div><div class="form-group"><label class="form-label">Last working day</label><input type="date" class="form-control" id="ex-m-last" value="' + (r.lastDay || '') + '"></div></div>' +
     '<div class="form-group"><label class="form-label">Reason</label><textarea class="form-control" id="ex-m-reason" rows="2">' + (r.reason || '') + '</textarea></div>' +
     '<div class="form-group"><label class="form-label">Resignation / termination letter ' + (r.resignLetter ? _attachLink({ attachment: r.resignLetter, attachmentName: r.resignLetterName }) : '') + '</label><input type="file" accept="image/*,.pdf" onchange="tkReadAttach(this,\'ex-m-letter\')" style="font-size:12px"><span id="ex-m-letterlbl" style="font-size:11px;color:var(--emerald);margin-left:6px"></span><input type="hidden" id="ex-m-letter"><input type="hidden" id="ex-m-lettername"></div>' +
     '<div style="font-weight:700;font-size:13px;margin:6px 0 2px;color:var(--navy)">Exit Clearance Checklist (FRM-014) — attach proof for returned assets</div>' +
@@ -14056,7 +14060,7 @@ function tkExitManage(id) {
     '<div style="font-weight:700;font-size:13px;margin:6px 0 2px;color:var(--navy)">Final Settlement (Article 46)</div>' +
     '<div class="card" style="padding:12px 14px;margin-bottom:6px;font-size:11.5px;color:var(--text-light)">Monthly salary base (P1+P2): <b style="color:var(--text-dark)">' + _PAY_FMT(set.monthly) + '</b> · daily rate ' + _PAY_FMT(set.dayRate) + ' · unused annual leave <b style="color:var(--text-dark)">' + set.leaveDays + ' day(s)</b>. Severance = ½ month × years not covered by unemployment insurance (often 0 for service since 2009).</div>' +
     '<div class="grid-2">' + fld('Annual-leave payout (VND)', 'ex-m-leave', set.leavePayout) + fld('Severance (VND)', 'ex-m-sev', set.severance) + '</div>' +
-    '<div class="grid-2">' + fld('Deductions (VND)', 'ex-m-ded', set.deductions) + '<div class="form-group"><label class="form-label">Rehire eligible</label><select class="form-control" id="ex-m-rehire"><option' + (r.rehire === 'Yes' ? ' selected' : '') + '>Yes</option><option' + (r.rehire === 'No' ? ' selected' : '') + '>No</option><option' + (r.rehire === 'Conditional' ? ' selected' : '') + '>Conditional</option></select></div></div>' +
+    '<div class="grid-2">' + fld('Deductions (VND)', 'ex-m-ded', set.deductions) + '<div class="form-group"><label class="form-label">Rehire eligible</label><select class="form-control" id="ex-m-rehire"><option value="Yes"' + (r.rehire === 'Yes' ? ' selected' : '') + '>Yes</option><option value="No"' + (r.rehire === 'No' ? ' selected' : '') + '>No</option><option value="Conditional"' + (r.rehire === 'Conditional' ? ' selected' : '') + '>Conditional</option></select></div></div>' +
     '<div class="form-group"><label class="form-label">Settlement / exit-interview notes</label><textarea class="form-control" id="ex-m-note" rows="2">' + (r.settlementNote || '') + '</textarea></div>' +
     '<div class="card" style="padding:10px 14px;background:var(--light-tint);display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text-light)">Net final settlement</span><span style="font-size:18px;font-weight:800;color:var(--navy)" id="ex-m-net">' + _PAY_FMT(set.net) + '</span></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'exitMgrOverlay\').remove()">Cancel</button><button class="btn btn-primary" onclick="tkExitSave(\'' + id + '\')">Save</button><button class="btn btn-emerald" onclick="tkExitSave(\'' + id + '\',true)">Save &amp; Complete</button></div></div>';
@@ -15258,7 +15262,7 @@ function tkQuickAdd(type, id) {
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
-    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
     if (f.type === 'money') return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" inputmode="numeric" autocomplete="off" oninput="_qaMoney(this)" value="' + _tkEscA(_qaMoneyFmt(val)) + '"></div>';
     if (f.type === 'files') {
       return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
@@ -18567,7 +18571,7 @@ function crmQuoteLose(id) {
     '<div class="modal-header"><div class="modal-title">' + _t2('Mark this quotation lost', 'Đánh dấu thua báo giá này') + '</div>' +
     '<button class="modal-close" onclick="document.getElementById(\'qtLoseOverlay\').remove()">&times;</button></div>' +
     '<div class="form-group"><label class="form-label">' + _t2('Why did we lose it?', 'Vì sao thua?') + '</label>' +
-      '<select class="form-control" id="qt-lose-reason">' + _QT_LOST_REASONS.map(r => '<option>' + r + '</option>').join('') + '</select></div>' +
+      '<select class="form-control" id="qt-lose-reason">' + _QT_LOST_REASONS.map(r => '<option value="' + r + '">' + r + '</option>').join('') + '</select></div>' +
     '<div class="form-group"><label class="form-label">' + _t2('Who won it (if known)', 'Ai thắng (nếu biết)') + '</label>' +
       '<input class="form-control" id="qt-lose-competitor" placeholder="' + _tkEscA(_t2('Competitor', 'Đối thủ')) + '"></div>' +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'qtLoseOverlay\').remove()">' + _t('Cancel') + '</button>' +
@@ -18727,8 +18731,8 @@ function crmSetDashType(v) { _crmDashType = v; crmRenderDashboard(); }
 function _crmDashControls() {
   const deals = _crmMine(_HR.crm_deals);
   const owners = [...new Set(deals.map(d => d.owner).filter(Boolean))].sort();
-  const ownSel = '<select class="form-control" title="Filter by salesman" style="width:auto;font-size:12px" onchange="crmSetDashOwner(this.value)"><option value="">All salesmen</option>' + owners.map(o => '<option' + ((_crmDashOwner || '') === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select>';
-  const typeSel = '<select class="form-control" title="Filter by product / service type" style="width:auto;font-size:12px" onchange="crmSetDashType(this.value)"><option value="">All types</option>' + _CRM_TYPES.map(t => '<option' + ((_crmDashType || '') === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
+  const ownSel = '<select class="form-control" title="Filter by salesman" style="width:auto;font-size:12px" onchange="crmSetDashOwner(this.value)"><option value="">All salesmen</option>' + owners.map(o => '<option value="' + _crmEsc(o) + '"' + ((_crmDashOwner || '') === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select>';
+  const typeSel = '<select class="form-control" title="Filter by product / service type" style="width:auto;font-size:12px" onchange="crmSetDashType(this.value)"><option value="">All types</option>' + _CRM_TYPES.map(t => '<option value="' + t + '"' + ((_crmDashType || '') === t ? ' selected' : '') + '>' + t + '</option>').join('') + '</select>';
   return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span style="font-size:12px;color:var(--text-light);font-weight:700">View</span>' + (_userLevel !== 'staff' ? ownSel : '') + typeSel + '</div><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">' + _crmPeriodBar() + '</div></div>';
 }
 async function crmRenderDashboard() {
@@ -20704,7 +20708,7 @@ function pmRenderQuality(pid) {
   const _mmYY = ym => { const a = String(ym).split('-'); return new Date(+a[0], +a[1] - 1, 1).toLocaleString('en-US', { month: 'short' }) + ' ' + (a[0] || '').slice(-2); };
   const q = all.filter(x => (!_pmQF.contractor || x.contractor === _pmQF.contractor) && _inPeriodLF(x.raisedDate, 'pmq-period-f')).sort(_cmpNewest('raisedDate'));
   const filterBar = '<div style="padding:10px 14px;border-bottom:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">Filter</span>' +
-    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
+    '<select class="form-control" style="width:auto;font-size:12px" onchange="pmQSet(\'contractor\',this.value)"><option value="">All contractors</option>' + _qcons.map(c => '<option value="' + _pmEsc(c) + '"' + (_pmQF.contractor === c ? ' selected' : '') + '>' + _pmEsc(c) + '</option>').join('') + '</select>' +
     _crmFiltPeriod('pmq-period-f', 'pmQRefresh') +
     ((_pmQF.contractor || _crmLF['pmq-period-f']) ? '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="pmQClear()">Clear</button> <span style="font-size:11px;color:var(--text-light)">' + q.length + ' of ' + all.length + '</span>' : '') + '</div>';
   const ncrOpen = q.filter(x => x.type === 'NCR' && x.status !== 'Closed').length;
@@ -20852,7 +20856,7 @@ function pmNcrClose(id) {
   el.innerHTML = '<div class="modal" style="max-width:520px"><div class="modal-header"><div class="modal-title">' + _t('Verify & close NCR') + '</div><button class="modal-close" onclick="document.getElementById(\'pmNcrOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-weight:700;margin-bottom:2px">' + _pmEsc((item.refNo ? item.refNo + ' — ' : '') + (item.title || 'NCR')) + '</div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + _pmEsc([item.contractor, item.discipline, item.severity].filter(Boolean).join(' · ') || '—') + (item.due ? ' · ' + _t('due') + ' ' + _pmFmt(item.due) : '') + '</div>' +
-    '<div class="form-group"><label class="form-label">' + _t('Disposition') + '</label><select class="form-control" id="pmncr-disp"><option value="">' + _t('Choose…') + '</option>' + DISP.map(d => '<option' + (item.disposition === d ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Disposition') + '</label><select class="form-control" id="pmncr-disp"><option value="">' + _t('Choose…') + '</option>' + DISP.map(d => '<option value="' + d + '"' + (item.disposition === d ? ' selected' : '') + '>' + d + '</option>').join('') + '</select></div>' +
     ta('pmncr-rc', 'Root cause', item.rootCause, 'Why did it happen?') +
     ta('pmncr-ca', 'Corrective action', item.correctiveAction, 'What was done to fix this instance?') +
     ta('pmncr-pa', 'Preventive action', item.preventiveAction, 'What stops it recurring?') +
@@ -21993,8 +21997,8 @@ async function pmRenderPortfolio() {
   const allP = _pmMine(_HR.pm_projects || []);
   const depts = [...new Set(allP.map(p => p.dept).filter(Boolean))].sort();
   const mgrs = [...new Set(allP.map(p => p.manager).filter(Boolean))].sort();
-  const fdept = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'dept\',this.value)"><option value="">All departments</option>' + depts.map(d => '<option' + (d === _pmDashDept ? ' selected' : '') + '>' + _pmEsc(d) + '</option>').join('') + '</select>';
-  const fmgr = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'mgr\',this.value)"><option value="">All managers</option>' + mgrs.map(m => '<option' + (m === _pmDashMgr ? ' selected' : '') + '>' + _pmEsc(m) + '</option>').join('') + '</select>';
+  const fdept = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'dept\',this.value)"><option value="">All departments</option>' + depts.map(d => '<option value="' + _pmEsc(d) + '"' + (d === _pmDashDept ? ' selected' : '') + '>' + _pmEsc(d) + '</option>').join('') + '</select>';
+  const fmgr = '<select class="form-control" style="width:auto;font-size:12px" onchange="pmSetDash(\'mgr\',this.value)"><option value="">All managers</option>' + mgrs.map(m => '<option value="' + _pmEsc(m) + '"' + (m === _pmDashMgr ? ' selected' : '') + '>' + _pmEsc(m) + '</option>').join('') + '</select>';
   const controls = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-light);font-weight:700">View</span>' + fdept + fmgr + '</div><button class="btn btn-primary btn-sm" onclick="showView(\'pm-projects\',null,\'Projects\')">' + tkIcon('external', 12) + ' All projects</button></div>';
   // charts
   const charts = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-bottom:16px">' +
@@ -22449,7 +22453,6 @@ const _VI = {
   'Who was hurt': 'Người bị nạn',
   'Days lost': 'Ngày nghỉ',
   'Report due': 'Hạn biên bản',
-  'Overdue': 'Quá hạn',
   'Report published': 'Đã công bố biên bản',
   'No accidents recorded. That is the register saying nothing has been entered, not that nothing has happened — enter every one, including those with no days lost.':
     'Chưa có tai nạn nào được ghi nhận. Điều đó nghĩa là chưa ai nhập, không phải là chưa xảy ra — hãy ghi nhận mọi vụ, kể cả vụ không phải nghỉ việc.',
@@ -22485,11 +22488,11 @@ const _VI = {
   'Headcount &amp; Turnover': 'Nhân sự & Biến động',
   'Headcount by month': 'Nhân sự theo tháng',
   'Headcount now': 'Nhân sự hiện tại',
-  'Joiners': 'Vào mới', 'Leavers': 'Nghỉ việc', 'Turnover': 'Tỷ lệ biến động',
-  'Movement': 'Biến động', 'Month': 'Tháng', 'Opening': 'Đầu kỳ', 'Joined': 'Vào',
+  'Joiners': 'Vào mới', 'Leavers': 'Nghỉ việc',
+  'Movement': 'Biến động', 'Opening': 'Đầu kỳ', 'Joined': 'Vào',
   // 'Left' is already in this dictionary further down as 'Đã nghỉ', which is right for this column
   // too — a second definition here would be dead (the later one wins) and misleading to read.
-  'Closing': 'Cuối kỳ', 'Carried forward': 'Chuyển sang kỳ sau', 'Who': 'Ai',
+ 'Carried forward': 'Chuyển sang kỳ sau',
   'opening': 'đầu kỳ', 'closing': 'cuối kỳ', 'months': 'tháng',
   'No months in this window': 'Không có tháng nào trong khoảng này',
   'Could not load the workforce report': 'Không tải được báo cáo nhân sự',
@@ -22514,7 +22517,6 @@ const _VI = {
   'People counted': 'Số người tính',
   'Labour cost': 'Chi phí nhân công',
   'Share': 'Tỷ trọng',
-  'People': 'Số người',
   'Basis': 'Cơ sở',
   'Recorded': 'Đã ghi nhận',
   'Estimated': 'Ước tính',
@@ -22634,7 +22636,6 @@ const _VI = {
   'unknown': 'chưa rõ',
   'leftover': 'còn sót',
   'oldest': 'lâu nhất',
-  'days': 'ngày',
   'revoked,': 'đã thu hồi,',
   'failed — see the list.': 'thất bại — xem danh sách.',
   'revoked.': 'đã thu hồi.',
@@ -22643,13 +22644,9 @@ const _VI = {
   'Give a reason — this cuts off access during their notice period.':
     'Hãy nêu lý do — việc này cắt quyền trong thời gian báo trước.',
   // ── Finance hub tabs ──
-  'Overview': 'Tổng quan',
-  'Payments': 'Thanh toán',
   'Claims & Travel': 'Chi phí & Công tác',
   'Signatures': 'Chữ ký',
   'Permissions': 'Phân quyền',
-  'Request': 'Đề nghị',
-  'New Travel': 'Công tác mới',
   'Request': 'Đề nghị',
   // ── 3-level approval workflow ──
   'Pending Review': 'Chờ xem xét',
@@ -22658,18 +22655,9 @@ const _VI = {
   'Reviewed': 'Đã xem xét',
   'Partially approved': 'Duyệt một phần',
   // ── Signature PIN / e-signature ──
-  'Electronic Signature': 'Chữ ký điện tử',
-  'Signer': 'Người ký',
-  'Date & time (UTC)': 'Ngày & giờ (UTC)',
-  'Meaning': 'Ý nghĩa',
-  'I certify that this electronic signature is the legally binding equivalent of my handwritten signature.': 'Tôi xác nhận chữ ký điện tử này có giá trị pháp lý tương đương chữ ký tay của tôi.',
-  'Sign': 'Ký',
   'with Microsoft 365': 'bằng Microsoft 365',
   'Signing…': 'Đang ký…',
-  'Cancel': 'Hủy',
   'Please tick the certification box to sign.': 'Vui lòng tích vào ô xác nhận để ký.',
-  'Demo mode — recorded without Microsoft 365 re-authentication.': 'Chế độ demo — ghi nhận mà không cần xác thực lại Microsoft 365.',
-  'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hoàn tất chữ ký này.',
   'Enter your signing PIN': 'Nhập mã PIN chữ ký của bạn',
   'Enter your 6–12 character signing PIN.': 'Nhập mã PIN chữ ký 6–12 ký tự của bạn.',
   'Use Microsoft 365 instead': 'Dùng Microsoft 365 thay thế',
@@ -22686,11 +22674,9 @@ const _VI = {
   'Confirm new PIN': 'Xác nhận mã PIN mới',
   'Save PIN': 'Lưu mã PIN',
   'Saving…': 'Đang lưu…',
-  'Show': 'Hiện',
   'No signing PIN set': 'Chưa đặt mã PIN chữ ký',
   'PIN active': 'PIN đang hoạt động',
   'since': 'từ',
-  'Expired': 'Đã hết hạn',
   'Temporarily locked': 'Tạm khóa',
   'Signing PIN saved': 'Đã lưu mã PIN chữ ký',
   'Signing PIN removed': 'Đã gỡ mã PIN chữ ký',
@@ -22711,7 +22697,6 @@ const _VI = {
   'Current PIN is incorrect.': 'Mã PIN hiện tại không đúng.',
   'Incorrect PIN.': 'Mã PIN không đúng.',
   'Edit —': 'Sửa —',
-  'Payment Requests': 'Đề nghị thanh toán',
   'My Payment Requests': 'Đề nghị thanh toán của tôi',
   'New Payment Request': 'Đề nghị thanh toán mới',
   'Payment Register': 'Sổ thanh toán',
@@ -22722,7 +22707,7 @@ const _VI = {
   'Seller address': 'Địa chỉ bên bán', 'Buyer address': 'Địa chỉ bên mua',
   'Currency': 'Tiền tệ', 'VAT rate': 'Thuế suất', 'Tax': 'Thuế',
   'Line items (goods & services)': 'Chi tiết hàng hoá & dịch vụ',
-  'Qty': 'SL', 'Unit price': 'Đơn giá', 'Amount': 'Thành tiền',
+ 'Unit price': 'Đơn giá',
   'Auto-fetch invoice + fill': 'Tự tải hoá đơn + điền', 'Fetching the invoice from the issuer portal…': 'Đang tải hoá đơn từ cổng phát hành…',
   'Fetched from portal': 'Đã tải từ cổng', 'Could not fetch this invoice from the portal': 'Không tải được hoá đơn này từ cổng',
   'Fetch failed': 'Tải thất bại', 'Download the real invoice from the issuer portal (eHoadon / MISA) and auto-fill every field': 'Tải hoá đơn thật từ cổng phát hành (eHoadon / MISA) và tự điền mọi trường',
@@ -22732,12 +22717,9 @@ const _VI = {
   'Payee': 'Người nhận',
   'Amount (VND)': 'Số tiền (VND)',
   'Due date': 'Ngày đến hạn',
-  'Due': 'Đến hạn',
   'Invoice / PO No.': 'Số hóa đơn / PO',
   'Attach invoice / quote (image or PDF)': 'Đính kèm hóa đơn / báo giá (ảnh hoặc PDF)',
-  'No.': 'Số',
   'Mark paid': 'Đánh dấu đã trả',
-  'Submitted': 'Đã gửi',
   'Paid': 'Đã thanh toán',
   'Payments': 'Thanh toán',
   'Spend by Category': 'Chi tiêu theo hạng mục',
@@ -22768,8 +22750,8 @@ const _VI = {
   'Settings': 'Cài đặt', 'Users': 'Người dùng', 'UoM': 'Đơn vị tính', 'Cost Centers': 'Trung tâm chi phí', 'Accounting Export': 'Xuất kế toán',
   'Your personal details, employment and security': 'Thông tin cá nhân, việc làm và bảo mật của bạn',
   'Company assets assigned to you': 'Tài sản công ty được giao cho bạn',
-  'Requisitions': 'Yêu cầu mua hàng', 'Purchase Requisitions': 'Yêu cầu mua hàng', 'Approvals': 'Phê duyệt', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
-  'Goods Issues': 'Xuất kho', 'Transfers': 'Chuyển kho', 'Stock Counts': 'Kiểm kê', 'Scan Hub': 'Trung tâm quét mã', 'HS Codes': 'Mã HS', 'Landed-Cost Estimator': 'Ước tính chi phí nhập khẩu', 'Budgets': 'Ngân sách', 'Approval Matrix': 'Ma trận phê duyệt', 'Items': 'Vật tư', 'Categories': 'Nhóm hàng',
+ 'Purchase Requisitions': 'Yêu cầu mua hàng', 'RFQs': 'Yêu cầu báo giá', 'Purchase Orders': 'Đơn đặt hàng', 'Goods Receipts': 'Phiếu nhập kho', 'Invoices': 'Hóa đơn', 'Payment Requests': 'Đề nghị thanh toán', 'Vendors': 'Nhà cung cấp', 'Contracts': 'Hợp đồng',
+  'Goods Issues': 'Xuất kho', 'Transfers': 'Chuyển kho', 'Stock Counts': 'Kiểm kê', 'Scan Hub': 'Trung tâm quét mã', 'HS Codes': 'Mã HS', 'Landed-Cost Estimator': 'Ước tính chi phí nhập khẩu', 'Budgets': 'Ngân sách', 'Approval Matrix': 'Ma trận phê duyệt', 'Categories': 'Nhóm hàng',
   'Trade & Reference': 'Thương mại & Tra cứu', 'Insights': 'Phân tích', 'Administration': 'Quản trị', 'Inventory': 'Kho hàng',
   'Opening Procurement…': 'Đang mở Mua hàng…',
   'Open in new tab': 'Mở trong tab mới',
@@ -22782,19 +22764,13 @@ const _VI = {
   'Approved outflow': 'Chi đã duyệt',
   'Pending approvals': 'Chờ duyệt',
   'Pending value': 'Giá trị chờ duyệt',
-  'Spend by Department': 'Chi tiêu theo phòng ban',
   'By Type': 'Theo loại',
-  'Pending Approvals': 'Chờ duyệt',
   'Company Finance Register': 'Sổ tài chính công ty',
   'Every submission across the company': 'Mọi hồ sơ trong toàn công ty',
   'Date requested': 'Ngày đề nghị', 'Date approved': 'Ngày duyệt', 'Date paid': 'Ngày thanh toán',
   'Payments · Claims · Travel — ': 'Thanh toán · Chi phí · Công tác — ',
-  'Reference': 'Tham chiếu',
-  'File': 'Tệp',
-  'Show': 'Xem',
   'Payment': 'Thanh toán',
   'Claim': 'Chi phí',
-  'All types': 'Tất cả loại',
   'No pending finance approvals — all clear.': 'Không có khoản chờ duyệt — đã xử lý hết.',
   'No finance records match your filters.': 'Không có bản ghi tài chính phù hợp bộ lọc.',
   'Electronic Signature': 'Chữ ký điện tử',
@@ -22803,15 +22779,11 @@ const _VI = {
   'Meaning': 'Ý nghĩa',
   'I certify that this electronic signature is the legally binding equivalent of my handwritten signature.': 'Tôi xác nhận chữ ký điện tử này có giá trị pháp lý tương đương chữ ký tay của tôi.',
   'You will re-authenticate with Microsoft 365 to complete this signature.': 'Bạn sẽ xác thực lại bằng Microsoft 365 để hoàn tất chữ ký này.',
-  'Demo mode — recorded without Microsoft 365 re-authentication.': 'Chế độ demo — ghi nhận mà không xác thực lại Microsoft 365.',
+  'Demo mode — recorded without Microsoft 365 re-authentication.': "Chế độ demo — ghi nhận mà không xác thực lại Microsoft 365.",
   'Sign with Microsoft 365': 'Ký bằng Microsoft 365',
   'Sign': 'Ký',
   'Search': 'Tìm kiếm',
   'Import CSV': 'Nhập CSV',
-  'Import Excel': 'Nhập Excel',
-  'Export CSV': 'Xuất CSV',
-  'Export Excel': 'Xuất Excel',
-  'Refresh': 'Làm mới',
   'Add grade': 'Thêm bậc',
   'Post a Job / Requisition': 'Đăng tuyển / Yêu cầu tuyển dụng',
   'Job Grade': 'Bậc công việc',
@@ -22835,7 +22807,6 @@ const _VI = {
   'Device / Equipment Name': 'Tên thiết bị / trang bị',
   'Serial / Asset Tag': 'Số sê-ri / Mã tài sản',
   'Assigned To (employee)': 'Cấp cho (nhân viên)',
-  'Quantity': 'Số lượng',
   'Unit Price (₫)': 'Đơn giá (₫)',
   'Photo / Attachment (image, PDF…)': 'Ảnh / Tệp đính kèm (ảnh, PDF…)',
   'Talent Assessment': 'Đánh giá nhân tài',
@@ -22860,7 +22831,6 @@ const _VI = {
   'Industry': 'Ngành',
   'Website': 'Trang web',
   'Account owner': 'Phụ trách khách hàng',
-  'Job title': 'Chức danh',
   'Lead name / contact': 'Tên khách hàng tiềm năng / liên hệ',
   'Est. value (₫)': 'Giá trị ước tính (₫)',
   'Product / Service': 'Sản phẩm / Dịch vụ',
@@ -22920,7 +22890,6 @@ const _VI = {
   'Package (Discipline)': 'Gói (Bộ môn)',
   'Standard / spec ref': 'Tiêu chuẩn / tham chiếu kỹ thuật',
   'Prepared by': 'Người lập',
-  'Approved by': 'Người duyệt',
   'Team Member': 'Thành viên nhóm',
   'Project role': 'Vai trò dự án',
   'Allocation %': 'Phân bổ %',
@@ -22974,16 +22943,13 @@ const _VI = {
   /* PM module VN terms */
   'System Setting': 'Cài đặt hệ thống',
   'HR': 'Nhân sự',
-  'HR Admin': 'Quản trị nhân sự',
   'Cost Variance (CV)': 'Chênh lệch chi phí (CV)',
   'Schedule Variance (SV)': 'Chênh lệch tiến độ (SV)',
   'Forecast (EAC)': 'Dự báo khi hoàn thành (EAC)',
   'Var. at Completion (VAC)': 'Chênh lệch khi hoàn thành (VAC)',
   'To Complete (ETC)': 'Chi phí còn lại (ETC)',
-  'Earned Value Analysis': 'Phân tích giá trị thu được',
   'No records yet.': 'Chưa có bản ghi nào.',
   'Search projects…': 'Tìm dự án…',
-  'All status': 'Tất cả trạng thái',
   'Contract value': 'Giá trị hợp đồng',
   'Member': 'Thành viên',
   'Allocation': 'Phân bổ',
@@ -23003,7 +22969,6 @@ const _VI = {
   'Confidential': 'Bảo mật',
   'Restricted': 'Hạn chế',
   'Internal': 'Nội bộ',
-  'Day range': 'Khoảng ngày',
   'Project Documents (SharePoint)': 'Tài liệu dự án (SharePoint)',
   'Save & build folders': 'Lưu & tạo thư mục',
   'View all folders': 'Xem tất cả thư mục',
@@ -23012,7 +22977,6 @@ const _VI = {
   'ITP Schedule (timeline)': 'Lịch ITP (dòng thời gian)',
   'Planned start': 'Bắt đầu dự kiến',
   'Planned finish': 'Kết thúc dự kiến',
-  'Planned': 'Dự kiến',
   'Superseded': 'Đã thay thế',
   'Single date': 'Một ngày',
   'Documents': 'Tài liệu',
@@ -23027,7 +22991,6 @@ const _VI = {
   'Copy folder list': 'Sao chép danh sách thư mục',
   'Folder': 'Thư mục',
   'Confidentiality': 'Mức bảo mật',
-  'Retention': 'Thời gian lưu',
   'Deliv.': 'Sản phẩm',
   'Tasks': 'Công việc',
   'Budget': 'Ngân sách',
@@ -23036,7 +22999,7 @@ const _VI = {
   'Executing': 'Đang thực hiện',
   'Initiating': 'Khởi tạo',
   'Planning': 'Lập kế hoạch',
-  'Closing': 'Kết thúc',
+  'Closing': "Kết thúc",
   'Monitoring & Controlling': 'Giám sát & Kiểm soát',
   'On Hold': 'Tạm dừng',
   'Construction / Execution': 'Thi công / Thực hiện',
@@ -23062,7 +23025,7 @@ const _VI = {
   /* Project Chat. */
   'Chat': 'Trao đổi',
   'Team Conversation': 'Trao đổi nhóm',
-  'Topic': 'Chủ đề', 'Move to': 'Chuyển sang', 'All': 'Tất cả',
+  'Topic': 'Chủ đề', 'Move to': 'Chuyển sang',
   'General': 'Chung',
   'Site & installation': 'Công trường & lắp đặt',
   'Drawings & design': 'Bản vẽ & thiết kế',
@@ -23087,14 +23050,13 @@ const _VI = {
   'Add a reaction': 'Thêm cảm xúc',
   'Uploading': 'Đang tải lên',
   'Up to 6 files per message.': 'Tối đa 6 tệp mỗi tin nhắn.',
-  'person': 'người', 'people': 'người',
+  'person': 'người',
   'No messages yet': 'Chưa có tin nhắn',
   'Write a message…': 'Nhập tin nhắn…',
   'Send': 'Gửi',
   'Reply': 'Trả lời', 'Reply to this': 'Trả lời',
   'Replying to': 'Đang trả lời', 'Editing your message': 'Đang sửa tin nhắn của bạn',
-  'edited': 'đã sửa', 'Today': 'Hôm nay', 'Yesterday': 'Hôm qua',
-  'Could not send': 'Không gửi được',
+  'edited': 'đã sửa', 'Yesterday': 'Hôm qua',
   'Enter to send · Shift+Enter for a new line': 'Enter để gửi · Shift+Enter để xuống dòng',
   'the working conversation for this project. Only people on this project can read it.': 'trao đổi công việc của dự án. Chỉ người thuộc dự án này mới đọc được.',
   'The working conversation for this project — say it here first. Anything that has to be filed for the client or an auditor belongs in Comms & Issues instead.': 'Trao đổi công việc của dự án — nói ở đây trước. Những gì cần lưu hồ sơ cho khách hàng hoặc kiểm toán thì đưa vào Comms & Issues.',
@@ -23167,7 +23129,6 @@ const _VI = {
   'Accepted': 'Đã chấp nhận',
   'Weighted progress': 'Tiến độ có trọng số',
   'Risks': 'Rủi ro',
-  'Open': 'Đang mở',
   'High / Critical': 'Cao / Nghiêm trọng',
   'Top score': 'Điểm cao nhất',
   'Quality records': 'Hồ sơ chất lượng',
@@ -23191,7 +23152,6 @@ const _VI = {
   'Open High/Critical risks': 'Rủi ro Cao/Nghiêm trọng mở',
   'WBS': 'WBS',
   'Deliverable': 'Sản phẩm bàn giao',
-  'Contractor': 'Nhà thầu',
   'Supervisor': 'Giám sát',
   'Task': 'Công việc',
   'Assignee': 'Người phụ trách',
@@ -23199,13 +23159,12 @@ const _VI = {
   'Finish': 'Kết thúc',
   'Ref': 'Mã',
   'Discipline': 'Bộ môn',
-  'Raised': 'Ngày nêu',
   'Result': 'Kết quả',
   'Severity': 'Mức độ',
   'File': 'Tệp',
   'Score': 'Điểm',
   'Response': 'Ứng phó',
-  'No.': 'STT',
+  'No.': "Số",
   'Priority': 'Ưu tiên',
   'Subject': 'Chủ đề',
   'Audience': 'Người nhận',
@@ -23215,7 +23174,6 @@ const _VI = {
   'Ret %': 'Giữ lại %',
   'Contractor / Vendor': 'Nhà thầu / NCC',
   'Cert': 'Chứng chỉ',
-  'Retention': 'Tiền giữ lại',
   'Net certified': 'Xác nhận ròng',
   'Organization': 'Tổ chức',
   'Role': 'Vai trò',
@@ -23232,7 +23190,6 @@ const _VI = {
   'Code': 'Mã',
   'Client': 'Khách hàng',
   'CR No.': 'Số CR',
-  'Decision': 'Quyết định',
   'Phase': 'Giai đoạn',
   'Area': 'Khu vực',
   'Manpower': 'Nhân lực',
@@ -23279,68 +23236,65 @@ const _VI = {
   'All months': 'Tất cả các tháng',
   'By year': 'Theo năm',
   'By month': 'Theo tháng',
-  'All departments': 'Tất cả phòng ban',
   'All managers': 'Tất cả quản lý',
   'On track': 'Đúng tiến độ',
   'At risk': 'Có rủi ro',
   'Today': 'Hôm nay',
   'In Progress': 'Đang thực hiện',
   'Used': 'Đã dùng',
-  'Remaining': 'Còn lại',
   'Good morning': 'Chào buổi sáng',
   'Good afternoon': 'Chào buổi chiều',
   'Good evening': 'Chào buổi tối',
   'Welcome back,': 'Chào mừng trở lại,',
   // Sidebar sections
-  'Overview': 'Tổng quan', 'My Workspace': 'Không gian của tôi', 'Approvals': 'Phê duyệt',
+ 'My Workspace': 'Không gian của tôi', 'Approvals': 'Phê duyệt',
   'People & Talent': 'Nhân sự & Nhân tài', 'Workplace': 'Nơi làm việc', 'Finance & Admin': 'Tài chính & Hành chính',
   // Nav items
-  'Dashboard': 'Bảng điều khiển', 'My Profile': 'Hồ sơ của tôi', 'Check In / Out': 'Chấm công vào/ra',
+ 'My Profile': 'Hồ sơ của tôi', 'Check In / Out': 'Chấm công vào/ra',
   'Attendance': 'Chấm công', 'Leave Management': 'Quản lý nghỉ phép', 'My Leave': 'Nghỉ phép của tôi',
-  'My Goals': 'Mục tiêu của tôi', 'My Training': 'Đào tạo của tôi', 'Travel Expense': 'Công tác phí',
-  'My Travel Expense': 'Công tác phí của tôi', 'My Devices': 'Thiết bị của tôi', 'Approval Inbox': 'Hộp phê duyệt',
-  'Team Monitoring': 'Giám sát nhóm', 'Employee Database': 'Cơ sở dữ liệu nhân sự', 'Recruitment': 'Tuyển dụng',
-  'Onboarding': 'Hội nhập', 'Offboarding': 'Thôi việc', 'Performance': 'Hiệu suất', 'Talent': 'Nhân tài',
+  'My Goals': 'Mục tiêu của tôi', 'Travel Expense': 'Công tác phí',
+  'My Travel Expense': 'Công tác phí của tôi', 'Approval Inbox': 'Hộp phê duyệt',
+  'Team Monitoring': 'Giám sát nhóm', 'Employee Database': 'Cơ sở dữ liệu nhân sự',
+ 'Offboarding': 'Thôi việc', 'Performance': 'Hiệu suất', 'Talent': 'Nhân tài',
   'Training & Dev': 'Đào tạo & Phát triển', 'Work Schedules': 'Lịch làm việc', 'GPS Locations': 'Vị trí GPS',
-  'Devices & Assets': 'Thiết bị & Tài sản', 'Payroll': 'Bảng lương', 'HR Admin': 'Quản trị NS',
+  'Devices & Assets': 'Thiết bị & Tài sản', 'Payroll': 'Bảng lương', 'HR Admin': "Quản trị NS",
   'Human Resource': 'Nhân sự', 'Human Resource Hub': 'Trung tâm Nhân sự', 'Office Operation': 'Vận hành văn phòng',
   'CRM': 'CRM', 'My Space': 'Không gian của tôi', 'Leave': 'Nghỉ phép',
   'Sales Funnel': 'Phễu bán hàng', 'Your live pipeline by stage. Click to open the board.': 'Pipeline theo giai đoạn. Chạm để mở bảng.',
-  'Sales Targets & Pipeline Coverage': 'Mục tiêu bán hàng & Độ phủ Pipeline', 'Team coverage': 'Độ phủ nhóm', 'Salesperson': 'Nhân viên bán hàng', 'Quota (target)': 'Chỉ tiêu (mục tiêu)', 'Pipeline target': 'Mục tiêu pipeline', 'Open pipeline': 'Pipeline đang mở', 'Coverage': 'Độ phủ', 'Team total': 'Tổng nhóm', 'No deals with an owner yet.': 'Chưa có cơ hội nào có chủ sở hữu.',
+  'Sales Targets & Pipeline Coverage': 'Mục tiêu bán hàng & Độ phủ Pipeline', 'Team coverage': 'Độ phủ nhóm', 'Salesperson': 'Nhân viên bán hàng', 'Quota (target)': 'Chỉ tiêu (mục tiêu)', 'Pipeline target': 'Mục tiêu pipeline', 'Coverage': 'Độ phủ', 'Team total': 'Tổng nhóm', 'No deals with an owner yet.': 'Chưa có cơ hội nào có chủ sở hữu.',
   'Pipeline coverage by salesperson': 'Độ phủ pipeline theo nhân viên', 'Pipeline value by stage': 'Giá trị pipeline theo giai đoạn',
-  'Dashboard': 'Bảng điều khiển', 'Period': 'Kỳ', 'Company': 'Công ty', 'Save': 'Lưu', 'Targets': 'Mục tiêu',
-  'Last month': 'Tháng trước', 'This quarter': 'Quý này', 'All time': 'Tất cả', 'All types': 'Tất cả loại', 'All status': 'Tất cả trạng thái', 'All salesmen': 'Tất cả NV bán hàng', 'All owners': 'Tất cả phụ trách', 'All sources': 'Tất cả nguồn',
-  'Project Management': 'Quản lý dự án', 'Customer Service': 'Dịch vụ khách hàng', 'Other': 'Khác', 'Engineering': 'Kỹ thuật',
+  'Dashboard': 'Bảng điều khiển', 'Targets': 'Mục tiêu',
+  'Last month': 'Tháng trước', 'This quarter': 'Quý này', 'All types': 'Tất cả loại', 'All status': 'Tất cả trạng thái', 'All salesmen': 'Tất cả NV bán hàng', 'All owners': 'Tất cả phụ trách', 'All sources': 'Tất cả nguồn',
+  'Project Management': 'Quản lý dự án', 'Customer Service': 'Dịch vụ khách hàng',
   'claims': 'khoản chi',
   'Company plan': 'Kế hoạch công ty', 'Company actual': 'Thực tế công ty', 'Attainment': 'Mức đạt', 'Remaining to plan': 'Còn lại theo kế hoạch', 'Above plan': 'Vượt kế hoạch',
   'Total Employees': 'Tổng nhân viên', 'Managers': 'Quản lý', 'Departments': 'Phòng ban', 'Candidates': 'Ứng viên', 'Est. value': 'Giá trị ước tính', 'Admins': 'Quản trị viên',
-  'Onboarding Now': 'Đang hội nhập', 'Open requisitions': 'Yêu cầu đang mở', 'Requisitions': 'Yêu cầu tuyển', 'Offers Out': 'Đã gửi đề nghị', 'Ready Now': 'Sẵn sàng ngay', 'High Potential': 'Tiềm năng cao',
-  'Company OKRs': 'OKR công ty', 'Avg. Progress': 'Tiến độ TB', 'Avg. Rating': 'Điểm TB', 'Assessed': 'Đã đánh giá', 'Active enrolments': 'Đang ghi danh', 'Tasks Done': 'Việc hoàn thành', 'Overdue': 'Quá hạn',
-  'Pending total': 'Tổng chờ duyệt', 'Gross Payroll': 'Lương gộp', 'Gross payroll': 'Lương gộp', 'Net Paid': 'Thực chi', 'Net paid': 'Thực chi', 'Turnover': 'Tỷ lệ nghỉ việc',
+  'Onboarding Now': 'Đang hội nhập', 'Open requisitions': 'Yêu cầu đang mở', 'Requisitions': "Yêu cầu tuyển", 'Offers Out': 'Đã gửi đề nghị', 'Ready Now': 'Sẵn sàng ngay', 'High Potential': 'Tiềm năng cao',
+  'Company OKRs': 'OKR công ty', 'Avg. Progress': 'Tiến độ TB', 'Avg. Rating': 'Điểm TB', 'Assessed': 'Đã đánh giá', 'Active enrolments': 'Đang ghi danh', 'Tasks Done': 'Việc hoàn thành',
+  'Pending total': 'Tổng chờ duyệt', 'Gross Payroll': 'Lương gộp', 'Gross payroll': 'Lương gộp', 'Net Paid': 'Thực chi', 'Net paid': 'Thực chi', 'Turnover': "Tỷ lệ nghỉ việc",
   'Products / services': 'Sản phẩm / dịch vụ', 'Open high risks': 'Rủi ro cao đang mở', 'Avg unit price': 'Đơn giá TB', 'Tracked staff': 'NV theo dõi', 'With open deals': 'Có cơ hội mở', 'Stars': 'Sao',
   'How to work the CRM': 'Cách sử dụng CRM', 'CRM Modules': 'Phân hệ CRM',
-  'Open pipeline': 'Pipeline đang mở', 'Open deals': 'Cơ hội đang mở', 'Weighted forecast': 'Dự báo có trọng số', 'Win rate': 'Tỷ lệ thắng', 'Active leads': 'Lead đang hoạt động',
-  'New': 'Mới', 'Qualified': 'Đủ điều kiện', 'Proposal': 'Đề xuất', 'Negotiation': 'Đàm phán', 'Won': 'Thắng', 'Lost': 'Mất',
-  'My Tools': 'Công cụ của tôi', 'to sign': 'cần ký', 'signed': 'đã ký', 'Onboarding': 'Hội nhập', 'Quick Actions': 'Thao tác nhanh', 'Request Leave': 'Xin nghỉ phép', 'New Travel': 'Công tác mới', 'New Claim': 'Đề nghị mới', 'New Payment': 'Thanh toán mới',
+  'Open pipeline': 'Pipeline đang mở', 'Open deals': 'Cơ hội đang mở', 'Weighted forecast': 'Dự báo có trọng số', 'Active leads': 'Lead đang hoạt động',
+  'New': 'Mới', 'Qualified': 'Đủ điều kiện', 'Won': 'Thắng', 'Lost': 'Mất',
+  'My Tools': 'Công cụ của tôi', 'to sign': 'cần ký', 'Onboarding': 'Hội nhập', 'Quick Actions': 'Thao tác nhanh', 'New Travel': 'Công tác mới', 'New Payment': 'Thanh toán mới',
   'Annual leave left': 'Phép năm còn lại', 'Present this month': 'Có mặt tháng này', 'On-time rate': 'Tỷ lệ đúng giờ', 'Pending requests': 'Đề nghị chờ duyệt', 'Training progress': 'Tiến độ đào tạo',
-  'present': 'có mặt', 'late': 'trễ', 'annual': 'phép năm', 'sick': 'phép ốm', 'PADR & self-review': 'PADR & tự đánh giá', 'done': 'hoàn thành', 'trips': 'chuyến', 'requests': 'đề nghị', 'assigned': 'được cấp',
+  'present': 'có mặt', 'late': 'trễ', 'annual': 'phép năm', 'sick': 'phép ốm', 'PADR & self-review': 'PADR & tự đánh giá', 'done': 'hoàn thành', 'trips': 'chuyến', 'requests': 'đề nghị',
   'HRBP Process': 'Quy trình HRBP', 'Employee Lifecycle': 'Vòng đời nhân viên',
   'The HR Business Partner cycle, end to end. Click any stage to jump straight in.': 'Chu trình HR Business Partner, từ đầu đến cuối. Chạm vào bất kỳ giai đoạn nào để mở ngay.',
   'Attract': 'Thu hút', 'Develop': 'Phát triển', 'Perform': 'Đánh giá', 'Retain': 'Giữ chân', 'Exit': 'Nghỉ việc',
-  'Headcount': 'Nhân sự', 'Open Roles': 'Vị trí đang tuyển', 'Reviews Due': 'Đánh giá đến hạn', 'Courses': 'Khóa học', 'Exits': 'Thôi việc',
+ 'Open Roles': 'Vị trí đang tuyển', 'Reviews Due': 'Đánh giá đến hạn', 'Exits': 'Thôi việc',
   'records': 'hồ sơ', 'open': 'đang tuyển', 'candidates': 'ứng viên', 'in progress': 'đang thực hiện',
   'reviews due': 'đánh giá đến hạn', 'in pool': 'trong nhóm', 'courses': 'khóa học', 'active': 'đang xử lý',
-  'Leave · payroll · policies': 'Nghỉ phép · lương · chính sách', 'Open': 'Mở', 'Loading…': 'Đang tải…',
+  'Leave · payroll · policies': 'Nghỉ phép · lương · chính sách', 'Open': "Mở",
   'Reports': 'Báo cáo', 'Access & Permissions': 'Phân quyền',
   // Audit Log (admin governance)
   'Audit Log': 'Nhật ký kiểm toán',
   'An immutable record of security & workflow events — check-ins/out, approvals, e-signatures, deletions and access-level changes.': 'Bản ghi không thể chỉnh sửa về các sự kiện bảo mật & quy trình — chấm công, phê duyệt, chữ ký điện tử, xóa và thay đổi phân quyền.',
-  'Export Excel': 'Xuất Excel',
   'Search actor / action / target / detail…': 'Tìm người thực hiện / hành động / đối tượng / chi tiết…',
   'All actions': 'Tất cả hành động', 'All actors': 'Tất cả người thực hiện',
   // 'When'/'Action' reuse the existing generic VN keys (Khi nào / Thao tác); 'Record' is a fresh key
   // for the audit "affected record" column (the generic 'Target'->'Mục tiêu' means goal, wrong here).
-  'Actor': 'Người thực hiện', 'Details': 'Chi tiết', 'Record': 'Bản ghi',
+  'Actor': 'Người thực hiện', 'Details': 'Chi tiết',
   'events': 'sự kiện', 'No events match your filters.': 'Không có sự kiện nào khớp với bộ lọc.',
   'No audit events recorded yet.': 'Chưa ghi nhận sự kiện kiểm toán nào.',
   'Export library is still loading — try again in a moment.': 'Thư viện xuất đang tải — vui lòng thử lại sau giây lát.',
@@ -23360,22 +23314,22 @@ const _VI = {
   'Performance Management': 'Quản lý hiệu suất', 'Talent Management': 'Quản lý nhân tài', 'Recruitment': 'Tuyển dụng',
   'Device & Asset Management': 'Quản lý Thiết bị & Tài sản', 'My Dashboard': 'Bảng điều khiển của tôi',
   // Common buttons
-  'Add Employee': 'Thêm nhân viên', 'Add Device': 'Thêm thiết bị', 'Add goal': 'Thêm mục tiêu', 'Add Course': 'Thêm khóa học',
-  'Export PDF': 'Xuất PDF', 'Export CSV': 'Xuất CSV', 'Import Excel': 'Nhập Excel', 'Template': 'Mẫu', 'Refresh': 'Làm mới',
-  'Save': 'Lưu', 'Cancel': 'Hủy', 'Add': 'Thêm', 'Edit': 'Sửa', 'Delete': 'Xóa', 'Close': 'Đóng', 'View All →': 'Xem tất cả →',
+  'Add Employee': 'Thêm nhân viên', 'Add Device': 'Thêm thiết bị', 'Add goal': 'Thêm mục tiêu',
+  'Export PDF': 'Xuất PDF', 'Export CSV': 'Xuất CSV', 'Import Excel': 'Nhập Excel', 'Refresh': 'Làm mới',
+  'Save': 'Lưu', 'Add': 'Thêm', 'Close': 'Đóng', 'View All →': 'Xem tất cả →',
   'Approve': 'Duyệt', 'Reject': 'Từ chối', 'Approve all': 'Duyệt tất cả', 'Reject all': 'Từ chối tất cả',
   'Submit': 'Gửi', 'Mark Complete': 'Đánh dấu hoàn thành', 'Save progress': 'Lưu tiến độ', 'Enroll': 'Đăng ký',
-  'Request Leave': 'Xin nghỉ phép', 'Travel Request': 'Đề nghị công tác', 'New Claim': 'Đề nghị chi phí',
-  'Submit a claim': 'Gửi đề nghị chi phí', 'Update My Profile': 'Cập nhật hồ sơ', 'Email': 'Gửi email',
-  'Assess Employee': 'Đánh giá nhân viên', 'Create': 'Tạo', 'Course link': 'Liên kết khóa học', 'Material': 'Tài liệu',
+  'Request Leave': 'Xin nghỉ phép', 'Travel Request': 'Đề nghị công tác', 'New Claim': "Đề nghị chi phí",
+  'Submit a claim': 'Gửi đề nghị chi phí', 'Update My Profile': 'Cập nhật hồ sơ',
+  'Assess Employee': 'Đánh giá nhân viên', 'Course link': 'Liên kết khóa học', 'Material': 'Tài liệu',
   'Assets': 'Tài sản', 'Manage': 'Quản lý', 'Complete': 'Hoàn thành', 'Initiate Exit': 'Khởi tạo thôi việc',
   // Statuses
-  'Active': 'Đang làm', 'Inactive': 'Ngừng', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Từ chối',
+ 'Inactive': 'Ngừng', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Từ chối',
   'Completed': 'Hoàn thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
   'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý',
-  'On Time': 'Đúng giờ', 'Late': 'Đi muộn', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
+  'On Time': 'Đúng giờ', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
   // KPI / labels
-  'Headcount': 'Tổng nhân sự', 'Present Today': 'Có mặt hôm nay', 'Late Arrivals': 'Đi muộn', 'On Leave': 'Nghỉ phép',
+  'Headcount': "Tổng nhân sự", 'Present Today': 'Có mặt hôm nay', 'On Leave': 'Nghỉ phép',
   'Present today': 'Có mặt hôm nay', 'On leave today': 'Nghỉ hôm nay', 'New hires (mo)': 'Tuyển mới (tháng)',
   'Open vacancies': 'Vị trí tuyển', 'In pipeline': 'Đang tuyển', 'Avg PADR': 'PADR TB', 'Course enrolments': 'Lượt đăng ký học',
   'Turnover (yr)': 'Tỷ lệ nghỉ (năm)', 'Days Present (Month)': 'Ngày công (Tháng)', 'Late Arrivals (Month)': 'Đi muộn (Tháng)',
@@ -23388,11 +23342,11 @@ const _VI = {
   'Celebrations This Month': 'Sự kiện trong tháng', 'Upcoming Holidays': 'Ngày lễ sắp tới', 'My Team': 'Nhóm của tôi',
   'Asset Register': 'Sổ tài sản', 'Staff by Department': 'Nhân sự theo phòng ban', 'Headcount by Department': 'Nhân sự theo phòng',
   'all assets': 'tất cả tài sản', 'who has what': 'ai đang giữ gì', 'Serial / Tag': 'Serial / Mã tài sản', 'Assigned On': 'Ngày cấp', 'Signed': 'Đã ký', 'Unsigned': 'Chưa ký', 'Provided date': 'Ngày cấp', 'Handover PDF': 'Biên bản bàn giao (PDF)', 'Select employee': 'Chọn nhân viên',
-  'Qty': 'SL', 'Remaining': 'Còn lại', 'Partially assigned': 'Cấp một phần', 'Fully assigned': 'Đã cấp hết', 'In stock': 'Tồn kho', 'unassigned': 'chưa cấp', 'Quantity': 'Số lượng', 'Provided': 'Ngày cấp', 'Only': 'Chỉ còn', 'unit(s) remaining.': 'đơn vị.', 'No units remaining — increase the stock quantity first, or return some units.': 'Không còn đơn vị nào — hãy tăng số lượng tồn kho hoặc thu hồi bớt.',
-  'Backfill sign-offs': 'Bổ sung xác nhận', 'Mark all existing assignments as acknowledged-on-record (one-time)': 'Đánh dấu tất cả tài sản đã cấp là đã xác nhận (một lần)', 'assignment(s) marked acknowledged': 'lượt cấp đã được đánh dấu xác nhận', 'Could not complete': 'Không thể hoàn tất', 'No company devices are currently assigned to you.': 'Hiện chưa có thiết bị nào được cấp cho bạn.',
+ 'Remaining': 'Còn lại', 'Partially assigned': 'Cấp một phần', 'Fully assigned': 'Đã cấp hết', 'unassigned': 'chưa cấp', 'Quantity': 'Số lượng', 'Only': 'Chỉ còn', 'unit(s) remaining.': 'đơn vị.', 'No units remaining — increase the stock quantity first, or return some units.': 'Không còn đơn vị nào — hãy tăng số lượng tồn kho hoặc thu hồi bớt.',
+  'Backfill sign-offs': 'Bổ sung xác nhận', 'Mark all existing assignments as acknowledged-on-record (one-time)': 'Đánh dấu tất cả tài sản đã cấp là đã xác nhận (một lần)', 'assignment(s) marked acknowledged': 'lượt cấp đã được đánh dấu xác nhận',
   'This marks every existing assignment that has no acknowledgment as acknowledged-on-record (a system note, not a drawn signature). New assignments still require the employee to e-sign. Continue?': 'Thao tác này đánh dấu mọi lượt cấp chưa có xác nhận là “đã xác nhận theo hồ sơ” (ghi chú hệ thống, không phải chữ ký tay). Các lượt cấp mới vẫn yêu cầu nhân viên ký điện tử. Tiếp tục?',
   'Assign & e-sign': 'Cấp phát & ký', 'Assign asset & e-sign': 'Cấp phát tài sản & ký điện tử', 'Assign to (employee)': 'Cấp cho (nhân viên)', 'Note (optional)': 'Ghi chú (tùy chọn)', 'e.g. charger + bag included': 'ví dụ: kèm sạc + túi', 'Employee signature — sign to acknowledge receipt': 'Chữ ký nhân viên — ký để xác nhận đã nhận', 'Confirm & sign': 'Xác nhận & ký', 'Asset assigned to': 'Đã cấp tài sản cho', 'signed': 'đã ký',
-  'Please select an employee.': 'Vui lòng chọn nhân viên.', 'Employee not found': 'Không tìm thấy nhân viên', 'Please ask the employee to sign to acknowledge receipt.': 'Vui lòng đề nghị nhân viên ký để xác nhận đã nhận.', 'No assets are currently assigned.': 'Hiện chưa có tài sản nào được cấp phát.',
+  'Please select an employee.': 'Vui lòng chọn nhân viên.', 'Please ask the employee to sign to acknowledge receipt.': 'Vui lòng đề nghị nhân viên ký để xác nhận đã nhận.', 'No assets are currently assigned.': 'Hiện chưa có tài sản nào được cấp phát.',
   'To acknowledge': 'Cần xác nhận', 'Receipt acknowledged': 'Đã xác nhận nhận', 'Awaiting your signature': 'Chờ bạn ký xác nhận', 'Acknowledge receipt': 'Xác nhận đã nhận', 'Sign & acknowledge': 'Ký & xác nhận', 'Please draw your signature to acknowledge.': 'Vui lòng ký để xác nhận.', 'Receipt acknowledged — thank you.': 'Đã xác nhận nhận tài sản — cảm ơn bạn.',
   'By signing you confirm you have received this company asset and are responsible for it until it is returned.': 'Bằng việc ký, bạn xác nhận đã nhận tài sản của công ty và chịu trách nhiệm cho đến khi hoàn trả.',
   'You are responsible for the company assets assigned to you. Please e-sign to acknowledge receipt of each item. On offboarding, all devices must be returned and signed off before your last working day.': 'Bạn chịu trách nhiệm với các tài sản công ty được cấp. Vui lòng ký điện tử để xác nhận đã nhận từng thiết bị. Khi nghỉ việc, tất cả thiết bị phải được hoàn trả và ký bàn giao trước ngày làm việc cuối cùng.',
@@ -23403,23 +23357,23 @@ const _VI = {
   'Avg Performance by Dept': 'Hiệu suất TB theo phòng', 'Items by Category': 'Thiết bị theo loại', 'Status Breakdown': 'Phân loại trạng thái',
   'Asset Value by Department': 'Giá trị tài sản theo phòng', 'My Attendance This Month': 'Chấm công của tôi tháng này',
   'My Working Hours (recent)': 'Giờ làm gần đây', 'My Leave by Type': 'Nghỉ phép theo loại', 'My Training Status': 'Đào tạo của tôi',
-  'Spend by Department': 'Chi phí theo phòng ban', '9-Box Talent Grid': 'Ma trận nhân tài 9-ô',
+  'Spend by Department': "Chi phí theo phòng ban", '9-Box Talent Grid': 'Ma trận nhân tài 9-ô',
   // Profile cards
   'Job & Employment': 'Công việc & Hợp đồng', 'Personal Information': 'Thông tin cá nhân', 'Contact': 'Liên hệ',
   'Education & Skills': 'Học vấn & Kỹ năng', 'Leave & Benefits': 'Nghỉ phép & Phúc lợi', 'Emergency Contact': 'Liên hệ khẩn cấp',
-  'Benefits & Allowances': 'Phúc lợi & Phụ cấp', 'Documents & Policies': 'Tài liệu & Chính sách', 'System Access': 'Quyền hệ thống',
+  'Benefits & Allowances': 'Phúc lợi & Phụ cấp', 'System Access': 'Quyền hệ thống',
   'Shirt / Uniform': 'Áo / Đồng phục', 'Reporting Line': 'Tuyến báo cáo',
   // Misc common words
-  'Department': 'Phòng ban', 'Position': 'Chức danh', 'Status': 'Trạng thái', 'Action': 'Thao tác', 'Actions': 'Thao tác',
-  'Date': 'Ngày', 'Name': 'Tên', 'Email': 'Email', 'Phone': 'Điện thoại', 'Category': 'Loại', 'Total': 'Tổng',
-  'Manager': 'Quản lý', 'Staff': 'Nhân viên', 'Admin': 'Quản trị', 'PADR year': 'Năm PADR',
+ 'Action': 'Thao tác', 'Actions': 'Thao tác',
+  'Date': 'Ngày', 'Name': 'Tên', 'Email': "Email", 'Phone': 'Điện thoại', 'Category': 'Loại', 'Total': 'Tổng',
+ 'Staff': 'Nhân viên', 'Admin': 'Quản trị', 'PADR year': 'Năm PADR',
   // Modal / dialog titles + common confirmations & toasts
   'Add New Employee': 'Thêm nhân viên mới', 'Edit Employee Profile': 'Sửa hồ sơ nhân viên', 'Add Candidate': 'Thêm ứng viên',
   'Add Device / Equipment': 'Thêm thiết bị / trang bị', 'Add Course': 'Thêm khóa học', 'Add New Hire': 'Thêm nhân sự mới',
   'My Onboarding Checklist': 'Danh sách hội nhập của tôi', 'My Courses': 'Khóa học của tôi', 'Asset Return & Sign-off': 'Trả tài sản & Ký xác nhận',
-  'Deleted': 'Đã xóa', 'Updated': 'Đã cập nhật', 'Added successfully': 'Đã thêm thành công', 'Saved': 'Đã lưu', 'Step completed': 'Đã hoàn thành bước',
+ 'Added successfully': 'Đã thêm thành công', 'Step completed': 'Đã hoàn thành bước',
   'Delete this item? This cannot be undone.': 'Xóa mục này? Hành động không thể hoàn tác.', 'Are you sure?': 'Bạn có chắc không?',
-  'No email on file for this employee': 'Nhân viên này chưa có email', 'Could not save': 'Không thể lưu',
+  'No email on file for this employee': 'Nhân viên này chưa có email',
   'Working days': 'Ngày công', 'Unpaid days': 'Ngày không lương', 'KPI factor': 'Hệ số KPI', 'NET PAY': 'THỰC LÃNH', 'GROSS': 'TỔNG THU NHẬP',
   'TOTAL DEDUCTIONS': 'TỔNG KHẤU TRỪ', 'Earnings — 3P': 'Thu nhập — 3P', 'Other deductions — Employee': 'Khấu trừ khác — Nhân viên',
   'Confidential Payslip': 'Phiếu lương (bảo mật)', 'Download PDF': 'Tải PDF', 'Payslip': 'Phiếu lương',
@@ -23429,8 +23383,8 @@ const _VI = {
   'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
   'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
   /* Onboarding & policy compliance */
-  'Create employee folders': 'Tạo thư mục nhân viên', 'Working…': 'Đang xử lý…',
-  'folder(s) created or refreshed': 'thư mục đã tạo hoặc cập nhật', 'failed': 'lỗi', 'Create': 'Tạo',
+  'Create employee folders': 'Tạo thư mục nhân viên',
+  'folder(s) created or refreshed': 'thư mục đã tạo hoặc cập nhật', 'Create': 'Tạo',
   'Could not create the folders': 'Không tạo được thư mục',
   'Create an HR SharePoint folder for every active employee?': 'Tạo thư mục SharePoint HR cho tất cả nhân viên đang làm việc?',
   'One folder per person under Employees/, each holding their record. Safe to run again later — it only adds what is missing.': 'Mỗi người một thư mục trong Employees/, chứa hồ sơ của họ. Có thể chạy lại — chỉ bổ sung phần còn thiếu.',
@@ -23439,8 +23393,8 @@ const _VI = {
   'next review': 'rà soát tiếp theo', 'review overdue since': 'quá hạn rà soát từ',
   'This document is past its review date.': 'Tài liệu này đã quá hạn rà soát.',
   'All signed': 'Đã ký đủ', 'Open Onboarding': 'Mở mục Hội nhập', 'Import old policies': 'Nhập chính sách cũ',
-  'Documents & Policies': 'Tài liệu & Chính sách', 'Imported': 'Đã nhập', 'documents': 'tài liệu',
-  'acknowledgements': 'xác nhận', 'Could not import': 'Không nhập được', 'Import': 'Nhập',
+  'Documents & Policies': 'Tài liệu & Chính sách', 'documents': 'tài liệu',
+  'acknowledgements': 'xác nhận', 'Could not import': 'Không nhập được',
   'Company documents you need to read and sign are in Onboarding, where your signature is recorded and filed in your HR folder.': 'Tài liệu công ty cần đọc và ký nằm ở mục Hội nhập, nơi chữ ký của bạn được ghi nhận và lưu vào hồ sơ nhân sự.',
   'Import the six built-in policies and their existing tick-box acknowledgements?': 'Nhập sáu chính sách có sẵn và các xác nhận tick trước đây?',
   'The old records are kept and clearly marked as tick-box, not signatures. Re-issue each document at a new version afterwards to collect real signatures.': 'Bản ghi cũ được giữ lại và ghi rõ là xác nhận tick, không phải chữ ký. Sau đó hãy ban hành lại phiên bản mới để thu chữ ký thật.',
@@ -23449,7 +23403,7 @@ const _VI = {
   'Everything the company has published, and who keeps it current.': 'Tất cả tài liệu công ty đã ban hành và người phụ trách cập nhật.',
   'document(s) have no file attached — nobody can read or sign them until you upload one.': 'tài liệu chưa có tệp đính kèm — chưa ai đọc hoặc ký được cho đến khi bạn tải tệp lên.',
   'Document': 'Tài liệu', 'Version': 'Phiên bản', 'Who must sign': 'Ai phải ký',
-  'Sign within': 'Hạn ký', 'Next review': 'Rà soát kế tiếp', 'days': 'ngày', 'none': 'không có',
+  'Sign within': 'Hạn ký', 'Next review': 'Rà soát kế tiếp', 'none': 'không có',
   'Everyone': 'Tất cả nhân viên', 'Selected people': 'Người được chọn',
   'No deadline, so this document is never chased.': 'Không có hạn ký nên tài liệu này không bao giờ được nhắc.',
   'No file attached yet — nobody can sign this': 'Chưa đính kèm tệp — chưa ai ký được',
@@ -23474,20 +23428,20 @@ const _VI = {
   // Asset register — release / correct an assignment, partial return, write-off
   'Release assignment': 'Thu hồi bàn giao', 'Release': 'Thu hồi', 'Released': 'Đã thu hồi',
   'Release / correct this assignment': 'Thu hồi / điều chỉnh bàn giao này',
-  'Quantity to release': 'Số lượng thu hồi', 'Reason': 'Lý do',
+  'Quantity to release': 'Số lượng thu hồi',
   'Returned to stock': 'Trả về kho', 'Correction — assigned in error': 'Điều chỉnh — bàn giao nhầm',
   'Written off — lost or damaged': 'Ghi giảm — mất hoặc hỏng',
   'Written off': 'Đã ghi giảm', 'written off': 'đã ghi giảm',
   'This assignment carries a signed handover. It will be archived on the asset record, not deleted.': 'Bàn giao này có chữ ký. Hệ thống sẽ lưu trữ vào hồ sơ tài sản chứ không xoá.',
   'What happened, for the record': 'Ghi lại điều đã xảy ra',
   'That assignment is no longer there.': 'Bàn giao này không còn nữa.',
-  'Returned': 'Đã trả', 'returned': 'đã trả', 'of': 'trong',
+  'Returned': 'Đã trả', 'returned': 'đã trả',
   'Exit sign-off record': 'Biên bản ký xác nhận nghỉ việc',
   // Effective-dated employment history + Wave 1 payroll/leave/PII strings
   'Employment history': 'Lịch sử công tác', 'Show history': 'Xem lịch sử',
-  'Effective': 'Hiệu lực từ', 'What changed': 'Nội dung thay đổi', 'From': 'Từ', 'To': 'Thành',
-  'Recorded by': 'Người ghi nhận', 'inferred': 'suy ra', 'Salary': 'Lương', 'Grade': 'Bậc',
-  'Position': 'Chức danh', 'Department': 'Bộ phận', 'Reports to': 'Quản lý trực tiếp', 'Status': 'Trạng thái',
+ 'What changed': 'Nội dung thay đổi',
+  'Recorded by': 'Người ghi nhận', 'inferred': 'suy ra', 'Salary': 'Lương',
+  'Position': 'Chức danh', 'Status': 'Trạng thái',
   'Could not load the history': 'Không tải được lịch sử',
   'No changes recorded yet. History starts from the day it was switched on — earlier changes were not kept, which is the gap this closes.': 'Chưa ghi nhận thay đổi nào. Lịch sử bắt đầu từ ngày tính năng này được bật — các thay đổi trước đó không được lưu, và đây chính là khoảng trống được khắc phục.',
   'Reconstructed from a finalised pay run, not recorded at the time.': 'Được dựng lại từ đợt lương đã chốt, không phải ghi nhận tại thời điểm đó.',
@@ -23503,11 +23457,11 @@ const _VI = {
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
-  'Effective': 'Hiệu lực từ', 'Due': 'Hạn', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',
+  'Effective': 'Hiệu lực từ', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',
   'Your signature': 'Chữ ký của bạn', 'Policy compliance': 'Tuân thủ tài liệu',
   'Who has signed what': 'Ai đã ký tài liệu nào', 'Publish a document': 'Ban hành tài liệu',
-  'Send reminders now': 'Gửi nhắc nhở ngay', 'All departments': 'Tất cả bộ phận',
-  'Compliance': 'Tuân thủ', 'Employee': 'Nhân viên', 'Department': 'Bộ phận', 'Overdue': 'Quá hạn',
+  'Send reminders now': 'Gửi nhắc nhở ngay', 'All departments': "Tất cả bộ phận",
+ 'Department': "Bộ phận", 'Overdue': 'Quá hạn',
   'By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.': 'Bằng việc ký, tôi xác nhận đã nhận, đã đọc và hiểu tài liệu này và đồng ý tuân thủ.',
   'Please open each document, read it, and sign to confirm. Your signature is filed in your HR record.': 'Vui lòng mở từng tài liệu, đọc và ký xác nhận. Chữ ký của bạn được lưu vào hồ sơ nhân sự.',
   'Please sign to confirm you have read this document.': 'Vui lòng ký để xác nhận bạn đã đọc tài liệu này.',
@@ -23522,17 +23476,16 @@ const _VI = {
   'Nothing to export.': 'Không có dữ liệu để xuất.',
   'Reminded': 'Đã nhắc', 'people.': 'người.',
   'Could not load this tab': 'Không tải được tab này',
-  'Check your connection and try again.': 'Kiểm tra kết nối và thử lại.', 'Retry': 'Thử lại',
-  'In stock': 'Còn trong kho', 'in stock': 'còn trong kho', 'Owned': 'Sở hữu', 'owned': 'sở hữu', 'assigned': 'đã cấp', 'Balanced': 'Khớp',
+  'Check your connection and try again.': 'Kiểm tra kết nối và thử lại.',
+  'In stock': "Còn trong kho", 'in stock': 'còn trong kho', 'Owned': 'Sở hữu', 'owned': 'sở hữu', 'assigned': "đã cấp", 'Balanced': 'Khớp',
   'issued beyond stock': 'cấp vượt tồn kho',
   'Someone has more of an item than the register says we own — check the highlighted rows.': 'Có người đang giữ nhiều hơn số lượng ghi nhận — kiểm tra các dòng được đánh dấu.',
   'My Devices': 'Thiết bị của tôi', 'My Training': 'Đào tạo của tôi', 'Open Positions': 'Vị trí tuyển dụng',
-  'JD': 'MTCV', 'Attach': 'Đính kèm', 'Show': 'Xem', 'Replace': 'Thay thế',
+  'JD': 'MTCV', 'Attach': 'Đính kèm', 'Show': "Xem", 'Replace': 'Thay thế',
   'Attach the Job Description file': 'Đính kèm tệp mô tả công việc',
   'Replace the JD': 'Thay thế bản mô tả công việc',
   'Open in SharePoint': 'Mở trong SharePoint', 'Stored in the portal': 'Lưu trong cổng thông tin',
   'That JD file is no longer available.': 'Tệp mô tả công việc này không còn nữa.',
-  'That file is too large.': 'Tệp này quá lớn.',
   'Filing the JD…': 'Đang lưu bản mô tả công việc…',
   'JD filed in HR SharePoint.': 'Đã lưu bản mô tả công việc vào SharePoint HR.',
   'JD saved in the portal.': 'Đã lưu bản mô tả công việc trong cổng thông tin.',
@@ -23577,11 +23530,10 @@ const _VI = {
   'All Types': 'Tất cả loại',
   'All caught up — no new notifications.': 'Đã xem hết — không có thông báo mới.',
   'All caught up!': 'Đã xem hết!',
-  'All time': 'Tất cả thời gian',
+  'All time': "Tất cả thời gian",
   'Allowed Domain (API restriction)': 'Tên miền được phép (giới hạn API)',
-  'Amount': 'Số tiền',
+  'Amount': "Số tiền",
   'Announcements': 'Thông báo',
-  'Annual': 'Phép năm',
   'Annual (Used/Total)': 'Phép năm (Đã dùng/Tổng)',
   'Annual Leave': 'Phép năm',
   'Annual Leave (days remaining)': 'Phép năm (số ngày còn lại)',
@@ -23644,10 +23596,8 @@ const _VI = {
   'Check-In Window': 'Khung giờ chấm vào',
   'Check-Out': 'Chấm ra',
   'Check-Out From': 'Chấm ra từ',
-  'Check-in': 'Chấm vào',
   'Check-in allowed (logged)': 'Cho phép chấm vào (đã ghi nhận)',
   'Check-ins': 'Lượt chấm vào',
-  'Check-out': 'Chấm ra',
   'Check-out reminder': 'Nhắc nhở chấm ra',
   'Claim title / trip': 'Tiêu đề yêu cầu / chuyến đi',
   'Claims': 'Yêu cầu hoàn ứng',
@@ -23669,14 +23619,13 @@ const _VI = {
   'Compensation — 3P Salary (HML-CB-001)': 'Đãi ngộ — Lương 3P (HML-CB-001)',
   'Competency / Skill Matrix': 'Ma trận Năng lực / Kỹ năng',
   'Competency Matrix': 'Ma trận năng lực',
-  'Save Changes': 'Lưu thay đổi',
   'removed permanently': 'đã xóa vĩnh viễn',
-  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Quy trình theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Export': 'Xuất', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
+  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Quy trình theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
   'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
   'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
-  'PMC / Projects': 'PMC / Dự án', 'Portfolio': 'Danh mục dự án', 'Projects': 'Dự án', 'Project Workspace': 'Không gian dự án', 'New Project': 'Dự án mới',
+  'PMC / Projects': 'PMC / Dự án', 'Portfolio': 'Danh mục dự án', 'Project Workspace': 'Không gian dự án', 'New Project': 'Dự án mới',
   'Active projects': 'Dự án đang chạy', 'On-track': 'Đúng tiến độ', 'Portfolio CPI': 'CPI danh mục', 'Portfolio SPI': 'SPI danh mục', 'Project Portfolio': 'Danh mục dự án',
-  'Project Charter': 'Hiến chương dự án', 'Project Manager': 'Quản lý dự án', 'Sponsor': 'Nhà tài trợ', 'Contract Value': 'Giá trị hợp đồng', 'Approved Budget': 'Ngân sách duyệt',
+  'Project Charter': 'Hiến chương dự án', 'Sponsor': 'Nhà tài trợ', 'Contract Value': 'Giá trị hợp đồng', 'Approved Budget': 'Ngân sách duyệt',
   'Scope / WBS': 'Phạm vi / WBS', 'Schedule': 'Tiến độ', 'Cost / EVM': 'Chi phí / EVM', 'Quality': 'Chất lượng', 'Resources': 'Nguồn lực', 'Comms & Issues': 'Trao đổi & Vấn đề',
   'Risk': 'Rủi ro', 'Procurement': 'Mua sắm', 'Stakeholders': 'Bên liên quan', 'Doc Control': 'Kiểm soát tài liệu', 'Overview': 'Tổng quan', 'Deliverables': 'Sản phẩm bàn giao',
   'Work Breakdown Structure (Deliverables)': 'Cấu trúc phân chia công việc (WBS)', 'Scope Statement': 'Tuyên bố phạm vi', 'Schedule — Gantt': 'Tiến độ — Gantt',
@@ -23701,7 +23650,6 @@ const _VI = {
   'Conditional': 'Có điều kiện',
   'Confirm signed handover': 'Xác nhận biên bản bàn giao đã ký',
   'Connect Now →': 'Kết nối ngay →',
-  'Continue': 'Tiếp tục',
   'Contributor (HR / Manager)': 'Cộng tác viên (Nhân sự / Quản lý)',
   'Coordinates': 'Tọa độ',
   'Course': 'Khóa học',
@@ -23709,7 +23657,6 @@ const _VI = {
   'Courses': 'Khóa học',
   'Courses available': 'Khóa học hiện có',
   'Create the Site': 'Tạo công trường',
-  'Created': 'Đã tạo',
   'Current Balance:': 'Số dư hiện tại:',
   'Custom': 'Tùy chỉnh',
   'Cycle': 'Chu kỳ',
@@ -23717,7 +23664,7 @@ const _VI = {
   'Daily 10:00 · Find no check-in → Teams absent alert': 'Hằng ngày 10:00 · Tìm trường hợp không chấm vào → Teams cảnh báo vắng mặt',
   'Daily 17:30 · Find unchecked-out → Teams message': 'Hằng ngày 17:30 · Tìm trường hợp chưa chấm ra → Teams nhắn tin',
   'Daily Attendance': 'Chấm công hằng ngày',
-  'Present': 'Có mặt', 'People': 'Người', 'Records': 'Lượt', 'Enrols': 'Ghi danh', 'OT rejected': 'Từ chối OT',
+  'Present': 'Có mặt', 'People': "Người", 'Records': 'Lượt', 'Enrols': 'Ghi danh', 'OT rejected': 'Từ chối OT',
   'Daily Work Hours': 'Số giờ làm việc hằng ngày',
   'Damaged': 'Hư hỏng',
   'Data Management': 'Quản lý dữ liệu',
@@ -23738,14 +23685,13 @@ const _VI = {
   'Payment voucher': 'Phiếu chi',
   'No bill attached': 'Chưa đính kèm hóa đơn',
   'Reviewed by': 'Người xem xét',
-  'Approved by': 'Người phê duyệt',
+  'Approved by': "Người phê duyệt",
   'Paid on': 'Đã chi ngày',
   'Not yet approved.': 'Chưa phê duyệt.',
   'Overtime request': 'Yêu cầu tăng ca',
-  'Overtime hours': 'Số giờ tăng ca',
   'Request overtime': 'Gửi yêu cầu tăng ca',
   // ── Overtime pay + the Art. 107 caps ──
-  'Overtime': 'Tăng ca', 'approved': 'đã duyệt', 'rejected': 'đã từ chối', 'night': 'đêm',
+ 'approved': 'đã duyệt', 'rejected': 'đã từ chối', 'night': 'đêm',
   'over cap': 'vượt trần', 'Normal working day': 'Ngày làm việc bình thường',
   'Weekly rest day': 'Ngày nghỉ hằng tuần', 'Public holiday': 'Ngày lễ, tết',
   'of which at night (22:00–06:00)': 'trong đó làm ban đêm (22:00–06:00)',
@@ -23764,7 +23710,7 @@ const _VI = {
   'Rebuild the employment history from the pay runs a Director has signed?': 'Xây dựng lại lịch sử nhân sự từ các bảng lương đã được Giám đốc ký?',
   'Reconstructed rows are removed and rebuilt. Anything recorded by hand is kept, and what is removed is written to the audit trail.': 'Các dòng suy luận sẽ được xoá và dựng lại. Những dòng do người dùng tự nhập vẫn được giữ nguyên, và phần bị xoá sẽ được ghi vào nhật ký kiểm toán.',
   'Rebuilding…': 'Đang dựng lại…', 'Rebuilt from': 'Đã dựng lại từ',
-  'signed pay run(s)': 'bảng lương đã ký', 'Removed': 'Đã xoá',
+  'signed pay run(s)': 'bảng lương đã ký',
   'reconstructed row(s) across': 'dòng suy luận, thuộc', 'employee(s)': 'nhân viên',
   'Nothing needed removing.': 'Không có dòng nào cần xoá.',
   'Wrote': 'Đã ghi', 'dated event(s)': 'sự kiện có ngày hiệu lực',
@@ -23786,7 +23732,7 @@ const _VI = {
   'Raise every record that is below the statutory minimum for': 'Nâng tất cả hồ sơ thấp hơn mức tối thiểu luật định cho năm',
   'Records that already meet or exceed the minimum are left alone. Each change is written to the audit trail.':
     'Các hồ sơ đã đạt hoặc vượt mức tối thiểu sẽ được giữ nguyên. Mỗi thay đổi đều được ghi vào nhật ký kiểm toán.',
-  'Raised': 'Đã nâng', 'entitlement(s)': 'hồ sơ ngày phép',
+  'Raised': "Ngày nêu", 'entitlement(s)': 'hồ sơ ngày phép',
   // ── Labour contract register (Art. 20) ──
   'Labour contracts': 'Hợp đồng lao động',
   'Company legal identity': 'Thông tin pháp lý công ty',
@@ -23838,7 +23784,7 @@ const _VI = {
   'Link to the scanned copy': 'Liên kết bản scan',
   'SharePoint or a URL': 'SharePoint hoặc đường dẫn',
   'Record it': 'Ghi nhận',
-  'Record': 'Ghi nhận',
+  'Record': "Bản ghi",
   'With no printed expiry, the review treats a health examination as valid for 12 months — 6 for hazardous work, minors, elderly and disabled workers (OSH Law Art. 21(1)).': 'Nếu không in ngày hết hạn, khám sức khỏe được tính hiệu lực 12 tháng — 6 tháng với công việc nặng nhọc, người chưa thành niên, người cao tuổi và người khuyết tật (Điều 21(1) Luật ATVSLĐ).',
   'With no printed expiry, safety training is treated as valid for 2 years (Decree 44/2016 Art. 24), and only where the person has an OSH group set.': 'Nếu không in ngày hết hạn, huấn luyện an toàn được tính hiệu lực 2 năm (Điều 24 NĐ 44/2016), và chỉ khi người lao động đã được phân nhóm.',
   'No statutory cadence is assumed for other certificates — only the expiry printed on them.': 'Chứng chỉ khác không áp chu kỳ luật định — chỉ dùng ngày hết hạn in trên chứng chỉ.',
@@ -23869,7 +23815,6 @@ const _VI = {
   'Ground under Art. 34': 'Căn cứ theo Điều 34',
   'If under Art. 36, which point': 'Nếu theo Điều 36, điểm nào',
   'Employee told on': 'Ngày báo trước',
-  'Last working day': 'Ngày cuối cùng làm việc',
   'Measure under Art. 124': 'Hình thức kỷ luật theo Điều 124',
   'Months deferred (if a pay rise)': 'Số tháng kéo dài nâng lương',
   'Date of the violation': 'Ngày xảy ra vi phạm',
@@ -23892,7 +23837,6 @@ const _VI = {
   'Letter issued': 'Đã cấp giấy xác nhận',
   'states the salary': 'có ghi mức lương',
   'Issued by': 'Người ký',
-  'Purpose': 'Mục đích',
   'Working…': 'Đang xử lý…',
   'Continue': 'Tiếp tục',
   'These fields are what a signed document says the employer is. They are stated on every labour contract under Labour Code Art. 21(1)(a).': 'Các thông tin này là những gì một văn bản đã ký nói về người sử dụng lao động. Điều 21(1)(a) Bộ luật Lao động yêu cầu ghi trên mọi hợp đồng lao động.',
@@ -23941,10 +23885,10 @@ const _VI = {
   'fixed terms so far': 'lần ký xác định thời hạn', 'no signed copy attached': 'chưa đính kèm bản đã ký',
   'No contract on file': 'Chưa có hợp đồng', 'Lapsed — now indefinite by law': 'Đã quá hạn — nay là HĐ không xác định thời hạn theo luật',
   'Expired — 30-day window': 'Đã hết hạn — còn trong 30 ngày', 'No end date': 'Chưa có ngày kết thúc',
-  'Expiring': 'Sắp hết hạn', 'Active': 'Đang hiệu lực', 'Indefinite-term': 'Không xác định thời hạn',
+  'Expiring': 'Sắp hết hạn', 'Active': "Đang làm", 'Indefinite-term': 'Không xác định thời hạn',
   // ── Correcting an attendance record ──
   'Correct': 'Sửa', 'corrected': 'đã sửa', 'Correct attendance': 'Sửa chấm công',
-  'Check-in': 'Giờ vào', 'Check-out': 'Giờ ra', 'Overtime hours': 'Số giờ tăng ca',
+ 'Check-out': "Giờ ra", 'Overtime hours': 'Số giờ tăng ca',
   'Overtime on this record is already approved. Changing the times or the hours sends it back for a decision — the approval described the shift as it was.':
     'Tăng ca của bản ghi này đã được duyệt. Việc thay đổi giờ hoặc số giờ sẽ đưa nó trở lại chờ duyệt — phê duyệt trước đó áp dụng cho ca làm việc như cũ.',
   'Reason for the correction': 'Lý do sửa',
@@ -23969,7 +23913,7 @@ const _VI = {
   'Normal': 'Bình thường', 'Hazardous': 'Nặng nhọc, độc hại', 'Especially hazardous': 'Đặc biệt nặng nhọc, độc hại',
   'OSH group': 'Nhóm ATVSLĐ', 'to': 'đến',
   // ── Final settlement (Art. 46/47/48 + 113(4)) ──
-  'Final settlement': 'Thanh toán khi nghỉ việc', 'Last day': 'Ngày làm việc cuối',
+  'Final settlement': 'Thanh toán khi nghỉ việc',
   'Leave earned / taken': 'Phép được hưởng / đã nghỉ', '6-month average wage': 'Lương bình quân 6 tháng',
   'TOTAL OWED': 'TỔNG PHẢI TRẢ', 'Must be settled by': 'Phải thanh toán xong trước',
   'Nothing is owed on this settlement.': 'Không có khoản nào phải thanh toán.',
@@ -23981,14 +23925,13 @@ const _VI = {
   'Raised as payment request': 'Đã lập đề nghị thanh toán',
   // ── Payroll journal (Circular 200/2014) ──
   'Payroll journal': 'Bút toán tiền lương', 'Account': 'Tài khoản', 'Account name': 'Tên tài khoản',
-  'Debit': 'Nợ', 'Credit': 'Có', 'TOTAL': 'TỔNG CỘNG',
+  'Debit': 'Nợ', 'Credit': 'Có',
   'From the pay run the Director signed, not a recomputation of it': 'Lấy từ bảng lương Giám đốc đã ký, không phải tính lại',
   'No journal for': 'Chưa có bút toán cho',
   'A journal comes from a pay run a Director has signed. A draft is a proposal, and proposals do not belong in a ledger.': 'Bút toán chỉ sinh ra từ bảng lương đã được Giám đốc ký. Bản nháp chỉ là đề xuất, và đề xuất thì không được ghi sổ.',
   'Choose a specific month — a journal is posted per period.': 'Vui lòng chọn một tháng cụ thể — bút toán được ghi theo từng kỳ.',
   'These entries do not balance — do not post them': 'Bút toán không cân — không được ghi sổ',
   'Debits and credits differ. It has been recorded in the audit trail; the difference has to be explained before this is posted.': 'Tổng Nợ và tổng Có không khớp. Việc này đã được ghi vào nhật ký kiểm toán; cần giải trình chênh lệch trước khi ghi sổ.',
-  'Nothing to export': 'Không có dữ liệu để xuất',
   // ── Salary payment file ──
   'Salary payment file': 'File chi lương', 'Choose a specific month.': 'Vui lòng chọn một tháng cụ thể.',
   'Produce the salary payment file for': 'Tạo file chi lương cho kỳ',
@@ -24005,7 +23948,7 @@ const _VI = {
   'Overtime &amp; statutory limits': 'Tăng ca &amp; giới hạn luật định',
   'Labour Code Art. 107 — 4h a day · 40h a month · ': 'Bộ luật Lao động Đ.107 — 4h/ngày · 40h/tháng · ',
   'h a year': 'h/năm', 'over the limit': 'vượt giới hạn',
-  'This month': 'Tháng này', 'This year': 'Năm nay', 'Of which at night': 'Trong đó ban đêm',
+ 'Of which at night': 'Trong đó ban đêm',
   'Breakdown': 'Chi tiết',
   'No overtime': 'Không tăng ca',
   'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Gửi yêu cầu tăng ca để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
@@ -24025,7 +23968,7 @@ const _VI = {
   'Director': 'Giám đốc',
   'Do not disclose client or project data without authorisation.': 'Không tiết lộ dữ liệu khách hàng hoặc dự án khi chưa được phép.',
   'Do not install unapproved software or disable security controls.': 'Không cài đặt phần mềm chưa được phê duyệt hoặc vô hiệu hóa các biện pháp bảo mật.',
-  'Due': 'Đến hạn',
+  'Due': "Đến hạn",
   'Due May 1': 'Đến hạn ngày 1 tháng 5',
   'Duration': 'Thời lượng',
   'Early Leave': 'Về sớm',
@@ -24121,7 +24064,6 @@ const _VI = {
   'GPS Accuracy Required (metres)': 'Độ chính xác GPS yêu cầu (mét)',
   'GPS Alerts (2)': 'Cảnh báo GPS (2)',
   'GPS Anomalies': 'Bất thường GPS',
-  'GPS Anomaly': 'Bất thường GPS',
   'GPS Coordinates': 'Tọa độ GPS',
   'GPS Gate Settings': 'Cài đặt cổng GPS',
   'GPS Service': 'Dịch vụ GPS',
@@ -24150,7 +24092,7 @@ const _VI = {
   'The mid-shift break inside these hours. Art. 109 requires at least 30 consecutive minutes on a day of 6 hours or more, 45 where 3 or more hours fall between 22:00 and 06:00. It only counts as paid working time for continuous shift work (Decree 145 Art. 63(3)). Working-time compliance is measured after this comes off.':
     'Thời gian nghỉ giữa giờ trong ca. Điều 109 yêu cầu ít nhất 30 phút liên tục nếu làm việc từ 6 giờ trở lên trong ngày, 45 phút nếu có từ 3 giờ trở lên trong khoảng 22:00–06:00. Chỉ được tính vào giờ làm việc có hưởng lương đối với ca liên tục (khoản 3 Điều 63 Nghị định 145). Việc kiểm tra giờ làm việc được tính sau khi trừ khoảng này.',
   'Grace Period (min)': 'Thời gian ân hạn (phút)',
-  'Grade': 'Bậc lương',
+  'Grade': "Bậc lương",
   'Gross': 'Tổng (gộp)',
   'HQ District 10 · Late (15 min)': 'Trụ sở Quận 10 · Trễ (15 phút)',
   'HQ District 10 · On Time': 'Trụ sở Quận 10 · Đúng giờ',
@@ -24191,23 +24133,23 @@ const _VI = {
   'Integrations': 'Tích hợp',
   'Intern': 'Thực tập sinh',
   'Issuing Doctor': 'Bác sĩ cấp giấy',
-  'Items': 'Mục',
+  'Items': "Mục",
   'Job Grade (G1–G10)': 'Bậc công việc (G1–G10)',
   'Job Level': 'Cấp bậc công việc',
   'Job Title': 'Chức danh',
   'Keep confidential information secure during and after employment.': 'Bảo mật thông tin trong và sau thời gian làm việc.',
   'Last 8 days': '8 ngày qua',
   'Last Data Sync': 'Đồng bộ dữ liệu lần cuối',
-  'Last day': 'Ngày cuối',
-  'Last working day': 'Ngày làm việc cuối',
+  'Last day': "Ngày cuối",
+  'Last working day': "Ngày làm việc cuối",
   'Late Alerts (4)': 'Cảnh báo đi muộn (4)',
   'Late Alerts': 'Cảnh báo đi muộn', 'GPS Alerts': 'Cảnh báo GPS',
   'No late arrivals today': 'Không có ai đi muộn hôm nay', 'No GPS anomalies today': 'Không có bất thường GPS hôm nay',
   'No team members to show': 'Không có nhân viên để hiển thị', 'Nothing to review right now.': 'Hiện không có gì cần xem xét.',
-  'Loading…': 'Đang tải…', 'Nearest zone': 'Khu vực gần nhất', 'Distance': 'Khoảng cách', 'Check-in': 'Chấm công vào',
-  'from': 'từ', 'Not checked in': 'Chưa chấm công', 'GPS Anomaly': 'Bất thường GPS', 'Late': 'Đi muộn',
+ 'Nearest zone': 'Khu vực gần nhất', 'Distance': 'Khoảng cách', 'Check-in': "Giờ vào",
+  'from': 'từ', 'GPS Anomaly': 'Bất thường GPS', 'Late': 'Đi muộn',
   'people': 'người', 'employee': 'nhân viên', 'employees': 'nhân viên', 'alert': 'cảnh báo', 'alerts': 'cảnh báo',
-  'min': 'phút', 'Mark Legitimate': 'Đánh dấu hợp lệ', 'marked as a legitimate site visit': 'đã đánh dấu là chuyến công tác hợp lệ',
+  'min': 'phút', 'marked as a legitimate site visit': 'đã đánh dấu là chuyến công tác hợp lệ',
   'Late Arrivals': 'Đi muộn', 'Annual': 'Phép năm',
   'Late Arrivals by Department': 'Đi muộn theo phòng ban',
   'Late By': 'Muộn',
@@ -24329,7 +24271,7 @@ const _VI = {
   'No check-ins yet': 'Chưa có lượt chấm vào nào',
   'No check-ins yet today.': 'Hôm nay chưa có lượt chấm vào nào.',
   'No claims': 'Không có yêu cầu hoàn ứng',
-  'No company devices are currently assigned to you.': 'Hiện chưa có thiết bị công ty nào được cấp cho bạn.',
+  'No company devices are currently assigned to you.': "Hiện chưa có thiết bị công ty nào được cấp cho bạn.",
   'No competency data': 'Không có dữ liệu năng lực',
   'No courses yet': 'Chưa có khóa học nào',
   'No data': 'Không có dữ liệu',
@@ -24358,7 +24300,7 @@ const _VI = {
   'No – Full days': 'Không – Nguyên ngày',
   'None yet.': 'Chưa có.',
   'Not Configured': 'Chưa cấu hình',
-  'Not checked in': 'Chưa chấm vào',
+  'Not checked in': "Chưa chấm vào",
   'Not checked out': 'Chưa chấm ra',
   'Not issued yet': 'Chưa cấp phát',
   'Note': 'Ghi chú',
@@ -24408,7 +24350,7 @@ const _VI = {
   'Patient Name': 'Tên bệnh nhân',
   'Pay Runs': 'Đợt chạy lương',
   'Pending (2)': 'Đang chờ (2)',
-  'Pending Approvals': 'Phê duyệt đang chờ',
+  'Pending Approvals': "Chờ duyệt",
   'Pending Manager': 'Chờ quản lý',
   'Per-employee home coordinates': 'Tọa độ nhà theo từng nhân viên',
   'Performance Improvement Plans (BM.HR-05-03)': 'Kế hoạch cải thiện hiệu suất (BM.HR-05-03)',
@@ -24475,7 +24417,7 @@ const _VI = {
   'Remove line': 'Xóa dòng',
   'Report hazards, near-misses and incidents immediately.': 'Báo cáo ngay các mối nguy, sự cố suýt xảy ra và tai nạn.',
   'Report lost devices or suspected breaches to IT immediately.': 'Báo cáo ngay cho IT về thiết bị bị mất hoặc nghi ngờ vi phạm bảo mật.',
-  'Reports to': 'Báo cáo cho',
+  'Reports to': "Báo cáo cho",
   'Request · Track · Balance · Calendar': 'Yêu cầu · Theo dõi · Số dư · Lịch',
   'Require real GPS for check-in/out (no simulation)': 'Yêu cầu GPS thật để chấm vào/ra (không giả lập)',
   'Reset Demo Data': 'Đặt lại dữ liệu demo',
@@ -24503,7 +24445,6 @@ const _VI = {
   'Schedule Name': 'Tên lịch trình',
   'Scheduled Jan 1': 'Đã lên lịch 1 tháng 1',
   'Scope': 'Phạm vi',
-  'Select all': 'Chọn tất cả',
   'Self': 'Bản thân',
   'Self-assessment': 'Tự đánh giá',
   'Self-assessment submitted': 'Đã gửi tự đánh giá',
@@ -24519,7 +24460,6 @@ const _VI = {
   'Setup Guide': 'Hướng dẫn thiết lập',
   'Shirt / Uniform Size': 'Cỡ áo / đồng phục',
   'Show to': 'Hiển thị cho',
-  'Showing': 'Đang hiển thị',
   'Showing 8 of 46 employees ·': 'Đang hiển thị 8 trên 46 nhân viên ·',
   'Sick': 'Nghỉ ốm',
   'Sick (Used/Total)': 'Nghỉ ốm (Đã dùng/Tổng)',
@@ -24550,13 +24490,13 @@ const _VI = {
   // ── QA polish pass: new validation / guard messages ──
   'Please wait — still submitting…': 'Vui lòng đợi — đang gửi…',
   // dialogs
-  'Please confirm': 'Xác nhận', 'Notice': 'Thông báo', 'Cancel': 'Huỷ', 'Confirm': 'Xác nhận', 'OK': 'OK',
+  'Please confirm': 'Xác nhận', 'Notice': 'Thông báo', 'Cancel': "Huỷ", 'Confirm': 'Xác nhận', 'OK': 'OK',
   // friendly errors (_errMsg)
   'Your session expired — please sign in again.': 'Phiên đăng nhập đã hết hạn — vui lòng đăng nhập lại.',
   "You don't have permission to do this.": 'Bạn không có quyền thực hiện thao tác này.',
   'That item could not be found.': 'Không tìm thấy mục này.',
   'That conflicts with a newer change — reload and try again.': 'Xung đột với thay đổi mới hơn — hãy tải lại và thử lại.',
-  'That file is too large.': 'Tệp quá lớn.',
+  'That file is too large.': "Tệp quá lớn.",
   'Too many requests — please wait a moment and try again.': 'Quá nhiều yêu cầu — hãy đợi một lát rồi thử lại.',
   'The server had a problem — please try again.': 'Máy chủ gặp sự cố — vui lòng thử lại.',
   'No connection — check your network and try again.': 'Mất kết nối — hãy kiểm tra mạng và thử lại.',
@@ -24574,23 +24514,16 @@ const _VI = {
   'No projects yet': 'Chưa có dự án',
   'You are not assigned to any projects yet': 'Bạn chưa được phân công dự án nào',
   // ── toast long-tail: error prefixes (now routed through _t) ──
-  'Could not save': 'Không lưu được', 'Could not update': 'Không cập nhật được',
+  'Could not save': "Không lưu được", 'Could not update': 'Không cập nhật được',
   'Could not delete': 'Không xoá được', 'Could not create': 'Không tạo được',
-  'Could not complete': 'Không hoàn tất được', 'Could not close': 'Không đóng được',
+  'Could not complete': "Không hoàn tất được", 'Could not close': 'Không đóng được',
   'Could not remove': 'Không gỡ được', 'Could not load': 'Không tải được',
   'Could not send': 'Không gửi được', 'Could not generate': 'Không tạo được',
-  'Network error': 'Lỗi mạng', 'Save failed': 'Lưu thất bại', 'Upload failed': 'Tải lên thất bại',
+  'Network error': 'Lỗi mạng', 'Upload failed': 'Tải lên thất bại',
   'Hire failed': 'Tuyển dụng thất bại', 'Could not start PIP': 'Không khởi tạo được PIP',
   'Could not create cycle': 'Không tạo được chu kỳ', 'Could not update overtime': 'Không cập nhật được tăng ca',
   // ── toast long-tail: common standalone messages ──
-  'Deleted': 'Đã xoá', 'Saved': 'Đã lưu', 'Removed': 'Đã gỡ', 'Updated': 'Đã cập nhật',
-  'No file attached': 'Không có tệp đính kèm', 'Deal not found': 'Không tìm thấy giao dịch',
-  'Payment not found': 'Không tìm thấy khoản thanh toán', 'Not found': 'Không tìm thấy',
-  'Please check in first': 'Vui lòng chấm công vào trước', 'Leave approved': 'Đã duyệt nghỉ phép',
-  'Leave rejected': 'Đã từ chối nghỉ phép', 'Goal removed': 'Đã gỡ mục tiêu',
-  'Excel engine not loaded': 'Chưa tải bộ xuất Excel', 'PDF library not loaded': 'Chưa tải thư viện PDF',
-  'PDF engine not loaded': 'Chưa tải bộ xuất PDF', 'PDF engine not ready': 'Bộ xuất PDF chưa sẵn sàng',
-  'File too large (max 100 MB)': 'Tệp quá lớn (tối đa 100 MB)',
+  'Deleted': "Đã xoá", 'Saved': 'Đã lưu', 'Removed': "Đã xoá", 'Updated': 'Đã cập nhật',
   // ── empty-state messages rolled onto tkEmptyRow ──
   'No deals yet': 'Chưa có giao dịch',
   'No leads': 'Chưa có khách hàng tiềm năng',
@@ -24599,7 +24532,7 @@ const _VI = {
   'No files yet — attachments added on any register (daily / weekly reports, RFIs, quality, …) appear here automatically.': 'Chưa có tệp — tệp đính kèm từ bất kỳ sổ nào (báo cáo ngày / tuần, RFI, chất lượng, …) sẽ tự động hiển thị ở đây.',
   'No new licensed users to add — everyone in Microsoft 365 is already in the system.': 'Không có người dùng có bản quyền mới để thêm — mọi người trong Microsoft 365 đã có trong hệ thống.',
   // render-cap "show all" control
-  'Show all': 'Xem tất cả', 'Showing': 'Đang hiển thị', 'of': 'trong tổng số',
+  'Show all': 'Xem tất cả', 'Showing': 'Đang hiển thị', 'of': "trong tổng số",
   // leave validation (specific)
   'Choose a leave type': 'Hãy chọn loại nghỉ phép',
   'Pick a start date': 'Hãy chọn ngày bắt đầu',
@@ -24643,7 +24576,7 @@ const _VI = {
   'Fix the first ✕ above, then test again. Files are always kept in the portal regardless.': 'Hãy khắc phục dấu ✕ đầu tiên ở trên rồi kiểm tra lại. Dù thế nào tệp vẫn luôn được giữ trong cổng thông tin.',
   'Archive activity': 'Hoạt động lưu trữ',
   'uploaded': 'đã tải lên',
-  'failed': 'thất bại',
+  'failed': "thất bại",
   'Last error': 'Lỗi gần nhất',
   // stage labels returned by /api/invtrack/sptest
   'SharePoint folder link is set': 'Đã đặt đường dẫn thư mục SharePoint',
@@ -24669,7 +24602,6 @@ const _VI = {
   'Folder reachable': 'Thư mục truy cập được',
   'Archiving… this can take a minute.': 'Đang lưu trữ… có thể mất một phút.',
   'Uploaded': 'Đã tải lên',
-
   // ── Payments: beneficiary bank-detail backfill ──
   'Bank details': 'Thông tin ngân hàng',
   'Missing bank details': 'Thiếu thông tin ngân hàng',
@@ -24706,7 +24638,7 @@ const _VI = {
   'This year': 'Năm nay',
   'Tick the activities that apply to this employee.': 'Đánh dấu các hoạt động áp dụng cho nhân viên này.',
   'Title': 'Chức danh',
-  'To': 'Đến',
+  'To': "Đến",
   'Total Days': 'Tổng số ngày',
   'Total Hours': 'Tổng số giờ',
   'Total Hours Worked': 'Tổng số giờ làm việc',
@@ -24884,7 +24816,6 @@ const _VI = {
   'Closed on': 'Ngày đóng',
   'Closed today — completion date set automatically': 'Đã đóng hôm nay — ngày hoàn thành được ghi tự động',
   'Files': 'Tệp',
-
   /* — QA i18n pass: bulk EN→VN for Invoice Tracking, toasts, nav, placeholders, empty-states — */
   "Loading invoice tracking…": "Đang tải theo dõi hoá đơn…",
   "Invoice Tracking": "Theo dõi hoá đơn",
@@ -24932,7 +24863,6 @@ const _VI = {
   "open the issuer portal to get the amount + invoice file": "mở cổng của đơn vị phát hành để lấy số tiền + tệp hoá đơn",
   "lookup": "tra cứu",
   "Open portal": "Mở cổng",
-  "Could not open the file": "Không mở được tệp",
   "No file": "Không có tệp",
   "Open supplier portal": "Mở cổng nhà cung cấp",
   "Supplier / Seller": "Nhà cung cấp / Người bán",
@@ -25306,7 +25236,6 @@ const _VI = {
   "Culture-Fit & Values": "Phù hợp văn hóa & giá trị",
   "Comp / Logistics / Notice": "Lương / Hậu cần / Thời gian báo trước",
   "Retention": "Tiền giữ lại",
-
   /* count units for the number+unit VN fallback */
   "items": "mục",
   "item": "mục",
@@ -25498,7 +25427,7 @@ async function tkRenderEntitlements() {
   const short = rows.filter(x => x.shortfall > 0);
   const canApply = _lvlRank(_userLevel) >= _lvlRank('editor');
   const yearSel = '<select class="sel-filter" onchange="_entYear=+this.value;tkRenderEntitlements()">' +
-    [_entYear - 1, _entYear, _entYear + 1].map(y => '<option' + (y === _entYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
+    [_entYear - 1, _entYear, _entYear + 1].map(y => '<option value="' + y + '"' + (y === _entYear ? ' selected' : '') + '>' + y + '</option>').join('') + '</select>';
 
   const head = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">' +
     '<div><div style="font-weight:700;color:var(--navy)">' + _t('Annual leave entitlement') + ' — ' + _entYear + '</div>' +
@@ -28666,7 +28595,14 @@ async function tkRenderContracts() {
       '<td style="white-space:nowrap;font-size:12px">' + (x.type === 'indefinite' ? _t('Indefinite') : (x.from ? _crmEsc(x.from) + ' → ' + _crmEsc(x.to || '?') : '—')) +
         (x.definiteCount > 1 ? '<div style="font-size:10px;color:var(--text-light)">' + x.definiteCount + ' ' + _t('fixed terms so far') + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.daysLeft == null ? '—' : x.daysLeft) + '</td>' +
-      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _t(st.label) + '</span>' + issues + '</td>' +
+      // "Active" means two different things in this app and cannot share one translation. For a
+      // PERSON it is employment — "Đang làm", the sense the employee directory, the profile badge
+      // and the HR headcount tile all need, and the sense the stored status value carries, so the
+      // bare key has to keep it. For a CONTRACT it is in force — "Đang hiệu lực" — which is what
+      // this register means and where "Đang làm" would be nonsense. _t2 states the Vietnamese here
+      // rather than inventing a second English key that would then have to be kept in step.
+      '<td><span class="badge ' + st.cls + '" style="font-size:10px">' +
+        (x.status === 'active' ? _t2('Active', 'Đang hiệu lực') : _t(st.label)) + '</span>' + issues + '</td>' +
       '<td style="text-align:right;white-space:nowrap">' +
         // The document, where the row about it is. The register warned "no signed copy attached" for
         // months with no way to attach one, and the issued contract was never kept at all.
@@ -31262,10 +31198,10 @@ async function saveEmployee() {
     <div class="form-group"><label class="form-label">Schedule Name</label><input type="text" class="form-control" id="sch-name" placeholder="e.g. Night Shift 22:00 – 06:00"></div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Department</label>
-        <select class="form-control" id="sch-dept"><option>All</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select>
+        <select class="form-control" id="sch-dept"><option value="All">All</option><option value="Human Resource &amp; Operation (HRO)">Human Resource &amp; Operation (HRO)</option><option value="Project Management Consultant (PMC)">Project Management Consultant (PMC)</option><option value="Engineering Consultant (ENG)">Engineering Consultant (ENG)</option><option value="Solution Sales (SAL)">Solution Sales (SAL)</option><option value="Customer Service &amp; Maintenance (CSM)">Customer Service &amp; Maintenance (CSM)</option><option value="Factory (FAC)">Factory (FAC)</option><option value="Finance Accountant (FA)">Finance Accountant (FA)</option><option value="Board Management (BM)">Board Management (BM)</option></select>
       </div>
       <div class="form-group"><label class="form-label">Work Days</label>
-        <select class="form-control" id="sch-days"><option>Mon – Fri</option><option>Mon – Sat</option><option>Mon – Sun</option></select>
+        <select class="form-control" id="sch-days"><option value="Mon – Fri">Mon – Fri</option><option value="Mon – Sat">Mon – Sat</option><option value="Mon – Sun">Mon – Sun</option></select>
       </div>
     </div>
     <div class="grid-2">
@@ -31275,7 +31211,7 @@ async function saveEmployee() {
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Grace Period (min)</label><input type="number" class="form-control" id="sch-grace" value="15" min="0" max="60"></div>
       <div class="form-group"><label class="form-label">Overtime Rate</label>
-        <select class="form-control" id="sch-ot"><option>1.5×</option><option>2.0×</option><option>—</option></select>
+        <select class="form-control" id="sch-ot"><option value="1.5×">1.5×</option><option value="2.0×">2.0×</option><option value="—">—</option></select>
       </div>
     </div>
     <!-- The portal records one check-in and one check-out, so a row is time ON SITE. Without the
@@ -31317,17 +31253,17 @@ async function saveEmployee() {
       <div class="form-group"><label class="form-label">Employee ID</label><input type="text" class="form-control" id="emp-id" placeholder="Leave blank to auto-generate (HML-###) — or type a custom ID"></div>
     </div>
     <div class="grid-2">
-      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="emp-gender"><option value="">—</option><option>Male</option><option>Female</option></select></div>
+      <div class="form-group"><label class="form-label">Gender</label><select class="form-control" id="emp-gender"><option value="">—</option><option value="Male">Male</option><option value="Female">Female</option></select></div>
       <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" id="emp-dob"></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Position / Job Title <span style="color:var(--danger)">*</span></label><input type="text" class="form-control" id="emp-title" placeholder="e.g. Design Engineer"></div>
-      <div class="form-group"><label class="form-label">Job Level</label><select class="form-control" id="emp-level"><option value="">—</option><option>Director</option><option>Manager</option><option>Lead</option><option>Staff</option><option>Intern</option></select></div>
+      <div class="form-group"><label class="form-label">Job Level</label><select class="form-control" id="emp-level"><option value="">—</option><option value="Director">Director</option><option value="Manager">Manager</option><option value="Lead">Lead</option><option value="Staff">Staff</option><option value="Intern">Intern</option></select></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Department <span style="color:var(--danger)">*</span></label>
-        <select class="form-control" id="emp-dept"><option value="">— Select —</option><option>Human Resource &amp; Operation (HRO)</option><option>Project Management Consultant (PMC)</option><option>Engineering Consultant (ENG)</option><option>Solution Sales (SAL)</option><option>Customer Service &amp; Maintenance (CSM)</option><option>Factory (FAC)</option><option>Finance Accountant (FA)</option><option>Board Management (BM)</option></select></div>
-      <div class="form-group"><label class="form-label">Employment Type</label><select class="form-control" id="emp-type"><option>Full Time</option><option>Part Time</option><option>Intern</option></select></div>
+        <select class="form-control" id="emp-dept"><option value="">— Select —</option><option value="Human Resource &amp; Operation (HRO)">Human Resource &amp; Operation (HRO)</option><option value="Project Management Consultant (PMC)">Project Management Consultant (PMC)</option><option value="Engineering Consultant (ENG)">Engineering Consultant (ENG)</option><option value="Solution Sales (SAL)">Solution Sales (SAL)</option><option value="Customer Service &amp; Maintenance (CSM)">Customer Service &amp; Maintenance (CSM)</option><option value="Factory (FAC)">Factory (FAC)</option><option value="Finance Accountant (FA)">Finance Accountant (FA)</option><option value="Board Management (BM)">Board Management (BM)</option></select></div>
+      <div class="form-group"><label class="form-label">Employment Type</label><select class="form-control" id="emp-type"><option value="Full Time">Full Time</option><option value="Part Time">Part Time</option><option value="Intern">Intern</option></select></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Work Email <span style="color:var(--text-light);font-weight:400">(login)</span></label><input type="email" class="form-control" id="emp-email" placeholder="name@humiley.com" oninput="this.dataset.edited='1'"></div>
@@ -31335,11 +31271,11 @@ async function saveEmployee() {
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Start Date</label><input type="date" class="form-control" id="emp-start"></div>
-      <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="emp-status"><option>Active</option><option>Inactive</option></select></div>
+      <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="emp-status"><option value="Active">Active</option><option value="Inactive">Inactive</option></select></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Direct Manager <span style="color:var(--text-light);font-weight:400">(approves leave)</span></label><select class="form-control" id="emp-manager"><option value="">— None (top of org) —</option></select></div>
-      <div class="form-group"><label class="form-label">Family Status</label><select class="form-control" id="emp-family"><option value="">—</option><option>Single</option><option>Married</option></select></div>
+      <div class="form-group"><label class="form-label">Family Status</label><select class="form-control" id="emp-family"><option value="">—</option><option value="Single">Single</option><option value="Married">Married</option></select></div>
     </div>
     <div class="grid-2">
       <div class="form-group"><label class="form-label">Education Level</label><input type="text" class="form-control" id="emp-education" placeholder="e.g. Bachelor's Degree"></div>
@@ -31434,7 +31370,7 @@ async function saveEmployee() {
         </div>
         <div class="form-group"><label class="form-label">Account holder <span style="font-weight:400;color:var(--text-light)">(only if different from their name)</span></label><input class="form-control" id="emp-bankHolder" placeholder="NGUYEN VAN A"></div>
         <div class="form-group"><label class="form-label">Bank branch</label><input class="form-control" id="emp-bankBranch" placeholder="Tan Binh"></div>
-        <div class="form-group"><label class="form-label">Shirt / Uniform Size</label><select class="form-control" id="emp-shirt"><option value="">—</option><option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>3XL</option></select></div>
+        <div class="form-group"><label class="form-label">Shirt / Uniform Size</label><select class="form-control" id="emp-shirt"><option value="">—</option><option value="XS">XS</option><option value="S">S</option><option value="M">M</option><option value="L">L</option><option value="XL">XL</option><option value="XXL">XXL</option><option value="3XL">3XL</option></select></div>
       </div>
       <label class="form-label">Provision on hire <span style="color:var(--text-light);font-weight:400">(auto-creates assets assigned to this employee)</span></label>
       <div style="display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:6px">
@@ -31524,10 +31460,10 @@ async function saveEmployee() {
     <div class="form-group">
       <label class="form-label">Action</label>
       <select class="form-control" id="note-action">
-        <option>Noted — No action required</option>
-        <option>Warning issued</option>
-        <option>Accepted — Legitimate reason</option>
-        <option>HR escalation required</option>
+        <option value="Noted — No action required">Noted — No action required</option>
+        <option value="Warning issued">Warning issued</option>
+        <option value="Accepted — Legitimate reason">Accepted — Legitimate reason</option>
+        <option value="HR escalation required">HR escalation required</option>
       </select>
     </div>
     <div class="modal-footer">
