@@ -84,20 +84,52 @@ def test_the_contract_rule_dropdowns_offer_exactly_the_codes_the_engine_READS():
                                   % (what, sorted(offered), sorted(known)))
 
 
+def _frag(src, start, end):
+    """Slice from `start` to the next `end`, so a check reads only the function it names."""
+    i = src.index(start)
+    j = src.find(end, i + len(start))
+    return src[i:j if j > 0 else len(src)]
+
+
 def _email_builder():
     """The approval-request email body, sliced out of index.html."""
     i = INDEX.index("function _tkApprovalEmailHtml")
     return INDEX[i:INDEX.index("\nasync function tkEmailApprovalRequest", i)]
 
 
-def test_the_approval_email_uses_the_REVERSE_mark_on_its_navy_header():
-    """The header is #205090. The full-colour logo is an emerald H beside a NAVY wordmark, so on
-    navy only the H survives and the company's name vanishes from its own approval email."""
-    body = _email_builder()
-    assert "_LH.logoWhite" in body, "the email header must take the reverse (white) mark"
-    assert "_LH.logo\b" not in body and "_LH.logo " not in body and "_LH.logo)" not in body, \
-        "the full-colour letterhead logo belongs on paper, not on the navy email header"
-    assert "#205090" in body or "navy" in body
+def _appsrc():
+    return (ROOT / "app.py").read_text()
+
+
+# ── one brand frame, on every outgoing email ────────────────────────────────────────────────────
+# These are cheap and they guard a whole class of defect that no test could otherwise see: the
+# markup is rendered by Outlook, OWA, Gmail and Apple Mail, none of which we can run in CI.
+
+def test_every_frontend_sendMail_call_goes_through_the_logo_injector():
+    """The inline logo is attached by _tkMailMsg(). A send site that builds its own message object
+    and posts it directly gets no attachment, so its `cid:` reference resolves to nothing and the
+    header shows a broken image — worse than the wrong-coloured logo this replaced."""
+    sites = re.findall(r"body: JSON\.stringify\(\{ message: ([^,]+?), saveToSentItems", INDEX)
+    assert sites, "no /me/sendMail call sites found — has the send path moved?"
+    unwrapped = [s.strip() for s in sites if not s.strip().startswith("_tkMailMsg(")]
+    assert not unwrapped, "these send sites bypass _tkMailMsg: %s" % unwrapped
+
+
+def test_no_portal_email_is_sent_as_bare_plain_text():
+    """Every template is served in the same frame. A plain-text body carries no logo at all, which
+    is the same complaint as a logo in the wrong colour — the mail does not look like the company."""
+    assert "contentType: 'Text'" not in INDEX, "a Graph message body is still plain text"
+
+
+def test_the_email_frame_uses_the_white_mark_and_styles_its_fallback():
+    """The header is navy. The mark must be the reverse one, and the alt text — all a client shows
+    when it declines the image — must be white too, or it is near-black on navy."""
+    for src, label in ((INDEX, "index.html"), (_appsrc(), "app.py")):
+        i = src.find("_tkMailLogoImg") if label == "index.html" else src.find("def _email_logo_img")
+        assert i > 0, label
+        img = src[i:i + 700]
+        assert "cid:" in img, "%s: the header logo must ride as an inline attachment" % label
+        assert "#ffffff" in img, "%s: the alt text must be white on the navy header" % label
 
 
 def test_no_email_style_depends_on_a_CSS_VARIABLE():
@@ -106,6 +138,53 @@ def test_no_email_style_depends_on_a_CSS_VARIABLE():
     it only looked right because the client's default happened to be white, and went dark behind
     dark ink in a dark-mode mailbox. This markup is read by mail clients, not by our stylesheet.
     """
-    body = _email_builder()
-    leaks = re.findall(r"[a-z-]+:\s*var\(--[a-z-]+\)", body)
-    assert not leaks, "CSS variables cannot be resolved by a mail client: %s" % leaks
+    for src, label in ((_email_builder(), "_tkApprovalEmailHtml"),
+                       (_frag(INDEX, "function _tkMailShell", "function _tkMailMsg"), "_tkMailShell"),
+                       (_frag(_appsrc(), "def _email_shell", "\ndef "), "_email_shell")):
+        leaks = re.findall(r"[a-z-]+:\s*var\(--[a-z-]+\)", src)
+        assert not leaks, "%s: a mail client cannot resolve %s" % (label, leaks)
+
+
+def test_every_backend_email_reaches_the_shared_frame():
+    """app.py has one send choke point. Any body handed to it that never passes through
+    _email_shell goes out unbranded — which is how the two document-reminder emails ended up as
+    bare <p>/<ul> with no header at all."""
+    src = _appsrc()
+    builders = ("_appr_email_html", "_digest_html")
+    for b in builders:
+        body = _frag(src, "def %s(" % b, "\ndef ")
+        assert "_email_shell(" in body, "%s does not use the shared frame" % b
+        assert "Humiley_Logo_White.png" not in body, "%s still links the logo by URL" % b
+    # and nothing hands _graph_send_mail a body that is neither a shell call nor one of those
+    for m in re.finditer(r"_graph_send_mail\(", src):
+        call = src[m.start():m.start() + 900]
+        assert ("_email_shell(" in call or "html" in call.split(")")[0] or ", html" in call
+                or "_appr_email_html" in call), "an unbranded body reaches the send path: %s" % call[:110]
+
+
+def test_the_logo_is_attached_only_when_the_body_asks_for_it():
+    """Attaching unconditionally puts a paperclip on every mail, including ones with no logo."""
+    src = _frag(_appsrc(), "def _graph_send_mail(", "\ndef ")
+    assert 'in (html or "")' in src, "the backend attaches the logo without checking the body"
+    js = _frag(INDEX, "function _tkMailMsg", "\n/*")
+    assert "indexOf('cid:'" in js, "the frontend attaches the logo without checking the body"
+
+
+def test_the_contract_rule_dropdowns_offer_exactly_the_codes_the_engine_READS():
+    """The select in index.html and the tuples in sales_contract.py are two copies of one list.
+
+    They are matched by exact string, and the engine now REFUSES a rule it cannot read rather than
+    silently recovering nothing. That makes drift expensive in a new way: rename a code in Python,
+    leave the dropdown alone, and every contract signed afterwards cannot be claimed at all. Cheap
+    to check, so check it.
+    """
+    import sales_contract as SC
+    html = INDEX
+    for const, rules, what in (("_SCT_RECOVERY", SC.RECOVERY_RULES, "advance recovery"),
+                               ("_SCT_RELEASE", SC.RELEASE_RULES, "retention release")):
+        m = re.search(r"const %s\s*=\s*\[(.*?)\];" % const, html)
+        assert m, "%s is not defined in index.html" % const
+        offered = set(re.findall(r"\['([a-z_]+)'", m.group(1)))
+        known = {r["code"] for r in rules}
+        assert offered == known, ("the %s dropdown offers %s but the engine reads %s"
+                                  % (what, sorted(offered), sorted(known)))

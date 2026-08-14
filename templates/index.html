@@ -4018,8 +4018,8 @@ async function tkEmailLeaveApproval(res, lv) {
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: { subject, body: { contentType: 'HTML', content: html },
-          toRecipients: [{ emailAddress: { address: res.managerEmail } }] }, saveToSentItems: true })
+        body: JSON.stringify({ message: _tkMailMsg({ subject, body: { contentType: 'HTML', content: html },
+          toRecipients: [{ emailAddress: { address: res.managerEmail } }] }), saveToSentItems: true })
       });
       if (resp.ok) { toast('Approval request emailed to ' + mgrName); return; }
     } catch (e) { /* fall back to mailto */ }
@@ -4027,6 +4027,76 @@ async function tkEmailLeaveApproval(res, lv) {
   toast('Opening email to ' + mgrName + ' — press Send to notify them.', 'info', 6000);
   window.location.href = 'mailto:' + encodeURIComponent(res.managerEmail) +
     '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(text);
+}
+
+/* ══════════ One brand frame for every email this portal sends ══════════
+   The header is navy, so the logo is the REVERSE (all-white) mark — the full-colour one is an
+   emerald H beside a NAVY wordmark and vanishes on navy.
+
+   It travels as a `cid:` INLINE ATTACHMENT, not a URL and not a data: URI, because each of those
+   fails on a different half of the mailboxes these land in: Outlook and OWA block remote images by
+   default, and Outlook's desktop renderer ignores base64 data: URIs. cid: is what mail clients have
+   always used for embedded images and is the one method all of them draw.
+
+   Literal colours only — no var(--x). Mail clients do not resolve CSS custom properties, and an
+   unresolved background leaves the card transparent: white by luck of the client's default, dark
+   behind dark ink in a dark-mode mailbox. Mirrors _email_shell()/_email_logo_img() in app.py. */
+const TK_MAIL_LOGO_CID = 'humileylogo';
+
+function _tkMailLogoImg(h) {
+  h = h || 30;
+  // The alt text is styled white as well: when a client declines the image the alt is what is left,
+  // and unstyled it renders near-black on navy — the same bug one layer down.
+  return '<img src="cid:' + TK_MAIL_LOGO_CID + '" alt="Humiley" height="' + h + '" style="height:' + h +
+    'px;width:auto;display:block;border:0;color:#ffffff;font:800 20px Segoe UI,Arial,sans-serif">';
+}
+
+function _tkMailShell(inner, strap, width) {
+  const navy = '#205090', emerald = '#00B060', mut = '#5C6470', line = '#E5E9F0', panel = '#F7F9FC';
+  const w = width || 600;
+  return '<div style="background:' + panel + ';padding:22px 0;font-family:Segoe UI,Arial,sans-serif">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">' +
+      '<table role="presentation" width="' + w + '" cellpadding="0" cellspacing="0" style="max-width:' + w +
+        'px;width:100%;background:#ffffff;border:1px solid ' + line + ';border-radius:14px;overflow:hidden">' +
+        '<tr><td style="background:' + navy + ';padding:16px 26px">' + _tkMailLogoImg(30) +
+          '<div style="font:600 12px Segoe UI,Arial,sans-serif;color:#B5C8E5;margin-top:5px">' +
+          (strap || 'People &amp; Workplace · Creating Sustainable Value') + '</div></td></tr>' +
+        '<tr><td style="height:4px;background:' + emerald + '"></td></tr>' +
+        inner +
+        '<tr><td style="border-top:1px solid ' + line + ';padding:16px 26px">' +
+          '<div style="font:700 13px Segoe UI,Arial,sans-serif;color:' + navy + '">Humiley Group Inc.</div>' +
+          '<div style="font:11px Segoe UI,Arial,sans-serif;color:' + mut + ';margin-top:2px">Creating Sustainable Value · People &amp; Workplace Portal</div>' +
+        '</td></tr>' +
+      '</table>' +
+    '</td></tr></table>' +
+  '</div>';
+}
+
+/* A plain-text body, rendered inside the frame. Used by the senders that were written as text —
+   the wording is untouched, so nothing that was reviewed and approved as copy silently changes. */
+function _tkMailFromText(text, strap) {
+  const esc = s => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const paras = String(text || '').split(/\n\s*\n/).filter(s => s.trim()).map(pg =>
+    '<p style="font:14px/1.7 Segoe UI,Arial,sans-serif;color:#1F2937;margin:0 0 14px">' +
+    esc(pg.trim()).replace(/\n/g, '<br>') + '</p>').join('');
+  return _tkMailShell('<tr><td style="padding:24px 26px 10px">' + paras + '</td></tr>', strap);
+}
+
+/* Hangs the logo off the message as an inline attachment — only when the body actually references
+   it, so a mail with no logo is not given a stray paperclip. Every /me/sendMail call goes through
+   this. */
+function _tkMailMsg(msg) {
+  try {
+    const b = msg && msg.body;
+    if (!b || b.contentType !== 'HTML' || String(b.content || '').indexOf('cid:' + TK_MAIL_LOGO_CID) < 0) return msg;
+    const b64 = String(typeof HUMILEY_LOGO_WHITE_B64 !== 'undefined' ? HUMILEY_LOGO_WHITE_B64 : '').split(',')[1] || '';
+    if (!b64) return msg;
+    msg.attachments = (msg.attachments || []).concat([{ '@odata.type': '#microsoft.graph.fileAttachment',
+      name: 'humiley-logo.png', contentType: 'image/png', contentBytes: b64,
+      isInline: true, contentId: TK_MAIL_LOGO_CID }]);
+  } catch (e) {}
+  return msg;
 }
 
 /* Generic HTML approval-request email for claims / travel — carries a prominent
@@ -4038,14 +4108,7 @@ function _tkApprovalEmailHtml(o) {
   o = o || {};
   const navy = '#205090', emerald = '#00B060', red = '#C00000', ink = '#1F2937', grey = '#5C6470', line = '#E5E9F0', panel = '#F7F9FC';
   const esc = (typeof _crmEsc === 'function') ? _crmEsc : (s => String(s == null ? '' : s));
-  // The header behind this is NAVY, so it takes the reverse mark. The full-colour logo puts a navy
-  // wordmark on navy and only the emerald H survives — the mail goes out looking half-printed.
-  const logo = (typeof _LH !== 'undefined' && _LH && _LH.logoWhite) ? _LH.logoWhite : '';
-  // The alt text is styled white too. A client that blocks the image falls back to the alt, and an
-  // unstyled alt renders in the default near-black — invisible on navy, which is the same bug the
-  // reverse mark exists to fix, just one layer down.
-  const logoImg = logo ? ('<img src="' + logo + '" alt="Humiley" height="30" style="height:30px;display:inline-block;border:0;vertical-align:middle;color:#ffffff;font:800 20px Segoe UI,Arial,sans-serif">')
-    : ('<span style="font:800 20px Segoe UI,Arial,sans-serif;color:#fff">Humiley</span>');
+  const logoImg = _tkMailLogoImg(30);
   const btn = (href, bg, label) => href ? ('<a href="' + href + '" style="display:inline-block;background:' + bg + ';color:#fff;font:700 15px Segoe UI,Arial,sans-serif;text-decoration:none;padding:12px 26px;border-radius:8px">' + label + '</a>') : '';
   const oneClick = (o.approve || o.reject) ? (
     '<table role="presentation" cellpadding="0" cellspacing="0"><tr>' +
@@ -4113,7 +4176,7 @@ async function tkEmailApprovalRequest(to, mgrName, subject, heading, detailsHtml
       const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: message, saveToSentItems: true })
+        body: JSON.stringify({ message: _tkMailMsg(message), saveToSentItems: true })
       });
       if (resp.ok) return true;
     } catch (e) { /* fall through to plain notify */ }
@@ -6331,7 +6394,7 @@ async function tkNotifyGraph(to, subject, body, noTeams) {
   if (to && _msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] }, saveToSentItems: true }) });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: _tkMailMsg({ subject: subject, body: { contentType: 'HTML', content: _tkMailFromText(body) }, toRecipients: [{ emailAddress: { address: to } }] }), saveToSentItems: true }) });
       sent = resp.ok;
     } catch (e) {}
   }
@@ -9705,9 +9768,9 @@ async function tkMailRequester(to, name, subject, body, cc, html) {
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const msg = { subject: subject, body: html ? { contentType: 'HTML', content: html } : { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: to } }] };
+      const msg = { subject: subject, body: { contentType: 'HTML', content: html ? _tkMailShell('<tr><td style="padding:24px 26px 10px">' + html + '</td></tr>') : _tkMailFromText(body) }, toRecipients: [{ emailAddress: { address: to } }] };
       if (ccList.length) msg.ccRecipients = ccList.map(a => ({ emailAddress: { address: a } }));
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: _tkMailMsg(msg), saveToSentItems: true }) });
       if (resp.ok) { toast('Emailed ' + (name || to) + (ccList.length ? ' (cc ' + ccList.length + ')' : '')); return true; }
     } catch (e) {}
   }
@@ -10021,9 +10084,9 @@ async function tkEmailPayslip(empId) {
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const msg = { subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: e.email } }] };
+      const msg = { subject, body: { contentType: 'HTML', content: _tkMailFromText(body, 'Confidential payslip &middot; Phi\u1ebfu l\u01b0\u01a1ng b\u1ea3o m\u1eadt') }, toRecipients: [{ emailAddress: { address: e.email } }] };
       if (pdfB64) msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: _payslipFilename(e, period), contentType: 'application/pdf', contentBytes: pdfB64 }];
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: _tkMailMsg(msg), saveToSentItems: true }) });
       if (resp.ok) { tkAudit('Payslip emailed', e.name, period); toast('Payslip PDF emailed confidentially to ' + e.name); return; }
     } catch (err) { /* fall back to Outlook compose */ }
   }
@@ -10148,9 +10211,9 @@ async function tkSendAssetHandover(empId, opts) {
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const msg = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: e.email } }], ccRecipients: [{ emailAddress: { address: 'HR@humiley.com' } }] };
+      const msg = { subject: subject, body: { contentType: 'HTML', content: _tkMailFromText(body, 'Asset &amp; Equipment Handover &middot; B\u00e0n giao t\u00e0i s\u1ea3n') }, toRecipients: [{ emailAddress: { address: e.email } }], ccRecipients: [{ emailAddress: { address: 'HR@humiley.com' } }] };
       if (pdfB64) msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: fname, contentType: 'application/pdf', contentBytes: pdfB64 }];
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: _tkMailMsg(msg), saveToSentItems: true }) });
       if (resp.ok) { tkAudit('Asset handover emailed', e.name, fname); toast('Handover emailed to ' + e.name + ' (cc HR)'); return; }
     } catch (err) {}
   }
@@ -10269,9 +10332,9 @@ async function tkEmailHandoverToHR(empId) {
   if (_msalApp && _account) {
     try {
       const r = await _msalApp.acquireTokenSilent({ scopes: ['Mail.Send'], account: _account });
-      const msg = { subject: subject, body: { contentType: 'Text', content: body }, toRecipients: [{ emailAddress: { address: 'HR@humiley.com' } }] };
+      const msg = { subject: subject, body: { contentType: 'HTML', content: _tkMailFromText(body, 'Asset &amp; Equipment Handover &middot; B\u00e0n giao t\u00e0i s\u1ea3n') }, toRecipients: [{ emailAddress: { address: 'HR@humiley.com' } }] };
       msg.attachments = [{ '@odata.type': '#microsoft.graph.fileAttachment', name: fname, contentType: (/\.pdf$/i.test(fname) ? 'application/pdf' : 'application/octet-stream'), contentBytes: b64 }];
-      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, saveToSentItems: true }) });
+      const resp = await fetch('https://graph.microsoft.com/v1.0/me/sendMail', { method: 'POST', headers: { 'Authorization': 'Bearer ' + r.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ message: _tkMailMsg(msg), saveToSentItems: true }) });
       if (resp.ok) { tkAudit('Handover emailed to HR', e.name, fname); toast('Handover emailed to HR@humiley.com'); return; }
     } catch (err) {}
   }

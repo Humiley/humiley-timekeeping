@@ -18,6 +18,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 import os
+import base64
 import re
 import secrets
 import time
@@ -334,6 +335,64 @@ def _health_probe():
 _APPR_EMAIL_HEALTH = {"at": "", "ok": 0, "failed": 0, "lastError": ""}
 
 
+# ── the brand mark on an outgoing email ──────────────────────────────────────────────────────────
+# Every email this portal sends puts the logo on a NAVY header, so it takes the REVERSE (all-white)
+# mark — the full-colour one is an emerald H beside a navy wordmark, and on navy the wordmark simply
+# disappears.
+#
+# It travels as a `cid:` INLINE ATTACHMENT rather than a URL or a data: URI, because those two each
+# fail on a different half of the mailboxes these go to: Outlook and OWA block remote images by
+# default, and Outlook's desktop renderer ignores base64 data: URIs. cid: is what mail clients have
+# always used for embedded images and is the only option all of them draw. A logo nobody can see is
+# the same defect as a logo in the wrong colour.
+EMAIL_LOGO_CID = "humileylogo"
+_EMAIL_LOGO_B64 = None
+
+
+def _email_logo_b64():
+    """The white mark's bytes, base64, read once. Empty string if the asset is missing — in which
+    case the header falls back to the styled alt text rather than a broken-image box."""
+    global _EMAIL_LOGO_B64
+    if _EMAIL_LOGO_B64 is None:
+        try:
+            with open(os.path.join(BASE_DIR, "static", "brand", "Humiley_Logo_White.png"), "rb") as fh:
+                _EMAIL_LOGO_B64 = base64.b64encode(fh.read()).decode("ascii")
+        except Exception:
+            _EMAIL_LOGO_B64 = ""
+    return _EMAIL_LOGO_B64
+
+
+def _email_logo_img(height=30):
+    """The <img> for the header. The alt text is styled WHITE: when a client declines to show the
+    image the alt is what is left, and unstyled it renders near-black on navy — the same bug one
+    layer down."""
+    return ("<img src='cid:" + EMAIL_LOGO_CID + "' alt='Humiley' height='" + str(height) + "' "
+            "style='height:" + str(height) + "px;width:auto;display:block;border:0;margin:0 0 6px;"
+            "color:#ffffff;font:800 20px Segoe UI,Arial,sans-serif'>")
+
+
+def _email_shell(inner, strap="Creating Sustainable Value", width=600):
+    """The one branded frame every portal email is served in: navy header with the reverse mark, the
+    emerald rule, a white card and the footer.
+
+    Literal colours only. This markup is read by Outlook, OWA, Gmail and Apple Mail, none of which
+    resolve CSS custom properties — a `var(--card)` here leaves the card with NO background, which
+    looks white by luck of the client's default and goes dark behind dark ink in a dark mailbox.
+    """
+    NAVY = "#205090"; EMER = "#00B060"; MUT = "#5C6470"; LINE = "#e3e8f0"; BG = "#f0f2f8"
+    return (
+        "<div style='margin:0;padding:24px;background:" + BG + ";font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
+        "<div style='max-width:" + str(width) + "px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
+        "<div style='background:" + NAVY + ";padding:18px 24px;color:#ffffff'>"
+        + _email_logo_img(30) +
+        "<div style='font-size:12px;color:#B5C8E5'>" + _hesc(strap) + "</div></div>"
+        "<div style='height:4px;background:" + EMER + "'></div>"
+        + inner +
+        "</div>"
+        "<div style='max-width:" + str(width) + "px;margin:10px auto 0;text-align:center;font-size:11px;color:" + MUT + "'>"
+        "&copy; Humiley Vi&#7879;t Nam &middot; portal.humiley.com</div></div>")
+
+
 def _portal_base():
     return "https://" + (os.environ.get("PORTAL_DOMAIN") or "portal.humiley.com").strip().rstrip("/")
 
@@ -363,11 +422,21 @@ def _graph_send_mail(sender, to, subject, html, cc=None):
 
     def _send():
         try:
-            msg = {"message": {"subject": subject,
-                               "body": {"contentType": "HTML", "content": html},
-                               "toRecipients": [{"emailAddress": {"address": a}} for a in to],
-                               "ccRecipients": [{"emailAddress": {"address": a}} for a in (cc or [])]},
-                   "saveToSentItems": True}
+            message = {"subject": subject,
+                       "body": {"contentType": "HTML", "content": html},
+                       "toRecipients": [{"emailAddress": {"address": a}} for a in to],
+                       "ccRecipients": [{"emailAddress": {"address": a}} for a in (cc or [])]}
+            # The header logo rides along as an inline attachment. Attached only when the body
+            # actually references it, so a plain-text or logo-less mail is not given a stray
+            # paperclip — and only when the asset really read, so a missing file degrades to the
+            # styled alt text instead of a broken-image box.
+            logo = _email_logo_b64() if ("cid:" + EMAIL_LOGO_CID) in (html or "") else ""
+            if logo:
+                message["attachments"] = [{"@odata.type": "#microsoft.graph.fileAttachment",
+                                           "name": "humiley-logo.png", "contentType": "image/png",
+                                           "contentBytes": logo, "isInline": True,
+                                           "contentId": EMAIL_LOGO_CID}]
+            msg = {"message": message, "saveToSentItems": True}
             url = "https://graph.microsoft.com/v1.0/users/" + urllib.parse.quote(sender) + "/sendMail"
             body = json.dumps(msg).encode("utf-8")
 
@@ -409,13 +478,7 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
     for k, v in rows:
         tr += ("<tr><td style='padding:7px 0;color:" + MUT + ";font-size:13px;width:150px;vertical-align:top'>" + esc(k) +
                "</td><td style='padding:7px 0;color:" + INK + ";font-size:13px;font-weight:600'>" + esc(v) + "</td></tr>")
-    return (
-        "<div style='margin:0;padding:24px;background:" + BG + ";font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
-        "<div style='max-width:600px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
-        "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
-        "<img src='" + _portal_base() + "/static/brand/Humiley_Logo_White.png' alt='Humiley' height='30' "
-        "style='height:30px;width:auto;display:block;border:0;margin:0 0 6px'>"
-        "<div style='font-size:12px;opacity:.85'>Creating Sustainable Value</div></div>"
+    return _email_shell(
         "<div style='padding:24px'>"
         "<span style='display:inline-block;background:" + scolor + "22;color:" + scolor + ";font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;letter-spacing:.5px'>" + esc(str(status).upper()) + "</span>"
         "<h1 style='font-size:19px;color:" + INK + ";margin:14px 0 6px'>" + esc(title) + "</h1>"
@@ -423,9 +486,7 @@ def _appr_email_html(title, status, intro, rows, cta_label, cta_url):
         "<table style='width:100%;border-collapse:collapse;border-top:1px solid " + LINE + ";border-bottom:1px solid " + LINE + ";margin:0 0 22px'>" + tr + "</table>"
         "<a href='" + esc(cta_url) + "' style='display:inline-block;background:" + NAVY + ";color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 26px;border-radius:9px'>" + esc(cta_label) + " &rarr;</a>"
         "<p style='font-size:12px;color:" + MUT + ";margin:20px 0 0;line-height:1.6'>Approvals are made in the portal with your e-signature (21 CFR Part 11). This is an automated message — please do not reply.</p>"
-        "</div></div>"
-        "<div style='max-width:600px;margin:10px auto 0;text-align:center;font-size:11px;color:" + MUT + "'>&copy; Humiley Việt Nam &middot; portal.humiley.com</div></div>"
-    )
+        "</div>")
 
 
 _APPR_EVENT = {"reviewed": "reviewed", "approved": "approved", "rejected": "rejected", "paid": "paid"}
@@ -866,12 +927,7 @@ def _digest_html(title, intro, sections, summary):
     for lbl, val in summary:
         chips += ("<span style='display:inline-block;background:#fff;border:1px solid " + LINE + ";border-radius:8px;padding:6px 12px;margin:0 6px 6px 0;font-size:12px;color:" + MUT + "'>"
                   + esc(lbl) + " <b style='color:" + NAVY + "'>" + esc(val) + "</b></span>")
-    return (
-        "<div style='margin:0;padding:24px;background:" + BG + ";font-family:Segoe UI,Roboto,Helvetica,Arial,sans-serif'>"
-        "<div style='max-width:620px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid " + LINE + "'>"
-        "<div style='background:" + NAVY + ";padding:18px 24px;color:#fff'>"
-        "<img src='" + _portal_base() + "/static/brand/Humiley_Logo_White.png' alt='Humiley' height='28' style='height:28px;width:auto;display:block;border:0;margin:0 0 6px'>"
-        "<div style='font-size:12px;opacity:.85'>Weekly digest &middot; Creating Sustainable Value</div></div>"
+    return _email_shell(
         "<div style='padding:22px 24px'>"
         "<h1 style='font-size:19px;color:" + INK + ";margin:0 0 6px'>" + esc(title) + "</h1>"
         "<p style='font-size:14px;color:" + MUT + ";line-height:1.6;margin:0 0 6px'>" + esc(intro) + "</p>"
@@ -879,8 +935,7 @@ def _digest_html(title, intro, sections, summary):
         + body +
         "<a href='" + esc(_portal_base()) + "/?inbox=1' style='display:inline-block;margin-top:20px;background:" + NAVY + ";color:#fff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:9px'>Open the portal &rarr;</a>"
         "<p style='font-size:12px;color:" + MUT + ";margin:18px 0 0;line-height:1.6'>Decisions are made in the portal with your e-signature. Automated weekly summary — please do not reply. Turn off in Access &amp; Permissions &rarr; System Integrations.</p>"
-        "</div></div>"
-        "<div style='max-width:620px;margin:10px auto 0;text-align:center;font-size:11px;color:" + MUT + "'>&copy; Humiley Vi&#7879;t Nam &middot; portal.humiley.com</div></div>")
+        "</div>", strap="Weekly digest &middot; Creating Sustainable Value", width=620)
 
 
 def _digest_send(preview_to=None):
@@ -1184,12 +1239,25 @@ def _hrdoc_reminders(today=None):
         try:
             _sender = _appr_email_sender("hrdocs")
             if _sender:
-                _graph_send_mail(_sender, [em], "[Humiley] " + title,
-                    "<p>These company documents are waiting for your signature:</p><ul>" +
-                    "".join("<li>%s%s</li>" % (_h.escape(r["doc"].get("title") or ""),
-                                               (" &mdash; due %s" % r["due"]) if r["due"] else "")
+                _graph_send_mail(_sender, [em], "[Humiley] " + title, _email_shell(
+                    "<div style='padding:24px'>"
+                    "<h1 style='font-size:19px;color:#1F2937;margin:0 0 4px'>Documents waiting for your signature</h1>"
+                    "<p style='font-size:13px;color:#5C6470;margin:0 0 16px'>T\u00e0i li\u1ec7u \u0111ang ch\u1edd b\u1ea1n k\u00fd</p>"
+                    "<table style='width:100%;border-collapse:collapse;border-top:1px solid #e3e8f0;border-bottom:1px solid #e3e8f0'>" +
+                    "".join("<tr><td style='padding:8px 0;font-size:13px;color:#1F2937;font-weight:600'>%s</td>"
+                            "<td style='padding:8px 0;font-size:12px;color:%s;text-align:right;white-space:nowrap'>%s</td></tr>"
+                            % (_h.escape(r["doc"].get("title") or ""),
+                               "#B45309" if r["due"] else "#5C6470",
+                               ("due %s" % _h.escape(str(r["due"]))) if r["due"] else "")
                             for r in v["docs"]) +
-                    "</ul><p>Open <b>My Space &rarr; Onboarding</b> in the portal to read and sign them.</p>")
+                    "</table>"
+                    "<a href='" + _portal_base() + "/' style='display:inline-block;margin-top:20px;background:#205090;"
+                    "color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:9px'>"
+                    "Open My Space &rarr; Onboarding &middot; M\u1edf c\u1ed5ng</a>"
+                    "<p style='font-size:12px;color:#5C6470;margin:18px 0 0;line-height:1.6'>Read and sign them in the portal. "
+                    "This is an automated message &mdash; please do not reply.<br>"
+                    "<span style='color:#9aa3ad'>\u0110\u1ecdc v\u00e0 k\u00fd trong c\u1ed5ng th\u00f4ng tin. Th\u01b0 t\u1ef1 \u0111\u1ed9ng &mdash; vui l\u00f2ng kh\u00f4ng tr\u1ea3 l\u1eddi.</span></p>"
+                    "</div>"))
         except Exception:
             pass
     # The manager hears only about what is actually LATE — a manager copied on every routine
@@ -1199,11 +1267,24 @@ def _hrdoc_reminders(today=None):
             _sender = _appr_email_sender("hrdocs")
             if _sender:
                 _graph_send_mail(_sender, [mgr_email],
-                    "[Humiley] %d overdue document signature(s) in your team" % len(rows),
-                    "<p>These are past their due date:</p><ul>" +
-                    "".join("<li>%s &mdash; %s (due %s)</li>" % (_h.escape(r["emp"].get("name") or ""),
-                                                                 _h.escape(r["doc"].get("title") or ""), r["due"])
-                            for r in rows) + "</ul>")
+                    "[Humiley] %d overdue document signature(s) in your team" % len(rows), _email_shell(
+                    "<div style='padding:24px'>"
+                    "<h1 style='font-size:19px;color:#1F2937;margin:0 0 4px'>Overdue signatures in your team</h1>"
+                    "<p style='font-size:13px;color:#5C6470;margin:0 0 16px'>Ch\u1eef k\u00fd qu\u00e1 h\u1ea1n trong nh\u00f3m c\u1ee7a b\u1ea1n</p>"
+                    "<table style='width:100%;border-collapse:collapse;border-top:1px solid #e3e8f0;border-bottom:1px solid #e3e8f0'>" +
+                    "".join("<tr><td style='padding:8px 0;font-size:13px;color:#1F2937;font-weight:600'>%s</td>"
+                            "<td style='padding:8px 0;font-size:13px;color:#5C6470'>%s</td>"
+                            "<td style='padding:8px 0;font-size:12px;color:#C0392B;text-align:right;white-space:nowrap'>due %s</td></tr>"
+                            % (_h.escape(r["emp"].get("name") or ""),
+                               _h.escape(r["doc"].get("title") or ""), _h.escape(str(r["due"])))
+                            for r in rows) +
+                    "</table>"
+                    "<a href='" + _portal_base() + "/' style='display:inline-block;margin-top:20px;background:#205090;"
+                    "color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:11px 24px;border-radius:9px'>"
+                    "Open the portal &middot; M\u1edf c\u1ed5ng</a>"
+                    "<p style='font-size:12px;color:#5C6470;margin:18px 0 0;line-height:1.6'>You are copied only on what is "
+                    "actually late. Automated message &mdash; please do not reply.</p>"
+                    "</div>", strap="Compliance &middot; Creating Sustainable Value"))
         except Exception:
             pass
     return sent
@@ -3372,7 +3453,6 @@ try:
 except Exception:                       # pragma: no cover - optional dependency
     _PUSH_OK = False
 
-import base64
 
 VAPID_SUBJECT = os.environ.get("TK_VAPID_SUBJECT", "mailto:portal@humiley.com")
 _VAPID = {"priv": None, "pub": None}
