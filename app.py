@@ -3899,6 +3899,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._company_get_ep(u))
         if path == "/api/hr/contract/draft":
             return self._guard(lambda u: self._contract_draft_ep(u, qs))
+        # /api/hr/contract/<id>/file/<kind>. NOT manager-guarded here: the endpoint itself allows a
+        # person their own contract (Art. 14(1)) and refuses everyone else, which a blanket manager
+        # gate would flatten into "HR only".
+        if path.startswith("/api/hr/contract/") and "/file/" in path:
+            _rest = path[len("/api/hr/contract/"):]
+            _cid, _, _kind = _rest.partition("/file/")
+            return self._guard(lambda u: self._contract_file_ep(
+                u, urllib.parse.unquote(_cid), urllib.parse.unquote(_kind)))
         if path == "/api/hr/incidents":
             return self._guard(lambda u: self._incidents_ep(u, qs), manager=True)
         if path == "/api/hr/speakup":
@@ -4006,6 +4014,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda uu: self._accounts_merge_ep(uu, body), manager=True)
         if path == "/api/hr/contract":
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
+        if path == "/api/hr/contract/file":
+            return self._guard(lambda u: self._contract_attach_ep(u, body), manager=True)
         if path == "/api/hr/incidents":
             return self._guard(lambda u: self._incident_add_ep(u, body), manager=True)
         if path.startswith("/api/hr/incidents/"):
@@ -6925,6 +6935,14 @@ class Handler(BaseHTTPRequestHandler):
                 items = [it for it in items
                          if not it.get("archived") and _hrdoc_targets(it, [me])]
             items = [dict(it, file="", hasFile=_hrdoc_has_file(it)) for it in items]
+        # Labour contracts now carry the document itself. Same reasoning as hrdocs above, and the same
+        # answer: the list is metadata, the bytes come from /api/hr/contract/<id>/file/<kind>, which
+        # re-checks who is asking. Without this, one register render ships every employee's contract —
+        # each one a PDF stating their wage — to whoever loaded the page.
+        if name == "contracts":
+            items = [dict(it, file="", issuedFile="",
+                          hasFile=bool(it.get("file") or it.get("fileUrl")),
+                          hasIssuedFile=bool(it.get("issuedFile"))) for it in items]
         if name == "pm_chat":
             vis = self._pm_visible_projects(u)
             if vis is not None:
@@ -8555,6 +8573,9 @@ class Handler(BaseHTTPRequestHandler):
                 "daysLeft": r["daysLeft"], "definiteCount": r["definiteCount"],
                 "mustBeIndefinite": r["mustBeIndefinite"],
                 "hasFile": bool(cur.get("file") or cur.get("fileUrl")),
+                # The generated original, kept apart from the signed copy on purpose — see
+                # _CONTRACT_FILE_KINDS. The register offers each of them separately.
+                "hasIssuedFile": bool(cur.get("issuedFile")),
                 "issues": r["issues"]})
         _rank = {"none": 0, "lapsed": 1, "grace": 2, "unknown": 3, "expiring": 4,
                  "active": 5, "indefinite": 6}
@@ -8797,6 +8818,118 @@ class Handler(BaseHTTPRequestHandler):
                 " → " + rec["endDate"] if rec["endDate"] else ""),
             "ts": self._utc_now()})
         return self._json({"ok": True, "contract": rec, "document": doc})
+
+    # ── the contract as a DOCUMENT, not just a row ───────────────────────────────────────────────
+    #
+    # The register has always reported `hasFile` and warned "no signed copy attached", but nothing
+    # could ever attach one: issuing a contract drew a PDF in the browser and called p.save(), so the
+    # only copy of the document the company had just issued was in whoever-pressed-the-button's
+    # Downloads folder. The row said a contract existed; the contract itself was nowhere. Art. 14(1)
+    # requires it in writing with a copy kept by each party, so "we have a database row" is not
+    # compliance — hence a place to put the file, and a way to get it back.
+    #
+    # Two distinct documents, deliberately NOT merged into one field:
+    #   issued — the system-generated original, stored automatically the moment it is issued.
+    #   signed — the countersigned scan, uploaded by HR when it comes back with both signatures.
+    # `hasFile` (and the register's warning) means SIGNED. Storing the generated PDF into the same
+    # field would make that warning disappear the moment a contract was issued, i.e. it would report
+    # that an unsigned draft was a signed contract — the one thing the warning exists to catch.
+    _CONTRACT_FILE_KINDS = {"issued": ("issuedFile", "issuedFileName"),
+                            "signed": ("file", "fileName")}
+
+    def _contract_attach_ep(self, u, body):
+        """Store a labour contract document against the employee's contract record.
+
+        Management only, matching who may issue one — the same act, finished."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to attach a labour "
+                             "contract.", 403)
+        b = dict(body or {})
+        cid = str(b.get("contractId") or "").strip()
+        rec = db.get_collection_item("contracts", cid) if cid else None
+        if not rec:
+            return self._err("That contract no longer exists.", 404)
+        kind = str(b.get("kind") or "signed").strip().lower()
+        if kind not in self._CONTRACT_FILE_KINDS:
+            # Named rather than defaulted: silently filing a signed contract as the generated draft
+            # (or the reverse) is exactly the confusion the two fields exist to prevent.
+            return self._err("A contract document must be either the issued original or the signed "
+                             "copy.", 400)
+        f_key, n_key = self._CONTRACT_FILE_KINDS[kind]
+        data = str(b.get("file") or "")
+        if not data.startswith("data:"):
+            return self._err("No document received.", 400)
+        head, _, b64 = data.partition(",")
+        try:
+            raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        except Exception:
+            return self._err("That document could not be read.", 400)
+        if not raw or len(raw) > _INVTRACK_FILE_MAX:
+            return self._err("That document is empty or too large.", 400)
+
+        emp = db.get_employee(rec.get("empId") or "") or {"id": rec.get("empId"),
+                                                          "name": rec.get("empName")}
+        # The signed copy is very often a PHONE PHOTO of a wet-ink page, not a PDF — the picker
+        # accepts image/*. Naming it .pdf regardless produces a file Windows and SharePoint preview
+        # both refuse to open, which is a poor way to store the one document an inspector asks for.
+        # Take the extension from the payload, falling back to the uploaded name, then to .pdf.
+        ctype = (head[5:].split(";")[0] or "").strip().lower()
+        ext = {"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/jpg": ".jpg",
+               "image/png": ".png", "image/heic": ".heic", "image/heif": ".heif",
+               "image/webp": ".webp", "image/tiff": ".tif"}.get(ctype, "")
+        if not ext:
+            _e = os.path.splitext(str(b.get("fileName") or ""))[1].lower()
+            ext = _e if re.match(r"^\.[a-z0-9]{1,5}$", _e) else ".pdf"
+        name = "%s - %s%s%s" % (rec.get("no") or rec.get("id"),
+                                str(rec.get("empName") or "").strip() or (rec.get("empId") or ""),
+                                " - signed" if kind == "signed" else "", ext)
+        rec[f_key] = data
+        rec[n_key] = str(b.get("fileName") or "").strip() or name
+        out = {"ok": True, "filed": False, "error": ""}
+        # SharePoint is where the rest of this person's file lives, so the contract belongs beside it
+        # — but it is a bonus, not the store of record. If it is unconfigured or unreachable the
+        # contract is still attached in the portal, and the response says which happened rather than
+        # reporting success for something that did not occur.
+        try:
+            web = _hrsp_put(["Employees", self._hr_emp_folder(emp), "Contracts"], name, raw,
+                            head[5:].split(";")[0] or "application/pdf")
+            if web:
+                rec[("signedWebUrl" if kind == "signed" else "issuedWebUrl")] = web
+                out["filed"] = True
+                out["webUrl"] = web
+        except Exception as e:
+            out["error"] = str(e)
+        db.put_collection_item("contracts", rec)
+        db.put_collection_item("audit", {
+            "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+            "action": ("Signed labour contract attached" if kind == "signed"
+                       else "Labour contract document stored"),
+            "target": "contracts/" + rec["id"],
+            "detail": "%s (%s) · %s" % (rec.get("empName") or "", rec.get("empId") or "", name),
+            "ts": self._utc_now()})
+        out["hasFile"] = bool(rec.get("file"))
+        out["hasIssuedFile"] = bool(rec.get("issuedFile"))
+        return self._json(out)
+
+    def _contract_file_ep(self, u, cid, kind):
+        """The bytes of one contract document.
+
+        Management runs the register and sees any of them. Beyond that, a person may read their OWN
+        contract: Art. 14(1) gives each party a copy of equal effect, so an employee being unable to
+        retrieve their own contract is the defect, not the protection. Nobody else — a labour contract
+        carries the wage."""
+        rec = db.get_collection_item("contracts", str(cid or "")) or {}
+        if not rec:
+            return self._err("That contract no longer exists.", 404)
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management") \
+                and (rec.get("empId") or "") != (u.get("id") or ""):
+            return self._err("That contract is not yours.", 403)
+        f_key, n_key = self._CONTRACT_FILE_KINDS.get(
+            str(kind or "signed").strip().lower(), self._CONTRACT_FILE_KINDS["signed"])
+        if not rec.get(f_key):
+            return self._err("No document of that kind is attached to this contract yet.", 404)
+        return self._json({"ok": True, "id": rec.get("id"), "file": rec.get(f_key) or "",
+                           "fileName": rec.get(n_key) or "contract.pdf"})
 
     # ── occupational accidents ───────────────────────────────────────────────────────────────────
 
@@ -12785,6 +12918,36 @@ class Handler(BaseHTTPRequestHandler):
             if self._level_rank(self._caller_level(u)) < self._level_rank(_need):
                 return self._err("%s access or above is required to change %s."
                                  % (_need.title(), name), 403)
+        # ── contracts: reconcile the body with what the LIST was allowed to show ──────────────────
+        # This has to run BEFORE the ISSUED_ONLY comparison below, not after the write is assembled.
+        # List reads blank the two document fields and add derived hasFile/hasIssuedFile flags, so a
+        # row that simply made the round trip browser→server differs from the stored row in three
+        # keys that were never edited. ISSUED_ONLY compares raw body against raw record, so it saw
+        # those as attempts to rewrite an issued contract and refused every edit with 400 — including
+        # the ones the allow-list exists to permit (recording signedAt, status, endedOn, attaching the
+        # signed scan). Restoring the truth here makes that comparison meaningful again, and it also
+        # means a blind whole-document replace can no longer erase the contract document itself.
+        if name == "contracts":
+            _prevc = db.get_collection_item(name, iid) or {}
+            if not _prevc:
+                return self._err("That contract no longer exists.", 404)
+            body = dict(body or {})
+            for _k in ("file", "fileName", "issuedFile", "issuedFileName",
+                       "signedWebUrl", "issuedWebUrl",
+                       # Who issued it and when is a fact about the past; an editor correcting a
+                       # typo is not the issuer, and must not become one by omission.
+                       "issuedBy", "issuedById", "issuedAt"):
+                if body.get(_k):
+                    continue
+                if _prevc.get(_k) is not None:
+                    body[_k] = _prevc.get(_k)
+                else:
+                    # The record does not carry this key at all — a contract with no issued PDF has
+                    # no issuedFile. The list read still invents an empty one, and leaving it would
+                    # compare "" against a missing key and read as a change to an issued contract.
+                    body.pop(_k, None)
+            body.pop("hasFile", None)          # derived read-only flags, never stored
+            body.pop("hasIssuedFile", None)
         if name in self.ISSUED_ONLY:
             # Fetched here rather than relying on `existing`, which the branches below assign only
             # for the collections they handle — reading it at this point raised a NameError.

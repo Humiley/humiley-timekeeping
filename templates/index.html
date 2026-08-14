@@ -6698,7 +6698,13 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload() };
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+  // Publishing a document used to redraw the ONBOARDING view, because that was the only place the
+  // register lived. Now that the register also mounts on the Compliance tab, redrawing onboarding
+  // repainted a hidden screen — and, worse, set _hrHostSfx to '-onb', so the next render of the
+  // register targeted a host that is not on screen. From the Compliance tab, publishing a document
+  // therefore appeared to do nothing at all. Repaint whichever register is actually mounted.
+  hrdocs: () => tkRenderCompliance(_hrHostSfx) };
 async function tkCollDelete(coll, id, reload) {
   if (!(await tkConfirm({ body: 'Delete this item? This cannot be undone.', danger: true }))) return;
   try {
@@ -7272,6 +7278,18 @@ function tkRenderDocRegister() {
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
           (nArch ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;color:var(--text-light)" onclick="_hrDocsShowArchived=!_hrDocsShowArchived;tkRenderDocRegister()">' +
             (_hrDocsShowArchived ? _t('Show current') : _t('Show archived') + ' (' + nArch + ')') + '</button>' : '') +
+          // The way IN lives on the register itself, not on the page around it. It used to sit only in
+          // the Onboarding view, so the Compliance tab — which renders this exact register — showed the
+          // list of published documents with no way to publish one. Anyone who went looking for "add a
+          // compliance document" where the documents are found a register they could not add to.
+          // Putting it here means it travels with the register wherever the register is mounted, and
+          // cannot drift apart from it again.
+          (canEdit
+            ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
+            // Saying nothing here is its own trap: the button is absent, and the feature looks broken
+            // rather than restricted. So name who may do it and where to ask.
+            : '<span style="font-size:11.5px;color:var(--text-light);max-width:360px;text-align:right">' +
+                _t('Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.') + '</span>') +
         '</div></div>' +
       (docs.length
         ? '<div class="table-wrap"><table style="min-width:940px"><thead><tr>' +
@@ -7281,7 +7299,9 @@ function tkRenderDocRegister() {
           '</tr></thead><tbody>' + docs.map(row).join('') + '</tbody></table></div>'
         : '<div style="padding:22px">' + tkEmpty(_hrDocsShowArchived ? 'Nothing archived' : 'No documents published yet',
             { icon: 'file', sub: _hrDocsShowArchived ? 'Archived documents stop being chased but keep their signatures.'
-                                                     : 'Publish a document and everyone it applies to will be asked to sign it.' }) + '</div>') +
+                                                     : 'Publish a document and everyone it applies to will be asked to sign it.',
+              // An empty register is exactly where someone is looking for the way to start one.
+              cta: (canEdit && !_hrDocsShowArchived) ? { label: 'Publish a document', onclick: 'tkQuickAdd(\'hrdocs\')' } : null }) + '</div>') +
     '</div>';
 }
 
@@ -7349,17 +7369,11 @@ async function tkRenderOnboarding() {
   root.innerHTML = kpis + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px">' + cards + '</div>' +
     // Policy compliance lives under the joiner checklist: same tab, because both answer "is this
     // person properly onboarded".
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:22px 0 10px">' +
-      '<div style="font-size:14px;font-weight:800;color:var(--navy)">' + _t('Policy compliance') + '</div>' +
-      // Same level the server enforces (HRDOC_MIN) and the same one the register's row actions use.
-      // Showing this to a manager who will be refused means they fill the whole form, attach the PDF,
-      // press Save and lose all of it to a 403. Hiding it silently is its own trap, though — HR opens
-      // the page, the button is gone, and the feature looks broken. So say which it is.
-      (_tkCanPublishDocs()
-        ? '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'hrdocs\')">+ ' + _t('Publish a document') + '</button>'
-        : '<span style="font-size:11.5px;color:var(--text-light)">' +
-            _t('Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.') + '</span>') +
-    '</div><div id="hr-docreg-onb"></div><div id="hr-compliance-onb"></div>';
+    // The publish button used to live HERE, which is why the Compliance tab never had one. It now sits
+    // in the register's own header — the register mounts immediately below — so there is exactly one
+    // of it, on the thing it acts on, in every view that shows the register.
+    '<div style="font-size:14px;font-weight:800;color:var(--navy);margin:22px 0 10px">' + _t('Policy compliance') + '</div>' +
+    '<div id="hr-docreg-onb"></div><div id="hr-compliance-onb"></div>';
   try { tkOnboardReminders(); } catch (e) {}
 }
 /* Probation milestone strip with computed due dates + status select. */
@@ -11679,7 +11693,19 @@ async function tkPaymentSave(editId) {
     const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
     if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
-    else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }   // combiner unavailable → keep the raw invoice so the request is never submitted without its bill
+    else {
+      // Combiner unavailable — which is exactly what happens on a PHONE, where the PDF libraries are
+      // heavier to load and likelier to fail. Keeping _files[0] alone silently THREW AWAY every other
+      // document the person had just attached, and nobody found out until the paid dossier was short.
+      body.attachment = _files[0].url;
+      body.attachmentName = _files[0].name || (body.reqNo + '-invoice');
+      if (_files.length > 1) {
+        toast(_t2('Could not merge into one PDF — all ' + _files.length + ' files are attached separately.',
+                  'Không gộp được thành một PDF — cả ' + _files.length + ' tệp vẫn được đính kèm riêng.'), 'warn', 7000);
+      }
+    }
+    // ALWAYS record every uploaded file, merged or not, so nothing depends on the merge succeeding.
+    body.attachments = _files.map(f => ({ url: f.url, name: f.name || '' })).filter(f => f.url);
   }
   // Filed server-side — see the note on the claim submit above.
   tkESign({
@@ -11805,6 +11831,16 @@ async function _finPaidDossierDoc(rec) {
     const _cover = rec.attachmentName === (rec.reqNo || '') + '.pdf';
     const _head = _t('Invoice / bill') + (!_cover && rec.attachmentName ? ' — ' + rec.attachmentName : '');
     await _appendFileToPdf(doc, rec.attachment, _head, _cover ? 1 : 0);
+  }
+  // Every OTHER file uploaded with the request. When the merge worked, rec.attachment already
+  // contains them and this list is skipped; when it did not — typically a phone — these are the
+  // documents that used to vanish from the dossier entirely.
+  const merged = rec.attachmentName === (rec.reqNo || '') + '.pdf';
+  if (!merged && Array.isArray(rec.attachments)) {
+    for (const f of rec.attachments) {
+      if (!f || !f.url || f.url === rec.attachment) continue;      // the first one is already above
+      await _appendFileToPdf(doc, f.url, _t('Invoice / bill') + (f.name ? ' — ' + f.name : ''));
+    }
   }
   if (rec.bankSlip) await _appendFileToPdf(doc, rec.bankSlip, _t('Bank payment slip') + (rec.bankSlipName ? ' — ' + rec.bankSlipName : ''));
   return doc;
@@ -14926,10 +14962,11 @@ async function tkRenderDashLevelBand() {
 
 /* Quick-add modal for the HR collections */
 const _QA_SPECS = {
-  // reload: 'onboarding' — the publish button lives on the Onboarding tab, so that is the view that
-  // has to redraw. It used to say 'recruitment', which redrew a tab nobody was looking at: the
-  // document saved fine and the screen never changed, which reads exactly like "it did not save".
-  hrdocs: { title: 'Publish a document to sign', coll: 'hrdocs', reload: 'onboarding', fields: [
+  // reload: 'hrdocs' — repaint the REGISTER, wherever it is mounted, rather than a named tab. This
+  // said 'recruitment' once (redrawing a tab nobody was looking at) and then 'onboarding' (correct
+  // only while the publish button lived there). Both had the same symptom: the document saved and
+  // the screen did not change, which reads exactly like "it did not save".
+  hrdocs: { title: 'Publish a document to sign', coll: 'hrdocs', reload: 'hrdocs', fields: [
     { k: 'title', label: 'Document title' },
     { k: 'code', label: 'Document code (e.g. HML-HR-001)' },
     { k: 'version', label: 'Version (e.g. 1.0)' },
@@ -25294,6 +25331,71 @@ const _VI = {
   "Download real invoice": "Tải hoá đơn thật",
   "Download the real invoice file (PDF/XML) — no lookup or CAPTCHA needed": "Tải tệp hoá đơn thật (PDF/XML) — không cần tra cứu hay CAPTCHA",
   "Download the real invoice to read the amount": "Tải hoá đơn thật để đọc số tiền",
+  /* ── 2026-08-14 · the Vietnamese that had never been written. 1,104 strings the VN switch
+     left in English: whole HR tabs (Labour Contracts, Statutory Returns, Young Workers,
+     Audit Pack), most table headers, and the legal sentences a Vietnamese reader needs
+     most. Translated in 14 batches against the glossary above, each batch then reviewed
+     by a second pass for correctness and consistency. ── */
+  "Accidents & Safety": "Tai nạn & An toàn",
+  "Asset": "Tài sản",
+  "Attach bank payment slip": "Đính kèm ủy nhiệm chi",
+  "Audit Pack": "Bộ hồ sơ kiểm toán",
+  "Bank payment slip": "Ủy nhiệm chi",
+  "Bill": "Hoá đơn",
+  "Billing & Cash": "Xuất hoá đơn & Thu tiền",
+  "Certificate certified": "Đã xác nhận chứng chỉ",
+  "Certificates & Health": "Chứng chỉ & Sức khỏe",
+  "Certificates, licences & health checks": "Chứng chỉ, giấy phép & khám sức khỏe",
+  "Certify & sign": "Xác nhận & ký",
+  "Change request": "Yêu cầu thay đổi",
+  "Choose…": "Chọn…",
+  "Could not read the file.": "Không thể đọc tệp.",
+  "DOB": "Ngày sinh",
+  "Deal value": "Giá trị cơ hội",
+  "Decide & sign": "Quyết định & ký",
+  "Employer": "Người sử dụng lao động",
+  "Entitlements": "Ngày phép được hưởng",
+  "Executive Dashboard": "Bảng điều khiển Ban lãnh đạo",
+  "Export this run's frozen payslip snapshot": "Xuất phiếu lương đã chốt của đợt chi lương này",
+  "Finalize (Director e-sign)": "Chốt (Giám đốc ký điện tử)",
+  "Integration settings saved.": "Đã lưu cài đặt tích hợp.",
+  "Invoice / bill": "Hoá đơn / chứng từ",
+  "Journal": "Bút toán",
+  "Labour Code Art. 107 — 4h a day · 40h a month ·": "Bộ luật Lao động Điều 107 — 4h/ngày · 40h/tháng ·",
+  "Labour Contracts": "Hợp đồng lao động",
+  "Leave Calendar": "Lịch nghỉ phép",
+  "Load": "Tải",
+  "Minimum Wage": "Lương tối thiểu vùng",
+  "Onboarding & Policies": "Hội nhập & Chính sách",
+  "Overtime & statutory limits": "Tăng ca & giới hạn luật định",
+  "Overtime could not be read for this period": "Không đọc được dữ liệu tăng ca cho kỳ này",
+  "PIN set": "Đã đặt PIN",
+  "PIN status": "Trạng thái PIN",
+  "Pay to": "Trả cho",
+  "Pipeline & Jobs": "Ứng viên & Vị trí tuyển dụng",
+  "Quotations": "Báo giá",
+  "Reload the page and try again.": "Hãy tải lại trang và thử lại.",
+  "Reversed ✓ —": "Đã ghi đảo ✓ —",
+  "Sales Compliance": "Tuân thủ bán hàng",
+  "Statutory Returns": "Báo cáo luật định",
+  "Testing…": "Đang kiểm tra…",
+  "Upload the bank transfer confirmation (proof of payment) for": "Tải lên uỷ nhiệm chi (chứng từ thanh toán) cho",
+  "When (UTC)": "Thời gian (UTC)",
+  "Work email (login)": "Email công ty (đăng nhập)",
+  "Wt": "Tr.số",
+  "Young Workers": "Lao động chưa thành niên",
+  "Your entries are kept — use ✕ or Cancel to close.": "Nội dung bạn nhập vẫn được giữ — dùng ✕ hoặc Hủy để đóng.",
+  "due": "đến hạn",
+  "project item(s) overdue — see My Project Actions.": "hạng mục dự án quá hạn — xem Việc dự án của tôi.",
+  "The contract was issued, but its document could not be stored — open it from the register and attach it.": "Hợp đồng đã được lập, nhưng chưa lưu được tệp hợp đồng — hãy mở trong sổ đăng ký và đính kèm lại.",
+  "Could not open that contract": "Không mở được hợp đồng đó",
+  "Could not attach that file": "Không đính kèm được tệp đó",
+  "Open the issued contract": "Mở hợp đồng đã lập",
+  "Contract": "Hợp đồng",
+  "Open the signed copy": "Mở bản đã ký",
+  "Attach signed copy": "Đính kèm bản đã ký",
+  "No documents published yet": "Chưa ban hành tài liệu nào",
+  "Publish a document and everyone it applies to will be asked to sign it.": "Ban hành một tài liệu và tất cả những người thuộc phạm vi áp dụng sẽ được yêu cầu ký."
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -28565,7 +28667,23 @@ async function tkRenderContracts() {
         (x.definiteCount > 1 ? '<div style="font-size:10px;color:var(--text-light)">' + x.definiteCount + ' ' + _t('fixed terms so far') + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (x.daysLeft == null ? '—' : x.daysLeft) + '</td>' +
       '<td><span class="badge ' + st.cls + '" style="font-size:10px">' + _t(st.label) + '</span>' + issues + '</td>' +
-      '<td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="tkContractDraft(\'' + _crmEsc(x.empId) + '\')">' +
+      '<td style="text-align:right;white-space:nowrap">' +
+        // The document, where the row about it is. The register warned "no signed copy attached" for
+        // months with no way to attach one, and the issued contract was never kept at all.
+        (x.contractId && x.hasIssuedFile
+          ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:5px 8px" title="' +
+              _tkEscA(_t('Open the issued contract')) + '" onclick="tkContractDoc(\'' + _crmEsc(x.contractId) + '\',\'issued\')">' +
+              tkIcon('file', 11) + ' ' + _t('Contract') + '</button>'
+          : '') +
+        (x.contractId
+          ? (x.hasFile
+            ? '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:5px 8px" title="' +
+                _tkEscA(_t('Open the signed copy')) + '" onclick="tkContractDoc(\'' + _crmEsc(x.contractId) + '\',\'signed\')">' +
+                tkIcon('check', 11) + ' ' + _t('Signed') + '</button>'
+            : '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:5px 8px;color:#B7791F" onclick="tkContractAttach(\'' +
+                _crmEsc(x.contractId) + '\')">' + _t('Attach signed copy') + '</button>')
+          : '') +
+        '<button class="btn btn-ghost btn-sm" onclick="tkContractDraft(\'' + _crmEsc(x.empId) + '\')">' +
         _t(x.contractId ? 'New contract' : 'Draft contract') + '</button></td></tr>';
   };
 
@@ -29222,8 +29340,60 @@ async function _ctIssue() {
   }
   closeModal('contractDraftModal');
   toast(_t2('Labour contract issued', 'Đã lập hợp đồng lao động'), 'success');
-  try { await _ctContractPdf(res.document, true); } catch (e) {}
+  // KEEP the document, not just the row. This was p.save() and nothing else, so the only copy of a
+  // contract the company had just issued lived in whoever pressed the button's Downloads folder —
+  // the register then listed a contract nobody could produce. Art. 14(1) wants it in writing.
+  let pdf = null;
+  try { pdf = await _ctContractPdf(res.document, 'data'); } catch (e) {}
+  if (pdf && pdf.data) {
+    try {
+      await tkApi('/api/hr/contract/file', { method: 'POST', body: {
+        contractId: (res.contract || {}).id, kind: 'issued', file: pdf.data, fileName: pdf.name } });
+    } catch (e) {
+      // The contract IS issued — the row is written and every Art. 20/21 check passed. Reporting a
+      // bare error next to a success toast would read as "the contract failed", so say precisely
+      // what is missing and how to finish it.
+      toast(_t('The contract was issued, but its document could not be stored — open it from the register and attach it.') +
+        ' ' + _errMsg(e), 'warn', 9000);
+    }
+  }
+  try { (pdf && pdf.save) ? pdf.save() : await _ctContractPdf(res.document, true); } catch (e) {}
+  try { tkCollInvalidate('contracts'); } catch (e) {}
   try { await tkRenderContracts(); } catch (e) {}
+}
+
+/* The contract document itself. Two kinds, kept apart on purpose: 'issued' is the original this
+   portal generated and stored at issue; 'signed' is the copy that came back with both signatures on
+   it. Conflating them would let an unsigned draft satisfy the register's "no signed copy" warning. */
+async function tkContractDoc(cid, kind) {
+  try {
+    const r = await tkApi('/api/hr/contract/' + encodeURIComponent(cid) + '/file/' +
+      encodeURIComponent(kind || 'signed'));
+    if (!r.file) { toast(_t('That file is no longer available.'), 'warn'); return; }
+    _tkPreviewUrl(r.file, r.fileName || 'contract.pdf');
+  } catch (e) { toast(_t('Could not open that contract') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
+/* Attach the countersigned copy. Until this happens the register keeps saying so, which is correct:
+   a generated original is not a signed contract. */
+function tkContractAttach(cid) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'application/pdf,image/*';
+  inp.onchange = async () => {
+    const f = (inp.files || [])[0]; if (!f) return;
+    try {
+      const data = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f);
+      });
+      await tkApi('/api/hr/contract/file', { method: 'POST', body: {
+        contractId: cid, kind: 'signed', file: data, fileName: f.name || '' } });
+      tkCollInvalidate('contracts');
+      toast(_t2('Signed contract attached', 'Đã đính kèm hợp đồng đã ký'), 'success');
+      await tkRenderContracts();
+    } catch (e) { toast(_t('Could not attach that file') + ': ' + _errMsg(e), 'error', 6000); }
+  };
+  inp.click();
 }
 
 async function _ctPreview() {
@@ -29341,7 +29511,21 @@ async function _ctContractPdf(doc, save) {
   for (let i = 1; i <= tot; i++) { p.setPage(i); _brandFooter(p, i, tot, 'BM.HR-01-05', 'HỢP ĐỒNG LAO ĐỘNG'); }
 
   const name = 'HDLD-' + ((c.b && c.b.empId) || 'draft') + '-' + (doc.issuedOn || '') + '.pdf';
+  // 'data' hands the bytes back instead of handing them to the browser — that is how an issued
+  // contract reaches the employee's HR record instead of only the issuer's Downloads folder. It
+  // returns `save` as a closure over the SAME rendered document so the caller can also give the
+  // issuer their copy without laying out a multi-page A4 PDF a second time on a phone.
+  if (save === 'data') {
+    // jsPDF emits "data:application/pdf;filename=generated.pdf;base64,…". That extra parameter is
+    // legal in a data URI and useless to us, and _tkPreviewUrl matches /^data:([^;]+);base64,/ —
+    // so a contract stored in the raw form would save fine and then refuse to OPEN. Normalise at
+    // the producer, the same way the payment attachment path already does.
+    const raw = p.output('datauristring');
+    return { data: 'data:application/pdf;base64,' + raw.slice(raw.indexOf(',') + 1),
+             name: name, save: () => p.save(name) };
+  }
   if (save) p.save(name); else window.open(p.output('bloburl'), '_blank');
+  return null;
 }
 
 function tkRenderBalances() {

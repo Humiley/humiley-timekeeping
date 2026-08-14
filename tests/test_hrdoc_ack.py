@@ -285,11 +285,21 @@ def test_a_published_document_can_be_opened_for_editing():
     collection with no edit affordance anywhere, so a document published without its PDF stayed that
     way for good. tkQuickAdd's second argument is what puts the form in edit mode."""
     import os
+    import re
     idx = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                        "templates", "index.html")
     with open(idx, encoding="utf-8") as fh:
         src = fh.read()
     assert "tkQuickAdd(\\'hrdocs\\',\\'" in src, "no edit-mode call site for hrdocs"
-    # And the form has to redraw the tab the button lives on, or a successful save looks like a
-    # failed one — it used to reload 'recruitment' from a button on the Onboarding tab.
-    assert "coll: 'hrdocs', reload: 'onboarding'" in src
+    # And saving has to repaint the REGISTER, or a successful save looks like a failed one. This
+    # assertion used to name the tab ('recruitment', then 'onboarding') — pinning the mechanism
+    # rather than the intent, so it went green while pointing at a view the register had moved off.
+    # The register now mounts on both Onboarding and Compliance, so what must hold is that whatever
+    # `reload` names has a handler, and that the handler repaints the register itself.
+    m = re.search(r"coll: 'hrdocs', reload: '([a-z_]+)'", src)
+    assert m, "the hrdocs quick-add spec names no reload target"
+    target = m.group(1)
+    handler = re.search(r"^\s*" + target + r": \(\) => (\w+)\(", src, re.M)
+    assert handler, "reload target '%s' has no entry in _HR_RELOAD" % target
+    assert handler.group(1) in ("tkRenderCompliance", "tkRenderDocRegister"), (
+        "saving a document repaints %s(), which does not redraw the register" % handler.group(1))
