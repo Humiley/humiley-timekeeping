@@ -31637,7 +31637,54 @@ if ('serviceWorker' in navigator) {
    HTML, bumped on every deploy) whenever the app regains focus, and reload ONCE when it changes —
    so the app always self-updates to the latest version, no manual clearing. */
 let _updReloading = false;
+
+/* ── STALE-SHELL SELF-HEAL ────────────────────────────────────────────────────
+   _checkForUpdate below could not rescue a phone, for three reasons that all had to hold at once —
+   and on an installed iOS PWA they did:
+
+     · it returns early unless window._APP_VERSION exists, so a shell old enough to lack it never
+       even checked;
+     · /api/config needs a session, so a device whose token had lapsed failed the check silently;
+     · and its `location.reload()` is a NAVIGATION, which the old service worker intercepts and
+       answers from its own cache. Reloading into the same stale shell is not an update.
+
+   This asks the two parties that cannot disagree: the SERVER (/api/build — public, no session) and
+   the WORKER ACTUALLY IN CONTROL (its CACHE name, over postMessage). If those differ, the device is
+   serving an old shell no matter what any in-page variable says, and the only thing that fixes it is
+   removing the caches and the worker BEFORE navigating. Guarded by sessionStorage so a failure can
+   never become a reload loop — at worst it gives up and leaves the app usable. */
+function _swBuild() {
+  return new Promise(function (resolve) {
+    var sw = navigator.serviceWorker;
+    if (!sw || !sw.controller) return resolve('');
+    var ch = new MessageChannel(), done = false;
+    ch.port1.onmessage = function (e) { done = true; resolve((e.data && e.data.tkBuild) || ''); };
+    try { sw.controller.postMessage('tk-which-build', [ch.port2]); } catch (e) { return resolve(''); }
+    setTimeout(function () { if (!done) resolve(''); }, 2500);   // an old worker answers nothing
+  });
+}
+async function _healStaleShell() {
+  if (_updReloading) return;
+  try {
+    var r = await fetch('/api/build', { cache: 'no-store' });
+    if (!r.ok) return;
+    var server = ((await r.json()) || {}).build || '';
+    var mine = await _swBuild();
+    if (!server || !mine || server === mine) return;            // unknown or already current
+    if (sessionStorage.getItem('tkHealedTo') === server) return; // already tried this build once
+    sessionStorage.setItem('tkHealedTo', server);
+    _updReloading = true;
+    try { toast(_t2('Updating to the latest version…', 'Đang cập nhật phiên bản mới nhất…'), undefined, 2500); } catch (e) {}
+    try { var ks = await caches.keys(); await Promise.all(ks.map(function (k) { return caches.delete(k); })); } catch (e) {}
+    // Unregister, not just update(): a waiting worker can sit behind the active one indefinitely on
+    // iOS, which is exactly how a device stays several deploys behind.
+    try { var reg = await navigator.serviceWorker.getRegistration(); if (reg) await reg.unregister(); } catch (e) {}
+    setTimeout(function () { try { location.reload(); } catch (e) { location.href = location.href; } }, 400);
+  } catch (e) { /* offline or blocked — the app keeps working on what it has */ }
+}
+
 async function _checkForUpdate() {
+  _healStaleShell();          // runs on its own terms: no session, no _APP_VERSION needed
   if (_updReloading || !window._APP_VERSION) return;
   try {
     const r = await fetch('/api/config', { cache: 'no-store' });
