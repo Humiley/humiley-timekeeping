@@ -11982,7 +11982,11 @@ async function tkFinShow(coll, id) {
       const doc = await _finPaidDossierDoc(r);
       if (doc) {
         const url = URL.createObjectURL(doc.output('blob'));
-        tkFilePreview(url, (r.reqNo || 'Payment') + ' — dossier.pdf', 'application/pdf');
+        // Say how many pages it holds. On a phone only page 1 is ever drawn inline, so without this
+        // there is no way to tell a complete dossier from an empty one just by looking at it.
+        let _pg = 0; try { _pg = doc.internal.getNumberOfPages(); } catch (e) {}
+        tkFilePreview(url, (r.reqNo || 'Payment') + ' — dossier.pdf' + (_pg ? '  (' + _pg + ' ' + _t('pages') + ')' : ''),
+                      'application/pdf');
         setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 300000);
         // A dossier that is SHORT must say so. Some documents render as a caption page rather than
         // the document (an unreadable scan, a format the engine cannot rasterise); staying quiet
@@ -19611,7 +19615,25 @@ function tkFilePreview(url, name, mime) {
   name = name || 'File'; mime = mime || '';
   const isImg = /^image\//i.test(mime) || /\.(png|jpe?g|gif|webp|svg|bmp)(\?|$)/i.test(name) || /^data:image/i.test(url);
   const isPdf = /pdf/i.test(mime) || /\.pdf(\?|$)/i.test(name) || /^data:application\/pdf/i.test(url);
+  // iOS will NOT render a multi-page PDF in an iframe. WebKit paints the first page as a static,
+  // non-scrollable preview and stops — no scrollbar, no page 2, no error. A consolidated payment
+  // dossier therefore looked on an iPhone exactly like a voucher with nothing attached, which is
+  // how "the paid file has not consolidated the documents" survived several rounds of fixes to code
+  // that was building the file correctly the whole time. Desktop browsers render every page, which
+  // is why this only ever showed up on mobile.
+  const _iOS = /iPad|iPhone|iPod/.test(navigator.userAgent || '') ||
+               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const inner = isImg ? '<img src="' + url + '" alt="Preview" style="max-width:100%;max-height:72vh;display:block;margin:0 auto;border-radius:8px">'
+    : (isPdf && _iOS)
+      ? '<div style="padding:28px 20px;text-align:center">' +
+          '<div style="font-size:34px;line-height:1;margin-bottom:10px">📄</div>' +
+          '<div style="font-weight:700;color:var(--navy);margin-bottom:6px">' + _crmEsc(name) + '</div>' +
+          '<div style="font-size:13px;color:var(--text-light);margin-bottom:18px">' +
+            _t2('iPhone and iPad can only show the first page inside the app. Open it to read every page — the invoice, the bills and the bank slip are in this file.',
+                'iPhone và iPad chỉ hiển thị được trang đầu tiên trong ứng dụng. Hãy mở tệp để xem đầy đủ các trang — hóa đơn, chứng từ và ủy nhiệm chi đều nằm trong tệp này.') +
+          '</div>' +
+          '<a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary" style="font-size:14px;padding:11px 20px">' +
+            _t2('Open the full document', 'Mở toàn bộ tài liệu') + '</a></div>'
     : isPdf ? '<iframe src="' + url + '" style="width:100%;height:72vh;border:none;border-radius:8px"></iframe>'
     : '<div style="padding:36px;text-align:center;color:var(--text-light)">This file type can’t preview inline.<br><br><a href="' + url + '" target="_blank" rel="noopener" class="btn btn-primary">Open / Download</a></div>';
   const el = document.createElement('div'); el.id = 'filePreviewOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
@@ -25471,7 +25493,9 @@ const _VI = {
   "Open the signed copy": "Mở bản đã ký",
   "Attach signed copy": "Đính kèm bản đã ký",
   "No documents published yet": "Chưa ban hành tài liệu nào",
-  "Publish a document and everyone it applies to will be asked to sign it.": "Ban hành một tài liệu và tất cả những người thuộc phạm vi áp dụng sẽ được yêu cầu ký."
+  "Publish a document and everyone it applies to will be asked to sign it.": "Ban hành một tài liệu và tất cả những người thuộc phạm vi áp dụng sẽ được yêu cầu ký.",
+  "pages": "trang",
+  "Open the full document": "Mở toàn bộ tài liệu"
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
