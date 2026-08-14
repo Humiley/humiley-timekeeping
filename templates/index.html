@@ -2897,16 +2897,39 @@ window.addEventListener('orientationchange', _setLoginBg);
     'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
   ];
-  let _started = false;
+  let _started = null;
+  // Returns a PROMISE that settles when the engines have actually arrived.
+  //
+  // This used to start the downloads and return undefined, so `await tkEnsureExportLibs()` resolved
+  // on the same tick with nothing loaded. On a desktop the scripts were usually there anyway; on a
+  // PHONE they were not, and the callers went straight on to use window.pdfjsLib. Every PDF a person
+  // had attached was then silently dropped — _addPdfPagesToPdf opens with `if (!window.pdfjsLib)
+  // return;` — while _combineToPdf still returned a data URI, so the merge REPORTED SUCCESS and the
+  // documents vanished from the consolidated dossier. That is the "not all docs on mobile" bug.
+  //
+  // Resolves (never rejects) even if a script 404s or the CDN is blocked: callers re-check for the
+  // library they need and degrade honestly, which is better than an unhandled rejection mid-export.
+  //
+  // AND IT IS TIME-BOUNDED. onerror is not enough: a request that HANGS — captive wifi, a blocked
+  // CDN, a dead mobile link — fires neither event, so a plain Promise.all would never settle and the
+  // export would wait forever. Hanging is worse than the bug this fixes; a bounded wait means the
+  // caller always gets to run and can report honestly on what is missing.
+  const LOAD_MS = 12000;
   function loadHeavy() {
-    if (_started) return; _started = true;
-    HEAVY.forEach(src => {
+    if (_started) return _started;
+    const all = Promise.all(HEAVY.map(src => new Promise(res => {
       const el = document.createElement('script'); el.src = src; el.async = true;
-      el.onload = () => { try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {} };
+      const done = () => {
+        try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+        res();
+      };
+      el.onload = done; el.onerror = done;
       document.head.appendChild(el);
-    });
+    })));
+    _started = Promise.race([all, new Promise(res => setTimeout(res, LOAD_MS))]).then(() => undefined);
+    return _started;
   }
-  window.tkEnsureExportLibs = loadHeavy;   // exposed so an export can force the load
+  window.tkEnsureExportLibs = loadHeavy;   // exposed so an export can force the load — and AWAIT it
   const _c = navigator.connection || {};
   const _saveData = _c.saveData === true || /(^|-)2g$/.test(_c.effectiveType || '');
   window.addEventListener('load', function () {
@@ -9584,7 +9607,11 @@ function _paySnapshotLines() {
     .map(e => _paySnapshotLine(e, _payCache[e.id] || _payComputed(e, 3)));
 }
 /* Export a pay run's FROZEN snapshot (the figures as finalised), never a live recompute. */
-function tkExportPayrun(id) {
+async function tkExportPayrun(id) {
+  // The export engines are lazy-loaded. This never waited for them, so on a phone — where they are
+  // slower to arrive and may not have started at all on a metered link — the button did nothing, or
+  // produced a file missing what the engine was supposed to draw.
+  try { await tkEnsureExportLibs(); } catch (e) {}
   const r = (_HR.payruns || []).find(x => x.id === id); if (!r) return;
   const lines = r.lines || [];
   if (!lines.length) { toast(_t2('This pay run predates payslip snapshots — open its month to export a live copy.', 'Đợt lương này chưa có bản chụp phiếu lương — mở tháng để xuất bản trực tiếp.'), 'warn', 5000); return; }
@@ -10033,8 +10060,10 @@ function _payStatCard(title, sub, rows, total, accent) {
     '<div style="font-size:9.5px;color:var(--text-light);margin-bottom:6px">' + sub + '</div>' + r +
     '<div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px;display:flex;justify-content:space-between;font-size:12px"><span style="font-weight:700">Subtotal</span><span style="font-weight:800;color:' + accent + '">' + _PAY_FMT(total) + '</span></div></div>';
 }
-function tkPayslip(empId) {
+async function tkPayslip(empId) {
   if (_payYM && _payYM.m === -1) { toast('Switch to a specific month for individual payslips / pay runs.', 'warn'); return; }
+  // Same as the pay-run export: wait for jsPDF rather than assuming it landed. See tkEnsureExportLibs.
+  try { await tkEnsureExportLibs(); } catch (e) {}
   const e = _hrEmp(empId); if (!e) return;
   // ONE document. This screen used to recompute the month live from TODAY's employee record while the
   // Download button beside it read the frozen, signed line — so a March payslip opened in September
@@ -10780,8 +10809,10 @@ async function _addImagePageToPdf(doc, dataUrl) {
   try { doc.addImage(dataUrl, fmt, (W - dw) / 2, (H - dh) / 2, dw, dh, undefined, 'FAST'); } catch (e) {}
 }
 /* Render every page of an attached PDF (dataURL) into the combined doc, via pdf.js. */
+/* Returns TRUE only if the pages really went in. The caller needs to know: a merge that quietly
+   embedded nothing used to be indistinguishable from one that worked. */
 async function _addPdfPagesToPdf(doc, dataUrl) {
-  if (!window.pdfjsLib) return;
+  if (!window.pdfjsLib) return false;
   try {
     const raw = atob(dataUrl.split(',')[1]); const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
@@ -10794,19 +10825,31 @@ async function _addPdfPagesToPdf(doc, dataUrl) {
       doc.addPage();
       await _addImagePageToPdf(doc, cv.toDataURL('image/jpeg', 0.82));
     }
-  } catch (e) {}
+    return true;
+  } catch (e) { return false; }
 }
 /* Build the combined PDF: drawPage1(doc) draws the form, then each file becomes following page(s). */
 async function _combineToPdf(drawPage1, files) {
+  // Waits for the engines instead of hoping they arrived. Without this, a phone reached the loop
+  // below with window.pdfjsLib still undefined and every PDF was skipped in silence.
+  try { await tkEnsureExportLibs(); } catch (e) {}
   const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; if (!J) return null;
   const doc = new J({ unit: 'mm', format: 'a4' });
   try { drawPage1(doc); } catch (e) {}
-  for (const f of (files || [])) {
+  let added = 0;
+  const list = files || [];
+  for (const f of list) {
     const isPdf = (f.type || '').includes('pdf') || /\.pdf$/i.test(f.name || '') || /^data:application\/pdf/i.test(f.url || '');
-    if (isPdf) await _addPdfPagesToPdf(doc, f.url);
-    else { doc.addPage(); await _addImagePageToPdf(doc, f.url); }
+    if (isPdf) { if (await _addPdfPagesToPdf(doc, f.url)) added++; }
+    else {
+      doc.addPage();
+      try { await _addImagePageToPdf(doc, f.url); added++; } catch (e) {}
+    }
   }
-  return doc.output('datauristring');
+  // A combined file that is missing some of the documents is WORSE than no combined file, because
+  // it looks complete. Say what actually went in and let the caller decide; every caller that keeps
+  // the separate uploads relies on this being truthful.
+  return { data: doc.output('datauristring'), added: added, total: list.length, complete: added === list.length };
 }
 /* ── Vietnamese in generated PDFs ───────────────────────────────────────────────────────────────
    jsPDF's built-in fonts are the standard-14 WinAnsi set, which has no Vietnamese. The portal used
@@ -10995,7 +11038,18 @@ async function tkClaimSave() {
     toast('Combining the claim + ' + _billFiles.length + ' bill(s) into one PDF…', 'info', 2500);
     const rows = [['Claim', title], ['Requested by', body.name], ['Department', body.dept], ['Type', claimKind], ['Items', String(items.length)], ['Total', _PAY_FMT(total)]].concat(items.map((it, i) => ['Item ' + (i + 1), (it.category || '') + ' — ' + _PAY_FMT(it.amount) + (it.note ? ' (' + it.note + ')' : '')]));
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Expense Claim', rows, title + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _billFiles);
-    if (pdf) { body.attachment = pdf; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
+    if (pdf && pdf.complete) { body.attachment = pdf.data; body.attachmentName = 'Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40) + '.pdf'; }
+    else if (_billFiles.length) {
+      // Merge incomplete (a phone that had not finished loading the PDF engine). Keep the first bill
+      // as the headline and every bill in `attachments`, rather than shipping a "combined" file that
+      // is quietly missing the receipts an approver is being asked to sign for.
+      body.attachment = _billFiles[0].url;
+      body.attachmentName = _billFiles[0].name || ('Claim-' + String(title).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40));
+      if (_billFiles.length > 1) toast(_t2('Could not merge into one PDF — all ' + _billFiles.length + ' bills are attached separately.',
+        'Không gộp được thành một PDF — cả ' + _billFiles.length + ' hóa đơn vẫn được đính kèm riêng.'), 'warn', 7000);
+    }
+    body.attachments = _billFiles.map(f => ({ url: f.url, name: f.name || '' })).filter(f => f.url);
+    body.attachmentsMerged = !!(pdf && pdf.complete);
   }
   // Filed by the SERVER now (app-only Graph), so it works whether or not anyone is signed in to
   // Microsoft in this tab — the browser path silently did nothing without an MSAL session.
@@ -11339,7 +11393,15 @@ async function tkTravelSave() {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
     const rows = [['Requested by', body.name], ['Department', body.dept], ['Destination', body.dest], ['Purpose', body.purpose], ['Dates', (body.from || '') + ' → ' + (body.to || '')], ['Transport', body.transport], ['Est. cost', _PAY_FMT(body.cost)], ['Advance', _PAY_FMT(body.advance)]];
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Travel Request', rows, (body.dest || '') + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
-    if (pdf) { body.attachment = pdf; body.attachmentName = 'Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf'; }
+    if (pdf && pdf.complete) { body.attachment = pdf.data; body.attachmentName = 'Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-') + '.pdf'; }
+    else if (_files.length) {
+      body.attachment = _files[0].url;
+      body.attachmentName = _files[0].name || ('Travel-' + (body.dest || 'request').replace(/[^A-Za-z0-9]+/g, '-'));
+      if (_files.length > 1) toast(_t2('Could not merge into one PDF — all ' + _files.length + ' files are attached separately.',
+        'Không gộp được thành một PDF — cả ' + _files.length + ' tệp vẫn được đính kèm riêng.'), 'warn', 7000);
+    }
+    body.attachments = _files.map(f => ({ url: f.url, name: f.name || '' })).filter(f => f.url);
+    body.attachmentsMerged = !!(pdf && pdf.complete);
   }
   // Filed server-side — see the note on the claim submit above.
   tkESign({
@@ -11669,7 +11731,12 @@ async function tkPaymentSave(editId) {
     if (_files.length) {
       const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
       const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
-      if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; } else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }
+      // Same contract as the submit path below: "<reqNo>.pdf" is only claimed when the merge really
+      // took every file, and every uploaded file is recorded either way.
+      if (pdf && pdf.complete) { body.attachment = pdf.data; body.attachmentName = body.reqNo + '.pdf'; }
+      else { body.attachment = _files[0].url; body.attachmentName = _files[0].name || (body.reqNo + '-invoice'); }
+      body.attachments = _files.map(f => ({ url: f.url, name: f.name || '' })).filter(f => f.url);
+      body.attachmentsMerged = !!(pdf && pdf.complete);
       // Filed server-side — see the note on the claim submit above.
     }
     tkESign({
@@ -11692,11 +11759,16 @@ async function tkPaymentSave(editId) {
     toast('Combining ' + _files.length + ' file(s) into one PDF…', 'info', 2500);
     const rows = [['Request No.', body.reqNo], ['Requested by', body.name], ['Department', body.department], ['Payee / Vendor', body.payee]].concat(_payBankRows(body), [['Category', body.category], ['Method', body.method], ['Amount', _PAY_FMT(amount)], ['Due date', body.dueDate], ['Invoice No.', body.invoiceNo], ['Purpose', body.purpose]]);
     const pdf = await _combineToPdf(d => _reqFormPage1(d, 'Payment Request', rows, body.reqNo + ' · ' + tkFmtDate(new Date().toISOString().slice(0, 10))), _files);
-    if (pdf) { body.attachment = pdf; body.attachmentName = body.reqNo + '.pdf'; }
+    if (pdf && pdf.complete) { body.attachment = pdf.data; body.attachmentName = body.reqNo + '.pdf'; }
     else {
-      // Combiner unavailable — which is exactly what happens on a PHONE, where the PDF libraries are
-      // heavier to load and likelier to fail. Keeping _files[0] alone silently THREW AWAY every other
-      // document the person had just attached, and nobody found out until the paid dossier was short.
+      // The merge did not take everything. On a PHONE that is the common case, and it used to be
+      // INVISIBLE: _combineToPdf returned a data URI whether or not the PDF engine had actually
+      // loaded, so a combined file arrived containing just the form page, named "<reqNo>.pdf" — the
+      // very name the dossier reads as "everything is already in here" — and the real bills were
+      // dropped from the consolidated document with nobody told.
+      //
+      // So: keep the FIRST file as the headline attachment, keep every file in `attachments`, and do
+      // NOT name it "<reqNo>.pdf", because that name is a claim of completeness this is not.
       body.attachment = _files[0].url;
       body.attachmentName = _files[0].name || (body.reqNo + '-invoice');
       if (_files.length > 1) {
@@ -11704,6 +11776,8 @@ async function tkPaymentSave(editId) {
                   'Không gộp được thành một PDF — cả ' + _files.length + ' tệp vẫn được đính kèm riêng.'), 'warn', 7000);
       }
     }
+    // Stated outright rather than inferred from the filename, so the dossier never has to guess.
+    body.attachmentsMerged = !!(pdf && pdf.complete);
     // ALWAYS record every uploaded file, merged or not, so nothing depends on the merge succeeding.
     body.attachments = _files.map(f => ({ url: f.url, name: f.name || '' })).filter(f => f.url);
   }
@@ -11794,6 +11868,10 @@ function _tkPreviewUrl(att, name) {
    banner — so the paid dossier is ONE file: request voucher + approval + invoice + bank slip. */
 async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
   if (!doc || !dataUri) return;
+  // Wait for pdf.js before deciding this is a PDF we cannot read. Without it the branch below fell
+  // through to the "— attached to the record." placeholder, so a consolidated dossier built on a
+  // phone was a stack of captions where the actual invoices and bills should have been.
+  try { await tkEnsureExportLibs(); } catch (e) {}
   const W = 210, M = 12, PW = W - 2 * M;
   const banner = () => { doc.addPage(); doc.setFillColor(32, 80, 144); doc.rect(0, 0, W, 12, 'F'); doc.setTextColor(255, 255, 255); _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.text(_pdfSafe(heading || ''), M, 8); doc.setTextColor(0, 0, 0); };
   const isPdf = /^data:application\/pdf/i.test(dataUri) || /\.pdf(\?|$)/i.test(String(heading || ''));
@@ -11821,6 +11899,9 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
 /* One consolidated PDF for a PAID payment: the branded voucher (request + approval e-signatures),
    then the invoice/bill, then the bank payment slip. */
 async function _finPaidDossierDoc(rec) {
+  // _finVoucherDoc needs jsPDF and returns null without it, which on a phone made "download the paid
+  // dossier" do nothing at all. Wait for the engines before deciding there is no document.
+  try { await tkEnsureExportLibs(); } catch (e) {}
   const doc = _finVoucherDoc('payment', rec);
   if (!doc) return null;
   if (rec.attachment) {
@@ -11832,10 +11913,17 @@ async function _finPaidDossierDoc(rec) {
     const _head = _t('Invoice / bill') + (!_cover && rec.attachmentName ? ' — ' + rec.attachmentName : '');
     await _appendFileToPdf(doc, rec.attachment, _head, _cover ? 1 : 0);
   }
-  // Every OTHER file uploaded with the request. When the merge worked, rec.attachment already
-  // contains them and this list is skipped; when it did not — typically a phone — these are the
-  // documents that used to vanish from the dossier entirely.
-  const merged = rec.attachmentName === (rec.reqNo || '') + '.pdf';
+  // Every OTHER file uploaded with the request. When the merge genuinely took everything, they are
+  // already inside rec.attachment and appending them again would duplicate pages; when it did not —
+  // typically a phone — these are the documents that used to vanish from the dossier entirely.
+  //
+  // `attachmentsMerged` is RECORDED at submit time and is the answer whenever it is present, because
+  // the filename could only ever be a guess: a merge that silently embedded nothing still produced a
+  // file called "<reqNo>.pdf", so the old heuristic read a broken merge as a complete one and
+  // skipped the real bills. Records written before that flag existed fall back to the filename.
+  const merged = typeof rec.attachmentsMerged === 'boolean'
+    ? rec.attachmentsMerged
+    : rec.attachmentName === (rec.reqNo || '') + '.pdf';
   if (!merged && Array.isArray(rec.attachments)) {
     for (const f of rec.attachments) {
       if (!f || !f.url || f.url === rec.attachment) continue;      // the first one is already above
