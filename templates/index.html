@@ -11894,12 +11894,25 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
       const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
       const _start = 1 + (skipFirst > 0 ? skipFirst : 0);       // skip leading auto-generated cover page(s)
+      let _drew = 0;
       for (let i = _start; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i); const vp = page.getViewport({ scale: 2 });
         const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
         await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
         banner();
         doc.addImage(cv.toDataURL('image/jpeg', 0.85), 'JPEG', M, 16, PW, Math.min(PW * (cv.height / cv.width), 270));
+        _drew++;
+      }
+      // Nothing was drawn. With skipFirst that means the stored "combined" file is ONE page — the
+      // auto-generated cover and nothing else — which is the fingerprint of a merge that dropped
+      // every bill before this was fixed. The loop simply not running used to `return true`, so the
+      // dossier reported success having added no pages at all: a voucher on its own, and silence.
+      // That is the "still nothing consolidated" everyone was looking at.
+      if (!_drew) {
+        banner();
+        doc.setFontSize(10);
+        doc.text(_pdfSafe(_t('The stored file has no document pages — the original upload did not survive the merge.')), M, 26);
+        return false;
       }
       return true;
     } else if (/^data:image/i.test(dataUri)) {
@@ -11954,6 +11967,10 @@ async function _finPaidDossierDoc(rec) {
     missing.push(rec.bankSlipName || _t('Bank payment slip'));
   }
   doc._tkMissing = missing;
+  // Nothing was attached to this request in the first place. Worth saying plainly: a one-page
+  // dossier is otherwise indistinguishable from one whose documents failed to embed, and Finance
+  // spent a while assuming the second when it was the first.
+  doc._tkNothingToAdd = !rec.attachment && !(Array.isArray(rec.attachments) && rec.attachments.length) && !rec.bankSlip;
   return doc;
 }
 async function tkFinShow(coll, id) {
@@ -11971,7 +11988,10 @@ async function tkFinShow(coll, id) {
         // the document (an unreadable scan, a format the engine cannot rasterise); staying quiet
         // about it is how a payment file reaches an auditor missing the bill it is evidence for.
         const _miss = doc._tkMissing || [];
-        if (_miss.length) {
+        if (doc._tkNothingToAdd) {
+          toast(_t2('This request has no invoice, bill or bank slip attached, so the file is the voucher only.',
+                    'Đề nghị này không có hóa đơn, chứng từ hay ủy nhiệm chi đính kèm, nên hồ sơ chỉ gồm phiếu duyệt chi.'), 'warn', 8000);
+        } else if (_miss.length) {
           toast(_t2('The file opened, but ' + _miss.length + ' document(s) could not be embedded: ' + _miss.join(', ') +
                     '. Open them individually from the request.',
                     'Đã mở hồ sơ, nhưng ' + _miss.length + ' tài liệu không nhúng được: ' + _miss.join(', ') +
