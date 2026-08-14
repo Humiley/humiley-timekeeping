@@ -11901,13 +11901,17 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
         banner();
         doc.addImage(cv.toDataURL('image/jpeg', 0.85), 'JPEG', M, 16, PW, Math.min(PW * (cv.height / cv.width), 270));
       }
+      return true;
     } else if (/^data:image/i.test(dataUri)) {
       const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = dataUri; });
       banner();
-      if (img) doc.addImage(dataUri, M, 16, PW, Math.min(PW * (img.height / img.width), 270));
-      else { doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not render).'), M, 26); }
-    } else { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached to the record.'), M, 26); }
-  } catch (e) { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not embed).'), M, 26); }
+      if (img) { doc.addImage(dataUri, M, 16, PW, Math.min(PW * (img.height / img.width), 270)); return true; }
+      doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not render).'), M, 26); return false;
+    } else { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached to the record.'), M, 26); return false; }
+  } catch (e) { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not embed).'), M, 26); return false; }
+  // Returns whether the document was really EMBEDDED. A caption page saying a file exists is not the
+  // file, and the consolidated dossier has to be able to tell the difference — otherwise "all docs
+  // included" is measured by page count rather than by content.
 }
 /* One consolidated PDF for a PAID payment: the branded voucher (request + approval e-signatures),
    then the invoice/bill, then the bank payment slip. */
@@ -11917,6 +11921,9 @@ async function _finPaidDossierDoc(rec) {
   try { await tkEnsureExportLibs(); } catch (e) {}
   const doc = _finVoucherDoc('payment', rec);
   if (!doc) return null;
+  // Names of the documents that produced a caption page instead of the real thing. Carried back on
+  // the doc so the caller can SAY the dossier is short rather than handing over a quiet gap.
+  const missing = [];
   if (rec.attachment) {
     // The stored attachment was combined at submission (_combineToPdf) and ALWAYS begins with an
     // auto-generated "Payment Request" cover page. The voucher above IS that request page — signed —
@@ -11924,7 +11931,7 @@ async function _finPaidDossierDoc(rec) {
     // bill(s). The auto-combined attachment is the one named "<reqNo>.pdf"; a raw uploaded file is not.
     const _cover = rec.attachmentName === (rec.reqNo || '') + '.pdf';
     const _head = _t('Invoice / bill') + (!_cover && rec.attachmentName ? ' — ' + rec.attachmentName : '');
-    await _appendFileToPdf(doc, rec.attachment, _head, _cover ? 1 : 0);
+    if (!await _appendFileToPdf(doc, rec.attachment, _head, _cover ? 1 : 0)) missing.push(rec.attachmentName || _t('Invoice / bill'));
   }
   // Every OTHER file uploaded with the request. When the merge genuinely took everything, they are
   // already inside rec.attachment and appending them again would duplicate pages; when it did not —
@@ -11940,10 +11947,13 @@ async function _finPaidDossierDoc(rec) {
   if (!merged && Array.isArray(rec.attachments)) {
     for (const f of rec.attachments) {
       if (!f || !f.url || f.url === rec.attachment) continue;      // the first one is already above
-      await _appendFileToPdf(doc, f.url, _t('Invoice / bill') + (f.name ? ' — ' + f.name : ''));
+      if (!await _appendFileToPdf(doc, f.url, _t('Invoice / bill') + (f.name ? ' — ' + f.name : ''))) missing.push(f.name || _t('Invoice / bill'));
     }
   }
-  if (rec.bankSlip) await _appendFileToPdf(doc, rec.bankSlip, _t('Bank payment slip') + (rec.bankSlipName ? ' — ' + rec.bankSlipName : ''));
+  if (rec.bankSlip && !await _appendFileToPdf(doc, rec.bankSlip, _t('Bank payment slip') + (rec.bankSlipName ? ' — ' + rec.bankSlipName : ''))) {
+    missing.push(rec.bankSlipName || _t('Bank payment slip'));
+  }
+  doc._tkMissing = missing;
   return doc;
 }
 async function tkFinShow(coll, id) {
@@ -11957,9 +11967,25 @@ async function tkFinShow(coll, id) {
         const url = URL.createObjectURL(doc.output('blob'));
         tkFilePreview(url, (r.reqNo || 'Payment') + ' — dossier.pdf', 'application/pdf');
         setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 300000);
+        // A dossier that is SHORT must say so. Some documents render as a caption page rather than
+        // the document (an unreadable scan, a format the engine cannot rasterise); staying quiet
+        // about it is how a payment file reaches an auditor missing the bill it is evidence for.
+        const _miss = doc._tkMissing || [];
+        if (_miss.length) {
+          toast(_t2('The file opened, but ' + _miss.length + ' document(s) could not be embedded: ' + _miss.join(', ') +
+                    '. Open them individually from the request.',
+                    'Đã mở hồ sơ, nhưng ' + _miss.length + ' tài liệu không nhúng được: ' + _miss.join(', ') +
+                    '. Hãy mở riêng từng tệp từ đề nghị.'), 'warn', 9000);
+        }
         return;
       }
-    } catch (e) { /* fall back to the plain bill below */ }
+      // Reached only when jsPDF never arrived. Falling through in silence looked identical to a
+      // one-document payment, which is why "the paid file has not consolidated" kept coming back.
+      toast(_t2('Could not build the consolidated file — the PDF engine did not load. Showing the bill on its own; try again on a better connection.',
+                'Không tạo được hồ sơ hợp nhất — bộ tạo PDF chưa tải xong. Đang hiển thị hóa đơn riêng lẻ; hãy thử lại khi đường truyền tốt hơn.'), 'warn', 9000);
+    } catch (e) {
+      toast(_t2('Could not build the consolidated file', 'Không tạo được hồ sơ hợp nhất') + ': ' + _errMsg(e), 'error', 8000);
+    }
   }
   let att = r.attachment, name = r.attachmentName;
   if (!att && Array.isArray(r.items)) { const it = r.items.find(i => i.attachment); if (it) { att = it.attachment; name = it.attachmentName; } }
