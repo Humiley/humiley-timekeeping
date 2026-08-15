@@ -1,0 +1,61 @@
+# Humiley — STAGING portal. A second copy of the app, on its own database, for looking at a change
+# before ~30 people do.
+#
+# Run it with its own project name so nothing here can touch production:
+#     docker compose -p humiley_staging -f docker-compose.staging.yml up -d --build
+#
+# The project name is what keeps the two apart. Compose namespaces containers, networks AND volumes
+# by project, so `humiley_staging_data` is a different volume from production's `humiley_data` even
+# though both are declared as `humiley_data` inside their own file. Never run this file WITHOUT -p:
+# without it Compose would adopt production's names and rebuild the live app.
+#
+# Deliberately NOT included: the Procurement app, Postgres and Caddy. Staging exists to look at the
+# portal; pulling in the whole stack triples the build for no extra answer. Reach it on 127.0.0.1
+# and tunnel, or put it behind the existing Caddy on a subdomain (see docs/STAGING.md).
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  app:
+    build: .
+    container_name: humiley_portal_staging
+    restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\" || exit 1"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+    environment:
+      - TK_ADMIN_EMAIL=${TK_ADMIN_EMAIL:-tony.nguyen@humiley.com}
+      - TK_ADMIN_NAME=${TK_ADMIN_NAME:-Tony Nguyen}
+      # Its OWN pepper. Sharing production's would let a staging database — which is a full copy of
+      # everybody's HR data and is handled far more casually — verify real signature PINs.
+      - TK_ESIGN_PEPPER=${TK_STAGING_ESIGN_PEPPER:-staging-only-pepper-not-production}
+      - TK_SSO_SECRET=${TK_STAGING_SSO_SECRET:-staging-only-sso-not-production}
+      # ── everything that reaches the outside world is OFF ──────────────────────────────────────
+      # A staging copy holds real people's records. With the mail credential absent the scheduler
+      # stays off, so staging can never email a supplier, an employee or an approver — the single
+      # worst thing a test environment can do.
+      - TK_M365_CLIENT_SECRET=
+      - TK_INVTRACK_MAILBOX=
+      - TK_ALERT_WEBHOOK=
+      - TK_OCR_ENDPOINT=
+      # Shown in the UI/health so nobody mistakes this for the real thing.
+      - TK_ENV_LABEL=STAGING
+    volumes:
+      - humiley_data:/data
+    ports:
+      # 127.0.0.1 ONLY. Staging holds real salary and bank data; binding 0.0.0.0 would publish it to
+      # the internet with none of Caddy's TLS or headers in front. Reach it over an SSH tunnel:
+      #     ssh -L 8100:127.0.0.1:8100 root@portal.humiley.com
+      # then open http://127.0.0.1:8100 on your laptop.
+      - "127.0.0.1:8100:8000"
+
+volumes:
+  humiley_data:
