@@ -6565,6 +6565,22 @@ const _daysUntil = iso => { const p = _tkDateParts(iso); if (!p) return null; re
    re-fetches server truth. Full page nav on logout clears all of this. */
 const _COLL_TS = {};        // name -> epoch ms of last successful load (0/absent = stale)
 const _COLL_INFLIGHT = {};  // name -> in-flight Promise, so N parallel callers share one request
+/* name -> {status, message} for the LAST failed load, cleared on the next success. A caller that
+   renders an empty state can ask tkCollFailed(name) and say "could not load" instead of "none yet". */
+const _COLL_ERR = {};
+function tkCollFailed(name) { return _COLL_ERR[name] || null; }
+/* One message per burst, not one per collection. A single screen opens 5–18 collections at once, so
+   a lapsed session would otherwise fire a wall of identical toasts; the first is the informative one
+   and the rest are noise. 6s is long enough to cover one screen's fan-out. */
+let _collErrAt = 0;
+function _tkCollLoadFailed(name, msg) {
+  if (Date.now() - _collErrAt < 6000) return;
+  _collErrAt = Date.now();
+  try {
+    toast(msg || _t2('Could not load your data — check your connection and try again.',
+                     'Không tải được dữ liệu — hãy kiểm tra kết nối và thử lại.'), 'error', 7000);
+  } catch (e) {}
+}
 const _COLL_TTL = 45000;    // a collection stays "fresh" for 45s
 async function tkLoadColl(name, opts) {
   opts = opts || {};
@@ -6574,8 +6590,27 @@ async function tkLoadColl(name, opts) {
   const pr = (async () => {
     try {
       const r = await fetch('/api/coll/' + name, { headers: { 'Authorization': 'Bearer ' + TK.token } });
-      if (r.ok) { const j = await r.json(); _HR[name] = j.items || []; _COLL_TS[name] = Date.now(); }
-    } catch (e) {}
+      if (r.ok) {
+        const j = await r.json();
+        _HR[name] = j.items || []; _COLL_TS[name] = Date.now(); delete _COLL_ERR[name];
+      } else {
+        // `if (r.ok)` with no else, and an empty catch, meant a 401 / 403 / 500 returned the stale
+        // (usually undefined) cache and every one of ~88 call sites rendered its EMPTY STATE. A
+        // person whose session had lapsed, or whose HR app an admin had switched off, saw "No
+        // benefit grades defined" — the same screen a genuinely empty register produces — while the
+        // server was returning an explanation nobody ever read. Silence is the worst answer here:
+        // it is indistinguishable from success.
+        let _msg = '';
+        try { _msg = ((await r.json()) || {}).error || ''; } catch (e) {}
+        _COLL_ERR[name] = { status: r.status, message: _msg };
+        if (r.status === 401) { try { _tkSessionExpired(); } catch (e) {} }
+        else _tkCollLoadFailed(name, _msg || ('HTTP ' + r.status));
+      }
+    } catch (e) {
+      // Offline or the request never completed. Same rule: say so rather than show an empty list.
+      _COLL_ERR[name] = { status: 0, message: String((e && e.message) || e) };
+      _tkCollLoadFailed(name, '');
+    }
     finally { delete _COLL_INFLIGHT[name]; }
     return _HR[name];
   })();
