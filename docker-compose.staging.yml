@@ -52,10 +52,28 @@ services:
       - humiley_data:/data
     ports:
       # 127.0.0.1 ONLY. Staging holds real salary and bank data; binding 0.0.0.0 would publish it to
-      # the internet with none of Caddy's TLS or headers in front. Reach it over an SSH tunnel:
-      #     ssh -L 8100:127.0.0.1:8100 root@portal.humiley.com
-      # then open http://127.0.0.1:8100 on your laptop.
+      # the internet with none of Caddy's TLS, password gate or headers in front.
+      #
+      # This port is reachable from the SERVER itself — `curl http://127.0.0.1:8100/api/health` in
+      # the Vietnix console — and from a laptop over an SSH tunnel, IF the network allows outbound
+      # port 22. On the office network it does not, which is the same reason auto-deploy polls
+      # outward instead of accepting a connection. To LOOK at staging from a browser here, publish
+      # it through Caddy instead: see caddy.d/staging.caddy.example and docs/STAGING.md.
       - "127.0.0.1:8100:8000"
+    networks:
+      - humiley_net
+
+# Production's network, joined rather than created, so the existing Caddy can reach this container
+# by name (humiley_portal_staging:8000) and serve it over HTTPS on a subdomain. Sharing a network is
+# not sharing a database: the two containers still have entirely separate volumes, and staging is
+# only reachable through Caddy once a file exists in caddy.d/ saying so.
+networks:
+  humiley_net:
+    external: true
 
 volumes:
+  # Declared external so Compose adopts the volume it created on the first run instead of warning
+  # about it on every subsequent one. `./staging.sh --fresh` is what re-copies production into it.
   humiley_data:
+    external: true
+    name: humiley_staging_humiley_data

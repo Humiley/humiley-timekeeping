@@ -150,6 +150,9 @@ services:
       - PORTAL_DOMAIN=${PORTAL_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Optional extra sites (staging), imported by the Caddyfile. Read-only: the edge can serve
+      # these files but can never rewrite them.
+      - ./caddy.d:/etc/caddy/conf.d:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
