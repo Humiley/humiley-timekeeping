@@ -119,3 +119,40 @@ def test_a_line_with_no_empId_does_not_trip_the_guard(api, tokens, _clean_runs):
     # What matters here is that two blank ids were not collapsed into one another and reported as
     # the same person being paid twice.
     assert "twice" not in str(b), b
+
+
+# ── stored markup must not reach anyone else's screen ────────────────────────────────────────────
+
+XSS = "<img src=x onerror=alert(1)>"
+
+
+def test_self_service_profile_text_is_stripped(api, tokens):
+    """PATCH /api/me is auth-only and any employee can call it for their own record. _emp_update
+    already strips angle brackets from what an ADMIN types; this path did not, so an emergency
+    contact could carry markup that runs the next time HR opens that person's card."""
+    st, _ = api("PATCH", "/api/me", tokens["staff"], {"emergency": XSS, "address": "A" + XSS})
+    assert st == 200
+    row = db.get_employee("HML-STF")
+    assert "<" not in (row.get("emergency") or "") and ">" not in (row.get("emergency") or "")
+    assert "<" not in (row.get("address") or "")
+
+
+def test_a_profile_photo_must_actually_be_an_image(api, tokens):
+    st, _ = api("PATCH", "/api/me", tokens["staff"], {"photo": "javascript:alert(1)"})
+    assert st == 400
+    st, _ = api("PATCH", "/api/me", tokens["staff"],
+                {"photo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="})
+    assert st == 200
+
+
+def test_company_announcements_are_stripped_before_everyone_sees_them(api, tokens):
+    """These render into EVERY user's dashboard, including an admin's, and are writable below admin —
+    so a manager-level author otherwise reaches every screen in the company."""
+    st, _ = api("PATCH", "/api/portal", tokens["mgr"],
+                {"announcements": [{"tag": "News", "title": XSS, "body": "hi", "audience": "All"}]})
+    assert st in (200, 403)
+    if st == 200:
+        stored = db.get_setting("portal_announcements") or []
+        if isinstance(stored, str):
+            stored = json.loads(stored)
+        assert "<" not in json.dumps(stored), stored

@@ -6296,7 +6296,24 @@ class Handler(BaseHTTPRequestHandler):
         eid = u.get("id")
         if not eid or not db.get_employee(eid):
             return self._err("Profile not found.", 404)
-        data = {k: v for k, v in body.items() if k in self.SELF_FIELDS}
+        # Self-service text goes straight into HR's screens. _emp_create/_emp_update already strip
+        # angle brackets from what an ADMIN types; this path — which any employee can call for their
+        # own record — did not, so an emergency contact or address could carry markup that executes
+        # the next time HR opens that person's card. Same helper, same reasoning, no new mechanism.
+        data = self._crm_sanitize({k: v for k, v in body.items() if k in self.SELF_FIELDS})
+        # A photo is the one field that must legitimately hold a data: URI, so the bracket strip
+        # cannot protect it — pin it to an actual image payload instead of trusting the shape.
+        if "photo" in data:
+            _p = data.get("photo")
+            if not (isinstance(_p, str) and re.match(
+                    r"^data:image/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$", _p or "")):
+                if _p:
+                    return self._err("That photo could not be read — upload a PNG, JPG, GIF or WebP.", 400)
+                data.pop("photo", None)
+        # A person can write their own record, but not an unbounded amount of it.
+        for _k, _v in list(data.items()):
+            if isinstance(_v, str) and len(_v) > 4000 and _k != "photo":
+                data[_k] = _v[:4000]
         if data:
             db.update_employee(eid, data)
         return self._json({"ok": True, "updated": list(data.keys())})
@@ -6548,7 +6565,14 @@ class Handler(BaseHTTPRequestHandler):
     def _portal_update(self, u, body):
         for k in self.PORTAL_KEYS:
             if isinstance(body.get(k), list):
-                db.set_setting("portal_" + k, body[k])
+                # Announcements, holidays, learning links and resources are rendered into EVERY
+                # user's dashboard — including an admin's — so a manager-level author reaches every
+                # screen in the company. _coll_add/_coll_update already put ordinary records through
+                # this strip; company-wide content was the one write path that skipped it, which is
+                # the wrong way round. Nested by design: an announcement is an object in a list.
+                # _crm_sanitize takes (and returns) a dict, so the list is wrapped rather than
+                # duplicating its recursion — it already cleans nested lists and objects.
+                db.set_setting("portal_" + k, self._crm_sanitize({"v": body[k]})["v"])
         # Integration endpoints are admin-only: a manager-level account must not be able to
         # repoint the Teams webhook, the SharePoint archive, or the Procurement launcher
         # (redirect / exfiltration vectors). Content lists above stay manager-editable; the
