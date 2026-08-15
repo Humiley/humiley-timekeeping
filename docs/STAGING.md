@@ -124,9 +124,24 @@ like the portal itself.
    docker exec humiley_caddy caddy reload --config /etc/caddy/Caddyfile
    ```
 
-   `caddy reload` validates the new configuration *before* applying it. A syntax error is reported
-   and the currently-running config keeps serving — a broken staging file cannot take
-   portal.humiley.com down. Caddy requests the certificate on the first visit.
+   `caddy reload` validates the new configuration before applying it: a syntax error is reported and
+   the currently-running config keeps serving. Caddy requests the certificate on the first visit.
+
+   **This is one Caddy process, shared with production.** A reload is safe, but the file stays on
+   disk and is read again on every deploy and every reboot — so "the reload was refused" is not the
+   end of it. `update.sh` therefore validates the whole config before it recreates Caddy and refuses
+   to deploy if it is invalid, and its reload step has no restart fallback (restarting after a
+   refused reload would discard the good config and re-read the bad one — Caddy's own documentation
+   says a failed startup should not be automatically retried).
+
+   With those guards a broken file here stops staging from appearing and stops the deploy, loudly,
+   with the live site still serving. Without them it would take portal.humiley.com offline in a
+   crash loop and auto-deploy would still log "deploy OK". If you edit the file by hand, check it
+   before walking away:
+
+   ```
+   docker exec humiley_caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+   ```
 
 ### Sign-in on staging
 

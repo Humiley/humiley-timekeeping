@@ -1,13 +1,14 @@
 # Humiley — STAGING portal. A second copy of the app, on its own database, for looking at a change
 # before ~30 people do.
 #
-# Run it with its own project name so nothing here can touch production:
-#     docker compose -p humiley_staging -f docker-compose.staging.yml up -d --build
+# ⚠️  Run it with ./staging.sh — not with docker compose directly. The data volume is declared
+# external here, deliberately: Compose can no longer silently invent an empty one and boot staging
+# on a blank database that looks like a wiped company. staging.sh creates and fills it first. A
+# direct `docker compose … up` now fails with "external volume not found", which is the correct
+# answer to a command that would otherwise produce a convincing lie.
 #
-# The project name is what keeps the two apart. Compose namespaces containers, networks AND volumes
-# by project, so `humiley_staging_data` is a different volume from production's `humiley_data` even
-# though both are declared as `humiley_data` inside their own file. Never run this file WITHOUT -p:
-# without it Compose would adopt production's names and rebuild the live app.
+# The project name (-p humiley_staging, set by staging.sh) is what keeps the two stacks apart:
+# Compose namespaces containers, networks and volumes by project. Never run this file without it.
 #
 # Deliberately NOT included: the Procurement app, Postgres and Caddy. Staging exists to look at the
 # portal; pulling in the whole stack triples the build for no extra answer. Reach it on 127.0.0.1
@@ -20,7 +21,13 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  app:
+  # 🚨 NOT named `app`. Compose registers the SERVICE NAME as a network alias, so a service called
+  # `app` joining humiley_net would make `app` resolve to two containers — production's portal and
+  # this staging copy. Caddy's production upstream is literally `reverse_proxy app:8000`, so Docker's
+  # round-robin DNS would send a share of LIVE traffic into staging: real people reading a stale
+  # database, and worse, writing to it. Setting `aliases:` does not help — Compose always adds the
+  # service name on top of any aliases. The name is the whole fix.
+  staging:
     build: .
     container_name: humiley_portal_staging
     restart: unless-stopped

@@ -7,9 +7,21 @@
 # puts all of that one password away from the open internet. That is why the password gate below is
 # not optional and why this file is not committed with a working one in it.
 #
-# The gate is a bcrypt hash, and Caddy will not start without a valid one — so a half-finished edit
-# fails closed (the site does not come up) rather than open (the site comes up unprotected). Generate
-# the hash ON THE SERVER; the plaintext is typed into a hidden prompt and never written anywhere:
+# The gate is a bcrypt hash and Caddy refuses to load a malformed one, so a half-finished edit can
+# never publish this unprotected.
+#
+# ⚠️  But understand WHICH site fails. Caddy is ONE process serving portal.humiley.com as well, so a
+# file here that Caddy cannot parse is a config the production edge cannot load either. That is why
+# update.sh validates the whole config BEFORE recreating Caddy and aborts the deploy if it is bad,
+# and why the reload step has no restart fallback: a refused reload leaves the previous config
+# serving, and restarting at that moment would throw the good config away. The net effect is safe —
+# a broken file here stops STAGING from appearing and stops the deploy, loudly, with the live site
+# still up — but it is safe because of those two guards, not because the files are independent.
+# If you edit this by hand, check it before walking away:
+#     docker exec humiley_caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#
+# Generate the hash ON THE SERVER; the plaintext is typed into a hidden prompt and never written
+# anywhere:
 #
 #     docker exec -it humiley_caddy caddy hash-password
 #

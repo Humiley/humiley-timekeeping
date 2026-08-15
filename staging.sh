@@ -86,7 +86,11 @@ if ! docker network inspect humiley_net >/dev/null 2>&1; then
 fi
 
 say "Building and starting staging"
-( cd "$BUILD_DIR" && docker compose -p "$PROJ" -f "$OLDPWD/$FILE" up -d --build )
+# --project-directory, NOT `cd`. Compose resolves `build: .` relative to the COMPOSE FILE's
+# directory, not the shell's cwd — so cd-ing into the worktree and pointing -f back at the repo root
+# still built the repo root. `./staging.sh some-branch` silently staged whatever was checked out
+# instead of the branch under test, which is the one thing this script exists to avoid.
+docker compose -p "$PROJ" --project-directory "$BUILD_DIR" -f "$FILE" up -d --build
 
 say "Waiting for it to answer"
 for i in $(seq 1 30); do

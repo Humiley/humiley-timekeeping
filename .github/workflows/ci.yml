@@ -60,6 +60,23 @@ jobs:
             -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
             caddy:2 caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+
+      - name: The staging service must not be called 'app'
+        run: |
+          # Compose registers the service name as a network alias. A staging service named 'app' on
+          # humiley_net collides with production's, and Caddy's `reverse_proxy app:8000` would then
+          # round-robin LIVE traffic into the staging copy — people reading, and writing, a stale
+          # database. Cheap to assert, catastrophic to get wrong, easy to reintroduce.
+          python3 - <<'PY'
+          import sys, yaml
+          svcs = list(yaml.safe_load(open('docker-compose.staging.yml'))['services'])
+          prod = set(yaml.safe_load(open('docker-compose.yml'))['services'])
+          clash = prod.intersection(svcs)
+          if clash:
+              sys.exit("staging service name(s) %s collide with production on the shared network" % sorted(clash))
+          print("staging services:", svcs, "— no collision with", sorted(prod))
+          PY
+
       - name: Validate it again with the staging site enabled
         run: |
           # A placeholder hash of a value nobody knows: this proves the block PARSES with a
@@ -70,3 +87,18 @@ jobs:
             -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
             -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
             caddy:2 caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
+      - name: A malformed caddy.d file must be REJECTED, not accepted
+        run: |
+          # The guard in update.sh is only worth anything if validation actually fails on bad input.
+          # A check that passes on everything is not a check — this is the negative case that proves
+          # the gate can say no.
+          printf 'staging.example.com {\n  basic_auth {\n    staging not-a-bcrypt-hash\n  }\n}\n' > caddy.d/broken.caddy
+          if docker run --rm -e PORTAL_DOMAIN=portal.humiley.com \
+               -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+               -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
+               caddy:2 caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile; then
+            echo "::error::caddy validate ACCEPTED a malformed password hash — the update.sh gate cannot protect the edge"
+            exit 1
+          fi
+          echo "rejected as expected"
+          rm -f caddy.d/broken.caddy
