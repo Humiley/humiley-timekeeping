@@ -13493,6 +13493,34 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("%d person(s) have already signed this document, so deleting it would "
                                  "orphan their signatures. Archive it instead — it stops being chased "
                                  "and the signatures stay retrievable." % len(_acks), 409)
+        # Deleting a PROJECT deletes nothing else — every pm_* child keyed on projectId simply stops
+        # being reachable. That silently strips a live job of its signed variation orders and its
+        # certified interim payment certificates, which are contract evidence: the exact artefacts a
+        # client or an arbitrator asks for. One confirm dialog ("Delete this item? This cannot be
+        # undone.") stood between a project manager and that. hrdocs already refuses on the same
+        # reasoning — a record whose dependants outlive it is withdrawn, not deleted.
+        if name == "pm_projects":
+            _kids, _signed = {}, 0
+            for _c in self.COLLECTIONS:
+                if not _c.startswith("pm_") or _c == "pm_projects":
+                    continue
+                _rows = [r for r in db.list_collection(_c)
+                         if str(r.get("projectId") or "") == str(iid)]
+                if _rows:
+                    _kids[_c] = len(_rows)
+                    # Anything carrying a signature or a certification is evidence, not working data.
+                    _signed += sum(1 for r in _rows if r.get("signatures") or r.get("sig")
+                                   or r.get("decidedBy") or r.get("certifiedBy") or r.get("signedBy"))
+            if _kids:
+                _what = ", ".join("%s: %d" % (k.replace("pm_", "").replace("_", " "), v)
+                                  for k, v in sorted(_kids.items()))
+                return self._err(
+                    "This project still holds %d record(s)%s, and deleting it would leave them "
+                    "unreachable — %s. Set the project to Closed or Archived instead; nothing is lost "
+                    "and it stops appearing as live work."
+                    % (sum(_kids.values()),
+                       " including %d that carry a signature or certification" % _signed if _signed else "",
+                       _what), 409)
         is_admin = self._caller_level(u) == "admin"
         # A payroll adjustment in a FINALISED (closed) month is locked — it can't be deleted either.
         if name == "payadjust" and self._payperiod_finalised(existing.get("period")):
