@@ -3423,7 +3423,19 @@ function tkVerifySelectedZone(force) {
   if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0, true) === 'in') { evaluate(_lastGpsLat, _lastGpsLon, 0); return; } }   // only a CONFIRMED in-zone cache shows instantly; a far/coarse cached fix is NOT displayed — keep "Checking…" and take a fresh fix
   let _geoDone = false;
   const _alert = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ';
-  const _ok = (lat, lon, acc) => { if (_geoDone) return; _geoDone = true; try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {} evaluate(lat, lon, acc); };
+  /* Accepts the BEST fix, not merely the first. _sharpen deliberately clears _geoDone so the
+     high-accuracy pass may report, which also reopened the door to a late callback from the earlier
+     COARSE request landing afterwards and overwriting the better position — deciding the geofence on
+     the worse of the two readings. Comparing accuracy closes that without another flag to keep in
+     step: a later fix only counts if it is genuinely sharper. */
+  let _acceptedAcc = Infinity;
+  const _ok = (lat, lon, acc) => {
+    const a = (typeof acc === 'number' && isFinite(acc)) ? acc : 9999;
+    if (_geoDone && a >= _acceptedAcc) return;
+    _geoDone = true; _acceptedAcc = a;
+    try { _lastGpsLat = lat; _lastGpsLon = lon; _gpsTimestamp = Date.now(); } catch (e) {}
+    evaluate(lat, lon, acc);
+  };
   /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
   const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked</strong> — you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.'; _tkSetCheckinAllowed('unverified'); };
   const _giveup = (e) => { if (_geoDone) return; _geoDone = true;
@@ -3434,7 +3446,41 @@ function tkVerifySelectedZone(force) {
     _tkSetCheckinAllowed('unverified'); };
   // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied).
   // Give the high-accuracy pass a real 15s (Wi-Fi/GPS triangulation is slow on first fix) before giving up.
-  const _slow = () => { if (_geoDone) return; try { navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _giveup(e); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }); } catch (e) { _giveup(e); } };
+  /* High-accuracy pass, as a WATCH rather than a single shot.
+     getCurrentPosition({enableHighAccuracy:true}) is all-or-nothing: on a phone the first GPS fix
+     routinely takes longer than any timeout worth making a person wait for, and when it expires you
+     get NOTHING — not even the coarse fix the device already had. That is the "sometimes it doesn't
+     detect my location" everyone reports, and it is worst exactly where it matters: indoors, at a
+     factory or site, on first use of the day.
+     watchPosition instead delivers progressively better fixes. We take the first one good enough to
+     decide a geofence, and otherwise keep the BEST fix seen and use that when the window closes —
+     so a usable-but-coarse position is reported rather than thrown away. */
+  const _GOOD_ACC = 60;        // metres — comfortably inside any office/site geofence radius
+  const _WATCH_MS = 15000;
+  const _slow = () => {
+    if (_geoDone) return;
+    let wid = null, best = null, closed = false;
+    const close = () => {
+      if (closed) return; closed = true;
+      if (wid !== null) { try { navigator.geolocation.clearWatch(wid); } catch (e) {} }
+      if (best) _ok(best.lat, best.lon, best.acc);      // coarse beats nothing
+      else _giveup({ code: 3 });
+    };
+    try {
+      wid = navigator.geolocation.watchPosition(p => {
+        const acc = typeof p.coords.accuracy === 'number' ? p.coords.accuracy : 9999;
+        if (!best || acc < best.acc) best = { lat: p.coords.latitude, lon: p.coords.longitude, acc: acc };
+        if (acc <= _GOOD_ACC) close();                  // good enough to judge the geofence — stop early
+      }, e => {
+        // ONLY a denial ends the watch. Every other error is transient by nature — a phone warming
+        // up its GPS routinely reports POSITION_UNAVAILABLE once and then delivers a good fix a
+        // moment later, and closing on that first error threw the good fix away. The timeout below
+        // is the backstop, so there is nothing to gain by giving up early.
+        if (e && e.code === 1) { closed = true; if (wid !== null) { try { navigator.geolocation.clearWatch(wid); } catch (x) {} } _denied(); }
+      }, { enableHighAccuracy: true, timeout: _WATCH_MS, maximumAge: 0 });
+      setTimeout(close, _WATCH_MS);
+    } catch (e) { _giveup(e); }
+  };
   let _sharpened = false;
   _sharpen = () => { if (_sharpened) return; _sharpened = true; _geoDone = false; setTimeout(_slow, 50); };   // one high-accuracy retry after a too-coarse fix
   // Never make the user WAIT on a slow/absent fix: allow check-in immediately (GPS-unverified); a
