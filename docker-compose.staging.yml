@@ -1,13 +1,14 @@
 # Humiley — STAGING portal. A second copy of the app, on its own database, for looking at a change
 # before ~30 people do.
 #
-# Run it with its own project name so nothing here can touch production:
-#     docker compose -p humiley_staging -f docker-compose.staging.yml up -d --build
+# ⚠️  Run it with ./staging.sh — not with docker compose directly. The data volume is declared
+# external here, deliberately: Compose can no longer silently invent an empty one and boot staging
+# on a blank database that looks like a wiped company. staging.sh creates and fills it first. A
+# direct `docker compose … up` now fails with "external volume not found", which is the correct
+# answer to a command that would otherwise produce a convincing lie.
 #
-# The project name is what keeps the two apart. Compose namespaces containers, networks AND volumes
-# by project, so `humiley_staging_data` is a different volume from production's `humiley_data` even
-# though both are declared as `humiley_data` inside their own file. Never run this file WITHOUT -p:
-# without it Compose would adopt production's names and rebuild the live app.
+# The project name (-p humiley_staging, set by staging.sh) is what keeps the two stacks apart:
+# Compose namespaces containers, networks and volumes by project. Never run this file without it.
 #
 # Deliberately NOT included: the Procurement app, Postgres and Caddy. Staging exists to look at the
 # portal; pulling in the whole stack triples the build for no extra answer. Reach it on 127.0.0.1
@@ -20,7 +21,13 @@ x-logging: &default-logging
     max-file: "3"
 
 services:
-  app:
+  # 🚨 NOT named `app`. Compose registers the SERVICE NAME as a network alias, so a service called
+  # `app` joining humiley_net would make `app` resolve to two containers — production's portal and
+  # this staging copy. Caddy's production upstream is literally `reverse_proxy app:8000`, so Docker's
+  # round-robin DNS would send a share of LIVE traffic into staging: real people reading a stale
+  # database, and worse, writing to it. Setting `aliases:` does not help — Compose always adds the
+  # service name on top of any aliases. The name is the whole fix.
+  staging:
     build: .
     container_name: humiley_portal_staging
     restart: unless-stopped
@@ -52,10 +59,28 @@ services:
       - humiley_data:/data
     ports:
       # 127.0.0.1 ONLY. Staging holds real salary and bank data; binding 0.0.0.0 would publish it to
-      # the internet with none of Caddy's TLS or headers in front. Reach it over an SSH tunnel:
-      #     ssh -L 8100:127.0.0.1:8100 root@portal.humiley.com
-      # then open http://127.0.0.1:8100 on your laptop.
+      # the internet with none of Caddy's TLS, password gate or headers in front.
+      #
+      # This port is reachable from the SERVER itself — `curl http://127.0.0.1:8100/api/health` in
+      # the Vietnix console — and from a laptop over an SSH tunnel, IF the network allows outbound
+      # port 22. On the office network it does not, which is the same reason auto-deploy polls
+      # outward instead of accepting a connection. To LOOK at staging from a browser here, publish
+      # it through Caddy instead: see caddy.d/staging.caddy.example and docs/STAGING.md.
       - "127.0.0.1:8100:8000"
+    networks:
+      - humiley_net
+
+# Production's network, joined rather than created, so the existing Caddy can reach this container
+# by name (humiley_portal_staging:8000) and serve it over HTTPS on a subdomain. Sharing a network is
+# not sharing a database: the two containers still have entirely separate volumes, and staging is
+# only reachable through Caddy once a file exists in caddy.d/ saying so.
+networks:
+  humiley_net:
+    external: true
 
 volumes:
+  # Declared external so Compose adopts the volume it created on the first run instead of warning
+  # about it on every subsequent one. `./staging.sh --fresh` is what re-copies production into it.
   humiley_data:
+    external: true
+    name: humiley_staging_humiley_data

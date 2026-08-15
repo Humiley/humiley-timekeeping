@@ -103,6 +103,35 @@ export BOOTSTRAP_ADMIN_NAME="${BOOTSTRAP_ADMIN_NAME:-Tony Nguyen}"
 say "Seeding Procurement reference data (+ admin ${BOOTSTRAP_ADMIN_EMAIL} on first run)…"; docker compose --profile setup run --rm proc-bootstrap
 fi
 
+# 5.5) VALIDATE THE EDGE CONFIG BEFORE TOUCHING THE EDGE.
+#
+# Caddy is a single process serving portal.humiley.com AND /procurement, and its config is a
+# bind-mounted file plus everything imported from caddy.d/. A config Caddy cannot load makes the
+# container exit; `restart: unless-stopped` then loops it, 80/443 never bind, and the whole company
+# is offline. Nothing below used to check for that: `up -d --build` does not fail when a container
+# starts and immediately dies, and the reload step's old fallback was `|| docker compose restart
+# caddy || true` — which threw away a WORKING config in favour of one that had just been refused,
+# and then swallowed the exit code so auto-deploy recorded "deploy OK" over a dead site.
+#
+# caddy.d/staging.caddy is hand-edited on the server and gitignored, so CI can never see it. This is
+# the only place it can be checked. Validate with the RUNNING container's own binary where possible
+# — that is the exact version that will parse it — and fall back to the image only on first boot.
+say "Validating the Caddy config…"
+if docker compose ps --status running caddy 2>/dev/null | grep -q caddy; then
+  _cv() { docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; }
+else
+  _cv() { docker run --rm -e PORTAL_DOMAIN="$DOMAIN" \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
+            caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; }
+fi
+if ! _cv; then
+  printf '\033[1;31m\n  Caddy config is INVALID — refusing to restart the edge.\033[0m\n' >&2
+  printf '  The site is still up on the old config. Nothing has been changed.\n' >&2
+  printf '  Almost always a hand-edited caddy.d/*.caddy file. To get back to a known-good edge:\n' >&2
+  printf '      mv caddy.d/staging.caddy /tmp/  &&  ./update.sh\n' >&2
+  exit 1
+fi
+
 # 6) Start / restart the whole stack (data volumes persist)
 if [ "$PORTAL_ONLY" -eq 1 ]; then
   # No --build: step 4 already built it. The old `up -d --build` here meant EVERY deploy built the
@@ -114,10 +143,20 @@ fi
 
 # The Caddyfile is bind-mounted, so `compose up` does NOT reload it (compose only sees image/config
 # changes). Gracefully reload Caddy so edits (gzip/zstd compression, framing headers) take effect on
-# an update — otherwise they stay dormant until the next full Caddy restart. Falls back to a restart.
+# an update — otherwise they stay dormant until the next full Caddy restart.
+#
+# There is deliberately NO restart fallback. Caddy rolls the old config back into place if a reload
+# fails, so a refused reload leaves the site UP on the last known-good config — which is the safe
+# state and exactly what you want to preserve. Restarting at that moment discards the good config
+# and re-reads the bad one; Caddy's own docs say a failed startup should not be automatically
+# retried. The error is no longer swallowed either: it is reported, and the deploy is marked failed
+# so auto-deploy raises its alert instead of logging "deploy OK".
 say "Reloading Caddy config…"
-docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile 2>/dev/null \
-  || docker compose restart caddy || true
+if ! docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+  printf '\033[1;31m    Caddy REFUSED the reload — it is still serving the previous config.\033[0m\n' >&2
+  printf '    The site is up. Fix the config, then re-run ./update.sh.\n' >&2
+  CADDY_RELOAD_FAILED=1
+fi
 
 # 7) Health checks
 say "Containers:"; docker compose ps
@@ -128,3 +167,11 @@ Q="$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN/procurement/login" 
 [ "$P" = "200" ] && printf '\033[1;32m    Portal OK (HTTP %s)\033[0m\n' "$P" || printf '\033[1;33m    Portal HTTP %s — docker compose logs --tail=50 app\033[0m\n' "$P"
 [ "$Q" = "200" ] && printf '\033[1;32m    Procurement OK (HTTP %s at /procurement)\033[0m\n' "$Q" || printf '\033[1;33m    Procurement HTTP %s — docker compose logs --tail=50 procurement\033[0m\n' "$Q"
 say "Done. One stack: Portal + Procurement + DB + Caddy."
+
+# A refused reload means the edge is running something OLDER than what is checked out. That is safe,
+# but it is not success — exit non-zero so autodeploy.sh counts the failure and raises its alert
+# rather than clearing it.
+if [ "${CADDY_RELOAD_FAILED:-0}" = "1" ]; then
+  printf '\033[1;31mDeploy incomplete: Caddy is serving an older config than this checkout.\033[0m\n' >&2
+  exit 1
+fi

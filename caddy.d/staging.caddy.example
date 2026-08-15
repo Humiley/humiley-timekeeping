@@ -1,0 +1,50 @@
+# ── STAGING over HTTPS ───────────────────────────────────────────────────────────────────────────
+# Copy to caddy.d/staging.caddy, fill in the TWO blanks below, then reload Caddy:
+#     docker exec humiley_caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# ⚠️  READ THIS FIRST. Staging runs on a FULL COPY of the production database: every salary, every
+# bank account, every signed document, every person's home address. Publishing it on a public name
+# puts all of that one password away from the open internet. That is why the password gate below is
+# not optional and why this file is not committed with a working one in it.
+#
+# The gate is a bcrypt hash and Caddy refuses to load a malformed one, so a half-finished edit can
+# never publish this unprotected.
+#
+# ⚠️  But understand WHICH site fails. Caddy is ONE process serving portal.humiley.com as well, so a
+# file here that Caddy cannot parse is a config the production edge cannot load either. That is why
+# update.sh validates the whole config BEFORE recreating Caddy and aborts the deploy if it is bad,
+# and why the reload step has no restart fallback: a refused reload leaves the previous config
+# serving, and restarting at that moment would throw the good config away. The net effect is safe —
+# a broken file here stops STAGING from appearing and stops the deploy, loudly, with the live site
+# still up — but it is safe because of those two guards, not because the files are independent.
+# If you edit this by hand, check it before walking away:
+#     docker exec humiley_caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#
+# Generate the hash ON THE SERVER; the plaintext is typed into a hidden prompt and never written
+# anywhere:
+#
+#     docker exec -it humiley_caddy caddy hash-password
+#
+# Paste the $2a$… line it prints into the basic_auth block. A bcrypt hash is not a usable
+# credential — it is safe to keep in this file, to paste into a terminal, and to hand to anybody
+# helping you. The password itself never leaves your password manager.
+
+staging.portal.humiley.com {          # ← BLANK 1: the name you created the DNS A record for
+
+	# Nobody browses to this by accident, and nothing here should ever be indexed.
+	header X-Robots-Tag "noindex, nofollow, noarchive"
+	header Strict-Transport-Security "max-age=31536000"
+
+	# The password gate. Everything behind it is the ordinary portal, which still requires its own
+	# sign-in — this is a second, outer lock, not the only one.
+	basic_auth {
+		staging PASTE_THE_BCRYPT_HASH_HERE     # ← BLANK 2: output of `caddy hash-password`
+	}
+
+	encode gzip zstd
+
+	# The staging container, by name, over the shared humiley_net network. NOT app:8000 — that is
+	# production, and pointing this at it would put the live portal behind a second password while
+	# proving nothing. The name comes from container_name in docker-compose.staging.yml.
+	reverse_proxy humiley_portal_staging:8000
+}

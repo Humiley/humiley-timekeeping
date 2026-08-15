@@ -75,8 +75,22 @@ if ! docker volume inspect "$STAGE_VOL" >/dev/null 2>&1 || [ "$FRESH" = "1" ]; t
 fi
 
 # ── run ──────────────────────────────────────────────────────────────────────────────────────────
+# Staging joins production's network so the existing Caddy can serve it on a subdomain. Joining a
+# network is not sharing data — the volumes stay separate, and Caddy only routes to staging if a
+# file in caddy.d/ says so. Compose's own error for a missing external network names no remedy, so
+# check it here.
+if ! docker network inspect humiley_net >/dev/null 2>&1; then
+  echo "Network 'humiley_net' not found — production does not appear to be up." >&2
+  echo "Start it first (./update.sh, or docker compose up -d), then re-run this." >&2
+  exit 1
+fi
+
 say "Building and starting staging"
-( cd "$BUILD_DIR" && docker compose -p "$PROJ" -f "$OLDPWD/$FILE" up -d --build )
+# --project-directory, NOT `cd`. Compose resolves `build: .` relative to the COMPOSE FILE's
+# directory, not the shell's cwd — so cd-ing into the worktree and pointing -f back at the repo root
+# still built the repo root. `./staging.sh some-branch` silently staged whatever was checked out
+# instead of the branch under test, which is the one thing this script exists to avoid.
+docker compose -p "$PROJ" --project-directory "$BUILD_DIR" -f "$FILE" up -d --build
 
 say "Waiting for it to answer"
 for i in $(seq 1 30); do
@@ -86,9 +100,18 @@ for i in $(seq 1 30); do
     echo "    Staging build: $(curl -fsS http://127.0.0.1:$PORT/api/build 2>/dev/null || echo '?')"
     echo "    Production   : $(curl -fsS https://portal.humiley.com/api/build 2>/dev/null || echo '?')"
     echo
-    echo "    Open it from your laptop:"
-    echo "        ssh -L $PORT:127.0.0.1:$PORT root@portal.humiley.com"
-    echo "        then browse http://127.0.0.1:$PORT"
+    if [ -f caddy.d/staging.caddy ]; then
+      echo "    caddy.d/staging.caddy exists — staging is published over HTTPS."
+      echo "    Browse the domain named in that file. If you just edited it:"
+      echo "        docker exec humiley_caddy caddy reload --config /etc/caddy/Caddyfile"
+    else
+      echo "    It is running, but only this server can reach it (127.0.0.1:$PORT)."
+      echo "    From HERE you can check it:  curl -s http://127.0.0.1:$PORT/api/health"
+      echo
+      echo "    To open it in a BROWSER, publish it through Caddy — see docs/STAGING.md."
+      echo "    (An SSH tunnel also works, but only on a network that allows outbound port 22,"
+      echo "     and it must be run on your own computer, never in this console.)"
+    fi
     exit 0
   fi
   sleep 1

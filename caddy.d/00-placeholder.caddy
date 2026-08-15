@@ -1,0 +1,17 @@
+# This directory holds OPTIONAL extra Caddy sites, imported by the main Caddyfile.
+#
+# It exists because the office network blocks outbound port 22, so an SSH tunnel — the usual way to
+# reach a staging container bound to 127.0.0.1 — cannot be opened from a laptop here. Anything that
+# has to be LOOKED at rather than curl'd must therefore arrive over HTTPS on 443, like the portal
+# itself.
+#
+# This file is a deliberate no-op. It only guarantees the import glob in ../Caddyfile always matches
+# at least one file, so a fresh clone with no extra sites still starts. Adding or removing a real
+# site here changes NOTHING about production until Caddy is reloaded.
+#
+# To publish staging, copy the template and fill in the two blanks:
+#     cp caddy.d/staging.caddy.example caddy.d/staging.caddy
+# then edit it and run:
+#     docker exec humiley_caddy caddy reload --config /etc/caddy/Caddyfile
+#
+# To take it down again, delete the file and reload. Full instructions: docs/STAGING.md.
