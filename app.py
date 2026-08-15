@@ -6296,7 +6296,24 @@ class Handler(BaseHTTPRequestHandler):
         eid = u.get("id")
         if not eid or not db.get_employee(eid):
             return self._err("Profile not found.", 404)
-        data = {k: v for k, v in body.items() if k in self.SELF_FIELDS}
+        # Self-service text goes straight into HR's screens. _emp_create/_emp_update already strip
+        # angle brackets from what an ADMIN types; this path — which any employee can call for their
+        # own record — did not, so an emergency contact or address could carry markup that executes
+        # the next time HR opens that person's card. Same helper, same reasoning, no new mechanism.
+        data = self._crm_sanitize({k: v for k, v in body.items() if k in self.SELF_FIELDS})
+        # A photo is the one field that must legitimately hold a data: URI, so the bracket strip
+        # cannot protect it — pin it to an actual image payload instead of trusting the shape.
+        if "photo" in data:
+            _p = data.get("photo")
+            if not (isinstance(_p, str) and re.match(
+                    r"^data:image/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=\s]+$", _p or "")):
+                if _p:
+                    return self._err("That photo could not be read — upload a PNG, JPG, GIF or WebP.", 400)
+                data.pop("photo", None)
+        # A person can write their own record, but not an unbounded amount of it.
+        for _k, _v in list(data.items()):
+            if isinstance(_v, str) and len(_v) > 4000 and _k != "photo":
+                data[_k] = _v[:4000]
         if data:
             db.update_employee(eid, data)
         return self._json({"ok": True, "updated": list(data.keys())})
@@ -6548,7 +6565,14 @@ class Handler(BaseHTTPRequestHandler):
     def _portal_update(self, u, body):
         for k in self.PORTAL_KEYS:
             if isinstance(body.get(k), list):
-                db.set_setting("portal_" + k, body[k])
+                # Announcements, holidays, learning links and resources are rendered into EVERY
+                # user's dashboard — including an admin's — so a manager-level author reaches every
+                # screen in the company. _coll_add/_coll_update already put ordinary records through
+                # this strip; company-wide content was the one write path that skipped it, which is
+                # the wrong way round. Nested by design: an announcement is an object in a list.
+                # _crm_sanitize takes (and returns) a dict, so the list is wrapped rather than
+                # duplicating its recursion — it already cleans nested lists and objects.
+                db.set_setting("portal_" + k, self._crm_sanitize({"v": body[k]})["v"])
         # Integration endpoints are admin-only: a manager-level account must not be able to
         # repoint the Teams webhook, the SharePoint archive, or the Procurement launcher
         # (redirect / exfiltration vectors). Content lists above stay manager-editable; the
@@ -6779,11 +6803,19 @@ class Handler(BaseHTTPRequestHandler):
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
     HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates", "review_cycles", "decisions", "hrletters"}
-    EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"}
+    # ⚠️ "bank" is the LEGACY free-text column. The salary transfer actually runs on the structured
+    # four below (db.py migration + EMP_FIELDS), and because db.list_employees() is a SELECT *, any
+    # field missing from these sets is returned to everyone. They were missing: every authenticated
+    # staff account could read every colleague's salary account number — precisely what a payroll
+    # diversion needs, and the first field a Decree 13 purpose-limitation audit asks about. The WRITE
+    # gate already refused them below management (_emp_update); only the READ gate was absent.
+    # Add a new bank/compensation column to BOTH sets, never to one.
+    _BANK_FIELDS = {"bankName", "bankAcc", "bankHolder", "bankBranch"}
+    EMP_SENSITIVE = {"salary", "grade", "bank", "taxId", "dependents", "personalId", "address", "emergency", "annualUsed", "annualTotal", "sickUsed", "sickTotal", "compoff"} | _BANK_FIELDS
     # Compensation / payroll fields — visible ONLY to Approver (management) level and above, matching
     # the Payroll page's data-level="management" gate and READ_MIN for payruns/payadjust. A Contributor
     # (manager) can approve leave etc. but must NOT see anyone's pay; leave balances stay visible to them.
-    PAY_SENSITIVE = {"salary", "grade", "bank", "taxId"}
+    PAY_SENSITIVE = {"salary", "grade", "bank", "taxId"} | _BANK_FIELDS
     # Identity PII a line manager may see for their OWN reports and for nobody else. Deliberately
     # excludes the leave counters — a manager must see the balance a request draws down, whoever it is.
     PII_SENSITIVE = {"personalId", "address", "emergency", "dob", "familyStatus", "dependents"}
@@ -12493,6 +12525,35 @@ class Handler(BaseHTTPRequestHandler):
         if not (isinstance(cols, list) and cols and all(isinstance(c, dict) and c.get("key")
                                                         for c in cols)):
             cols = None       # fall back to the shipped layout rather than a half-configured one
+
+        # A period can legitimately hold more than one finalised run — a company roll-out plus an
+        # individual or correction run (tkCreatePayRun even offers "a pay run already exists, create
+        # another?"). Flattening them all produces one bank row PER LINE with no key on empId, so a
+        # person appearing in two runs is PAID TWICE and the batch total is silently inflated by
+        # their net. The control trailer sums the same inflated list, so the one manual check that
+        # could catch it reconciles perfectly.
+        #
+        # This module already refuses to emit a partial file (blocked rows) and already asks before
+        # regenerating. It had no guard against the opposite and worse failure. Refusing matches the
+        # rest of it: paying somebody twice is not something to resolve by guessing which run wins.
+        _seen, _dupes = {}, {}
+        for r in runs:
+            for l in (r.get("lines") or []):
+                eid = str(l.get("empId") or "").strip()
+                if not eid:
+                    continue
+                if eid in _seen and _seen[eid] != r.get("id"):
+                    _dupes.setdefault(eid, {"name": l.get("name") or eid, "runs": {_seen[eid]}})
+                    _dupes[eid]["runs"].add(r.get("id"))
+                else:
+                    _seen[eid] = r.get("id")
+        if _dupes:
+            _who = ", ".join("%s (%s)" % (v["name"], " + ".join(sorted(str(x) for x in v["runs"])))
+                             for v in list(_dupes.values())[:8])
+            return self._err(
+                "This period has %d person(s) in more than one finalised pay run, so a combined bank "
+                "file would pay them twice: %s. Cancel or supersede the duplicate run before "
+                "exporting." % (len(_dupes), _who), 400)
 
         merged = {"period": period, "lines": [l for r in runs for l in (r.get("lines") or [])]}
         built = bank_transfer.build(merged, db.list_employees(),
