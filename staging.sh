@@ -86,9 +86,19 @@ for i in $(seq 1 30); do
     echo "    Staging build: $(curl -fsS http://127.0.0.1:$PORT/api/build 2>/dev/null || echo '?')"
     echo "    Production   : $(curl -fsS https://portal.humiley.com/api/build 2>/dev/null || echo '?')"
     echo
-    echo "    Open it from your laptop:"
-    echo "        ssh -L $PORT:127.0.0.1:$PORT root@portal.humiley.com"
-    echo "        then browse http://127.0.0.1:$PORT"
+    echo "    ┌─────────────────────────────────────────────────────────────────────────┐"
+    echo "    │  Staging is running HERE on the server, on 127.0.0.1:$PORT.               │"
+    echo "    │                                                                         │"
+    echo "    │  To see it, open Terminal ON YOUR OWN COMPUTER — not this window —       │"
+    echo "    │  and run:                                                               │"
+    echo "    │                                                                         │"
+    echo "    │      ssh -L $PORT:127.0.0.1:$PORT root@portal.humiley.com                │"
+    echo "    │                                                                         │"
+    echo "    │  Leave it open, then browse to  http://127.0.0.1:$PORT                   │"
+    echo "    │                                                                         │"
+    echo "    │  (Running that command in THIS window just logs the server into itself   │"
+    echo "    │   and fails with \"Address already in use\" — staging already has the port.)│"
+    echo "    └─────────────────────────────────────────────────────────────────────────┘"
     exit 0
   fi
   sleep 1

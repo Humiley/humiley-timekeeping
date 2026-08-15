@@ -59,3 +59,9 @@ services:
 
 volumes:
   humiley_data:
+    # staging.sh creates and fills this volume BEFORE compose runs (it copies the live database in),
+    # so compose must adopt it rather than claim it. Without `external` compose warns on every run:
+    # "volume ... already exists but was not created by Docker Compose".
+    # The name is the project-namespaced one compose would have generated, so nothing else changes.
+    external: true
+    name: humiley_staging_humiley_data
