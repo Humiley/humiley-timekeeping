@@ -6891,8 +6891,19 @@ function tkCandidateDetail(id) {
   el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">Candidate</div><button class="modal-close" onclick="document.getElementById(\'candDetailOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
     '<div style="text-align:center;margin-bottom:14px"><div class="ava-md" style="background:#205090;margin:0 auto 8px;width:54px;height:54px;font-size:18px">' + ini + '</div><div style="font-weight:700;font-size:16px">' + c.name + '</div><div style="font-size:12px;color:var(--text-light)">' + (c.role || '') + '</div><div style="margin-top:6px"><span class="badge ' + stageColor + '">' + (c.stage || '') + '</span></div></div>' +
     row('Applying for', c.role) + row('Department', job ? job.dept : '—') + row('Source', c.source) + row('Rating', c.rating ? _hrStars(c.rating) : 'Not rated') +
-    (c.eval && c.eval.score ? row('Interview score', c.eval.score + '/5 · ' + (c.eval.rec || '')) : '') +
-    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px">' + hire + adv + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkInterviewEval(\'' + id + '\')">Evaluate</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkQuickAdd(\'candidates\',\'' + id + '\')">Edit</button><button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCollDelete(\'candidates\',\'' + id + '\',\'recruitment\')">Delete</button></div></div>';
+    (function () {
+      const ev = _candEvals(c);
+      return Object.keys(_EVAL_TEMPLATES).filter(st => ev[st] && ev[st].score)
+        .map(st => row(_t(_evalTpl(st).title), ev[st].score + '/5 · ' + _t(ev[st].rec || ''))).join('');
+    })() +
+    (function () {
+      const has = c.hasCv || c.cvFile;
+      const act = has
+        ? '<button class="btn btn-outline btn-sm" style="padding:2px 9px;font-size:11px" onclick="tkCvOpen(\'' + id + '\')">' + _t('Open CV') + '</button><button class="btn btn-ghost btn-sm" style="padding:2px 9px;font-size:11px" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCvAttach(\'' + id + '\')">' + _t('Replace CV') + '</button>'
+        : '<button class="btn btn-outline btn-sm" style="padding:2px 9px;font-size:11px" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCvAttach(\'' + id + '\')">' + _t('Attach CV') + '</button>';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line)"><span style="color:var(--text-light)">' + 'CV' + '</span><span style="display:flex;align-items:center;gap:6px">' + (has ? '<span style="font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _tkEscT(c.cvName || 'CV') + '</span>' : '<span style="color:var(--warn,#B26A00);font-weight:600">' + _t('No CV attached') + '</span>') + act + '</span></div>';
+    })() +
+    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px">' + hire + adv + '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkInterviewEval(\'' + id + '\',\'' + (c.stage || 'Interview') + '\')">' + _t('Evaluate') + '</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'candDetailOverlay\').remove();tkQuickAdd(\'candidates\',\'' + id + '\')">Edit</button><button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="document.getElementById(\'candDetailOverlay\').remove();tkCollDelete(\'candidates\',\'' + id + '\',\'recruitment\')">Delete</button></div></div>';
   document.body.appendChild(el);
 }
 
@@ -6934,33 +6945,116 @@ async function tkReqReject(id) {
 }
 
 /* Interview evaluation rubric (BM.HR-01-04: Technical 40 / Behavioral 35 / Culture 15 / Logistics 10). */
-const _EVAL_CRIT = [{ k: 'tech', label: 'Technical Competencies', w: 40 }, { k: 'behav', label: 'Behavioral Competencies', w: 35 }, { k: 'culture', label: 'Culture-Fit & Values', w: 15 }, { k: 'logistics', label: 'Comp / Logistics / Notice', w: 10 }];
-function tkInterviewEval(id) {
-  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
-  const ev = c.eval || {};
-  document.getElementById('evalOverlay')?.remove();
-  const rows = _EVAL_CRIT.map(cr => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:13px">' + cr.label + ' <span style="color:var(--text-light)">(' + cr.w + '%)</span></div><select class="form-control" style="width:70px" id="eval-' + cr.k + '" onchange="tkEvalCalc()"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + ((ev[cr.k] || 0) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>').join('');
-  const el = document.createElement('div'); el.id = 'evalOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
-  el.innerHTML = '<div class="modal" style="max-width:460px"><div class="modal-header"><div class="modal-title">Interview Evaluation — ' + (c.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'evalOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
-    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + (c.role || '') + ' · score each 1–5 (BM.HR-01-04)</div>' + rows +
-    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:10px 0"><span style="font-size:13px;font-weight:600">Weighted score</span><span id="eval-total" style="font-size:18px;font-weight:800;color:var(--navy)">—</span></div>' +
-    '<div class="form-group"><label class="form-label">Recommendation</label><select class="form-control" id="eval-rec"><option value="">—</option><option value="Strong Hire"' + (ev.rec === 'Strong Hire' ? ' selected' : '') + '>Strong Hire</option><option value="Hire"' + (ev.rec === 'Hire' ? ' selected' : '') + '>Hire</option><option value="Conditional"' + (ev.rec === 'Conditional' ? ' selected' : '') + '>Conditional</option><option value="No Hire"' + (ev.rec === 'No Hire' ? ' selected' : '') + '>No Hire</option></select></div>' +
-    '<div class="form-group"><label class="form-label">Comments</label><textarea class="form-control" id="eval-comment">' + _tkEscT(ev.comment || '') + '</textarea></div>' +
-    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'evalOverlay\').remove()">Cancel</button><button class="btn btn-emerald" onclick="tkEvalSave(\'' + id + '\')">Save evaluation</button></div></div>';
-  document.body.appendChild(el); tkEvalCalc();
+/* Evaluation templates — ONE PER STAGE.
+   There used to be a single form (BM.HR-01-04, the interview panel) and a single `eval` object on
+   the candidate, so evaluating at Screening and again at Interview wrote to the same place and the
+   first assessment was lost. Each stage now has its own form and its own stored result.
+   ⚠️ The criteria below for Applied / Screening / Offer are PLACEHOLDERS modelled on the interview
+   form. Humiley's own BM.HR-01-xx forms should replace them — only the Interview set is the real
+   company form. Weights are percentages and must total 100 per stage. */
+const _EVAL_TEMPLATES = {
+  Applied:   { code: 'BM.HR-01-02', title: 'CV Screening', crit: [
+    { k: 'qual',      label: 'Qualification vs job requirement', w: 35 },
+    { k: 'exp',       label: 'Relevant experience (HVAC / cleanroom / MEP)', w: 35 },
+    { k: 'stability', label: 'Employment stability & progression', w: 15 },
+    { k: 'cvquality', label: 'CV clarity & completeness', w: 15 }] },
+  Screening: { code: 'BM.HR-01-03', title: 'HR Screening', crit: [
+    { k: 'comm',      label: 'Communication & language', w: 25 },
+    { k: 'motive',    label: 'Motivation & understanding of the role', w: 25 },
+    { k: 'salary',    label: 'Salary expectation vs band', w: 25 },
+    { k: 'notice',    label: 'Notice period & availability', w: 25 }] },
+  Interview: { code: 'BM.HR-01-04', title: 'Interview Evaluation', crit: [
+    { k: 'tech',      label: 'Technical Competencies', w: 40 },
+    { k: 'behav',     label: 'Behavioral Competencies', w: 35 },
+    { k: 'culture',   label: 'Culture-Fit & Values', w: 15 },
+    { k: 'logistics', label: 'Comp / Logistics / Notice', w: 10 }] },
+  Offer:     { code: 'BM.HR-01-05', title: 'Offer Review', crit: [
+    { k: 'reference', label: 'Reference / background check', w: 30 },
+    { k: 'package',   label: 'Package within approved band', w: 30 },
+    { k: 'headcount', label: 'Headcount & budget confirmed', w: 20 },
+    { k: 'startdate', label: 'Start date agreed', w: 20 }] }
+};
+function _evalTpl(stage) { return _EVAL_TEMPLATES[stage] || _EVAL_TEMPLATES.Interview; }
+/* Every evaluation this candidate has, keyed by stage. Records created before per-stage forms
+   existed carry a single `eval`, which was always the interview panel's — read it as that rather
+   than losing it. */
+function _candEvals(c) {
+  const ev = Object.assign({}, (c && c.evals) || {});
+  if (!ev.Interview && c && c.eval && (c.eval.score || c.eval.rec)) ev.Interview = c.eval;
+  return ev;
 }
-function tkEvalCalc() {
-  let tot = 0; _EVAL_CRIT.forEach(cr => { const v = +(document.getElementById('eval-' + cr.k) || {}).value || 0; tot += v * cr.w / 100; });
+const _EVAL_CRIT = _EVAL_TEMPLATES.Interview.crit;   // kept: the interview form, by its old name
+function tkInterviewEval(id, stage) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  stage = stage || c.stage || 'Interview';
+  const tpl = _evalTpl(stage), ev = _candEvals(c)[stage] || {};
+  document.getElementById('evalOverlay')?.remove();
+  const rows = tpl.crit.map(cr => '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1;font-size:13px">' + _t(cr.label) + ' <span style="color:var(--text-light)">(' + cr.w + '%)</span></div><select class="form-control" style="width:70px" id="eval-' + cr.k + '" onchange="tkEvalCalc(\'' + stage + '\')"><option value="0">—</option>' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + ((ev[cr.k] || 0) === n ? ' selected' : '') + '>' + n + '</option>').join('') + '</select></div>').join('');
+  const cvBtn = (c.hasCv || c.cvFile) ? '<button class="btn btn-outline btn-sm" onclick="tkCvOpen(\'' + id + '\')">' + _t('Open CV') + '</button>' : '<span style="font-size:12px;color:var(--warn,#B26A00)">' + _t('No CV attached') + '</span>';
+  const el = document.createElement('div'); el.id = 'evalOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:460px;max-height:92vh;overflow:auto"><div class="modal-header"><div class="modal-title">' + _t(tpl.title) + ' — ' + _tkEscT(c.name || '') + '</div><button class="modal-close" onclick="document.getElementById(\'evalOverlay\').remove()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px"><div style="font-size:12px;color:var(--text-light)">' + _tkEscT(c.role || '') + ' · ' + stage + ' · ' + _t('score each 1–5') + ' (' + tpl.code + ')</div>' + cvBtn + '</div>' + rows +
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--soft-bg);border-radius:8px;padding:10px 14px;margin:10px 0"><span style="font-size:13px;font-weight:600">' + _t('Weighted score') + '</span><span id="eval-total" style="font-size:18px;font-weight:800;color:var(--navy)">—</span></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Recommendation') + '</label><select class="form-control" id="eval-rec"><option value="">—</option>' + ['Strong Hire', 'Hire', 'Conditional', 'No Hire'].map(o => '<option value="' + o + '"' + (ev.rec === o ? ' selected' : '') + '>' + _t(o) + '</option>').join('') + '</select></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Comments') + '</label><textarea class="form-control" id="eval-comment">' + _tkEscT(ev.comment || '') + '</textarea></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'evalOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-emerald" onclick="tkEvalSave(\'' + id + '\',\'' + stage + '\')">' + _t('Save evaluation') + '</button></div></div>';
+  document.body.appendChild(el); tkEvalCalc(stage);
+}
+function tkEvalCalc(stage) {
+  let tot = 0; _evalTpl(stage).crit.forEach(cr => { const v = +(document.getElementById('eval-' + cr.k) || {}).value || 0; tot += v * cr.w / 100; });
   const el = document.getElementById('eval-total'); if (el) el.textContent = tot ? tot.toFixed(2) + ' / 5' : '—';
 }
-async function tkEvalSave(id) {
+async function tkEvalSave(id, stage) {
   const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
-  const ev = { rec: document.getElementById('eval-rec').value, comment: document.getElementById('eval-comment').value };
-  let tot = 0; _EVAL_CRIT.forEach(cr => { ev[cr.k] = +document.getElementById('eval-' + cr.k).value || 0; tot += ev[cr.k] * cr.w / 100; });
+  stage = stage || c.stage || 'Interview';
+  const tpl = _evalTpl(stage);
+  const ev = { stage: stage, form: tpl.code, rec: document.getElementById('eval-rec').value,
+               comment: document.getElementById('eval-comment').value,
+               by: (TK.user && TK.user.name) || '', at: new Date().toISOString() };
+  let tot = 0; tpl.crit.forEach(cr => { ev[cr.k] = +document.getElementById('eval-' + cr.k).value || 0; tot += ev[cr.k] * cr.w / 100; });
   ev.score = +tot.toFixed(2);
+  const evals = _candEvals(c); evals[stage] = ev;
+  c.evals = evals;
+  // `eval` stays as the latest assessment so anything still reading the old shape keeps working.
   c.eval = ev; if (ev.score) c.rating = Math.round(ev.score);
-  try { await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c }); tkAudit('Interview evaluated', c.name, ev.score + '/5 · ' + (ev.rec || '')); document.getElementById('evalOverlay').remove(); toast('Evaluation saved (' + ev.score + '/5 · ' + (ev.rec || '') + ')'); tkRenderRecruitment(); }
+  try {
+    await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: c });
+    tkAudit(tpl.title + ' recorded', c.name, stage + ' · ' + ev.score + '/5 · ' + (ev.rec || ''));
+    document.getElementById('evalOverlay').remove();
+    toast(_t('Evaluation saved') + ' (' + ev.score + '/5 · ' + _t(ev.rec || '') + ')');
+    tkRenderRecruitment();
+  }
   catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
+/* ── The CV ───────────────────────────────────────────────────────────────────────────────────
+   A CV is an outsider's personal data. The bytes never ride along with the pipeline list (the
+   server blanks them and sends `hasCv`), so both attaching and opening go through /api/hr/cv,
+   which re-checks who is asking and records the read. */
+function tkCvAttach(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  const inp = document.createElement('input'); inp.type = 'file';
+  inp.accept = '.pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+  inp.onchange = async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    if (f.size > 8 * 1024 * 1024) { toast(_t('That file is too large — 8 MB maximum.'), 'error', 5000); return; }
+    toast(_t('Uploading CV…'));
+    try {
+      const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f); });
+      const j = await tkApi('/api/hr/cv', { method: 'POST', body: { candidateId: id, file: data, fileName: f.name } });
+      c.cvName = (j && j.cvName) || f.name; c.hasCv = true;
+      toast(_t('CV attached') + ' · ' + c.cvName);
+      tkRenderRecruitment(); tkCandidateDetail(id);
+    } catch (e) { toast(_t('Could not attach the CV') + ': ' + _errMsg(e), 'error', 6000); }
+  };
+  inp.click();
+}
+async function tkCvOpen(id) {
+  try {
+    const j = await tkApi('/api/hr/cv/' + encodeURIComponent(id));
+    if (!j || !j.file) { toast(_t('No CV attached'), 'error'); return; }
+    tkFilePreview(j.file, j.fileName || 'cv.pdf');
+  } catch (e) { toast(_t('Could not open the CV') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
 /* Human Resource hub — Overview tab. The HRBP (HR Business Partner) process across the
@@ -7122,14 +7216,48 @@ function _buildRecMonthlyCharts() {
   _mkChart('rec-src', { type: 'doughnut', data: { labels: d.srcLabels, datasets: [{ data: d.srcVals, backgroundColor: _BRAND, borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Candidates' } });
 }
 function tkRecTab(tab, el) { ['pipeline', 'monthly'].forEach(t => { const p = document.getElementById('rec-' + t); if (p) p.style.display = t === tab ? 'block' : 'none'; }); document.querySelectorAll('#recruitment-root .tab').forEach(b => b.classList.remove('active')); if (el) el.classList.add('active'); if (tab === 'monthly') setTimeout(_buildRecMonthlyCharts, 60); }
+const _CAND_ORDER = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
+/* Advancing is a DECISION, so it now opens the evidence rather than just moving the card: the CV,
+   and the evaluation recorded for the stage being left. The old version fired a bare fetch and
+   checked `j.ok` — when the server said no, nothing happened and nothing was said. */
 function tkCandidateAdvance(id) {
-  const c = _HR.candidates.find(x => x.id === id); if (!c) return;
-  const order = ['Applied', 'Screening', 'Interview', 'Offer', 'Hired'];
-  const i = order.indexOf(c.stage);
-  if (i < 0 || i >= order.length - 1) { toast(c.name + ' is already ' + c.stage); return; }
-  const next = order[i + 1];
-  fetch('/api/coll/candidates/' + id, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TK.token }, body: JSON.stringify({ ...c, stage: next }) })
-    .then(r => r.json()).then(j => { if (j.ok) { c.stage = next; tkRenderRecruitment(); toast(c.name + ' → ' + next); } });
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  const i = _CAND_ORDER.indexOf(c.stage);
+  if (i < 0 || i >= _CAND_ORDER.length - 1) { toast(_tkEscT(c.name) + ' · ' + _t('no further stage')); return; }
+  const next = _CAND_ORDER[i + 1], tpl = _evalTpl(c.stage), ev = _candEvals(c)[c.stage];
+  const has = c.hasCv || c.cvFile;
+  document.getElementById('candAdvOverlay')?.remove();
+  const cvLine = has
+    ? '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><span style="font-size:13px">' + 'CV' + ' · <span style="color:var(--text-light)">' + _tkEscT(c.cvName || 'CV') + '</span></span><button class="btn btn-outline btn-sm" style="padding:2px 9px;font-size:11px" onclick="tkCvOpen(\'' + id + '\')">' + _t('Open CV') + '</button></div>'
+    : '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0"><span style="font-size:13px;color:var(--warn,#B26A00)">' + _t('No CV attached') + '</span><button class="btn btn-outline btn-sm" style="padding:2px 9px;font-size:11px" onclick="document.getElementById(\'candAdvOverlay\').remove();tkCvAttach(\'' + id + '\')">' + _t('Attach CV') + '</button></div>';
+  const evLine = ev && ev.score
+    ? '<div style="padding:8px 0;border-top:1px solid var(--line)"><div style="display:flex;justify-content:space-between;font-size:13px"><span>' + _t(tpl.title) + '</span><span style="font-weight:700">' + ev.score + '/5 · ' + _t(ev.rec || '') + '</span></div>' + (ev.comment ? '<div style="font-size:12px;color:var(--text-light);margin-top:4px">' + _tkEscT(ev.comment) + '</div>' : '') + (ev.by ? '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _t('Evaluated by') + ' ' + _tkEscT(ev.by) + '</div>' : '') + '</div>'
+    : '<div style="padding:8px 0;border-top:1px solid var(--line);font-size:13px;color:var(--warn,#B26A00)">' + _t('No evaluation recorded for this stage') + ' (' + tpl.code + ')</div>';
+  const advBtn = (ev && ev.score)
+    ? '<button class="btn btn-emerald" onclick="tkCandidateAdvanceGo(\'' + id + '\')">' + _t('Advance to') + ' ' + next + ' →</button>'
+    : '<button class="btn btn-ghost" style="color:var(--text-light)" onclick="tkCandidateAdvanceGo(\'' + id + '\')">' + _t('Advance without evaluation') + '</button>';
+  const el = document.createElement('div'); el.id = 'candAdvOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:440px"><div class="modal-header"><div class="modal-title">' + _t('Review before advancing') + '</div><button class="modal-close" onclick="document.getElementById(\'candAdvOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:13px;margin-bottom:4px"><b>' + _tkEscT(c.name || '') + '</b> · ' + _tkEscT(c.role || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:10px">' + c.stage + ' → ' + next + '</div>' +
+    cvLine + evLine +
+    '<div class="modal-footer" style="flex-wrap:wrap;gap:6px"><button class="btn btn-ghost" onclick="document.getElementById(\'candAdvOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-outline" onclick="document.getElementById(\'candAdvOverlay\').remove();tkInterviewEval(\'' + id + '\',\'' + c.stage + '\')">' + _t('Evaluate') + '</button>' + advBtn + '</div></div>';
+  document.body.appendChild(el);
+}
+async function tkCandidateAdvanceGo(id) {
+  const c = (_HR.candidates || []).find(x => x.id === id); if (!c) return;
+  const i = _CAND_ORDER.indexOf(c.stage);
+  if (i < 0 || i >= _CAND_ORDER.length - 1) return;
+  const next = _CAND_ORDER[i + 1], had = !!(_candEvals(c)[c.stage] || {}).score;
+  try {
+    await tkApi('/api/coll/candidates/' + id, { method: 'PATCH', body: Object.assign({}, c, { stage: next }) });
+    c.stage = next;
+    document.getElementById('candAdvOverlay')?.remove();
+    tkAudit('Candidate advanced', c.name, _CAND_ORDER[i] + ' → ' + next + (had ? '' : ' · NO EVALUATION'));
+    tkRenderRecruitment();
+    toast(_tkEscT(c.name) + ' → ' + next);
+  } catch (e) { toast(_t('Could not advance') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
 /* Onboarding */
@@ -9781,7 +9909,7 @@ function _hrJdCell(j) {
   return '<button class="btn btn-ghost btn-sm" style="font-size:10.5px;padding:4px 7px;color:var(--navy);font-weight:600" ' +
     'onclick="hrJdOpen(\'' + j.id + '\')" title="' + _tkEscA(jd.name + ' — ' + where) + '">' + tkIcon('file', 12) + ' ' + _t('Show') + '</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 6px;color:var(--text-light)" ' +
-    'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Replace the JD')) + '">' + _t('Replace') + '</button>';
+    'onclick="hrJdPick(\'' + j.id + '\')" title="' + _tkEscA(_t('Replace the JD')) + '">' + _t('Replace CV') + '</button>';
 }
 function hrJdOpen(id) {
   const j = (_HR.jobs || []).find(x => x.id === id), jd = j && j.jd;
@@ -22619,6 +22747,42 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Recruitment: CV + per-stage evaluation (2026-08-15) */
+  'Attach CV': 'Đính kèm CV',
+  'Open CV': 'Mở CV',
+  'Replace CV': 'Thay CV',
+  'No CV attached': 'Chưa đính kèm CV',
+  'CV attached': 'Đã đính kèm CV',
+  'Uploading CV…': 'Đang tải CV lên…',
+  'Could not attach the CV': 'Không thể đính kèm CV',
+  'Could not open the CV': 'Không thể mở CV',
+  'Could not advance': 'Không thể chuyển bước',
+  'That file is too large — 8 MB maximum.': 'Tệp quá lớn — tối đa 8 MB.',
+  'score each 1–5': 'chấm điểm 1–5',
+  'Evaluation saved': 'Đã lưu đánh giá',
+  'Review before advancing': 'Xem xét trước khi chuyển bước',
+  'Advance to': 'Chuyển sang',
+  'Advance without evaluation': 'Chuyển bước khi chưa đánh giá',
+  'No evaluation recorded for this stage': 'Chưa có đánh giá cho bước này',
+  'Evaluated by': 'Người đánh giá',
+  'no further stage': 'không còn bước tiếp theo',
+  'CV Screening': 'Sàng lọc hồ sơ',
+  'HR Screening': 'Sơ vấn nhân sự',
+  'Interview Evaluation': 'Đánh giá phỏng vấn',
+  'Offer Review': 'Xét duyệt đề nghị',
+  'Qualification vs job requirement': 'Bằng cấp so với yêu cầu công việc',
+  'Relevant experience (HVAC / cleanroom / MEP)': 'Kinh nghiệm liên quan (HVAC / phòng sạch / MEP)',
+  'Employment stability & progression': 'Sự ổn định & thăng tiến nghề nghiệp',
+  'CV clarity & completeness': 'Hồ sơ rõ ràng & đầy đủ',
+  'Communication & language': 'Giao tiếp & ngoại ngữ',
+  'Motivation & understanding of the role': 'Động lực & hiểu biết về vị trí',
+  'Salary expectation vs band': 'Mức lương mong muốn so với khung',
+  'Notice period & availability': 'Thời gian báo trước & khả năng nhận việc',
+  'Reference / background check': 'Kiểm tra tham chiếu / lý lịch',
+  'Package within approved band': 'Gói đãi ngộ trong khung đã duyệt',
+  'Headcount & budget confirmed': 'Đã xác nhận định biên & ngân sách',
+  'Start date agreed': 'Đã thống nhất ngày bắt đầu',
+
   'They will be sent automatically when you have a connection. The time recorded is when you pressed the button, not when it is sent.':
     'Hệ thống sẽ tự động gửi khi có kết nối. Giờ được ghi nhận là lúc bạn bấm nút, không phải lúc gửi đi.',
   'Your check-out is missing for': 'Thiếu giờ chấm công ra ngày',

@@ -3942,6 +3942,9 @@ class Handler(BaseHTTPRequestHandler):
             _cid, _, _kind = _rest.partition("/file/")
             return self._guard(lambda u: self._contract_file_ep(
                 u, urllib.parse.unquote(_cid), urllib.parse.unquote(_kind)))
+        if path.startswith("/api/hr/cv/"):
+            return self._guard(lambda u: self._cv_file_ep(
+                u, urllib.parse.unquote(path[len("/api/hr/cv/"):])))
         if path == "/api/hr/incidents":
             return self._guard(lambda u: self._incidents_ep(u, qs), manager=True)
         if path == "/api/hr/speakup":
@@ -4051,6 +4054,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
         if path == "/api/hr/contract/file":
             return self._guard(lambda u: self._contract_attach_ep(u, body), manager=True)
+        if path == "/api/hr/cv":
+            return self._guard(lambda u: self._cv_attach_ep(u, body), manager=True)
         if path == "/api/hr/incidents":
             return self._guard(lambda u: self._incident_add_ep(u, body), manager=True)
         if path.startswith("/api/hr/incidents/"):
@@ -7010,6 +7015,14 @@ class Handler(BaseHTTPRequestHandler):
             items = [dict(it, file="", issuedFile="",
                           hasFile=bool(it.get("file") or it.get("fileUrl")),
                           hasIssuedFile=bool(it.get("issuedFile"))) for it in items]
+        # A CV is a stranger's personal data — full name, date of birth, address, phone, photo and
+        # their whole employment history — given to us for one stated purpose. Shipping every
+        # applicant's PDF to whoever opens the Recruitment board is the over-collection Decree 13
+        # exists to stop, and it makes one board render carry megabytes. The board needs to know a CV
+        # EXISTS; the bytes come from /api/hr/cv/<id>, which re-checks who is asking.
+        if name == "candidates":
+            items = [dict(it, cvFile="",
+                          hasCv=bool(it.get("cvFile") or it.get("cvUrl"))) for it in items]
         if name == "pm_chat":
             vis = self._pm_visible_projects(u)
             if vis is not None:
@@ -9024,6 +9037,80 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("No document of that kind is attached to this contract yet.", 404)
         return self._json({"ok": True, "id": rec.get("id"), "file": rec.get(f_key) or "",
                            "fileName": rec.get(n_key) or "contract.pdf"})
+
+    # ── candidate CVs ────────────────────────────────────────────────────────────────────────────
+    # A CV is personal data belonging to someone who does not work here and cannot see what we hold.
+    # Two rules follow, and both are enforced here rather than in the UI: only the people running
+    # recruitment may attach or read one, and the bytes never travel with a list.
+    _CV_TYPES = ("application/pdf", "application/msword", "image/jpeg", "image/png",
+                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+
+    def _audit_cv(self, u, action, rec, detail=""):
+        """Record a CV attach/read in the tamper-evident chain.
+
+        Reading a candidate's CV is a USE of an outsider's personal data, and the review step only
+        means something if a named person did it. Written here, server-side, so it cannot be skipped
+        by calling the endpoint directly."""
+        try:
+            db.put_collection_item("audit", {
+                "actor": u.get("name") or "System", "actorId": u.get("id") or "",
+                "action": action,
+                "target": "candidates/" + str((rec or {}).get("id") or ""),
+                "detail": (" · ".join(x for x in [
+                    (rec or {}).get("name") or "", (rec or {}).get("role") or "", detail] if x))[:400],
+                "ts": _now_iso(),
+            })
+        except Exception:
+            pass          # an audit failure must never block the recruiter's actual work
+
+    def _cv_attach_ep(self, u, body):
+        """Attach (or replace) the CV on a candidate. Manager level and above — the same people who
+        may see the pipeline at all."""
+        if u.get("role") != "manager" and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Manager access is required to attach a CV.", 403)
+        b = dict(body or {})
+        cid = str(b.get("candidateId") or "").strip()
+        rec = db.get_collection_item("candidates", cid) if cid else None
+        if not rec:
+            return self._err("That candidate no longer exists.", 404)
+        data = str(b.get("file") or "")
+        if not data.startswith("data:"):
+            return self._err("No CV received.", 400)
+        head, _, b64 = data.partition(",")
+        mime = head[5:].split(";")[0].strip().lower()
+        if mime not in self._CV_TYPES:
+            return self._err("A CV must be a PDF, a Word document or a scan (JPG/PNG).", 400)
+        try:
+            raw = base64.b64decode(b64 + "=" * (-len(b64) % 4))
+        except Exception:
+            return self._err("That file could not be read.", 400)
+        if not raw or len(raw) > _INVTRACK_FILE_MAX:
+            return self._err("That file is empty or too large.", 400)
+        name = str(b.get("fileName") or "").strip() or "cv.pdf"
+        name = re.sub(r"[\r\n\t/\\]", " ", name)[:120]      # it is rendered and offered as a download
+        rec = dict(rec)
+        rec["cvFile"] = data
+        rec["cvName"] = name
+        rec["cvAt"] = _now_iso()
+        rec["cvBy"] = u.get("name") or u.get("id") or ""
+        db.put_collection_item("candidates", rec)
+        self._audit_cv(u, "CV attached", rec, name)
+        return self._json({"ok": True, "id": cid, "cvName": name, "hasCv": True})
+
+    def _cv_file_ep(self, u, cid):
+        """The bytes of one candidate's CV."""
+        if u.get("role") != "manager" and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
+            return self._err("Manager access is required to read a CV.", 403)
+        rec = db.get_collection_item("candidates", str(cid or "")) or {}
+        if not rec:
+            return self._err("That candidate no longer exists.", 404)
+        if not rec.get("cvFile"):
+            return self._err("No CV has been attached to this candidate yet.", 404)
+        # Reading somebody's CV is a use of their personal data, and the whole point of the review
+        # step is that a named person did it. Recorded server-side so it cannot be skipped.
+        self._audit_cv(u, "CV opened", rec, rec.get("cvName") or "")
+        return self._json({"ok": True, "id": rec.get("id"), "file": rec.get("cvFile") or "",
+                           "fileName": rec.get("cvName") or "cv.pdf"})
 
     # ── occupational accidents ───────────────────────────────────────────────────────────────────
 
@@ -13071,6 +13158,23 @@ class Handler(BaseHTTPRequestHandler):
                     body.pop(_k, None)
             body.pop("hasFile", None)          # derived read-only flags, never stored
             body.pop("hasIssuedFile", None)
+        # ── candidates: the same round-trip trap, and it destroys the CV ─────────────────────────
+        # The Recruitment screens PATCH the whole candidate object they are holding (advancing a
+        # stage, saving an evaluation). That object came from a LIST read, which blanks cvFile — so
+        # without this, the first evaluation saved after attaching a CV would silently delete it. The
+        # record would still say a CV had been attached and the file would be gone. This is the exact
+        # failure the contracts block above was written for; candidates now carry a document too.
+        if name == "candidates":
+            _prevk = db.get_collection_item(name, iid) or {}
+            body = dict(body or {})
+            for _k in ("cvFile", "cvName", "cvUrl", "cvAt", "cvBy"):
+                if body.get(_k):
+                    continue
+                if _prevk.get(_k) is not None:
+                    body[_k] = _prevk.get(_k)
+                else:
+                    body.pop(_k, None)
+            body.pop("hasCv", None)            # derived read-only flag, never stored
         if name in self.ISSUED_ONLY:
             # Fetched here rather than relying on `existing`, which the branches below assign only
             # for the collections they handle — reading it at this point raised a NameError.
