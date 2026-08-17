@@ -114,20 +114,28 @@ fi
 # and then swallowed the exit code so auto-deploy recorded "deploy OK" over a dead site.
 #
 # caddy.d/staging.caddy is hand-edited on the server and gitignored, so CI can never see it. This is
-# the only place it can be checked. Validate with the RUNNING container's own binary where possible
-# — that is the exact version that will parse it — and fall back to the image only on first boot.
+# the only place it can be checked.
+#
+# ⚠️ Validate in a THROWAWAY container with the real mounts — never by `exec`-ing into the running
+# one. That was the first version of this check and it deadlocked the deploy: the running Caddy was
+# created before caddy.d/ was added to the compose file, so /etc/caddy/conf.d did not exist inside
+# it, the new `import /etc/caddy/conf.d/*.caddy` could not resolve, validation failed, and this gate
+# aborted the very deploy that would have given the container the mount. Nothing was broken and
+# nothing shipped — the site stayed healthy on old code for three merged PRs while every deploy
+# quietly refused itself.
+#
+# The lesson is narrower than "don't validate": validate the config AS IT WILL BE. The running
+# container is the wrong oracle because its MOUNTS are stale even when its binary is current.
 say "Validating the Caddy config…"
-if docker compose ps --status running caddy 2>/dev/null | grep -q caddy; then
-  _cv() { docker compose exec -T caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; }
-else
-  _cv() { docker run --rm -e PORTAL_DOMAIN="$DOMAIN" \
-            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
-            caddy:2 caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; }
-fi
-if ! _cv; then
+CADDY_IMG="$(grep -oE 'image: *caddy:[0-9A-Za-z._-]+' docker-compose.yml | head -1 | awk '{print $2}')"
+CADDY_IMG="${CADDY_IMG:-caddy:2}"
+if ! docker run --rm -e PORTAL_DOMAIN="$DOMAIN" \
+       -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+       -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
+       "$CADDY_IMG" caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile; then
   printf '\033[1;31m\n  Caddy config is INVALID — refusing to restart the edge.\033[0m\n' >&2
   printf '  The site is still up on the old config. Nothing has been changed.\n' >&2
-  printf '  Almost always a hand-edited caddy.d/*.caddy file. To get back to a known-good edge:\n' >&2
+  printf '  The reason is printed above. Almost always a hand-edited caddy.d/*.caddy file:\n' >&2
   printf '      mv caddy.d/staging.caddy /tmp/  &&  ./update.sh\n' >&2
   exit 1
 fi
