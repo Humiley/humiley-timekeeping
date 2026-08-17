@@ -15366,7 +15366,11 @@ const _QA_SPECS = {
   candidates: { title: 'Add Candidate', coll: 'candidates', reload: 'recruitment', fields: [
     { k: 'name', label: 'Candidate Name' }, { k: 'role', label: 'Applying For' },
     { k: 'stage', label: 'Stage', type: 'select', options: ['Applied', 'Screening', 'Interview', 'Offer', 'Hired', 'Rejected'] },
-    { k: 'source', label: 'Source' }, { k: 'rating', label: 'Rating (0–5)', type: 'number' }] },
+    { k: 'source', label: 'Source' }, { k: 'rating', label: 'Rating (0–5)', type: 'number' },
+    // The CV arrives WITH the application, so it is captured here rather than as a second trip
+    // through the card. type:'cv' is deliberately not type:'file': the bytes must not be written
+    // into the candidates row, they go to /api/hr/cv after the record exists.
+    { k: 'cv', label: 'CV / Resume', type: 'cv' }] },
   onboarding: { title: 'Add New Hire', coll: 'onboarding', reload: 'onboarding', fields: [
     { k: 'name', label: 'Full Name' }, { k: 'role', label: 'Role / Position' }, { k: 'startDate', label: 'Start Date', type: 'date' }] },
   goals: { title: 'New Company Goal', coll: 'goals', reload: 'performance', fields: [
@@ -15610,6 +15614,7 @@ function tkQuickAdd(type, id) {
   /* seed the multi-file store for type:'files' fields — keep existing files on edit
      (accepts the legacy single attachment/attachmentName shape too) */
   _qaFilesStore = {};
+  _qaCvPending = null;
   spec.fields.forEach(f => {
     if (f.type !== 'files') return;
     const legacy = f.k.replace(/s$/, '');
@@ -15624,6 +15629,13 @@ function tkQuickAdd(type, id) {
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
     if (f.type === 'money') return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" inputmode="numeric" autocomplete="off" oninput="_qaMoney(this)" value="' + _tkEscA(_qaMoneyFmt(val)) + '"></div>';
+    if (f.type === 'cv') {
+      const cur = ex && (ex.cvName || ex.hasCv)
+        ? '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('CV attached') + ': ' + _tkEscT(ex.cvName || 'CV') + '</div>' : '';
+      return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
+        '<input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onchange="_qaReadCv(this)" style="font-size:12px;width:100%">' +
+        '<div id="qa-cv-note" style="font-size:11px;color:var(--navy);margin-top:4px"></div>' + cur + '</div>';
+    }
     if (f.type === 'files') {
       return '<div class="form-group"><label class="form-label">' + f.label + '</label>' +
         '<input type="file" multiple accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,image/*" onchange="_qaReadFiles(this,\'' + f.k + '\')" style="font-size:12px;width:100%">' +
@@ -15715,6 +15727,7 @@ async function _qaReadFile(input, k) {
 /* In-flight single-file reads, keyed by field. tkQuickAddSave awaits these before it collects
    values — the multi-file path has always awaited its reads; this one never did. */
 let _qaFileReads = {};
+let _qaCvPending = null;      // {data,name} chosen on the Add Candidate form, uploaded after save
 /* ── Multi-file quick-add fields (type:'files') — e.g. Site Daily/Weekly Reports where each
    contractor submits their own file. Each file uploads to the project SharePoint folder when
    linked (link kept in DB); otherwise stored as an in-DB data URL. Persisted as attachments[]. */
@@ -15744,6 +15757,24 @@ const TK_MAX_INLINE = TK_MAX_INLINE_MB * 1024 * 1024;
 /* Total base64 a single save may carry. Comfortably under the server's MAX_BODY so the user gets a
    clear message here rather than a bare rejection from the server. */
 const TK_MAX_SAVE_BYTES = 45 * 1024 * 1024;
+/* The CV chosen on the Add Candidate form. Held aside rather than folded into the record: the
+   bytes belong behind /api/hr/cv, not in a row every board render reads. */
+function _qaReadCv(input) {
+  const f = input.files && input.files[0];
+  _qaCvPending = null;
+  const note = document.getElementById('qa-cv-note');
+  if (note) note.textContent = '';
+  if (!f) return;
+  if (f.size > 8 * 1024 * 1024) { input.value = ''; toast(_t('That file is too large — 8 MB maximum.'), 'error', 5000); return; }
+  const p = new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => { _qaCvPending = { data: String(r.result), name: f.name }; if (note) note.textContent = f.name; res(); };
+    r.onerror = () => { toast(_t('That file could not be read.'), 'error', 5000); res(); };
+    r.readAsDataURL(f);
+  });
+  _qaFileReads.__cv = p;                       // Save awaits this before reading the form
+  p.then(() => { delete _qaFileReads.__cv; });
+}
 async function _qaReadFiles(input, k) {
   const files = Array.prototype.slice.call(input.files || []); if (!files.length) return;
   const coll = (_QA_SPECS[_qaType] || {}).coll || '';
@@ -15807,6 +15838,7 @@ async function tkQuickAddSave() {
       data[legacy + 'Name'] = arr.length ? (arr[0].name || '') : '';
       return;
     }
+    if (f.type === 'cv') return;   // never stored on the row — see the /api/hr/cv call below
     if (f.type === 'file') { data[f.k] = (document.getElementById('qa-' + f.k) || {}).value || ''; data[f.k + 'Name'] = (document.getElementById('qa-' + f.k + '-name') || {}).value || ''; return; }
     const el = document.getElementById('qa-' + f.k); let v = el ? el.value.trim() : ''; if (f.type === 'number') v = parseInt(v, 10) || 0; else if (f.type === 'money') v = parseInt(v.replace(/[^0-9]/g, ''), 10) || 0; data[f.k] = v;
   });
@@ -15849,6 +15881,18 @@ async function tkQuickAddSave() {
       if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(data.role || ''); }
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
+    }
+    if (_qaCvPending && item && item.id) {
+      // Two steps, so a partial failure is possible: the candidate exists and the CV does not.
+      // Reporting "Added successfully" and dropping the document would be the worst outcome —
+      // the record looks complete and the CV is gone with nobody aware.
+      try {
+        const _cv = await tkApi('/api/hr/cv', { method: 'POST', body: { candidateId: item.id, file: _qaCvPending.data, fileName: _qaCvPending.name } });
+        item.hasCv = true; item.cvName = (_cv && _cv.cvName) || _qaCvPending.name;
+      } catch (_e) {
+        toast(_t('Saved, but the CV did not attach') + ': ' + _errMsg(_e) + ' — ' + _t('open the candidate to attach it.'), 'error', 9000);
+      }
+      _qaCvPending = null;
     }
     if (['crm_deals', 'crm_leads', 'crm_contacts'].indexOf(_qaType) >= 0 && data.company) { try { await _crmEnsureAccount(data.company, data.owner); } catch (e) {} }
     if (_qaType === 'pm_projects' && data.account) { try { await _crmEnsureAccount(data.account, data.manager); } catch (e) {} }
@@ -22747,6 +22791,11 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'CV / Resume': 'CV / Hồ sơ',
+  'Saved, but the CV did not attach': 'Đã lưu, nhưng chưa đính kèm được CV',
+  'open the candidate to attach it.': 'mở hồ sơ ứng viên để đính kèm.',
+  'That file could not be read.': 'Không đọc được tệp này.',
+
   /* Recruitment: CV + per-stage evaluation (2026-08-15) */
   'Attach CV': 'Đính kèm CV',
   'Open CV': 'Mở CV',
