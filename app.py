@@ -7719,6 +7719,33 @@ class Handler(BaseHTTPRequestHandler):
         # could destroy a signed claim/payment, re-own a CRM deal, or forge an audit entry via a known
         # id). Strip any incoming id so a fresh one is always minted; genuine edits go through PATCH.
         item.pop("id", None)
+        # SECURITY: a request must be born UNDECIDED.
+        #
+        # `status` and the signature manifest came straight from the client on create. PATCH refuses
+        # both, and _coll_update strips them — but nothing did on the way IN. So any authenticated
+        # employee could POST a payment request that already said "Approved", carrying a fabricated
+        # signatures[] block naming real approvers with real-looking timestamps.
+        #
+        # That is not cosmetic. The disbursement gate asks only what the CURRENT status is
+        # ("Only an approved request can be marked paid", _appr_check), and the approver≠payer test
+        # reads the same signature array. A forged row therefore arrives in Finance's inbox looking
+        # fully decided, and a named payer can release real money against an approval that never
+        # happened. Owner≠payer still stops the author paying themselves, so this is not self-service
+        # theft — it is worse in one specific way: it collapses a two-person control to one person
+        # plus a forged record, and the payee bank details are on the request.
+        #
+        # Only DECIDED states are rewritten. _appr_state maps anything unrecognised to "submit", so a
+        # legitimate create ("Submitted", "Pending", "Draft", or no status at all) passes through
+        # untouched and leave keeps its own vocabulary. Decisions are made by /api/esign, which is the
+        # only thing that may write these fields.
+        if name in self.THREE_LEVEL_COLLS:
+            for _dk in ("signatures", "reviewedBy", "reviewedById", "reviewedAt",
+                        "approvedBy", "approvedById", "approvedAt",
+                        "paidOn", "paidBy", "paidById", "paidAt",
+                        "rejectedBy", "rejectedById", "rejectedAt", "reversedBy", "reversedAt"):
+                item.pop(_dk, None)
+            if self._appr_state(item.get("status")) != "submit":
+                item["status"] = "Submitted"
         # Amount sanity on money records: reject negative/non-numeric/absurd, advance<=cost.
         if name in ("claims", "travel", "payments", "payruns", "payadjust"):
             _err = self._validate_money_item(name, item)
