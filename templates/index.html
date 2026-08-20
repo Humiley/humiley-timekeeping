@@ -6815,7 +6815,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
   // Publishing a document used to redraw the ONBOARDING view, because that was the only place the
   // register lived. Now that the register also mounts on the Compliance tab, redrawing onboarding
   // repainted a hidden screen — and, worse, set _hrHostSfx to '-onb', so the next render of the
@@ -15506,6 +15506,20 @@ const _QA_SPECS = {
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
     { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path? (auto if predecessors set)', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_detail: { title: 'Detail Schedule Item', coll: 'pm_detail', reload: 'pm_detail', fields: [
+    { k: 'scheduleId', label: 'Detail schedule', type: 'select', options: 'pm_sched_opts' },
+    // First, because it decides where the line LIVES: a detail line is a piece of a master activity
+    // and its progress is what moves that activity. A line with no master link contributes to
+    // nothing, so the form asks for it before anything else.
+    { k: 'taskRef', label: 'Part of master activity (WBS or name)', type: 'select', options: 'pm_task_opts' },
+    { k: 'name', label: 'Report item' },
+    { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
+    { k: 'start', label: 'Start date', type: 'date' }, { k: 'finish', label: 'Finish date', type: 'date' },
+    { k: 'unit', label: 'Unit / location (optional)' },
+    // Blank is the right default: duration in days is a defensible weight and the alternative is
+    // making somebody invent a number. Set it when a short item carries disproportionate value.
+    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
     { k: 'item', label: 'Cost item' },
     { k: 'category', label: 'Category', type: 'select', options: ['Labor', 'Material', 'Subcontract', 'Equipment', 'Overhead', 'Other'] },
@@ -15879,6 +15893,11 @@ async function tkQuickAddSave() {
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
       if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(data.role || ''); }
+      // A line added while looking at a schedule belongs to it — asking again would be a question
+      // whose answer is already on screen.
+      if (_qaType === 'pm_detail' && !data.scheduleId) {
+        const _cs = _pdCurSched(_pmPid()); if (_cs && _cs.id !== '_unfiled') data.scheduleId = _cs.id;
+      }
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
@@ -19213,6 +19232,21 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
   if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
+  if (src === 'pm_sched_opts') {   // value is the id; the label is the name, resolved at render
+    const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+    return _pdScheds(pid).map(x => x.id);
+  }
+  if (src === 'pm_detail_cats') {   // trades already in use on this project, then the usual ones
+    const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.category) : [];
+    return [...new Set([].concat(used, ['Electrical Works', 'HVAC Works', 'Plumbing Works',
+      'Fire Protection Works', 'Cleanroom / Architectural', 'Controls & BMS', 'Testing & Commissioning']).filter(Boolean))];
+  }
+  if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
+    const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_tasks', _pmPid()) : [];
+    return [...new Set(ts.map(t => String((t.wbs || t.name) || '').trim()).filter(Boolean))];
+  }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
     const mem = (p && typeof _pmMembers === 'function') ? (_pmMembers(p) || []) : [];
@@ -19616,7 +19650,7 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
 // after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
@@ -20255,7 +20289,7 @@ function _pmMyActionsHtml() {
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables'] },
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20561,7 +20595,8 @@ function pmRenderScope(pid) {
 
 /* ---------- 3. Schedule (Gantt) ---------- */
 let _pmSchedSel = '';
-let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
+let _pmSchedTab = 'm-timeline';   // '<level>-<view>' — see _PM_SCHED_PANES
+let _pmSchedLast = { m: 'm-timeline', d: 'd-timeline' };   // remember where you were in each level
 let _pmCalMonth = '', _pmCalPid = '', _pmCalFilter = 'all';   // calendar sub-view state
 let _pmCalHost = { el: 'psch-calendar', render: () => _pmCalendarHtml(_pmPid()), portfolio: false };   // which calendar nav/filter/export act on
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
@@ -20858,6 +20893,958 @@ function _pmGTip(el) {
   tip.style.left = left + 'px'; tip.style.top = top + 'px';
 }
 function _pmGTipHide() { const t = document.getElementById('pm-gtip'); if (t) t.style.display = 'none'; }
+/* ══ DETAIL SCHEDULE (Level 3) ═══════════════════════════════════════════════════════════════════
+   pm_tasks is the MASTER schedule — WBS, CPM, float, milestones, the contractual dates. This is the
+   level beneath it: the daily-report line items a site engineer actually reports against
+   ("Install underground pipe — Zone 2 1FL"), grouped by trade.
+
+   Three decisions make this a control document rather than a second table:
+
+   1. ACCUMULATED IS A LOG, DAILY IS DERIVED. The progress column that gets typed is the accumulated
+      one; each report is appended to `log` with its date. Daily = today's accumulated minus the last
+      reading before today, so an item nobody touched today reads 0% instead of showing last week's
+      increment forever. That stale-daily-number is the classic failure of these reports on paper.
+   2. ROLL-UP IS WEIGHTED. A category is not the average of its items' percentages — a two-day item
+      would count the same as a two-month one. Weight defaults to duration in days and can be
+      overridden with contract value or man-hours.
+   3. PLANNED IS COMPUTED, NOT TYPED. Linear distribution between start and finish gives planned %
+      at today, so every line has a variance and the report says whether work is behind, not just
+      how far it has got. */
+
+const _PD_COLL = 'pm_detail';
+/* ══ DETAIL SCHEDULES — one project can define several ════════════════════════════════════════════
+   A cleanroom fit-out does not have one detail programme. It has the MEP programme for Block E, the
+   cleanroom finishes for Zone 3, a T&C programme — each with its own trades, its own dates and its
+   own reporting cadence, often its own subcontractor. Forcing them into a single list makes the
+   roll-up meaningless (whose 80%?) and the register unreadable.
+
+   pm_schedules holds the definitions; every pm_detail row carries scheduleId. Rows written before
+   this existed have no scheduleId and are NEVER hidden — they surface under "Unfiled" so a schedule
+   that was there yesterday cannot quietly vanish behind a filter. */
+let _pdSchedId = '';                        // '' = the first defined schedule, or everything
+function _pdScheds(pid) {
+  return _pmScopeFor('pm_schedules', pid).slice()
+    .sort((a, b) => (+a.order || 0) - (+b.order || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+}
+/* Every row for this project, unfiltered — the denominator for "is anything unfiled?" */
+function _pdAllRows(pid) {
+  return _pmScopeFor(_PD_COLL, pid).slice().sort((a, b) =>
+    String(a.category || '').localeCompare(String(b.category || '')) ||
+    (a.start || '').localeCompare(b.start || '') ||
+    String(a.name || '').localeCompare(String(b.name || '')));
+}
+function _pdUnfiled(pid) {
+  const ids = _pdScheds(pid).map(s => s.id);
+  return _pdAllRows(pid).filter(r => !r.scheduleId || ids.indexOf(r.scheduleId) < 0);
+}
+/* The schedule currently being looked at. With none defined the project has one implicit programme
+   and everything belongs to it — no empty state, no ceremony before the first useful screen. */
+function _pdCurSched(pid) {
+  const ss = _pdScheds(pid);
+  if (!ss.length) return null;
+  return ss.find(s => s.id === _pdSchedId) || (_pdSchedId === '_unfiled' ? { id: '_unfiled', name: _t('Unfiled') } : ss[0]);
+}
+function pdSchedPick(id) { _pdSchedId = id; _pmReload(); }
+async function pdSchedNew(pid) {
+  const name = await tkPrompt(_t('Name this detail schedule'), '', _t('e.g. Block E — MEP, Zone 3 — Cleanroom, Testing & Commissioning'));
+  if (!name) return;
+  try {
+    const res = await tkApi('/api/coll/pm_schedules', { method: 'POST',
+      body: { projectId: pid, name: name, order: _pdScheds(pid).length + 1 } });
+    (_HR.pm_schedules = _HR.pm_schedules || []).push(res.item);
+    _pdSchedId = res.item.id;
+    tkAudit('Detail schedule created', name, pid);
+    toast(_t('Schedule created') + ' — ' + name);
+    _pmReload();
+  } catch (e) { toast(_t('Could not create the schedule') + ': ' + _errMsg(e), 'error', 6000); }
+}
+/* The picker. Also the honest place to surface unfiled rows rather than dropping them. */
+function _pdSchedBar(pid) {
+  const ss = _pdScheds(pid), unf = _pdUnfiled(pid), cur = _pdCurSched(pid);
+  const chip = (id, label, n, on) =>
+    '<button onclick="pdSchedPick(\'' + id + '\')" style="border:1px solid ' + (on ? 'var(--emerald)' : 'var(--line)') +
+    ';background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text)') +
+    ';border-radius:999px;padding:5px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' +
+    _pmEsc(label) + ' <span style="opacity:.7;font-weight:500">' + n + '</span></button>';
+  if (!ss.length && !unf.length) return '';
+  const chips = ss.map(s => chip(s.id, s.name || _t('Untitled'),
+      _pdAllRows(pid).filter(r => r.scheduleId === s.id).length, !!cur && cur.id === s.id)).join('') +
+    (unf.length ? chip('_unfiled', _t('Unfiled'), unf.length, !!cur && cur.id === '_unfiled') : '');
+  return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+    '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light)">' +
+      _t('Schedule') + '</span>' + chips +
+    '<button class="btn btn-ghost btn-sm" onclick="pdSchedNew(\'' + pid + '\')" title="' + _tkEscA(_t('Define another detail schedule for this project')) + '">+ ' + _t('New') + '</button>' +
+    (unf.length ? '<span style="font-size:11px;color:var(--warn,#B26A00)">' + unf.length + ' ' + _t('item(s) not assigned to a schedule') + '</span>' : '') +
+    '</div>';
+}
+
+/* ══ DETAIL · BOARD ══════════════════════════════════════════════════════════════════════════════
+   Columns are HEALTH, not stage. A detail line has no workflow to move through — it has a number
+   that is either keeping up or not, and the only question worth asking a site team is "what is
+   behind?". Sorting by lateness puts the worst thing first. */
+function _pdBoard(pid, rows, day) {
+  const COLS = [
+    { k: 'behind',  label: 'Behind',      hex: '#EF4444', hit: (a, p) => a < 100 && a - p < -10 },
+    { k: 'slip',    label: 'Slipping',    hex: '#F59E0B', hit: (a, p) => a < 100 && a - p < -0.5 && a - p >= -10 },
+    { k: 'onplan',  label: 'On plan',     hex: '#00B060', hit: (a, p) => a < 100 && a - p >= -0.5 },
+    { k: 'done',    label: 'Complete',    hex: '#5C6470', hit: a => a >= 100 },
+  ];
+  const bucket = r => {
+    const a = _pdAcc(r, day), p = _pdPlanned(r, day);
+    return (COLS.find(c => c.hit(a, p)) || COLS[2]).k;
+  };
+  const cols = COLS.map(c => {
+    const mine = rows.filter(r => bucket(r) === c.k)
+      .sort((x, y) => (_pdAcc(x, day) - _pdPlanned(x, day)) - (_pdAcc(y, day) - _pdPlanned(y, day)));
+    const cards = mine.map(r => {
+      const a = _pdAcc(r, day), v = a - _pdPlanned(r, day), dly = _pdDaily(r, day);
+      return '<div onclick="pdProgress(\'' + r.id + '\')" style="background:var(--card,#fff);border:1px solid var(--line);' +
+        'border-left:3px solid ' + c.hex + ';border-radius:8px;padding:9px 11px;margin-bottom:8px;cursor:pointer" ' +
+        'title="' + _tkEscA(_t('File progress')) + '">' +
+        '<div style="font-size:12.5px;font-weight:600;line-height:1.35">' + _pmEsc(r.name || '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _pmEsc(r.category || '') +
+          (r.finish ? ' · ' + _t('due') + ' ' + tkFmtDate(r.finish) : '') + '</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-variant-numeric:tabular-nums">' +
+          '<span style="font-size:13px;font-weight:700">' + a + '%</span>' +
+          '<span style="font-size:11.5px;font-weight:700;color:' + _pdVarColor(v) + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</span>' +
+        '</div>' + (dly > 0 ? '<div style="font-size:10.5px;color:var(--emerald);margin-top:3px;font-weight:600">+' + dly + '% ' + _t('today') + '</div>' : '') +
+        '</div>';
+    }).join('') || '<div style="font-size:11.5px;color:var(--text-light);padding:6px 2px">' + _t('Nothing here') + '</div>';
+    return '<div style="flex:1;min-width:172px;background:var(--soft-bg);border-radius:10px;padding:10px">' +
+      '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">' +
+        '<span style="width:9px;height:9px;border-radius:50%;background:' + c.hex + '"></span>' +
+        '<span style="font-weight:700;font-size:12.5px">' + _t(c.label) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-light)">' + mine.length + '</span></div>' + cards + '</div>';
+  }).join('');
+  return '<div class="card" style="padding:15px 17px">' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:12px">' +
+      _t('Grouped by how far each activity is from its planned position today. Click a card to file progress.') + '</div>' +
+    '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">' + cols + '</div></div>';
+}
+
+/* ══ DETAIL · CALENDAR ═══════════════════════════════════════════════════════════════════════════
+   What a site team wants from a calendar is not "everything happening" — it is what STARTS and what
+   is DUE. Both are commitments; the middle of a bar is not. */
+let _pdCalM = '';
+function pdCalMove(n) {
+  const cur = _pdCalM || _pmToday().slice(0, 7);
+  const d = new Date(+cur.slice(0, 4), +cur.slice(5, 7) - 1 + n, 1);
+  _pdCalM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  _pmReload();
+}
+function _pdCalendar(pid, rows, day) { return _schCalendar(_pdNorm(pid, rows, day), { day: day }); }
+function _pdRows(pid) {
+  const all = _pdAllRows(pid), cur = _pdCurSched(pid);
+  if (!cur) return all;                                   // no schedules defined = one implicit one
+  if (cur.id === '_unfiled') return _pdUnfiled(pid);
+  return all.filter(r => r.scheduleId === cur.id);
+}
+/* The reported readings, oldest first. Defensive: the log is user data and may arrive malformed. */
+function _pdLog(r) {
+  const l = Array.isArray(r && r.log) ? r.log : [];
+  return l.filter(e => e && e.d).slice().sort((a, b) => String(a.d).localeCompare(String(b.d)));
+}
+/* Accumulated % as at `day` (default today) — the latest reading on or before it. */
+function _pdAcc(r, day) {
+  day = day || _pmToday();
+  const l = _pdLog(r); let v = 0;
+  for (const e of l) { if (String(e.d) <= day) v = _pmPct(e.pct); else break; }
+  return v;
+}
+/* Today's increment. Zero unless a reading was actually filed for `day` — that is the whole point. */
+function _pdDaily(r, day) {
+  day = day || _pmToday();
+  const l = _pdLog(r);
+  const todays = l.filter(e => String(e.d) === day).pop();
+  if (!todays) return 0;
+  let prev = 0;
+  for (const e of l) { if (String(e.d) < day) prev = _pmPct(e.pct); }
+  return Math.max(0, _pmPct(todays.pct) - prev);
+}
+/* Planned % at `day`, linear between start and finish (inclusive of both). */
+function _pdPlanned(r, day) {
+  day = day || _pmToday();
+  const s = r && r.start, f = r && r.finish;
+  if (!s || !f) return 0;
+  if (day < s) return 0;
+  if (day >= f) return 100;
+  const total = Math.max(1, (_pmDateDiff(s, f) || 0) + 1);
+  const done = Math.max(0, (_pmDateDiff(s, day) || 0) + 1);
+  return _pmPct(done * 100 / total);
+}
+/* Weight for the roll-up. Duration in days unless the user gave a value (contract ₫ or man-hours). */
+function _pdWeight(r) {
+  const w = +(r && r.weight) || 0;
+  if (w > 0) return w;
+  if (r && r.start && r.finish) return Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1);
+  return 1;
+}
+/* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
+function _pdRollup(rows, day) {
+  let wsum = 0, a = 0, p = 0;
+  (rows || []).forEach(r => { const w = _pdWeight(r); wsum += w; a += w * _pdAcc(r, day); p += w * _pdPlanned(r, day); });
+  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0 };
+  const acc = a / wsum, planned = p / wsum;
+  return { acc: acc, planned: planned, variance: acc - planned, weight: wsum };
+}
+/* The master activity's % when detail lines exist beneath it — derived, never typed. */
+function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
+function _pdTaskPct(task, pid) {
+  const ref = _pdTaskRef(task); if (!ref) return null;
+  const rows = _pdRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
+}
+function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
+function _pdVarLabel(v) { return v >= -0.5 ? 'On/ahead' : (v >= -10 ? 'Slipping' : 'Behind'); }
+
+/* Add n days to an ISO day, staying on local dates. `new Date('YYYY-MM-DD')` parses as UTC, so
+   building the result from a UTC-parsed instant and reading it back locally shifts +07 mornings to
+   the previous day — the same trap _pmToday() already documents. */
+function _pmDateAdd(iso, n) {
+  const a = String(iso).split('-');
+  const d = new Date(+a[0], +a[1] - 1, +a[2] + (+n || 0));
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+/* ══ S-CURVE ═════════════════════════════════════════════════════════════════════════════════════
+   Planned vs actual cumulative progress — the one chart a client asks for. Drawn as inline SVG
+   rather than through Chart.js: no canvas lifecycle to manage inside a tab that rebuilds on every
+   render, and it survives the html2canvas PDF export, which a canvas often does not. */
+function _pdSCurve(rows, day) {
+  if (!rows.length) return '';
+  const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
+  if (!ds.length) return '';
+  const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
+  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  // Weekly sampling beyond ~4 months: a 400-point polyline is no more informative and makes the
+  // page heavier than the table it sits under.
+  const step = span > 120 ? 7 : 1;
+  const pts = [];
+  for (let i = 0; i <= span; i += step) {
+    const d = _pmDateAdd(min, i), roll = _pdRollup(rows, d);
+    pts.push({ d: d, planned: roll.planned, actual: d <= day ? roll.acc : null });
+  }
+  if (pts.length && pts[pts.length - 1].d !== max) {
+    const roll = _pdRollup(rows, max);
+    pts.push({ d: max, planned: roll.planned, actual: max <= day ? roll.acc : null });
+  }
+  const W = 100, H = 100;                       // viewBox units; the SVG scales to its container
+  const X = d => ((_pmDateDiff(min, d) || 0) / span) * W;
+  const Y = v => H - (Math.max(0, Math.min(100, v)) / 100) * H;
+  const line = key => pts.filter(p => p[key] !== null).map((p, i) => (i ? 'L' : 'M') + X(p.d).toFixed(2) + ' ' + Y(p[key]).toFixed(2)).join(' ');
+  const actualPts = pts.filter(p => p.actual !== null);
+  const area = actualPts.length
+    ? 'M' + X(actualPts[0].d).toFixed(2) + ' ' + H + ' ' + actualPts.map(p => 'L' + X(p.d).toFixed(2) + ' ' + Y(p.actual).toFixed(2)).join(' ') +
+      ' L' + X(actualPts[actualPts.length - 1].d).toFixed(2) + ' ' + H + ' Z'
+    : '';
+  const now = _pdRollup(rows, day);
+  const grid = [0, 25, 50, 75, 100].map(v =>
+    '<line x1="0" y1="' + Y(v) + '" x2="' + W + '" y2="' + Y(v) + '" stroke="var(--line)" stroke-width="0.4" vector-effect="non-scaling-stroke"/>').join('');
+  const todayX = (day >= min && day <= max) ? X(day) : null;
+
+  return '<div class="card" style="padding:14px 16px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:8px">' +
+      '<div style="font-weight:700;font-size:13px">' + _t('S-curve — planned vs actual') + '</div>' +
+      '<div style="font-size:12px;color:var(--text-light)">' +
+        '<span style="color:#8B5CF6;font-weight:700">' + Math.round(now.planned) + '%</span> ' + _t('planned') + ' · ' +
+        '<span style="color:var(--emerald);font-weight:700">' + Math.round(now.acc) + '%</span> ' + _t('actual') + ' · ' +
+        '<span style="font-weight:700;color:' + _pdVarColor(now.variance) + '">' + (now.variance >= 0 ? '+' : '') + now.variance.toFixed(1) + '%</span></div></div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:190px;overflow:visible" role="img" aria-label="' +
+      _tkEscA(_t('Cumulative planned versus actual progress')) + '">' +
+      grid +
+      (area ? '<path d="' + area + '" fill="var(--emerald)" opacity="0.13"/>' : '') +
+      '<path d="' + line('planned') + '" fill="none" stroke="#8B5CF6" stroke-width="1.6" stroke-dasharray="3 2" vector-effect="non-scaling-stroke"/>' +
+      (actualPts.length ? '<path d="' + line('actual') + '" fill="none" stroke="var(--emerald)" stroke-width="2" vector-effect="non-scaling-stroke"/>' : '') +
+      (todayX !== null ? '<line x1="' + todayX + '" y1="0" x2="' + todayX + '" y2="' + H + '" stroke="#EF4444" stroke-width="1.2" vector-effect="non-scaling-stroke"/>' : '') +
+    '</svg>' +
+    '<div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text-light);margin-top:3px">' +
+      '<span>' + tkFmtDate(min) + '</span><span>' + tkFmtDate(max) + '</span></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _t('Dashed = planned · solid = actual to date · red = today. Both curves are weighted, so they agree with the table above.') +
+    '</div></div>';
+}
+
+/* ══ DAILY ENTRY ═════════════════════════════════════════════════════════════════════════════════
+   Filing readings one modal at a time is fine for a correction and hopeless for a site engineer with
+   forty lines to report every evening. One grid, one save. Only rows that were actually changed are
+   written — an untouched row must not get a reading, or every item would show progress every day. */
+function pdDailyEntry(pid) {
+  const rows = _pdRows(pid), day = _pmToday();
+  if (!rows.length) { toast(_t('No detail items yet.'), 'warn'); return; }
+  document.getElementById('pdEntryOverlay')?.remove();
+  let body = '', lastCat = null;
+  rows.forEach(r => {
+    const cat = r.category || 'Uncategorised';
+    if (cat !== lastCat) {
+      lastCat = cat;
+      body += '<tr style="background:var(--soft-bg)"><td colspan="4" style="font-weight:700;font-size:12px">' + _pmEsc(cat) + '</td></tr>';
+    }
+    const acc = _pdAcc(r, day), pl = _pdPlanned(r, day);
+    body += '<tr>' +
+      '<td style="font-size:12.5px">' + _pmEsc(r.name || '') + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
+      '<td style="text-align:right;font-size:12px;font-variant-numeric:tabular-nums">' + acc + '%</td>' +
+      '<td style="text-align:right"><input type="number" min="0" max="100" step="1" inputmode="numeric" class="form-control pd-e" ' +
+        'data-id="' + r.id + '" data-was="' + acc + '" value="' + acc + '" style="width:78px;text-align:right;padding:3px 6px;font-size:12.5px"></td>' +
+      '</tr>';
+  });
+  const el = document.createElement('div'); el.id = 'pdEntryOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:620px;max-height:92vh;display:flex;flex-direction:column">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Daily progress') + ' — ' + tkFmtDate(day) + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'pdEntryOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' +
+      _t('Enter the accumulated total for each item. Leave a row unchanged and nothing is filed against it.') + '</div>' +
+    '<div style="overflow:auto;flex:1;min-height:0"><table style="width:100%"><thead><tr>' +
+      '<th>' + _t('Report item') + '</th><th style="text-align:right">' + _t('Planned') + '</th>' +
+      '<th style="text-align:right">' + _t('Now') + '</th><th style="text-align:right">' + _t('Today') + '</th>' +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdEntryOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-emerald" id="pd-entry-save" onclick="pdDailyEntrySave()">' + _t('File readings') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+async function pdDailyEntrySave() {
+  const day = _pmToday();
+  const changed = [...document.querySelectorAll('.pd-e')].filter(i => _pmPct(i.value) !== +i.dataset.was);
+  if (!changed.length) { toast(_t('Nothing changed — no readings filed.'), 'warn'); return; }
+  const btn = document.getElementById('pd-entry-save'); if (btn) { btn.disabled = true; btn.textContent = _t('Filing…'); }
+  let ok = 0; const failed = [];
+  for (const inp of changed) {
+    const r = (_HR[_PD_COLL] || []).find(x => x.id === inp.dataset.id); if (!r) continue;
+    const v = _pmPct(inp.value);
+    const log = _pdLog(r).filter(e => String(e.d) !== day);
+    log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() });
+    try { await tkApi('/api/coll/' + _PD_COLL + '/' + r.id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) }); r.log = log; ok++; }
+    catch (e) { failed.push((r.name || r.id) + ': ' + _errMsg(e)); }
+  }
+  document.getElementById('pdEntryOverlay')?.remove();
+  tkAudit('Daily progress filed', tkFmtDate(day), ok + ' item(s)' + (failed.length ? ' · ' + failed.length + ' FAILED' : ''));
+  // A partial save is the case worth being loud about: some readings are in and some are not, and
+  // "Saved" over the top of that would send somebody home believing the report was complete.
+  if (failed.length) tkAlert({ title: _t('Some readings were not filed'),
+    body: '<div style="font-size:13px;margin-bottom:8px">' + ok + ' ' + _t('filed') + ', <b>' + failed.length + ' ' + _t('failed') + '</b>. ' +
+      _t('Re-enter the ones below — the rest are saved.') + '</div><ul style="font-size:12px;padding-left:18px;margin:0">' +
+      failed.map(f => '<li>' + _pmEsc(f) + '</li>').join('') + '</ul>' });
+  else toast(_t('Readings filed') + ' — ' + ok + ' ' + _t('item(s)'));
+  _pmReload();
+}
+
+/* ══ IMPORT ══════════════════════════════════════════════════════════════════════════════════════
+   A detail schedule is hundreds of lines. Paste straight from Excel — the clipboard gives tab-
+   separated rows, so that is what this parses. Nothing is written until the preview has been seen,
+   and the preview names what will be REJECTED as well as what will be created. */
+const _PD_IMPORT_COLS = ['category', 'name', 'start', 'finish', 'taskRef', 'unit', 'weight'];
+function pdImport(pid) {
+  document.getElementById('pdImpOverlay')?.remove();
+  const el = document.createElement('div'); el.id = 'pdImpOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:660px;max-height:92vh;display:flex;flex-direction:column">' +
+    '<div class="modal-header"><div class="modal-title">' + _t('Import detail schedule') + '</div>' +
+    '<button class="modal-close" onclick="document.getElementById(\'pdImpOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:12.5px;color:var(--text-light);margin-bottom:8px">' +
+      _t('Copy the rows from Excel and paste them here. Column order:') +
+      ' <code style="font-size:11.5px">' + _PD_IMPORT_COLS.join(' · ') + '</code><br>' +
+      _t('Dates as YYYY-MM-DD. The last three columns are optional. A header row is detected and skipped.') + '</div>' +
+    '<textarea id="pd-imp" class="form-control" style="min-height:150px;font-family:monospace;font-size:12px" ' +
+      'placeholder="HVAC Works&#9;Install ceiling support - Zone 1 1FL&#9;2026-08-11&#9;2026-08-25" oninput="pdImportPreview()"></textarea>' +
+    '<div id="pd-imp-prev" style="margin-top:10px;overflow:auto;flex:1;min-height:0"></div>' +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdImpOverlay\').remove()">' + _t('Cancel') + '</button>' +
+    '<button class="btn btn-emerald" id="pd-imp-go" disabled onclick="pdImportRun(\'' + pid + '\')">' + _t('Import') + '</button></div></div>';
+  document.body.appendChild(el);
+}
+/* Parse + validate. Returns {rows, bad} — bad rows carry the reason, and are never silently dropped. */
+function _pdImportParse(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.replace(/\s+$/, '')).filter(l => l.trim());
+  const rows = [], bad = [];
+  const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v);
+  lines.forEach((ln, i) => {
+    const c = ln.split('\t').length > 1 ? ln.split('\t') : ln.split(',');
+    const o = {};
+    _PD_IMPORT_COLS.forEach((k, n) => { o[k] = (c[n] || '').trim(); });
+    // A pasted header row is the commonest first line; skip it rather than importing "Category".
+    if (i === 0 && /^categor/i.test(o.category) && /^(report )?item|name/i.test(o.name)) return;
+    if (!o.category || !o.name) { bad.push({ line: i + 1, why: _t('category and item are both required'), raw: ln }); return; }
+    if (o.start && !isDate(o.start)) { bad.push({ line: i + 1, why: _t('start is not YYYY-MM-DD'), raw: ln }); return; }
+    if (o.finish && !isDate(o.finish)) { bad.push({ line: i + 1, why: _t('finish is not YYYY-MM-DD'), raw: ln }); return; }
+    if (o.start && o.finish && o.finish < o.start) { bad.push({ line: i + 1, why: _t('finish is before start'), raw: ln }); return; }
+    if (o.weight && !(+o.weight > 0)) { bad.push({ line: i + 1, why: _t('weight must be a positive number'), raw: ln }); return; }
+    rows.push(o);
+  });
+  return { rows: rows, bad: bad };
+}
+function pdImportPreview() {
+  const { rows, bad } = _pdImportParse(document.getElementById('pd-imp').value);
+  const go = document.getElementById('pd-imp-go'); if (go) go.disabled = !rows.length;
+  const head = '<div style="font-size:12.5px;margin-bottom:6px"><b>' + rows.length + '</b> ' + _t('to import') +
+    (bad.length ? ' · <b style="color:#C00000">' + bad.length + '</b> ' + _t('rejected') : '') + '</div>';
+  const good = rows.slice(0, 8).map(r => '<div style="font-size:11.5px;padding:2px 0;border-bottom:1px solid var(--line)">' +
+    '<b>' + _pmEsc(r.category) + '</b> · ' + _pmEsc(r.name) + (r.start ? ' · ' + _pmEsc(r.start) + ' → ' + _pmEsc(r.finish || '?') : '') + '</div>').join('') +
+    (rows.length > 8 ? '<div style="font-size:11px;color:var(--text-light);padding-top:4px">…' + (rows.length - 8) + ' ' + _t('more') + '</div>' : '');
+  const errs = bad.length ? '<div style="margin-top:8px;font-size:11.5px;color:#C00000">' +
+    bad.slice(0, 6).map(b => '<div>' + _t('line') + ' ' + b.line + ': ' + _pmEsc(b.why) + '</div>').join('') +
+    (bad.length > 6 ? '<div>…' + (bad.length - 6) + ' ' + _t('more') + '</div>' : '') + '</div>' : '';
+  document.getElementById('pd-imp-prev').innerHTML = head + good + errs;
+}
+async function pdImportRun(pid) {
+  const { rows } = _pdImportParse(document.getElementById('pd-imp').value);
+  if (!rows.length) return;
+  const btn = document.getElementById('pd-imp-go'); if (btn) { btn.disabled = true; btn.textContent = _t('Importing…'); }
+  let ok = 0; const failed = [];
+  for (const r of rows) {
+    const body = { projectId: pid, category: r.category, name: r.name, start: r.start || '', finish: r.finish || '',
+                   taskRef: r.taskRef || '', unit: r.unit || '', log: [] };
+    if (+r.weight > 0) body.weight = +r.weight;
+    try { const res = await tkApi('/api/coll/' + _PD_COLL, { method: 'POST', body: body }); (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push(res.item); ok++; }
+    catch (e) { failed.push(r.name + ': ' + _errMsg(e)); }
+  }
+  document.getElementById('pdImpOverlay')?.remove();
+  tkAudit('Detail schedule imported', ok + ' item(s)', failed.length ? failed.length + ' failed' : '');
+  if (failed.length) tkAlert({ title: _t('Some rows were not imported'),
+    body: '<div style="font-size:13px;margin-bottom:8px">' + ok + ' ' + _t('imported') + ', <b>' + failed.length + ' ' + _t('failed') + '</b>.</div>' +
+      '<ul style="font-size:12px;padding-left:18px;margin:0">' + failed.slice(0, 10).map(f => '<li>' + _pmEsc(f) + '</li>').join('') + '</ul>' });
+  else toast(_t('Imported') + ' ' + ok + ' ' + _t('item(s)'));
+  _pmReload();
+}
+
+/* ── the report table + grouped Gantt ─────────────────────────────────────────────────────────── */
+let _pdCol = {};                       // collapsed categories, by name
+function pdToggleCat(c) { _pdCol[c] = !_pdCol[c]; _pmReload(); }
+
+/* Every detail view shares the same head: which schedule, and where it stands. The view-specific
+   part is the only thing that changes underneath — so switching Timeline↔Board↔Calendar never moves
+   the numbers or the picker, and you keep your place. */
+function _pdView(pid, view) {
+  const rows = _pdRows(pid), day = _pmToday();
+  const head = _pdSchedBar(pid) + _pdKpis(pid, rows, day);
+  if (!rows.length) return head + _pdEmpty(pid);
+  const cats = []; rows.forEach(r => { const c = _pdGroupOf(pid, r); if (cats.indexOf(c) < 0) cats.push(c); });
+  if (view === 'board') return head + _pdBoard(pid, rows, day);
+  if (view === 'calendar') return head + _pdCalendar(pid, rows, day);
+  if (view === 'timeline') return head + _pdTimeline(pid, rows, cats, day) + _pdSCurve(rows, day);
+  return head + _pdRegister(pid, rows, cats, day) + _pdBiCard();     // 'register'
+}
+function _pdEmpty(pid) {
+  return _pmCard('Detail Schedule', _PD_COLL, 'Add report item',
+    '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+    _t('No lines in this schedule yet.') + '<br><span style="font-size:12px">' +
+    _t('The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.') +
+    '</span><div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
+    _t('Import from Excel') + '</button></div></div>');
+}
+/* The five numbers, shown above every detail view so switching view never changes the headline. */
+function _pdKpis(pid, rows, day) {
+  const all = _pdRollup(rows, day);
+  return _hrKpiRow([
+    _hrKpi('Report items', rows.length),
+    _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
+    _hrKpi('Planned to date', Math.round(all.planned) + '%', '#8B5CF6'),
+    _hrKpi('Variance', (all.variance >= 0 ? '+' : '') + all.variance.toFixed(1) + '%', _pdVarColor(all.variance)),
+    _hrKpi('Reported today', rows.filter(r => _pdDaily(r, day) > 0).length)
+  ]);
+}
+/* The register — the daily-report table itself. */
+function _pdRegister(pid, rows, cats, day) {
+  const bar = (pct, color) => '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden">' +
+    '<span style="display:block;height:100%;width:' + _pmPct(pct) + '%;background:' + color + '"></span></span>';
+
+  let body = '';
+  cats.forEach(cat => {
+    const cr = rows.filter(r => _pdGroupOf(pid, r) === cat), roll = _pdRollup(cr, day);
+    const open = !_pdCol[cat];
+    body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
+      '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
+      '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' item' + (cr.length === 1 ? '' : 's') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (roll.acc > 0 ? '' : '') + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
+      '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' + (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
+      '<td colspan="3"></td></tr>';
+    if (!open) return;
+    cr.forEach(r => {
+      const acc = _pdAcc(r, day), dly = _pdDaily(r, day), pl = _pdPlanned(r, day), v = acc - pl;
+      body += '<tr>' +
+        '<td></td>' +
+        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (r.unit ? ' <span style="color:var(--text-light);font-size:11px">(' + _pmEsc(r.unit) + ')</span>' : '') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b></td>' +
+        '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
+        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '" title="' + _pdVarLabel(v) + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.start ? tkFmtDate(r.start) : '—') + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.finish ? tkFmtDate(r.finish) : '—') + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          '<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdProgress(\'' + r.id + '\')">' + _t('Report') + '</button> ' +
+          '<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="tkQuickAdd(\'' + _PD_COLL + '\',\'' + r.id + '\')">' + _t('Edit') + '</button>' +
+        '</td></tr>';
+    });
+  });
+  const table = '<div class="table-wrap"><table style="min-width:980px"><thead><tr>' +
+    ['Category', 'Report Items', 'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>';
+
+  return '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
+      '<span><b style="color:var(--text)">Daily</b> is today\u2019s increment — 0% unless a reading was filed today.</span>' +
+      '<span><b style="color:var(--text)">Planned</b> is straight-line between start and finish.</span>' +
+      '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
+    '</div>' +
+    _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table,
+      '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>');
+}
+
+/* ── Power BI feed ────────────────────────────────────────────────────────────────────────────
+   The datasets are already correct; this is just the door. Three URLs and one revocable key —
+   deliberately not a session token, because a Power BI dataset refreshes unattended for months. */
+function _pdBiCard() {
+  if (typeof _pmSeeAll === 'function' && !_pmSeeAll()) return '';
+  const base = location.origin;
+  const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+  const q = pid ? ('?project=' + encodeURIComponent(pid)) : '';
+  const row = (name, path, why) =>
+    '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">' +
+    '<div style="min-width:120px"><b style="font-size:12.5px">' + name + '</b><div style="font-size:11px;color:var(--text-light)">' + why + '</div></div>' +
+    '<code style="flex:1;min-width:230px;font-size:11px;background:var(--soft-bg);padding:5px 8px;border-radius:5px;overflow-x:auto;white-space:nowrap">' + _pmEsc(base + path) + '</code>' +
+    '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdCopy(' + JSON.stringify(base + path).replace(/"/g, '&quot;') + ')">' + _t('Copy') + '</button></div>';
+
+  return '<div class="card" style="padding:15px 17px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div style="font-weight:700;font-size:13px">' + _t('Power BI feed') + '</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-outline btn-sm" onclick="pdBiKey(false)">' + _t('Generate key') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="pdBiKey(true)">' + _t('Revoke') + '</button>' +
+      '</div></div>' +
+    row(_t('Progress (fact)'), '/api/bi/progress' + q, _t('one row per item per day')) +
+    row(_t('Items'), '/api/bi/items' + q, _t('dimension')) +
+    row(_t('Master activities'), '/api/bi/activities' + q, _t('dimension')) +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:10px;line-height:1.65">' +
+      '<b style="color:var(--text)">' + _t('In Power BI') + ':</b> Get Data → Web → paste a URL → ' +
+      _t('Basic authentication, user') + ' <code>bi</code>, ' + _t('password = the key') + '.<br>' +
+      '<b style="color:var(--text)">' + _t('Percent complete must be weighted') + ':</b> ' +
+      _t('use') + ' <code>DIVIDE(SUM(progress[weightedAccum]), SUM(progress[weight]))</code> — ' +
+      _t('an average of accumulatedPct is wrong at every grain above a single item.') + '<br>' +
+      _t('Add ?format=csv for a file, and ?from=&to= to narrow the window.') +
+    '</div></div>';
+}
+/* clipboard with a visible outcome — a silent copy button that did nothing is worse than none */
+async function pdCopy(text) {
+  try { await navigator.clipboard.writeText(text); toast(_t('Copied')); }
+  catch (_) { toast(_t('Could not copy — select the address and copy it manually.'), 'warn', 5000); }
+}
+async function pdBiKey(revoke) {
+  if (revoke && !(await tkConfirm(_t('Revoke the BI key? Any Power BI dataset using it stops refreshing.')))) return;
+  try {
+    const j = await tkApi('/api/bi/key', { method: 'POST', body: { revoke: !!revoke } });
+    if (revoke) { toast(_t('BI key revoked')); return; }
+    // Shown once. Only its hash is stored, so there is no second chance to read it — say so plainly
+    // rather than letting somebody close the dialog and find out later.
+    await tkAlert({ title: _t('BI key issued'),
+      body: '<div style="font-size:13px;margin-bottom:8px">' + _t('Copy this now — it is shown once and cannot be shown again.') + '</div>' +
+        '<code style="display:block;word-break:break-all;background:var(--soft-bg);padding:10px;border-radius:6px;font-size:12px">' + _pmEsc(j.key) + '</code>' +
+        '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _t('Power BI: Basic authentication, user') + ' <b>bi</b>, ' + _t('password = this key') + '.</div>' });
+    try { await navigator.clipboard.writeText(j.key); toast(_t('Key copied to the clipboard')); } catch (_) {}
+  } catch (e) { toast(_t('Could not update the BI key') + ': ' + _errMsg(e), 'error', 6000); }
+}
+
+/* ══ TIMELINE ════════════════════════════════════════════════════════════════════════════════════
+   The time axis is the organising element, not a decoration at the side of a table: quarter and
+   month bands across the top, every trade and its activities hanging underneath, aligned to the same
+   scale. Three things make it usable rather than merely correct:
+
+   · The header STICKS while you scroll, and the trade label column sticks to the left while you
+     scroll sideways. A Gantt whose dates scroll out of view is a picture of coloured bars.
+   · Gridlines run the full height, so a bar's position can be read against a month without
+     tracing a finger up the screen.
+   · Rows are ACTIONABLE — click an activity to file its progress, click a trade to fold it away.
+     Everything visible here is something a site engineer wants to do next. */
+const _PD_LABW = 404;   // gutter: name · who · start · finish · duration                     // label gutter, px — shared by header, rows and gridlines
+let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
+function pdWide() { _pdWide = !_pdWide; _pmReload(); }
+
+/* ══ SHARED SCHEDULE KIT ═════════════════════════════════════════════════════════════════════════
+   Master and Detail are two levels of the SAME thing, so they render through the same components —
+   not two implementations that look alike on the day they are written and drift by the next change.
+
+   Each level supplies rows in one normalised shape and the kit does the rest:
+
+     { id, group, name, start, finish, acc, planned, w, click }
+
+   acc / planned are already resolved by the caller, because the two levels answer them differently:
+   a detail line reads its progress log, a master activity is the weighted roll-up of the detail
+   lines beneath it (or its own typed % when it has none). Everything downstream — bars, grouping,
+   roll-ups, colours, gridlines — is identical by construction. */
+const _SCH_PAL = ['#00B060', '#F97316', '#38BDF8', '#8B5CF6', '#EAB308', '#EC4899'];
+function _schRoll(rows) {
+  let ws = 0, a = 0, p = 0;
+  (rows || []).forEach(r => { const w = +r.w || 1; ws += w; a += w * (+r.acc || 0); p += w * (+r.planned || 0); });
+  return ws ? { acc: a / ws, planned: p / ws } : { acc: 0, planned: 0 };
+}
+
+/* Row status — the thing a schedule is actually asked. Finished ones are judged against the date
+   they were DUE (early / on time / late); unfinished ones against where they should be TODAY.
+   "Overdue" outranks "behind": a line past its finish date with work left is a different
+   conversation from one that is merely trailing its planned curve. */
+function _schFlag(r, day) {
+  const acc = +r.acc || 0, pl = +r.planned || 0;
+  if (acc >= 100) {
+    if (r.doneOn && r.finish) {
+      const d = _pmDateDiff(r.finish, r.doneOn);
+      if (d < 0) return { k: 'early', label: Math.abs(d) + 'd ' + _t('early'), hex: '#00B060' };
+      if (d > 0) return { k: 'late', label: d + 'd ' + _t('late'), hex: '#F59E0B' };
+    }
+    return { k: 'done', label: _t('Done'), hex: '#00B060' };
+  }
+  if (r.finish && r.finish < day) {
+    return { k: 'overdue', label: _pmDateDiff(r.finish, day) + 'd ' + _t('overdue'), hex: '#EF4444' };
+  }
+  const v = acc - pl;
+  if (v >= 5) return { k: 'ahead', label: '+' + v.toFixed(0) + '%', hex: '#00B060' };
+  if (v >= -0.5) return { k: 'onplan', label: _t('On plan'), hex: '#5C6470' };
+  if (v >= -10) return { k: 'slip', label: v.toFixed(0) + '%', hex: '#F59E0B' };
+  return { k: 'behind', label: v.toFixed(0) + '%', hex: '#EF4444' };
+}
+const _SCH_FILTERS = [['all', 'All'], ['behind', 'Behind'], ['slip', 'Slipping'], ['onplan', 'On plan'],
+                      ['ahead', 'Ahead'], ['overdue', 'Overdue'], ['done', 'Done']];
+let _schFilt = { m: { q: '', k: 'all', from: '', to: '' }, d: { q: '', k: 'all', from: '', to: '' } };
+function schFiltKind(ns, k) { _schFilt[ns].k = k; _pmReload(); }
+function schFiltDate(ns, which, v) { _schFilt[ns][which] = v || ''; _pmReload(); }
+function schFiltClear(ns) { _schFilt[ns] = { q: '', k: 'all', from: '', to: '' }; _pmReload(); }
+function schFiltQ(ns, v) {
+  _schFilt[ns].q = v;
+  // Re-render on a debounce, not per keystroke: this redraws a few hundred absolutely-positioned
+  // bars and typing must not wait for it.
+  clearTimeout(_schFilt._t);
+  _schFilt._t = setTimeout(() => _pmReload(), 260);
+}
+function _schFilterBar(ns, shown, total) {
+  const f = _schFilt[ns];
+  const chip = (k, label) => '<button onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
+    (f.k === k ? 'var(--navy)' : 'var(--line)') + ';background:' + (f.k === k ? 'var(--navy)' : 'var(--card,#fff)') +
+    ';color:' + (f.k === k ? '#fff' : 'var(--text-light)') + ';border-radius:999px;padding:3px 11px;' +
+    'font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' + _t(label) + '</button>';
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line)">' +
+    '<input value="' + _tkEscA(f.q) + '" oninput="schFiltQ(\'' + ns + '\',this.value)" placeholder="' +
+      _tkEscA(_t('Find an activity or who…')) + '" style="flex:0 1 220px;min-width:150px;font-size:12px;padding:4px 9px;' +
+      'border:1px solid var(--line);border-radius:7px;background:var(--card,#fff);color:var(--text);font-family:inherit">' +
+    _SCH_FILTERS.map(x => chip(x[0], x[1])).join('') +
+    '<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-light)">' +
+      _t('from') + '<input type="date" value="' + _tkEscA(f.from) + '" onchange="schFiltDate(\'' + ns + '\',\'from\',this.value)" ' +
+        'style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card,#fff);color:var(--text);font-family:inherit">' +
+      _t('to') + '<input type="date" value="' + _tkEscA(f.to) + '" onchange="schFiltDate(\'' + ns + '\',\'to\',this.value)" ' +
+        'style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card,#fff);color:var(--text);font-family:inherit"></span>' +
+    ((f.q || f.from || f.to || f.k !== 'all')
+      ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px" onclick="schFiltClear(\'' + ns + '\')">' + _t('Clear') + '</button>' : '') +
+    (shown < total ? '<span style="font-size:11px;color:var(--text-light);margin-left:2px">' + shown + ' / ' + total + '</span>' : '') +
+    '</div>';
+}
+function _schApplyFilter(rows, ns, day) {
+  const f = _schFilt[ns], q = (f.q || '').trim().toLowerCase();
+  return rows.filter(r => {
+    if (q && (String(r.name || '') + ' ' + String(r.group || '') + ' ' + String(r.who || '')).toLowerCase().indexOf(q) < 0) return false;
+    if (f.k !== 'all' && _schFlag(r, day).k !== f.k) return false;
+    // A date window keeps anything that OVERLAPS it, not only what starts inside it — an activity
+    // running through the whole month is the most relevant thing in that month, not the least.
+    if (f.from && (r.finish || '9999-12-31') < f.from) return false;
+    if (f.to && (r.start || '0000-01-01') > f.to) return false;
+    return true;
+  });
+}
+/* One initial-avatar, matching the rest of the app. */
+function _schWho(who) {
+  if (!who) return '<span style="width:22px;height:22px;border-radius:50%;background:var(--soft-bg);flex:none"></span>';
+  const ini = String(who).split(/\s+/).filter(Boolean).slice(-2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  let h = 0; for (let i = 0; i < who.length; i++) h = (h * 31 + who.charCodeAt(i)) % 360;
+  return '<span title="' + _tkEscA(who) + '" style="width:22px;height:22px;border-radius:50%;flex:none;background:hsl(' + h +
+    ',52%,45%);color:#fff;font:700 9px ui-sans-serif,system-ui,sans-serif;display:flex;align-items:center;justify-content:center">' + ini + '</span>';
+}
+
+function _schTimeline(rows, o) {
+  o = o || {};
+  const day = o.day || _pmToday();
+  const ns = o.ns || 'd', total = rows.length;
+  rows = _schApplyFilter(rows, ns, day);
+  if (!rows.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    _schFilterBar(ns, 0, total) + '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+    _t('Nothing matches this filter.') + '</div></div>';
+  const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
+  if (!ds.length) return '';
+  ds.push(day);
+  const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
+  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
+
+  const months = [];
+  let cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
+  const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
+  while (cur <= end) {
+    const first = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
+    const nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    const last = nxt.getFullYear() + '-' + String(nxt.getMonth() + 1).padStart(2, '0') + '-01';
+    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > max ? max : last)),
+                  m: cur.getMonth(), y: cur.getFullYear() });
+    cur = nxt;
+  }
+  const quarters = [];
+  months.forEach(mo => {
+    const q = 'Q' + (Math.floor(mo.m / 3) + 1) + ' ' + mo.y;
+    const last = quarters[quarters.length - 1];
+    if (last && last.label === q) last.to = mo.to; else quarters.push({ label: q, from: mo.from, to: mo.to });
+  });
+
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const plotW = _pdWide ? Math.max(760, months.length * 132) : Math.max(520, months.length * 74);
+  const seg = (a, b, style, txt, title) =>
+    '<div style="position:absolute;left:' + a + '%;width:' + Math.max(0, b - a) + '%;' + style + '"' +
+    (title ? ' title="' + _tkEscA(title) + '"' : '') + '>' + (txt || '') + '</div>';
+  const band = (items, h, fs, weight) => items.map(x =>
+    seg(x.from, x.to, 'top:0;height:' + h + 'px;border-left:1px solid var(--line);display:flex;align-items:center;' +
+        'justify-content:center;font-size:' + fs + 'px;font-weight:' + weight + ';color:var(--text-light);overflow:hidden;white-space:nowrap',
+        x.label)).join('');
+
+  // Today, computed BEFORE the header because the header renders the chip. `const` is not
+  // hoisted-and-usable: referencing it earlier is a ReferenceError at RUNTIME, which node --check
+  // cannot see and only opening the page would have shown.
+  const tX = (day >= min && day <= max) ? pct(day) : null;
+  const todayLine = tX === null ? '' :
+    '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
+  const todayChip = tX === null ? '' :
+    '<div style="position:absolute;left:' + tX + '%;bottom:1px;transform:translateX(-50%);background:#EF4444;color:#fff;' +
+      'font:700 9.5px ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;white-space:nowrap;' +
+      'pointer-events:none">' + tkFmtDate(day) + '</div>' +
+    '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
+
+  const header =
+    '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
+      '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
+        'border-right:1px solid var(--line);padding:6px 10px;display:flex;align-items:flex-end;gap:6px;' +
+        'font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' +
+        '<span style="flex:1;min-width:0">' + _t(o.labelHead || 'Trade / Activity') + '</span>' +
+        '<span style="width:26px;text-align:center">' + _t('Who') + '</span>' +
+        '<span style="width:52px;text-align:right">' + _t('Start') + '</span>' +
+        '<span style="width:52px;text-align:right">' + _t('Finish') + '</span>' +
+        '<span style="width:38px;text-align:right">' + _t('Dur') + '</span>' +
+        '<span style="width:62px;text-align:right">' + _t('Status') + '</span></div>' +
+      '<div style="flex:1;position:relative;height:46px">' +
+        band(quarters, 22, 11, 700) +
+        '<div style="position:absolute;top:22px;left:0;right:0;height:24px">' +
+          band(months.map(mo => ({ from: mo.from, to: mo.to, label: MON[mo.m] + " '" + String(mo.y).slice(-2) })), 24, 10.5, 600) +
+        '</div>' + todayChip +
+      '</div></div>';
+
+  const gridlines = months.map(mo =>
+    '<div style="position:absolute;left:' + mo.from + '%;top:0;bottom:0;border-left:1px solid var(--line);opacity:.7"></div>').join('');
+
+  const bar = (r, color, label, big) => {
+    if (!r.start || !r.finish) return '';
+    const a = pct(r.start), b = pct(r.finish), acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
+    return seg(a, b, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color + '2e', '',
+               (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + Math.round(acc) + '%') +
+           seg(a, a + (b - a) * acc / 100, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color, '') +
+           '<div style="position:absolute;left:' + b + '%;top:' + (top - 2) + 'px;margin-left:7px;font-size:10.5px;' +
+             'font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
+  };
+  const dur = r => (r.start && r.finish) ? ((_pmDateDiff(r.start, r.finish) || 0) + 1) + 'd' : '—';
+  const cell = (v, w, extra) => '<span style="width:' + w + 'px;text-align:right;flex:none;font-size:10.5px;' +
+    'font-variant-numeric:tabular-nums;color:var(--text-light);' + (extra || '') + '">' + v + '</span>';
+  const lab = (html, indent, r) => {
+    const f = r ? _schFlag(r, day) : null;
+    return '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
+      'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:6px;' +
+      'overflow:hidden;white-space:nowrap">' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">' + html + '</span>' +
+      (r ? '<span style="width:26px;display:flex;justify-content:center;flex:none">' + _schWho(r.who) + '</span>' +
+           cell(r.start ? tkFmtDate(r.start).slice(0, 6) : '—', 52) +
+           cell(r.finish ? tkFmtDate(r.finish).slice(0, 6) : '—', 52) +
+           cell(dur(r), 38) +
+           cell(f.label, 62, 'color:' + f.hex + ';font-weight:700')
+         : '<span style="width:230px;flex:none"></span>') + '</div>';
+  };
+
+  const groups = []; rows.forEach(r => { if (groups.indexOf(r.group) < 0) groups.push(r.group); });
+  const collapsed = o.collapsed || {};
+  let body = '';
+  groups.forEach((g, i) => {
+    const gr = rows.filter(r => r.group === g), roll = _schRoll(gr), color = _SCH_PAL[i % _SCH_PAL.length];
+    const open = !collapsed[g];
+    const gs = gr.map(r => r.start).filter(Boolean).sort()[0];
+    const gf = gr.map(r => r.finish).filter(Boolean).sort().slice(-1)[0];
+    body += '<div style="display:flex;height:30px;background:var(--soft-bg);cursor:pointer;border-bottom:1px solid var(--line)" ' +
+        'onclick="' + (o.toggle || '').replace('{g}', encodeURIComponent(g)) + '" title="' + _tkEscA(_t('Show or hide this group')) + '">' +
+      lab('<span style="width:11px;color:var(--text-light);font-weight:700">' + (open ? '−' : '+') + '</span>' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' +
+          '<span style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(g) + '</span>' +
+          '<span style="font-size:10.5px;color:var(--text-light);flex:none">' + gr.length + '</span>', 10, null) +
+      '<div style="flex:1;position:relative">' +
+        bar({ start: gs, finish: gf, acc: roll.acc, name: g }, color, Math.round(roll.acc) + '%', true) + '</div></div>';
+    if (!open) return;
+    gr.forEach(r => {
+      const v = (+r.acc || 0) - (+r.planned || 0);
+      body += '<div style="display:flex;height:27px;background:var(--card,#fff);' + (r.click ? 'cursor:pointer;' : '') +
+          'border-bottom:1px solid var(--line)"' + (r.click ? ' onclick="' + r.click + '"' : '') +
+          ' title="' + _tkEscA(o.rowHint || '') + '">' +
+        lab('<span style="width:5px;height:5px;border-radius:50%;background:' + _pdVarColor(v) + ';flex:none"></span>' +
+            '<span style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis">' + _pmEsc(r.name || '') + '</span>' +
+            (r.note ? '<span title="' + _tkEscA(r.note) + '" style="flex:none;font-size:10px;color:var(--navy);cursor:help">\u270e</span>' : ''), 22, r) +
+        '<div style="flex:1;position:relative">' + bar(r, color, Math.round(+r.acc || 0) + '%', false) + '</div></div>';
+    });
+  });
+
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)">' +
+      '<div><div style="font-weight:700;font-size:13px">' + _t('Timeline') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) +
+        (o.sub ? ' · ' + o.sub : '') + '</div></div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
+        (o.actions || '') + '</div></div>' +
+    _schFilterBar(ns, rows.length, total) +
+    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (_PD_LABW + plotW) + 'px">' +
+      header +
+      '<div style="position:relative">' +
+        '<div style="position:absolute;left:' + _PD_LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
+          gridlines + todayLine + '</div>' + body +
+      '</div></div></div>' +
+    '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
+      _t('Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind') +
+    '</div></div>';
+}
+
+/* Calendar — what STARTS and what is DUE. Both are commitments; the middle of a bar is not. */
+function _schCalendar(rows, o) {
+  o = o || {};
+  const day = o.day || _pmToday();
+  const ym = _pdCalM || day.slice(0, 7);
+  const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
+  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;               // Monday-first, the site week
+  const iso = dd => y + '-' + String(m + 1).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.4"></div>';
+  for (let dd = 1; dd <= days; dd++) {
+    const d = iso(dd), starts = rows.filter(r => r.start === d), ends = rows.filter(r => r.finish === d), isToday = d === day;
+    const pill = (r, hex, glyph) =>
+      '<div' + (r.click ? ' onclick="event.stopPropagation();' + r.click + '"' : '') + ' title="' + _tkEscA(r.name || '') + '" ' +
+      'style="font-size:10.5px;line-height:1.3;padding:2px 5px;border-radius:4px;background:' + hex + '1f;color:' + hex +
+      ';font-weight:600;margin-top:3px;' + (r.click ? 'cursor:pointer;' : '') + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      glyph + ' ' + _pmEsc(r.name || '') + '</div>';
+    cells += '<div style="min-height:92px;background:var(--card,#fff);border:1px solid ' + (isToday ? '#EF4444' : 'var(--line)') +
+      ';border-radius:8px;padding:5px 6px;overflow:hidden">' +
+      '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? '#EF4444' : 'var(--text-light)') + '">' + dd + '</div>' +
+      starts.slice(0, 3).map(r => pill(r, '#38BDF8', '▶')).join('') +
+      ends.slice(0, 3).map(r => pill(r, '#F97316', '■')).join('') +
+      ((starts.length + ends.length) > 6 ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">+' + (starts.length + ends.length - 6) + '</div>' : '') +
+      '</div>';
+  }
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return '<div class="card" style="padding:15px 17px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:13.5px">' + _t(MON[m]) + ' ' + y + '</div>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span style="font-size:11px;color:var(--text-light)"><b style="color:#38BDF8">▶</b> ' + _t('starts') +
+        ' &nbsp;<b style="color:#F97316">■</b> ' + _t('due') + '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(-1)">‹</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(1)">›</button></div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">' +
+      DOW.map(d => '<div style="font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
+    '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">' + cells + '</div></div>';
+}
+
+/* ── the two adapters ─────────────────────────────────────────────────────────────────────────── */
+let _pmPhCol = {};
+function pmPhToggle(g) { g = decodeURIComponent(g); _pmPhCol[g] = !_pmPhCol[g]; _pmReload(); }
+/* Master activities. Progress is the detail roll-up where detail lines exist — one source of truth,
+   the same rule the Activities table already shows as "rolled up". */
+function _pmTaskNorm(pid, day) {
+  return _pmScopeFor('pm_tasks', pid).filter(t => t.start || t.finish).map(t => {
+    const d = _pdTaskPct(t, pid);
+    const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
+    return { id: t.id, group: t.phase || _t('Activities'),
+             name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
+                   (d ? '  ·  ' + d.n + ' ' + _t('detail line(s)') : ''),
+             start: t.start, finish: t.finish, w: dur, who: t.assignee || '', note: t.note || '',
+             doneOn: t.actualFinish || '',
+             // Name it plainly: this activity's percentage is not typed, it is what the site reported.
+             _fed: d ? d.n : 0,
+             acc: d ? d.pct : _pmPct(t.pctComplete),
+             planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
+             click: "tkQuickAdd('pm_tasks','" + t.id + "')" };
+  });
+}
+/* The parent of a detail line is the MASTER ACTIVITY it reports against — that is the whole point
+   of two levels: the site reports detail, and the contract programme moves because of it. The trade
+   is an attribute of the line, not its parent, so it rides along as a suffix instead of grouping.
+   A line with no master link is never hidden — it groups under a named bucket so the gap is visible
+   and fixable, because an unlinked line contributes to nothing. */
+function _pdMasterOf(pid, r) {
+  const ref = String((r && r.taskRef) || '').trim();
+  if (!ref) return null;
+  return _pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref) || null;
+}
+function _pdGroupOf(pid, r) {
+  const t = _pdMasterOf(pid, r);
+  if (!t) return _t('Not linked to a master activity');
+  return (t.wbs ? t.wbs + ' · ' : '') + (t.name || _t('Untitled'));
+}
+function _pdNorm(pid, rows, day) {
+  return rows.map(r => {
+    const log = _pdLog(r);
+    // The day it actually finished is the FIRST reading that reached 100 — not the last reading, and
+    // not the planned finish. That is what makes "3d early" a fact rather than a guess.
+    const doneRow = log.find(e => _pmPct(e.pct) >= 100);
+    const last = log[log.length - 1];
+    return { id: r.id, group: _pdGroupOf(pid, r),
+      name: (r.name || '') + (r.category ? '  ·  ' + r.category : ''),
+      start: r.start, finish: r.finish, w: _pdWeight(r),
+      who: (last && last.by) || '', note: r.note || '', doneOn: doneRow ? String(doneRow.d) : '',
+      acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" };
+  });
+}
+
+function _pdTimeline(pid, rows, cats, day) {
+  return _schTimeline(_pdNorm(pid, rows, day), { day: day, ns: 'd', collapsed: _pdCol,
+    toggle: "pdToggleCat(decodeURIComponent('{g}'))", labelHead: 'Trade / Activity',
+    rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
+    actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
+}
+/* ── filing a reading ─────────────────────────────────────────────────────────────────────────── */
+function pdProgress(id) {
+  const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
+  const day = _pmToday(), acc = _pdAcc(r, day), pl = _pdPlanned(r, day);
+  document.getElementById('pdProgOverlay')?.remove();
+  const hist = _pdLog(r).slice(-6).reverse().map(e =>
+    '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="color:var(--text-light)">' + tkFmtDate(e.d) + (e.by ? ' · ' + _pmEsc(e.by) : '') + '</span><b>' + _pmPct(e.pct) + '%</b></div>').join('') ||
+    '<div style="font-size:12px;color:var(--text-light)">No readings filed yet.</div>';
+  const el = document.createElement('div'); el.id = 'pdProgOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:430px"><div class="modal-header"><div class="modal-title">' + _t('Report progress') + '</div><button class="modal-close" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:13px;font-weight:600">' + _pmEsc(r.name || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + _pmEsc(r.category || '') + ' · ' + tkFmtDate(day) + ' · ' + _t('planned to date') + ' ' + pl + '%</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Accumulated progress today (%)') + '</label>' +
+    '<input type="number" min="0" max="100" step="1" class="form-control" id="pd-acc" value="' + acc + '" inputmode="numeric">' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.') + '</div></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Note (optional)') + '</label><input class="form-control" id="pd-note" placeholder="' + _tkEscA(_t('Delay reason, area handed over, etc.')) + '"></div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--navy);margin:10px 0 2px">' + _t('Recent readings') + '</div>' + hist +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-emerald" onclick="pdProgressSave(\'' + id + '\')">' + _t('File reading') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const i = document.getElementById('pd-acc'); if (i) { i.focus(); i.select(); } }, 30);
+}
+async function pdProgressSave(id) {
+  const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
+  const day = _pmToday();
+  const v = _pmPct(document.getElementById('pd-acc').value);
+  const note = (document.getElementById('pd-note').value || '').trim();
+  const prev = _pdAcc(r, day);
+  // Going backwards is legitimate (a re-measure, a rejected section) but it is never a typo worth
+  // saving silently — it changes the reported position of the works.
+  if (v < prev && !(await tkConfirm(_t('That is lower than the last reading') + ' (' + prev + '% → ' + v + '%). ' + _t('File it anyway?')))) return;
+  const log = _pdLog(r).filter(e => String(e.d) !== day);       // one reading per day — the latest wins
+  log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString(), note: note });
+  try {
+    await tkApi('/api/coll/' + _PD_COLL + '/' + id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) });
+    r.log = log;
+    document.getElementById('pdProgOverlay').remove();
+    tkAudit('Detail progress reported', r.name, (r.category || '') + ' · ' + v + '%' + (note ? ' · ' + note : ''));
+    toast(_t('Reading filed') + ' — ' + v + '%');
+    _pmReload();
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
 function _pmGanttHtml(pid) {
   const p = _pmProj(pid); if (!p) return '';
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
@@ -20976,29 +21963,93 @@ function pmRenderSchedule(pid) {
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
   // had; pmSchedTab() builds a pane the first time it is shown.
   _pmSchedBuild = {};
-  _pmSchedBuild.gantt = () => _pmGanttHtml(pid);
-  _pmSchedBuild.activities = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
+  _pmSchedBuild['m-timeline'] = () => {
+    const _n = _pmTaskNorm(pid, _pmToday());
+    return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol,
+        toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
+        rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
+        actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' })
+      : '<div class="card" style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+        _t('No activities with dates yet.') + '</div>';
+  };
+  _pmSchedBuild['d-timeline'] = () => _pdView(pid, 'timeline');
+  _pmSchedBuild['d-register'] = () => _pdView(pid, 'register');
+  _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
+  _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
+  _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
     { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
-    { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
+    { label: '%', sk: 'pctComplete', align: 'right', render: r => {
+        // One source of truth: when detail lines report against this activity, its percentage is
+        // their weighted roll-up. A typed number that disagrees with the site's own daily report is
+        // the thing this whole level exists to stop.
+        const d = _pdTaskPct(r, pid);
+        return d ? ('<span title="Rolled up from ' + d.n + ' detail item' + (d.n === 1 ? '' : 's') + '" style="font-weight:700">' + d.pct + '%</span><span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">rolled up</span>')
+                 : (_pmPct(r.pctComplete) + '%');
+      } },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
-  _pmSchedBuild.board = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
-  _pmSchedBuild.calendar = () => _pmCalendarHtml(pid);
-  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
+  _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  _pmSchedBuild['m-calendar'] = () => _schCalendar(_pmTaskNorm(pid, _pmToday()), { day: _pmToday() });
+  // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four
+  // views, because "where am I" and "how do I want to see it" are separate questions and answering
+  // them on one flat bar made four master-only views look like peers of the whole detail programme.
+  const _lv = _pmSchedLevel();
+  const lvBtn = (k, label, sub) => {
+    const on = _lv === k;
+    return '<button onclick="pmSchedLevel(\'' + k + '\')" style="flex:0 0 auto;text-align:left;border:1px solid ' +
+      (on ? 'var(--navy)' : 'var(--line)') + ';background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' +
+      (on ? '#fff' : 'var(--text)') + ';border-radius:10px;padding:8px 15px;cursor:pointer;font-family:inherit">' +
+      '<div style="font-weight:700;font-size:13px">' + _t(label) + '</div>' +
+      '<div style="font-size:10.5px;opacity:' + (on ? '.8' : '.65') + ';margin-top:1px">' + _t(sub) + '</div></button>';
+  };
+  const levels = '<div style="display:flex;gap:8px;margin:2px 0 10px;flex-wrap:wrap">' +
+    lvBtn('m', 'Master Schedule', 'Contract activities · WBS · critical path') +
+    lvBtn('d', 'Detail Schedule', 'What the site reports each day') + '</div>';
+  const views = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">' +
+    _PM_SCHED_VIEWS[_lv].map(v => _pmSchedTabBtn(v[0], v[1])).join('') + '</div>';
+  const subtabs = '<div data-html2canvas-ignore="true">' + levels + views + '</div>';
   const _pane = k => '<div id="psch-' + k + '"' + (_pmSchedTab === k ? ' data-built="1"' : ' style="display:none"') + '>' +
     (_pmSchedTab === k ? _pmSchedBuild[k]() : '') + '</div>';
-  _pmSet(kpis + subtabs + ['gantt', 'activities', 'board', 'calendar'].map(_pane).join(''));
+  _pmSet(kpis + subtabs + _PM_SCHED_PANES.map(_pane).join(''));
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
   return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
 }
+/* The Schedule sub-panes, in order. Declared ONCE: this list is read by the renderer and by the
+   show/hide loop, and when it existed twice a new pane added to only one of them rendered fine
+   and was never displayed — every pane hidden, none shown, and nothing logged. */
+const _PM_SCHED_PANES = ['m-timeline', 'm-activities', 'm-board', 'm-calendar',
+                         'd-timeline', 'd-register', 'd-board', 'd-calendar'];
+const _PM_SCHED_VIEWS = {
+  m: [['m-timeline', 'Timeline'], ['m-activities', 'Activities'], ['m-board', 'Board'], ['m-calendar', 'Calendar']],
+  d: [['d-timeline', 'Timeline'], ['d-register', 'Register'], ['d-board', 'Board'], ['d-calendar', 'Calendar']],
+};
+function _pmSchedLevel() { return _pmSchedTab.charAt(0) === 'd' ? 'd' : 'm'; }
+/* Switching level returns you to the view you were last using THERE, not to a fixed one — moving
+   between the master plan and a detail programme should not also throw away which view you wanted.
+   It must RE-RENDER, not just toggle panes: the level-2 bar shows only the current level's four
+   views and the level-1 buttons carry the selected state, so a cheap pane swap left the chrome
+   describing one level while the content showed the other. */
+function pmSchedLevel(lv) {
+  _pmSchedTab = _pmSchedLast[lv] || (lv + '-timeline');
+  _pmSchedLast[lv] = _pmSchedTab;
+  _pmReload();
+}
 function pmSchedTab(name) {
+  // Crossing LEVELS cannot be a pane swap. The level-2 bar only contains the current level's four
+  // buttons and the level-1 buttons carry the selection, so swapping to the other level's pane left
+  // the chrome describing master while a detail pane was on screen. Clicking cannot reach that state
+  // — level changes go through pmSchedLevel — but any future caller could, so guard it here where
+  // the invariant actually lives rather than trusting every call site to know.
+  const crossing = name.charAt(0) !== _pmSchedTab.charAt(0);
   _pmSchedTab = name;
+  _pmSchedLast[_pmSchedLevel()] = name;
+  if (crossing) { _pmReload(); return; }
   // Build this pane the first time it is shown. pmRenderSchedule re-creates the hosts on every
   // reload, so data-built resets naturally and a pane can never show stale rows.
   const host = document.getElementById('psch-' + name);
@@ -21006,7 +22057,7 @@ function pmSchedTab(name) {
     try { host.innerHTML = _pmSchedBuild[name](); } catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Could not render: ' + _pmEsc(e.message) + '</div>'; }
     host.dataset.built = '1';
   }
-  ['gantt', 'activities', 'board', 'calendar'].forEach(k => {
+  _PM_SCHED_PANES.forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
     const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
   });
@@ -22791,6 +23842,157 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Master↔detail linkage + date filter (2026-08-20) */
+  'Not linked to a master activity': 'Chưa gắn với công việc tổng thể',
+  'detail line(s)': 'hạng mục chi tiết',
+  'to': 'đến',
+  'Part of master activity (WBS or name)': 'Thuộc công việc tổng thể (WBS hoặc tên)',
+
+  /* Timeline columns + filter (2026-08-20) */
+  'Dur': 'Thời lượng',
+  'Status': 'Trạng thái',
+  'early': 'sớm',
+  'late': 'trễ',
+  'Ahead': 'Vượt kế hoạch',
+  'Overdue': 'Quá hạn',
+  'Find an activity or who…': 'Tìm công việc hoặc người…',
+  'Nothing matches this filter.': 'Không có mục nào khớp bộ lọc.',
+
+  /* Shared schedule kit (2026-08-20) */
+  'Phase / Activity': 'Giai đoạn / Công việc',
+  'Open this activity': 'Mở công việc này',
+  'grouped by phase · click an activity to open it': 'nhóm theo giai đoạn · bấm để mở công việc',
+  'No activities with dates yet.': 'Chưa có công việc nào có ngày.',
+  'Show or hide this group': 'Ẩn/hiện nhóm này',
+
+  /* Two-level schedule + multi detail schedules (2026-08-20) */
+  'Schedule': 'Tiến độ',
+  'Unfiled': 'Chưa phân loại',
+  'Untitled': 'Chưa đặt tên',
+  'Define another detail schedule for this project': 'Tạo thêm một tiến độ chi tiết cho dự án',
+  'item(s) not assigned to a schedule': 'hạng mục chưa gán vào tiến độ nào',
+  'Name this detail schedule': 'Đặt tên cho tiến độ chi tiết',
+  'e.g. Block E — MEP, Zone 3 — Cleanroom, Testing & Commissioning': 'VD: Block E — MEP, Zone 3 — Phòng sạch, Chạy thử & nghiệm thu',
+  'Schedule created': 'Đã tạo tiến độ',
+  'Could not create the schedule': 'Không thể tạo tiến độ',
+  'Detail schedule': 'Tiến độ chi tiết',
+  'Contract activities · WBS · critical path': 'Công việc hợp đồng · WBS · đường găng',
+  'What the site reports each day': 'Công trường ghi nhận mỗi ngày',
+  'No lines in this schedule yet.': 'Tiến độ này chưa có hạng mục.',
+  'The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.': 'Tiến độ tổng thể chứa các công việc hợp đồng; cấp này chứa các hạng mục công trường ghi nhận mỗi ngày — theo từng bộ môn và vị trí.',
+  'Behind': 'Trễ',
+  'Slipping': 'Chậm nhẹ',
+  'On plan': 'Đúng kế hoạch',
+  'Complete': 'Hoàn thành',
+  'Nothing here': 'Không có mục nào',
+  'File progress': 'Ghi nhận tiến độ',
+  'due': 'hạn',
+  'today': 'hôm nay',
+  'Grouped by how far each activity is from its planned position today. Click a card to file progress.': 'Nhóm theo mức chênh so với kế hoạch đến hôm nay. Bấm vào thẻ để ghi nhận tiến độ.',
+  'starts': 'bắt đầu',
+  'Tue': 'T3',
+  'Wed': 'T4',
+  'Thu': 'T5',
+  'Sat': 'T7',
+  'Sun': 'CN',
+  'January': 'Tháng 1',
+  'February': 'Tháng 2',
+  'March': 'Tháng 3',
+  'April': 'Tháng 4',
+  'May': 'Tháng 5',
+  'June': 'Tháng 6',
+  'July': 'Tháng 7',
+  'August': 'Tháng 8',
+  'September': 'Tháng 9',
+  'October': 'Tháng 10',
+  'November': 'Tháng 11',
+  'December': 'Tháng 12',
+
+  /* Timeline-first Detail Schedule (2026-08-20) */
+  'Trade / Activity': 'Bộ môn / Công việc',
+  'Timeline': 'Dòng thời gian',
+  'click an activity to file progress': 'bấm vào công việc để ghi nhận tiến độ',
+  'Show or hide this trade': 'Ẩn/hiện bộ môn này',
+  'File progress for this activity': 'Ghi nhận tiến độ công việc này',
+  'Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind': 'Thanh nhạt = khoảng kế hoạch · thanh đậm = tiến độ luỹ kế · chấm = đúng kế hoạch, chậm nhẹ hoặc trễ',
+  'Wide': 'Rộng',
+  'Fit': 'Vừa khung',
+
+  /* Detail Schedule: S-curve, daily entry, import (2026-08-17) */
+  'S-curve — planned vs actual': 'Đường cong S — kế hoạch và thực tế',
+  'planned': 'kế hoạch',
+  'actual': 'thực tế',
+  'Cumulative planned versus actual progress': 'Tiến độ luỹ kế: kế hoạch so với thực tế',
+  'Dashed = planned · solid = actual to date · red = today. Both curves are weighted, so they agree with the table above.': 'Nét đứt = kế hoạch · nét liền = thực tế đến nay · đỏ = hôm nay. Cả hai đường đều có trọng số nên khớp với bảng ở trên.',
+  'Daily progress': 'Tiến độ hằng ngày',
+  'No detail items yet.': 'Chưa có hạng mục chi tiết.',
+  'Enter the accumulated total for each item. Leave a row unchanged and nothing is filed against it.': 'Nhập tổng luỹ kế cho từng hạng mục. Dòng nào không đổi thì không ghi nhận gì.',
+  'Report item': 'Hạng mục',
+  'Now': 'Hiện tại',
+  'File readings': 'Lưu các ghi nhận',
+  'Filing…': 'Đang lưu…',
+  'Nothing changed — no readings filed.': 'Không có thay đổi — chưa ghi nhận gì.',
+  'Some readings were not filed': 'Một số ghi nhận chưa được lưu',
+  'filed': 'đã lưu',
+  'Re-enter the ones below — the rest are saved.': 'Nhập lại các mục dưới đây — phần còn lại đã lưu.',
+  'item(s)': 'hạng mục',
+  'Import detail schedule': 'Nhập tiến độ chi tiết',
+  'Import from Excel': 'Nhập từ Excel',
+  'Copy the rows from Excel and paste them here. Column order:': 'Sao chép các dòng từ Excel và dán vào đây. Thứ tự cột:',
+  'Dates as YYYY-MM-DD. The last three columns are optional. A header row is detected and skipped.': 'Ngày theo dạng YYYY-MM-DD. Ba cột cuối không bắt buộc. Dòng tiêu đề sẽ được tự động bỏ qua.',
+  'to import': 'sẽ nhập',
+  'rejected': 'bị từ chối',
+  'line': 'dòng',
+  'category and item are both required': 'bắt buộc có cả nhóm và hạng mục',
+  'start is not YYYY-MM-DD': 'ngày bắt đầu không đúng dạng YYYY-MM-DD',
+  'finish is not YYYY-MM-DD': 'ngày kết thúc không đúng dạng YYYY-MM-DD',
+  'finish is before start': 'ngày kết thúc trước ngày bắt đầu',
+  'weight must be a positive number': 'trọng số phải là số dương',
+  'Importing…': 'Đang nhập…',
+  'Some rows were not imported': 'Một số dòng chưa được nhập',
+  'imported': 'đã nhập',
+  'Imported': 'Đã nhập',
+
+  /* Power BI feed (2026-08-17) */
+  'Power BI feed': 'Nguồn dữ liệu Power BI',
+  'Generate key': 'Tạo khoá',
+  'Progress (fact)': 'Tiến độ (bảng sự kiện)',
+  'one row per item per day': 'mỗi hạng mục một dòng mỗi ngày',
+  'dimension': 'bảng chiều',
+  'Master activities': 'Công việc tổng thể',
+  'In Power BI': 'Trong Power BI',
+  'Basic authentication, user': 'Xác thực Basic, tài khoản',
+  'password = the key': 'mật khẩu = khoá',
+  'password = this key': 'mật khẩu = khoá này',
+  'Percent complete must be weighted': 'Phần trăm hoàn thành phải có trọng số',
+  'use': 'dùng',
+  'an average of accumulatedPct is wrong at every grain above a single item.': 'lấy trung bình accumulatedPct là sai ở mọi cấp trên một hạng mục.',
+  'Add ?format=csv for a file, and ?from=&to= to narrow the window.': 'Thêm ?format=csv để tải tệp, và ?from=&to= để thu hẹp khoảng thời gian.',
+  'Copy this now — it is shown once and cannot be shown again.': 'Sao chép ngay — khoá chỉ hiển thị một lần và không thể xem lại.',
+  'BI key issued': 'Đã tạo khoá BI',
+  'BI key revoked': 'Đã thu hồi khoá BI',
+  'Revoke the BI key? Any Power BI dataset using it stops refreshing.': 'Thu hồi khoá BI? Mọi tập dữ liệu Power BI đang dùng sẽ ngừng làm mới.',
+  'Could not update the BI key': 'Không thể cập nhật khoá BI',
+  'Key copied to the clipboard': 'Đã sao chép khoá',
+  'Copied': 'Đã sao chép',
+  'Could not copy — select the address and copy it manually.': 'Không sao chép được — hãy chọn địa chỉ và sao chép thủ công.',
+
+  /* Detail Schedule (2026-08-17) */
+  'Report': 'Ghi nhận',
+  'Report progress': 'Ghi nhận tiến độ',
+  'Accumulated progress today (%)': 'Luỹ kế đến hôm nay (%)',
+  'Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.': 'Nhập tổng đã đạt, không phải phần tăng hôm nay — phần trong ngày được tính từ lần ghi trước.',
+  'Note (optional)': 'Ghi chú (không bắt buộc)',
+  'Delay reason, area handed over, etc.': 'Lý do chậm, khu vực bàn giao, v.v.',
+  'Recent readings': 'Các lần ghi gần đây',
+  'File reading': 'Lưu ghi nhận',
+  'Reading filed': 'Đã lưu ghi nhận',
+  'planned to date': 'kế hoạch đến nay',
+  'That is lower than the last reading': 'Thấp hơn lần ghi trước',
+  'File it anyway?': 'Vẫn lưu?',
+  'Detail Schedule': 'Tiến độ chi tiết',
+  'Master Schedule': 'Tiến độ tổng thể',
+
   'CV / Resume': 'CV / Hồ sơ',
   'Saved, but the CV did not attach': 'Đã lưu, nhưng chưa đính kèm được CV',
   'open the candidate to attach it.': 'mở hồ sơ ứng viên để đính kèm.',
