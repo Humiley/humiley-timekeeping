@@ -27329,6 +27329,18 @@ Object.assign(_QA_SPECS, {
       { k: 'origin', label: 'Origin' },
       { k: 'note', label: 'Notes', type: 'textarea' }]
   },
+  est_risks: {
+    title: 'Risk', coll: 'est_risks', reload: 'est_risks', fields: [
+      { k: 'code', label: 'Code' },
+      { k: 'risk', label: 'Risk — what could happen' },
+      { k: 'category', label: 'Category', type: 'select', options: ['', 'Technical', 'Commercial', 'Schedule', 'Supply chain', 'Regulatory', 'HSE', 'Financial', 'Client', 'Weather', 'Other'] },
+      { k: 'probability', label: 'Probability % (or 0-1)', type: 'number' },
+      { k: 'impact', label: 'Impact if it happens (₫)', type: 'money' },
+      { k: 'mitigation', label: 'Mitigation — what we do about it', type: 'textarea' },
+      { k: 'owner', label: 'Owner', type: 'select', options: 'employees' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Mitigated', 'Accepted', 'Closed'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
   est_rates: {
     title: 'Library rate', coll: 'est_rates', reload: 'est_rates', fields: [
       { k: 'code', label: 'Code' },
@@ -27349,7 +27361,8 @@ Object.assign(_HR_RELOAD, {
   est_landed: () => tndReload(),
   est_local: () => tndReload(),
   est_bom: () => tndReload(),
-  est_quote: () => tndReload()
+  est_quote: () => tndReload(),
+  est_risks: () => tndReload()
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -27389,7 +27402,9 @@ function _tndTabs() {
     { k: 'local', label: 'Local VN', fn: 'tndTabLocal' },
     { k: 'master', label: 'Cost Master', fn: 'tndTabMaster' },
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
-    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' }
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
+    { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
+    { k: 'risk', label: 'Risk', fn: 'tndTabRisk' }
   ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
@@ -27397,7 +27412,9 @@ function _tndTabs() {
     { k: 'bom', label: 'Bill of Materials', fn: 'tndTabBom' },
     { k: 'margin', label: 'Margin by Cost Centre', fn: 'tndTabMargin' },
     { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
-    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' }
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
+    { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
+    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' }
   ];
   return _EST_TABS;
 }
@@ -28181,7 +28198,211 @@ function tndAdd(coll) {
   if (coll === 'est_landed') { seed.currency = 'USD'; seed.qty = 1; seed.coForm = 'None'; }
   if (coll === 'est_local') { seed.qty = 1; }
   if (coll === 'est_bom') { seed.costCentre = 'CIV'; seed.qty = 1; }
+  if (coll === 'est_risks') { seed.status = 'Open'; seed.probability = 20; }
   tkQuickAdd(coll, null, seed);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   CASH FLOW — when the money leaves, when it comes back, and how deep the hole gets
+
+   A job can be profitable on every line of the P&L and still be one the company cannot
+   afford to take. The peak funding requirement is the number this page exists to produce;
+   everything else on it is the working that leads to it.
+────────────────────────────────────────────────────────────────────────────── */
+
+function tndTabCash() {
+  const e = _estById(_estCur); const c = (_tndSum || {}).cash;
+  if (!c) { _estSet('<div class="card" style="padding:18px;color:var(--text-light)">' + _t('Nothing to forecast yet.') + '</div>'); return; }
+  const can = _estCanPrice() && !_estFrozen(e);
+  const M = c.months, mh = n => 'M' + n;
+
+  const tile = (lbl, val, sub, hex) => '<div style="flex:1 1 160px;min-width:150px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' + _t(lbl) + '</div>' +
+    '<div style="font-size:19px;font-weight:800;color:' + (hex || 'var(--navy)') + ';line-height:1.2;font-variant-numeric:tabular-nums">' + val + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + sub + '</div></div>';
+
+  const head = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div style="display:flex;gap:20px;flex-wrap:wrap">' +
+    tile('Peak funding required', _tndMoney(c.peakFunding), _t('deepest point, month') + ' ' + c.peakMonth,
+      c.peakFunding ? 'var(--danger)' : 'var(--emerald-deep)') +
+    tile('Total out', _tndMoney(c.outTotal), _t('cost of the works over') + ' ' + M + ' ' + _t('months')) +
+    tile('Total in', _tndMoney(c.inTotal), c.inflows.length + ' ' + _t('milestones')) +
+    tile('Closing position', _tndMoney(c.closingPosition), _t('the profit, once everything is collected'), 'var(--emerald-deep)') +
+    '</div></div>';
+
+  const warn = (c.warnings || []).length
+    ? '<div class="card" style="padding:13px 16px;margin-bottom:14px;border-left:3px solid var(--warning)"><ul style="font-size:12.5px;color:var(--text-light);padding-left:18px;margin:0">' +
+      c.warnings.map(w => '<li style="margin-bottom:2px">' + _estEsc(_t(w)) + '</li>').join('') + '</ul></div>'
+    : '';
+
+  /* The curve, drawn. A table of 24 numbers is a table; the shape of the hole is the point. */
+  const lo = Math.min(0, Math.min.apply(null, c.cumulative));
+  const hi = Math.max(0, Math.max.apply(null, c.cumulative));
+  const span = (hi - lo) || 1, H = 120;
+  const zeroY = H * (hi / span);
+  const bars = c.cumulative.map((v, i) => {
+    const y = H * ((hi - v) / span);
+    const top = Math.min(y, zeroY), h = Math.max(1, Math.abs(y - zeroY));
+    const neg = v < 0;
+    return '<div title="' + _tkEscA('M' + (i + 1) + ': ' + _PAY_FMT(v)) + '" style="flex:1;position:relative;height:' + H + 'px">' +
+      '<div style="position:absolute;left:8%;width:84%;top:' + top + 'px;height:' + h + 'px;border-radius:2px;background:' +
+      (neg ? 'var(--danger)' : 'var(--emerald)') + ';opacity:' + (i + 1 === c.peakMonth ? '1' : '.72') + '"></div></div>';
+  }).join('');
+  const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
+    '<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);margin-bottom:10px">' + _t('Cumulative cash position') + '</div>' +
+    '<div style="display:flex;gap:2px;align-items:stretch;position:relative">' + bars +
+    '<div style="position:absolute;left:0;right:0;top:' + zeroY + 'px;border-top:1px dashed var(--text-light);opacity:.5"></div></div>' +
+    '<div style="display:flex;gap:2px;margin-top:5px">' + c.cumulative.map((_v, i) =>
+      '<div style="flex:1;text-align:center;font-size:8.5px;color:var(--text-light)">' + ((i + 1) % 3 === 0 || i === 0 ? mh(i + 1) : '') + '</div>').join('') + '</div></div>';
+
+  const money0 = n => n ? _tndNum(n, 0) : '';
+  const rowHtml = (label, cells, opts) => {
+    const o = opts || {};
+    return '<tr' + (o.bg ? ' style="background:' + o.bg + '"' : '') + '>' +
+      '<td style="position:sticky;left:0;background:' + (o.bg || 'var(--card)') + ';font-weight:' + (o.strong ? '800' : '600') +
+      ';font-size:12px;white-space:nowrap;padding-right:12px' + (o.color ? ';color:' + o.color : '') + '">' + _estEsc(_t(label)) + '</td>' +
+      cells.map(v => '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap;padding:3px 6px' +
+        (o.color ? ';color:' + o.color : '') + (o.strong ? ';font-weight:700' : '') + '">' + money0(v) + '</td>').join('') +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:800;padding-left:10px;white-space:nowrap' +
+      (o.color ? ';color:' + o.color : ';color:var(--navy)') + '">' + money0(cells.reduce((a, b) => a + b, 0)) + '</td></tr>';
+  };
+  const section = (t2) => '<tr><td colspan="' + (M + 2) + '" style="background:var(--soft-bg);font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy);padding:7px 0 7px 0">' + _t(t2) + '</td></tr>';
+
+  const grid = '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:' + (200 + M * 62) + 'px;border-collapse:collapse">' +
+    '<thead><tr><th style="position:sticky;left:0;background:var(--card);text-align:left">' + _t('Cash flow line') + '</th>' +
+    c.cumulative.map((_v, i) => '<th style="text-align:right;font-size:10.5px;padding:0 6px">' + mh(i + 1) + '</th>').join('') +
+    '<th style="text-align:right;padding-left:10px">' + _t('Total') + '</th></tr></thead><tbody>' +
+    section('Outflows — project costs') +
+    c.outflows.map(r => rowHtml(r.label, r.months)).join('') +
+    rowHtml('Total outflows', c.outByMonth, { strong: true, bg: 'var(--soft-bg)' }) +
+    section('Inflows — client milestones') +
+    c.inflows.map(r => rowHtml(r.label + ' ' + _tndNum(r.pct, 0) + '%', r.months)).join('') +
+    rowHtml('Total inflows', c.inByMonth, { strong: true, bg: 'var(--soft-bg)' }) +
+    section('Net') +
+    rowHtml('Net monthly', c.netByMonth, { strong: true }) +
+    rowHtml('Cumulative position', c.cumulative, { strong: true, bg: 'rgba(32,80,144,.06)' }) +
+    '</tbody></table></div></div>';
+
+  const miles = ((_tndSum || {}).milestones || []).map((m, i) =>
+    '<tr><td style="padding:5px 10px 5px 0">' + (can
+      ? '<input class="form-control" style="padding:5px 9px;font-size:12.5px" value="' + _tkEscA(m.label || '') + '" onchange="tndSetMilestone(' + i + ',\'label\',this.value)">'
+      : _estEsc(m.label)) + '</td>' +
+    '<td style="width:90px;padding:5px 10px 5px 0">' + (can
+      ? '<input class="form-control" type="number" step="any" style="padding:5px 9px;font-size:12.5px;text-align:right" value="' + _tkEscA(m.pct) + '" onchange="tndSetMilestone(' + i + ',\'pct\',this.value)">'
+      : _tndNum(m.pct, 1) + '%') + '</td>' +
+    '<td style="width:90px;padding:5px 10px 5px 0">' + (can
+      ? '<input class="form-control" type="number" step="1" min="1" style="padding:5px 9px;font-size:12.5px;text-align:right" value="' + _tkEscA(m.month) + '" onchange="tndSetMilestone(' + i + ',\'month\',this.value)">'
+      : 'M' + m.month) + '</td>' +
+    '<td style="width:40px;text-align:right">' + (can ? '<button class="btn btn-ghost btn-sm" style="color:#C00000;padding:6px 8px" onclick="tndRemoveMilestone(' + i + ')">' + _TRASH + '</button>' : '') + '</td></tr>').join('');
+
+  const milestones = '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><div style="font-size:12.5px;font-weight:800;color:var(--navy)">' + _t('Payment milestones') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _t('When the client pays, as a share of the contract. These decide how deep the hole gets — the same job on payment-on-handover terms needs several times the funding.') + '</div></div>' +
+    (can ? '<div style="display:flex;gap:6px"><button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tndAddMilestone()">' + tkIcon('plus') + _t('Add milestone') + '</button>' +
+      '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tndSetDuration()">' + _t('Duration') + ': ' + M + 'm</button></div>' : '') + '</div>' +
+    '<table style="width:100%;border-collapse:collapse"><thead><tr>' +
+    ['Milestone', '% of contract', 'Month', ''].map(h => '<th style="text-align:left;font-size:10.5px">' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + miles + '</tbody></table></div>';
+
+  _estSet(head + warn + chart + grid + milestones);
+}
+
+async function _tndSaveMilestones(list) {
+  const e = _estById(_estCur); if (!e) return;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: Object.assign({}, e, { milestones: list }) });
+    tkCollInvalidate('est_projects'); await tndReload();
+  } catch (x) { toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000); }
+}
+function _tndMiles() { return ((_tndSum || {}).milestones || []).map(m => ({ label: m.label, pct: m.pct, month: m.month })); }
+function tndSetMilestone(i, f, v) {
+  const l = _tndMiles(); if (!l[i]) return;
+  l[i][f] = (f === 'label') ? v : (+v || 0);
+  _tndSaveMilestones(l);
+}
+function tndRemoveMilestone(i) { const l = _tndMiles(); l.splice(i, 1); _tndSaveMilestones(l.length ? l : [{ label: _t('On completion'), pct: 100, month: 1 }]); }
+function tndAddMilestone() {
+  const l = _tndMiles();
+  l.push({ label: _t('New milestone'), pct: 0, month: Math.min(((_tndSum || {}).cash || {}).months || 24, (l.length + 1) * 4) });
+  _tndSaveMilestones(l);
+}
+async function tndSetDuration() {
+  const e = _estById(_estCur); if (!e) return;
+  const v = await tkPrompt({ title: _t('Project duration'), body: _t('How many months from start to handover?'),
+    type: 'number', value: String(((_tndSum || {}).cash || {}).months || 24) });
+  if (!v) return;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: Object.assign({}, e, { durationMonths: +v || 24 }) });
+    tkCollInvalidate('est_projects'); await tndReload();
+  } catch (x) { toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   RISK — what it is worth, against what has been set aside for it
+────────────────────────────────────────────────────────────────────────────── */
+
+const _TND_RISK_HEX = { 'Very low': '#00B060', Low: '#14B8A6', Medium: '#F59E0B', High: '#C2410C', 'Very high': '#C00000' };
+
+function tndTabRisk() {
+  const e = _estById(_estCur); const r = (_tndSum || {}).risk, sn = (_tndSum || {}).sensitivity;
+  if (!r) { _estSet('<div class="card" style="padding:18px;color:var(--text-light)">' + _t('No register yet.') + '</div>'); return; }
+  const can = _estCanPrice() && !_estFrozen(e);
+
+  /* The comparison the workbook only hints at, on the same screen as the register. */
+  const verdict = r.covered
+    ? '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--emerald)">' +
+      '<b style="color:var(--emerald-deep)">' + _t('The contingency covers the expected risk.') + '</b> ' +
+      '<span style="font-size:12.5px;color:var(--text-light)">' + _tndMoney(r.contingency) + ' ' + _t('set aside against an expected') + ' ' + _tndMoney(r.expectedValue) + '.</span></div>'
+    : '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--danger)">' +
+      '<b style="color:var(--danger)">' + _t('The contingency does not cover the expected risk.') + '</b> ' +
+      '<span style="font-size:12.5px;color:var(--text-light)">' + _tndMoney(r.contingency) + ' ' + _t('set aside against an expected') + ' ' + _tndMoney(r.expectedValue) +
+      ' — ' + _t('short by') + ' <b style="color:var(--danger)">' + _tndMoney(r.shortfall) + '</b>. ' +
+      _t('Raise the contingency on the Assumptions tab, mitigate the largest risks, or price the gap knowingly.') + '</span></div>';
+
+  const rows = r.rows.length ? r.rows.map(x => {
+    const hex = _TND_RISK_HEX[x.band] || '#5C6470';
+    const closed = String(x.status || '').toLowerCase() === 'closed';
+    return '<tr' + (closed ? ' style="opacity:.5"' : '') + '>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(x.code || '—') + '</td>' +
+      '<td><div style="font-weight:600">' + _estEsc(x.risk) + '</div>' +
+      (x.mitigation ? '<div style="font-size:11.5px;color:var(--text-light)">' + _estEsc(x.mitigation) + '</div>' : '') + '</td>' +
+      '<td style="font-size:12px">' + _estEsc(x.owner || '—') + '</td>' +
+      '<td style="text-align:right">' + _estBadge(_tndNum(x.probability, 0) + '% · ' + _t(x.band), hex) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(x.impact) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + _tndMoney(x.expected) + '</td>' +
+      '<td style="font-size:12px">' + _estEsc(x.status) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_risks', x.id, 'est_risks') : '') + '</td></tr>';
+  }).join('') : tkEmptyRow(8, _t('No risks recorded. A tender with no risks on it has not been read carefully.'), { icon: 'inbox' });
+
+  const register = '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:960px"><thead><tr>' +
+    ['Code', 'Risk & mitigation', 'Owner', 'Probability', 'Impact', 'Expected value', 'Status', ''].map((h, i) =>
+      '<th' + (i >= 3 && i <= 5 ? ' style="text-align:right"' : '') + '>' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + rows +
+    (r.rows.length ? '<tr style="background:var(--soft-bg)"><td colspan="4" style="font-weight:800;color:var(--navy)">' + _t('Total, open risks') + '</td>' +
+      '<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums">' + _tndMoney(r.worstCase) + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _tndMoney(r.expectedValue) + '</td>' +
+      '<td colspan="2" style="font-size:11.5px;color:var(--text-light)">' + _t('worst case · expected') + '</td></tr>' : '') +
+    '</tbody></table></div></div>';
+
+  const sens = sn ? '<div class="card" style="padding:0;overflow:hidden;margin-top:14px"><div style="padding:13px 16px;font-size:12.5px;color:var(--text-light)">' +
+    _t('What a cost overrun does to the margin. The price is held, because it has already been given to the customer — flexing both would let an overrun be absorbed by a price rise nobody agreed to.') +
+    ' <b style="color:var(--navy)">' + _t('This tender breaks even at a') + ' ' + _tndNum(sn.breakEvenOverrunPct, 1) + '% ' + _t('overrun') + '.</b></div>' +
+    '<div class="table-wrap"><table style="min-width:620px"><thead><tr>' +
+    ['Scenario', 'Cost', 'Profit', 'Margin', 'vs target', ''].map((h, i) => '<th' + (i >= 1 && i <= 4 ? ' style="text-align:right"' : '') + '>' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + sn.rows.map(x => {
+      const hex = x.verdict === 'On target' ? 'var(--emerald-deep)' : (x.verdict === 'Thin' ? 'var(--warning)' : 'var(--danger)');
+      return '<tr' + (x.step === 0 ? ' style="background:var(--soft-bg)"' : '') + '>' +
+        '<td style="font-weight:' + (x.step === 0 ? '800' : '600') + '">' + (x.step > 0 ? '+' : '') + _tndNum(x.step, 0) + '% ' + _t('on cost') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(x.cost) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(x.profit) + '</td>' +
+        '<td style="text-align:right;font-weight:700;color:' + hex + '">' + _tndNum(x.marginPct, 2) + '%</td>' +
+        '<td style="text-align:right;font-size:12px;color:' + hex + '">' + (x.vsTarget >= 0 ? '+' : '') + _tndNum(x.vsTarget, 2) + '</td>' +
+        '<td style="font-size:12px;color:' + hex + '">' + _t(x.verdict) + '</td></tr>';
+    }).join('') + '</tbody></table></div></div>' : '';
+
+  _estSet(verdict +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_risks\')">' + tkIcon('plus') + _t('Add risk') + '</button></div>' : '') +
+    register + sens);
 }
 
 function _sbKey(lab) { return 'sbsec_' + (lab.dataset.sbkey || (lab.textContent || '').trim()); }
@@ -29829,6 +30050,56 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Cash flow & risk register (2026-08-21) */
+  "% of contract": "% hợp đồng",
+  "Add milestone": "Thêm mốc",
+  "Cash Flow": "Dòng tiền",
+  "Cash flow line": "Mục dòng tiền",
+  "Closing position": "Số dư cuối kỳ",
+  "Cumulative cash position": "Số dư luỹ kế",
+  "Cumulative position": "Số dư luỹ kế",
+  "Expected value": "Giá trị kỳ vọng",
+  "How many months from start to handover?": "Bao nhiêu tháng từ khởi công đến bàn giao?",
+  "Inflows — client milestones": "Dòng vào — mốc thanh toán khách hàng",
+  "Loss-making": "Lỗ",
+  "Net monthly": "Dòng tiền thuần tháng",
+  "New milestone": "Mốc mới",
+  "No register yet.": "Chưa có sổ rủi ro.",
+  "No risks recorded. A tender with no risks on it has not been read carefully.": "Chưa ghi nhận rủi ro nào. Hồ sơ thầu không có rủi ro nào là hồ sơ chưa được đọc kỹ.",
+  "Nothing to forecast yet.": "Chưa có gì để dự báo.",
+  "On completion": "Khi hoàn thành",
+  "On target": "Đạt mục tiêu",
+  "Outflows — project costs": "Dòng ra — chi phí dự án",
+  "Payment milestones": "Mốc thanh toán",
+  "Peak funding required": "Vốn cần huy động cao nhất",
+  "Probability": "Xác suất",
+  "Project duration": "Thời gian dự án",
+  "Raise the contingency on the Assumptions tab, mitigate the largest risks, or price the gap knowingly.": "Hãy tăng dự phòng ở tab Giả định, giảm thiểu các rủi ro lớn nhất, hoặc chấp nhận phần chênh một cách có ý thức.",
+  "Risk & Sensitivity": "Rủi ro & độ nhạy",
+  "Risk & mitigation": "Rủi ro & biện pháp",
+  "Scenario": "Kịch bản",
+  "The contingency covers the expected risk.": "Dự phòng đủ bù rủi ro kỳ vọng.",
+  "The contingency does not cover the expected risk.": "Dự phòng KHÔNG đủ bù rủi ro kỳ vọng.",
+  "Thin": "Mỏng",
+  "This tender breaks even at a": "Hồ sơ này hoà vốn khi vượt",
+  "Total in": "Tổng thu",
+  "Total inflows": "Tổng dòng vào",
+  "Total out": "Tổng chi",
+  "Total outflows": "Tổng dòng ra",
+  "Total, open risks": "Tổng, rủi ro đang mở",
+  "Very high": "Rất cao",
+  "Very low": "Rất thấp",
+  "What a cost overrun does to the margin. The price is held, because it has already been given to the customer — flexing both would let an overrun be absorbed by a price rise nobody agreed to.": "Vượt chi phí ảnh hưởng thế nào tới biên lợi nhuận. Giá bán được giữ nguyên vì đã báo cho khách — thay đổi cả hai sẽ khiến phần vượt được bù bằng mức giá chưa ai đồng ý.",
+  "When the client pays, as a share of the contract. These decide how deep the hole gets — the same job on payment-on-handover terms needs several times the funding.": "Khi nào khách hàng thanh toán, tính theo tỷ lệ hợp đồng. Đây là yếu tố quyết định độ sâu của hố tiền — cùng một công trình nhưng thanh toán khi bàn giao sẽ cần vốn gấp nhiều lần.",
+  "cost of the works over": "chi phí thi công trong",
+  "deepest point, month": "điểm sâu nhất, tháng",
+  "milestones": "mốc thanh toán",
+  "on cost": "chi phí",
+  "overrun": "chi phí",
+  "set aside against an expected": "đã trích lập so với mức kỳ vọng",
+  "the profit, once everything is collected": "lợi nhuận, sau khi thu đủ",
+  "vs target": "so mục tiêu",
+  "worst case · expected": "xấu nhất · kỳ vọng",
   /* Tender & estimating — Vietnamese (2026-08-20) */
   "Workbook downloaded": "Đã tải bảng tính",
   "Could not build the workbook": "Không tạo được bảng tính",
