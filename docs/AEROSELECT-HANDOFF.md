@@ -170,6 +170,30 @@ const bytes = new TextEncoder().encode(JSON.stringify(canonical(attested)))
 A document whose hash does not match its contents is **refused outright**. That is the case where
 somebody opened the JSON and changed the airflow.
 
+#### Two rules that are invisible until they bite
+
+**The hash is over the PARSED VALUES, not the file's bytes.** A JSON number is a number: `810` and
+`810.0` are the same value to one side and different text to the other. Python's `json.dumps`
+preserves a float's trailing `.0`; JavaScript has no int/float distinction and cannot emit it at
+all:
+
+```
+python3 -c "import json;print(json.dumps(810.0))"   ->  810.0
+node    -e "console.log(JSON.stringify(810.0))"     ->  810
+```
+
+So **never put a whole-number float in a payload.** Write `810`, not `810.0`. The shipped example
+originally carried `810.0`, which made it unreproducible from JavaScript — the exact file offered as
+the thing to assert against. `tools/make_selection_example.py` now refuses to write one, and
+`tests/handoff_example_cross_language.js` runs the recipe below over the committed example in Node
+and fails CI if the hashes disagree.
+
+**Sort object KEYS recursively; never sort ARRAY elements.** `payload.sections` is ordered — it is
+the module chain in airflow order. A canonicaliser that sorted array contents would silently reorder
+a unit's sections and still hash "successfully", which is worse than failing. Python's
+`json.dumps(sort_keys=True)` never touches list order, so this is a hazard for the TypeScript side
+only — and this is where a TypeScript implementer will look.
+
 ### `signature` — checked when the two are paired
 
 HMAC-SHA256 over those same canonical bytes — the attested object, envelope included — keyed by a

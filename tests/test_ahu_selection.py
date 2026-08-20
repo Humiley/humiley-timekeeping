@@ -337,6 +337,42 @@ def test_the_summary_reads_like_something_a_person_would_confirm():
 
 # ── the example the spec hands to AeroSelect ─────────────────────────────────────────────────────
 
+def test_the_worked_example_carries_no_whole_number_float():
+    """A whole-number float makes the example unreproducible by the side it is FOR.
+
+    Python renders 810.0 with the trailing .0; JavaScript has no int/float distinction and writes
+    810. The example shipped with `sfpIntWm3s: 810.0`, so the AeroSelect exporter's first run
+    against it would have failed with no bug behind it — and the obvious fix would have been to bend
+    their canonicaliser until it matched, breaking the live path that works.
+
+    tests/handoff_example_cross_language.js proves the hashes agree; this states the underlying rule
+    on the Python side, where the file is generated.
+    """
+    import json
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(here, "docs", "examples",
+                           "aeroselect-selection-example.json"), encoding="utf-8") as fh:
+        doc = json.load(fh)
+
+    offenders = []
+
+    def walk(v, path):
+        if isinstance(v, dict):
+            for k, x in v.items():
+                walk(x, "%s.%s" % (path, k))
+        elif isinstance(v, list):
+            for i, x in enumerate(v):
+                walk(x, "%s[%d]" % (path, i))
+        elif isinstance(v, float) and v.is_integer():
+            offenders.append("%s = %r" % (path, v))
+
+    walk(doc["payload"], "payload")
+    walk(doc["aeroselect"], "aeroselect")
+    assert not offenders, (
+        "unreproducible from JavaScript — write these as integers: " + ", ".join(offenders))
+
+
 def test_the_worked_example_in_the_spec_actually_imports():
     """docs/examples/aeroselect-selection-example.json is what the AeroSelect side will assert its
     exporter against. A spec whose own example fails the check it documents is worse than none, so
