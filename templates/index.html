@@ -21540,12 +21540,16 @@ function pmRenderSchedule(pid) {
   const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Master Schedule') + _pmSchedTabBtn('detail', 'Detail Schedule') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
   const _pane = k => '<div id="psch-' + k + '"' + (_pmSchedTab === k ? ' data-built="1"' : ' style="display:none"') + '>' +
     (_pmSchedTab === k ? _pmSchedBuild[k]() : '') + '</div>';
-  _pmSet(kpis + subtabs + ['gantt', 'detail', 'activities', 'board', 'calendar'].map(_pane).join(''));
+  _pmSet(kpis + subtabs + _PM_SCHED_PANES.map(_pane).join(''));
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
   return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
 }
+/* The Schedule sub-panes, in order. Declared ONCE: this list is read by the renderer and by the
+   show/hide loop, and when it existed twice a new pane added to only one of them rendered fine
+   and was never displayed — every pane hidden, none shown, and nothing logged. */
+const _PM_SCHED_PANES = ['gantt', 'detail', 'activities', 'board', 'calendar'];
 function pmSchedTab(name) {
   _pmSchedTab = name;
   // Build this pane the first time it is shown. pmRenderSchedule re-creates the hosts on every
@@ -21555,7 +21559,7 @@ function pmSchedTab(name) {
     try { host.innerHTML = _pmSchedBuild[name](); } catch (e) { host.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Could not render: ' + _pmEsc(e.message) + '</div>'; }
     host.dataset.built = '1';
   }
-  ['gantt', 'activities', 'board', 'calendar'].forEach(k => {
+  _PM_SCHED_PANES.forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
     const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
   });
