@@ -138,5 +138,66 @@ t('good and bad rows are separated, not all-or-nothing', (() => {
   const r = parse(TAB(['HVAC', 'Good']) + '\n' + TAB(['', 'Bad']));
   return r.rows.length + '/' + r.bad.length; })(), '1/1');
 
+
+/* ── the register's HEADER SHAPE ─────────────────────────────────────────────────────────────────
+ *
+ * Every defect this feature produced was invisible to the checks above: a hidden pane, a header
+ * translated only as far as its first text node, a column count that stopped matching its rows.
+ * `node --check` cannot see any of it and neither can the arithmetic tests, so the only thing that
+ * ever caught them was opening the page — which is not something CI can do.
+ *
+ * This renders _pdRegister from the shipping file and checks the three properties a person would
+ * check by looking: the header spans as many columns as the rows do, the two header rows agree, and
+ * no header cell is split into fragments the DOM-walk translator would half-translate.
+ */
+const REG_START = 'function _pdRegister(', REG_END = '\nfunction _pdKpiRowFor';
+const ri = src.indexOf(REG_START);
+let rj = src.indexOf('\nfunction ', ri + 10);
+if (ri < 0 || rj < 0) {
+  console.error('Could not find _pdRegister in templates/index.html — update the markers, do NOT delete this test.');
+  process.exit(2);
+}
+const regStubs = `
+  const _PD_COLL = 'pm_detail';
+  const _pdCol = {};
+  const TK = { user: { role: 'manager' } };
+  function _t(s){ return s; }
+  function _tkEscA(s){ return String(s).replace(/"/g, '&quot;'); }
+  function _pmEsc(s){ return String(s == null ? '' : s); }
+  function _pmPct(v){ return Math.max(0, Math.min(100, Math.round(+v || 0))); }
+  function tkFmtDate(d){ return String(d || ''); }
+  function _pdGroupOf(pid, r){ return r.group; }
+  function _pdRollup(rows, day){ return { acc: 50, planned: 40, variance: 10 }; }
+  function _pdAcc(){ return 50; } function _pdDaily(){ return 5; } function _pdPlanned(){ return 40; }
+  function _pdLog(r){ return r.log || []; }
+  function _pdQtyPlan(r){ return +r.qtyPlan || 0; }
+  function _pdQtyAt(r){ return { q: +r.qtyAt || 0, inferred: !!r.inferred }; }
+  function _pdVarColor(){ return '#000'; } function _pdVarLabel(){ return 'x'; }
+  function _pmCard(title, coll, add, table, extra){ return table; }
+`;
+const reg = {};
+new Function(regStubs + src.slice(ri, rj) + '\n Object.assign(this, { _pdRegister });').call(reg);
+
+const ROWS = [
+  { id: 'A', group: 'G1', name: 'Duct run', qtyPlan: 240, qtyAt: 96, unit: 'm',
+    log: [{ d: '2026-08-15', qty: 96 }], start: '2026-08-01', finish: '2026-08-20' },
+  { id: 'B', group: 'G1', name: 'No quantity here', log: [] },
+];
+const html = reg._pdRegister('P1', ROWS, ['G1'], '2026-08-15');
+
+const spans = (tr) => (tr.match(/<t[hd][^>]*>/g) || [])
+  .reduce((n, tag) => n + (+(tag.match(/colspan="(\d+)"/) || [0, 1])[1] || 1), 0);
+const between = (s, a, b) => s.slice(s.indexOf(a) + a.length, s.indexOf(b));
+const headRows = between(html, '<thead>', '</thead>').split('<tr').slice(1);
+const bodyRows = between(html, '<tbody>', '</tbody>').split('<tr').slice(1);
+
+t('the header spans twelve columns', spans(headRows[0]), 12);
+t('the second header row fills the nine non-spanning columns', (headRows[1].match(/<th/g) || []).length, 9);
+t('every body row spans exactly twelve columns', [...new Set(bodyRows.map(spans))], [12]);
+t('no header cell is split by a <br>', /<th[^>]*>[^<]*<br/.test(headRows.join('')), false);
+t('the group header carries the measured block rule', /colspan="3"[^>]*border-left/.test(headRows[0]), true);
+t('the unit datalist is offered', html.indexOf('<datalist id="pd-units">') > -1, true);
+t('a measured line locks its scheduled quantity', html.indexOf('&#128274;') > -1, true);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
