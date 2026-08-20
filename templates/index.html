@@ -21457,85 +21457,100 @@ function _pdKpis(pid, rows, day) {
 function _pdRegister(pid, rows, cats, day) {
   const bar = (pct, color) => '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden">' +
     '<span style="display:block;height:100%;width:' + _pmPct(pct) + '%;background:' + color + '"></span></span>';
+  const n = v => (v === '' || v === null || v === undefined) ? '' : (Math.round(v * 100) / 100);
+  // The measured trio sits at the END of the row, after the dates: it is the EVIDENCE behind the
+  // percentages, not a competitor to them. A separate "% complete" column was dropped — Accumulated
+  // already IS actual/plan wherever a quantity exists, and the same number twice invites the reader
+  // to look for a difference that cannot be there.
+  const EDGE = 'border-left:1px solid var(--line);';
 
-  let body = '';
+  let body = '', lastCat = null;
   cats.forEach(cat => {
     const cr = rows.filter(r => _pdGroupOf(pid, r) === cat), roll = _pdRollup(cr, day);
     const open = !_pdCol[cat];
     body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
       '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
-      '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' item' + (cr.length === 1 ? '' : 's') + '</td>' +
-      '<td colspan="3"></td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums"></td>' +
+      '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' ' + _t('item(s)') + '</td>' +
+      '<td></td>' +
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
       '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
-      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' + (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
-      '<td colspan="3"></td></tr>';
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' +
+        (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
+      '<td colspan="2"></td>' +
+      '<td colspan="3" style="' + EDGE + '"></td><td></td></tr>';
     if (!open) return;
     cr.forEach(r => {
       const acc = _pdAcc(r, day), dly = _pdDaily(r, day), pl = _pdPlanned(r, day), v = acc - pl;
+      const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
+      // Locked once anything has been MEASURED against it: moving the denominator rewrites every
+      // percentage already reported. The server refuses it too — this only shows why.
+      const measured = _pdLog(r).some(e => e.qty !== undefined && e.qty !== null && e.qty !== '');
+      const canMove = !measured || (TK.user || {}).role === 'manager';
+      const cell = (field, val, extra, ro, tip) =>
+        '<input class="pd-cell" data-id="' + r.id + '" data-field="' + field + '"' + (ro ? ' readonly' : '') +
+        (tip ? ' title="' + _tkEscA(tip) + '"' : '') +
+        ' type="number" min="0" step="any" inputmode="decimal" value="' + (val === '' ? '' : val) + '" placeholder="—"' +
+        ' onchange="pdCellSave(this)"' +
+        ' style="width:76px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;padding:3px 6px;' +
+        'border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-family:inherit;' + (extra || '') + '"' +
+        ' onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'"' +
+        ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
       body += '<tr>' +
         '<td></td>' +
-        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span></td>' +
-        (function () {
-          // EDITABLE IN PLACE. Requiring a scheduled quantity to be set on the edit form first meant
-          // the register showed a row of greyed cells and no way in — a progress sheet you cannot
-          // type into. Every line now takes a figure right here; setting the scheduled quantity is
-          // the adjacent cell, not a different screen.
-          const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
-          const n = v => v === '' || v === null ? '' : (Math.round(v * 100) / 100);
-          const cell = (field, val, ph, extra) =>
-            '<input class="pd-cell" data-id="' + r.id + '" data-field="' + field + '" ' +
-            'type="number" min="0" step="any" inputmode="decimal" value="' + (val === '' ? '' : val) + '" ' +
-            'placeholder="' + _tkEscA(ph) + '" onchange="pdCellSave(this)" ' +
-            'style="width:74px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;padding:3px 6px;' +
-            'border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-family:inherit;' + (extra || '') + '" ' +
-            'onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'" ' +
-            'onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
-          const unitCell = '<input class="pd-cell" data-id="' + r.id + '" data-field="unit" value="' + _tkEscA(r.unit || '') + '" ' +
-            'placeholder="' + _tkEscA(_t('unit')) + '" onchange="pdCellSave(this)" ' +
-            'style="width:42px;font-size:11px;padding:3px 4px;border:1px solid transparent;border-radius:6px;' +
-            'background:transparent;color:var(--text-light);font-family:inherit" ' +
-            'onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'" ' +
-            'onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
-          // An inferred site figure is shown lighter and italic: it was back-calculated from a
-          // percentage somebody typed, and must never be mistaken for something measured on site.
-          const siteVal = at.inferred ? '' : n(at.q);
-          return '<td style="text-align:right;white-space:nowrap">' + cell('qtyPlan', qp ? n(qp) : '', _t('qty')) + unitCell + '</td>' +
-            '<td style="text-align:right;white-space:nowrap">' + cell('qtyAt', siteVal, at.inferred && qp ? String(n(at.q)) : _t('site'),
-              at.inferred ? 'color:var(--text-light);font-style:italic' : 'font-weight:600') +
-              (at.inferred && qp ? '<span title="' + _tkEscA(_t('Derived from the reported percentage — no site quantity filed yet')) + '" style="font-size:10px;color:var(--text-light);cursor:help">~</span>' : '') + '</td>' +
-            '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' +
-              (qp ? _pmPct(at.q / qp * 100) + '%' : '<span style="font-weight:500;color:var(--text-light);font-size:11px" title="' +
-                _tkEscA(_t('Set a scheduled quantity and this is worked out for you')) + '">—</span>') + '</td>';
-        })() +
+        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' +
+          (r.category ? '<div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(r.category) + '</div>' : '') + '</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
-        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b></td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b>' +
+          (qp ? '<div style="font-size:9.5px;color:var(--text-light);line-height:1.2">' + _t('measured') + '</div>' : '') + '</td>' +
         '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
-        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '" title="' + _pdVarLabel(v) + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</td>' +
-        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.start ? tkFmtDate(r.start) : '—') + '</td>' +
-        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.finish ? tkFmtDate(r.finish) : '—') + '</td>' +
+        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '" title="' + _tkEscA(_pdVarLabel(v)) + '">' +
+          (v >= 0 ? '+' : '') + v.toFixed(1) + '%</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">' + (r.start ? tkFmtDate(r.start) : '—') + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">' + (r.finish ? tkFmtDate(r.finish) : '—') + '</td>' +
+        // ── measured trio: ACTUAL · PLAN · UNIT ──
+        '<td style="text-align:right;white-space:nowrap;' + EDGE + '">' +
+          cell('qtyAt', at.inferred ? '' : n(at.q), at.inferred ? 'color:var(--text-light);font-style:italic' : 'font-weight:600') +
+          (at.inferred && qp ? '<span title="' + _tkEscA(_t('Derived from the reported percentage — no site quantity filed yet')) +
+            '" style="font-size:10px;color:var(--text-light);cursor:help">~</span>' : '') + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          cell('qtyPlan', qp ? n(qp) : '', canMove ? '' : 'color:var(--text-light);cursor:not-allowed', !canMove,
+               measured ? _t('Locked — work has been measured against this quantity. A manager can change it with a reason.') : '') +
+          (measured ? '<span style="font-size:9.5px;color:var(--text-light)">&#128274;</span>' : '') + '</td>' +
+        '<td style="white-space:nowrap"><input class="pd-cell" data-id="' + r.id + '" data-field="unit" value="' + _tkEscA(r.unit || '') + '"' +
+          ' placeholder="—" onchange="pdCellSave(this)" list="pd-units"' +
+          ' style="width:56px;font-size:12px;padding:3px 6px;border:1px solid transparent;border-radius:6px;' +
+          'background:transparent;color:var(--text);font-family:inherit"' +
+          ' onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'"' +
+          ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'"></td>' +
         '<td style="text-align:right;white-space:nowrap">' +
           '<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdProgress(\'' + r.id + '\')">' + _t('Report') + '</button> ' +
           '<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="tkQuickAdd(\'' + _PD_COLL + '\',\'' + r.id + '\')">' + _t('Edit') + '</button>' +
         '</td></tr>';
     });
   });
-  const table = '<div class="table-wrap"><table style="min-width:980px"><thead><tr>' +
-    ['Category', 'Report Items', 'Scheduled<br>quantity', 'Actual<br>at site', '% Complete<br>(site / scheduled)',
-     'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
+
+  const HEAD = [['Category', ''], ['Report Items', ''], ['Daily Progress (%)', 'right'],
+    ['Accumulated Progress (%)', 'right'], ['Planned to date (%)', 'right'], ['Variance', 'right'],
+    ['Start Date', ''], ['Finish Date', ''],
+    ['Actual at site', 'right'], ['Scheduled quantity', 'right'], ['Unit', ''], ['', '']];
+  // ONE text node per header. A <br> splits it in two and the DOM-walk translator matches only the
+  // first — which is how "Actual at site" came out as "Thực tế at site".
+  const table = '<datalist id="pd-units">' + ['m', 'm²', 'm³', 'kg', 'no.', 'set', 'lot', 'point', 'zone']
+      .map(u => '<option value="' + u + '">').join('') + '</datalist>' +
+    '<div class="table-wrap"><table style="min-width:1180px"><thead><tr>' +
+    HEAD.map((h, i) => '<th style="white-space:normal;min-width:' + (i === 1 ? 190 : 78) + 'px' +
+      (h[1] === 'right' ? ';text-align:right' : '') + (i === 8 ? ';' + EDGE : '') + '">' + _t(h[0]) + '</th>').join('') +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
 
   return '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
-      '<span><b style="color:var(--text)">Daily</b> is today\u2019s increment — 0% unless a reading was filed today.</span>' +
-      '<span><b style="color:var(--text)">Planned</b> is straight-line between start and finish.</span>' +
-      '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
+      '<span><b style="color:var(--text)">' + _t('Daily') + '</b> ' + _t('is today’s increment — 0% unless a reading was filed today.') + '</span>' +
+      '<span><b style="color:var(--text)">' + _t('Accumulated') + '</b> ' + _t('is actual ÷ scheduled where a quantity is set, otherwise the reported percentage.') + '</span>' +
+      '<span><b style="color:var(--text)">' + _t('Roll-up') + '</b> ' + _t('is weighted by duration (or by the weight you set), never a plain average.') + '</span>' +
     '</div>' +
     _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table,
       '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
       '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>');
 }
-
 /* ── Power BI feed ────────────────────────────────────────────────────────────────────────────
    The datasets are already correct; this is just the door. Three URLs and one revocable key —
    deliberately not a session token, because a Power BI dataset refreshes unattended for months. */
@@ -21962,6 +21977,15 @@ async function pdCellSave(el) {
   else if (field === 'qtyPlan') {
     const v = raw === '' ? 0 : Math.max(0, +raw || 0);
     if (raw !== '' && !(v > 0)) { toast(_t('A scheduled quantity must be a positive number.'), 'warn'); return; }
+    const measured = _pdLog(r).some(e => e.qty !== undefined && e.qty !== null && e.qty !== '');
+    if (measured && v !== _pdQtyPlan(r)) {
+      // Ask BEFORE the request, so the reason is given while the person still remembers why — not
+      // extracted from them by a 400 after the fact.
+      const why = await tkPrompt(_t('Why is the scheduled quantity changing?'), '',
+        _t('This rewrites every percentage already reported against it — e.g. "Variation VO-014 reduced the run".'));
+      if (!why || why.trim().length < 4) { _pmReload(); return; }
+      body.qtyPlanReason = why.trim();
+    }
     body.qtyPlan = v;
   } else if (field === 'qtyAt') {
     const qp = _pdQtyPlan(r);
@@ -24047,6 +24071,30 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Register trio at row end (2026-08-20) */
+  'measured': 'đã đo',
+  'is actual ÷ scheduled where a quantity is set, otherwise the reported percentage.': 'là thực tế ÷ kế hoạch khi có khối lượng, nếu không thì lấy phần trăm đã báo.',
+  'is today’s increment — 0% unless a reading was filed today.': 'là phần tăng trong ngày — 0% nếu hôm nay chưa ghi nhận.',
+  'is weighted by duration (or by the weight you set), never a plain average.': 'có trọng số theo thời lượng (hoặc trọng số bạn đặt), không phải trung bình cộng.',
+  'Daily': 'Trong ngày',
+  'Accumulated': 'Luỹ kế',
+  'Roll-up': 'Tổng hợp',
+
+  /* Register headers as single text nodes (2026-08-20) */
+  'Report Items': 'Hạng mục báo cáo',
+  'Daily Progress (%)': 'Tiến độ trong ngày (%)',
+  'Accumulated Progress (%)': 'Tiến độ luỹ kế (%)',
+  'Planned to date (%)': 'Kế hoạch đến nay (%)',
+  'Finish Date': 'Ngày kết thúc',
+  'Category': 'Loại',
+
+  /* Baseline guard + tab order (2026-08-20) */
+  'Board': 'Bảng',
+  'Locked — work has been measured against this quantity. A manager can change it with a reason.': 'Đã khoá — đã có khối lượng thực tế đo theo con số này. Quản lý có thể đổi kèm lý do.',
+  'Measured against — changing it needs a reason': 'Đã có đo thực tế — đổi thì phải nêu lý do',
+  'Why is the scheduled quantity changing?': 'Vì sao thay đổi khối lượng kế hoạch?',
+  'This rewrites every percentage already reported against it — e.g. \'Variation VO-014 reduced the run\'.': 'Việc này viết lại mọi phần trăm đã báo cáo theo con số cũ — VD: \'Phát sinh VO-014 giảm chiều dài tuyến\'.',
+
   /* Inline register editing (2026-08-20) */
   'unit': 'đơn vị',
   'qty': 'khối lượng',

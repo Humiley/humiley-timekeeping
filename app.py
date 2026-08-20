@@ -13448,6 +13448,47 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     body.pop(_k, None)
             body.pop("hasCv", None)            # derived read-only flag, never stored
+        # ── pm_detail: the DENOMINATOR is a baseline, not a free-text field ───────────────────────
+        # Percent complete is site quantity over scheduled quantity. Once anybody has measured
+        # against a scheduled quantity, moving it silently rewrites every percentage that was ever
+        # reported off it — the roll-up, the master activity, the S-curve and the client's progress
+        # report all change, and nothing on screen says why. Lowering it flatters the job; raising it
+        # buries a delay. So: free to set while nothing has been measured, and after that a manager's
+        # decision with a stated reason, kept on the record and in the tamper-evident chain.
+        if name == "pm_detail":
+            _prevq = db.get_collection_item(name, iid) or {}
+            def _f(v):
+                try:
+                    return float(v or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            _oldq, _newq = _f(_prevq.get("qtyPlan")), _f((body or {}).get("qtyPlan"))
+            _reason = str((body or {}).get("qtyPlanReason") or "").strip()
+            body = dict(body or {})
+            body.pop("qtyPlanReason", None)          # a justification, not a column
+            if abs(_oldq - _newq) > 1e-9:
+                _measured = [e for e in (_prevq.get("log") or [])
+                             if isinstance(e, dict) and e.get("qty") not in (None, "")]
+                if _measured:
+                    if u.get("role") != "manager":
+                        return self._err(
+                            "%s has %d measured reading(s) against a scheduled quantity of %s. "
+                            "Changing it rewrites every percentage already reported, so it needs a "
+                            "manager." % (_prevq.get("name") or "This item", len(_measured),
+                                          ("%g" % _oldq) if _oldq else "none"), 403)
+                    if len(_reason) < 4:
+                        return self._err("Say why the scheduled quantity is changing — it moves "
+                                         "progress that has already been reported.", 400)
+                    _hist = list(_prevq.get("qtyPlanLog") or [])
+                    _hist.append({"from": _oldq, "to": _newq, "reason": _reason[:300],
+                                  "by": u.get("name") or u.get("id") or "", "at": _now_iso()})
+                    body["qtyPlanLog"] = _hist
+                    self._audit_cv(u, "Scheduled quantity changed", _prevq,
+                                   "%g -> %g (%s) - %s" % (_oldq, _newq, _prevq.get("unit") or "", _reason[:200]))
+                elif _prevq.get("qtyPlanLog"):
+                    body["qtyPlanLog"] = _prevq.get("qtyPlanLog")
+            elif _prevq.get("qtyPlanLog") and not body.get("qtyPlanLog"):
+                body["qtyPlanLog"] = _prevq.get("qtyPlanLog")
         if name in self.ISSUED_ONLY:
             # Fetched here rather than relying on `existing`, which the branches below assign only
             # for the collections they handle — reading it at this point raised a NameError.
