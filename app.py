@@ -45,6 +45,7 @@ import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hou
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations, the test matrix (pure)
 import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
+import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4046,6 +4047,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/ahu/unit/") and path.endswith("/route"):
             _uid = path[len("/api/ahu/unit/"):-len("/route")]
             return self._guard(lambda u: self._ahu_route_build_ep(u, urllib.parse.unquote(_uid)))
+        if path.startswith("/api/ahu/unit/") and path.endswith("/selection"):
+            _uid = path[len("/api/ahu/unit/"):-len("/selection")]
+            return self._guard(lambda u: self._ahu_selection_ep(u, urllib.parse.unquote(_uid), body))
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
         if path == "/api/invtrack/sptest":
@@ -5176,6 +5180,125 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s · %d step(s)" % (unit.get("family") or "?", len(rows))})
         orphans = [r["code"] for r in rows if r.get("orphan")]
         return self._json({"ok": True, "steps": len(rows), "orphans": orphans})
+
+    # ── The AeroSelect selection handoff ──────────────────────────────────────────────────────────
+    # A unit is sold on numbers AeroSelect computed, and production builds and tests against exactly
+    # those numbers. Retyping them is how a casing comes to be tested against the wrong limit, so
+    # they are imported as a document instead — hashed, optionally signed, and stamped with where
+    # they came from.
+    AHU_SELECTION_SECRET_ENV = "TK_AEROSELECT_SECRET"
+
+    def _ahu_selection_secret(self):
+        return (os.environ.get(self.AHU_SELECTION_SECRET_ENV) or "").strip() or None
+
+    def _ahu_selection_ep(self, u, uid, body):
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        unit = db.get_collection_item("ahu_units", uid)
+        if not unit:
+            return self._err("AHU not found.", 404)
+        ctx = ahu.load_ctx(uid)
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+        if not (is_mgr or self._ahu_named(u, ctx, "engineering")
+                or self._ahu_named(u, ctx, "production")):
+            return self._err("Importing a selection is done by engineering or production.", 403)
+
+        raw = (body or {}).get("document")
+        if isinstance(raw, str) and raw.startswith("data:"):
+            # A file picked in the browser arrives as a data: URI.
+            _head, _sep, _b64 = raw.partition(",")
+            if not _sep:
+                return self._err("That upload is not a readable file.", 400)
+            try:
+                raw = base64.b64decode(_b64, validate=False)
+            except Exception:
+                return self._err("That upload could not be decoded.", 400)
+        if raw in (None, ""):
+            return self._err("Attach the selection document exported from AeroSelect.", 400)
+
+        try:
+            doc = ahu_selection.parse(raw, self._ahu_selection_secret())
+        except ahu_selection.SelectionError as exc:
+            return self._err(str(exc), 400)
+
+        fields = ahu_selection.to_unit_fields(doc)
+        if not fields.get("family") and not unit.get("family"):
+            return self._err(
+                "This selection does not say which product family the unit is — modular, packaged, "
+                "hygienic or outdoor. The family decides which workstations and which tests apply, "
+                "so it is set by a person rather than guessed. Set it on the unit and import again.",
+                400)
+
+        # Re-importing a DIFFERENT selection onto a unit that has already been released to the shop
+        # floor is an engineering change, not an import. The design has moved under a unit somebody
+        # is already building, and that decision belongs to a person who can see what moved.
+        already = ahu.signed_codes(ctx["steps"])
+        released = "G2" in already
+        same = ahu_selection.is_same_selection(doc, unit)
+        diffs = ahu_selection.differences(doc, unit)
+        if released and not same and not (body or {}).get("supersede"):
+            return self._err(
+                "This unit passed gate G2 against selection %s, and this document is a different "
+                "selection (%s). Changing it now is an engineering change: raise one, record the "
+                "impact, and re-import with that decision attached." % (
+                    unit.get("selectionRef") or "(unrecorded)",
+                    ", ".join("%s %s -> %s" % (f, a if a not in (None, "") else "unset", b)
+                              for f, a, b in diffs[:6]) or "no visible field changed"),
+                409)
+        if released and not same and (body or {}).get("supersede") and not is_mgr:
+            return self._err("Superseding the selection a released unit was built to is a "
+                             "manager's decision.", 403)
+
+        before = {k: unit.get(k) for k in fields}
+        unit.update(fields)
+        unit["selectionImportedBy"] = u.get("name")
+        unit["selectionImportedOn"] = time.strftime("%Y-%m-%d")
+        db.put_collection_item("ahu_units", unit)
+
+        # Gate G2 asks for a selection report against the unit. The import IS that record, so it is
+        # filed as one rather than leaving somebody to attach a second copy by hand.
+        doc_id = "%s-selection" % uid
+        db.put_collection_item("ahu_docs", {
+            "id": doc_id, "unitId": uid, "kind": "Selection report",
+            "docNo": doc.get("selectionRef"),
+            "title": "AeroSelect selection — " + ahu_selection.summary(doc),
+            "rev": doc.get("engineVersion") or "", "status": "Issued",
+            "issuedOn": (doc.get("generatedOn") or "")[:10] or time.strftime("%Y-%m-%d"),
+            "form": "HML-AHU-SEL-001",
+            "selectionHash": doc.get("contentHash"),
+            "selectionVerified": bool(doc.get("verified")),
+            "createdBy": u.get("name"),
+        })
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "AeroSelect selection imported"
+                      + (" (superseding)" if released and not same else ""),
+            "target": "ahu_units/" + str(uid),
+            "detail": "%s · %s · %s" % (
+                ahu_selection.summary(doc),
+                "signature verified" if doc.get("verified")
+                else ("signed, not verified — no shared secret configured" if doc.get("signed")
+                      else "unsigned"),
+                doc.get("contentHash"))})
+
+        return self._json({
+            "ok": True,
+            "summary": ahu_selection.summary(doc),
+            "verified": bool(doc.get("verified")),
+            "signed": bool(doc.get("signed")),
+            "secretConfigured": bool(self._ahu_selection_secret()),
+            "applied": fields,
+            "changed": [{"field": k, "from": before.get(k), "to": v}
+                        for k, v in fields.items()
+                        if str(before.get(k) or "") != str(v or "")],
+            # The whole point of the integration, said out loud: these two are targets the factory
+            # still has to prove, not results anybody computed.
+            "targetsToProve": ahu_selection.classes_measured_by_test(doc),
+            "routeStale": bool(fields.get("family")
+                               and fields["family"] != (before.get("family") or "")),
+        })
 
     def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None, rec=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.

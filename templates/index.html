@@ -27991,6 +27991,146 @@ function ahuFailStep(code) {
   });
 }
 
+/* ── The AeroSelect selection ──
+   The numbers a unit is built and tested against come from the selection, not from somebody
+   retyping them. This panel says which figures came from where, whether the document was
+   signature-verified, and — the part that matters — which declared classes are still only targets
+   that a test has to prove. */
+function _ahuSelectionPanel(d) {
+  const u = d.unit || {};
+  const has = !!u.selectionRef;
+  const imp = '<button class="btn ' + (has ? 'btn-ghost' : 'btn-primary') + ' btn-sm" ' +
+    'style="font-size:11.5px" onclick="ahuImportSelection()">' + tkIcon('upload', 12) + ' ' +
+    (has ? 'Import a newer selection' : 'Import the AeroSelect selection') + '</button>';
+  if (!has) {
+    return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+      '<div><div style="font-weight:800;color:var(--navy)">AeroSelect selection</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' +
+      'No selection imported. Gate G2 needs one, and until it is here the airflow, the casing classes ' +
+      'and the test limits are whatever somebody typed.</div></div>' + imp + '</div>');
+  }
+  const verified = u.selectionVerified
+    ? _ahuBadge('Signature verified', '#00B060', 'Signed by the paired AeroSelect and checked here')
+    : _ahuBadge('Signature not verified', '#A16207',
+        'Accepted, but not signature-checked — no shared secret is configured on this portal');
+  const rows = [
+    ['Selection reference', u.selectionRef],
+    ['Computed by', [u.selectionEngine, u.selectionEngineVersion].filter(Boolean).join(' ')],
+    ['Generated', (u.selectionGeneratedOn || '').slice(0, 10)],
+    ['Imported by', [u.selectionImportedBy, u.selectionImportedOn].filter(Boolean).join(' · ')],
+    ['ErP verdict', u.selectionErp],
+    ['Eurovent class', u.selectionEurovent],
+    ['SFP_int', u.selectionSfpInt ? u.selectionSfpInt + ' W/(m³/s)' : '']
+  ].filter(r => r[1]);
+
+  /* D, T and TB are computed by AeroSelect. L and F are NOT — its own type marks them "test-only,
+     undefined until tested", because EN 1886 awards them by testing a built unit. So they show as
+     targets against the test that proves them, and never as though they were measurements. */
+  const proof = { L: 'T3', F: 'T4' };
+  const stepBy = {}; (d.steps || []).forEach(s => stepBy[s.code] = s);
+  const cls = ['D', 'L', 'F', 'T', 'TB'].map(k => {
+    const v = u['class' + k];
+    if (!v) return '';
+    const t = proof[k];
+    if (!t) {
+      return '<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:12px">' +
+        '<span style="font-weight:700;color:var(--navy)">' + _ahuEsc(v) + '</span> ' +
+        '<span style="color:var(--text-light)">— computed by AeroSelect</span></div>';
+    }
+    const s = stepBy[t] || {};
+    const done = _ahuSigned(s.status);
+    const tone = done ? '#00B060' : '#A16207';
+    const said = done ? ('proved by ' + t + (s.signedOn ? ' on ' + s.signedOn : ''))
+                      : ('a target — ' + t + ' has to prove it on the built unit');
+    return '<div style="padding:5px 0;border-bottom:1px solid var(--line);font-size:12px">' +
+      '<span style="font-weight:700;color:var(--navy)">' + _ahuEsc(v) + '</span> ' +
+      '<span style="color:' + tone + '">— ' + _ahuEsc(said) + '</span></div>';
+  }).join('');
+
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><div style="font-weight:800;color:var(--navy)">AeroSelect selection</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">These figures were read from the selection, not typed.</div></div>' +
+    '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">' + verified + imp + '</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px">' +
+    rows.map(r => '<div><div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(r[0]) + '</div>' +
+      '<div style="font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums">' +
+      _ahuEsc(r[1]) + '</div></div>').join('') + '</div>' +
+    (cls ? '<div style="margin-top:11px"><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-bottom:3px">' +
+      'EN 1886 classes</div>' +
+      '<div style="font-size:11px;color:var(--text-light);margin-bottom:5px">' +
+      'AeroSelect computes strength, transmittance and thermal bridging. Leakage and filter bypass it ' +
+      'will not compute — those are awarded by testing a built unit, which is what this factory does.</div>' +
+      cls + '</div>' : ''));
+}
+
+function ahuImportSelection() {
+  const el = document.createElement('input');
+  el.type = 'file';
+  el.accept = '.json,application/json';
+  el.onchange = () => {
+    const f = el.files && el.files[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => _ahuSelectionSend(rd.result, false);
+    rd.onerror = () => toast('That file could not be read.', 'warn');
+    rd.readAsDataURL(f);
+  };
+  el.click();
+}
+
+async function _ahuSelectionSend(dataUri, supersede) {
+  try {
+    const r = await tkApi('/api/ahu/unit/' + encodeURIComponent(_AHU.unitId) + '/selection',
+      { method: 'POST', body: { document: dataUri, supersede: !!supersede } });
+    const targets = Object.keys(r.targetsToProve || {});
+    let msg = 'Selection imported — ' + r.summary + '.';
+    if ((r.changed || []).length) msg += ' ' + r.changed.length + ' figure(s) updated.';
+    if (!r.verified) {
+      msg += r.secretConfigured ? '' :
+        ' Accepted unverified — no shared signing secret is configured on this portal.';
+    }
+    if (targets.length) {
+      msg += ' ' + targets.map(k => 'class ' + k + ' is a target for ' +
+        r.targetsToProve[k]).join(', ') + '.';
+    }
+    toast(msg, undefined, 9000);
+    if (r.routeStale) {
+      toast('The product family changed, so the route no longer matches this unit. ' +
+        'Rebuild the route — signatures and readings are carried forward.', 'warn', 10000);
+    }
+    ahuRenderTraveller();
+  } catch (e) {
+    // 409 is the deliberate refusal to re-specify a unit that is already being built. It is not an
+    // error to hide behind a toast — somebody has to decide, so show them what moved and ask.
+    if (/engineering change/i.test(e.message || '')) return _ahuSupersedeAsk(e.message, dataUri);
+    toast('Could not import that selection: ' + e.message, 'warn', 9000);
+  }
+}
+
+function _ahuSupersedeAsk(why, dataUri) {
+  document.getElementById('ahuSupersedeOverlay')?.remove();
+  const el = document.createElement('div');
+  el.id = 'ahuSupersedeOverlay';
+  el.className = 'modal-overlay';
+  el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:560px">' +
+    '<div class="modal-header"><h3 style="margin:0">This unit is already being built</h3></div>' +
+    '<div class="modal-body" style="font-size:13px;line-height:1.55">' +
+    '<p style="margin-top:0">' + _ahuEsc(why) + '</p>' +
+    '<p>Superseding it records that the unit is now built to a different selection. ' +
+    'Raise the engineering change first, so the cost and schedule impact are assessed — this only ' +
+    'changes what the factory builds and tests against.</p></div>' +
+    '<div class="modal-footer">' +
+    '<button class="btn btn-ghost" onclick="document.getElementById(\'ahuSupersedeOverlay\').remove()">Cancel</button>' +
+    '<button class="btn btn-primary" id="ahu-supersede-go">' + tkIcon('check', 13) +
+    ' Supersede the selection</button></div></div>';
+  document.body.appendChild(el);
+  document.getElementById('ahu-supersede-go').onclick = () => {
+    el.remove();
+    _ahuSelectionSend(dataUri, true);
+  };
+}
+
 /* ── Documents & drawings ── */
 function _ahuTabDocs(d) {
   const docs = d.docs || [];
@@ -28017,7 +28157,8 @@ function _ahuTabDocs(d) {
     _ahuA(x.id) + '\')">Edit</button></td></tr>').join('')
     : '<tr><td colspan="7" style="color:var(--text-light);padding:14px">Nothing filed against this unit yet.</td></tr>';
 
-  return _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Travels with the unit</div>' +
+  return _ahuSelectionPanel(d) + '<div style="height:12px"></div>' +
+    _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Travels with the unit</div>' +
     '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
     'SOP section 12.5. Gate G6 refuses dispatch until every one of these is attached.</div>' + check) +
     '<div style="height:12px"></div>' +
@@ -28867,6 +29008,21 @@ const _VI = {
   'Measured values': 'Giá trị đo được',
   'As-built record': 'Hồ sơ hoàn công',
   'Contract review': 'Soát xét hợp đồng',
+  /* AeroSelect selection handoff (2026-08-21) — qualified, same rule as above. */
+  'AeroSelect selection': 'Bảng tính chọn AeroSelect',
+  'Import the AeroSelect selection': 'Nhập bảng tính chọn AeroSelect',
+  'Import a newer selection': 'Nhập bảng tính chọn mới hơn',
+  'Signature verified': 'Chữ ký đã được xác thực',
+  'Signature not verified': 'Chữ ký chưa được xác thực',
+  'Selection reference': 'Mã bảng tính chọn',
+  'Computed by': 'Tính bởi',
+  'Imported by': 'Nhập bởi',
+  'ErP verdict': 'Kết luận ErP',
+  'Eurovent class': 'Cấp Eurovent',
+  'EN 1886 classes': 'Các cấp EN 1886',
+  'These figures were read from the selection, not typed.': 'Các thông số này được đọc từ bảng tính chọn, không phải nhập tay.',
+  'This unit is already being built': 'Sản phẩm này đã bắt đầu được chế tạo',
+  'Supersede the selection': 'Thay thế bảng tính chọn',
   /* The door to the FIRST detail schedule (2026-08-20) */
   'New detail schedule': 'Tiến độ chi tiết mới',
   'One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.':
