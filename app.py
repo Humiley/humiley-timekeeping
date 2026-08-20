@@ -62,6 +62,7 @@ import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
+import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
@@ -3999,6 +4000,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._myspace_summary(u))
         if path == "/api/est/summary":
             return self._guard(lambda u: self._est_summary_ep(u, qs))
+        if path == "/api/tender/summary":
+            return self._guard(lambda u: self._tender_summary_ep(u, qs))
         if path == "/api/exec/summary":
             return self._guard(lambda u: self._exec_summary(u))
         if path == "/api/exec/trends":
@@ -6777,6 +6780,66 @@ class Handler(BaseHTTPRequestHandler):
             "budget": estimating.budget_lines(items, res, markups),
         })
 
+    def _tender_summary_ep(self, u, qs):
+        """A tender priced by whichever model it uses, plus the quotation it produces.
+
+        Trading and EPC are two different costing engines and one document. Which engine runs is
+        the tender's own `costingType`, not a query parameter: the type is a property of the job,
+        and letting the caller choose it would let two people read the same tender two ways.
+        """
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required — a tender holds the company's cost and margin.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        tid = (qs.get("id") or [""])[0].strip()
+        e = self._est_get(tid)
+        if not e:
+            return self._err("Tender not found.", 404)
+        a = tender.assumptions(e.get("assump"))
+        ctype = str(e.get("costingType") or tender.TRADING).strip().lower()
+        out = {"tender": e, "assumptions": a, "costingType": ctype,
+               "assumptionSpec": [{"key": k, "group": g, "label": l, "default": d, "unit": un, "note": nt}
+                                  for k, g, l, d, un, nt in tender.ASSUMPTIONS]}
+        master = rollup = None
+        try:
+            if ctype == tender.EPC:
+                rollup = tender.bom_rollup(
+                    [r for r in db.list_collection("est_bom") if r.get("estId") == tid],
+                    a, e.get("bomConfig") or {})
+                out["rollup"] = rollup
+                out["costCentres"] = [{"key": k, "label": l, "markupPct": m,
+                                       "optional": k in tender.OPTIONAL_CENTRES}
+                                      for k, l, m in tender.COST_CENTRES]
+            else:
+                master = tender.cost_master(
+                    [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
+                    [r for r in db.list_collection("est_local") if r.get("estId") == tid], a)
+                out["master"] = master
+            overrides = [r for r in db.list_collection("est_quote") if r.get("estId") == tid]
+            quote = tender.quotation(e, master=master, rollup=rollup, overrides=overrides)
+            out["quote"] = quote
+            out["pnl"] = tender.pnl(quote, e)
+            out["issue"] = tender.issue_check(e, quote)
+            # The customer's copy. Assembled server-side from the same figures as the totals above,
+            # so the preview, the PDF and the P&L cannot be three different documents.
+            out["document"] = tender.document(e, quote, self._company_identity())
+        except ValueError as ex:
+            return self._err(str(ex), 400)
+        except AssertionError as ex:
+            return self._err("This tender did not reconcile (%s). It has not been served — please report it." % ex, 500)
+        return self._json(out)
+
+    def _company_identity(self):
+        """Who is quoting, as a document has to state it. `company` already holds this for
+        contracts and letters — a quotation must not invent a second version of it."""
+        try:
+            return company.identity(db.get_setting("portal_company") or {})
+        except Exception:
+            try:
+                return {"name": (db.get_setting("portal_company") or {}).get("name") or ""}
+            except Exception:
+                return {}
+
     def _est_adopt_ep(self, u, body):
         """Hand a won estimate to a project as its budget.
 
@@ -7037,7 +7100,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_quote"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -7131,6 +7194,7 @@ class Handler(BaseHTTPRequestHandler):
     # which is where a won estimate lands.
     EST_MIN = "manager"
     READ_MIN = {"est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
+                "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_quote": EST_MIN,
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's

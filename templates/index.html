@@ -26525,6 +26525,22 @@ function engStatusPDF(pid) {
    once written twice, in two languages, and drifted. This file draws; the server decides.
 ────────────────────────────────────────────────────────────────────────────── */
 
+/* The tender vocabulary. Declared here, above the form specs that read it: a `const` is in its
+   temporal dead zone until its own line runs, and _QA_SPECS is BUILT (not just read) further down
+   this file — so declaring these beside the tender rendering code threw at load. */
+const TND_TYPES = [
+  { k: 'boq', label: 'Build-up (BoQ)', desc: 'Installation work priced from material, labour, plant and subcontract' },
+  { k: 'trading', label: 'Trading (import / local)', desc: 'Products bought abroad or in Vietnam and resold — landed cost' },
+  { k: 'epc', label: 'EPC / turnkey', desc: 'A plant priced as a bill of materials per cost centre' }
+];
+const TND_CO_FORMS = ['', 'None', 'Form D (ATIGA)', 'Form E (ACFTA)', 'Form AK (AKFTA)', 'Form AJ (AJCEP)',
+  'Form AI (AIFTA)', 'Form AANZ (AANZFTA)', 'Form VK (VKFTA)', 'Form EUR.1 (EVFTA)',
+  'Form CPTPP', 'Form RCEP', 'Form S (VN-Laos)', 'Form VC (VCFTA)'];
+const TND_CURRENCIES = ['USD', 'EUR', 'CNY', 'JPY'];
+/* Cost-centre keys, mirrored from tender.COST_CENTRES on the server. The labels and default
+   mark-ups live there; only the picker's option list is needed here. */
+const TND_CENTRE_KEYS = ['CIV', 'MEP', 'BUT', 'CUT', 'CLR', 'OSD', 'PFI', 'LVP', 'SVP', 'QCL', 'WHS', 'CON'];
+
 const _EST_CORE = ['est_projects'];
 const _EST_STATUS = ['Draft', 'Submitted', 'Approved', 'Won', 'Lost', 'Cancelled'];
 const _EST_STATUS_HEX = { Draft: '#5C6470', Submitted: '#F59E0B', Approved: '#205090', Won: '#00B060', Lost: '#C00000', Cancelled: '#9AA3AF' };
@@ -26635,12 +26651,17 @@ const _EST_TABS = [
 async function estRenderWorkspace() {
   const root = document.getElementById('est-estimate-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
-  await _estNeed(['est_projects', 'est_items', 'est_resources', 'est_rates']);
+  await _estNeed(['est_projects', 'est_items', 'est_resources', 'est_rates',
+                  'est_landed', 'est_local', 'est_bom', 'est_quote']);
   const e = _estById(_estCur);
   if (!e) { root.innerHTML = '<div class="card" style="padding:20px">' + _t('Estimate not found.') + ' <a href="#" onclick="showView(\'est-projects\',null,\'Estimates\');return false">' + _t('Back to Estimates') + '</a></div>'; return; }
-  const err = await _estLoadSummary(e.id);
+  // Which engine priced this tender decides which summary it reads. A build-up reads
+  // /api/est/summary; Trading and EPC read /api/tender/summary. Both are the server's.
+  const _ty = String(e.costingType || 'boq').toLowerCase();
+  const err = (_ty === 'boq') ? await _estLoadSummary(e.id) : await _tndLoad(e.id);
   const hex = _EST_STATUS_HEX[e.status || 'Draft'] || '#5C6470';
   const s = (_estSum || {}).summary || null;
+  if (_ty !== 'boq') _estSum = null;    // the BoQ summary is not this tender's; do not draw from it
 
   const hdr = '<div class="card" style="padding:16px 18px;margin-bottom:14px">' +
     '<button class="btn btn-ghost btn-sm" onclick="showView(\'est-projects\',null,\'Estimates\')" style="font-size:12px">' + tkIcon('arrowLeft', 13) + ' ' + _t('Estimates') + '</button>' +
@@ -26651,13 +26672,13 @@ async function estRenderWorkspace() {
     (e.adoptedProjectId ? _estBadge(_t('Budget set'), '#00B060') : '') +
     (_estCanPrice() ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')" style="font-size:11px">' + _PENCIL + ' ' + _t('Edit') + '</button>' : '') +
     '</div></div>' +
-    (s ? _estHeadline(s) : '') +
+    (_ty === 'boq' ? (s ? _estHeadline(s) : '') : _tndHeadline()) +
     '<div id="est-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _EST_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="estTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _estTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _estTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + _t(t.label) + '</button>').join('') +
+    _tndTabs().map(t => '<button class="tab" data-k="' + t.k + '" onclick="estTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _estTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _estTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + _t(t.label) + '</button>').join('') +
     '</div></div>';
 
   const warn = err ? '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--danger);color:var(--danger);font-size:12.5px"><b>' + _t('The server could not price this estimate') + '</b><br>' + _estEsc(err) + '</div>' : '';
-  root.innerHTML = hdr + warn + _estDrift() + '<div id="est-tab-body"></div>';
+  root.innerHTML = hdr + warn + (_ty === 'boq' ? _estDrift() : '') + '<div id="est-tab-body"></div>';
   estTab(_estTabK);
 }
 
@@ -26696,7 +26717,9 @@ function _estDrift() {
 }
 
 function estTab(k) {
-  const t = _EST_TABS.find(x => x.k === k); if (!t) return;
+  const tabs = _tndTabs();
+  const t = tabs.find(x => x.k === k) || tabs[0]; if (!t) return;
+  k = t.k;
   _estTabK = k;
   document.querySelectorAll('#est-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
   try { (window[t.fn] || function () { })(); }
@@ -26706,6 +26729,7 @@ function _estSet(html) { const b = document.getElementById('est-tab-body'); if (
 
 /* After any write: reload the collection, re-read the server's arithmetic, redraw the tab AND the
    header (the headline margin has to move with the edit that changed it). */
+/* eslint-disable no-unused-vars */
 async function estReload() {
   await _estNeed(['est_items', 'est_resources', 'est_projects', 'est_rates']);
   await estRenderWorkspace();
@@ -27014,8 +27038,26 @@ Object.assign(_QA_SPECS, {
       { k: 'estNo', label: 'Estimate No.' },
       { k: 'client', label: 'Client', type: 'combo', dyn: 'companies' },
       { k: 'clientRef', label: 'Client tender reference' },
+      { k: 'costingType', label: 'Costing model — decides which tabs this tender has', type: 'select', options: TND_TYPES.map(x => x.k) },
       { k: 'contractType', label: 'Contract type', type: 'select', options: PM_CONTRACT_TYPE },
       { k: 'status', label: 'Status', type: 'select', options: _EST_STATUS },
+      { k: 'quoteNo', label: 'Quotation No. (as the customer will cite it)' },
+      { k: 'clientAddress', label: 'Customer address' },
+      { k: 'clientTaxCode', label: 'Customer tax code (MST)' },
+      { k: 'clientAttn', label: 'Attn. — name and title' },
+      { k: 'clientContact', label: 'Customer email / phone' },
+      { k: 'projectName', label: 'Project name (on the quotation)' },
+      { k: 'projectCode', label: 'Project code' },
+      { k: 'site', label: 'Site' },
+      { k: 'issueDate', label: 'Issue date', type: 'date' },
+      { k: 'validUntil', label: 'Valid until', type: 'date' },
+      { k: 'amountInWords', label: 'Amount in words (stated on the quotation)' },
+      { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' },
+      { k: 'approvedBy', label: 'Approved by', type: 'select', options: 'employees' },
+      { k: 'bankName', label: 'Bank' },
+      { k: 'bankAccount', label: 'Bank account No.' },
+      { k: 'bankSwift', label: 'SWIFT' },
+      { k: 'intro', label: 'Opening paragraph (blank uses the standard wording)', type: 'textarea' },
       { k: 'dateIssued', label: 'Priced on', type: 'date' },
       { k: 'dueDate', label: 'Submission due', type: 'date' },
       { k: 'validityDays', label: 'Price validity (days)', type: 'number' },
@@ -27056,6 +27098,52 @@ Object.assign(_QA_SPECS, {
       { k: 'wastePct', label: 'Waste / allowance (%)', type: 'number' },
       { k: 'note', label: 'Notes' }]
   },
+  est_landed: {
+    title: 'Imported item', coll: 'est_landed', reload: 'est_landed', fields: [
+      { k: 'itemCode', label: 'Item code' },
+      { k: 'desc', label: 'Description' },
+      { k: 'hsCode', label: 'HS code' },
+      { k: 'origin', label: 'Country of origin' },
+      { k: 'supplier', label: 'Supplier' },
+      { k: 'unit', label: 'UOM', type: 'combo', dyn: 'est_units' },
+      { k: 'qty', label: 'Quantity', type: 'number' },
+      { k: 'currency', label: 'Supplier currency', type: 'select', options: TND_CURRENCIES },
+      { k: 'exwUnit', label: 'EXW unit price (in that currency)', type: 'number' },
+      { k: 'fx', label: 'FX rate — blank uses the assumption for that currency', type: 'number' },
+      { k: 'coForm', label: 'C/O form — the certificate, not the hope', type: 'select', options: TND_CO_FORMS },
+      { k: 'ftaDutyPct', label: 'FTA duty % (applies ONLY with a C/O form above)', type: 'number' },
+      { k: 'mfnDutyPct', label: 'MFN duty % — blank uses the default assumption', type: 'number' },
+      { k: 'sctPct', label: 'Special consumption tax %', type: 'number' },
+      { k: 'vatPct', label: 'Import VAT % (recoverable — never enters the cost)', type: 'number' },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
+  est_local: {
+    title: 'Local Vietnam item', coll: 'est_local', reload: 'est_local', fields: [
+      { k: 'itemCode', label: 'Item code' },
+      { k: 'desc', label: 'Description' },
+      { k: 'supplier', label: 'Supplier' },
+      { k: 'unit', label: 'UOM', type: 'combo', dyn: 'est_units' },
+      { k: 'qty', label: 'Quantity', type: 'number' },
+      { k: 'unitPrice', label: 'Unit price excl VAT (VND)', type: 'money' },
+      { k: 'vatPct', label: 'VAT % (recoverable)', type: 'number' },
+      { k: 'transPct', label: 'Transport %', type: 'number' },
+      { k: 'handlingPct', label: 'Handling %', type: 'number' },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
+  est_bom: {
+    title: 'BOM line', coll: 'est_bom', reload: 'est_bom', fields: [
+      { k: 'costCentre', label: 'Cost centre', type: 'select', options: TND_CENTRE_KEYS },
+      { k: 'code', label: 'Code' },
+      { k: 'descEn', label: 'Description (EN)' },
+      { k: 'descVn', label: 'Mô tả (VN)' },
+      { k: 'spec', label: 'Specification' },
+      { k: 'unit', label: 'Unit', type: 'combo', dyn: 'est_units' },
+      { k: 'qty', label: 'Quantity', type: 'number' },
+      { k: 'unitCostUsd', label: 'Unit cost (USD)', type: 'number' },
+      { k: 'markupPct', label: 'Mark-up % — blank uses the cost centre default', type: 'number' },
+      { k: 'origin', label: 'Origin' },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
   est_rates: {
     title: 'Library rate', coll: 'est_rates', reload: 'est_rates', fields: [
       { k: 'code', label: 'Code' },
@@ -27072,8 +27160,579 @@ Object.assign(_HR_RELOAD, {
   est_projects: () => { if (_currentView === 'est-estimate') estReload(); else estRenderProjects(); },
   est_items: () => estReload(),
   est_resources: () => estReload(),
-  est_rates: () => { if (_currentView === 'est-estimate') estReload(); else estRenderRates(); }
+  est_rates: () => { if (_currentView === 'est-estimate') estReload(); else estRenderRates(); },
+  est_landed: () => tndReload(),
+  est_local: () => tndReload(),
+  est_bom: () => tndReload(),
+  est_quote: () => tndReload()
 });
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   TENDER — the two costing models, and the quotation they produce
+
+   The estimate workspace grew a costing TYPE. A tender priced as a build-up keeps the
+   bill-of-quantities tabs it already had; one priced as Trading gets the customs chain;
+   one priced as EPC gets a bill of materials per cost centre and a configurator. Same
+   record, same mark-up chain underneath, different tabs in front — because an HS-code
+   column in front of somebody pricing a cleanroom is the clutter the app board just fixed.
+
+   As with `estimating`, NOT ONE FIGURE HERE IS COMPUTED IN THE BROWSER. Landed cost,
+   roll-up, quotation, P&L and the customer's document all come from /api/tender/summary,
+   which is `tender.py`. This file draws.
+────────────────────────────────────────────────────────────────────────────── */
+
+
+let _tndSum = null;      // the last server answer — the only source of numbers
+
+function _tndType() { const e = _estById(_estCur) || {}; return String(e.costingType || 'boq').toLowerCase(); }
+function _tndMoney(n) { return _PAY_FMT(n || 0); }
+function _tndUsd(n) { return '$' + (+n || 0).toLocaleString('en-US', { maximumFractionDigits: 2 }); }
+function _tndNum(n, d) { return (+n || 0).toLocaleString('en-US', { maximumFractionDigits: d == null ? 2 : d }); }
+function _tndPct(n) { return _tndNum(n, 2) + '%'; }
+
+async function _tndLoad(id) {
+  try { _tndSum = await tkApi('/api/tender/summary?id=' + encodeURIComponent(id)); return null; }
+  catch (e) { _tndSum = null; return _errMsg(e); }
+}
+
+/* Which tabs this tender has. The type is a property of the job, so the tab bar is too. */
+function _tndTabs() {
+  const t = _tndType();
+  if (t === 'trading') return [
+    { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
+    { k: 'import', label: 'Import Costing', fn: 'tndTabImport' },
+    { k: 'local', label: 'Local VN', fn: 'tndTabLocal' },
+    { k: 'master', label: 'Cost Master', fn: 'tndTabMaster' },
+    { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' }
+  ];
+  if (t === 'epc') return [
+    { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
+    { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
+    { k: 'bom', label: 'Bill of Materials', fn: 'tndTabBom' },
+    { k: 'margin', label: 'Margin by Cost Centre', fn: 'tndTabMargin' },
+    { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' }
+  ];
+  return _EST_TABS;
+}
+
+/* The headline, per model. Trading and EPC both end in a price and a margin; what gets you
+   there differs, so the four tiles differ with it. */
+function _tndHeadline() {
+  if (!_tndSum || !_tndSum.quote) return '';
+  const q = _tndSum.quote, ty = _tndType();
+  const tile = (lbl, val, sub, hex) => '<div style="flex:1 1 150px;min-width:140px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' + _t(lbl) + '</div>' +
+    '<div style="font-size:19px;font-weight:800;color:' + (hex || 'var(--navy)') + ';line-height:1.2;font-variant-numeric:tabular-nums">' + val + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + sub + '</div></div>';
+  const costLbl = ty === 'epc' ? 'Cost of works' : 'Landed cost';
+  const cost = ty === 'epc' ? (_tndSum.rollup || {}).costVnd : (_tndSum.master || {}).landedTotal;
+  const vatRec = (_tndSum.master || {}).vatRecoverable;
+  return '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">' +
+    tile(costLbl, _tndMoney(cost), _t('what the goods cost us, VAT excluded')) +
+    tile('Quotation (excl VAT)', _tndMoney(q.net), q.lineCount + ' ' + _t('lines') + ' · ' + _t('VAT') + ' ' + _tndMoney(q.vat), 'var(--emerald-deep)') +
+    tile('Gross margin', _tndPct(q.grossMarginPct), _tndPct(q.effectiveMarkupPct) + ' ' + _t('effective mark-up'), q.grossMarginPct < 10 ? 'var(--warning)' : 'var(--navy)') +
+    (vatRec ? tile('Import VAT recoverable', _tndMoney(vatRec), _t('a receivable, deliberately not in the cost')) : '') +
+    '</div>';
+}
+
+/* ── Assumptions — the workbook's one sheet, grouped as it groups them ── */
+function tndTabAssump() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const spec = _tndSum.assumptionSpec || [], vals = _tndSum.assumptions || {};
+  const groups = [];
+  spec.forEach(s => { const g = groups.find(x => x.name === s.group) || (groups.push({ name: s.group, rows: [] }), groups[groups.length - 1]); g.rows.push(s); });
+  const can = _estCanPrice() && !_estFrozen(e);
+  const html = groups.map(g => '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:11px 16px;background:var(--soft-bg);font-size:11px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy)">' + _t(g.name) + '</div>' +
+    '<div class="table-wrap"><table style="min-width:620px"><tbody>' +
+    g.rows.map(s => '<tr><td style="font-weight:600;width:38%">' + _t(s.label) + '</td>' +
+      '<td style="width:150px">' + (can
+        ? '<input class="form-control" style="padding:5px 9px;font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums" type="number" step="any" value="' + _tkEscA(vals[s.key]) + '" onchange="tndSetAssump(\'' + s.key + '\',this.value)">'
+        : '<span style="font-variant-numeric:tabular-nums">' + _tndNum(vals[s.key], 4) + '</span>') + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light);width:90px">' + _estEsc(s.unit) + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light)">' + _estEsc(_t(s.note)) + '</td></tr>').join('') +
+    '</tbody></table></div></div>').join('');
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('Every rate this tender prices with, in one place. Change one and every line reprices — the same way the workbook’s named ranges flow through. Percentages are PERCENTAGES: 0.5 means half a percent, not half.') + '</div>' + html);
+}
+
+async function tndSetAssump(key, v) {
+  const e = _estById(_estCur); if (!e) return;
+  const next = Object.assign({}, e.assump || {});
+  next[key] = v === '' ? '' : (+v);
+  try {
+    // The collection PATCH replaces the whole item, so the whole item goes.
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: Object.assign({}, e, { assump: next }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) { toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000); }
+}
+
+async function tndReload() {
+  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_quote']);
+  await estRenderWorkspace();
+}
+
+/* ── Import costing — the customs chain, stage by stage ── */
+function tndTabImport() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const rows = (_tndSum.master || {}).rows || [];
+  const imp = rows.filter(r => r.source === 'import');
+  const can = _estCanPrice() && !_estFrozen(e);
+  const dup = (_tndSum.master || {}).duplicateCodes || [];
+
+  const body = imp.length ? imp.map(r => '<tr>' +
+    '<td style="font-weight:600;font-variant-numeric:tabular-nums">' + _estEsc(r.itemCode) + '</td>' +
+    '<td>' + _estEsc(r.desc) + '<div style="font-size:11px;color:var(--text-light)">' + _estEsc([r.origin, r.supplier].filter(Boolean).join(' · ')) + '</div></td>' +
+    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(r.hsCode || '—') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(r.qty, 3) + ' <span style="color:var(--text-light);font-size:11px">' + _estEsc(r.unit) + '</span></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndUsd(r.exwTotal) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndUsd(r.cifFx) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.cif) + '</td>' +
+    '<td style="text-align:right;font-size:12px"><span style="font-variant-numeric:tabular-nums">' + _tndPct(r.dutyRate) + '</span>' +
+      '<div style="font-size:10px;color:' + (r.dutyBasis.indexOf('FTA') === 0 ? 'var(--emerald-deep)' : 'var(--text-light)') + '">' + _estEsc(r.dutyBasis) + '</div></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.duty + r.sct) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--info)" title="' + _tkEscA(_t('Recoverable from the state — deliberately NOT part of the landed cost')) + '">' + _tndMoney(r.vatRecoverable) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.chargesTotal) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + _tndMoney(r.landed) + '</td>' +
+    '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_landed', r.id, 'est_landed') : '') + '</td></tr>').join('')
+    : tkEmptyRow(13, _t('No imported lines yet.'), { icon: 'inbox' });
+
+  const tot = imp.reduce((a, r) => ({ landed: a.landed + r.landed, vat: a.vat + r.vatRecoverable }), { landed: 0, vat: 0 });
+  _estSet(
+    '<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('EXW → international leg → CIF → converted at the rate for that supplier’s currency → duty → special consumption tax → VAT → local charges → landed cost. The three taxes CASCADE: duty on CIF, SCT on CIF plus duty, VAT on all three. Import VAT is recoverable and never enters the cost.') + '</div>' +
+    (dup.length ? '<div class="card" style="padding:12px 16px;margin-bottom:14px;border-left:3px solid var(--warning);font-size:12.5px"><b>' + _t('The same item code is bought two ways') + ':</b> ' + _estEsc(dup.join(', ')) + '. ' + _t('The quotation would price whichever came first — give them different codes.') + '</div>' : '') +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_landed\')">' + tkIcon('plus') + _t('Add imported item') + '</button></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:1180px"><thead><tr>' +
+    ['Code', 'Description', 'HS code', 'Qty', 'EXW', 'CIF', 'CIF (VND)', 'Duty', 'Duty + SCT', 'VAT recov.', 'Local chg', 'Landed', ''].map((h, i) => '<th' + (i >= 3 && i <= 11 ? ' style="text-align:right"' : '') + '>' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + body +
+    (imp.length ? '<tr style="background:var(--soft-bg)"><td colspan="9" style="text-align:right;font-weight:800;color:var(--navy)">' + _t('Total landed') + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--info);font-variant-numeric:tabular-nums">' + _tndMoney(tot.vat) + '</td><td></td>' +
+      '<td style="text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _tndMoney(tot.landed) + '</td><td></td></tr>' : '') +
+    '</tbody></table></div></div>');
+}
+
+/* ── Local Vietnam ── */
+function tndTabLocal() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const loc = ((_tndSum.master || {}).rows || []).filter(r => r.source === 'local');
+  const can = _estCanPrice() && !_estFrozen(e);
+  const body = loc.length ? loc.map(r => '<tr>' +
+    '<td style="font-weight:600;font-variant-numeric:tabular-nums">' + _estEsc(r.itemCode) + '</td>' +
+    '<td>' + _estEsc(r.desc) + '<div style="font-size:11px;color:var(--text-light)">' + _estEsc(r.supplier) + '</div></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(r.qty, 3) + ' <span style="color:var(--text-light);font-size:11px">' + _estEsc(r.unit) + '</span></td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.netExVat) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px;color:var(--info)">' + _tndMoney(r.vatRecoverable) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.transport) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndMoney(r.handling) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + _tndMoney(r.landed) + '</td>' +
+    '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_local', r.id, 'est_local') : '') + '</td></tr>').join('')
+    : tkEmptyRow(9, _t('No local lines yet.'), { icon: 'inbox' });
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('Bought in Vietnam — no customs chain, but transport and handling are still cost, and the supplier’s VAT is still recoverable and still not part of it.') + '</div>' +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_local\')">' + tkIcon('plus') + _t('Add local item') + '</button></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:860px"><thead><tr>' +
+    ['Code', 'Description', 'Qty', 'Net excl VAT', 'VAT recov.', 'Transport', 'Handling', 'Total cost', ''].map((h, i) => '<th' + (i >= 2 && i <= 7 ? ' style="text-align:right"' : '') + '>' + (h ? _t(h) : '') + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></div>');
+}
+
+/* ── Cost master — what the quotation prices from ── */
+function tndTabMaster() {
+  const m = (_tndSum || {}).master; if (!m) return;
+  const body = m.rows.length ? m.rows.map(r => '<tr>' +
+    '<td>' + _estBadge(_t(r.source === 'import' ? 'Import' : 'Local'), r.source === 'import' ? '#8B5CF6' : '#14B8A6') + '</td>' +
+    '<td style="font-weight:600;font-variant-numeric:tabular-nums">' + _estEsc(r.itemCode) + '</td>' +
+    '<td>' + _estEsc(r.desc) + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(r.hsCode || '—') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(r.qty, 3) + '</td>' +
+    '<td style="font-size:12px">' + _estEsc(r.unit) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(r.unitLanded) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + _tndMoney(r.landed) + '</td></tr>').join('')
+    : tkEmptyRow(8, _t('Nothing costed yet.'), { icon: 'inbox' });
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('Import and local consolidated into one lookup — this is what the quotation prices from, exactly as the workbook’s COST_MASTER does.') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:900px"><thead><tr>' +
+    ['Source', 'Code', 'Description', 'HS code', 'Qty', 'Unit', 'Unit cost', 'Total cost'].map((h, i) => '<th' + (i >= 4 ? ' style="text-align:right"' : '') + '>' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' + body +
+    (m.rows.length ? '<tr style="background:var(--soft-bg)"><td colspan="7" style="text-align:right;font-weight:800;color:var(--navy)">' + _t('Total cost') + '</td>' +
+      '<td style="text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _tndMoney(m.landedTotal) + '</td></tr>' : '') +
+    '</tbody></table></div></div>');
+}
+
+/* ── EPC: the configurator ── */
+function tndTabConfig() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const cfg = e.bomConfig || {}, centres = _tndSum.costCentres || [];
+  const roll = _tndSum.rollup || { centres: [] };
+  const by = {}; (roll.centres || []).forEach(c => { by[c.costCentre] = c; });
+  const can = _estCanPrice() && !_estFrozen(e);
+  const rows = centres.map(c => {
+    const on = !c.optional || ((cfg[c.key] || {}).include !== false);
+    const scale = ((cfg[c.key] || {}).scale != null) ? (cfg[c.key] || {}).scale : 1;
+    const live = by[c.key];
+    return '<tr' + (on ? '' : ' style="opacity:.5"') + '>' +
+      '<td style="font-weight:700;font-variant-numeric:tabular-nums">' + _estEsc(c.key) + '</td>' +
+      '<td>' + _estEsc(_t(c.label)) + (c.optional ? '' : ' <span style="font-size:10.5px;color:var(--text-light)">' + _t('(always built)') + '</span>') + '</td>' +
+      '<td style="text-align:center">' + (c.optional
+        ? '<label style="display:inline-flex;align-items:center;gap:6px;cursor:' + (can ? 'pointer' : 'not-allowed') + '"><input type="checkbox" ' + (on ? 'checked' : '') + (can ? '' : ' disabled') + ' onchange="tndSetConfig(\'' + c.key + '\',\'include\',this.checked)" style="width:16px;height:16px;accent-color:var(--navy)"></label>'
+        : '<span style="color:var(--text-light)">—</span>') + '</td>' +
+      '<td style="text-align:right">' + (can
+        ? '<input class="form-control" style="width:90px;padding:4px 8px;font-size:12.5px;text-align:right" type="number" step="0.05" min="0" value="' + _tkEscA(scale) + '" onchange="tndSetConfig(\'' + c.key + '\',\'scale\',this.value)">'
+        : _tndNum(scale, 2)) + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:var(--text-light)">' + _tndPct(c.markupPct) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (live ? _tndUsd(live.costUsd) : '—') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--navy)">' + (live ? _tndUsd(live.sellUsd) : '—') + '</td></tr>';
+  }).join('');
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('Switch a production line off and it leaves the quotation entirely — not as a zero row, which a customer reads as “we forgot to price this”. Capacity scale multiplies QUANTITY, not unit price: half a line is half the equipment at the same price. The permanent plant cannot be switched off.') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+    ['Code', 'Cost centre', 'Include', 'Capacity', 'Mark-up', 'Cost (USD)', 'Sell (USD)'].map((h, i) => '<th' + (i >= 3 ? ' style="text-align:right"' : (i === 2 ? ' style="text-align:center"' : '')) + '>' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' + rows +
+    '<tr style="background:var(--soft-bg)"><td colspan="5" style="text-align:right;font-weight:800;color:var(--navy)">' + _t('Total') + '</td>' +
+    '<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums">' + _tndUsd(roll.costUsd) + '</td>' +
+    '<td style="text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _tndUsd(roll.sellUsd) + '</td></tr>' +
+    '</tbody></table></div></div>');
+}
+
+async function tndSetConfig(centre, field, v) {
+  const e = _estById(_estCur); if (!e) return;
+  const cfg = JSON.parse(JSON.stringify(e.bomConfig || {}));
+  cfg[centre] = cfg[centre] || {};
+  cfg[centre][field] = field === 'scale' ? (+v || 0) : !!v;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: Object.assign({}, e, { bomConfig: cfg }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) { toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000); }
+}
+
+/* ── EPC: the bill of materials ── */
+function tndTabBom() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const roll = _tndSum.rollup || { lines: [], centres: [] };
+  const can = _estCanPrice() && !_estFrozen(e);
+  const byCentre = {};
+  roll.lines.forEach(l => { (byCentre[l.costCentre] = byCentre[l.costCentre] || []).push(l); });
+  const html = (roll.centres || []).map(c => {
+    const lines = byCentre[c.costCentre] || [];
+    return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+      '<div style="padding:11px 16px;background:var(--soft-bg);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-size:12.5px;font-weight:800;color:var(--navy)">' + _estEsc(c.costCentre) + ' · ' + _estEsc(_t(c.label)) +
+      (c.scale !== 1 ? ' <span style="font-size:11px;font-weight:600;color:var(--warning)">× ' + _tndNum(c.scale, 2) + '</span>' : '') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _t('Cost') + ' <b style="color:var(--text-dark)">' + _tndUsd(c.costUsd) + '</b> · ' +
+      _t('Sell') + ' <b style="color:var(--navy)">' + _tndUsd(c.sellUsd) + '</b> · ' + _t('Margin') + ' <b style="color:var(--emerald-deep)">' + _tndPct(c.marginPct) + '</b></div></div>' +
+      '<div class="table-wrap"><table style="min-width:820px"><thead><tr>' +
+      ['Code', 'Description', 'Spec', 'Unit', 'Qty', 'Unit cost', 'Cost', 'Mark-up', 'Sell', ''].map((h, i) => '<th style="font-size:10.5px' + (i >= 4 && i <= 8 ? ';text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>').join('') +
+      '</tr></thead><tbody>' + (lines.length ? lines.map(l => '<tr>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(l.code) + '</td>' +
+        '<td style="font-size:12.5px">' + _estEsc(l.descEn) + (l.descVn ? '<div style="font-size:11px;color:var(--text-light)">' + _estEsc(l.descVn) + '</div>' : '') + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-light)">' + _estEsc(l.spec || '—') + '</td>' +
+        '<td style="font-size:12px">' + _estEsc(l.unit) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 3) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndUsd(l.unitCostUsd) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:12px">' + _tndUsd(l.costUsd) + '</td>' +
+        '<td style="text-align:right;font-size:12px">' + _tndPct(l.markupPct) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndUsd(l.sellUsd) + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_bom', l.id, 'est_bom') : '') + '</td></tr>').join('')
+        : tkEmptyRow(10, _t('No lines in this cost centre.'), { icon: 'inbox' })) + '</tbody></table></div></div>';
+  }).join('');
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('One bill per cost centre, each carrying its own mark-up — a cleanroom and a concrete slab do not earn the same margin.') + '</div>' +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_bom\')">' + tkIcon('plus') + _t('Add BOM line') + '</button></div>' : '') +
+    (html || '<div class="card" style="padding:22px;text-align:center;color:var(--text-light)">' + _t('No bill of materials yet.') + '</div>'));
+}
+
+/* ── EPC: margin by cost centre ── */
+function tndTabMargin() {
+  const roll = (_tndSum || {}).rollup; if (!roll) return;
+  const target = 15;
+  const rows = roll.centres.map(c => {
+    const delta = c.marginPct - target;
+    const hex = delta >= 0 ? 'var(--emerald-deep)' : (delta > -5 ? 'var(--warning)' : 'var(--danger)');
+    return '<tr><td style="font-weight:700;font-variant-numeric:tabular-nums">' + _estEsc(c.costCentre) + '</td>' +
+      '<td>' + _estEsc(_t(c.label)) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndUsd(c.costUsd) + '</td>' +
+      '<td style="text-align:right;font-size:12px">' + _tndPct(c.markupPct) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndUsd(c.sellUsd) + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndUsd(c.marginUsd) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + hex + '">' + _tndPct(c.marginPct) + '</td>' +
+      '<td style="text-align:right;font-size:12px;color:' + hex + '">' + (delta >= 0 ? '+' : '') + _tndNum(delta, 1) + '</td></tr>';
+  }).join('');
+  _estSet('<div class="card" style="padding:14px 16px;margin-bottom:14px;font-size:12.5px;color:var(--text-light);line-height:1.55">' +
+    _t('Which cost centres are carrying the job and which are being carried, against a 15% target margin. Mark-up and margin are different numbers and both are shown — a 15% mark-up is a 13% margin.') + '</div>' +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:840px"><thead><tr>' +
+    ['Code', 'Cost centre', 'Cost', 'Mark-up', 'Sell', 'Margin', 'Margin %', 'vs target'].map((h, i) => '<th' + (i >= 2 ? ' style="text-align:right"' : '') + '>' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' + rows +
+    '<tr style="background:var(--soft-bg)"><td colspan="2" style="font-weight:800;color:var(--navy)">' + _t('Total') + '</td>' +
+    '<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums">' + _tndUsd(roll.costUsd) + '</td><td></td>' +
+    '<td style="text-align:right;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _tndUsd(roll.sellUsd) + '</td>' +
+    '<td style="text-align:right;font-weight:800;font-variant-numeric:tabular-nums">' + _tndUsd(roll.sellUsd - roll.costUsd) + '</td>' +
+    '<td style="text-align:right;font-weight:800;color:var(--emerald-deep)">' + _tndPct(roll.sellUsd ? (roll.sellUsd - roll.costUsd) / roll.sellUsd * 100 : 0) + '</td><td></td></tr>' +
+    '</tbody></table></div></div>');
+}
+
+/* ── P&L ── */
+function tndTabPnl() {
+  const p = (_tndSum || {}).pnl, q = (_tndSum || {}).quote; if (!p) return;
+  const row = (lbl, val, pct, note, strong, hex) => '<tr' + (strong ? ' style="background:var(--soft-bg)"' : '') + '>' +
+    '<td style="' + (strong ? 'font-weight:800;color:var(--navy)' : 'font-weight:600') + '">' + _t(lbl) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;' + (strong ? 'font-weight:800;color:' + (hex || 'var(--navy)') : '') + '">' + val + '</td>' +
+    '<td style="text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + (pct == null ? '' : _tndPct(pct)) + '</td>' +
+    '<td style="font-size:11.5px;color:var(--text-light)">' + _estEsc(_t(note || '')) + '</td></tr>';
+  _estSet('<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:680px"><thead><tr>' +
+    '<th>' + _t('Line item') + '</th><th style="text-align:right">' + _t('Amount') + '</th><th style="text-align:right">' + _t('% of revenue') + '</th><th>' + _t('Note') + '</th>' +
+    '</tr></thead><tbody>' +
+    row('Revenue (excl VAT)', _tndMoney(p.revenue), 100, 'Quotation subtotal', true) +
+    row('Cost of goods sold', _tndMoney(p.cogs), null, 'Landed cost of the quoted items') +
+    row('Gross profit', _tndMoney(p.grossProfit), p.grossMarginPct, 'Revenue less COGS', true, 'var(--emerald-deep)') +
+    p.opex.map(o => row(o.label, _tndMoney(o.amount), o.pctRevenue, o.note)).join('') +
+    row('Total operating expenses', _tndMoney(p.opexTotal), null, '', true) +
+    row('EBIT', _tndMoney(p.ebit), p.ebitMarginPct, 'Gross profit less opex', true) +
+    row('Corporate income tax', _tndMoney(p.cit), null, 'Only on a positive EBIT — a loss earns no credit') +
+    row('Net profit after tax', _tndMoney(p.netProfit), p.netMarginPct, '', true, p.netProfit < 0 ? 'var(--danger)' : 'var(--emerald-deep)') +
+    '</tbody></table></div></div>' +
+    (q ? '<div class="card" style="padding:14px 16px;margin-top:14px;font-size:12.5px;color:var(--text-light)">' +
+      _t('Effective mark-up across the whole quotation') + ': <b style="color:var(--navy)">' + _tndPct(q.effectiveMarkupPct) + '</b> — ' +
+      _t('the blended truth after any line-by-line discounting.') + '</div>' : ''));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   THE QUOTATION — what the customer actually receives
+
+   One document, drawn twice: on screen as a preview, and into a branded PDF. Both read
+   the SAME `document` object the server assembled from the same figures as the P&L, so
+   a preview cannot show one price and the PDF another.
+
+   The customer's copy carries no cost and no mark-up. The server strips them before the
+   document leaves; this file never had them. That is the single most expensive thing
+   that can go out in a PDF, so it is guarded in both places rather than trusted to one.
+────────────────────────────────────────────────────────────────────────────── */
+
+function tndTabQuote() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const doc = _tndSum.document, q = _tndSum.quote, iss = _tndSum.issue || {};
+  const can = _estCanPrice() && !_estFrozen(e);
+
+  const gate = (iss.missing || []).length
+    ? '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--danger)">' +
+      '<div style="font-weight:700;color:var(--danger);font-size:13px;margin-bottom:4px">' + _t('Not ready to send') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light)">' + _t('Fill these in before this is a document rather than a draft') + ': <b style="color:var(--text-dark)">' +
+      (iss.missing || []).map(x => _estEsc(_t(x))).join(', ') + '</b></div>' +
+      (can ? '<button class="btn btn-outline btn-sm" style="margin-top:9px;font-size:11px" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')">' + _PENCIL + ' ' + _t('Edit the tender') + '</button>' : '') + '</div>'
+    : '';
+  const warn = (iss.warnings || []).length
+    ? '<div class="card" style="padding:14px 16px;margin-bottom:14px;border-left:3px solid var(--warning)">' +
+      '<div style="font-weight:700;color:var(--navy);font-size:13px;margin-bottom:4px">' + _t('Worth a second look before you send it') + '</div>' +
+      '<ul style="font-size:12.5px;color:var(--text-light);padding-left:18px;margin:0">' +
+      (iss.warnings || []).map(w => '<li style="margin-bottom:2px">' + _estEsc(_t(w)) + '</li>').join('') + '</ul></div>'
+    : '';
+
+  const bar = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">' +
+    '<div style="font-size:12.5px;color:var(--text-light)">' + _t('This is exactly what the customer will receive. Nothing here shows cost or mark-up.') + '</div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    (can ? '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')">' + _PENCIL + ' ' + _t('Quotation details') + '</button>' : '') +
+    '<button class="btn btn-primary btn-sm" onclick="tndQuotePDF()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
+    tkIcon('download', 13) + ' ' + _t('Export PDF') + '</button></div></div>';
+
+  _estSet(bar + gate + warn + _tndQuoteSheet(doc, q));
+}
+
+/* The preview. Deliberately shaped like the document, not like a data table — somebody
+   about to send this to a customer is checking a LETTER, and a grid of cells does not let
+   them see what the customer will see. */
+function _tndQuoteSheet(doc, q) {
+  if (!doc) return '';
+  const kv = (l, v) => '<div style="display:flex;gap:8px;font-size:12.5px;margin-bottom:3px"><span style="color:var(--text-light);min-width:104px">' + _t(l) + '</span><span style="font-weight:600">' + (_estEsc(v) || '—') + '</span></div>';
+  const lines = (doc.lines || []).map((l, i) => '<tr>' +
+    '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums">' + (i + 1) + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(l.itemCode || '') + '</td>' +
+    '<td>' + _estEsc(l.desc) + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(l.hsCode || '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 3) + '</td>' +
+    '<td style="font-size:12px">' + _estEsc(l.unit || '') + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(l.unitSell) + '</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(l.net) + '</td>' +
+    '<td style="text-align:right;font-size:12px">' + _tndNum(l.vatPct, 1) + '%</td>' +
+    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(l.gross) + '</td></tr>').join('');
+
+  return '<div class="card" id="tnd-quote-sheet" style="padding:0;overflow:hidden">' +
+    /* letterhead band */
+    '<div style="padding:20px 26px 16px;border-bottom:3px solid var(--emerald);background:linear-gradient(180deg,#fff,var(--soft-bg))">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">' +
+    '<img src="/static/brand/portal-logo-login.png" alt="Humiley" style="height:38px">' +
+    '<div style="text-align:right"><div style="font-size:19px;font-weight:300;letter-spacing:4px;color:var(--navy)">' + _t('SALES QUOTATION') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);letter-spacing:1px">' + _t('Engineering &amp; Solutions') + '</div></div></div></div>' +
+
+    '<div style="padding:20px 26px">' +
+    '<div style="display:flex;gap:26px;flex-wrap:wrap;margin-bottom:18px">' +
+    '<div style="flex:1 1 260px"><div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Bill to / Customer') + '</div>' +
+    kv('Customer', doc.client.name) + kv('Address', doc.client.address) + kv('Tax code', doc.client.taxCode) +
+    kv('Attn.', doc.client.attn) + kv('Email / phone', doc.client.contact) + '</div>' +
+    '<div style="flex:1 1 260px"><div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Quotation info') + '</div>' +
+    kv('Quotation No.', doc.quoteNo) + kv('Issue date', doc.issueDate) + kv('Valid until', doc.validUntil) +
+    kv('Project', doc.project.name) + kv('Project code', doc.project.code) + '</div></div>' +
+
+    '<div style="font-size:12.5px;color:var(--text-dark);line-height:1.6;margin-bottom:16px">' + _estEsc(doc.intro) + '</div>' +
+
+    '<div class="table-wrap"><table style="min-width:880px"><thead><tr>' +
+    ['No.', 'Item code', 'Description', 'HS code', 'Qty', 'UOM', 'Unit price', 'Subtotal (excl VAT)', 'VAT', 'Total (incl VAT)']
+      .map((h, i) => '<th style="font-size:10.5px' + (i >= 4 && i !== 5 ? ';text-align:right' : (i === 0 ? ';text-align:center' : '')) + '">' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' + (lines || tkEmptyRow(10, _t('No lines to quote yet.'), { icon: 'inbox' })) + '</tbody></table></div>' +
+
+    '<div style="display:flex;justify-content:flex-end;margin-top:14px">' +
+    '<table style="min-width:330px;font-size:13px">' +
+    '<tr><td style="padding:4px 12px;color:var(--text-light)">' + _t('Subtotal (excl VAT)') + '</td><td style="padding:4px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(doc.totals.net) + '</td></tr>' +
+    '<tr><td style="padding:4px 12px;color:var(--text-light)">' + _t('VAT (output)') + '</td><td style="padding:4px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(doc.totals.vat) + '</td></tr>' +
+    '<tr style="border-top:2px solid var(--navy)"><td style="padding:7px 12px;font-weight:800;color:var(--navy)">' + _t('GRAND TOTAL (incl VAT)') + '</td>' +
+    '<td style="padding:7px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:var(--navy);font-size:15px">' + _tndMoney(doc.totals.gross) + '</td></tr></table></div>' +
+
+    (doc.amountInWords ? '<div style="font-size:12.5px;margin-top:10px"><span style="color:var(--text-light)">' + _t('Amount in words') + ': </span><i>' + _estEsc(doc.amountInWords) + '</i></div>' : '') +
+
+    '<div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Terms &amp; conditions') + '</div>' +
+    '<ol style="font-size:12px;color:var(--text-dark);line-height:1.65;padding-left:20px;margin:0">' +
+    (doc.terms || []).map(t => '<li style="margin-bottom:2px"><b>' + _estEsc(_t(t.label)) + '.</b> ' + _estEsc(_t(t.text)) + '</li>').join('') + '</ol>' +
+
+    (doc.bank && (doc.bank.beneficiary || doc.bank.bank) ?
+      '<div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Payment / bank details') + '</div>' +
+      kv('Beneficiary', doc.bank.beneficiary) + kv('Bank', doc.bank.bank) + kv('Account No.', doc.bank.account) + kv('SWIFT', doc.bank.swift) : '') +
+
+    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:26px">' +
+    (doc.signatures || []).map(s => '<div style="flex:1 1 180px;text-align:center">' +
+      '<div style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy);margin-bottom:44px">' + _t(s.role) + '</div>' +
+      '<div style="border-top:1px solid var(--text-light);padding-top:6px;font-size:12px;font-weight:600">' + (_estEsc(s.name) || '&nbsp;') + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _estEsc(_t(s.title)) + '</div></div>').join('') + '</div>' +
+    '</div></div>';
+}
+
+/* ── The PDF. Same document object, drawn onto the Humiley letterhead. ── */
+function tndQuotePDF() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const doc0 = _tndSum.document, iss = _tndSum.issue || {};
+  if (!iss.canIssue) {
+    toast(_t('Complete these first') + ': ' + (iss.missing || []).join(', '), 'warn', 6000);
+    return;
+  }
+  const o = _engPdfOpen('Sales Quotation', _pmPdfTxt((doc0.quoteNo || '') + '  ' + (doc0.client.name || '')), 'HML-QT');
+  if (!o) return;
+  const doc = o.doc; let y = o.y, page = 1;
+  const M = 15;
+
+  /* Header blocks — bill-to on the left, quotation info on the right, as the workbook has them. */
+  const pair = (x, label, val, yy) => {
+    _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(92, 100, 112);
+    doc.text(_pmPdfTxt(String(label).toUpperCase()), x, yy);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+    const lines = doc.splitTextToSize(_pmPdfTxt(val || '-'), 58);
+    doc.text(lines, x + 26, yy);
+    return yy + Math.max(4.6, lines.length * 4.2);
+  };
+  _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor(32, 80, 144);
+  doc.text(_pmPdfTxt('BILL TO / CUSTOMER'), M, y);
+  doc.text(_pmPdfTxt('QUOTATION INFO'), M + 97, y);
+  doc.setDrawColor(207, 214, 226); doc.line(M, y + 1.6, M + 88, y + 1.6); doc.line(M + 97, y + 1.6, M + 180, y + 1.6);
+  let yl = y + 6.5, yr = y + 6.5;
+  yl = pair(M, 'Customer', doc0.client.name, yl);
+  yl = pair(M, 'Address', doc0.client.address, yl);
+  yl = pair(M, 'Tax code', doc0.client.taxCode, yl);
+  yl = pair(M, 'Attn.', doc0.client.attn, yl);
+  yl = pair(M, 'Contact', doc0.client.contact, yl);
+  yr = pair(M + 97, 'Quotation No.', doc0.quoteNo, yr);
+  yr = pair(M + 97, 'Issue date', doc0.issueDate, yr);
+  yr = pair(M + 97, 'Valid until', doc0.validUntil, yr);
+  yr = pair(M + 97, 'Project', doc0.project.name, yr);
+  yr = pair(M + 97, 'Project code', doc0.project.code, yr);
+  y = Math.max(yl, yr) + 3;
+
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(60, 66, 74);
+  const intro = doc.splitTextToSize(_pmPdfTxt(doc0.intro), 180);
+  doc.text(intro, M, y); y += intro.length * 4.2 + 4;
+
+  /* The priced lines. Widths total 180mm — A4 portrait, as _engPdfTable requires. */
+  const money = n => _pmPdfTxt(_PAY_FMT(n || 0));
+  const t = _engPdfTable(doc, {
+    y: y, page: page, code: 'HML-QT', title: 'Sales Quotation', subtitle: _pmPdfTxt(doc0.quoteNo || ''),
+    cols: [
+      { label: 'NO.', w: 9, get: (r) => r._n },
+      { label: 'CODE', w: 21, get: r => r.itemCode },
+      { label: 'DESCRIPTION', w: 56, get: r => r.desc },
+      { label: 'HS', w: 15, get: r => r.hsCode },
+      { label: 'QTY', w: 12, get: r => _pmPdfTxt(_tndNum(r.qty, 2)) },
+      { label: 'UOM', w: 11, get: r => r.unit },
+      { label: 'UNIT PRICE', w: 20, get: r => money(r.unitSell) },
+      { label: 'SUBTOTAL', w: 20, get: r => money(r.net) },
+      { label: 'TOTAL', w: 16, get: r => money(r.gross) }
+    ],
+    rows: (doc0.lines || []).map((l, i) => Object.assign({ _n: i + 1 }, l))
+  });
+  y = t.y + 3; page = t.page;
+
+  /* Totals, right-aligned against the table's right edge. */
+  const totRow = (label, val, bold) => {
+    if (y > 262) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
+    _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 10 : 9);
+    doc.setTextColor.apply(doc, bold ? [32, 80, 144] : [92, 100, 112]);
+    doc.text(_pmPdfTxt(label), M + 108, y);
+    doc.setTextColor.apply(doc, bold ? [32, 80, 144] : [31, 41, 55]);
+    doc.text(money(val), M + 180, y, { align: 'right' });
+    y += bold ? 6.5 : 5;
+  };
+  totRow('Subtotal (excl VAT)', doc0.totals.net);
+  totRow('VAT (output)', doc0.totals.vat);
+  doc.setDrawColor(32, 80, 144); doc.setLineWidth(0.5); doc.line(M + 106, y - 3.4, M + 180, y - 3.4); doc.setLineWidth(0.2);
+  totRow('GRAND TOTAL (incl VAT)', doc0.totals.gross, true);
+  if (doc0.amountInWords) {
+    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(92, 100, 112);
+    doc.text(_pmPdfTxt('Amount in words: ' + doc0.amountInWords), M, y); y += 6;
+  }
+
+  /* Terms — the part a dispute is read against, so it goes in full, never truncated. */
+  y = _engPdfSection(doc, 'Terms & Conditions', y + 2, 'HML-QT', 'Sales Quotation', _pmPdfTxt(doc0.quoteNo || ''));
+  (doc0.terms || []).forEach((tm, i) => {
+    const txt = doc.splitTextToSize(_pmPdfTxt((i + 1) + '.  ' + tm.label + ' — ' + tm.text), 180);
+    if (y + txt.length * 4 > 272) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
+    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(45, 51, 60);
+    doc.text(txt, M, y); y += txt.length * 4 + 1.4;
+  });
+
+  if (doc0.bank && (doc0.bank.beneficiary || doc0.bank.bank)) {
+    y = _engPdfSection(doc, 'Payment / Bank Details', y + 2, 'HML-QT', 'Sales Quotation', _pmPdfTxt(doc0.quoteNo || ''));
+    y = _engPdfRow(doc, 'Beneficiary', doc0.bank.beneficiary, y);
+    y = _engPdfRow(doc, 'Bank', doc0.bank.bank, y);
+    y = _engPdfRow(doc, 'Account No.', doc0.bank.account, y);
+    y = _engPdfRow(doc, 'SWIFT', doc0.bank.swift, y);
+  }
+
+  /* Signature blocks — three, side by side, with room to actually sign. */
+  if (y > 232) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
+  y += 6;
+  (doc0.signatures || []).forEach((s, i) => {
+    const x = M + i * 60;
+    _pdfFont(doc, 'bold'); doc.setFontSize(8); doc.setTextColor(32, 80, 144);
+    doc.text(_pmPdfTxt(String(s.role).toUpperCase()), x, y);
+    doc.setDrawColor(150, 158, 170); doc.line(x, y + 24, x + 52, y + 24);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+    doc.text(_pmPdfTxt(s.name || ' '), x, y + 28.5);
+    doc.setFontSize(7.5); doc.setTextColor(92, 100, 112);
+    doc.text(_pmPdfTxt(s.title || ''), x, y + 32.5);
+  });
+
+  _engSave(doc, 'Quotation_' + String(doc0.quoteNo || 'HML').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf', page, 'HML-QT');
+  try { tkAudit('Quotation exported', doc0.quoteNo || '', (doc0.client.name || '') + ' · ' + _PAY_FMT(doc0.totals.gross)); } catch (x) { }
+}
+
+/* Adding a costing line: the tender it belongs to is seeded, so it shows in the form
+   rather than being injected invisibly on save. */
+function tndAdd(coll) {
+  const e = _estById(_estCur); if (!e) return;
+  if (_estFrozen(e)) { toast(_t('This tender is the budget of a live project — raise a revised one instead.'), 'warn'); return; }
+  const seed = { estId: e.id };
+  if (coll === 'est_landed') { seed.currency = 'USD'; seed.qty = 1; seed.coForm = 'None'; }
+  if (coll === 'est_local') { seed.qty = 1; }
+  if (coll === 'est_bom') { seed.costCentre = 'CIV'; seed.qty = 1; }
+  tkQuickAdd(coll, null, seed);
+}
 
 function _sbKey(lab) { return 'sbsec_' + (lab.dataset.sbkey || (lab.textContent || '').trim()); }
 function _sbSet(lab, collapsed) { if (lab._grp) lab._grp.style.display = collapsed ? 'none' : ''; const c = lab.querySelector('.sb-chev'); if (c) c.style.transform = collapsed ? 'rotate(-90deg)' : 'rotate(0deg)'; lab._collapsed = collapsed; }
@@ -27655,6 +28314,119 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Tender & estimating — Vietnamese (2026-08-20) */
+  "% of revenue": "% doanh thu",
+  "(always built)": "(luôn xây dựng)",
+  "A draft is a working document, not a baseline. Set this estimate to Approved or Won first.": "Bản nháp là tài liệu đang làm, chưa phải mốc chuẩn. Hãy chuyển dự toán sang Đã duyệt hoặc Trúng thầu trước.",
+  "A price is built by the commercial team and committed by management. Setting a project budget needs Approver level.": "Giá do bộ phận thương mại lập và ban lãnh đạo cam kết. Đặt ngân sách dự án cần cấp Phê duyệt.",
+  "A rate used in an estimate is COPIED into it, never referenced. A tender reopened six months later must still be the tender that was submitted — so updating a price here never reprices work already estimated. Where a price has moved, the estimate says so and offers to re-price.": "Đơn giá dùng trong dự toán được SAO CHÉP vào, không tham chiếu động. Hồ sơ thầu mở lại sau sáu tháng vẫn phải đúng như lúc nộp — nên cập nhật giá ở đây không bao giờ tính lại phần đã lập. Nếu giá đã thay đổi, dự toán sẽ báo và đề nghị tính lại.",
+  "Add BOM line": "Thêm dòng BOM",
+  "Add imported item": "Thêm hàng nhập khẩu",
+  "Add local item": "Thêm hàng trong nước",
+  "Add material, labour, plant or subcontract": "Thêm vật liệu, nhân công, máy hoặc thầu phụ",
+  "Already handed over": "Đã chuyển giao",
+  "Amount in words": "Số tiền bằng chữ",
+  "An estimate prices a tender from its parts — material, labour, plant and subcontract — then adds preliminaries, overhead, risk and profit. Winning it hands the cost base to the project as its budget.": "Dự toán định giá hồ sơ thầu từ các thành phần — vật liệu, nhân công, máy và thầu phụ — rồi cộng chi phí chung công trường, quản lý, dự phòng và lợi nhuận. Khi trúng thầu, giá thành được chuyển thành ngân sách dự án.",
+  "Back to Estimates": "Quay lại Dự toán",
+  "Bill to / Customer": "Bên mua / Khách hàng",
+  "Bought in Vietnam — no customs chain, but transport and handling are still cost, and the supplier’s VAT is still recoverable and still not part of it.": "Mua trong nước — không qua hải quan, nhưng vận chuyển và bốc xếp vẫn là chi phí, và VAT của nhà cung cấp vẫn được khấu trừ nên vẫn không nằm trong giá vốn.",
+  "Build-up": "Bóc tách",
+  "By count of decided tenders": "Theo số hồ sơ đã có kết quả",
+  "Complete the missing fields first": "Hãy điền đủ các trường còn thiếu trước",
+  "Complete these first": "Hãy hoàn tất các mục sau",
+  "Direct cost by resource": "Chi phí trực tiếp theo nguồn lực",
+  "Direct cost of one unit": "Chi phí trực tiếp cho một đơn vị",
+  "Distributed across the priced lines pro-rata to cost": "Phân bổ cho các dòng có giá theo tỷ lệ chi phí",
+  "Draft, submitted or approved": "Nháp, đã nộp hoặc đã duyệt",
+  "EXW → international leg → CIF → converted at the rate for that supplier’s currency → duty → special consumption tax → VAT → local charges → landed cost. The three taxes CASCADE: duty on CIF, SCT on CIF plus duty, VAT on all three. Import VAT is recoverable and never enters the cost.": "EXW → chặng quốc tế → CIF → quy đổi theo tỷ giá của đồng tiền nhà cung cấp → thuế nhập khẩu → thuế TTĐB → VAT → chi phí nội địa → giá vốn nhập kho. Ba sắc thuế TÍNH LŨY TIẾN: thuế NK trên CIF, TTĐB trên CIF cộng thuế NK, VAT trên cả ba. VAT nhập khẩu được khấu trừ nên không bao giờ vào giá vốn.",
+  "Edit the tender": "Sửa hồ sơ thầu",
+  "Effective mark-up across the whole quotation": "Tỷ lệ cộng giá thực tế của toàn bộ báo giá",
+  "Engineering &amp; Solutions": "Kỹ thuật &amp; Giải pháp",
+  "Entered rates": "Đơn giá nhập tay",
+  "Estimate not found.": "Không tìm thấy dự toán.",
+  "Every material this bill needs, gathered across all its lines and including the waste allowance. This is the list procurement would otherwise rebuild by hand from the drawings.": "Toàn bộ vật liệu bảng khối lượng này cần, tổng hợp từ mọi dòng và đã gồm hao hụt. Đây chính là danh sách mà bộ phận mua hàng lẽ ra phải tự bóc lại từ bản vẽ.",
+  "Every rate this tender prices with, in one place. Change one and every line reprices — the same way the workbook’s named ranges flow through. Percentages are PERCENTAGES: 0.5 means half a percent, not half.": "Mọi tỷ lệ hồ sơ thầu này dùng, gom về một chỗ. Đổi một giá trị là mọi dòng tính lại — đúng như các named range trong file Excel. Phần trăm là PHẦN TRĂM: 0.5 nghĩa là nửa phần trăm, không phải một nửa.",
+  "Fill these in before this is a document rather than a draft": "Hãy điền các mục sau để đây là một tài liệu chứ không phải bản nháp",
+  "GRAND TOTAL (incl VAT)": "TỔNG CỘNG (đã gồm VAT)",
+  "Hand the cost base to this project as its budget": "Chuyển giá thành sang dự án này làm ngân sách",
+  "Import and local consolidated into one lookup — this is what the quotation prices from, exactly as the workbook’s COST_MASTER does.": "Hàng nhập khẩu và hàng nội địa gộp thành một bảng tra — báo giá lấy giá từ đây, đúng như COST_MASTER trong file Excel.",
+  "It can only be done once. Re-baselining a live job afterwards needs a revised estimate.": "Chỉ làm được một lần. Muốn đặt lại mốc chuẩn cho một công trình đang chạy thì phải lập dự toán sửa đổi.",
+  "Line item": "Khoản mục",
+  "Margin": "Biên lợi nhuận",
+  "Margin basis: the profit percentage is a share OF the selling price. Price = cost ÷ (1 − p).": "Cơ sở tỷ suất: phần trăm lợi nhuận là phần TRÊN giá bán. Giá = giá thành ÷ (1 − p).",
+  "Mark-up basis: the profit percentage is added ON to the cost. Price = cost × (1 + p). A 20% mark-up takes a 16.7% margin, not 20%.": "Cơ sở cộng giá: phần trăm lợi nhuận được CỘNG vào giá thành. Giá = giá thành × (1 + p). Cộng 20% chỉ cho tỷ suất 16,7%, không phải 20%.",
+  "No bill of materials yet.": "Chưa có bảng vật tư.",
+  "No build-up. This line prices at the rate entered on it.": "Chưa bóc tách. Dòng này tính theo đơn giá nhập tay.",
+  "No estimates yet. Create one to start pricing a tender.": "Chưa có dự toán. Tạo mới để bắt đầu định giá hồ sơ thầu.",
+  "No imported lines yet.": "Chưa có dòng hàng nhập khẩu.",
+  "No labour in the build-up yet.": "Chưa có nhân công trong bóc tách.",
+  "No lines in this cost centre.": "Chưa có dòng nào trong trung tâm chi phí này.",
+  "No lines to quote yet.": "Chưa có dòng nào để báo giá.",
+  "No lines yet. Add a section, then the items under it.": "Chưa có dòng nào. Thêm một chương, rồi thêm hạng mục bên dưới.",
+  "No local lines yet.": "Chưa có dòng hàng trong nước.",
+  "No open project to hand this to yet.": "Chưa có dự án đang mở để chuyển giao.",
+  "No priced lines yet.": "Chưa có dòng nào được định giá.",
+  "No rates on file. Add the materials, trades and plant you price with.": "Chưa có đơn giá. Hãy thêm vật liệu, nghề và máy mà bạn dùng để định giá.",
+  "Not ready to send": "Chưa sẵn sàng gửi",
+  "Nothing costed yet.": "Chưa tính chi phí gì.",
+  "Nothing to buy yet — add material to a line build-up.": "Chưa có gì phải mua — hãy thêm vật liệu vào bóc tách của một dòng.",
+  "Nothing to hand over yet.": "Chưa có gì để chuyển giao.",
+  "On lines": "Số dòng",
+  "One bill per cost centre, each carrying its own mark-up — a cleanroom and a concrete slab do not earn the same margin.": "Mỗi trung tâm chi phí một bảng vật tư, mỗi bảng có tỷ lệ cộng giá riêng — phòng sạch và tấm bê tông không thể cùng một biên lợi nhuận.",
+  "Payment / bank details": "Thông tin thanh toán / ngân hàng",
+  "Pick a project first.": "Hãy chọn một dự án trước.",
+  "Priced resources on file": "Nguồn lực đã có đơn giá",
+  "Profit as a share of the selling price — the number the business lives on": "Lợi nhuận tính trên giá bán — con số doanh nghiệp sống bằng nó",
+  "Quotation details": "Thông tin báo giá",
+  "Quotation info": "Thông tin báo giá",
+  "Recoverable from the state — deliberately NOT part of the landed cost": "Được hoàn/khấu trừ từ ngân sách — cố ý KHÔNG nằm trong giá vốn",
+  "SALES QUOTATION": "BẢNG BÁO GIÁ",
+  "Section": "Chương",
+  "Sections and notes carry no money — only priced items do. Open a line to build its rate from material, labour, plant and subcontract.": "Chương và ghi chú không mang giá trị — chỉ hạng mục có giá mới mang. Mở một dòng để bóc đơn giá từ vật liệu, nhân công, máy và thầu phụ.",
+  "Sell": "Giá bán",
+  "Selling rate — direct cost plus this line’s share of preliminaries, overhead, risk and profit": "Đơn giá bán — chi phí trực tiếp cộng phần chia của dòng này trong chi phí chung, quản lý, dự phòng và lợi nhuận",
+  "Set the project budget": "Đặt ngân sách dự án",
+  "Subtotal (excl VAT)": "Cộng (chưa VAT)",
+  "Switch a production line off and it leaves the quotation entirely — not as a zero row, which a customer reads as “we forgot to price this”. Capacity scale multiplies QUANTITY, not unit price: half a line is half the equipment at the same price. The permanent plant cannot be switched off.": "Tắt một dây chuyền thì nó biến mất hoàn toàn khỏi báo giá — không để lại dòng bằng 0, vì khách hàng sẽ hiểu là “họ quên báo giá mục này”. Hệ số công suất nhân với KHỐI LƯỢNG, không phải đơn giá: nửa dây chuyền là nửa số thiết bị với cùng đơn giá. Phần nhà máy cố định không thể tắt.",
+  "Terms &amp; conditions": "Điều khoản &amp; điều kiện",
+  "The quotation would price whichever came first — give them different codes.": "Báo giá sẽ lấy mã nào xuất hiện trước — hãy đặt mã khác nhau.",
+  "The same item code is bought two ways": "Cùng một mã hàng được mua theo hai đường",
+  "The server could not price this estimate": "Máy chủ không tính được giá cho dự toán này",
+  "This estimate is the budget of a live project — raise a revised estimate instead.": "Dự toán này đang là ngân sách của một dự án đang chạy — hãy lập dự toán sửa đổi.",
+  "This estimate is the budget of a live project. Re-baselining is a decision, not a re-click — raise a revised estimate instead.": "Dự toán này đang là ngân sách của một dự án đang chạy. Đặt lại mốc chuẩn là một quyết định, không phải bấm lại — hãy lập dự toán sửa đổi.",
+  "This estimate still prices at what it was priced at — that is deliberate. Re-pricing is a decision you make, not something that happens to a submitted tender.": "Dự toán vẫn giữ đúng giá lúc lập — đó là chủ ý. Tính lại giá là quyết định của bạn, không phải điều tự xảy ra với một hồ sơ đã nộp.",
+  "This is exactly what the customer will receive. Nothing here shows cost or mark-up.": "Đây đúng là những gì khách hàng sẽ nhận. Không có chỗ nào hiện giá vốn hay tỷ lệ cộng giá.",
+  "This is what becomes the project budget if the tender is won": "Đây là con số trở thành ngân sách dự án nếu trúng thầu",
+  "This rate was typed, not built from resources. Legitimate under tender pressure — but the total says so.": "Đơn giá này được nhập tay, không bóc từ định mức. Chấp nhận được khi gấp — nhưng tổng số sẽ nói rõ điều đó.",
+  "This tender is the budget of a live project — raise a revised one instead.": "Hồ sơ thầu này đang là ngân sách của một dự án đang chạy — hãy lập bản sửa đổi.",
+  "This writes the cost base of": "Thao tác này ghi giá thành của",
+  "Total cost": "Tổng chi phí",
+  "Total landed": "Tổng giá vốn nhập kho",
+  "Total material": "Tổng vật liệu",
+  "VAT (output)": "VAT đầu ra",
+  "What a won tender hands to the job. The COST BASE becomes the budget — direct cost, preliminaries, overhead and risk. Profit is deliberately not budgeted: a project that spends its profit has not stayed within budget, it has consumed the reason the job was taken.": "Những gì một hồ sơ trúng thầu bàn giao cho công trình. GIÁ THÀNH trở thành ngân sách — chi phí trực tiếp, chi phí chung công trường, quản lý và dự phòng. Lợi nhuận cố ý không đưa vào ngân sách: dự án tiêu vào lợi nhuận không phải là giữ được ngân sách, mà là ăn mất lý do nhận việc.",
+  "Which cost centres are carrying the job and which are being carried, against a 15% target margin. Mark-up and margin are different numbers and both are shown — a 15% mark-up is a 13% margin.": "Trung tâm chi phí nào đang gánh công trình và trung tâm nào đang được gánh, so với biên mục tiêu 15%. Cộng giá và tỷ suất là hai con số khác nhau và cả hai đều được hiển thị — cộng 15% chỉ cho tỷ suất 13%.",
+  "Worth a second look before you send it": "Nên xem lại trước khi gửi",
+  "a receivable, deliberately not in the cost": "một khoản phải thu, cố ý không nằm trong giá vốn",
+  "as its budget:": "làm ngân sách:",
+  "decided": "đã có kết quả",
+  "effective mark-up": "tỷ lệ cộng giá thực tế",
+  "estimated at": "lập giá tại",
+  "every line built from its parts": "mọi dòng đều bóc từ thành phần",
+  "ex-VAT": "chưa gồm VAT",
+  "into": "vào",
+  "labour hours": "giờ công",
+  "library now": "thư viện hiện tại",
+  "none decided yet": "chưa có kết quả nào",
+  "not attributed to a category": "chưa quy về nhóm chi phí nào",
+  "of cost on site": "của chi phí tại công trường",
+  "of cost on site plus overhead": "của chi phí công trường cộng quản lý",
+  "of direct cost": "của chi phí trực tiếp",
+  "priced by entered rate": "định giá bằng đơn giá nhập tay",
+  "priced lines": "dòng có giá",
+  "the blended truth after any line-by-line discounting.": "con số thực sau khi đã giảm giá từng dòng.",
+  "what the goods cost us, VAT excluded": "hàng hoá tốn của chúng ta bao nhiêu, chưa gồm VAT",
+  "what the job costs the company": "công trình tốn của công ty bao nhiêu",
   /* App launcher + contextual sidebar (2026-08-20) */
   'All Apps': 'Tất cả ứng dụng',
   /* Estimating (2026-08-20) */
