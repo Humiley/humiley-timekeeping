@@ -4877,6 +4877,24 @@ class Handler(BaseHTTPRequestHandler):
         "sales":      ("salesOwner", "accountManager"),
     }
 
+    def _ahu_check_family(self, item):
+        """Refuse a unit whose product family cannot be turned into a route.
+
+        `ahu_units` is a generic collection, so nothing used to stop "kappa" being stored in
+        `family`. The route library then raised on it, and because the production board builds every
+        unit's route, ONE mistyped record returned 500 to every user on the landing screen. The
+        board is now resilient to it as well (ahu.safe_build_for), but a record that cannot be built
+        should never have been accepted in the first place — a unit with no valid family has no
+        workstations and no test matrix, which is not a state worth storing.
+        """
+        fam = str((item or {}).get("family") or "").strip().lower()
+        if not fam or fam in ahu_route.FAMILIES:
+            return None
+        return self._err(
+            "%r is not an AHU product family. Use one of: %s — the family decides which "
+            "workstations and which tests apply to the unit."
+            % (item.get("family"), ", ".join(sorted(ahu_route.FAMILIES))), 400)
+
     def _ahu_unit_of(self, rec):
         """The AHU a production record belongs to, or {}."""
         uid = (rec or {}).get("unitId")
@@ -8520,6 +8538,10 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        if name == "ahu_units":
+            _err_fam = self._ahu_check_family(item)
+            if _err_fam:
+                return _err_fam
         if name.startswith("ahu_"):
             # Same reasoning as the eng_ strip below: a signature is applied by /api/esign and by
             # nothing else. A POST arriving with signedBy already filled would produce a workstation
@@ -14364,6 +14386,10 @@ class Handler(BaseHTTPRequestHandler):
         # dispute a factory record exists to settle. So signer identity is restored from the stored
         # row on every generic write, and a signed step is frozen, except for observations added
         # later ABOUT the step rather than changes TO it.
+        if name == "ahu_units":
+            _err_fam = self._ahu_check_family(item)
+            if _err_fam:
+                return _err_fam
         if name.startswith("ahu_"):
             existing = db.get_collection_item(name, iid)
             if existing:
@@ -14643,6 +14669,18 @@ class Handler(BaseHTTPRequestHandler):
             if existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"):
                 return self._err("This record has been signed and cannot be deleted. "
                                  "Raise a superseding change request instead.", 403)
+        # A signed production step is the same kind of evidence, and deleting one is strictly worse
+        # than editing it — which _coll_update already refuses. Without this, the operator who signed
+        # a hold point could destroy the record of what was measured, and the as-built dossier would
+        # simply show one fewer step with nothing saying it had ever existed. Admin included: an
+        # admin repairing a mistake can still correct the unit, but not erase a signature.
+        if name in ("ahu_steps", "ahu_ncr"):
+            if (existing.get("signatures") or existing.get("signedBy")
+                    or existing.get("gateSignedBy") or existing.get("closedBy")):
+                return self._err(
+                    "This step has been signed and cannot be deleted — it records what was measured "
+                    "when somebody put their name to it. Record a failure against it, or raise a "
+                    "non-conformance, rather than removing it.", 403)
         # Approved / paid financial records are immutable evidence — block deletion (admin included).
         if name in ("claims", "travel", "payments"):
             st = str(existing.get("status") or "").strip().lower()
@@ -14654,7 +14692,7 @@ class Handler(BaseHTTPRequestHandler):
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
             if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
-                    or name.startswith("eng_")) and not mine:
+                    or name.startswith("eng_") or name.startswith("ahu_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:
