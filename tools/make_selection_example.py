@@ -51,20 +51,19 @@ payload = {
     ],
 }
 
-doc = {
-    "aeroselect": {
-        "document": "selection",
-        "specVersion": S.SPEC_VERSION,
-        "selectionRef": "AS-2026-0410",
-        "engine": "AeroSelect",
-        "engineVersion": "2.0.0",
-        "generatedOn": "2026-08-20T09:14:00Z",
-        "contentHash": S.content_hash(payload),
-        # No `signature` here on purpose: the example must import cleanly on a portal with no
-        # shared secret configured, and be reported as unverified — which is the honest default.
-    },
-    "payload": payload,
+env = {
+    "document": "selection",
+    "specVersion": S.SPEC_VERSION,
+    "selectionRef": "AS-2026-0410",
+    "engine": "AeroSelect",
+    "engineVersion": "2.0.0",
+    "generatedOn": "2026-08-20T09:14:00Z",
 }
+# The hash covers the envelope's identifying fields as well as the payload, so it is computed once
+# the envelope is complete. No `signature` here on purpose: the example must import cleanly on a
+# portal with no shared secret configured, and be reported unverified — the honest default.
+env["contentHash"] = S.content_hash(env, payload)
+doc = {"aeroselect": env, "payload": payload}
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 with open(OUT, "w", encoding="utf-8") as fh:
