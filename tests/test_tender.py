@@ -478,3 +478,197 @@ def test_conditions_can_be_added_to_not_only_edited():
 def test_an_empty_or_malformed_stored_list_falls_back_to_the_defaults():
     for bad in ([], [{}], [{"text": "  "}], "not a list", None):
         assert t.conditions(_trading_tender(conditions=bad))[0]["key"] == "validity"
+
+
+# ══════ CASH FLOW ══════════════════════════════════════════════════════════════════════════════
+
+def _roll(civ=3_000_000_000, clr=2_000_000_000):
+    return {"centres": [{"costCentre": "CIV", "label": "Civil", "costVnd": civ},
+                        {"costCentre": "CLR", "label": "Cleanroom", "costVnd": clr}]}
+
+
+def _q(net=10_000_000_000, cogs=8_000_000_000):
+    return {"net": net, "cogs": cogs}
+
+
+def test_every_shipped_spend_curve_sums_to_one():
+    """A curve summing to 0.9 does not look wrong on screen — it forecasts spending 90% of a cost
+    centre and flatters the funding requirement by the rest."""
+    for key, curve in t.SPEND_CURVES.items():
+        assert abs(sum(curve) - 1.0) < 0.005, (key, sum(curve))
+    assert abs(sum(t.TRADING_CURVE) - 1.0) < 1e-9
+
+
+def test_the_default_milestones_collect_the_whole_contract():
+    assert sum(m["pct"] for m in t.DEFAULT_MILESTONES) == 100
+
+
+def test_each_cost_centre_spends_exactly_what_it_costs():
+    """Rounding 24 fractions of a billion dong independently loses money; the parts are made to
+    sum to the whole."""
+    cf = t.cash_flow({}, _q(), rollup=_roll())
+    assert cf["outTotal"] == 5_000_000_000
+    for row in cf["outflows"]:
+        assert sum(row["months"]) == row["total"]
+
+
+def test_the_milestones_collect_exactly_the_quoted_price():
+    cf = t.cash_flow({}, _q(net=10_000_000_000), rollup=_roll())
+    assert cf["inTotal"] == 10_000_000_000
+
+
+def test_the_civil_curve_starts_in_month_three_because_nothing_is_built_before_it():
+    cf = t.cash_flow({}, _q(), rollup=_roll())
+    civ = [r for r in cf["outflows"] if r["key"] == "CIV"][0]
+    assert civ["months"][0] == 0 and civ["months"][1] == 0
+    assert civ["months"][2] > 0
+
+
+def test_the_cleanroom_cannot_start_until_the_building_is_closed():
+    cf = t.cash_flow({}, _q(), rollup=_roll())
+    clr = [r for r in cf["outflows"] if r["key"] == "CLR"][0]
+    assert sum(clr["months"][:8]) == 0        # nothing before month 9
+    assert clr["months"][8] > 0
+
+
+def test_the_peak_funding_requirement_is_the_number_this_page_exists_for():
+    """A job can be profitable on every line of the P&L and still be one the company cannot afford
+    to take. Nothing else in this module would say so."""
+    cf = t.cash_flow({}, _q(), rollup=_roll())
+    assert cf["peakFunding"] > 0
+    assert 1 <= cf["peakMonth"] <= cf["months"]
+    assert cf["cumulative"][cf["peakMonth"] - 1] == -cf["peakFunding"]
+
+
+def test_paying_everything_at_the_end_makes_the_hole_far_deeper():
+    late = t.cash_flow({"milestones": [{"label": "On handover", "pct": 100, "month": 24}]},
+                       _q(), rollup=_roll())
+    normal = t.cash_flow({}, _q(), rollup=_roll())
+    assert late["peakFunding"] > normal["peakFunding"]
+
+
+def test_the_closing_position_is_the_profit_on_the_job():
+    cf = t.cash_flow({}, _q(net=10_000_000_000), rollup=_roll())
+    assert cf["closingPosition"] == 10_000_000_000 - cf["outTotal"]
+
+
+def test_milestones_that_do_not_add_up_to_the_contract_are_called_out():
+    cf = t.cash_flow({"milestones": [{"label": "Half", "pct": 50, "month": 1}]}, _q(), rollup=_roll())
+    assert any("not 100" in w for w in cf["warnings"])
+
+
+def test_a_hand_edited_curve_that_does_not_sum_to_one_warns_but_still_reconciles():
+    """Scaled to the cost rather than silently under-spending it — and said out loud."""
+    cf = t.cash_flow({"spendCurves": {"CIV": [0.5, 0.2]}}, _q(), rollup=_roll())
+    civ = [r for r in cf["outflows"] if r["key"] == "CIV"][0]
+    assert sum(civ["months"]) == 3_000_000_000
+    assert any("adds up to" in w for w in cf["warnings"])
+
+
+def test_a_milestone_beyond_the_last_month_lands_on_the_last_month_rather_than_vanishing():
+    cf = t.cash_flow({"durationMonths": 6, "milestones": [{"label": "End", "pct": 100, "month": 99}]},
+                     _q(), rollup=_roll())
+    assert cf["inflows"][0]["month"] == 6
+    assert cf["inTotal"] == 10_000_000_000
+
+
+def test_a_trading_tender_spends_over_a_short_curve_not_an_eighteen_month_one():
+    """Spreading a purchase order over eighteen months would be a picture of a job nobody is doing."""
+    cf = t.cash_flow({}, _q(), master={"landedTotal": 1_000_000_000})
+    goods = [r for r in cf["outflows"] if r["key"] == "GOODS"][0]
+    assert sum(goods["months"][:4]) == 1_000_000_000
+
+
+def test_project_fees_appear_in_the_cash_flow_too():
+    cf = t.cash_flow({"assump": {"pmFeePct": 5}}, _q(), rollup=_roll())
+    assert cf["outTotal"] > 5_000_000_000
+
+
+# ══════ RISK REGISTER ══════════════════════════════════════════════════════════════════════════
+
+def _risks():
+    return [{"id": "r1", "code": "R-001", "risk": "FX volatility", "probability": 50,
+             "impact": 280_000_000, "status": "Open"},
+            {"id": "r2", "code": "R-002", "risk": "Scope change", "probability": 0.5,
+             "impact": 350_000_000, "status": "Open"}]
+
+
+def test_probability_is_read_the_same_whether_it_is_typed_as_50_or_as_point_five():
+    r = t.risk_register(_risks())
+    assert r["rows"][0]["probability"] == 50 and r["rows"][1]["probability"] == 50
+
+
+def test_expected_value_is_probability_times_impact():
+    r = t.risk_register(_risks())
+    assert {x["code"]: x["expected"] for x in r["rows"]} == {"R-001": 140_000_000,
+                                                            "R-002": 175_000_000}
+    assert r["expectedValue"] == 315_000_000
+
+
+def test_the_register_is_ordered_by_what_it_is_worth_not_by_the_order_it_was_typed():
+    r = t.risk_register(_risks())
+    assert [x["code"] for x in r["rows"]] == ["R-002", "R-001"]
+
+
+def test_a_closed_risk_stops_counting_but_stays_on_the_register():
+    rows = _risks(); rows[0]["status"] = "Closed"
+    r = t.risk_register(rows)
+    assert len(r["rows"]) == 2 and r["openCount"] == 1
+    assert r["expectedValue"] == 175_000_000
+
+
+def test_the_register_says_whether_the_contingency_actually_covers_it():
+    """A million of expected risk against four hundred thousand of contingency is not a register,
+    it is a warning."""
+    q = _q(cogs=8_000_000_000)
+    thin = t.risk_register(_risks(), {"assump": {"contingencyPct": 2}}, q)
+    assert thin["contingency"] == 160_000_000
+    assert thin["covered"] is False and thin["shortfall"] == 155_000_000
+    fat = t.risk_register(_risks(), {"assump": {"contingencyPct": 10}}, q)
+    assert fat["covered"] is True and fat["shortfall"] == 0
+
+
+def test_the_worst_case_is_every_risk_landing_at_once():
+    assert t.risk_register(_risks())["worstCase"] == 630_000_000
+
+
+def test_probability_bands_read_in_words_as_well_as_numbers():
+    assert t.risk_band(0.02) == "Very low"
+    assert t.risk_band(25) == "Medium"
+    assert t.risk_band(50) == "High"        # a coin flip is High on this scale, not Medium
+    assert t.risk_band(0.9) == "Very high"
+
+
+# ══════ SENSITIVITY ════════════════════════════════════════════════════════════════════════════
+
+def test_sensitivity_flexes_the_cost_and_holds_the_price():
+    """The price has already been given to the customer. Flexing both would let an overrun be
+    absorbed by a price rise nobody has agreed to."""
+    s = t.sensitivity(_q(), {})
+    base = [r for r in s["rows"] if r["step"] == 0][0]
+    worse = [r for r in s["rows"] if r["step"] == 10][0]
+    assert base["marginPct"] == 20.0
+    assert worse["marginPct"] < base["marginPct"]
+    assert worse["cost"] > base["cost"]
+
+
+def test_the_break_even_overrun_is_the_room_there_actually_is():
+    s = t.sensitivity(_q(net=10_000_000_000, cogs=8_000_000_000), {})
+    assert s["breakEvenOverrunPct"] == 25.0
+
+
+def test_a_thin_job_is_called_thin_and_a_losing_one_loss_making():
+    s = t.sensitivity(_q(net=10_000_000_000, cogs=9_800_000_000), {})
+    verdicts = {r["step"]: r["verdict"] for r in s["rows"]}
+    assert verdicts[0.0] in ("Thin", "Loss-making")
+    assert verdicts[15.0] == "Loss-making"
+
+
+def test_a_curve_longer_than_the_job_is_compressed_into_it_never_dropped():
+    """A cleanroom curve starting in month 9, on a six-month job, used to fall outside the horizon
+    and take its whole cost out of the forecast with it."""
+    cf = t.cash_flow({"durationMonths": 6}, _q(), rollup=_roll())
+    assert cf["outTotal"] == 5_000_000_000
+    clr = [r for r in cf["outflows"] if r["key"] == "CLR"][0]
+    assert sum(clr["months"]) == 2_000_000_000
+    assert len(clr["months"]) == 6
