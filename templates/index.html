@@ -201,6 +201,9 @@ button,.btn{touch-action:manipulation}  /* no double-tap zoom on rapid mobile ta
    `th{background:transparent !important}` below, so rows would otherwise bleed through it. */
 .table-wrap{overflow-x:auto;overflow-y:hidden}
 .table-wrap thead th{position:sticky;top:0;z-index:3;background:var(--card) !important}
+/* The register's group name is emitted twice: in the Category column for desktop, and again inside
+   the name column for phones, where Category is hidden so that column can freeze. Only one shows. */
+.pd-grp-sm{display:none}
 body.exporting .table-wrap{max-height:none !important;overflow:visible !important}
 /* Proxy horizontal scrollbar, pinned to the viewport bottom while a wide table is on screen. */
 #tw-xbar{position:fixed;bottom:0;z-index:900;overflow-x:auto;overflow-y:hidden;height:14px;display:none;
@@ -877,6 +880,26 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   .modal-close{width:40px !important;height:40px !important}
   /* guard: content never scrolls sideways itself — wide children scroll in their own box */
   #content{overflow-x:hidden}
+  /* ── the Detail Schedule register on a phone ──────────────────────────────────────────────────
+     The register is twelve columns and 1120px wide; on a 375px screen the three quantity cells sit
+     583px off to the right — about two screen-widths — and the row you were typing into had scrolled
+     out of sight, so a site engineer was entering a figure against an unlabelled box. The name column
+     freezes at left:0 instead. Scoped to .pd-reg: every other table in the portal is untouched.
+     Category is hidden here rather than frozen too — two frozen columns would eat 308 of 310px — and
+     the group name rides inside the frozen column instead (.pd-grp-sm). */
+  .pd-reg th.pdc0, .pd-reg td.pdc0{display:none}
+  /* !important because the <th> carries an inline min-width:190px for the desktop layout, and an
+     inline declaration beats a plain stylesheet one — without this the frozen column eats 190 of the
+     310px available and leaves 120px for the data it is supposed to be labelling. */
+  .pd-reg th.pdc1, .pd-reg td.pdc1{position:sticky;left:0;z-index:2;
+    min-width:132px !important;max-width:132px !important;width:132px !important;
+    white-space:normal;background:var(--card,#fff);box-shadow:1px 0 0 var(--line)}
+  .pd-reg thead th.pdc1{z-index:6}
+  .pd-reg tbody tr[style*="--soft-bg"] td.pdc1{background:var(--soft-bg)}
+  .pd-grp-sm{display:inline}
+  /* the filter chips are bare <button>s with inline styles, so .btn{min-height:38px} above never
+     reached them — they were rendering 21px tall, half the portal's own touch minimum. */
+  .sch-chip{min-height:38px !important;padding:8px 13px !important}
   /* ── mobile scroll smoothness ── the desktop "floating card" theme paints big blurred
      shadows on every card; those are expensive to repaint while scrolling on a phone, which
      shows up as stutter. Swap for a light, cheap shadow and drop the GPU-heavy modal blur. */
@@ -21691,8 +21714,12 @@ function _pdRegister(pid, rows, cats, day) {
     const cr = rows.filter(r => _pdGroupOf(pid, r) === cat), roll = _pdRollup(cr, day);
     const open = !_pdCol[cat];
     body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
-      '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
-      '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' ' + _t('item(s)') + '</td>' +
+      '<td class="pdc0" style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
+      '<td class="pdc1" style="color:var(--text-light);font-size:12px">' +
+        // col 0 is hidden on a phone so the name column can freeze at left:0 — the group name would
+        // go with it, so it rides here too, shown by CSS only at that width.
+        '<span class="pd-grp-sm" style="font-weight:700;color:var(--text)">' + (open ? '−' : '+') + ' ' + _pmEsc(cat) + ' · </span>' +
+        cr.length + ' ' + _t('item(s)') + '</td>' +
       '<td></td>' +
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
       '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
@@ -21718,8 +21745,8 @@ function _pdRegister(pid, rows, cats, day) {
         ' onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'"' +
         ' onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
       body += '<tr>' +
-        '<td></td>' +
-        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' +
+        '<td class="pdc0"></td>' +
+        '<td class="pdc1"><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' +
           (r.category ? '<div style="font-size:10.5px;color:var(--text-light)">' + _pmEsc(r.category) + '</div>' : '') + '</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b>' +
@@ -21773,9 +21800,9 @@ function _pdRegister(pid, rows, cats, day) {
     ['At site', 'right', 88], ['Planned', 'right', 88], ['Unit', '', 64]];
   const table = '<datalist id="pd-units">' + ['m', 'm²', 'm³', 'kg', 'no.', 'set', 'lot', 'point', 'zone']
       .map(u => '<option value="' + u + '">').join('') + '</datalist>' +
-    '<div class="table-wrap"><table style="min-width:1120px"><thead>' +
-    '<tr><th rowspan="2" style="min-width:118px;vertical-align:bottom">' + _t('Category') + '</th>' +
-      '<th rowspan="2" style="min-width:190px;vertical-align:bottom">' + _t('Report Items') + '</th>' +
+    '<div class="table-wrap"><table class="pd-reg" style="min-width:1120px"><thead>' +
+    '<tr><th rowspan="2" class="pdc0" style="min-width:118px;vertical-align:bottom">' + _t('Category') + '</th>' +
+      '<th rowspan="2" class="pdc1" style="min-width:190px;vertical-align:bottom">' + _t('Report Items') + '</th>' +
       '<th colspan="4" style="' + GRP + '">' + _t('Progress (%)') + '</th>' +
       '<th colspan="2" style="' + GRP + '">' + _t('Dates') + '</th>' +
       '<th colspan="3" style="' + GRP + EDGE + '" title="' + _tkEscA(_t('Actual at site ÷ scheduled quantity')) + '">' +
@@ -21858,7 +21885,18 @@ async function pdBiKey(revoke) {
      tracing a finger up the screen.
    · Rows are ACTIONABLE — click an activity to file its progress, click a trade to fold it away.
      Everything visible here is something a site engineer wants to do next. */
-const _PD_LABW = 404;   // gutter: name · who · start · finish · duration                     // label gutter, px — shared by header, rows and gridlines
+const _PD_LABW = 404;   // gutter: name · who · start · finish · duration
+/* On a phone the 404px gutter is WIDER than the scroll box (310px at 375px wide), and it is
+   position:sticky;left:0 — so it covered the plot at every scroll position and the Gantt bars were
+   not merely cramped, they were unreachable. Measured on production: 0px of plot visible at rest,
+   0px at scrollLeft 200, 33px at maximum scroll, bars never visible.
+   This must be decided in JS rather than a media query: the gridline overlay and the today marker are
+   positioned absolutely at left:_PD_LABW, so shrinking the gutter in CSS alone would leave them
+   228px out of register with the bars they annotate. */
+function _pdLabW() {
+  try { return window.matchMedia('(max-width:700px)').matches ? 176 : _PD_LABW; }
+  catch (e) { return _PD_LABW; }
+}                     // label gutter, px — shared by header, rows and gridlines
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
 
@@ -21919,7 +21957,7 @@ function schFiltQ(ns, v) {
 }
 function _schFilterBar(ns, shown, total) {
   const f = _schFilt[ns];
-  const chip = (k, label) => '<button onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
+  const chip = (k, label) => '<button class="sch-chip" onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
     (f.k === k ? 'var(--navy)' : 'var(--line)') + ';background:' + (f.k === k ? 'var(--navy)' : 'var(--card,#fff)') +
     ';color:' + (f.k === k ? '#fff' : 'var(--text-light)') + ';border-radius:999px;padding:3px 11px;' +
     'font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' + _t(label) + '</button>';
@@ -21960,6 +21998,7 @@ function _schWho(who) {
 }
 
 function _schTimeline(rows, o) {
+  const LABW = _pdLabW(), NARROW = LABW < 300;   // one decision; every offset below reads it
   o = o || {};
   const day = o.day || _pmToday();
   const ns = o.ns || 'd', total = rows.length;
@@ -22016,14 +22055,15 @@ function _schTimeline(rows, o) {
 
   const header =
     '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
-      '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
+      '<div style="width:' + LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
         'border-right:1px solid var(--line);padding:6px 10px;display:flex;align-items:flex-end;gap:6px;' +
         'font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' +
         '<span style="flex:1;min-width:0">' + _t(o.labelHead || 'Trade / Activity') + '</span>' +
-        '<span style="width:26px;text-align:center">' + _t('Who') + '</span>' +
-        '<span style="width:52px;text-align:right">' + _t('Start') + '</span>' +
-        '<span style="width:52px;text-align:right">' + _t('Finish') + '</span>' +
-        '<span style="width:38px;text-align:right">' + _t('Dur') + '</span>' +
+        (NARROW ? '' :
+          '<span style="width:26px;text-align:center">' + _t('Who') + '</span>' +
+          '<span style="width:52px;text-align:right">' + _t('Start') + '</span>' +
+          '<span style="width:52px;text-align:right">' + _t('Finish') + '</span>' +
+          '<span style="width:38px;text-align:right">' + _t('Dur') + '</span>') +
         '<span style="width:62px;text-align:right">' + _t('Status') + '</span></div>' +
       '<div style="flex:1;position:relative;height:46px">' +
         band(quarters, 22, 11, 700) +
@@ -22049,16 +22089,17 @@ function _schTimeline(rows, o) {
     'font-variant-numeric:tabular-nums;color:var(--text-light);' + (extra || '') + '">' + v + '</span>';
   const lab = (html, indent, r) => {
     const f = r ? _schFlag(r, day) : null;
-    return '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
+    return '<div style="width:' + LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
       'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:6px;' +
       'overflow:hidden;white-space:nowrap">' +
       '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">' + html + '</span>' +
-      (r ? '<span style="width:26px;display:flex;justify-content:center;flex:none">' + _schWho(r.who) + '</span>' +
-           cell(r.start ? tkFmtDate(r.start).slice(0, 6) : '—', 52) +
-           cell(r.finish ? tkFmtDate(r.finish).slice(0, 6) : '—', 52) +
-           cell(dur(r), 38) +
+      (r ? (NARROW ? '' :
+             '<span style="width:26px;display:flex;justify-content:center;flex:none">' + _schWho(r.who) + '</span>' +
+             cell(r.start ? tkFmtDate(r.start).slice(0, 6) : '—', 52) +
+             cell(r.finish ? tkFmtDate(r.finish).slice(0, 6) : '—', 52) +
+             cell(dur(r), 38)) +
            cell(f.label, 62, 'color:' + f.hex + ';font-weight:700')
-         : '<span style="width:230px;flex:none"></span>') + '</div>';
+         : '<span style="width:' + (NARROW ? 62 : 230) + 'px;flex:none"></span>') + '</div>';
   };
 
   const groups = []; rows.forEach(r => { if (groups.indexOf(r.group) < 0) groups.push(r.group); });
@@ -22099,10 +22140,10 @@ function _schTimeline(rows, o) {
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
     _schFilterBar(ns, rows.length, total) +
-    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (_PD_LABW + plotW) + 'px">' +
+    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (LABW + plotW) + 'px">' +
       header +
       '<div style="position:relative">' +
-        '<div style="position:absolute;left:' + _PD_LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
+        '<div style="position:absolute;left:' + LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
           gridlines + todayLine + '</div>' + body +
       '</div></div></div>' +
     '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
