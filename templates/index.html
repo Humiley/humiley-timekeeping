@@ -1066,6 +1066,22 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-label">Design Control</span>
   </div>
 
+  <div class="sidebar-section-label" data-appgrp="ahu" data-app="ahu">AHU Production</div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-board',this,'Production Board')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M8 10v10"/><path d="M15 10v10"/></svg></span>
+    <span class="nav-label">Production Board</span><span class="nav-badge hidden" id="badge-ahu"></span>
+  </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-units',this,'AHU Register')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z"/><polyline points="2.32 6.16 12 11 21.68 6.16"/><line x1="12" y1="22.76" x2="12" y2="11"/></svg></span>
+    <span class="nav-label">AHU Register</span>
+  </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-orders',this,'Orders &amp; Contracts')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>
+    <span class="nav-label">Orders &amp; Contracts</span>
+  </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-standard',this,'Production Standard')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
+    <span class="nav-label">Production Standard</span>
   <div class="sidebar-section-label" data-appgrp="est" data-roles="manager" data-app="est">Estimating</div>
   <div class="nav-item" data-roles="manager" data-app="est" onclick="showView('est-projects',this,'Estimates')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/></svg></span>
@@ -1448,6 +1464,11 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-eng-dashboard" class="view"><div class="page-header"><div><h1>Design Portfolio</h1><p>Every engineering design commission — stage, progress, and what is holding each one up</p></div></div><div id="eng-dashboard-root"></div></div>
 <div id="view-eng-projects" class="view"><div class="page-header"><div><h1>Design Control</h1><p>Conceptual, basic and detailed design — deliverables, drawings, revisions and the control around them</p></div></div><div id="eng-projects-root"></div></div>
 <div id="view-eng-project" class="view"><div id="eng-project-root"></div></div>
+<div id="view-ahu-board" class="view"><div class="page-header"><div><h1>Production Board</h1><p>Every AHU on the floor right now — the step it is on, what it is waiting for, and what is holding it</p></div></div><div id="ahu-board-root"></div></div>
+<div id="view-ahu-units" class="view"><div class="page-header"><div><h1>AHU Register</h1><p>Every unit by its Production Identification Number, from order to dispatch</p></div></div><div id="ahu-units-root"></div></div>
+<div id="view-ahu-orders" class="view"><div class="page-header"><div><h1>Orders &amp; Contracts</h1><p>Customer purchase orders and contracts, and the units built against each</p></div></div><div id="ahu-orders-root"></div></div>
+<div id="view-ahu-standard" class="view"><div class="page-header"><div><h1>Production Standard</h1><p>AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix</p></div></div><div id="ahu-standard-root"></div></div>
+<div id="view-ahu-unit" class="view"><div id="ahu-unit-root"></div></div>
 
 <!-- ═══ ESTIMATING: the tender price, built from its parts ═══ -->
 <div id="view-est-projects" class="view"><div class="page-header"><div><h1>Estimates</h1><p>What a job will cost us, and what we should therefore charge for it</p></div></div><div id="est-projects-root"></div></div>
@@ -15804,6 +15825,92 @@ const _QA_SPECS = {
     { k: 'area', label: 'Area / zone' }, { k: 'manpower', label: 'Avg daily manpower', type: 'number' },
     { k: 'workPerformed', label: 'Work performed this week', type: 'textarea' }, { k: 'nextWeekPlan', label: 'Plan for next week', type: 'textarea' },
     { k: 'delays', label: 'Delays / issues' }, { k: 'safetyIncidents', label: 'Safety incidents' }, { k: 'preparedBy', label: 'Prepared by', type: 'select', options: 'employees' }, { k: 'attachments', label: 'Attachments — contractor reports / photos (images / PDF)', type: 'files' }] },
+
+  /* ── AHU production ──
+     The class fields are deliberately left blank rather than pre-filled: a blank one inherits the
+     Design Standard default for the family, and the server says so. Cleanroom class and supply
+     voltage are never defaulted — an assumed voltage would set the hi-pot test voltage, and an
+     assumed cleanroom class would put a number nobody chose on a validation record. */
+  ahu_orders: { title: 'AHU Order / Contract', coll: 'ahu_orders', reload: 'ahu_orders', fields: [
+    { k: 'poNumber', label: 'Customer PO / contract no.' }, { k: 'customer', label: 'Customer' },
+    { k: 'project', label: 'Project' }, { k: 'orderDate', label: 'Order date', type: 'date' },
+    { k: 'deliveryDate', label: 'Contracted delivery date', type: 'date' },
+    { k: 'incoterms', label: 'Incoterms' }, { k: 'paymentTerms', label: 'Payment terms' },
+    { k: 'warrantyMonths', label: 'Warranty (months)', type: 'number' },
+    { k: 'ldClause', label: 'Liquidated damages clause' },
+    { k: 'fatRequired', label: 'FAT sold with this order', type: 'select', options: ['', 'Yes'] },
+    { k: 'scheduleBaselined', label: 'Master schedule baselined', type: 'select', options: ['', 'Yes'] },
+    { k: 'openExceptions', label: 'Open commercial / technical exceptions', type: 'number' },
+    { k: 'salesOwner', label: 'Sales owner', type: 'select', options: 'employees' },
+    { k: 'productionLead', label: 'Production lead', type: 'select', options: 'employees' },
+    { k: 'qcInspector', label: 'QC inspector', type: 'select', options: 'employees' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_units: { title: 'AHU Unit (PIN)', coll: 'ahu_units', reload: 'ahu_units', fields: [
+    { k: 'pin', label: 'Production Identification Number (PIN)' }, { k: 'tag', label: 'AHU tag' },
+    { k: 'orderId', label: 'Customer order', type: 'ref', src: 'ahu_orders', blank: '— not linked to an order —' },
+    { k: 'family', label: 'Product family', type: 'select', options: ['modular', 'packaged', 'hygienic', 'outdoor'] },
+    { k: 'model', label: 'Model designation' },
+    { k: 'airflow', label: 'Airflow (m3/h)', type: 'number' }, { k: 'esp', label: 'External static pressure (Pa)', type: 'number' },
+    { k: 'selectionRef', label: 'AeroSelect selection reference' },
+    { k: 'classD', label: 'EN 1886 casing strength (blank = family default)', type: 'select', options: ['', 'D1', 'D2', 'D3'] },
+    { k: 'classL', label: 'EN 1886 leakage (blank = family default)', type: 'select', options: ['', 'L1', 'L2', 'L3'] },
+    { k: 'classF', label: 'EN 1886 filter bypass (blank = family default)', type: 'select', options: ['', 'F8', 'F9'] },
+    { k: 'classT', label: 'EN 1886 transmittance (blank = family default)', type: 'select', options: ['', 'T1', 'T2', 'T3', 'T4', 'T5'] },
+    { k: 'classTB', label: 'EN 1886 thermal bridging (blank = family default)', type: 'select', options: ['', 'TB1', 'TB2', 'TB3', 'TB4', 'TB5'] },
+    { k: 'voltage', label: 'Supply voltage (V) — sets the hi-pot test voltage', type: 'number' },
+    { k: 'coilDesignBar', label: 'Coil design pressure (bar)', type: 'number' },
+    { k: 'cleanroom', label: 'ISO 14644-1 class (hygienic units)', type: 'select', options: ['', 'ISO5', 'ISO6', 'ISO7', 'ISO8'] },
+    { k: 'fatRequired', label: 'FAT required', type: 'select', options: ['', 'Yes'] },
+    { k: 'soundTest', label: 'Sound test sold (T12)', type: 'select', options: ['', 'Yes'] },
+    { k: 'bomStatus', label: 'BOM status', type: 'select', options: ['Draft', 'Released'] },
+    { k: 'engProjectId', label: 'Linked design commission — an open change here holds gate G2', type: 'ref', src: 'eng_projects', blank: '— no design link —' },
+    { k: 'productionLead', label: 'Production lead', type: 'select', options: 'employees' },
+    { k: 'qcInspector', label: 'QC inspector', type: 'select', options: 'employees' },
+    { k: 'status', label: 'Status', type: 'select', options: ['In production', 'On hold', 'Dispatched', 'Cancelled'] },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_docs: { title: 'AHU Document', coll: 'ahu_docs', reload: 'ahu_docs', fields: [
+    { k: 'docNo', label: 'Document number' }, { k: 'title', label: 'Title' },
+    { k: 'kind', label: 'Kind', type: 'select', options: ['GA drawing', 'Selection report', 'Wiring diagram', 'As-built drawing', 'Test certificate', 'FAT report', 'O&M manual', 'Packing list', 'Bill of Lading', 'Warranty card', 'Certificate', 'Other'] },
+    { k: 'form', label: 'Form / standard reference' }, { k: 'rev', label: 'Revision' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Draft', 'Issued', 'Signed', 'Superseded'] },
+    { k: 'issuedOn', label: 'Issued on', type: 'date' },
+    { k: 'attachment', label: 'File (image or PDF)', type: 'file' }] },
+  ahu_bom: { title: 'BOM Line', coll: 'ahu_bom', reload: 'ahu_bom', fields: [
+    { k: 'partNo', label: 'Part number' }, { k: 'description', label: 'Description' },
+    { k: 'qty', label: 'Required quantity', type: 'number' },
+    { k: 'kittedQty', label: 'Kitted quantity', type: 'number' },
+    { k: 'receivedQty', label: 'Received quantity', type: 'number' },
+    { k: 'shortageQty', label: 'Shortage', type: 'number' },
+    { k: 'iqcStatus', label: 'Incoming inspection', type: 'select', options: ['', 'Pending', 'Passed', 'Rejected', 'N/A'] },
+    { k: 'supplier', label: 'Supplier' }, { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_trace: { title: 'Component Serial', coll: 'ahu_trace', reload: 'ahu_trace', fields: [
+    { k: 'component', label: 'Component', type: 'select', options: ['Fan', 'Motor', 'Coil', 'Filter', 'Controller', 'Damper', 'Heat recovery', 'Other'] },
+    { k: 'maker', label: 'Make' }, { k: 'serial', label: 'Serial number' }, { k: 'batch', label: 'Batch / lot' },
+    { k: 'section', label: 'Section ID' }, { k: 'recordedOn', label: 'Recorded on', type: 'date' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
+  ahu_ncr: { title: 'Non-conformance / Punch item', coll: 'ahu_ncr', reload: 'ahu_ncr', fields: [
+    { k: 'ncrNo', label: 'Number' }, { k: 'title', label: 'Title' },
+    { k: 'kind', label: 'Kind', type: 'select', options: ['NCR', 'punch', 'CAPA'] },
+    { k: 'stepCode', label: 'Step it was found at' },
+    { k: 'detail', label: 'What is wrong', type: 'textarea' },
+    { k: 'disposition', label: 'Disposition', type: 'select', options: ['', 'Use as is', 'Rework', 'Repair', 'Reject'] },
+    { k: 'correctiveAction', label: 'Corrective action', type: 'textarea' },
+    { k: 'raisedBy', label: 'Raised by', type: 'select', options: 'employees' },
+    { k: 'raisedOn', label: 'Raised on', type: 'date' },
+    { k: 'status', label: 'Status', type: 'select', options: ['Open', 'In progress', 'Closed'] },
+    { k: 'attachment', label: 'Photo / evidence', type: 'file' }] },
+  ahu_dispatch: { title: 'Packing & Dispatch', coll: 'ahu_dispatch', reload: 'ahu_dispatch', fields: [
+    { k: 'packaging', label: 'Packaging configuration', type: 'select', options: ['Stretch-wrap on skid', 'Bubble + plywood crate', 'Export wooden case (ISPM-15)', 'Export steel frame + tarpaulin'] },
+    { k: 'crateNo', label: 'Crate / case number' },
+    { k: 'grossWeight', label: 'Gross weight (kg)', type: 'number' },
+    { k: 'netWeight', label: 'Net weight (kg)', type: 'number' },
+    { k: 'dimensions', label: 'Dimensions (L x W x H)' },
+    { k: 'carrier', label: 'Carrier' }, { k: 'bolNo', label: 'Bill of Lading no.' },
+    { k: 'dispatchedOn', label: 'Dispatched on', type: 'date' },
+    { k: 'customerNotified', label: 'Customer notified of dispatch', type: 'select', options: ['', 'Yes'] },
+    { k: 'eta', label: 'ETA on site', type: 'date' },
+    { k: 'photos', label: 'Loading photos — 6 angles plus the nameplate', type: 'files' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
 };
 let _qaType = null, _qaEditId = null;
 function _qaMoneyFmt(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, '').replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
@@ -16089,6 +16196,10 @@ async function tkQuickAddSave() {
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
   if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
   if ((_qaType || '').indexOf('eng_') === 0) { if (spec.coll !== 'eng_projects' && !data.projectId) data.projectId = _engPid(); _engDerive(spec.coll, data, _qaEditId); if (!_qaEditId) { _engAutoNumber(spec.coll, data); if (spec.coll === 'eng_deliverables') _engAutoDocNo(data); } }
+  /* A production record belongs to the AHU whose traveller is open — stamped here rather than
+     typed, so a reading can never be filed against the wrong unit. Orders sit above units and
+     units carry their own order link, so neither is stamped. */
+  if ((_qaType || '').indexOf('ahu_') === 0) { if (spec.coll !== 'ahu_orders' && spec.coll !== 'ahu_units' && !data.unitId) data.unitId = _AHU.unitId; }
   if ((_qaType || '').indexOf('est_') === 0) { try { _estDerive(spec.coll, data, _qaEditId); } catch (e) { console.warn('est derive:', e.message); } }
   if (_qaType === 'devices') {   // resolve the assignee to an employee id so an assigned asset shows in that employee's My Devices
     const _em = data.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(data.assignedTo).toLowerCase()) : null;
@@ -19529,6 +19640,13 @@ function _qaRefOptions(src, ex) {
   }
   if (src === 'pm_projects') {
     return (_HR.pm_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
+  }
+  if (src === 'eng_projects') {
+    return (_HR.eng_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
+  }
+  if (src === 'ahu_orders') {
+    return (_HR.ahu_orders || []).map(o => ({
+      v: o.id, l: (o.poNumber || '(no PO number)') + (o.customer ? ' — ' + o.customer : '') }));
   }
   if (src === 'est_rates') {
     return (_HR.est_rates || []).slice()
@@ -27156,6 +27274,8 @@ const _TK_APPS = [
     icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/>' },
   { key: 'eng',         label: 'Engineering Design', tone: '#14B8A6', desc: 'Design gates, deliverables register and drawing revisions',
     icon: '<path d="M2 20h20"/><path d="M4 20V8l8-5 8 5v12"/><path d="M9 20v-6h6v6"/>' },
+  { key: 'ahu',         label: 'AHU Production',     tone: '#EA580C', desc: 'Order to dispatch — the shop floor, hold points, tests and the as-built record',
+    icon: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20"/><path d="M8 10v10"/><path d="M15 10v10"/>' },
   { key: 'est',         label: 'Estimating',         tone: '#B45309', desc: 'Tender pricing built from material, labour, plant and subcontract',
     icon: '<rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="7" x2="16" y2="7"/><line x1="8" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="12" y2="15"/>' },
   { key: 'hr',          label: 'Human Resource',     tone: '#DB4C8C', desc: 'People, contracts, assets and HR reporting',
@@ -27349,6 +27469,921 @@ function _appsFilter(q) {
   } else if (none) { none.style.display = 'none'; }
 }
 
+/* ═══════════════════════ AHU PRODUCTION ═══════════════════════
+   Order to dispatch, against AHU-SOP-MASTER-001. The process itself is served by
+   /api/ahu/process rather than restated here, so the shop floor, the test bench and the
+   as-built dossier all read one copy of the standard. Every acceptance limit shown next to
+   an input comes from the server for the same reason: a limit typed into a browser is a
+   limit somebody can retype. */
+
+const _AHU = { process: null, unitId: null, unit: null, tab: 'route', timer: null, busy: false };
+
+const _AHU_STATUS_TONE = {
+  'pending': '#94A3B8', 'ready': '#0EA5E9', 'in progress': '#F59E0B', 'started': '#F59E0B',
+  'complete': '#00B060', 'completed': '#00B060', 'passed': '#00B060', 'signed': '#00B060',
+  'released': '#00B060', 'failed': '#DC2626', 'held': '#7C3AED', 'waived': '#A16207'
+};
+const _AHU_VERDICT_TONE = {
+  'pass': '#00B060', 'fail': '#DC2626', 'incomplete': '#94A3B8',
+  'undeterminable': '#7C3AED', 'recorded': '#0EA5E9'
+};
+/* Qualified on purpose. `_VI` is one flat dictionary shared by the whole portal, so a bare 'Gate'
+   or 'Test' would be a claim on that word everywhere — and the later definition silently wins.
+   tests/vi_duplicate_keys.js exists because that has already shipped a regression once. */
+const _AHU_KIND_LABEL = { gate: 'Stage gate', op: 'Workstation', ipqc: 'Hold point', test: 'Factory test' };
+
+function _ahuEsc(s) { return (typeof _crmEsc === 'function') ? _crmEsc(s) : String(s == null ? '' : s); }
+function _ahuA(s) { return (typeof _tkEscA === 'function') ? _tkEscA(s) : _ahuEsc(s); }
+function _ahuTone(st) { return _AHU_STATUS_TONE[String(st || '').toLowerCase()] || '#94A3B8'; }
+function _ahuSigned(st) {
+  return ['complete', 'completed', 'passed', 'signed', 'released'].indexOf(String(st || '').toLowerCase()) >= 0;
+}
+function _ahuBadge(txt, tone, title) {
+  return '<span class="badge" title="' + _ahuA(title || '') + '" style="background:' + tone +
+    '18;color:' + tone + ';border:1px solid ' + tone + '40;font-size:11px;font-weight:700;' +
+    'padding:2px 8px;border-radius:999px;white-space:nowrap">' + _ahuEsc(txt) + '</span>';
+}
+function _ahuBar(pct, tone) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  return '<div style="height:7px;border-radius:999px;background:var(--line);overflow:hidden;min-width:70px">' +
+    '<div style="height:100%;width:' + p + '%;background:' + (tone || 'var(--emerald)') + '"></div></div>';
+}
+function _ahuCard(inner, pad) { return '<div class="card" style="padding:' + (pad || '16px 18px') + '">' + inner + '</div>'; }
+function _ahuEmpty(msg, hint) {
+  return _ahuCard('<div style="text-align:center;padding:26px 10px;color:var(--text-light)">' +
+    '<div style="font-weight:700;color:var(--navy);margin-bottom:5px">' + _ahuEsc(msg) + '</div>' +
+    (hint ? '<div style="font-size:12.5px">' + _ahuEsc(hint) + '</div>' : '') + '</div>');
+}
+
+async function _ahuProcess() {
+  if (_AHU.process) return _AHU.process;
+  const r = await tkApi('/api/ahu/process');
+  _AHU.process = r || {};
+  return _AHU.process;
+}
+
+/* ───────────────────────── Production Board ───────────────────────── */
+async function ahuRenderBoard() {
+  const root = document.getElementById('ahu-board-root'); if (!root) return;
+  if (!root.dataset.loaded) root.innerHTML = tkSkeleton();
+  let data;
+  try { data = await tkApi('/api/ahu/board'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000">Could not load the production board: ' +
+      _ahuEsc(e.message) + '</div>'); return;
+  }
+  root.dataset.loaded = '1';
+  const units = (data && data.units) || [];
+  _ahuBoardTick();
+  if (!units.length) {
+    root.innerHTML = _ahuEmpty('Nothing on the floor',
+      'Register an AHU against a customer order to start its route.');
+    return;
+  }
+  const held = units.filter(u => (u.failed || []).length || u.openNcr > 0);
+  const kpi = [
+    ['In production', units.length, 'var(--navy)'],
+    ['Held or failed', held.length, held.length ? '#DC2626' : 'var(--emerald)'],
+    ['Average completion', Math.round(units.reduce((a, u) => a + (u.progress || 0), 0) / units.length) + '%', 'var(--emerald)'],
+    ['Awaiting a signature', units.filter(u => (u.next || []).length).length, '#F59E0B']
+  ];
+  const kpiHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">' +
+    kpi.map(k => _ahuCard('<div style="font-size:11.5px;color:var(--text-light);font-weight:600">' +
+      _ahuEsc(k[0]) + '</div><div style="font-size:23px;font-weight:800;color:' + k[2] + ';line-height:1.25">' +
+      _ahuEsc(k[1]) + '</div>', '13px 15px')).join('') + '</div>';
+
+  const rows = units.map(u => {
+    const tone = (u.failed || []).length ? '#DC2626' : (u.progress >= 100 ? '#00B060' : 'var(--emerald)');
+    const stg = 'Stage ' + (u.stage || 1) + ' · ' + _ahuEsc(u.stageTitle || '');
+    const nxt = (u.failed || []).length
+      ? _ahuBadge('Failed: ' + u.failed.join(', '), '#DC2626')
+      : (u.next || []).length
+        ? _ahuBadge('Next: ' + u.next[0] + (u.nextTitle ? ' — ' + u.nextTitle : ''), '#0EA5E9')
+        : _ahuBadge('Complete', '#00B060');
+    return '<tr style="cursor:pointer" onclick="ahuOpenUnit(\'' + _ahuA(u.unitId) + '\')">' +
+      '<td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _ahuEsc(u.pin || '—') + '</td>' +
+      '<td>' + _ahuEsc(u.tag || '') + '</td>' +
+      '<td style="text-transform:capitalize">' + _ahuEsc(u.family || '') + '</td>' +
+      '<td style="font-size:12px;color:var(--text-light)">' + stg + '</td>' +
+      '<td style="min-width:120px">' + _ahuBar(u.progress, tone) +
+      '<div style="font-size:11px;color:var(--text-light);margin-top:3px;font-variant-numeric:tabular-nums">' +
+      (u.progress || 0) + '% · ' + (u.signed || 0) + '/' + (u.total || 0) + ' steps</div></td>' +
+      '<td>' + nxt + (u.openNcr ? ' ' + _ahuBadge(u.openNcr + ' NCR', '#DC2626') : '') +
+      ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') + '</td></tr>';
+  }).join('');
+
+  root.innerHTML = kpiHtml + _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div style="font-weight:800;color:var(--navy)">Units on the floor</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)" id="ahu-board-stamp"></div></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
+    '<th>PIN</th><th>Tag</th><th>Family</th><th>Production stage</th><th>Completion</th><th>State</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+  _ahuBoardTick();
+}
+function _ahuBoardTick() {
+  const el = document.getElementById('ahu-board-stamp');
+  if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
+}
+/* The board is the one screen somebody leaves open on a wall, so it refreshes itself — but only
+   while it is actually the visible view, so a backgrounded tab is not polling the server forever. */
+function _ahuBoardAuto() {
+  clearInterval(_AHU.timer);
+  _AHU.timer = setInterval(() => {
+    const v = document.getElementById('view-ahu-board');
+    if (!v || !v.classList.contains('active') || document.hidden) return;
+    ahuRenderBoard();
+  }, 30000);
+}
+
+/* ───────────────────────── AHU register ───────────────────────── */
+async function ahuRenderUnits() {
+  const root = document.getElementById('ahu-units-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  await Promise.all([tkLoadColl('ahu_units'), tkLoadColl('ahu_orders')].map(p => p.catch(() => { })));
+  const units = _HR.ahu_units || [], orders = _HR.ahu_orders || [];
+  const byOrder = {}; orders.forEach(o => byOrder[o.id] = o);
+  const add = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'ahu_units\')">' +
+    tkIcon('plus', 13) + ' Register an AHU</button>';
+  if (!units.length) {
+    root.innerHTML = _ahuEmpty('No AHU registered yet',
+      'Each physical unit gets a Production Identification Number, and everything else hangs off it.') +
+      '<div style="margin-top:12px;text-align:center">' + add + '</div>';
+    return;
+  }
+  const rows = units.map(u => {
+    const o = byOrder[u.orderId] || {};
+    return '<tr style="cursor:pointer" onclick="ahuOpenUnit(\'' + _ahuA(u.id) + '\')">' +
+      '<td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _ahuEsc(u.pin || '—') + '</td>' +
+      '<td>' + _ahuEsc(u.tag || '') + '</td>' +
+      '<td style="text-transform:capitalize">' + _ahuEsc(u.family || '') + '</td>' +
+      '<td>' + _ahuEsc(o.poNumber || '') + '</td>' +
+      '<td>' + _ahuEsc(o.customer || '') + '</td>' +
+      '<td>' + _ahuBadge(u.status || 'In production', _ahuTone(u.status || 'in progress')) + '</td></tr>';
+  }).join('');
+  root.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div style="font-weight:800;color:var(--navy)">' + units.length + ' unit(s)</div>' + add + '</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:720px"><thead><tr>' +
+    '<th>PIN</th><th>Tag</th><th>Family</th><th>Order</th><th>Customer</th><th>Status</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+/* ───────────────────────── Orders & contracts ───────────────────────── */
+async function ahuRenderOrders() {
+  const root = document.getElementById('ahu-orders-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  await Promise.all([tkLoadColl('ahu_orders'), tkLoadColl('ahu_units')].map(p => p.catch(() => { })));
+  const orders = _HR.ahu_orders || [], units = _HR.ahu_units || [];
+  const add = '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'ahu_orders\')">' +
+    tkIcon('plus', 13) + ' New order</button>';
+  if (!orders.length) {
+    root.innerHTML = _ahuEmpty('No customer orders yet',
+      'A purchase order or contract is what a unit is built against — and what gate G1 checks.') +
+      '<div style="margin-top:12px;text-align:center">' + add + '</div>';
+    return;
+  }
+  const rows = orders.map(o => {
+    const mine = units.filter(u => u.orderId === o.id);
+    const reviewed = o.contractReviewSigned
+      ? _ahuBadge('Reviewed · ' + (o.contractReviewBy || ''), '#00B060', 'Contract review AHU-FM-101 signed')
+      : _ahuBadge('Review not signed', '#DC2626', 'Gate G1 will refuse until AHU-FM-101 is signed');
+    return '<tr>' +
+      '<td style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _ahuEsc(o.poNumber || o.id) + '</td>' +
+      '<td>' + _ahuEsc(o.customer || '') + '</td>' +
+      '<td>' + _ahuEsc(o.project || '') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(o.deliveryDate || '') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + mine.length + '</td>' +
+      '<td>' + reviewed + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_orders\',\'' +
+      _ahuA(o.id) + '\')">Edit</button>' +
+      (o.contractReviewSigned ? '' :
+        '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuSignOrder(\'' +
+        _ahuA(o.id) + '\')">' + tkIcon('check', 12) + ' Sign review</button>') + '</td></tr>';
+  }).join('');
+  root.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div style="font-weight:800;color:var(--navy)">' + orders.length + ' order(s)</div>' + add + '</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:820px"><thead><tr>' +
+    '<th>PO / contract</th><th>Customer</th><th>Project</th><th>Delivery</th><th>Units</th>' +
+    '<th>Contract review</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+function ahuSignOrder(id) {
+  const o = (_HR.ahu_orders || []).find(x => x.id === id) || {};
+  tkESign({
+    coll: 'ahu_orders', id: id, setStatus: 'Accepted',
+    meaning: 'Contract review AHU-FM-101 — ' + (o.poNumber || id),
+    onDone: () => { tkLoadColl('ahu_orders', true).then(() => ahuRenderOrders()); }
+  });
+}
+
+function ahuOpenUnit(id, tab) {
+  _AHU.unitId = id;
+  try { sessionStorage.setItem('ahu_unit', id); } catch (e) { }
+  _AHU.tab = tab || 'route';
+  showView('ahu-unit', null, 'AHU Traveller');
+}
+
+/* ───────────────────────── The traveller ─────────────────────────
+   One unit, its whole life. Everything here is drawn from /api/ahu/unit — including each step's
+   verdict and each gate's blockers — so what the screen says about a step is exactly what the
+   server will decide when somebody presses Sign. Computing a verdict in the browser as well would
+   create a second opinion, and the two would eventually disagree. */
+const _AHU_TABS = [
+  { k: 'route', label: 'Route & sign-off' },
+  { k: 'docs', label: 'Documents & drawings' },
+  { k: 'bom', label: 'Materials' },
+  { k: 'trace', label: 'Traceability' },
+  { k: 'ncr', label: 'Non-conformance' },
+  { k: 'dispatch', label: 'Packing & dispatch' },
+  { k: 'dossier', label: 'As-built dossier' }
+];
+
+async function ahuRenderTraveller() {
+  const root = document.getElementById('ahu-unit-root'); if (!root) return;
+  const id = _AHU.unitId || (function () { try { return sessionStorage.getItem('ahu_unit'); } catch (e) { return null; } })();
+  if (!id) { showView('ahu-units', null, 'AHU Register'); return; }
+  _AHU.unitId = id;
+  root.innerHTML = tkSkeleton();
+  let d;
+  try { d = await tkApi('/api/ahu/unit/' + encodeURIComponent(id)); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="padding:6px 0">This AHU could not be loaded: ' +
+      _ahuEsc(e.message) + ' <a href="#" onclick="showView(\'ahu-units\',null,\'AHU Register\');return false">Back to the register</a></div>');
+    return;
+  }
+  _AHU.unit = d;
+  await _ahuProcess();
+  const u = d.unit || {}, s = d.state || {};
+  const fam = (d.declaration && u.family) ? String(u.family) : '';
+  const tone = (s.failed || []).length ? '#DC2626' : (s.progress >= 100 ? '#00B060' : 'var(--emerald)');
+
+  const back = '<button class="btn btn-ghost btn-sm" onclick="showView(\'ahu-units\',null,\'AHU Register\')" style="font-size:12px">' +
+    tkIcon('arrowLeft', 13) + ' AHU Register</button>';
+  const hdr = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">' +
+    '<div>' + back +
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:8px">' +
+    '<span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:' + tone + '"></span>' +
+    '<div><div style="font-weight:800;color:var(--navy);font-size:18px;font-variant-numeric:tabular-nums">' +
+    _ahuEsc(u.pin || 'Unregistered') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light)">' +
+    _ahuEsc([u.tag, fam, (d.order || {}).poNumber, (d.order || {}).customer].filter(Boolean).join(' · ')) +
+    '</div></div></div></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    _ahuBadge('Stage ' + (s.stage || 1) + ' · ' + (s.stageTitle || ''), 'var(--navy)') +
+    _ahuBadge((s.progress || 0) + '% complete', tone) +
+    (s.openNcr ? _ahuBadge(s.openNcr + ' open NCR', '#DC2626') : '') +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuDossierPDF()">' +
+    tkIcon('download', 12) + ' As-built dossier</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuTravellerPDF()">' +
+    tkIcon('download', 12) + ' Traveller card</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuRebuildRoute()" ' +
+    'title="Re-read the route from the standard after a specification change. Signatures and readings are carried forward.">' +
+    tkIcon('refresh', 12) + ' Rebuild route</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_units\',\'' +
+    _ahuA(u.id) + '\')">' + tkIcon('edit', 12) + ' Edit</button>' +
+    '</div></div>' +
+    '<div style="margin-top:12px">' + _ahuBar(s.progress, tone) + '</div>' +
+    '<div id="ahu-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
+    _AHU_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="ahuTab(\'' + t.k + '\')" ' +
+      'style="border:none;background:' + (t.k === _AHU.tab ? 'var(--emerald)' : 'transparent') + ';color:' +
+      (t.k === _AHU.tab ? '#fff' : 'var(--text-light)') +
+      ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' +
+      _ahuEsc(t.label) + '</button>').join('') + '</div>');
+  root.innerHTML = hdr + '<div id="ahu-tab-body" style="margin-top:14px"></div>';
+  ahuTab(_AHU.tab);
+}
+
+function ahuTab(k) {
+  if (!_AHU_TABS.some(t => t.k === k)) k = 'route';
+  _AHU.tab = k;
+  document.querySelectorAll('#ahu-tabbar .tab').forEach(b => {
+    const on = b.dataset.k === k;
+    b.style.background = on ? 'var(--emerald)' : 'transparent';
+    b.style.color = on ? '#fff' : 'var(--text-light)';
+  });
+  const body = document.getElementById('ahu-tab-body'); if (!body) return;
+  const fn = { route: _ahuTabRoute, docs: _ahuTabDocs, bom: _ahuTabBom, trace: _ahuTabTrace,
+               ncr: _ahuTabNcr, dispatch: _ahuTabDispatch, dossier: _ahuTabDossier }[k];
+  try { body.innerHTML = fn ? fn(_AHU.unit) : ''; }
+  catch (e) { body.innerHTML = _ahuCard('<div style="color:#C00000">Could not draw this tab: ' + _ahuEsc(e.message) + '</div>'); }
+}
+
+/* ── Route & sign-off ── */
+function _ahuTabRoute(d) {
+  const steps = (d.steps || []).slice().sort((a, b) => (a.seq || 0) - (b.seq || 0));
+  if (!steps.length) {
+    return _ahuEmpty('This unit has no route yet',
+      'Press “Rebuild route” to lay the standard onto it — seven stages, the workstations for its family, its hold points and its test matrix.');
+  }
+  const stages = (_AHU.process && _AHU.process.stages) || [];
+  const byStage = {};
+  steps.forEach(s => { (byStage[s.stage] = byStage[s.stage] || []).push(s); });
+  const gateBlk = {}; (d.gates || []).forEach(g => gateBlk[g.code] = g.blockers || []);
+
+  return Object.keys(byStage).sort((a, b) => a - b).map(no => {
+    const meta = stages.find(x => String(x.no) === String(no)) || {};
+    const rows = byStage[no].map(s => _ahuStepRow(s, gateBlk)).join('');
+    const done = byStage[no].filter(s => _ahuSigned(s.status)).length;
+    return _ahuCard(
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<div><span style="font-weight:800;color:var(--navy)">Stage ' + _ahuEsc(no) + ' · ' +
+      _ahuEsc(meta.title || '') + '</span>' +
+      (meta.owner ? '<span style="font-size:11.5px;color:var(--text-light)"> — ' + _ahuEsc(meta.owner) + '</span>' : '') + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);font-variant-numeric:tabular-nums">' +
+      done + '/' + byStage[no].length + ' signed</div></div>' +
+      '<div style="display:flex;flex-direction:column;gap:8px">' + rows + '</div>') +
+      '<div style="height:12px"></div>';
+  }).join('');
+}
+
+function _ahuStepRow(s, gateBlk) {
+  const signed = _ahuSigned(s.status);
+  const blocked = (s.blockedBy || []).length;
+  const tone = _ahuTone(s.status);
+  const vt = _AHU_VERDICT_TONE[s.verdict] || '#94A3B8';
+  const gb = s.kind === 'gate' ? (gateBlk[s.code] || []) : [];
+  const meta = [s.wi, (s.forms || ''), s.std].filter(Boolean).join(' · ');
+  const open = _AHU.openStep === s.code;
+
+  let right = '';
+  if (signed) {
+    right = '<div style="text-align:right;font-size:11.5px;color:var(--text-light)">' +
+      _ahuBadge(s.status, tone) +
+      (s.signedBy ? '<div style="margin-top:3px">' + _ahuEsc(s.signedBy) +
+        (s.signedOn ? ' · ' + _ahuEsc(s.signedOn) : '') + '</div>' : '') + '</div>';
+  } else if (blocked) {
+    right = _ahuBadge('Waiting on ' + s.blockedBy.join(', '), '#94A3B8',
+      'The step before it has not been signed');
+  } else {
+    right = '<button class="btn btn-outline btn-sm" style="font-size:11.5px" onclick="ahuStepOpen(\'' +
+      _ahuA(s.code) + '\')">' + (open ? 'Close' : (s.checks || []).length ? 'Record & sign' : 'Sign off') + '</button>';
+  }
+
+  let detail = '';
+  if (open && !signed && !blocked) detail = _ahuStepPanel(s, gb);
+  else if (gb.length && !signed) {
+    detail = '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#DC262610;' +
+      'border:1px solid #DC262630;font-size:12px;color:#991B1B">' +
+      '<div style="font-weight:700;margin-bottom:3px">This gate is held</div><ul style="margin:0;padding-left:17px">' +
+      gb.map(b => '<li>' + _ahuEsc(b) + '</li>').join('') + '</ul></div>';
+  }
+
+  return '<div style="border:1px solid ' + (blocked ? 'var(--line)' : tone + '40') +
+    ';border-radius:9px;padding:10px 12px;background:' + (signed ? '#00B0600A' : 'transparent') + '">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
+    '<div style="min-width:220px;flex:1">' +
+    '<div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">' +
+    '<span style="font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + _ahuEsc(s.code) + '</span>' +
+    '<span style="font-weight:600">' + _ahuEsc(s.title) + '</span>' +
+    _ahuBadge(_AHU_KIND_LABEL[s.kind] || s.kind, s.kind === 'gate' ? 'var(--navy)' : s.kind === 'ipqc' ? '#7C3AED' : s.kind === 'test' ? '#0EA5E9' : '#64748B') +
+    (s.verdict && (s.checks || []).length ? _ahuBadge(s.verdict, vt, 'Judged by the server against the standard') : '') +
+    '</div>' +
+    (meta ? '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _ahuEsc(meta) + '</div>' : '') +
+    (s.tact ? '<div style="font-size:11px;color:var(--text-light)">Typical ' + _ahuEsc(s.tact) + '</div>' : '') +
+    '</div>' + right + '</div>' + detail + '</div>';
+}
+
+function _ahuStepPanel(s, gateBlockers) {
+  const checks = s.checks || [];
+  const inputs = checks.map(c => {
+    const lim = c.op === 'yes' ? 'Confirm'
+      : c.op === 'note' ? 'Recorded, not judged'
+      : c.op === 'range' ? 'Allowed ' + c.limit + ' to ' + c.limit2 + (c.unit ? ' ' + c.unit : '')
+      : (c.op === '<=' ? 'Maximum ' : 'Minimum ') + (c.limit == null ? '—' : c.limit) + (c.unit ? ' ' + c.unit : '');
+    const basis = c.limitNote ? ' · ' + c.limitNote : '';
+    const cur = c.value == null ? '' : c.value;
+    const field = c.op === 'yes'
+      ? '<select class="form-input" data-ck="' + _ahuA(c.key) + '" style="font-size:12.5px">' +
+        '<option value="">—</option>' +
+        '<option value="yes"' + (String(cur).toLowerCase() === 'yes' ? ' selected' : '') + '>Yes</option>' +
+        '<option value="no"' + (String(cur).toLowerCase() === 'no' ? ' selected' : '') + '>No</option></select>'
+      : '<input class="form-input" data-ck="' + _ahuA(c.key) + '" value="' + _ahuA(cur) +
+        '" ' + (c.op === 'note' ? '' : 'inputmode="decimal"') + ' style="font-size:12.5px">';
+    const tone = _AHU_VERDICT_TONE[c.status] || '#94A3B8';
+    return '<div style="display:grid;grid-template-columns:1fr 150px;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">' +
+      '<div><div style="font-size:12.5px;font-weight:600">' + _ahuEsc(c.label || c.key) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(lim + basis) +
+      (c.src ? ' · ' + _ahuEsc(c.src) : '') + '</div>' +
+      (c.status && c.status !== 'incomplete' ? '<div style="font-size:11px;color:' + tone + ';font-weight:600">' +
+        _ahuEsc(c.message || '') + '</div>' : '') + '</div>' +
+      '<div>' + field + '</div></div>';
+  }).join('');
+
+  const held = (gateBlockers || []).length
+    ? '<div style="margin:8px 0;padding:9px 11px;border-radius:8px;background:#DC262610;border:1px solid #DC262630;font-size:12px;color:#991B1B">' +
+      '<div style="font-weight:700;margin-bottom:3px">This gate is held</div><ul style="margin:0;padding-left:17px">' +
+      (gateBlockers || []).map(b => '<li>' + _ahuEsc(b) + '</li>').join('') + '</ul></div>'
+    : '';
+
+  const signLabel = s.kind === 'op' ? 'Sign the work complete' : s.kind === 'gate' ? 'Pass the gate' : 'Pass and sign';
+  return '<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)" data-step="' + _ahuA(s.code) + '">' +
+    (s.activity ? '<div style="font-size:12px;color:var(--text-light);margin-bottom:8px">' + _ahuEsc(s.activity) + '</div>' : '') +
+    (s.sampling ? '<div style="font-size:11.5px;color:#A16207;margin-bottom:8px">' + _ahuEsc(s.sampling) + '</div>' : '') +
+    (checks.length ? inputs : '<div style="font-size:12px;color:var(--text-light)">No measured check on this step — signing it records that it was done.</div>') +
+    held +
+    '<div style="display:flex;gap:7px;margin-top:11px;flex-wrap:wrap">' +
+    (checks.length ? '<button class="btn btn-ghost btn-sm" style="font-size:12px" onclick="ahuSaveReadings(\'' +
+      _ahuA(s.code) + '\')">' + tkIcon('save', 12) + ' Save readings</button>' : '') +
+    '<button class="btn btn-primary btn-sm" style="font-size:12px" onclick="ahuSignStep(\'' + _ahuA(s.code) +
+    '\')">' + tkIcon('check', 12) + ' ' + _ahuEsc(signLabel) + '</button>' +
+    '<button class="btn btn-outline btn-sm" style="font-size:12px" onclick="ahuFailStep(\'' + _ahuA(s.code) +
+    '\')" title="Record that this step did not pass. This is signed too — who decided a unit failed is exactly what an investigation needs.">' +
+    tkIcon('x', 12) + ' Record a failure</button></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:7px">' +
+    'Every limit above comes from the server. Signing re-checks them there — what you see here is what it will decide.</div></div>';
+}
+
+function ahuStepOpen(code) { _AHU.openStep = (_AHU.openStep === code) ? null : code; ahuTab('route'); }
+
+function _ahuCollect(code) {
+  const panel = document.querySelector('#ahu-tab-body [data-step="' + code + '"]');
+  const out = {};
+  if (!panel) return out;
+  panel.querySelectorAll('[data-ck]').forEach(el => {
+    const v = (el.value || '').trim();
+    if (v !== '') out[el.dataset.ck] = v;
+  });
+  return out;
+}
+
+function _ahuStep(code) { return ((_AHU.unit || {}).steps || []).find(s => s.code === code); }
+
+async function ahuSaveReadings(code, quiet) {
+  const s = _ahuStep(code); if (!s) return false;
+  const body = {};
+  Object.keys(s).forEach(k => { if (['verdict', 'checks', 'blockedBy', 'spec'].indexOf(k) < 0) body[k] = s[k]; });
+  body.readings = Object.assign({}, s.readings || {}, _ahuCollect(code));
+  try {
+    await tkApi('/api/coll/ahu_steps/' + encodeURIComponent(s.id), { method: 'PATCH', body: body });
+    if (!quiet) toast('Readings saved.');
+    return true;
+  } catch (e) { toast('Could not save the readings: ' + e.message, 'warn'); return false; }
+}
+
+async function ahuSignStep(code) {
+  const s = _ahuStep(code); if (!s) return;
+  if ((s.checks || []).length && !await ahuSaveReadings(code, true)) return;
+  const status = s.kind === 'op' ? 'Complete' : 'Passed';
+  tkESign({
+    coll: 'ahu_steps', id: s.id, setStatus: status,
+    meaning: (s.kind === 'gate' ? 'Gate ' : '') + s.code + ' — ' + (s.title || '') +
+      ' · ' + (((_AHU.unit || {}).unit || {}).pin || ''),
+    onDone: () => { _AHU.openStep = null; ahuRenderTraveller(); }
+  });
+}
+
+function ahuFailStep(code) {
+  const s = _ahuStep(code); if (!s) return;
+  tkESign({
+    coll: 'ahu_steps', id: s.id, setStatus: 'Failed',
+    meaning: s.code + ' failed — ' + (s.title || '') + ' · ' + (((_AHU.unit || {}).unit || {}).pin || ''),
+    onDone: () => {
+      _AHU.openStep = null;
+      toast('Recorded as failed. Raise a non-conformance against it so the correction is tracked.', undefined, 6000);
+      ahuRenderTraveller();
+    }
+  });
+}
+
+/* ── Documents & drawings ── */
+function _ahuTabDocs(d) {
+  const docs = d.docs || [];
+  const required = ((_AHU.process || {}).dossier || []).filter(x =>
+    x.always || (x.k === 'fat_report' && ((d.unit || {}).fatRequired || (d.order || {}).fatRequired)));
+  const have = f => docs.some(x => String(x.form || '').toLowerCase() === String(f || '').toLowerCase());
+  const check = required.map(r =>
+    '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">' +
+    (r.form && have(r.form)
+      ? '<span style="color:#00B060;font-weight:800">✓</span>'
+      : '<span style="color:#DC2626;font-weight:800">•</span>') +
+    '<span style="font-size:12.5px;flex:1">' + _ahuEsc(r.label) + '</span>' +
+    '<span style="font-size:11px;color:var(--text-light);font-variant-numeric:tabular-nums">' +
+    _ahuEsc(r.form || '') + '</span></div>').join('');
+
+  const rows = docs.length ? docs.map(x =>
+    '<tr><td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.docNo || '') + '</td>' +
+    '<td>' + _ahuEsc(x.title || x.kind || '') + '</td>' +
+    '<td>' + _ahuEsc(x.kind || '') + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.rev || '') + '</td>' +
+    '<td>' + _ahuBadge(x.status || 'Draft', _ahuTone(x.status)) + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.form || '') + '</td>' +
+    '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_docs\',\'' +
+    _ahuA(x.id) + '\')">Edit</button></td></tr>').join('')
+    : '<tr><td colspan="7" style="color:var(--text-light);padding:14px">Nothing filed against this unit yet.</td></tr>';
+
+  return _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Travels with the unit</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+    'SOP section 12.5. Gate G6 refuses dispatch until every one of these is attached.</div>' + check) +
+    '<div style="height:12px"></div>' +
+    _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+      '<div style="font-weight:800;color:var(--navy)">Document register</div>' +
+      '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_docs\')">' +
+      tkIcon('plus', 12) + ' Add a document</button></div>' +
+      '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:720px"><thead><tr>' +
+      '<th>Document no.</th><th>Title</th><th>Kind</th><th>Rev</th><th>Status</th><th>Form</th><th></th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+/* ── Materials ── */
+function _ahuTabBom(d) {
+  const bom = d.bom || [];
+  const n = v => Number(v || 0);
+  const rows = bom.length ? bom.map(b => {
+    const short = n(b.kittedQty) < n(b.qty);
+    return '<tr><td style="font-variant-numeric:tabular-nums">' + _ahuEsc(b.partNo || '') + '</td>' +
+      '<td>' + _ahuEsc(b.description || '') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(b.qty || 0) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;color:' + (short ? '#DC2626' : 'inherit') + '">' +
+      _ahuEsc(b.kittedQty || 0) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(b.receivedQty || 0) + '</td>' +
+      '<td>' + (b.iqcStatus ? _ahuBadge(b.iqcStatus, _ahuTone(b.iqcStatus === 'Passed' ? 'passed' : 'pending')) : '—') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;color:' + (n(b.shortageQty) > 0 ? '#DC2626' : 'inherit') + '">' +
+      _ahuEsc(b.shortageQty || 0) + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_bom\',\'' +
+      _ahuA(b.id) + '\')">Edit</button></td></tr>';
+  }).join('') : '<tr><td colspan="8" style="color:var(--text-light);padding:14px">No bill of materials raised.</td></tr>';
+  return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Bill of materials</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Gate G3 needs every line kitted, incoming inspection closed and no shortage.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_bom\')">' +
+    tkIcon('plus', 12) + ' Add a line</button></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
+    '<th>Part no.</th><th>Description</th><th>Required</th><th>Kitted</th><th>Received</th><th>IQC</th><th>Short</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+/* ── Traceability ── */
+function _ahuTabTrace(d) {
+  const t = d.trace || [];
+  const rows = t.length ? t.map(x =>
+    '<tr><td>' + _ahuEsc(x.component || '') + '</td>' +
+    '<td>' + _ahuEsc(x.maker || '') + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.serial || x.batch || '') + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.section || '') + '</td>' +
+    '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.recordedOn || '') + '</td>' +
+    '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_trace\',\'' +
+    _ahuA(x.id) + '\')">Edit</button></td></tr>').join('')
+    : '<tr><td colspan="6" style="color:var(--text-light);padding:14px">No serial numbers recorded yet.</td></tr>';
+  return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Component traceability</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">SOP section 10.4 — fan, coil, filter and controller serials against this PIN.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_trace\')">' +
+    tkIcon('plus', 12) + ' Record a serial</button></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:660px"><thead><tr>' +
+    '<th>Component</th><th>Make</th><th>Serial / batch</th><th>Section</th><th>Recorded</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+/* ── Non-conformance ── */
+function _ahuTabNcr(d) {
+  const ncr = d.ncr || [];
+  const rows = ncr.length ? ncr.map(x => {
+    const openish = ['open', 'raised', 'under review', 'in progress', 'pending', ''].indexOf(String(x.status || '').toLowerCase()) >= 0;
+    return '<tr><td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.ncrNo || '') + '</td>' +
+      '<td>' + _ahuEsc(x.title || '') + '</td>' +
+      '<td>' + _ahuEsc(x.kind || 'NCR') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums">' + _ahuEsc(x.stepCode || '') + '</td>' +
+      '<td>' + _ahuEsc(x.disposition || '') + '</td>' +
+      '<td>' + _ahuBadge(x.status || 'Open', openish ? '#DC2626' : '#00B060') + '</td>' +
+      '<td>' + _ahuEsc(x.raisedBy || '') + '</td>' +
+      '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_ncr\',\'' +
+      _ahuA(x.id) + '\')">Edit</button>' +
+      (openish ? '<button class="btn btn-outline btn-sm" style="font-size:11px;margin-left:5px" onclick="ahuCloseNcr(\'' +
+        _ahuA(x.id) + '\')">Close</button>' : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="8" style="color:var(--text-light);padding:14px">Nothing raised against this unit.</td></tr>';
+  return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Non-conformance & punch list</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">AHU-FM-902 / 903 / 603. Gates G4 and G5 refuse while anything here is open.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_ncr\')">' +
+    tkIcon('plus', 12) + ' Raise one</button></div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:820px"><thead><tr>' +
+    '<th>No.</th><th>Title</th><th>Kind</th><th>Step</th><th>Disposition</th><th>Status</th><th>Raised by</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+function ahuCloseNcr(id) {
+  const n = ((_AHU.unit || {}).ncr || []).find(x => x.id === id) || {};
+  if (!String(n.disposition || '').trim()) {
+    toast('Record the disposition first — use-as-is, rework, repair or reject.', 'warn', 6000);
+    tkQuickAdd('ahu_ncr', id); return;
+  }
+  tkESign({
+    coll: 'ahu_ncr', id: id, setStatus: 'Closed',
+    meaning: 'Non-conformance closed — ' + (n.ncrNo || '') + ' ' + (n.title || ''),
+    onDone: () => ahuRenderTraveller()
+  });
+}
+
+/* ── Packing & dispatch ── */
+function _ahuTabDispatch(d) {
+  const rec = (d.dispatch || [])[0];
+  const packs = (_AHU.process || {}).packaging || [];
+  const opts = packs.map(p =>
+    '<div style="padding:7px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="font-size:12.5px;font-weight:600">' + _ahuEsc(p.label) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(p.when) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(p.spec) + '</div></div>').join('');
+  const g6 = (d.gates || []).find(g => g.code === 'G6') || {};
+  const held = (g6.blockers || []).length
+    ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#DC262610;border:1px solid #DC262630;font-size:12px;color:#991B1B">' +
+      '<div style="font-weight:700;margin-bottom:3px">Dispatch is held</div><ul style="margin:0;padding-left:17px">' +
+      g6.blockers.map(b => '<li>' + _ahuEsc(b) + '</li>').join('') + '</ul></div>'
+    : '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#00B06010;border:1px solid #00B06030;font-size:12px;color:#065F46">Everything gate G6 asks for is in place.</div>';
+
+  const cur = rec
+    ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:9px">' +
+      [['Packing', rec.packaging], ['Crate / case no.', rec.crateNo], ['Gross weight', rec.grossWeight],
+       ['Dimensions', rec.dimensions], ['Carrier', rec.carrier], ['Dispatched', rec.dispatchedOn]]
+        .map(p => '<div><div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(p[0]) + '</div>' +
+          '<div style="font-size:13px;font-weight:600">' + _ahuEsc(p[1] || '—') + '</div></div>').join('') + '</div>' +
+      '<div style="margin-top:9px"><button class="btn btn-ghost btn-sm" style="font-size:11.5px" onclick="tkQuickAdd(\'ahu_dispatch\',\'' +
+      _ahuA(rec.id) + '\')">' + tkIcon('edit', 12) + ' Edit the packing record</button></div>'
+    : '<div style="font-size:12.5px;color:var(--text-light)">No packing record yet.</div>' +
+      '<div style="margin-top:9px"><button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_dispatch\')">' +
+      tkIcon('plus', 12) + ' Raise the packing record</button></div>';
+
+  return _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Packing record</div>' + cur + held) +
+    '<div style="height:12px"></div>' +
+    _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:6px">Packaging configurations</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:6px">SOP section 12.3</div>' + opts);
+}
+
+/* ── As-built dossier ── */
+function _ahuTabDossier(d) {
+  const s = d.state || {};
+  const missing = ((_AHU.process || {}).dossier || [])
+    .filter(x => x.always && x.form && !(d.docs || []).some(y => String(y.form || '').toLowerCase() === String(x.form).toLowerCase()))
+    .map(x => x.label);
+  const steps = (d.steps || []).filter(x => (x.checks || []).length);
+  const measured = steps.map(x =>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">' +
+    '<div style="font-weight:700;color:var(--navy);font-size:12.5px">' + _ahuEsc(x.code) + ' · ' + _ahuEsc(x.title) + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(x.signedBy || 'unsigned') +
+    (x.signedOn ? ' · ' + _ahuEsc(x.signedOn) : '') + '</div></div>' +
+    (x.checks || []).map(c => '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0">' +
+      '<span style="color:var(--text-light)">' + _ahuEsc(c.label || c.key) + '</span>' +
+      '<span style="color:' + (_AHU_VERDICT_TONE[c.status] || '#94A3B8') + ';font-weight:600;font-variant-numeric:tabular-nums">' +
+      _ahuEsc(c.message || c.status || '') + '</span></div>').join('') + '</div>').join('');
+
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><div style="font-weight:800;color:var(--navy)">As-built record</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Everything this unit is: what it was built against, what went into it, who signed each step and what was measured.</div></div>' +
+    '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuDossierPDF()">' +
+    tkIcon('download', 12) + ' Download the dossier</button></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-top:8px">' +
+    [['Completion', (s.progress || 0) + '%'], ['Steps signed', (s.signed || 0) + ' / ' + (s.total || 0)],
+     ['Open non-conformance', s.openNcr || 0], ['Documents missing', missing.length]]
+      .map(p => '<div><div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(p[0]) + '</div>' +
+        '<div style="font-size:19px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+        _ahuEsc(p[1]) + '</div></div>').join('') + '</div>' +
+    (missing.length ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#DC262610;' +
+      'border:1px solid #DC262630;font-size:12px;color:#991B1B">Still missing: ' + _ahuEsc(missing.join(', ')) + '</div>' : '')) +
+    '<div style="height:12px"></div>' +
+    _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:6px">Measured values</div>' +
+      (measured || '<div style="font-size:12.5px;color:var(--text-light)">Nothing measured yet.</div>'));
+}
+
+/* A child record always belongs to the unit that is open. The link is stamped at save time (see
+   the `ahu_` line in the quick-add save), the same way the project and design modules do it, so
+   nobody has to remember to pick the right PIN out of a dropdown. */
+function ahuAddChild(coll) { tkQuickAdd(coll); }
+
+async function ahuRebuildRoute() {
+  if (_AHU.busy) return;
+  _AHU.busy = true;
+  try {
+    const r = await tkApi('/api/ahu/unit/' + encodeURIComponent(_AHU.unitId) + '/route', { method: 'POST' });
+    toast('Route rebuilt — ' + r.steps + ' step(s).' +
+      ((r.orphans || []).length ? ' ' + r.orphans.length + ' signed step(s) are no longer in the route and are flagged for review.' : ''),
+      undefined, 6000);
+    await ahuRenderTraveller();
+  } catch (e) { toast('Could not rebuild the route: ' + e.message, 'warn'); }
+  finally { _AHU.busy = false; }
+}
+
+/* ───────────────────────── The standard, as reference ─────────────────────────
+   AHU-SOP-MASTER-001 rendered from the server's own copy. Somebody on the floor asking "what is
+   IPQC-3 supposed to measure?" gets the same answer the gate will enforce. */
+async function ahuRenderStandard() {
+  const root = document.getElementById('ahu-standard-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let p;
+  try { p = await _ahuProcess(); }
+  catch (e) { root.innerHTML = _ahuCard('<div style="color:#C00000">Could not load the standard: ' + _ahuEsc(e.message) + '</div>'); return; }
+
+  const stages = _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">The seven stages and six gates</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:680px"><thead><tr>' +
+    '<th>#</th><th>Stage</th><th>Owner</th><th>Typical</th><th>Gate</th><th>What the gate checks</th></tr></thead><tbody>' +
+    (p.stages || []).map(s => '<tr><td style="font-variant-numeric:tabular-nums">' + _ahuEsc(s.no) + '</td>' +
+      '<td><div style="font-weight:600">' + _ahuEsc(s.title) + '</div>' +
+      '<div style="font-size:11px;color:var(--text-light)">' + _ahuEsc(s.title_vn || '') + '</div></td>' +
+      '<td>' + _ahuEsc(s.owner) + '</td><td style="font-size:11.5px">' + _ahuEsc(s.cycle) + '</td>' +
+      '<td>' + (s.gate ? _ahuBadge(s.gate, 'var(--navy)', s.gate_title) : '—') + '</td>' +
+      '<td style="font-size:11.5px;color:var(--text-light)">' +
+      _ahuEsc((s.requires || []).length ? s.requires.length + ' criteria' : '—') + '</td></tr>').join('') +
+    '</tbody></table></div>');
+
+  const ws = _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Workstations</div>' +
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:700px"><thead><tr>' +
+    '<th>Station</th><th>Activity</th><th>Work instruction</th><th>Typical</th><th>Applies to</th></tr></thead><tbody>' +
+    (p.workstations || []).map(w => '<tr><td style="font-weight:700;font-variant-numeric:tabular-nums">' + _ahuEsc(w.code) + '</td>' +
+      '<td><div style="font-weight:600">' + _ahuEsc(w.title) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light)">' + _ahuEsc(w.activity) + '</div></td>' +
+      '<td style="font-size:11.5px;font-variant-numeric:tabular-nums">' + _ahuEsc(w.wi) + '</td>' +
+      '<td style="font-size:11.5px">' + _ahuEsc(w.tact) + '</td>' +
+      '<td style="font-size:11.5px">' + _ahuEsc(w.families ? w.families.join(', ') : 'all families') + '</td></tr>').join('') +
+    '</tbody></table></div>');
+
+  const limitTxt = c => c.op === 'yes' ? 'Confirm' : c.op === 'note' ? 'Recorded, not judged'
+    : c.op === 'range' ? c.limit + ' to ' + c.limit2 + (c.unit ? ' ' + c.unit : '')
+    : c.limit_from ? 'from the unit’s declared ' + String(c.limit_from).replace('class_', 'EN 1886 ').replace(/_/g, ' ')
+    : (c.op === '<=' ? '≤ ' : '≥ ') + c.limit + (c.unit ? ' ' + c.unit : '');
+
+  const checkList = arr => (arr || []).map(x =>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">' +
+    '<span style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' + _ahuEsc(x.code) + '</span>' +
+    '<span style="font-weight:600">' + _ahuEsc(x.title) + '</span>' +
+    (x.families ? _ahuBadge(x.families.join(', '), '#7C3AED') : '') +
+    (x.optional ? _ahuBadge('optional', '#A16207') : '') + '</div>' +
+    (x.method || x.doc ? '<div style="font-size:11.5px;color:var(--text-light);margin-top:2px">' +
+      _ahuEsc(x.method || x.doc) + (x.std ? ' · ' + _ahuEsc(x.std) : '') + '</div>' : '') +
+    (x.sampling ? '<div style="font-size:11.5px;color:#A16207">' + _ahuEsc(x.sampling) + '</div>' : '') +
+    (x.checks || []).map(c => '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2px 0 0">' +
+      '<span style="color:var(--text-light)">' + _ahuEsc(c.label) + '</span>' +
+      '<span style="font-weight:600;font-variant-numeric:tabular-nums">' + _ahuEsc(limitTxt(c)) + '</span></div>').join('') +
+    '</div>').join('');
+
+  const hold = _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:4px">In-process hold points</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:6px">Each is inspected by QA/QC — never by the person who did the work.</div>' +
+    checkList(p.ipqc));
+  const tests = _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:4px">Test matrix</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:6px">SOP section 11.2. A limit shown as “from the unit’s declared …” is resolved per unit at test time.</div>' +
+    checkList(p.tests));
+
+  const en = p.en1886 || {};
+  const tbl = (t, o) => '<div style="margin-bottom:7px"><div style="font-size:11.5px;font-weight:700;color:var(--navy)">' +
+    _ahuEsc(t) + '</div><div style="font-size:11.5px;color:var(--text-light);font-variant-numeric:tabular-nums">' +
+    Object.keys(o || {}).map(k => k + ' ' + (o[k] === null ? '∞' : o[k])).join(' · ') + '</div></div>';
+  const classes = _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:6px">EN 1886 class thresholds</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+    'The same tables AeroSelect classifies against, so the class a unit is sold as and the class it is tested against cannot drift apart.</div>' +
+    tbl('Casing strength — relative deflection, mm/m', en.strength) +
+    tbl('Leakage at −400 Pa — l/(s·m²)', en.leakNeg400) +
+    tbl('Leakage at +700 Pa — l/(s·m²)', en.leakPos700) +
+    tbl('Thermal transmittance — W/(m²·K)', en.thermalU) +
+    tbl('Thermal bridging — kb (higher is better)', en.bridging) +
+    tbl('Filter bypass — % maximum', en.bypass));
+
+  const disc = (p.discrepancies || []).length
+    ? _ahuCard('<div style="font-weight:800;color:#92400E;margin-bottom:6px">Where the SOP and the standard differ</div>' +
+      (p.discrepancies || []).map(d =>
+        '<div style="font-size:12px;padding:7px 0;border-bottom:1px solid var(--line)">' +
+        '<div style="font-weight:700">' + _ahuEsc(d.where) + '</div>' +
+        '<div style="color:var(--text-light)">SOP says: ' + _ahuEsc(d.sop_says) + '</div>' +
+        '<div style="color:var(--text-light)">Standard says: ' + _ahuEsc(d.standard_says) + '</div>' +
+        '<div style="color:#92400E;margin-top:2px">' + _ahuEsc(d.resolution) + '</div></div>').join('')) +
+      '<div style="height:12px"></div>'
+    : '';
+
+  root.innerHTML = disc + stages + '<div style="height:12px"></div>' + ws + '<div style="height:12px"></div>' +
+    hold + '<div style="height:12px"></div>' + tests + '<div style="height:12px"></div>' + classes;
+}
+
+/* ───────────────────────── The as-built dossier ─────────────────────────
+   The unit's birth certificate: what it was built against, what went into it, who signed each step
+   and what was actually measured. Assembled server-side by /api/ahu/unit/<id>/dossier so the
+   document and the screen can never tell different stories. */
+function _ahuPdfOpen(title, subtitle, code, landscape) {
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast('PDF library not loaded — try again in a moment', 'warn'); return null; }
+  const doc = new J(landscape ? 'l' : 'p', 'mm', 'a4');
+  const y = _brandHeader(doc, { title: title, subtitle: subtitle, docCode: code, confidential: true });
+  return { doc: doc, y: y + 2, code: code, title: title, sub: subtitle, land: !!landscape };
+}
+function _ahuPdfSave(o, name) {
+  const tp = o.doc.getNumberOfPages();
+  for (let i = 1; i <= tp; i++) { o.doc.setPage(i); _brandFooter(o.doc, i, tp, o.code); }
+  o.doc.save(name);
+}
+function _ahuPdfBreak(o, need) {
+  if (o.y <= (o.land ? 180 : 262) - (need || 0)) return;
+  o.doc.addPage();
+  o.y = _brandHeader(o.doc, { title: o.title, subtitle: o.sub, docCode: o.code, confidential: true }) + 2;
+}
+function _ahuPdfHead(o, t) {
+  _ahuPdfBreak(o, 14);
+  o.y += 2; _pdfFont(o.doc, 'bold'); o.doc.setFontSize(10); o.doc.setTextColor(32, 80, 144);
+  o.doc.text(_pdfSafe(t), 15, o.y); o.y += 5.5;
+}
+function _ahuPdfLine(o, label, val) {
+  _ahuPdfBreak(o, 7);
+  _pdfFont(o.doc, 'normal'); o.doc.setFontSize(8.6); o.doc.setTextColor(90, 96, 106);
+  o.doc.text(_pdfSafe(String(label)), 15, o.y);
+  o.doc.setTextColor(28, 32, 38); _pdfFont(o.doc, 'bold');
+  const txt = o.doc.splitTextToSize(_pdfSafe(String(val == null || val === '' ? '—' : val)), o.land ? 180 : 110);
+  o.doc.text(txt, o.land ? 90 : 78, o.y);
+  o.y += Math.max(5, txt.length * 4.4);
+}
+
+async function ahuDossierPDF() {
+  let d;
+  try { d = await tkApi('/api/ahu/unit/' + encodeURIComponent(_AHU.unitId) + '/dossier'); }
+  catch (e) { toast('Could not build the dossier: ' + e.message, 'warn'); return; }
+  const u = d.unit || {}, ord = d.order || {}, decl = d.declaration || {};
+  const o = _ahuPdfOpen('AHU As-Built Record',
+    _pdfSafe((u.pin || '') + '   ' + (u.tag || '') + '   ' + (ord.poNumber || '')), 'HML-AHU-ABR');
+  if (!o) return;
+
+  _ahuPdfHead(o, 'The unit');
+  [['Production Identification Number', u.pin], ['AHU tag', u.tag],
+   ['Product family', (d.family || {}).label || u.family], ['Model', u.model],
+   ['Airflow / ESP', [u.airflow ? u.airflow + ' m3/h' : '', u.esp ? u.esp + ' Pa' : ''].filter(Boolean).join('   ')],
+   ['AeroSelect selection', u.selectionRef], ['Design Standard', (d.family || {}).ds]
+  ].forEach(r => _ahuPdfLine(o, r[0], r[1]));
+
+  _ahuPdfHead(o, 'Built against');
+  [['Customer PO / contract', ord.poNumber], ['Customer', ord.customer], ['Project', ord.project],
+   ['Contracted delivery', ord.deliveryDate],
+   ['Contract review AHU-FM-101', ord.contractReviewSigned ? 'Signed by ' + (ord.contractReviewBy || '') +
+     (ord.contractReviewOn ? ' on ' + ord.contractReviewOn : '') : 'Not signed']
+  ].forEach(r => _ahuPdfLine(o, r[0], r[1]));
+
+  _ahuPdfHead(o, 'Declared performance basis');
+  _ahuPdfLine(o, 'EN 1886 classes',
+    ['D:' + decl.classD, 'L:' + decl.classL, 'F:' + decl.classF, 'T:' + decl.classT, 'TB:' + decl.classTB].join('   '));
+  _ahuPdfLine(o, 'Supply voltage', decl.voltage ? decl.voltage + ' V' : 'not declared');
+  _ahuPdfLine(o, 'Coil design pressure', decl.coilDesignBar ? decl.coilDesignBar + ' bar' : 'not declared');
+  if (decl.cleanroom) _ahuPdfLine(o, 'ISO 14644-1 class', decl.cleanroom);
+
+  _ahuPdfHead(o, 'Route — every step, who signed it, and what was measured');
+  (d.steps || []).forEach(s => {
+    _ahuPdfBreak(o, 12);
+    _pdfFont(o.doc, 'bold'); o.doc.setFontSize(8.8); o.doc.setTextColor(28, 32, 38);
+    o.doc.text(_pdfSafe(s.code + '  ' + (s.title || '')), 15, o.y);
+    _pdfFont(o.doc, 'normal'); o.doc.setTextColor(90, 96, 106);
+    o.doc.text(_pdfSafe((s.status || '') + (s.signedBy ? '   ' + s.signedBy : '') +
+      (s.signedOn ? '   ' + s.signedOn : '') + (s.orphan ? '   [no longer in the route]' : '')), 120, o.y);
+    o.y += 4.4;
+    (s.checks || []).forEach(c => {
+      _ahuPdfBreak(o, 6);
+      o.doc.setFontSize(8.2); o.doc.setTextColor(110, 116, 126);
+      o.doc.text(_pdfSafe('   ' + (c.label || c.key)), 15, o.y);
+      o.doc.setTextColor(c.status === 'fail' ? 190 : 60, c.status === 'fail' ? 30 : 70, 40);
+      o.doc.text(_pdfSafe(String(c.message || c.status || '')), 120, o.y);
+      o.y += 4;
+    });
+    o.y += 1;
+  });
+
+  if ((d.trace || []).length) {
+    _ahuPdfHead(o, 'Component traceability');
+    d.trace.forEach(t => _ahuPdfLine(o, (t.component || '') + (t.maker ? ' — ' + t.maker : ''),
+      (t.serial || t.batch || '') + (t.section ? '   section ' + t.section : '')));
+  }
+  if ((d.ncr || []).length) {
+    _ahuPdfHead(o, 'Non-conformance');
+    d.ncr.forEach(n => _ahuPdfLine(o, (n.ncrNo || '') + ' ' + (n.title || ''),
+      (n.disposition || '') + '   ' + (n.status || '') + (n.closedBy ? '   closed by ' + n.closedBy : '')));
+  }
+
+  _ahuPdfHead(o, 'Documents travelling with the unit');
+  (d.documents || []).forEach(x => _ahuPdfLine(o, x.label + (x.form ? '  (' + x.form + ')' : ''),
+    x.present ? 'Attached' : 'MISSING'));
+
+  _ahuPdfHead(o, 'Status of the record');
+  _ahuPdfLine(o, 'Route completion', (d.progress || 0) + '%');
+  _ahuPdfLine(o, 'Steps signed', ((d.state || {}).signed || 0) + ' of ' + ((d.state || {}).total || 0));
+  if ((d.missingDocuments || []).length) _ahuPdfLine(o, 'Documents still missing', d.missingDocuments.join(', '));
+  (d.gates || []).forEach(g => {
+    if ((g.blockers || []).length) _ahuPdfLine(o, 'Gate ' + g.code + ' held by', g.blockers.join('; '));
+  });
+
+  _ahuPdfSave(o, 'AHU-As-Built-' + (u.pin || u.id || 'record') + '.pdf');
+}
+
+/* A single-page card for the unit itself — what the shop floor pins to the frame. */
+async function ahuTravellerPDF() {
+  const d = _AHU.unit; if (!d) return;
+  const u = d.unit || {}, s = d.state || {};
+  const o = _ahuPdfOpen('AHU Traveller', _pdfSafe((u.pin || '') + '   ' + (u.tag || '')), 'HML-AHU-TRV');
+  if (!o) return;
+  [['PIN', u.pin], ['Tag', u.tag], ['Family', u.family], ['Order', (d.order || {}).poNumber],
+   ['Customer', (d.order || {}).customer], ['Current stage', 'Stage ' + (s.stage || 1) + ' — ' + (s.stageTitle || '')],
+   ['Completion', (s.progress || 0) + '%   (' + (s.signed || 0) + ' of ' + (s.total || 0) + ' steps)'],
+   ['Next step', (s.next || []).join(', ') + (s.nextTitle ? '  —  ' + s.nextTitle : '')]
+  ].forEach(r => _ahuPdfLine(o, r[0], r[1]));
+  _ahuPdfHead(o, 'Route');
+  (d.steps || []).forEach(x => _ahuPdfLine(o, x.code + '  ' + (x.title || ''),
+    (x.status || '') + (x.signedBy ? '   ' + x.signedBy : '')));
+  _ahuPdfSave(o, 'AHU-Traveller-' + (u.pin || u.id || 'unit') + '.pdf');
+}
+
 function showView(id, navEl, title) {
   /* staff dashboard redirect — must happen BEFORE the guard check */
   if (_userRole === 'staff' && id === 'dashboard') { id = 'staff-dashboard'; }
@@ -27370,6 +28405,7 @@ function showView(id, navEl, title) {
   if ((id === 'finance' || id === 'payroll' || id === 'invtrack') && _appDeniedCurrent('finance')) { toast('Access restricted — Finance is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id === 'procurement' && _appDeniedCurrent('procurement')) { toast('Access restricted — Procurement is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('eng-') === 0 && _appDeniedCurrent('eng')) { toast('Access restricted — Engineering Design is not enabled for your account. Ask an admin.', 'warn'); return; }
+  if (id.indexOf('ahu-') === 0 && _appDeniedCurrent('ahu')) { toast('Access restricted — AHU Production is not enabled for your account. Ask an admin.', 'warn'); return; }
   if (id.indexOf('est-') === 0 && _appDeniedCurrent('est')) { toast('Access restricted — Estimating is not enabled for your account. Ask an admin.', 'warn'); return; }
   /* close the mobile drawer after navigating */
   if (window.matchMedia && window.matchMedia('(max-width:820px)').matches) document.body.classList.remove('sb-open');
@@ -27414,6 +28450,12 @@ function showView(id, navEl, title) {
   if (id === 'eng-projects') { try { engRenderProjects(); } catch (e) { console.warn('eng-projects:', e.message); } }
   if (id === 'eng-dashboard') { try { engRenderPortfolio(); } catch (e) { console.warn('eng-dashboard:', e.message); } }
   if (id === 'eng-project') { try { engRenderWorkspace(); } catch (e) { console.warn('eng-project:', e.message); } }
+  if (id === 'ahu-board') { try { ahuRenderBoard(); _ahuBoardAuto(); } catch (e) { console.warn('ahu-board:', e.message); } }
+  if (id.indexOf('ahu-') !== 0 && _AHU.timer) { clearInterval(_AHU.timer); _AHU.timer = null; }
+  if (id === 'ahu-orders') { try { ahuRenderOrders(); } catch (e) { console.warn('ahu-orders:', e.message); } }
+  if (id === 'ahu-units') { try { ahuRenderUnits(); } catch (e) { console.warn('ahu-units:', e.message); } }
+  if (id === 'ahu-unit') { try { ahuRenderTraveller(); } catch (e) { console.warn('ahu-unit:', e.message); } }
+  if (id === 'ahu-standard') { try { ahuRenderStandard(); } catch (e) { console.warn('ahu-standard:', e.message); } }
   if (id === 'est-projects') { try { estRenderProjects(); } catch (e) { console.warn('est-projects:', e.message); } }
   if (id === 'est-rates') { try { estRenderRates(); } catch (e) { console.warn('est-rates:', e.message); } }
   if (id === 'est-estimate') { try { estRenderWorkspace(); } catch (e) { console.warn('est-estimate:', e.message); } }
@@ -27717,13 +28759,17 @@ const _VI = {
   'Find an app…': 'Tìm ứng dụng…',
   'Choose an app to get started': 'Chọn một ứng dụng để bắt đầu',
   'Your apps': 'Ứng dụng của bạn',
+  'Company Insight': 'Tổng quan công ty',
+  'Sales & CRM': 'Bán hàng & CRM',
   'section': 'mục',
   'sections': 'mục',
   'No app matches that.': 'Không có ứng dụng nào khớp.',
   'No apps are enabled for your account yet. Ask an administrator to grant you access.': 'Tài khoản của bạn chưa được bật ứng dụng nào. Hãy đề nghị quản trị viên cấp quyền.',
   'That app is not enabled for your account. Ask an admin.': 'Ứng dụng này chưa được bật cho tài khoản của bạn. Hãy liên hệ quản trị viên.',
-  'Company Insight': 'Tổng quan công ty',
-  'Sales & CRM': 'Bán hàng & CRM',
+  /* 'Procurement' is deliberately NOT redefined here. The PMC register already claims it as
+     'Mua sắm', that definition comes later in this object and therefore wins portal-wide, and the
+     rest of the portal already reads Mua sắm. A second 'Mua hàng' here never reached a screen —
+     it only made the launcher tile's own word unpredictable. See tests/vi_duplicate_keys.js. */
   'System Settings': 'Cài đặt hệ thống',
   'Your dashboard, attendance and personal requests': 'Bảng điều khiển, chuyên cần và các đề nghị cá nhân của bạn',
   'Company and executive dashboards': 'Bảng điều khiển công ty và ban điều hành',
@@ -27735,6 +28781,49 @@ const _VI = {
   'Payments, payroll and invoice tracking': 'Thanh toán, tiền lương và theo dõi hoá đơn',
   'Purchasing, inventory, trade reference and insights': 'Mua hàng, kho, tra cứu thương mại và phân tích',
   'Access, signatures, audit trail, schedules and locations': 'Phân quyền, chữ ký, vết kiểm toán, lịch làm việc và địa điểm',
+  /* AHU Production (2026-08-20). Every key here is QUALIFIED — 'Production stage', not 'Stage'.
+     _VI is one flat object shared by the whole portal, so a bare generic word is a claim on that
+     word in every module and the later definition wins silently. See tests/vi_duplicate_keys.js. */
+  'AHU Production': 'Sản xuất AHU',
+  'Production Board': 'Bảng sản xuất',
+  'AHU Register': 'Sổ đăng ký AHU',
+  'Orders & Contracts': 'Đơn hàng & Hợp đồng',
+  'Production Standard': 'Tiêu chuẩn sản xuất',
+  'Order to dispatch — the shop floor, hold points, tests and the as-built record': 'Từ đơn hàng đến giao hàng — xưởng sản xuất, điểm dừng kiểm tra, thử nghiệm và hồ sơ hoàn công',
+  'Production stage': 'Công đoạn sản xuất',
+  'Route & sign-off': 'Lộ trình & ký duyệt',
+  'Documents & drawings': 'Tài liệu & bản vẽ',
+  'Packing & dispatch': 'Đóng gói & giao hàng',
+  'As-built dossier': 'Hồ sơ hoàn công',
+  'Component traceability': 'Truy xuất linh kiện',
+  'Non-conformance & punch list': 'Không phù hợp & danh mục tồn',
+  'Stage gate': 'Cổng công đoạn',
+  'Hold point': 'Điểm dừng kiểm tra',
+  'Factory test': 'Thử nghiệm xuất xưởng',
+  'Units on the floor': 'Sản phẩm đang sản xuất',
+  'In production': 'Đang sản xuất',
+  'Held or failed': 'Đang giữ hoặc không đạt',
+  'Average completion': 'Tiến độ trung bình',
+  'Awaiting a signature': 'Đang chờ ký',
+  'Register an AHU': 'Đăng ký một AHU',
+  'Rebuild route': 'Dựng lại lộ trình',
+  'Traveller card': 'Phiếu theo dõi sản phẩm',
+  'Record & sign': 'Ghi nhận & ký',
+  'Sign off': 'Ký duyệt',
+  'Sign the work complete': 'Ký xác nhận hoàn thành',
+  'Pass the gate': 'Thông qua cổng',
+  'Pass and sign': 'Đạt và ký',
+  'Record a failure': 'Ghi nhận không đạt',
+  'Save readings': 'Lưu số liệu đo',
+  'This gate is held': 'Cổng này đang bị giữ',
+  'Dispatch is held': 'Việc giao hàng đang bị giữ',
+  'Travels with the unit': 'Tài liệu đi theo sản phẩm',
+  'Bill of materials': 'Danh mục vật tư',
+  'Document register': 'Sổ đăng ký tài liệu',
+  'Packing record': 'Hồ sơ đóng gói',
+  'Measured values': 'Giá trị đo được',
+  'As-built record': 'Hồ sơ hoàn công',
+  'Contract review': 'Soát xét hợp đồng',
   /* The door to the FIRST detail schedule (2026-08-20) */
   'New detail schedule': 'Tiến độ chi tiết mới',
   'One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.':

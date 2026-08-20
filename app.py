@@ -43,6 +43,8 @@ import employment_letter # the confirmation letter, and what its PURPOSE lets it
 import attendance_days  # what each day WAS: worked / leave / holiday / rest / absent
 import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hours and the rest owed (pure)
 import doc_number       # controlled-document numbering: the format and the series (pure)
+import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations, the test matrix (pure)
+import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4011,6 +4013,16 @@ class Handler(BaseHTTPRequestHandler):
             seg = path[len("/api/invtrack/file/"):]
             fid, _dot, ext = seg.partition(".")
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
+        if path == "/api/ahu/process":
+            return self._guard(lambda u: self._ahu_process_ep(u, qs))
+        if path == "/api/ahu/board":
+            return self._guard(lambda u: self._ahu_board_ep(u))
+        if path.startswith("/api/ahu/unit/") and path.endswith("/dossier"):
+            _uid = path[len("/api/ahu/unit/"):-len("/dossier")]
+            return self._guard(lambda u: self._ahu_dossier_ep(u, urllib.parse.unquote(_uid)))
+        if path.startswith("/api/ahu/unit/"):
+            _uid = path[len("/api/ahu/unit/"):].split("/")[0]
+            return self._guard(lambda u: self._ahu_unit_ep(u, urllib.parse.unquote(_uid)))
         if path == "/api/esign/pin/all":
             return self._guard(lambda u: self._json({"pins": db.all_pin_statuses()}), manager=True)
         if path.startswith("/api/coll/"):
@@ -4031,6 +4043,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._auth_m365(body)
         if path == "/api/auth/logout":
             return self._auth_logout()
+        if path.startswith("/api/ahu/unit/") and path.endswith("/route"):
+            _uid = path[len("/api/ahu/unit/"):-len("/route")]
+            return self._guard(lambda u: self._ahu_route_build_ep(u, urllib.parse.unquote(_uid)))
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
         if path == "/api/invtrack/sptest":
@@ -4843,6 +4858,307 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return None
 
+    # ── AHU production control ───────────────────────────────────────────────────────────────────
+    # The rule the paper process could not enforce: a step is signed only when the step before it is
+    # signed, only when its own readings actually meet the standard, and — at a hold point — only by
+    # somebody other than the person who did the work.
+
+    # Which named person on the unit (falling back to the order) carries each signing role. A
+    # factory is full of people who are not portal managers and are nonetheless the right signatory:
+    # the line leader signs the workstation, the QC inspector signs the hold point. Gating on
+    # `manager` would either hand the shop floor manager access or put the wrong name on every
+    # record — the same reasoning as the design office in _eng_is_lead.
+    AHU_ROLE_FIELDS = {
+        "production": ("productionLead", "lineLeader"),
+        "qaqc":       ("qcInspector", "qaManager"),
+        "engineering": ("designLead", "projectEngineer"),
+        "warehouse":  ("warehouseLead", "storeKeeper"),
+        "logistics":  ("logisticsLead", "dispatchOfficer"),
+        "sales":      ("salesOwner", "accountManager"),
+    }
+
+    def _ahu_unit_of(self, rec):
+        """The AHU a production record belongs to, or {}."""
+        uid = (rec or {}).get("unitId")
+        if not uid:
+            return {}
+        return db.get_collection_item("ahu_units", uid) or {}
+
+    def _ahu_named(self, u, ctx, role):
+        """Is this person the named signatory for `role` on this unit or its order?"""
+        me = str(u.get("name") or "").strip().lower()
+        if not me:
+            return False
+        for src in (ctx.get("unit") or {}, ctx.get("order") or {}):
+            for f in self.AHU_ROLE_FIELDS.get(role, ()):
+                v = src.get(f)
+                if v and (str(v).strip().lower() == me or self._pm_same_person(v, u.get("name"))):
+                    return True
+        return False
+
+    def _ahu_same_person(self, a, b_user):
+        if not a:
+            return False
+        return (str(a).strip().lower() == str(b_user.get("name") or "").strip().lower()
+                or self._pm_same_person(a, b_user.get("name")))
+
+    AHU_NAMED_FIELDS = ("operator", "signedBy", "inspector", "assignedTo", "raisedBy",
+                        "preparedBy", "witnessedBy", "closedBy", "productionLead", "lineLeader",
+                        "qcInspector", "qaManager", "warehouseLead", "logisticsLead")
+
+    def _ahu_owns_record(self, u, coll, item):
+        """Whether the caller is one of the people this production record is ABOUT."""
+        me = str(u.get("name") or "").strip().lower()
+        if not me:
+            return False
+        for f in self.AHU_NAMED_FIELDS:
+            v = (item or {}).get(f)
+            if v and (str(v).strip().lower() == me or self._pm_same_person(v, u.get("name"))):
+                return True
+        unit = (item or {}) if coll == "ahu_units" else self._ahu_unit_of(item)
+        if not unit:
+            return False
+        order = db.get_collection_item("ahu_orders", unit.get("orderId")) or {} \
+            if unit.get("orderId") else {}
+        ctx = {"unit": unit, "order": order}
+        return any(self._ahu_named(u, ctx, role) for role in self.AHU_ROLE_FIELDS)
+
+    def _ahu_appr_check(self, u, coll, cur_status, set_status, rec):
+        t = str(set_status or "").strip().lower()
+        if not t:
+            return None                     # an unsigned attestation carries no authority claim
+        rec = rec or {}
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+
+        # Closing a non-conformance is a QA act, and never by the person who raised it — the same
+        # rule the engineering change already carries.
+        if coll == "ahu_ncr":
+            if t not in ("closed", "verified", "accepted"):
+                return None
+            if not str(rec.get("disposition") or "").strip():
+                return ("Record the disposition — use-as-is, rework, repair or reject — before "
+                        "closing the non-conformance.")
+            ctx = ahu.load_ctx(rec.get("unitId"))
+            if not (is_mgr or self._ahu_named(u, ctx, "qaqc")):
+                return "A non-conformance is closed by QA/QC or a manager."
+            if self._ahu_same_person(rec.get("raisedBy"), u):
+                return "A non-conformance is closed by somebody other than the person who raised it."
+            return None
+
+        if coll != "ahu_steps":
+            return None
+        if t not in ("complete", "completed", "passed", "signed", "released"):
+            return None
+
+        unit = self._ahu_unit_of(rec)
+        if not unit:
+            return "This step is not attached to an AHU."
+        ctx = ahu.load_ctx(unit.get("id"))
+        code = rec.get("code")
+        spec = ahu.spec_for(unit, code, ctx.get("order"))
+        if not spec:
+            return ("%s is not part of this unit's route. If the specification changed, rebuild the "
+                    "route before signing." % (code or "This step"))
+
+        # 1. The step before it. This is the whole "step by step" promise: a unit cannot be foamed
+        #    before it is framed, and cannot be tested before the gate that says it was built.
+        outstanding = ahu_route.blocked_by(spec, ahu.signed_codes(ctx["steps"]))
+        if outstanding:
+            return ("%s cannot be signed yet — %s still %s to be signed first."
+                    % (code, ", ".join(outstanding), "has" if len(outstanding) == 1 else "have"))
+
+        # 2. Its own readings, judged against the standard rather than against an opinion. A blank
+        #    reading and an unresolvable limit both refuse: neither is a pass.
+        v = ahu_route.evaluate_step(spec, ahu.readings_of(rec), ahu.unit_decl(unit))
+        if v["status"] == ahu_route.FAIL:
+            f = v["failures"][0]
+            return ("%s fails on %s: %s. Raise a non-conformance and correct it — a failed reading "
+                    "is not signed off." % (code, f["label"], f["message"]))
+        if v["status"] == ahu_route.INCOMPLETE:
+            o = v["open"][0]
+            return "%s is not finished — %s has no reading recorded." % (code, o["label"])
+        if v["status"] == ahu_route.UNDETERMINABLE:
+            o = v["open"][0]
+            return ("%s cannot be judged — %s. Declare it on the unit before signing, rather than "
+                    "signing a test nothing was measured against." % (code, o["message"].rstrip(".")))
+
+        # 3. A gate additionally has to satisfy the stage's exit criteria (SOP section 5).
+        if spec["kind"] == "gate":
+            blockers = ahu.gate_blockers(code, ctx)
+            if blockers:
+                return "%s cannot be passed yet: %s." % (code, "; ".join(blockers))
+
+        # 4. Nobody inspects their own work. SOP section 10.3 puts a hold point after a station so a
+        #    second pair of eyes sees it; letting the builder sign both makes the hold point
+        #    decorative. No manager exemption, deliberately — the person most likely to be both is a
+        #    working supervisor, which is exactly the case the rule exists for.
+        #
+        #    Checked BEFORE authority on purpose. Somebody who built the section AND holds QC
+        #    authority passes the authority test, and is the single most likely person to sign both
+        #    — so if authority ran first it would wave through the one case that matters. It also
+        #    gives the more useful message: "you cannot inspect what you built" tells a qualified
+        #    inspector something they did not know; "you are not QC" tells them something they are.
+        wn = spec.get("witness_not")
+        if wn:
+            built = next((s for s in ctx["steps"] if s.get("code") == wn), {})
+            for who in (built.get("signedBy"), built.get("operator")):
+                if self._ahu_same_person(who, u):
+                    return ("%s inspects %s, which you signed. A hold point is checked by somebody "
+                            "other than the person who did the work." % (code, wn))
+
+        # 5. Authority.
+        role = spec.get("sign") or "production"
+        if not (is_mgr or self._ahu_named(u, ctx, role)):
+            if spec["kind"] == "gate":
+                return ("Gate %s is signed by %s, or by a manager. Ask the named signatory, or have "
+                        "one recorded on the unit." % (code, role.upper() if role == "qaqc" else role))
+            if spec["kind"] in ("ipqc", "test"):
+                return ("A hold point is signed by QA/QC. Ask the inspector, or have one recorded "
+                        "on the unit as its QC inspector.")
+            # An operation may be signed by whoever did it. That is what the signature MEANS on a
+            # workstation record, and demanding a lead for it would put the wrong name on the work.
+            op = rec.get("operator")
+            if op and not self._ahu_same_person(op, u):
+                return ("%s is recorded against %s. The person who did the work signs it, or a "
+                        "production lead." % (code, op))
+        return None
+
+    # ── AHU production endpoints ─────────────────────────────────────────────────────────────────
+    def _ahu_gate(self, u):
+        """Read access to the production module, honouring the per-account app switches."""
+        return None if "ahu" not in self._apps_denied(u) else \
+            self._err("The AHU Production app is not enabled for your account.", 403)
+
+    @staticmethod
+    def _ahu_json_safe(v):
+        """Replace non-finite floats with null, recursively.
+
+        The open-ended EN 1886 classes are genuinely unbounded — D3 and T5 have no upper limit — and
+        float('inf') is the honest way to say so in Python. But json.dumps writes it as the bare
+        token `Infinity`, which is NOT valid JSON: the browser's JSON.parse rejects the whole
+        response. That failure is silent and total — the fetch throws, the process cache stays
+        empty, and every screen that awaits it renders blank with nothing in the network tab
+        looking wrong. Null crosses the wire, and the UI already draws it as the infinity sign.
+        """
+        if isinstance(v, float):
+            return v if -1e308 < v < 1e308 else None
+        if isinstance(v, dict):
+            return {k: Handler._ahu_json_safe(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [Handler._ahu_json_safe(x) for x in v]
+        return v
+
+    def _ahu_process_ep(self, u, qs):
+        """The standard itself — what the process IS, before any unit exists.
+
+        Served rather than duplicated in the browser so the shop floor, the test bench and the
+        as-built dossier are all reading one copy of AHU-SOP-MASTER-001.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        fam = (qs.get("family") or [""])[0].strip().lower() or None
+        out = {
+            "stages": ahu_route.STAGES,
+            "families": ahu_route.FAMILIES,
+            "workstations": ahu_route.WORKSTATIONS,
+            "ipqc": ahu_route.IPQC,
+            "tests": ahu_route.TESTS,
+            "dispatchOps": ahu_route.DISPATCH_OPS,
+            "packaging": ahu_route.PACKAGING,
+            "dossier": ahu_route.DOSSIER,
+            "classDefaults": ahu_route.FAMILY_CLASS_DEFAULTS,
+            "en1886": {"strength": ahu_route.EN1886_STRENGTH,
+                       "leakNeg400": ahu_route.EN1886_LEAK_NEG400,
+                       "leakPos700": ahu_route.EN1886_LEAK_POS700,
+                       "thermalU": ahu_route.EN1886_THERMAL_U,
+                       "bridging": ahu_route.EN1886_BRIDGING,
+                       "bypass": ahu_route.EN1886_BYPASS},
+            # Published so the difference between the SOP and the standard is visible in the app
+            # rather than buried in a module nobody opens.
+            "discrepancies": ahu_route.SOP_DISCREPANCIES,
+        }
+        if fam:
+            if fam not in ahu_route.FAMILIES:
+                return self._err("Unknown AHU family: %s" % fam, 400)
+            out["route"] = ahu_route.build_route(fam, {"fat": True, "sound_test": True})
+        return self._json(self._ahu_json_safe(out))
+
+    def _ahu_board_ep(self, u):
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        return self._json(self._ahu_json_safe({"units": ahu.board()}))
+
+    def _ahu_unit_ep(self, u, uid):
+        """One unit's live picture: every step with its verdict, and why each gate is held."""
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        ctx = ahu.load_ctx(uid)
+        if not ctx["unit"]:
+            return self._err("AHU not found.", 404)
+        decl = ahu.unit_decl(ctx["unit"])
+        spec_by = {s["code"]: s for s in ahu.build_for(ctx["unit"], ctx["order"])}
+        done = ahu.signed_codes(ctx["steps"])
+        steps = []
+        for row in ctx["steps"]:
+            spec = spec_by.get(row.get("code"))
+            v = ahu_route.evaluate_step(spec, ahu.readings_of(row), decl) if spec else None
+            steps.append(dict(row,
+                              verdict=(v or {}).get("status"),
+                              checks=(v or {}).get("checks") or [],
+                              blockedBy=ahu_route.blocked_by(spec, done) if spec else [],
+                              spec=spec))
+        return self._json(self._ahu_json_safe({
+            "unit": ctx["unit"], "order": ctx["order"], "declaration": decl,
+            "state": ahu.unit_state(ctx), "steps": steps,
+            "bom": ctx["bom"], "docs": ctx["docs"], "trace": ctx["trace"],
+            "ncr": ctx["ncr"], "dispatch": ctx["dispatch"],
+            "gates": [{"code": st["gate"], "title": st["gate_title"],
+                       "blockers": ahu.gate_blockers(st["gate"], ctx)}
+                      for st in ahu_route.STAGES if st.get("gate")],
+        }))
+
+    def _ahu_dossier_ep(self, u, uid):
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        d = ahu.dossier(uid)
+        if not d:
+            return self._err("AHU not found.", 404)
+        return self._json(self._ahu_json_safe(d))
+
+    def _ahu_route_build_ep(self, u, uid):
+        """Instantiate (or rebuild) a unit's route from the standard.
+
+        Rebuilding is safe by construction: ahu.instantiate carries every recorded reading and
+        signature forward, and a signed step that has left the route is kept and flagged rather
+        than deleted. What it will NOT do is renumber or re-sign anything.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        unit = db.get_collection_item("ahu_units", uid)
+        if not unit:
+            return self._err("AHU not found.", 404)
+        ctx = ahu.load_ctx(uid)
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+        if not (is_mgr or self._ahu_named(u, ctx, "production")
+                or self._ahu_named(u, ctx, "engineering")):
+            return self._err("Building a unit's route is done by production or engineering.", 403)
+        rows = ahu.instantiate(unit, ctx.get("order"), ctx["steps"])
+        for r in rows:
+            r.setdefault("id", "%s-%s" % (uid, r.get("code")))
+            db.put_collection_item("ahu_steps", r)
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "AHU route built",
+            "target": "ahu_units/" + str(uid),
+            "detail": "%s · %d step(s)" % (unit.get("family") or "?", len(rows))})
+        orphans = [r["code"] for r in rows if r.get("orphan")]
+        return self._json({"ok": True, "steps": len(rows), "orphans": orphans})
+
     def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None, rec=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
         Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage.
@@ -4883,6 +5199,8 @@ class Handler(BaseHTTPRequestHandler):
         # the deliverable being issued.
         if coll.startswith("eng_"):
             return self._eng_appr_check(u, coll, cur_status, set_status, rec)
+        if coll.startswith("ahu_"):
+            return self._ahu_appr_check(u, coll, cur_status, set_status, rec)
         if coll not in self.THREE_LEVEL_COLLS:
             if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
                 return "Manager access required to approve, reject or mark paid."
@@ -5130,6 +5448,13 @@ class Handler(BaseHTTPRequestHandler):
         # else typed into the register, which is every drawing.
         if not _owns_rec and coll.startswith("eng_"):
             _owns_rec = self._eng_owns_record(u, coll, item)
+        # A production record is "owned" by the people it names — the operator who did the work, the
+        # inspector assigned to the hold point, whoever raised the non-conformance — plus the named
+        # role-holders on the unit and its order. Without this the shop-floor authority model above
+        # is unreachable: a line leader on a staff account could never sign the workstation they
+        # just worked, which is every workstation.
+        if not _owns_rec and coll.startswith("ahu_"):
+            _owns_rec = self._ahu_owns_record(u, coll, item)
         if u.get("role") != "manager" and not _owns_rec:
             return self._err("You can only sign your own record.", 403)
         # ── Undo ─────────────────────────────────────────────────────────────────────────────────
@@ -5400,6 +5725,33 @@ class Handler(BaseHTTPRequestHandler):
             if coll == "eng_comments" and set_status in ("Closed", "Resolved"):
                 item["closedBy"] = signer_name
                 item.setdefault("closedOn", time.strftime("%Y-%m-%d"))
+            # ---- AHU production: the signer's identity is stamped here, from the re-authenticated
+            # session, and nowhere else. The traveller, the gate certificate and the as-built
+            # dossier all read these fields — a browser can never name the signer.
+            if coll == "ahu_steps" and set_status in ("Complete", "Completed", "Passed", "Signed",
+                                                      "Released"):
+                item["signedBy"] = signer_name
+                item.setdefault("signedOn", time.strftime("%Y-%m-%d"))
+                # An operation nobody claimed is claimed by the person who signed it — that is what
+                # the signature means on a workstation record.
+                if item.get("kind") == "op":
+                    item.setdefault("operator", signer_name)
+                if item.get("kind") == "gate":
+                    item["gateDecision"] = "Passed"
+                    item["gateSignedBy"] = signer_name
+                    item.setdefault("gateSignedOn", time.strftime("%Y-%m-%d"))
+            if coll == "ahu_steps" and set_status in ("Failed", "Held"):
+                # A refused step is signed too. Who decided a unit failed is exactly the fact an
+                # investigation needs, and leaving it unsigned is how a failure becomes deniable.
+                item["signedBy"] = signer_name
+                item.setdefault("signedOn", time.strftime("%Y-%m-%d"))
+            if coll == "ahu_ncr" and set_status in ("Closed", "Verified", "Accepted"):
+                item["closedBy"] = signer_name
+                item.setdefault("closedOn", time.strftime("%Y-%m-%d"))
+            if coll == "ahu_orders" and set_status in ("Accepted", "Confirmed"):
+                item["contractReviewSigned"] = True
+                item["contractReviewBy"] = signer_name
+                item.setdefault("contractReviewOn", time.strftime("%Y-%m-%d"))
             if set_status in ("Finalised", "Finalized") and coll == "payruns":
                 item["finalisedBy"] = signer_name                       # the Director who signed off payroll
                 item["approvedBy"] = signer_name
@@ -7037,9 +7389,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -7292,7 +7644,7 @@ class Handler(BaseHTTPRequestHandler):
             # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
-        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if app and app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
@@ -8054,7 +8406,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
@@ -8070,10 +8422,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("%s is issued through %s, which checks what the law requires of it "
                              "before it exists. Creating one here would skip those checks."
                              % (_what[0].upper() + _what[1:], _where), 400)
-        if (name.startswith("pm_") or name.startswith("eng_")) and name not in self.STAFF_WRITE \
-                and u.get("role") != "manager":
+        if (name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_")) \
+                and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
+        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -8165,9 +8517,18 @@ class Handler(BaseHTTPRequestHandler):
         # arrived, and a browser that could choose it could backdate a lead out of an aging report.
         if name.startswith("crm_"):
             item["ts"] = self._utc_now()
-        if name.startswith("pm_") or name.startswith("eng_"):
+        if name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        if name.startswith("ahu_"):
+            # Same reasoning as the eng_ strip below: a signature is applied by /api/esign and by
+            # nothing else. A POST arriving with signedBy already filled would produce a workstation
+            # sign-off, a passed hold point or a signed gate attributed to somebody who never signed
+            # it — and on a production record that is the whole evidential value gone.
+            for _k in ("signatures", "signedBy", "signedOn", "gateDecision", "gateSignedBy",
+                       "gateSignedOn", "verifiedBy", "verifiedOn", "witnessedBy", "releasedBy",
+                       "releasedOn"):
+                item.pop(_k, None)
         if name.startswith("eng_"):
             # A signature is applied by /api/esign and by nothing else. Without this, POSTing a
             # revision with issuedBy already filled in would produce a drawing that renders as
@@ -13500,7 +13861,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
@@ -13688,10 +14049,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("%s cannot be rewritten after it is issued — %s decides what it "
                                  "says. Issue a superseding one instead. Refused change to: %s."
                                  % (_what[0].upper() + _what[1:], _where, ", ".join(_bad)), 400)
-        if (name.startswith("pm_") or name.startswith("eng_")) and name not in self.STAFF_WRITE \
-                and u.get("role") != "manager":
+        if (name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_")) \
+                and name not in self.STAFF_WRITE and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
+        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -13755,8 +14116,13 @@ class Handler(BaseHTTPRequestHandler):
         # it. The real gates on these records are elsewhere and are the ones that matter: the
         # STAFF_WRITE list (eng_projects stays manager-only), the per-record ownership check below,
         # and the signature freeze — none of which this line was adding to.
+        # ahu_ belongs here for the same reason as eng_, only more so: the people who record a
+        # workstation reading are machine operators and QC inspectors, and none of them is a portal
+        # manager. The real gates on these records are elsewhere — the STAFF_WRITE list
+        # (ahu_orders/ahu_units stay manager-only), the ownership check below, the step freeze, and
+        # _ahu_appr_check on every signature.
         if (u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_")
-                and not name.startswith("eng_")
+                and not name.startswith("eng_") and not name.startswith("ahu_")
                 and name not in ("claims", "travel", "payments", "hrdocs")):
             if name == "enrollments":
                 existing = db.get_collection_item("enrollments", iid)
@@ -13991,6 +14357,47 @@ class Handler(BaseHTTPRequestHandler):
         # the stored row on EVERY generic write, and a live signed decision freezes the record —
         # otherwise a drawing could be issued for construction at one revision and the register
         # afterwards edited to say something else, with the signature still rendering underneath it.
+        # ---- AHU production. Same rule as the design register below, and it is the one that gives a
+        # traveller its evidential value: a signed step records what was measured AT THE TIME
+        # somebody put their name to it. If a reading could be edited afterwards, the signature
+        # would attest to numbers that were not there when it was given — which is precisely the
+        # dispute a factory record exists to settle. So signer identity is restored from the stored
+        # row on every generic write, and a signed step is frozen, except for observations added
+        # later ABOUT the step rather than changes TO it.
+        if name.startswith("ahu_"):
+            existing = db.get_collection_item(name, iid)
+            if existing:
+                for _k in ("createdBy", "createdById"):
+                    if existing.get(_k) is not None:
+                        item[_k] = existing.get(_k)
+            _AHU_SIG_KEYS = {
+                "ahu_steps": ("signatures", "signedBy", "signedOn", "gateDecision",
+                              "gateSignedBy", "gateSignedOn", "witnessedBy", "operator"),
+                "ahu_ncr": ("signatures", "closedBy", "closedOn"),
+                "ahu_orders": ("signatures", "contractReviewBy", "contractReviewOn",
+                               "contractReviewSigned"),
+            }.get(name)
+            if _AHU_SIG_KEYS:
+                if existing:
+                    for _k in _AHU_SIG_KEYS:
+                        if _k in existing:
+                            item[_k] = existing[_k]
+                        else:
+                            item.pop(_k, None)
+                else:
+                    for _k in _AHU_SIG_KEYS:
+                        item.pop(_k, None)   # never create an already-signed step via PATCH
+            # A LIVE signer stamp is the freeze test. `notes`, `photos` and the NCRs raised against
+            # a step are facts recorded ABOUT it afterwards, so they stay open; the readings, the
+            # status and the operator do not.
+            if name == "ahu_steps" and existing and existing.get("signedBy") \
+                    and self._caller_level(u) != "admin":
+                _keep = dict(existing)
+                _keep["id"] = iid
+                for _later in ("notes", "photos", "attachments", "ncrIds"):
+                    if _later in item:
+                        _keep[_later] = item.get(_later)
+                item = _keep
         if name.startswith("eng_"):
             existing = db.get_collection_item(name, iid)
             if existing:
@@ -14157,7 +14564,7 @@ class Handler(BaseHTTPRequestHandler):
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
