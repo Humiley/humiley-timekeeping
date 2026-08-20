@@ -72,6 +72,15 @@ jobs:
       - name: Vietnamese dictionary has no duplicate keys
         run: node tests/vi_duplicate_keys.js
 
+      # Nothing in CI has ever syntax-checked the JavaScript. `py_compile app.py db.py` covers the
+      # Python; templates/index.html is 3 MB of inline <script> with no build step, and a bad splice
+      # there fails silently — it kills one block, every function defined below the break stops
+      # existing, and the symptom is a button whose handler is gone. That has already deleted six
+      # functions from this file once. `node --check` per block, and it fails if it finds no blocks
+      # to check rather than reporting a green tick for having examined nothing.
+      - name: JavaScript in index.html parses
+        run: python3 tools/check_index_js.py
+
       - name: The staging service must not be called 'app'
         run: |
           # Compose registers the service name as a network alias. A staging service named 'app' on
