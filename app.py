@@ -4755,10 +4755,17 @@ class Handler(BaseHTTPRequestHandler):
             _iss = str(rec.get("issueStatus") or "").strip().lower()
             _suit = str(rec.get("suitability") or "").strip().lower()
             _external = any(_iss.startswith(k) for k in self.ENG_ISSUE_EXTERNAL) or _suit.startswith("a")
-            if _external and self._caller_level(u) != "admin":
+            # No admin exemption, deliberately. Everywhere else in this file an admin can step over a
+            # freeze, because a freeze exists to stop accidents and an admin is repairing one. This is
+            # a different kind of rule: it says the work was looked at by a second pair of eyes. An
+            # exemption would aim itself squarely at the one person most likely to be both the
+            # preparer and the only approver — the owner of a small design office — which is exactly
+            # the case the rule exists for. Same reasoning as the sell-side variation above.
+            if _external:
                 prep = rec.get("preparedBy")
+                _me = str(u.get("name") or "").strip().lower()
                 if prep and (self._pm_same_person(prep, u.get("name"))
-                             or str(prep).strip().lower() == str(u.get("name") or "").strip().lower()):
+                             or str(prep).strip().lower() == _me):
                     return ("The engineer who prepared a document does not approve their own issue "
                             "of it. Record the checker / approver, or keep this issue internal "
                             "(IFR) until somebody else can sign it.")
@@ -4781,7 +4788,7 @@ class Handler(BaseHTTPRequestHandler):
             # The originator of a change does not approve it — the same rule the payroll run and
             # the sell-side variation already carry.
             _orig = rec.get("originator") or rec.get("createdBy")
-            if _orig and self._caller_level(u) != "admin" and \
+            if _orig and \
                     (self._pm_same_person(_orig, u.get("name"))
                      or str(_orig).strip().lower() == str(u.get("name") or "").strip().lower()):
                 return "A change is authorised by somebody other than the person who raised it."
@@ -7994,6 +8001,15 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_") or name.startswith("eng_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        if name.startswith("eng_"):
+            # A signature is applied by /api/esign and by nothing else. Without this, POSTing a
+            # revision with issuedBy already filled in would produce a drawing that renders as
+            # issued and signed by somebody who never signed it — the exact failure the freeze in
+            # _coll_update exists to prevent, reached one step earlier.
+            for _k in ("signatures", "issuedBy", "issuedOn", "gateSignedBy", "gateSignedOn",
+                       "gateDecision", "decidedBy", "decidedOn", "approvedBy", "approvedOn",
+                       "closedBy", "closedOn", "supersededBy", "supersededOn"):
+                item.pop(_k, None)
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
         # version is discarded — setdefault would let a browser claim to be somebody else. Same for the
         # time: a client-supplied ts could backdate a message into the middle of an argument. Posting
@@ -13448,6 +13464,47 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     body.pop(_k, None)
             body.pop("hasCv", None)            # derived read-only flag, never stored
+        # ── pm_detail: the DENOMINATOR is a baseline, not a free-text field ───────────────────────
+        # Percent complete is site quantity over scheduled quantity. Once anybody has measured
+        # against a scheduled quantity, moving it silently rewrites every percentage that was ever
+        # reported off it — the roll-up, the master activity, the S-curve and the client's progress
+        # report all change, and nothing on screen says why. Lowering it flatters the job; raising it
+        # buries a delay. So: free to set while nothing has been measured, and after that a manager's
+        # decision with a stated reason, kept on the record and in the tamper-evident chain.
+        if name == "pm_detail":
+            _prevq = db.get_collection_item(name, iid) or {}
+            def _f(v):
+                try:
+                    return float(v or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            _oldq, _newq = _f(_prevq.get("qtyPlan")), _f((body or {}).get("qtyPlan"))
+            _reason = str((body or {}).get("qtyPlanReason") or "").strip()
+            body = dict(body or {})
+            body.pop("qtyPlanReason", None)          # a justification, not a column
+            if abs(_oldq - _newq) > 1e-9:
+                _measured = [e for e in (_prevq.get("log") or [])
+                             if isinstance(e, dict) and e.get("qty") not in (None, "")]
+                if _measured:
+                    if u.get("role") != "manager":
+                        return self._err(
+                            "%s has %d measured reading(s) against a scheduled quantity of %s. "
+                            "Changing it rewrites every percentage already reported, so it needs a "
+                            "manager." % (_prevq.get("name") or "This item", len(_measured),
+                                          ("%g" % _oldq) if _oldq else "none"), 403)
+                    if len(_reason) < 4:
+                        return self._err("Say why the scheduled quantity is changing — it moves "
+                                         "progress that has already been reported.", 400)
+                    _hist = list(_prevq.get("qtyPlanLog") or [])
+                    _hist.append({"from": _oldq, "to": _newq, "reason": _reason[:300],
+                                  "by": u.get("name") or u.get("id") or "", "at": _now_iso()})
+                    body["qtyPlanLog"] = _hist
+                    self._audit_cv(u, "Scheduled quantity changed", _prevq,
+                                   "%g -> %g (%s) - %s" % (_oldq, _newq, _prevq.get("unit") or "", _reason[:200]))
+                elif _prevq.get("qtyPlanLog"):
+                    body["qtyPlanLog"] = _prevq.get("qtyPlanLog")
+            elif _prevq.get("qtyPlanLog") and not body.get("qtyPlanLog"):
+                body["qtyPlanLog"] = _prevq.get("qtyPlanLog")
         if name in self.ISSUED_ONLY:
             # Fetched here rather than relying on `existing`, which the branches below assign only
             # for the collections they handle — reading it at this point raised a NameError.
@@ -13525,7 +13582,14 @@ class Handler(BaseHTTPRequestHandler):
         # `hrdocs` is excluded because its own gate ran above: _is_hr_admin already decided, and being
         # NAMED as HR is the grant. Leaving it here would let this blunt role check overrule that and
         # refuse an HR officer who is plain staff — which is most of them.
+        # eng_ belongs with crm_ and pm_ here. The people who fill in a drawing register are design
+        # engineers on ordinary staff accounts; without this they are refused every edit with
+        # "Manager access required", which is the whole module unusable by the only people who use
+        # it. The real gates on these records are elsewhere and are the ones that matter: the
+        # STAFF_WRITE list (eng_projects stays manager-only), the per-record ownership check below,
+        # and the signature freeze — none of which this line was adding to.
         if (u.get("role") != "manager" and not name.startswith("crm_") and not name.startswith("pm_")
+                and not name.startswith("eng_")
                 and name not in ("claims", "travel", "payments", "hrdocs")):
             if name == "enrollments":
                 existing = db.get_collection_item("enrollments", iid)
