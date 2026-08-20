@@ -44,10 +44,10 @@ def doc(secret=None, spec=S.SPEC_VERSION, ref="AS-2026-0410", **over):
         "document": "selection", "specVersion": spec, "selectionRef": ref,
         "engine": "AeroSelect", "engineVersion": "2.0.0",
         "generatedOn": "2026-08-20T09:14:00Z",
-        "contentHash": S.content_hash(p),
     }
+    env["contentHash"] = S.content_hash(env, p)
     if secret:
-        env["signature"] = S.sign(p, secret)
+        env["signature"] = S.sign(env, p, secret)
     return {"aeroselect": env, "payload": p}
 
 
@@ -84,9 +84,10 @@ def test_a_document_with_no_hash_is_refused():
 
 def test_the_hash_is_independent_of_key_order():
     """Both sides must agree on the canonical bytes or every document fails for no reason."""
+    e = {"document": "selection", "specVersion": S.SPEC_VERSION, "selectionRef": "R"}
     a = {"b": 2, "a": 1, "c": {"y": 1, "x": 2}}
     b = {"a": 1, "c": {"x": 2, "y": 1}, "b": 2}
-    assert S.content_hash(a) == S.content_hash(b)
+    assert S.content_hash(e, a) == S.content_hash(e, b)
 
 
 def test_a_non_json_file_is_refused_with_a_useful_message():
@@ -117,6 +118,32 @@ def test_a_future_spec_version_is_refused_rather_than_guessed():
     with pytest.raises(S.SelectionError) as e:
         S.parse(doc(spec=S.SPEC_VERSION + 1))
     assert "spec version" in str(e.value)
+
+
+def test_the_signature_covers_the_documents_identity_not_only_its_numbers():
+    """The failure this spec version exists to close. `selectionRef`, `engine`, `engineVersion` and
+    `generatedOn` live in the envelope and are all written onto the unit — selectionRef is also the
+    document number of the Selection report filed as gate G2's evidence. When the hash covered only
+    the payload, a document could carry a perfectly valid signature and still claim to be a
+    selection AeroSelect never wrote, with "Signature verified" printed over it."""
+    for field, value in [("selectionRef", "TOTALLY-DIFFERENT-REF"),
+                         ("engine", "NotAeroSelect"),
+                         ("engineVersion", "9.9.9"),
+                         ("generatedOn", "2001-01-01T00:00:00Z")]:
+        raw = doc(secret=SECRET)
+        raw["aeroselect"][field] = value
+        with pytest.raises(S.SelectionError) as e:
+            S.parse(raw, secret=SECRET)
+        assert "altered" in str(e.value), field
+
+
+def test_tampering_with_the_identity_breaks_the_hash_even_with_no_secret():
+    """It is the HASH that carries this, so it holds on an unpaired portal too."""
+    raw = doc()
+    raw["aeroselect"]["selectionRef"] = "SOMEBODY-ELSES-REF"
+    with pytest.raises(S.SelectionError) as e:
+        S.parse(raw)
+    assert "altered" in str(e.value)
 
 
 def test_a_document_with_no_selection_reference_is_refused():
@@ -155,7 +182,7 @@ def test_an_unsigned_document_is_refused_when_a_secret_is_configured():
 def test_a_signature_does_not_survive_an_edit():
     raw = doc(secret=SECRET)
     raw["payload"]["classes"]["L"] = "L3"
-    raw["aeroselect"]["contentHash"] = S.content_hash(raw["payload"])   # forge the hash too
+    raw["aeroselect"]["contentHash"] = S.content_hash(raw["aeroselect"], raw["payload"])  # forge it
     with pytest.raises(S.SelectionError) as e:
         S.parse(raw, secret=SECRET)
     assert "does not verify" in str(e.value)
@@ -211,16 +238,27 @@ def test_a_missing_value_is_left_alone_rather_than_written_blank():
     assert "coilDesignBar" not in f and "cleanroom" not in f
 
 
-def test_a_nonsense_class_is_dropped_rather_than_carried_through():
-    f = S.to_unit_fields(S.parse(doc(classes={"D": "D9", "L": "L2"})))
-    assert "classD" not in f
-    assert f["classL"] == "L2"
+def test_a_class_this_portal_cannot_read_is_refused_not_dropped():
+    """The nastiest shape in the module. A dropped class leaves whatever the unit held before, so a
+    document declaring D4 would leave a D2 unit tested against the D2 limit, silently."""
+    with pytest.raises(S.SelectionError) as e:
+        S.parse(doc(classes={"D": "D9", "L": "L2"}))
+    assert "cannot read" in str(e.value) and "D9" in str(e.value)
 
 
-def test_a_cleanroom_class_is_normalised_but_an_unknown_one_is_dropped():
+def test_an_unreadable_cleanroom_class_is_refused_too():
     assert S.to_unit_fields(S.parse(doc()))["cleanroom"] == "ISO7"
     u = dict(payload()["unit"], cleanroom="Class 100")
-    assert "cleanroom" not in S.to_unit_fields(S.parse(doc(unit=u)))
+    with pytest.raises(S.SelectionError) as e:
+        S.parse(doc(unit=u))
+    assert "cleanroom" in str(e.value)
+
+
+def test_an_absent_class_is_still_simply_absent():
+    """Refusing an unreadable value must not turn a missing one into an error."""
+    d = S.parse(doc(classes={"D": "D2"}))
+    f = S.to_unit_fields(d)
+    assert f["classD"] == "D2" and "classL" not in f
 
 
 def test_text_where_a_number_belongs_is_dropped_not_read_as_zero():
@@ -267,6 +305,25 @@ def test_a_changed_selection_lists_exactly_what_moved():
     assert moved["airflow"] == (12000, 14000)
     assert moved["classL"] == ("L1", "L2")
     assert "esp" not in moved
+
+
+def test_a_number_that_did_not_move_is_not_reported_as_a_change():
+    """12000 and 12000.0 are the same airflow. Stringly comparison put a field that had not moved
+    next to the ones that had, in the one message somebody reads before superseding a unit already
+    being built."""
+    d = S.parse(doc())
+    moved = [f for f, _a, _b in S.differences(d, {"airflow": 12000, "esp": 450})]
+    assert "airflow" not in moved and "esp" not in moved
+
+
+def test_losing_the_shared_secret_shows_up_as_a_change():
+    """Re-importing the same document on a portal that can no longer verify it downgrades the unit
+    to unverified — honest, but somebody confirming should be able to see it happen."""
+    verified = S.to_unit_fields(S.parse(doc(secret=SECRET), secret=SECRET))
+    assert verified["selectionVerified"] is True
+    unverified = S.parse(doc(secret=SECRET))          # same document, no secret this side
+    moved = dict((f, (a, b)) for f, a, b in S.differences(unverified, verified))
+    assert moved["selectionVerified"] == (True, False)
 
 
 def test_a_unit_with_no_selection_yet_shows_everything_as_a_change():
