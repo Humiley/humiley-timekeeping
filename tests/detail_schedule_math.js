@@ -78,5 +78,35 @@ t('a percentage over 100 is clamped', _pdAcc({ log: [{ d: TODAY, pct: 9999 }] },
 t('an item with no dates still has a weight', _pdWeight({}), 1);
 t('readings filed out of order are sorted', _pdAcc({ log: [{ d: '2026-08-15', pct: 95 }, { d: '2026-08-10', pct: 40 }] }, TODAY), 95);
 
+
+// ── the import parser ────────────────────────────────────────────────────────────────────────────
+// It decides what gets written, so its REJECTIONS matter as much as its acceptances. A parser that
+// quietly drops a malformed line creates a schedule with holes nobody knows about.
+const iStart = src.indexOf('const _PD_IMPORT_COLS'), iEnd = src.indexOf('function pdImportPreview');
+if (iStart < 0 || iEnd < 0) { console.error('Could not find the import parser block.'); process.exit(2); }
+const imp = {};
+new Function('function _t(s){return s;}' + src.slice(iStart, iEnd) + '\n Object.assign(this,{_pdImportParse});').call(imp);
+const parse = imp._pdImportParse;
+
+const TAB = (a) => a.join('\t');
+t('a clean row', parse(TAB(['HVAC Works', 'Install ceiling support', '2026-08-11', '2026-08-25'])).rows.length, 1);
+t('a pasted header row is skipped, not imported',
+  parse('Category\tReport Items\tStart Date\tFinish Date\n' + TAB(['HVAC', 'X', '2026-08-11', '2026-08-25'])).rows.length, 1);
+t('comma-separated also works', parse('HVAC,Install pipe,2026-08-11,2026-08-25').rows.length, 1);
+t('blank lines are ignored', parse('\n\n' + TAB(['HVAC', 'X']) + '\n\n').rows.length, 1);
+
+t('a missing item name is rejected', parse(TAB(['HVAC', ''])).bad.length, 1);
+t('a missing category is rejected', parse(TAB(['', 'Install pipe'])).bad.length, 1);
+t('a bad start date is rejected', parse(TAB(['HVAC', 'X', '11/08/2026', '2026-08-25'])).bad.length, 1);
+t('finish before start is rejected', parse(TAB(['HVAC', 'X', '2026-08-25', '2026-08-11'])).bad.length, 1);
+t('a negative weight is rejected', parse(TAB(['HVAC', 'X', '2026-08-11', '2026-08-25', '', '', '-5'])).bad.length, 1);
+t('a zero weight is rejected', parse(TAB(['HVAC', 'X', '2026-08-11', '2026-08-25', '', '', '0'])).bad.length, 1);
+t('dates are optional', parse(TAB(['HVAC', 'X'])).rows.length, 1);
+t('a rejected row does not silently vanish',
+  parse(TAB(['HVAC', 'X']) + '\n' + TAB(['', 'no category'])).bad[0].line, 2);
+t('good and bad rows are separated, not all-or-nothing', (() => {
+  const r = parse(TAB(['HVAC', 'Good']) + '\n' + TAB(['', 'Bad']));
+  return r.rows.length + '/' + r.bad.length; })(), '1/1');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
