@@ -256,3 +256,65 @@ def test_staff_cannot_download_the_workbook(base_url, tokens):
     tid = _trading("TND-XLSX4")
     st, _h, _b = _raw(base_url, "/api/tender/quote.xlsx?id=" + tid, tokens["staff"])
     assert st == 403
+
+
+# ── cash flow and risk through the API ───────────────────────────────────────────────────────────
+
+def test_the_summary_carries_a_cash_flow_that_reconciles_to_the_costing(api, tokens):
+    tid = _epc("TND-CASH")
+    _, r = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    c = r["cash"]
+    assert c["outTotal"] == sum(x["total"] for x in c["outflows"])
+    assert c["inTotal"] == r["quote"]["net"]
+    assert c["peakFunding"] >= 0 and 1 <= c["peakMonth"] <= c["months"]
+    assert c["closingPosition"] == c["inTotal"] - c["outTotal"]
+
+
+def test_the_milestones_come_back_so_the_ui_need_not_invent_defaults(api, tokens):
+    tid = _epc("TND-MILE")
+    _, r = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    assert sum(m["pct"] for m in r["milestones"]) == 100
+
+
+def test_moving_the_money_later_deepens_the_funding_requirement(api, tokens):
+    tid = _epc("TND-LATE")
+    _, before = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    e = next(x for x in db.list_collection("est_projects") if x["id"] == tid)
+    e["milestones"] = [{"label": "On handover", "pct": 100, "month": 24}]
+    db.put_collection_item("est_projects", e)
+    _, after = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    assert after["cash"]["peakFunding"] > before["cash"]["peakFunding"]
+
+
+def test_the_risk_register_reads_from_its_own_collection_and_is_scoped_to_the_tender(api, tokens):
+    tid = _epc("TND-RISK")
+    db.put_collection_item("est_risks", {"id": "rk1", "estId": tid, "code": "R-1",
+                                         "risk": "FX", "probability": 50, "impact": 100_000_000})
+    db.put_collection_item("est_risks", {"id": "rk2", "estId": "SOMEONE-ELSE", "code": "R-9",
+                                         "risk": "Other tender", "probability": 90,
+                                         "impact": 900_000_000})
+    _, r = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    assert [x["code"] for x in r["risk"]["rows"]] == ["R-1"]
+    assert r["risk"]["expectedValue"] == 50_000_000
+
+
+def test_the_register_says_whether_the_contingency_covers_it(api, tokens):
+    tid = _epc("TND-COVER")
+    db.put_collection_item("est_risks", {"id": "rk3", "estId": tid, "code": "R-BIG",
+                                         "risk": "Large", "probability": 100,
+                                         "impact": 9_000_000_000_000})
+    _, r = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    assert r["risk"]["covered"] is False and r["risk"]["shortfall"] > 0
+
+
+def test_sensitivity_comes_back_with_a_break_even_overrun(api, tokens):
+    tid = _epc("TND-SENS")
+    _, r = api("GET", "/api/tender/summary?id=" + tid, tokens["admin"])
+    assert r["sensitivity"]["breakEvenOverrunPct"] > 0
+    assert [x["step"] for x in r["sensitivity"]["rows"]] == [-5.0, 0.0, 5.0, 10.0, 15.0]
+
+
+def test_staff_cannot_read_the_risk_register(api, tokens):
+    _epc("TND-RISKACL")
+    st, _ = api("GET", "/api/coll/est_risks", tokens["staff"])
+    assert st == 403
