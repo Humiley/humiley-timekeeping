@@ -21695,17 +21695,38 @@ function _pdRegister(pid, rows, cats, day) {
     });
   });
 
-  const HEAD = [['Category', ''], ['Report Items', ''], ['Daily Progress (%)', 'right'],
-    ['Accumulated Progress (%)', 'right'], ['Planned to date (%)', 'right'], ['Variance', 'right'],
-    ['Start Date', ''], ['Finish Date', ''],
-    ['Actual at site', 'right'], ['Scheduled quantity', 'right'], ['Unit', ''], ['', '']];
+  // Eleven long labels in one flat row made the reader work out from the wording that the columns are
+  // three different KINDS of fact. They are grouped instead: what the percentages say, when the work
+  // is meant to happen, and the measured quantity the percentages come from. The group carries the
+  // long name so each column label can be short — which is also what stops "Tiến độ trong ngày (%)"
+  // wrapping to four lines and pushing the header to a hundred pixels tall.
+  //
   // ONE text node per header. A <br> splits it in two and the DOM-walk translator matches only the
   // first — which is how "Actual at site" came out as "Thực tế at site".
+  //
+  // position:static on the group row is deliberate: .table-wrap makes every thead th sticky at top:0,
+  // and two sticky rows at the same offset land on top of each other. The column row keeps the pin.
+  const GRP = 'position:static;text-align:center;font-size:10px;letter-spacing:.06em;font-weight:700;' +
+    'text-transform:uppercase;color:var(--text-light);padding-bottom:3px;white-space:nowrap;';
+  // Column labels WRAP; only the group row is nowrap. Holding all nine on one line each pushed the
+  // table from 1298px to 1521px — a shorter header bought with more sideways scrolling, which is not
+  // a trade worth making on the one screen people read left-to-right across the whole row.
+  const COLS = [['Daily', 'right', 74], ['Accumulated', 'right', 86],
+    ['Planned to date', 'right', 104],   // 104 so Vietnamese breaks 'Kế hoạch / đến nay' in two, not three
+    ['Variance', 'right', 78], ['Start', '', 88], ['Finish', '', 88],
+    ['At site', 'right', 88], ['Planned', 'right', 88], ['Unit', '', 64]];
   const table = '<datalist id="pd-units">' + ['m', 'm²', 'm³', 'kg', 'no.', 'set', 'lot', 'point', 'zone']
       .map(u => '<option value="' + u + '">').join('') + '</datalist>' +
-    '<div class="table-wrap"><table style="min-width:1180px"><thead><tr>' +
-    HEAD.map((h, i) => '<th style="white-space:normal;min-width:' + (i === 1 ? 190 : 78) + 'px' +
-      (h[1] === 'right' ? ';text-align:right' : '') + (i === 8 ? ';' + EDGE : '') + '">' + _t(h[0]) + '</th>').join('') +
+    '<div class="table-wrap"><table style="min-width:1120px"><thead>' +
+    '<tr><th rowspan="2" style="min-width:118px;vertical-align:bottom">' + _t('Category') + '</th>' +
+      '<th rowspan="2" style="min-width:190px;vertical-align:bottom">' + _t('Report Items') + '</th>' +
+      '<th colspan="4" style="' + GRP + '">' + _t('Progress (%)') + '</th>' +
+      '<th colspan="2" style="' + GRP + '">' + _t('Dates') + '</th>' +
+      '<th colspan="3" style="' + GRP + EDGE + '" title="' + _tkEscA(_t('Actual at site ÷ scheduled quantity')) + '">' +
+        _t('Quantity of work') + '</th>' +
+      '<th rowspan="2"></th></tr>' +
+    '<tr>' + COLS.map((c, i) => '<th style="white-space:normal;min-width:' + c[2] + 'px' +
+      (c[1] === 'right' ? ';text-align:right' : '') + (i === 6 ? ';' + EDGE : '') + '">' + _t(c[0]) + '</th>').join('') +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
 
   return '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
@@ -27051,6 +27072,16 @@ const _VI = {
   'Payments, payroll and invoice tracking': 'Thanh toán, tiền lương và theo dõi hoá đơn',
   'Purchasing, inventory, trade reference and insights': 'Mua hàng, kho, tra cứu thương mại và phân tích',
   'Access, signatures, audit trail, schedules and locations': 'Phân quyền, chữ ký, vết kiểm toán, lịch làm việc và địa điểm',
+  /* Grouped register header + the KPI labels that were never keyed (2026-08-20) */
+  'Progress (%)': 'Tiến độ (%)',
+  'Quantity of work': 'Khối lượng công việc',
+  'At site': 'Tại công trường',
+  'Planned to date': 'Kế hoạch đến nay',
+  'Actual at site ÷ scheduled quantity': 'Thực tế tại công trường ÷ khối lượng kế hoạch',
+  'Report items': 'Hạng mục báo cáo',
+  'Reported today': 'Đã ghi nhận hôm nay',
+  'Critical tasks': 'Công việc găng',
+
   /* Register trio at row end (2026-08-20) */
   'measured': 'đã đo',
   'is actual ÷ scheduled where a quantity is set, otherwise the reported percentage.': 'là thực tế ÷ kế hoạch khi có khối lượng, nếu không thì lấy phần trăm đã báo.',
