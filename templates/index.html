@@ -15645,6 +15645,19 @@ function tkQuickAdd(type, id) {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'ref') {
+      /* A pointer to another record. The stored value is the id — so the link survives a document
+         being renumbered — while the dropdown shows the number and title somebody actually
+         recognises. The plain `select` type cannot express that: it uses one string for both. */
+      const _pairs = _qaRefOptions(f.src, ex);
+      const _cur = String(val || '');
+      const _known = _pairs.some(o => o.v === _cur);
+      return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '">' +
+        '<option value="">' + _crmEsc(f.blank || '— none —') + '</option>' +
+        (_cur && !_known ? '<option value="' + _tkEscA(_cur) + '" selected>' + _crmEsc(f.missing || '(record no longer in the list)') + '</option>' : '') +
+        _pairs.map(o => '<option value="' + _tkEscA(o.v) + '"' + (o.v === _cur ? ' selected' : '') + '>' + _crmEsc(o.l) + '</option>').join('') +
+        '</select></div>';
+    }
     if (f.type === 'money') return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" inputmode="numeric" autocomplete="off" oninput="_qaMoney(this)" value="' + _tkEscA(_qaMoneyFmt(val)) + '"></div>';
     if (f.type === 'cv') {
       const cur = ex && (ex.cvName || ex.hasCv)
@@ -15673,6 +15686,14 @@ function tkQuickAdd(type, id) {
   // Belt-and-suspenders: translate the modal now if in VN (don't depend on observer timing).
   try { if (typeof _LANG !== 'undefined' && _LANG.cur === 'vi' && typeof _viWalk === 'function') _viWalk(document.getElementById('quickAddModal')); } catch (e) {}
 }
+/* Which project owns the file being attached — a PMC project for a pm_ register, a design
+   commission for an eng_ one. Both records carry `sharepointUrl`, so everything downstream
+   (_pmSpBase / _graphUploadFile / _pmSpEnsureDir) works unchanged on either. */
+function _qaSpProject(coll) {
+  if (String(coll || '').indexOf('eng_') === 0) return (typeof _engProj === 'function') ? _engProj() : null;
+  if (String(coll || '').indexOf('pm_') === 0) return _pmProj();
+  return null;
+}
 /* Which SharePoint sub-folder each PMC register's attachments go to (relative to the project root). */
 const _PM_UPLOAD_DIR = {
   pm_changes: '10_Change_Management_ECN',
@@ -15685,7 +15706,18 @@ const _PM_UPLOAD_DIR = {
   pm_rfis: '05_Construction_Installation/03_Site_Instructions_RFI',
   pm_procurement: '04_Procurement_Subcontracts',
   pm_sitereports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports',
-  pm_weekreports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports'
+  pm_weekreports: '05_Construction_Installation/02_Site_Daily_Weekly_Reports',
+  /* Engineering design control — mirrors _ENG_SP_TPL below. A revision's file is the controlled
+     document itself, so it goes to the issue folder for its stage, not to a generic attachments bin. */
+  eng_inputs: '01_Design_Basis_Inputs',
+  eng_deliverables: '05_Detail_Design/01_Drawings',
+  eng_revisions: '07_Issued_Transmittals',
+  eng_reviews: '08_Design_Reviews_Verification',
+  eng_comments: '09_Comments_Resolution',
+  eng_changes: '10_Design_Change_ECR_ECN',
+  eng_tq: '11_Technical_Queries',
+  eng_transmittals: '07_Issued_Transmittals',
+  eng_stages: '12_Stage_Gates_Approvals'
 };
 /* Read an attachment for a file-type quick-add field. For PMC document attachments the file is
    uploaded to the project's SharePoint folder (only the link is kept in the DB — keeps SQLite lean);
@@ -15694,9 +15726,9 @@ async function _qaReadFile(input, k) {
   const f = input.files && input.files[0]; if (!f) return;
   const v = document.getElementById('qa-' + k), n = document.getElementById('qa-' + k + '-name'), info = document.getElementById('qa-' + k + '-info');
   const coll = (_QA_SPECS[_qaType] || {}).coll || '';
-  const canSP = k === 'attachment' && coll.indexOf('pm_') === 0 && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
+  const canSP = (k === 'attachment' || k === 'file') && (coll.indexOf('pm_') === 0 || coll.indexOf('eng_') === 0) && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
   if (canSP) {
-    const p = _pmProj();
+    const p = _qaSpProject(coll);
     if (p && _pmSpBase(p)) {
       if (f.size > 100 * 1024 * 1024) { toast('File too large (max 100 MB)', 'warn'); input.value = ''; return; }
       if (info) info.textContent = 'Uploading to SharePoint…';
@@ -15795,7 +15827,7 @@ function _qaReadCv(input) {
 async function _qaReadFiles(input, k) {
   const files = Array.prototype.slice.call(input.files || []); if (!files.length) return;
   const coll = (_QA_SPECS[_qaType] || {}).coll || '';
-  const p = coll.indexOf('pm_') === 0 ? _pmProj() : null;
+  const p = _qaSpProject(coll);
   const canSP = p && _pmSpBase(p) && (typeof DEMO_MODE !== 'function' || !DEMO_MODE()) && _msalApp && _account;
   for (const f of files) {
     if (canSP) {
@@ -15861,6 +15893,7 @@ async function tkQuickAddSave() {
   });
   if ((_qaType || '').indexOf('crm_') === 0 && !data.owner && TK.user) data.owner = TK.user.name;
   if ((_qaType || '').indexOf('pm_') === 0) { if (spec.coll !== 'pm_projects' && spec.coll !== 'pm_settings' && !data.projectId) data.projectId = _pmPid(); if (!data.owner && spec.fields.some(f => f.k === 'owner') && TK.user) data.owner = TK.user.name; _pmDerive(spec.coll, data); if (!_qaEditId) _pmAutoNumber(spec.coll, data); }
+  if ((_qaType || '').indexOf('eng_') === 0) { if (spec.coll !== 'eng_projects' && !data.projectId) data.projectId = _engPid(); _engDerive(spec.coll, data, _qaEditId); if (!_qaEditId) { _engAutoNumber(spec.coll, data); if (spec.coll === 'eng_deliverables') _engAutoDocNo(data); } }
   if (_qaType === 'devices') {   // resolve the assignee to an employee id so an assigned asset shows in that employee's My Devices
     const _em = data.assignedTo ? (_DEMO_EMPLOYEES || []).find(x => (x.name || '').toLowerCase() === String(data.assignedTo).toLowerCase()) : null;
     // Only (re)derive empId when this form actually carries an assignee. On a line already held by
@@ -19263,6 +19296,38 @@ function _qaDynOptions(src, ex) {
     const emps = (_DEMO_EMPLOYEES || []).map(e => e.name);
     return [...new Set([].concat(mem, res, used, emps).filter(Boolean))];
   }
+  /* Design-office people: the commission's own team first, then anyone already named anywhere in
+     its registers, then all staff. FREE TEXT is allowed throughout — a sub-consultant's checker
+     signs drawings and will never have a portal account, and a picker that cannot hold their name
+     is a register that quietly loses the person who did the checking. */
+  if (src === 'eng_people') {
+    const p = (typeof _engProj === 'function') ? _engProj() : null;
+    const pid = (typeof _engPid === 'function') ? _engPid() : '';
+    const lead = p ? [p.designManager, p.leadEngineer, p.qaApprover] : [];
+    const mem = p ? _engMembers(p) : [];
+    const team = (_HR.eng_team || []).filter(r => r && r.projectId === pid).map(r => r.name);
+    const named = [];
+    ['eng_deliverables', 'eng_revisions', 'eng_comments', 'eng_reviews', 'eng_changes', 'eng_tq'].forEach(c => {
+      (_HR[c] || []).forEach(r => { if (r && r.projectId === pid) named.push(r.preparedBy, r.checkedBy, r.approver, r.chair, r.responsible, r.raisedBy, r.originator, r.owner); });
+    });
+    const emps = (_DEMO_EMPLOYEES || []).map(e => e.name);
+    return [...new Set([].concat(lead, mem, team, named, emps).filter(Boolean))];
+  }
+  if (src === 'eng_numformats') return Object.keys(_ENG_NUM_PRESETS).map(k => _ENG_NUM_PRESETS[k]);
+  return [];
+}
+/* Value/label pairs for a `ref` field. Kept separate from _qaDynOptions because that one returns
+   bare strings, which is exactly what a reference must not be. */
+function _qaRefOptions(src, ex) {
+  if (src === 'eng_deliverables') {
+    const pid = (typeof _engPid === 'function') ? _engPid() : '';
+    return (_HR.eng_deliverables || []).filter(d => d && d.projectId === pid)
+      .sort((a, b) => String(a.docNo || '').localeCompare(String(b.docNo || '')))
+      .map(d => ({ v: d.id, l: (d.docNo || '(no number)') + ' — ' + (d.title || '') }));
+  }
+  if (src === 'pm_projects') {
+    return (_HR.pm_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
+  }
   return [];
 }
 function _crmFillContacts(co) {
@@ -21413,17 +21478,36 @@ function _pdRegister(pid, rows, cats, day) {
         '<td></td>' +
         '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span></td>' +
         (function () {
-          const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day), u = r.unit ? ' ' + _pmEsc(r.unit) : '';
-          const n = v => (Math.round(v * 100) / 100).toLocaleString();
-          if (!qp) return '<td colspan="3" style="text-align:center;font-size:11px;color:var(--text-light)">' +
-            _t('no quantity — progress is judged') + '</td>';
+          // EDITABLE IN PLACE. Requiring a scheduled quantity to be set on the edit form first meant
+          // the register showed a row of greyed cells and no way in — a progress sheet you cannot
+          // type into. Every line now takes a figure right here; setting the scheduled quantity is
+          // the adjacent cell, not a different screen.
+          const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
+          const n = v => v === '' || v === null ? '' : (Math.round(v * 100) / 100);
+          const cell = (field, val, ph, extra) =>
+            '<input class="pd-cell" data-id="' + r.id + '" data-field="' + field + '" ' +
+            'type="number" min="0" step="any" inputmode="decimal" value="' + (val === '' ? '' : val) + '" ' +
+            'placeholder="' + _tkEscA(ph) + '" onchange="pdCellSave(this)" ' +
+            'style="width:74px;text-align:right;font-size:12px;font-variant-numeric:tabular-nums;padding:3px 6px;' +
+            'border:1px solid transparent;border-radius:6px;background:transparent;color:var(--text);font-family:inherit;' + (extra || '') + '" ' +
+            'onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'" ' +
+            'onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
+          const unitCell = '<input class="pd-cell" data-id="' + r.id + '" data-field="unit" value="' + _tkEscA(r.unit || '') + '" ' +
+            'placeholder="' + _tkEscA(_t('unit')) + '" onchange="pdCellSave(this)" ' +
+            'style="width:42px;font-size:11px;padding:3px 4px;border:1px solid transparent;border-radius:6px;' +
+            'background:transparent;color:var(--text-light);font-family:inherit" ' +
+            'onfocus="this.style.borderColor=\'var(--navy)\';this.style.background=\'var(--card,#fff)\'" ' +
+            'onblur="this.style.borderColor=\'transparent\';this.style.background=\'transparent\'">';
           // An inferred site figure is shown lighter and italic: it was back-calculated from a
           // percentage somebody typed, and must never be mistaken for something measured on site.
-          return '<td style="text-align:right;font-variant-numeric:tabular-nums">' + n(qp) + u + '</td>' +
-            '<td style="text-align:right;font-variant-numeric:tabular-nums' + (at.inferred ? ';color:var(--text-light);font-style:italic' : ';font-weight:600') + '"' +
-              (at.inferred ? ' title="' + _tkEscA(_t('Derived from the reported percentage — no site quantity filed yet')) + '"' : '') + '>' +
-              n(at.q) + u + '</td>' +
-            '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + _pmPct(at.q / qp * 100) + '%</td>';
+          const siteVal = at.inferred ? '' : n(at.q);
+          return '<td style="text-align:right;white-space:nowrap">' + cell('qtyPlan', qp ? n(qp) : '', _t('qty')) + unitCell + '</td>' +
+            '<td style="text-align:right;white-space:nowrap">' + cell('qtyAt', siteVal, at.inferred && qp ? String(n(at.q)) : _t('site'),
+              at.inferred ? 'color:var(--text-light);font-style:italic' : 'font-weight:600') +
+              (at.inferred && qp ? '<span title="' + _tkEscA(_t('Derived from the reported percentage — no site quantity filed yet')) + '" style="font-size:10px;color:var(--text-light);cursor:help">~</span>' : '') + '</td>' +
+            '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' +
+              (qp ? _pmPct(at.q / qp * 100) + '%' : '<span style="font-weight:500;color:var(--text-light);font-size:11px" title="' +
+                _tkEscA(_t('Set a scheduled quantity and this is worked out for you')) + '">—</span>') + '</td>';
         })() +
         '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b></td>' +
@@ -21866,6 +21950,42 @@ function _pdTimeline(pid, rows, cats, day) {
     rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
     actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
 }
+/* Save one cell of the register. Three fields, three different meanings:
+   · qtyPlan / unit describe the WORK and live on the item;
+   · qtyAt is a MEASUREMENT and becomes today's reading, exactly as the Report dialog would file it.
+   Saving on change (not on every keystroke) keeps it to one write per cell actually edited. */
+async function pdCellSave(el) {
+  const r = (_HR[_PD_COLL] || []).find(x => x.id === el.dataset.id); if (!r) return;
+  const field = el.dataset.field, raw = String(el.value).trim();
+  const body = Object.assign({}, r);
+  if (field === 'unit') { body.unit = raw; }
+  else if (field === 'qtyPlan') {
+    const v = raw === '' ? 0 : Math.max(0, +raw || 0);
+    if (raw !== '' && !(v > 0)) { toast(_t('A scheduled quantity must be a positive number.'), 'warn'); return; }
+    body.qtyPlan = v;
+  } else if (field === 'qtyAt') {
+    const qp = _pdQtyPlan(r);
+    if (!qp) { toast(_t('Set a scheduled quantity first — the percentage is worked out from the two.'), 'warn', 5000); return; }
+    if (raw === '') return;                                   // cleared, not measured — file nothing
+    const qty = Math.max(0, +raw || 0);
+    const day = _pmToday();
+    const log = _pdLog(r).filter(e => String(e.d) !== day);
+    log.push({ d: day, pct: _pmPct(qty / qp * 100), qty: qty,
+               by: (TK.user && TK.user.name) || '', at: new Date().toISOString() });
+    body.log = log;
+  } else return;
+  el.disabled = true;
+  try {
+    await tkApi('/api/coll/' + _PD_COLL + '/' + r.id, { method: 'PATCH', body: body });
+    Object.assign(r, body);
+    tkAudit('Detail schedule edited', r.name, field + ' = ' + (raw || '—'));
+    _pmReload();
+  } catch (e) {
+    el.disabled = false;
+    toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 6000);
+  }
+}
+
 /* ── filing a reading ─────────────────────────────────────────────────────────────────────────── */
 function pdProgress(id) {
   const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
@@ -23927,6 +24047,14 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Inline register editing (2026-08-20) */
+  'unit': 'đơn vị',
+  'qty': 'khối lượng',
+  'site': 'thực tế',
+  'A scheduled quantity must be a positive number.': 'Khối lượng kế hoạch phải là số dương.',
+  'Set a scheduled quantity first — the percentage is worked out from the two.': 'Hãy nhập khối lượng kế hoạch trước — phần trăm được tính từ hai giá trị này.',
+  'Set a scheduled quantity and this is worked out for you': 'Nhập khối lượng kế hoạch thì đây sẽ tự tính',
+
   /* Quantity-based progress (2026-08-20) */
   'Scheduled quantity (optional)': 'Khối lượng theo kế hoạch (không bắt buộc)',
   'Unit of work (m, m², m³, no., set, lot…)': 'Đơn vị công việc (m, m², m³, cái, bộ, lô…)',
