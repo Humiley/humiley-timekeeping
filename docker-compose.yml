@@ -43,6 +43,10 @@ services:
       # The ONE shared SSO secret. Procurement reads the SAME variable (below), so the no-second-
       # login handoff can never drift out of sync. Generated once into .env by update.sh.
       - TK_SSO_SECRET=${TK_SSO_SECRET:-}
+      # Shared with AeroSelect so a signed selection document can be verified. Empty is a valid,
+      # honest state: documents are accepted and recorded UNVERIFIED. Once set, signatures become
+      # REQUIRED — so set it only when AeroSelect is actually signing. See .env.example.
+      - TK_AEROSELECT_SECRET=${TK_AEROSELECT_SECRET:-}
       # Invoice Tracking — app-only Microsoft Graph mail read for the 24/7 hd@humiley.com sync.
       # Put the "Humiley Portal" Entra app's CLIENT SECRET in .env as TK_M365_CLIENT_SECRET AND grant
       # that app the Graph Mail.Read APPLICATION permission + admin consent. Empty = the 24/7 scheduler
