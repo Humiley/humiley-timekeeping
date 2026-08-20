@@ -599,27 +599,62 @@ body{
 #content::-webkit-scrollbar-thumb{background:rgba(32,80,144,.18);border-radius:8px}
 #content::-webkit-scrollbar-track{background:transparent}
 
-/* ── Floating, rounded navy sidebar ── */
+/* ── Floating, rounded LIGHT sidebar (the tool rail) ──────────────────────────
+   A white panel rather than a navy slab: the full-colour logo carries the brand,
+   the page you are on is a solid navy pill, and collapsed it becomes a clean icon
+   rail. This is an OVERRIDE layer — the base rules further up are still written for
+   the old dark sidebar — so every colour here carries !important, which is the
+   convention the rest of this stylesheet already uses. */
 #sidebar{
-  background:linear-gradient(180deg,#1b417a 0%, #205090 55%, #1d6e6a 130%) !important;
+  background:var(--card) !important;
   margin:14px 0 14px 14px;
   height:calc(100vh - 28px);height:calc(100dvh - 28px);
-  border-radius:26px;
-  box-shadow:0 22px 48px rgba(23,58,107,.28);
+  border-radius:22px;
+  border:1px solid var(--line);
+  box-shadow:0 18px 40px rgba(23,58,107,.10);
 }
-.sidebar-section-label{color:rgba(255,255,255,.6) !important;}
-/* Collapsed sidebar: scale the logo to fit (overrides inline width/height) */
-#sidebar.collapsed .sidebar-logo{padding:14px 6px 10px !important;}
-#sidebar.collapsed .sidebar-logo img{max-width:44px !important;width:auto !important;height:auto !important;object-fit:contain !important;object-position:center !important;}
-/* Collapsed rail: show ONLY the H mark (the full logo's "Humiley…" text is illegible at 44px). */
+#sidebar.collapsed{width:68px;min-width:68px}
+.sidebar-logo{padding:20px 16px 15px !important;border-bottom:1px solid var(--line) !important;}
+.sidebar-scroll{scrollbar-color:rgba(32,80,144,.22) transparent}
+.sidebar-scroll::-webkit-scrollbar-thumb{background:rgba(32,80,144,.18)}
+.sidebar-scroll::-webkit-scrollbar-thumb:hover{background:rgba(32,80,144,.34)}
+.sidebar-section-label{color:var(--text-light) !important;font-weight:700;}
+.sidebar-section-label.sb-clickable:hover{color:var(--navy) !important;background:var(--soft-bg) !important;}
+.sb-chev{opacity:.45}
+
+.nav-item{position:relative;margin:2px 10px;border-radius:12px;border-left:none !important;padding:10px 13px !important;color:var(--text-dark) !important;font-weight:600;}
+.nav-item:hover{background:var(--soft-bg) !important;color:var(--navy) !important;}
+.nav-item.active{background:var(--navy) !important;color:#fff !important;box-shadow:0 6px 16px rgba(32,80,144,.26) !important;}
+.nav-item.active::before{display:none !important;}
+.nav-badge{background:var(--emerald) !important;color:#fff !important;}
+.nav-item.active .nav-badge{background:rgba(255,255,255,.26) !important;}
+
+/* Collapsed = a 68px icon rail: icons centred, the active one a filled navy square. */
+#sidebar.collapsed .sidebar-logo{padding:16px 6px 13px !important;}
+#sidebar.collapsed .sidebar-logo img{max-width:34px !important;width:auto !important;height:auto !important;object-fit:contain !important;object-position:center !important;}
+/* The full lockup's "Humiley…" text is illegible at rail width — show only the H mark. */
 #sidebar.collapsed .sidebar-logo img.sidebar-logo-full{display:none !important;}
-#sidebar.collapsed .sidebar-logo img.sidebar-logo-mark{display:block !important;height:34px !important;width:34px !important;max-width:34px !important;object-fit:contain !important;object-position:center !important;}
-.nav-item{margin:1px 10px;border-radius:12px;border-left:none !important;padding:9px 13px !important;}
-.nav-item.active{background:rgba(255,255,255,.16) !important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12);}
-.nav-item.active::before{content:'';position:absolute;left:-10px;width:4px;height:20px;border-radius:4px;background:var(--emerald)}
-.nav-item{position:relative}
-.nav-badge{background:var(--emerald) !important;}
-.sidebar-footer{border-top:1px solid rgba(255,255,255,.12) !important;}
+#sidebar.collapsed .sidebar-logo img.sidebar-logo-mark{display:block !important;height:30px !important;width:30px !important;max-width:30px !important;object-fit:contain !important;object-position:center !important;}
+#sidebar.collapsed .nav-item{justify-content:center;padding:10px 0 !important;margin:3px 12px;}
+
+/* ── Footer: the utilities, kept apart from the navigation by a rule ── */
+.sidebar-footer{border-top:1px solid var(--line) !important;padding:10px !important;}
+.sidebar-footer .user-name{color:var(--navy) !important;}
+.sidebar-footer .user-role{color:var(--text-light) !important;}
+.user-card{border-radius:12px}
+.user-card:hover{background:var(--soft-bg)}
+.sidebar-footer .role-badge.mgr{background:rgba(32,80,144,.12) !important;color:var(--navy) !important;}
+.sidebar-footer .role-badge.staff{background:rgba(0,176,96,.14) !important;color:var(--emerald-deep) !important;}
+.sb-foot{display:flex;align-items:center;gap:11px;width:100%;margin:1px 0;padding:9px 13px;border:none;background:transparent;border-radius:12px;font-family:inherit;font-size:13px;font-weight:600;color:var(--text-dark);cursor:pointer;white-space:nowrap;text-align:left;transition:background .15s,color .15s}
+.sb-foot:hover{background:var(--soft-bg);color:var(--navy)}
+.sb-foot svg{flex:none}
+.sb-foot-out{color:var(--danger)}
+.sb-foot-out:hover{background:rgba(192,0,0,.07);color:var(--danger)}
+.sb-foot-collapse{margin-top:8px;padding-top:12px;border-top:1px solid var(--line);border-radius:0;font-size:12px;font-weight:500;color:var(--text-light)}
+.sb-foot:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,80,144,.28)}
+#sidebar.collapsed .sb-foot{justify-content:center;padding:9px 0}
+#sidebar.collapsed .sb-foot .nav-label{opacity:0;width:0;overflow:hidden}
+#sidebar.collapsed .user-card{justify-content:center;padding:8px 0}
 
 /* ── Airy main area, transparent topbar ── */
 #main{padding:0 !important;}
@@ -689,15 +724,15 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
 #sidebar.collapsed .sb-group.sb-out-of-scope{display:none !important}
 
 .sb-apps-wrap{padding:12px 10px 2px;flex-shrink:0}
-.sb-apps-btn{display:flex;align-items:center;gap:11px;width:100%;padding:9px 13px;border-radius:12px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);color:#fff;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;transition:background .15s}
-.sb-apps-btn:hover{background:rgba(255,255,255,.19)}
-.sb-apps-btn.on{background:rgba(255,255,255,.19);border-color:rgba(255,255,255,.30)}
+.sb-apps-btn{display:flex;align-items:center;gap:11px;width:100%;padding:9px 13px;border-radius:12px;background:var(--soft-bg);border:1px solid var(--line);color:var(--navy);font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background .15s,color .15s}
+.sb-apps-btn:hover{background:var(--light-tint)}
+.sb-apps-btn.on{background:var(--navy);border-color:var(--navy);color:#fff}
 .sb-apps-btn .nav-icon{display:flex;align-items:center;flex-shrink:0}
 #sidebar.collapsed .sb-apps-btn{justify-content:center;padding:9px 0}
 #sidebar.collapsed .sb-apps-btn .nav-label{opacity:0;width:0;overflow:hidden}
-.sb-appnow{margin:9px 10px 2px;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.07);border-left:3px solid var(--emerald);display:none}
-.sb-appnow-lbl{font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;color:rgba(255,255,255,.42);margin-bottom:1px}
-.sb-appnow-name{font-size:12.5px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-appnow{margin:9px 10px 2px;padding:8px 12px;border-radius:12px;background:rgba(0,176,96,.09);border-left:3px solid var(--emerald);display:none}
+.sb-appnow-lbl{font-size:8.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--text-light);margin-bottom:1px}
+.sb-appnow-name{font-size:12.5px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #sidebar.collapsed .sb-appnow{display:none !important}
 
 .topbar-apps{color:var(--navy)}
@@ -735,6 +770,8 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   /* The phone topbar is already tight, and the drawer carries "All Apps" at the top —
      a second button here only stole the page title's room. */
   .topbar-apps{display:none !important}
+  /* The phone sidebar is a drawer, not a rail — there is nothing to collapse it to. */
+  .sb-foot-collapse{display:none !important}
   .app-lead h1{font-size:26px}
   .app-filter{width:100%;min-width:0}
   .app-grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
@@ -941,10 +978,10 @@ window.addEventListener('orientationchange', _setLoginBg);
 <a href="#content" class="skip-link">Skip to main content</a>
 <nav id="sidebar">
   <div class="sidebar-logo">
-    <img class="sidebar-logo-full" src="/static/brand/portal-logo-sidebar.png"
+    <img class="sidebar-logo-full" src="/static/brand/portal-logo-login.png"
            alt="Humiley Engineering &amp; Solutions"
-           style="height:36px;width:auto;max-width:180px;display:block">
-    <img class="sidebar-logo-mark" src="/static/brand/H-mark-white.png"
+           style="height:34px;width:auto;max-width:172px;display:block">
+    <img class="sidebar-logo-mark" src="/static/brand/H-mark-color.png"
            alt="Humiley" style="display:none">
   </div>
 
@@ -1094,13 +1131,23 @@ window.addEventListener('orientationchange', _setLoginBg);
         <div class="user-role" id="sidebar-user-role">Managing Director</div>
       </div>
     </div>
-    <button class="logout-btn upd-btn" onclick="tkForceUpdate()" style="margin-bottom:6px">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:6px"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-      Check for updates
+    <!-- Utilities, not navigation: settings (only for an account that has the app),
+         updates, sign-out, and the rail toggle on its own line at the very bottom. -->
+    <button class="sb-foot" id="sb-foot-settings" onclick="tkOpenApp('admin')" title="Settings" style="display:none">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      <span class="nav-label">Settings</span>
     </button>
-    <button class="logout-btn" onclick="doLogout()">
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-      Sign Out
+    <button class="sb-foot" onclick="tkForceUpdate()" title="Check for updates">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      <span class="nav-label">Check for updates</span>
+    </button>
+    <button class="sb-foot sb-foot-out" onclick="doLogout()" title="Sign Out">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      <span class="nav-label">Sign Out</span>
+    </button>
+    <button class="sb-foot sb-foot-collapse" id="sb-foot-collapse" onclick="toggleSidebar()" title="Collapse">
+      <span id="sb-collapse-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></span>
+      <span class="nav-label" id="sb-collapse-lbl">Collapse</span>
     </button>
   </div>
 </nav>
@@ -26541,6 +26588,23 @@ function _tkAppScopeApply() {
   if (name && meta) name.textContent = _t(meta.label);
   const btn = document.getElementById('nav-apps');
   if (btn) btn.classList.toggle('on', !_tkActiveApp);
+  // Settings is a utility, so it sits in the footer rather than the app board — but only
+  // for an account that actually holds it. A row that only ever refuses is worse than none.
+  const set = document.getElementById('sb-foot-settings');
+  if (set) set.style.display = _tkAppOpen('admin') ? '' : 'none';
+  try { _sbSyncCollapseBtn(); } catch (e) {}
+}
+
+/* The rail toggle has to say which way it goes — an arrow pointing the wrong way is
+   worse than no arrow. Mirrors whatever class toggleSidebar() just set. */
+function _sbSyncCollapseBtn() {
+  const sb = document.getElementById('sidebar'), btn = document.getElementById('sb-foot-collapse');
+  if (!sb || !btn) return;
+  const off = sb.classList.contains('collapsed');
+  const lbl = document.getElementById('sb-collapse-lbl'), ico = document.getElementById('sb-collapse-ico');
+  if (lbl) lbl.textContent = _t(off ? 'Expand' : 'Collapse');
+  btn.title = _t(off ? 'Expand' : 'Collapse');
+  if (ico) ico.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="' + (off ? 'm14 9 3 3-3 3' : 'm16 15-3-3 3-3') + '"/></svg>';
 }
 
 /* Navigation decides the scope: land on a page and the sidebar becomes that page's app.
@@ -26915,6 +26979,7 @@ function toggleSidebar() {
   }
   document.getElementById('sidebar').classList.toggle('collapsed');
   document.getElementById('main').classList.toggle('expanded');
+  try { _sbSyncCollapseBtn(); } catch (e) {}
 }
 function closeSidebarMobile() { document.body.classList.remove('sb-open'); }
 
@@ -26953,6 +27018,8 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 const _VI = {
   /* App launcher + contextual sidebar (2026-08-20) */
   'All Apps': 'Tất cả ứng dụng',
+  'Collapse': 'Thu gọn',
+  'Expand': 'Mở rộng',
   'Apps': 'Ứng dụng',
   'Current app': 'Ứng dụng hiện tại',
   'Find an app…': 'Tìm ứng dụng…',
