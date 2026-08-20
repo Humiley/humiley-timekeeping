@@ -199,3 +199,60 @@ def test_a_line_can_be_excluded_or_repriced_from_the_quotation_without_touching_
     assert after["quote"]["lineCount"] == before["quote"]["lineCount"] - 1
     # The costing still holds both lines — only the customer's quotation dropped one.
     assert len(after["master"]["rows"]) == len(before["master"]["rows"])
+
+
+# ── the Excel letterhead ─────────────────────────────────────────────────────────────────────────
+
+def _raw(base_url, path, token):
+    """The workbook endpoint returns bytes, not JSON, so the `api` fixture cannot read it."""
+    import urllib.request, urllib.error
+    req = urllib.request.Request(base_url + path)
+    req.add_header("Authorization", "Bearer " + token)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, dict(r.headers), r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, dict(e.headers), e.read()
+
+
+def test_the_quotation_downloads_as_a_real_xlsx_named_for_the_customer(base_url, tokens):
+    import io, zipfile
+    tid = _trading("TND-XLSX")
+    st, h, body = _raw(base_url, "/api/tender/quote.xlsx?id=" + tid, tokens["admin"])
+    assert st == 200
+    assert h["Content-Type"].endswith("spreadsheetml.sheet")
+    assert "ABC-Manufacturing" in h["Content-Disposition"]
+    z = zipfile.ZipFile(io.BytesIO(body))
+    assert z.testzip() is None
+    assert "xl/worksheets/sheet1.xml" in z.namelist()
+    # the letterhead chrome came through
+    assert "xl/media/image1.png" in z.namelist()
+    xml = z.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    assert "ABC Manufacturing Co., Ltd." in xml
+    assert "GRAND TOTAL" in xml
+
+
+def test_the_workbook_carries_no_cost_and_no_markup(base_url, tokens):
+    import io, zipfile
+    tid = _trading("TND-XLSX2")
+    _st, _h, body = _raw(base_url, "/api/tender/quote.xlsx?id=" + tid, tokens["admin"])
+    xml = zipfile.ZipFile(io.BytesIO(body)).read("xl/worksheets/sheet1.xml").decode("utf-8")
+    for banned in ("unitCost", "markup", "cogs"):
+        assert banned not in xml, banned
+
+
+def test_a_quotation_that_is_not_ready_to_issue_is_refused_rather_than_written(base_url, tokens):
+    """The same gate the Send button applies. A workbook is a document that leaves the building."""
+    tid = _trading("TND-XLSX3")
+    e = next(x for x in db.list_collection("est_projects") if x["id"] == tid)
+    e["clientTaxCode"] = ""
+    db.put_collection_item("est_projects", e)
+    st, _h, body = _raw(base_url, "/api/tender/quote.xlsx?id=" + tid, tokens["admin"])
+    assert st == 400
+    assert b"tax code" in body.lower()
+
+
+def test_staff_cannot_download_the_workbook(base_url, tokens):
+    tid = _trading("TND-XLSX4")
+    st, _h, _b = _raw(base_url, "/api/tender/quote.xlsx?id=" + tid, tokens["staff"])
+    assert st == 403

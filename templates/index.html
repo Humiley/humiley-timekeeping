@@ -27659,6 +27659,8 @@ function tndTabQuote() {
     '<div style="font-size:12.5px;color:var(--text-light)">' + _t('This is exactly what the customer will receive. Nothing here shows cost or mark-up.') + '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
     (can ? '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')">' + _PENCIL + ' ' + _t('Quotation details') + '</button>' : '') +
+    '<button class="btn btn-outline btn-sm" onclick="tndQuoteXlsx()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
+    tkIcon('download', 13) + ' ' + _t('Export Excel') + '</button>' +
     '<button class="btn btn-primary btn-sm" onclick="tndQuotePDF()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
     tkIcon('download', 13) + ' ' + _t('Export PDF') + '</button></div></div>';
 
@@ -27730,6 +27732,31 @@ function _tndQuoteSheet(doc, q) {
       '<div style="border-top:1px solid var(--text-light);padding-top:6px;font-size:12px;font-weight:600">' + (_estEsc(s.name) || '&nbsp;') + '</div>' +
       '<div style="font-size:11px;color:var(--text-light)">' + _estEsc(_t(s.title)) + '</div></div>').join('') + '</div>' +
     '</div></div>';
+}
+
+/* The Excel letterhead. The server fills the REAL template — the same .xlsx the sales team
+   already sends — so the header bar, the logo, the footer and the fonts are never re-derived
+   here. Downloaded through a blob rather than a plain link so the Authorization header goes
+   with it; the endpoint is session-gated like everything else. */
+async function tndQuoteXlsx() {
+  const e = _estById(_estCur); if (!e) return;
+  const iss = (_tndSum || {}).issue || {};
+  if (!iss.canIssue) { toast(_t('Complete these first') + ': ' + (iss.missing || []).join(', '), 'warn', 6000); return; }
+  try {
+    const r = await fetch('/api/tender/quote.xlsx?id=' + encodeURIComponent(e.id),
+      { headers: { 'Authorization': 'Bearer ' + TK.token } });
+    if (!r.ok) {
+      let msg = ''; try { msg = ((await r.json()) || {}).error || ''; } catch (x) {}
+      toast(_t('Could not build the workbook') + (msg ? ': ' + msg : ''), 'error', 6000); return;
+    }
+    const cd = r.headers.get('Content-Disposition') || '';
+    const nm = (/filename="([^"]+)"/.exec(cd) || [])[1] || 'Quotation.xlsx';
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement('a'); a.href = url; a.download = nm;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast(_t('Workbook downloaded'));
+  } catch (x) { toast(_t('Could not build the workbook') + ': ' + _errMsg(x), 'error', 6000); }
 }
 
 /* ── The PDF. Same document object, drawn onto the Humiley letterhead. ── */
@@ -29365,6 +29392,8 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
   /* Tender & estimating — Vietnamese (2026-08-20) */
+  "Workbook downloaded": "Đã tải bảng tính",
+  "Could not build the workbook": "Không tạo được bảng tính",
   "% of revenue": "% doanh thu",
   "(always built)": "(luôn xây dựng)",
   "A draft is a working document, not a baseline. Set this estimate to Approved or Won first.": "Bản nháp là tài liệu đang làm, chưa phải mốc chuẩn. Hãy chuyển dự toán sang Đã duyệt hoặc Trúng thầu trước.",

@@ -65,6 +65,7 @@ import access_revoke     # what access has to be cut when somebody leaves, and w
 import labour_cost       # what each project cost in people, and on what basis (pure)
 import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
 import tender            # the two costing models we tender with: landed cost, BOM, quotation (pure)
+import quote_xlsx        # the quotation as the real Excel letterhead, filled (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
@@ -4004,6 +4005,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._est_summary_ep(u, qs))
         if path == "/api/tender/summary":
             return self._guard(lambda u: self._tender_summary_ep(u, qs))
+        if path == "/api/tender/quote.xlsx":
+            return self._guard(lambda u: self._quote_xlsx_ep(u, qs))
         if path == "/api/exec/summary":
             return self._guard(lambda u: self._exec_summary(u))
         if path == "/api/exec/trends":
@@ -7180,6 +7183,72 @@ class Handler(BaseHTTPRequestHandler):
         except AssertionError as ex:
             return self._err("This tender did not reconcile (%s). It has not been served — please report it." % ex, 500)
         return self._json(out)
+
+    def _quote_xlsx_ep(self, u, qs):
+        """The quotation as the Excel letterhead, filled from the tender.
+
+        The same gate as the summary: a tender is the company's cost and margin, and although the
+        workbook itself carries neither, the person downloading it is issuing a price.
+        """
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        tid = (qs.get("id") or [""])[0].strip()
+        e = self._est_get(tid)
+        if not e:
+            return self._err("Tender not found.", 404)
+        a = tender.assumptions(e.get("assump"))
+        ctype = str(e.get("costingType") or tender.TRADING).strip().lower()
+        try:
+            master = rollup = None
+            if ctype == tender.EPC:
+                rollup = tender.bom_rollup(
+                    [r for r in db.list_collection("est_bom") if r.get("estId") == tid],
+                    a, e.get("bomConfig") or {})
+            else:
+                master = tender.cost_master(
+                    [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
+                    [r for r in db.list_collection("est_local") if r.get("estId") == tid], a)
+            quote = tender.quotation(
+                e, master=master, rollup=rollup,
+                overrides=[r for r in db.list_collection("est_quote") if r.get("estId") == tid])
+            chk = tender.issue_check(e, quote)
+            if not chk["canIssue"]:
+                # A workbook is a document that leaves the building. The same gate the Send button
+                # applies has to apply here, or the gate is decoration.
+                return self._err("This quotation is not ready to issue — missing: %s"
+                                 % ", ".join(chk["missing"]), 400)
+            doc = tender.document(e, quote, self._company_identity())
+            doc["totals"]["subtotal"] = quote["net"]
+            data = quote_xlsx.build(doc)
+            name = quote_xlsx.filename(doc)
+        except (ValueError, AssertionError) as ex:
+            return self._err(str(ex), 400)
+        except OSError:
+            return self._err("The quotation template is missing from this deployment.", 500)
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("email"), "actor": u.get("name") or u.get("email"),
+                "action": "Quotation workbook exported", "target": doc.get("quoteNo") or tid,
+                "detail": "%s · %s" % ((doc.get("client") or {}).get("name") or "",
+                                       _money_vnd(quote["gross"]))})
+        except Exception:
+            pass
+        self.send_response(200)
+        self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", 'attachment; filename="%s"' % name)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "sandbox; default-src 'none'")
+        self.send_header("X-Download-Options", "noopen")
+        self._emit_sec_headers("application/octet-stream")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except OSError:
+            pass
+        return None
 
     def _company_identity(self):
         """Who is quoting, as a document has to state it. `company` already holds this for

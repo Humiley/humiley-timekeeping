@@ -486,6 +486,20 @@ def pnl(quote, tender):
 #   4. What a quotation must carry before it may leave the building
 # ══════════════════════════════════════════════════════════════════════════════
 
+_MONTHS = ("January", "February", "March", "April", "May", "June",
+           "July", "August", "September", "October", "November", "December")
+
+
+def _long_date(iso):
+    """2026-08-21 -> 21 August 2026. A letter does not date itself in ISO."""
+    s = str(iso or "").strip()[:10]
+    try:
+        y, m, d = (int(x) for x in s.split("-"))
+        return "%d %s %d" % (d, _MONTHS[m - 1], y)
+    except (ValueError, IndexError):
+        return s
+
+
 TERMS_DEFAULT = [
     ("Currency", "All prices are in Vietnamese Dong (VND) unless otherwise stated."),
     ("VAT", "VAT (output) is shown separately per line at the rate stated."),
@@ -534,12 +548,40 @@ def issue_check(tender, quote):
     return {"canIssue": not missing, "missing": missing, "warnings": warnings}
 
 
-def document(tender, quote, company=None):
-    """The quotation as the customer will read it: header, lines, totals, terms, signatures.
+def terms_paragraph(tender):
+    """The terms as one paragraph, the way the letterhead states them.
 
-    Assembled here rather than in the PDF writer so the preview on screen and the PDF that is sent
-    are built from one structure. A preview that is drawn by different code from the export is not
-    a preview of anything.
+    The template runs validity, Incoterm, lead time, payment, warranty, variation and currency
+    together in prose rather than as a numbered list. That is a deliberate choice about tone — a
+    letter, not a contract annex — so the sentences are assembled in that fixed order and any of
+    them can be edited on the tender.
+    """
+    if str(tender.get("termsParagraph") or "").strip():
+        return tender["termsParagraph"].strip()
+    valid = str(tender.get("validUntil") or "").strip()
+    bits = []
+    bits.append("This quotation is valid until %s and is quoted %s."
+                % (valid or "the date stated above", tender.get("incoterm") or "Ex-Works (EXW)"))
+    if tender.get("leadTime"):
+        bits.append("Delivery lead time is %s after receipt of order and deposit." % tender["leadTime"])
+    if tender.get("paymentTerms"):
+        bits.append("Payment terms are %s." % tender["paymentTerms"])
+    if tender.get("warranty"):
+        bits.append("All equipment is covered by %s." % tender["warranty"])
+    bits.append("Scope is strictly as described; any variation requires a written change order "
+                "and a revised quotation.")
+    bits.append("All prices are in Vietnamese Dong (VND).")
+    return " ".join(bits)
+
+
+def document(tender, quote, company=None):
+    """The quotation as the customer will read it — shaped as the LETTERHEAD, not as a data table.
+
+    The template is a letter: company block, date and reference, addressee, an RE: line, a
+    salutation, a paragraph of context, the priced table, the terms in prose, a closing, and a
+    signature. Assembled here rather than in the writers so the preview on screen, the PDF and the
+    Excel workbook are three renderings of ONE structure. A preview drawn by different code from
+    the export is not a preview of anything.
     """
     a = assumptions(tender.get("assump"))
     company = company or {}
@@ -585,4 +627,36 @@ def document(tender, quote, company=None):
             {"role": "Customer acceptance", "title": "Authorised signatory & seal", "name": ""},
         ],
         "outputVatPct": a["outputVatPct"],
+
+        # ── the letterhead letter ──
+        "company": {
+            "name": (company.get("name") or "HUMILEY ENGINEERING & SOLUTIONS").upper(),
+            "address": company.get("address") or "",
+            # The company's own line, not a person's: it goes on every quotation the firm sends.
+            "contact": " · ".join(x for x in (company.get("website"), company.get("email"),
+                                              company.get("phone")) if x) or "",
+        },
+        "placeDate": ((tender.get("place") or "Ho Chi Minh City") + ", "
+                      + _long_date(tender.get("issueDate"))),
+        "salutationTo": tender.get("salutationTo") or "Sir / Madam",
+        "salutation": tender.get("salutation") or "Dear Sir / Madam,",
+        "subject": (tender.get("subject")
+                    or ("Sales Quotation No. " + (tender.get("quoteNo") or "")
+                        + (" — " + tender["projectName"] if tender.get("projectName") else ""))),
+        "termsParagraph": terms_paragraph(tender),
+        "closing": tender.get("closingParagraph") or (
+            "We trust this proposal meets your requirements and would be glad to clarify any "
+            "technical or commercial point."
+            + (" We look forward to the opportunity to support the %s." % tender["projectName"]
+               if tender.get("projectName") else "")),
+        "contactLine": tender.get("contactLine") or (
+            "Should you require any clarification, please do not hesitate to contact me directly "
+            "on the details below."),
+        "signerContact": " ".join(x for x in (
+            ("E  " + tender["signerEmail"]) if tender.get("signerEmail") else "",
+            ("T  " + tender["signerPhone"]) if tender.get("signerPhone") else "") if x),
+        "encl": tender.get("encl") or ("Detailed quotation " + (tender.get("quoteNo") or "")
+                                       + " (Excel / PDF)"),
+        "discountPct": _num(tender.get("discountPct")),
+        "vatPct": a["outputVatPct"],
     }
