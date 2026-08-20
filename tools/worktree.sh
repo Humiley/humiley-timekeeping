@@ -118,7 +118,24 @@ cmd_rm() {
   # branch are the other way to lose work, so check that too before deleting the branch.
   local unmerged
   unmerged=$(git -C "$MAIN_REPO" log --oneline "origin/main..$branch" 2>/dev/null | wc -l | tr -d ' ')
-  git -C "$MAIN_REPO" worktree remove "$wt"
+  # `git worktree remove` refuses when the tree still holds work, which is right. But under `set -e`
+  # this script would then die on git's bare "fatal: ... use --force to delete it", which says what
+  # happened and nothing about what to do — and the move people reach for next is `rm -rf` on the
+  # directory. That unregisters nothing and strands the branch, which is exactly how this tool came
+  # to be reported as having a leftover-branch bug it does not have. Say what is in the way instead.
+  if ! git -C "$MAIN_REPO" worktree remove "$wt" 2>/dev/null; then
+    echo "$wt still has work in it — nothing was removed." >&2
+    echo >&2
+    git -C "$wt" status --short >&2 || true
+    echo >&2
+    echo "  keep it:     commit and push from $wt, then run this again" >&2
+    echo "  discard it:  git -C \"$wt\" reset --hard && git -C \"$wt\" clean -fd" >&2
+    echo "  force it:    git -C \"$MAIN_REPO\" worktree remove --force \"$wt\"" >&2
+    echo "               (then delete the branch yourself: git branch -D $branch)" >&2
+    echo >&2
+    echo "Do not rm -rf the directory: git keeps the worktree registered and $branch is left behind." >&2
+    exit 1
+  fi
   if [ "$unmerged" != "0" ]; then
     echo "kept branch $branch — it has $unmerged commit(s) not on origin/main"
     echo "  delete when merged:  git branch -D $branch"
