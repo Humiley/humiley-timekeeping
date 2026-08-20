@@ -50,7 +50,20 @@ import json
 
 # The document shape this module understands. Bumped only when a change would make an older
 # document read incorrectly — a new optional field does not need a new version.
-SPEC_VERSION = 1
+#
+# 2 — the hash and signature now cover the document's IDENTITY as well as its payload. In version 1
+# they covered `payload` alone, and `selectionRef`, `engine`, `engineVersion` and `generatedOn` sit
+# in the envelope: all four are written onto the unit, and selectionRef is also the document number
+# of the Selection report filed as gate G2's evidence. So a version-1 document could carry a
+# perfectly valid signature and still claim to be a selection AeroSelect never wrote — the
+# signature said "these numbers are ours" while the document said "and they belong to selection X".
+# That is a worse failure than no signature at all, because it prints "Signature verified" over it.
+SPEC_VERSION = 2
+
+# The envelope fields that are part of what is being attested. Anything here is read onto the unit
+# or into its evidence, so it has to be inside the hash.
+SIGNED_ENVELOPE_FIELDS = ("document", "specVersion", "selectionRef", "engine", "engineVersion",
+                          "generatedOn")
 
 # Bound the payload. A selection document is a few kilobytes of numbers; anything vastly larger is
 # either a mistake or an attempt to make the parser work hard.
@@ -93,23 +106,33 @@ class SelectionError(ValueError):
     """The document cannot be trusted or cannot be understood. The message is shown to a person."""
 
 
-def canonical(payload):
+def attested(env, payload):
+    """What the hash and the signature are actually taken over.
+
+    The payload AND the envelope fields that identify it. Anything a reader will act on has to be
+    in here, or a signature attests to less than the document appears to claim.
+    """
+    return {"envelope": {k: (env or {}).get(k) for k in SIGNED_ENVELOPE_FIELDS},
+            "payload": payload}
+
+
+def canonical(obj):
     """The exact bytes a hash and a signature are taken over.
 
     Sorted keys, no insignificant whitespace, UTF-8. Both sides must agree on this or every
     document fails its hash for no reason — so it is stated once, here, and the spec quotes it.
     """
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"),
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"),
                       ensure_ascii=False).encode("utf-8")
 
 
-def content_hash(payload):
-    return "sha256:" + hashlib.sha256(canonical(payload)).hexdigest()
+def content_hash(env, payload):
+    return "sha256:" + hashlib.sha256(canonical(attested(env, payload))).hexdigest()
 
 
-def sign(payload, secret):
-    """The signature AeroSelect writes: HMAC-SHA256 over the canonical payload bytes."""
-    return "hmac-sha256:" + hmac.new(secret.encode("utf-8"), canonical(payload),
+def sign(env, payload, secret):
+    """The signature AeroSelect writes: HMAC-SHA256 over the canonical attested bytes."""
+    return "hmac-sha256:" + hmac.new(secret.encode("utf-8"), canonical(attested(env, payload)),
                                      hashlib.sha256).hexdigest()
 
 
@@ -183,7 +206,7 @@ def parse(raw, secret=None):
     # ── Integrity, always. A document whose hash does not match its own content is refused: it has
     # been edited since AeroSelect wrote it, and the edit may be the numbers the unit is built to.
     stated = str(env.get("contentHash") or "").strip()
-    actual = content_hash(payload)
+    actual = content_hash(env, payload)
     if not stated:
         raise SelectionError("The document carries no content hash, so nothing can be said about "
                              "whether it still matches what AeroSelect wrote.")
@@ -199,7 +222,7 @@ def parse(raw, secret=None):
             raise SelectionError("This portal requires signed selection documents and this one is "
                                  "unsigned. Re-export it from an AeroSelect that shares the "
                                  "signing secret.")
-        if not hmac.compare_digest(sig, sign(payload, secret)):
+        if not hmac.compare_digest(sig, sign(env, payload, secret)):
             raise SelectionError("The signature on this document does not verify against the "
                                  "shared secret. It was not produced by the AeroSelect this "
                                  "portal is paired with.")
@@ -210,6 +233,28 @@ def parse(raw, secret=None):
     unit = payload.get("unit") if isinstance(payload.get("unit"), dict) else {}
     if not unit:
         raise SelectionError("The document has no `payload.unit`.")
+
+    # A class code that is PRESENT but unreadable is refused, and is not the same thing as one that
+    # is absent. `_cls` returns None for both, and `to_unit_fields` skips a None — so "D4" used to
+    # be dropped, `differences()` reported nothing, and a unit already holding D2 kept D2 while the
+    # document declared otherwise. It was then built and tested against the D2 limit with no warning
+    # anywhere. That is precisely the failure this module opens by describing: a figure wrong in a
+    # way nobody notices until a test is judged against the wrong limit.
+    _cls_in = payload.get("classes") if isinstance(payload.get("classes"), dict) else {}
+    _bad = []
+    for _k in ("D", "L", "F", "T", "TB"):
+        _v = _cls_in.get(_k)
+        if _v not in (None, "") and _cls(_k, _v) is None:
+            _bad.append("%s = %r (expected one of %s)" % (_k, _v, ", ".join(VALID[_k])))
+    _cr = unit.get("cleanroom")
+    if _cr not in (None, "") and _cleanroom(_cr) is None:
+        _bad.append("cleanroom = %r (expected ISO5, ISO6, ISO7 or ISO8)" % (_cr,))
+    if _bad:
+        raise SelectionError(
+            "This selection declares a class this portal cannot read, and a class it cannot read is "
+            "a test limit it cannot apply: %s. Correct the export rather than importing it — "
+            "dropping the value silently would leave the unit tested against whatever it held "
+            "before." % "; ".join(_bad))
 
     out = {
         "specVersion": ver,
@@ -306,11 +351,22 @@ def differences(doc, unit):
     unit = unit or {}
     out = []
     for k, v in to_unit_fields(doc).items():
-        if k in ("selectionHash", "selectionGeneratedOn", "selectionVerified",
-                 "selectionEngineVersion"):
+        # The hash and the generated date identify the document rather than describe the unit, so
+        # they are not "what moved". `selectionVerified` IS reported: re-importing the same document
+        # on a portal that has lost its shared secret downgrades a verified unit to unverified, and
+        # that is a change somebody confirming should be able to see.
+        if k in ("selectionHash", "selectionGeneratedOn", "selectionEngineVersion"):
             continue
         cur = unit.get(k)
         if cur in (None, "") and v in (None, ""):
+            continue
+        # Compare numbers as numbers. Stringly comparison made 12000 and 12000.0 look like a change,
+        # which put a field that had not moved next to the ones that had, in the one message
+        # somebody reads when deciding whether to supersede a unit already being built.
+        a, b = _num(cur), _num(v)
+        if a is not None and b is not None:
+            if a != b:
+                out.append((k, cur, v))
             continue
         if str(cur or "").strip().lower() != str(v or "").strip().lower():
             out.append((k, cur, v))

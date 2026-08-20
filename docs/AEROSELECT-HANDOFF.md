@@ -27,7 +27,7 @@ One JSON file. Two top-level keys: `aeroselect` (the envelope) and `payload` (th
 {
   "aeroselect": {
     "document":      "selection",
-    "specVersion":   1,
+    "specVersion":   2,
     "selectionRef":  "AS-2026-0410",
     "engine":        "AeroSelect",
     "engineVersion": "2.0.0",
@@ -56,7 +56,7 @@ One JSON file. Two top-level keys: `aeroselect` (the envelope) and `payload` (th
 | Field | Required | Notes |
 |---|---|---|
 | `document` | yes | Literally `"selection"`. Anything else is refused by name. |
-| `specVersion` | yes | `1`. A mismatch is refused rather than guessed across. |
+| `specVersion` | yes | `2`. A mismatch is refused rather than guessed across. |
 | `selectionRef` | yes | Your stable identifier for this selection. Becomes the unit's `selectionRef` and the document number of the selection report. Refused if blank — a unit has to be able to say which selection it was built to. |
 | `engine`, `engineVersion` | recommended | Recorded as provenance and shown on the unit. `engineVersion` is your `ENGINE_VERSION` / `API_VERSION`. |
 | `generatedOn` | recommended | ISO 8601 UTC. |
@@ -67,6 +67,12 @@ One JSON file. Two top-level keys: `aeroselect` (the envelope) and `payload` (th
 
 Everything is optional except `unit`. **A field you omit is left alone on the portal side, not
 written blank** — importing a partial selection can never erase something already known.
+
+**A class code the portal cannot read is refused, not dropped.** `classes.D = "D4"` or
+`unit.cleanroom = "Class 100"` fails the import and names the offending value. This is deliberate:
+dropping it silently would leave the unit tested against whatever class it held before, while the
+document declared something else — a figure wrong in exactly the way nobody notices until a test is
+judged against the wrong limit. An **absent** class is still simply absent.
 
 `unit.family` maps to the four families the Design Standards define. Accepted spellings, case- and
 separator-insensitive: `modular` / `built-up` / `CAU` / `AHU`; `packaged` / `compact` / `PAU`;
@@ -112,7 +118,24 @@ Two independent things, deliberately not conflated.
 
 ### `contentHash` — always checked
 
-SHA-256 over the **canonical bytes** of `payload`:
+SHA-256 over the **canonical bytes** of the *attested object* — the payload **and** the envelope
+fields that identify it:
+
+```json
+{ "envelope": { "document": …, "specVersion": …, "selectionRef": …,
+                "engine": …, "engineVersion": …, "generatedOn": … },
+  "payload":  { … } }
+```
+
+**This is the change in spec version 2, and it is the reason to bump.** In version 1 the hash
+covered `payload` alone — but `selectionRef`, `engine`, `engineVersion` and `generatedOn` live in
+the envelope, are all written onto the production unit, and `selectionRef` becomes the document
+number of the Selection report filed as gate G2's evidence. So a version-1 document could carry a
+perfectly valid signature and still claim to be a selection AeroSelect never wrote, with
+"Signature verified" printed over it. `contentHash` and `signature` are excluded, for the obvious
+reason.
+
+Canonical bytes, of that object:
 
 * `JSON.stringify` with **sorted keys**, no insignificant whitespace, UTF-8.
 * Written as `"sha256:" + hex`.
@@ -134,7 +157,14 @@ const canonical = (v: unknown): unknown =>
     ? Object.fromEntries(Object.keys(v as object).sort()
         .map(k => [k, canonical((v as Record<string, unknown>)[k])]))
     : v
-const bytes = new TextEncoder().encode(JSON.stringify(canonical(payload)))
+const attested = {
+  envelope: {
+    document: env.document, specVersion: env.specVersion, selectionRef: env.selectionRef,
+    engine: env.engine, engineVersion: env.engineVersion, generatedOn: env.generatedOn,
+  },
+  payload,
+}
+const bytes = new TextEncoder().encode(JSON.stringify(canonical(attested)))
 ```
 
 A document whose hash does not match its contents is **refused outright**. That is the case where
@@ -142,8 +172,8 @@ somebody opened the JSON and changed the airflow.
 
 ### `signature` — checked when the two are paired
 
-HMAC-SHA256 over those same canonical bytes, keyed by a shared secret, written as
-`"hmac-sha256:" + hex`.
+HMAC-SHA256 over those same canonical bytes — the attested object, envelope included — keyed by a
+shared secret, written as `"hmac-sha256:" + hex`.
 
 The portal reads its secret from `TK_AEROSELECT_SECRET`, and its behaviour is honest about its own
 state — the same honesty your `/v1` API applies to `API_KEYS`:

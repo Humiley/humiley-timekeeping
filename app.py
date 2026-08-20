@@ -5258,7 +5258,20 @@ class Handler(BaseHTTPRequestHandler):
 
         # Gate G2 asks for a selection report against the unit. The import IS that record, so it is
         # filed as one rather than leaving somebody to attach a second copy by hand.
-        doc_id = "%s-selection" % uid
+        # Keyed on the content hash, not on the unit. A fixed id meant the second import REPLACED
+        # the first — and on the supersede path, which exists precisely because the unit is already
+        # past G2, that destroyed the document which justified passing G2. The rest of the module
+        # keeps superseded evidence and marks it (a signed step that leaves the route is flagged
+        # `orphan`, never deleted); this now does the same.
+        _hash = str(doc.get("contentHash") or "")
+        doc_id = "%s-selection-%s" % (uid, _hash.split(":")[-1][:12] or "0")
+        for _prior in ctx["docs"]:
+            if (_prior.get("kind") == "Selection report" and _prior.get("id") != doc_id
+                    and str(_prior.get("status") or "").lower() != "superseded"):
+                _prior["status"] = "Superseded"
+                _prior["supersededBy"] = doc.get("selectionRef")
+                _prior["supersededOn"] = time.strftime("%Y-%m-%d")
+                db.put_collection_item("ahu_docs", _prior)
         db.put_collection_item("ahu_docs", {
             "id": doc_id, "unitId": uid, "kind": "Selection report",
             "docNo": doc.get("selectionRef"),

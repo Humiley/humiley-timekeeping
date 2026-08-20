@@ -58,9 +58,11 @@ def doc(secret=None, ref="AS-2026-0410", **over):
     p = payload(**over)
     env = {"document": "selection", "specVersion": S.SPEC_VERSION, "selectionRef": ref,
            "engine": "AeroSelect", "engineVersion": "2.0.0",
-           "generatedOn": "2026-08-20T09:14:00Z", "contentHash": S.content_hash(p)}
+           "generatedOn": "2026-08-20T09:14:00Z"}
+    # Computed after the envelope is complete — the hash covers its identifying fields too.
+    env["contentHash"] = S.content_hash(env, p)
     if secret:
-        env["signature"] = S.sign(p, secret)
+        env["signature"] = S.sign(env, p, secret)
     return {"aeroselect": env, "payload": p}
 
 
@@ -249,6 +251,24 @@ def test_a_superseding_import_is_allowed_when_the_decision_is_recorded(api, toke
                     supersede=True)
     assert st == 200, r
     assert _unit(api, tokens["admin"], unit)["airflow"] == 14000
+
+
+def test_superseding_keeps_the_report_that_justified_passing_g2(api, tokens, unit):
+    """A fixed document id made the second import REPLACE the first — destroying, on the one path
+    that only runs after G2, the very document that justified passing it. The rest of the module
+    keeps superseded evidence and marks it; so does this."""
+    _release_to_g2(api, tokens, unit)
+    u = dict(payload()["unit"], airflow_m3h=14000)
+    st, r = _import(api, tokens["admin"], unit, doc(unit=u, ref="AS-2026-0411"), supersede=True)
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/unit/" + unit, tokens["admin"])
+    reports = [d for d in r["docs"] if d.get("kind") == "Selection report"]
+    assert len(reports) == 2, [d.get("docNo") for d in reports]
+    old = next(d for d in reports if d["docNo"] == "AS-2026-0410")
+    new = next(d for d in reports if d["docNo"] == "AS-2026-0411")
+    assert old["status"] == "Superseded"
+    assert old["supersededBy"] == "AS-2026-0411"
+    assert new["status"] == "Issued"
 
 
 def test_superseding_a_released_unit_is_not_a_staff_decision(api, tokens, unit):
