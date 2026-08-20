@@ -21236,10 +21236,12 @@ function _pdHtml(pid) {
       '<span><b style="color:var(--text)">Planned</b> is straight-line between start and finish.</span>' +
       '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
     '</div>' +
+    _pdTimeline(pid, rows, cats, day) +
+    _pdSCurve(rows, day) +
     _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table,
       '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
       '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>') +
-    _pdSCurve(rows, day) + _pdGantt(pid, rows, cats, day) + _pdBiCard();
+    _pdBiCard();
 }
 
 /* ── Power BI feed ────────────────────────────────────────────────────────────────────────────
@@ -21295,66 +21297,150 @@ async function pdBiKey(revoke) {
   } catch (e) { toast(_t('Could not update the BI key') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
-/* Grouped Gantt: one rolled-up bar per trade, then its items. Light bar = planned window, solid
-   overlay = accumulated progress, red line = today. */
-function _pdGantt(pid, rows, cats, day) {
+/* ══ TIMELINE ════════════════════════════════════════════════════════════════════════════════════
+   The time axis is the organising element, not a decoration at the side of a table: quarter and
+   month bands across the top, every trade and its activities hanging underneath, aligned to the same
+   scale. Three things make it usable rather than merely correct:
+
+   · The header STICKS while you scroll, and the trade label column sticks to the left while you
+     scroll sideways. A Gantt whose dates scroll out of view is a picture of coloured bars.
+   · Gridlines run the full height, so a bar's position can be read against a month without
+     tracing a finger up the screen.
+   · Rows are ACTIONABLE — click an activity to file its progress, click a trade to fold it away.
+     Everything visible here is something a site engineer wants to do next. */
+const _PD_LABW = 252;                     // label gutter, px — shared by header, rows and gridlines
+let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
+function pdWide() { _pdWide = !_pdWide; _pmReload(); }
+
+function _pdTimeline(pid, rows, cats, day) {
   const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
   if (!ds.length) return '';
   ds.push(day);
   const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
-  const span = Math.max(1, (_pmDateDiff(min, max) || 1));
-  const x = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
-  const todayX = x(day);
+  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
 
-  /* Month ruler across the same scale. */
-  let ticks = '', cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
+  // Month boundaries, each with its share of the width — the same numbers drive the header labels,
+  // the gridlines and the quarter band, so they cannot drift apart.
+  const months = [];
+  let cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
   const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
   while (cur <= end) {
-    const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
-    const lx = x(ym < min ? min : ym);
-    ticks += '<div style="position:absolute;left:' + lx + '%;top:0;bottom:0;border-left:1px solid var(--line)"></div>' +
-             '<div style="position:absolute;left:calc(' + lx + '% + 4px);top:2px;font-size:10px;color:var(--text-light);white-space:nowrap">' +
-             cur.toLocaleString('en-US', { month: 'short' }) + ' ' + String(cur.getFullYear()).slice(-2) + '</div>';
-    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    const first = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
+    const nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+    const last = nxt.getFullYear() + '-' + String(nxt.getMonth() + 1).padStart(2, '0') + '-01';
+    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > max ? max : last)),
+                  m: cur.getMonth(), y: cur.getFullYear() });
+    cur = nxt;
   }
+  // Quarters, merged from the months so the two bands always line up.
+  const quarters = [];
+  months.forEach(mo => {
+    const q = 'Q' + (Math.floor(mo.m / 3) + 1) + ' ' + mo.y;
+    const last = quarters[quarters.length - 1];
+    if (last && last.label === q) last.to = mo.to; else quarters.push({ label: q, from: mo.from, to: mo.to });
+  });
 
-  const track = (r, color, label) => {
-    const s = r.start, f = r.finish;
-    if (!s || !f) return '<div style="height:18px"></div>';
-    const l = x(s), w = Math.max(0.8, x(f) - x(s)), acc = _pdAcc(r, day);
-    return '<div style="position:relative;height:18px">' +
-      '<div style="position:absolute;left:' + l + '%;width:' + w + '%;top:4px;height:10px;border-radius:5px;background:' + color + '33"></div>' +
-      '<div style="position:absolute;left:' + l + '%;width:' + (w * acc / 100) + '%;top:4px;height:10px;border-radius:5px;background:' + color + '"></div>' +
-      '<div style="position:absolute;left:calc(' + (l + w) + '% + 6px);top:2px;font-size:10.5px;color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>' +
-      '</div>';
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const plotW = _pdWide ? Math.max(760, months.length * 132) : Math.max(520, months.length * 74);
+  const innerW = _PD_LABW + plotW;
+  const seg = (a, b, style, txt, title) =>
+    '<div style="position:absolute;left:' + a + '%;width:' + Math.max(0, b - a) + '%;' + style + '"' +
+    (title ? ' title="' + _tkEscA(title) + '"' : '') + '>' + (txt || '') + '</div>';
+
+  const band = (items, h, fs, weight) => items.map(x =>
+    seg(x.from, x.to, 'top:0;height:' + h + 'px;border-left:1px solid var(--line);display:flex;align-items:center;' +
+        'justify-content:center;font-size:' + fs + 'px;font-weight:' + weight + ';color:var(--text-light);overflow:hidden;white-space:nowrap',
+        x.label)).join('');
+
+  // Today, computed BEFORE the header because the header renders the chip. `const` is not
+  // hoisted-and-usable: referencing it earlier is a ReferenceError at RUNTIME, which node --check
+  // cannot see and only opening the page would have shown.
+  const tX = (day >= min && day <= max) ? pct(day) : null;
+  const todayLine = tX === null ? '' :
+    '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
+  const todayChip = tX === null ? '' :
+    '<div style="position:absolute;left:' + tX + '%;bottom:1px;transform:translateX(-50%);background:#EF4444;color:#fff;' +
+      'font:700 9.5px ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;white-space:nowrap;' +
+      'pointer-events:none">' + tkFmtDate(day) + '</div>' +
+    '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
+
+  const header =
+    '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
+      '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
+        'border-right:1px solid var(--line);padding:6px 12px;display:flex;align-items:flex-end;font:600 11px ui-sans-serif,system-ui,sans-serif;' +
+        'letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + _t('Trade / Activity') + '</div>' +
+      '<div style="flex:1;position:relative;height:46px">' +
+        band(quarters, 22, 11, 700) +
+        '<div style="position:absolute;top:22px;left:0;right:0;height:24px">' +
+          band(months.map(mo => ({ from: mo.from, to: mo.to, label: MON[mo.m] + " '" + String(mo.y).slice(-2) })), 24, 10.5, 600) +
+        '</div>' + todayChip +
+      '</div></div>';
+
+  // Gridlines + today, drawn ONCE behind every row so nothing can fall out of alignment.
+  const gridlines = months.map(mo =>
+    '<div style="position:absolute;left:' + mo.from + '%;top:0;bottom:0;border-left:1px solid var(--line);opacity:.7"></div>').join('');
+
+  const bar = (r, color, label, big) => {
+    if (!r.start || !r.finish) return '';
+    const a = pct(r.start), b = pct(r.finish), acc = r._acc, h = big ? 13 : 10, top = big ? 6 : 8;
+    return seg(a, b, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color + '2e', '',
+               (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + acc + '%') +
+           seg(a, a + (b - a) * acc / 100, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color, '') +
+           '<div style="position:absolute;left:' + b + '%;top:' + (top - 2) + 'px;margin-left:7px;font-size:10.5px;' +
+             'font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
   };
 
   const PAL = ['#00B060', '#F97316', '#38BDF8', '#8B5CF6', '#EAB308', '#EC4899'];
-  let lanes = '';
+  const lab = (html, indent, extra) =>
+    '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
+      'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:7px;' +
+      'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' + (extra || '') + '">' + html + '</div>';
+
+  let body = '';
   cats.forEach((cat, i) => {
     const cr = rows.filter(r => (r.category || 'Uncategorised') === cat), roll = _pdRollup(cr, day), color = PAL[i % PAL.length];
+    const open = !_pdCol[cat];
     const cs = cr.map(r => r.start).filter(Boolean).sort()[0];
     const cf = cr.map(r => r.finish).filter(Boolean).sort().slice(-1)[0];
-    lanes += '<div style="display:flex;align-items:center;gap:10px;margin-top:9px">' +
-      '<div style="width:230px;flex:none;font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' + _pmEsc(cat) + '</div>' +
-      '<div style="flex:1;position:relative">' + track({ start: cs, finish: cf, log: [{ d: day, pct: roll.acc }] }, color, Math.round(roll.acc) + '%') + '</div></div>';
-    if (_pdCol[cat]) return;
+    body += '<div style="display:flex;height:30px;background:var(--soft-bg);cursor:pointer;border-bottom:1px solid var(--line)" ' +
+        'onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')" title="' + _tkEscA(_t('Show or hide this trade')) + '">' +
+      lab('<span style="width:11px;color:var(--text-light);font-weight:700">' + (open ? '−' : '+') + '</span>' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' +
+          '<span style="font-weight:700;font-size:12.5px">' + _pmEsc(cat) + '</span>' +
+          '<span style="font-size:10.5px;color:var(--text-light)">' + cr.length + '</span>', 10) +
+      '<div style="flex:1;position:relative">' +
+        bar({ start: cs, finish: cf, _acc: roll.acc, name: cat }, color, Math.round(roll.acc) + '%', true) + '</div></div>';
+    if (!open) return;
     cr.forEach(r => {
-      lanes += '<div style="display:flex;align-items:center;gap:10px">' +
-        '<div style="width:230px;flex:none;font-size:12px;color:var(--text-light);padding-left:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(r.name || '') + '">' + _pmEsc(r.name || '') + '</div>' +
-        '<div style="flex:1;position:relative">' + track(r, color, _pdAcc(r, day) + '%') + '</div></div>';
+      const acc = _pdAcc(r, day), v = acc - _pdPlanned(r, day);
+      body += '<div style="display:flex;height:27px;background:var(--card,#fff);cursor:pointer;border-bottom:1px solid var(--line)" ' +
+          'onclick="pdProgress(\'' + r.id + '\')" title="' + _tkEscA(_t('File progress for this activity')) + '">' +
+        lab('<span style="width:5px;height:5px;border-radius:50%;background:' + _pdVarColor(v) + ';flex:none"></span>' +
+            '<span style="font-size:12px;color:var(--text)">' + _pmEsc(r.name || '') + '</span>', 26) +
+        '<div style="flex:1;position:relative">' + bar(Object.assign({}, r, { _acc: acc }), color, acc + '%', false) + '</div></div>';
     });
   });
 
-  return '<div class="card" style="padding:14px 16px;overflow:hidden"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Detail Schedule — Gantt</div>' +
-    '<div style="display:flex;gap:10px;margin-bottom:2px"><div style="width:230px;flex:none"></div>' +
-    '<div style="flex:1;position:relative;height:16px">' + ticks + '</div></div>' +
-    '<div style="position:relative">' +
-      '<div style="position:absolute;left:calc(230px + 10px);right:0;top:0;bottom:0;pointer-events:none">' +
-        '<div style="position:absolute;left:' + todayX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div></div>' +
-      lanes +
-    '</div>' +
-    '<div style="margin-top:10px;font-size:11px;color:var(--text-light)">Pale bar = planned window · solid = accumulated progress · red line = today (' + tkFmtDate(day) + ')</div></div>';
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)">' +
+      '<div><div style="font-weight:700;font-size:13px">' + _t('Timeline') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) + ' · ' +
+        _t('click an activity to file progress') + '</div></div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
+        '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
+      '</div></div>' +
+    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + innerW + 'px">' +
+      header +
+      '<div style="position:relative">' +
+        '<div style="position:absolute;left:' + _PD_LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
+          gridlines + todayLine + '</div>' +
+        body +
+      '</div></div></div>' +
+    '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
+      _t('Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind') +
+    '</div></div>';
 }
 
 /* ── filing a reading ─────────────────────────────────────────────────────────────────────────── */
@@ -23344,6 +23430,16 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Timeline-first Detail Schedule (2026-08-20) */
+  'Trade / Activity': 'Bộ môn / Công việc',
+  'Timeline': 'Dòng thời gian',
+  'click an activity to file progress': 'bấm vào công việc để ghi nhận tiến độ',
+  'Show or hide this trade': 'Ẩn/hiện bộ môn này',
+  'File progress for this activity': 'Ghi nhận tiến độ công việc này',
+  'Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind': 'Thanh nhạt = khoảng kế hoạch · thanh đậm = tiến độ luỹ kế · chấm = đúng kế hoạch, chậm nhẹ hoặc trễ',
+  'Wide': 'Rộng',
+  'Fit': 'Vừa khung',
+
   /* Detail Schedule: S-curve, daily entry, import (2026-08-17) */
   'S-curve — planned vs actual': 'Đường cong S — kế hoạch và thực tế',
   'planned': 'kế hoạch',
