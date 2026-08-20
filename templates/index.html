@@ -15508,9 +15508,12 @@ const _QA_SPECS = {
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_detail: { title: 'Detail Schedule Item', coll: 'pm_detail', reload: 'pm_detail', fields: [
     { k: 'scheduleId', label: 'Detail schedule', type: 'select', options: 'pm_sched_opts' },
-    { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
+    // First, because it decides where the line LIVES: a detail line is a piece of a master activity
+    // and its progress is what moves that activity. A line with no master link contributes to
+    // nothing, so the form asks for it before anything else.
+    { k: 'taskRef', label: 'Part of master activity (WBS or name)', type: 'select', options: 'pm_task_opts' },
     { k: 'name', label: 'Report item' },
-    { k: 'taskRef', label: 'Rolls up to master activity (WBS or name)', type: 'select', options: 'pm_task_opts' },
+    { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
     { k: 'start', label: 'Start date', type: 'date' }, { k: 'finish', label: 'Finish date', type: 'date' },
     { k: 'unit', label: 'Unit / location (optional)' },
     // Blank is the right default: duration in days is a defensible weight and the alternative is
@@ -21029,7 +21032,7 @@ function pdCalMove(n) {
   _pdCalM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   _pmReload();
 }
-function _pdCalendar(pid, rows, day) { return _schCalendar(_pdNorm(rows, day), { day: day }); }
+function _pdCalendar(pid, rows, day) { return _schCalendar(_pdNorm(pid, rows, day), { day: day }); }
 function _pdRows(pid) {
   const all = _pdAllRows(pid), cur = _pdCurSched(pid);
   if (!cur) return all;                                   // no schedules defined = one implicit one
@@ -21312,7 +21315,7 @@ function _pdView(pid, view) {
   const rows = _pdRows(pid), day = _pmToday();
   const head = _pdSchedBar(pid) + _pdKpis(pid, rows, day);
   if (!rows.length) return head + _pdEmpty(pid);
-  const cats = []; rows.forEach(r => { const c = r.category || 'Uncategorised'; if (cats.indexOf(c) < 0) cats.push(c); });
+  const cats = []; rows.forEach(r => { const c = _pdGroupOf(pid, r); if (cats.indexOf(c) < 0) cats.push(c); });
   if (view === 'board') return head + _pdBoard(pid, rows, day);
   if (view === 'calendar') return head + _pdCalendar(pid, rows, day);
   if (view === 'timeline') return head + _pdTimeline(pid, rows, cats, day) + _pdSCurve(rows, day);
@@ -21344,7 +21347,7 @@ function _pdRegister(pid, rows, cats, day) {
 
   let body = '';
   cats.forEach(cat => {
-    const cr = rows.filter(r => (r.category || 'Uncategorised') === cat), roll = _pdRollup(cr, day);
+    const cr = rows.filter(r => _pdGroupOf(pid, r) === cat), roll = _pdRollup(cr, day);
     const open = !_pdCol[cat];
     body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
       '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
@@ -21498,8 +21501,10 @@ function _schFlag(r, day) {
 }
 const _SCH_FILTERS = [['all', 'All'], ['behind', 'Behind'], ['slip', 'Slipping'], ['onplan', 'On plan'],
                       ['ahead', 'Ahead'], ['overdue', 'Overdue'], ['done', 'Done']];
-let _schFilt = { m: { q: '', k: 'all' }, d: { q: '', k: 'all' } };
+let _schFilt = { m: { q: '', k: 'all', from: '', to: '' }, d: { q: '', k: 'all', from: '', to: '' } };
 function schFiltKind(ns, k) { _schFilt[ns].k = k; _pmReload(); }
+function schFiltDate(ns, which, v) { _schFilt[ns][which] = v || ''; _pmReload(); }
+function schFiltClear(ns) { _schFilt[ns] = { q: '', k: 'all', from: '', to: '' }; _pmReload(); }
 function schFiltQ(ns, v) {
   _schFilt[ns].q = v;
   // Re-render on a debounce, not per keystroke: this redraws a few hundred absolutely-positioned
@@ -21518,6 +21523,13 @@ function _schFilterBar(ns, shown, total) {
       _tkEscA(_t('Find an activity or who…')) + '" style="flex:0 1 220px;min-width:150px;font-size:12px;padding:4px 9px;' +
       'border:1px solid var(--line);border-radius:7px;background:var(--card,#fff);color:var(--text);font-family:inherit">' +
     _SCH_FILTERS.map(x => chip(x[0], x[1])).join('') +
+    '<span style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text-light)">' +
+      _t('from') + '<input type="date" value="' + _tkEscA(f.from) + '" onchange="schFiltDate(\'' + ns + '\',\'from\',this.value)" ' +
+        'style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card,#fff);color:var(--text);font-family:inherit">' +
+      _t('to') + '<input type="date" value="' + _tkEscA(f.to) + '" onchange="schFiltDate(\'' + ns + '\',\'to\',this.value)" ' +
+        'style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card,#fff);color:var(--text);font-family:inherit"></span>' +
+    ((f.q || f.from || f.to || f.k !== 'all')
+      ? '<button class="btn btn-ghost btn-sm" style="font-size:11px;padding:3px 9px" onclick="schFiltClear(\'' + ns + '\')">' + _t('Clear') + '</button>' : '') +
     (shown < total ? '<span style="font-size:11px;color:var(--text-light);margin-left:2px">' + shown + ' / ' + total + '</span>' : '') +
     '</div>';
 }
@@ -21526,6 +21538,10 @@ function _schApplyFilter(rows, ns, day) {
   return rows.filter(r => {
     if (q && (String(r.name || '') + ' ' + String(r.group || '') + ' ' + String(r.who || '')).toLowerCase().indexOf(q) < 0) return false;
     if (f.k !== 'all' && _schFlag(r, day).k !== f.k) return false;
+    // A date window keeps anything that OVERLAPS it, not only what starts inside it — an activity
+    // running through the whole month is the most relevant thing in that month, not the least.
+    if (f.from && (r.finish || '9999-12-31') < f.from) return false;
+    if (f.to && (r.start || '0000-01-01') > f.to) return false;
     return true;
   });
 }
@@ -21739,22 +21755,42 @@ function _pmTaskNorm(pid, day) {
   return _pmScopeFor('pm_tasks', pid).filter(t => t.start || t.finish).map(t => {
     const d = _pdTaskPct(t, pid);
     const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
-    return { id: t.id, group: t.phase || _t('Activities'), name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || ''),
+    return { id: t.id, group: t.phase || _t('Activities'),
+             name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
+                   (d ? '  ·  ' + d.n + ' ' + _t('detail line(s)') : ''),
              start: t.start, finish: t.finish, w: dur, who: t.assignee || '', note: t.note || '',
              doneOn: t.actualFinish || '',
+             // Name it plainly: this activity's percentage is not typed, it is what the site reported.
+             _fed: d ? d.n : 0,
              acc: d ? d.pct : _pmPct(t.pctComplete),
              planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
              click: "tkQuickAdd('pm_tasks','" + t.id + "')" };
   });
 }
-function _pdNorm(rows, day) {
+/* The parent of a detail line is the MASTER ACTIVITY it reports against — that is the whole point
+   of two levels: the site reports detail, and the contract programme moves because of it. The trade
+   is an attribute of the line, not its parent, so it rides along as a suffix instead of grouping.
+   A line with no master link is never hidden — it groups under a named bucket so the gap is visible
+   and fixable, because an unlinked line contributes to nothing. */
+function _pdMasterOf(pid, r) {
+  const ref = String((r && r.taskRef) || '').trim();
+  if (!ref) return null;
+  return _pmScopeFor('pm_tasks', pid).find(t => _pdTaskRef(t) === ref) || null;
+}
+function _pdGroupOf(pid, r) {
+  const t = _pdMasterOf(pid, r);
+  if (!t) return _t('Not linked to a master activity');
+  return (t.wbs ? t.wbs + ' · ' : '') + (t.name || _t('Untitled'));
+}
+function _pdNorm(pid, rows, day) {
   return rows.map(r => {
     const log = _pdLog(r);
     // The day it actually finished is the FIRST reading that reached 100 — not the last reading, and
     // not the planned finish. That is what makes "3d early" a fact rather than a guess.
     const doneRow = log.find(e => _pmPct(e.pct) >= 100);
     const last = log[log.length - 1];
-    return { id: r.id, group: r.category || 'Uncategorised', name: r.name || '',
+    return { id: r.id, group: _pdGroupOf(pid, r),
+      name: (r.name || '') + (r.category ? '  ·  ' + r.category : ''),
       start: r.start, finish: r.finish, w: _pdWeight(r),
       who: (last && last.by) || '', note: r.note || '', doneOn: doneRow ? String(doneRow.d) : '',
       acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" };
@@ -21762,7 +21798,7 @@ function _pdNorm(rows, day) {
 }
 
 function _pdTimeline(pid, rows, cats, day) {
-  return _schTimeline(_pdNorm(rows, day), { day: day, ns: 'd', collapsed: _pdCol,
+  return _schTimeline(_pdNorm(pid, rows, day), { day: day, ns: 'd', collapsed: _pdCol,
     toggle: "pdToggleCat(decodeURIComponent('{g}'))", labelHead: 'Trade / Activity',
     rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
     actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
@@ -23806,6 +23842,12 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Master↔detail linkage + date filter (2026-08-20) */
+  'Not linked to a master activity': 'Chưa gắn với công việc tổng thể',
+  'detail line(s)': 'hạng mục chi tiết',
+  'to': 'đến',
+  'Part of master activity (WBS or name)': 'Thuộc công việc tổng thể (WBS hoặc tên)',
+
   /* Timeline columns + filter (2026-08-20) */
   'Dur': 'Thời lượng',
   'Status': 'Trạng thái',
