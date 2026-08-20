@@ -5709,10 +5709,18 @@ function _applyRole(role) {
       return;
     }
   } catch (e) {}
-  /* Home is the board of apps — every app this account may open, and nothing else. The
-     dashboards are one tile away (Company Insight for management, My Workspace for
-     everyone), which is a click more than before and a menu of thirty rows less. */
-  showView('apps', null, 'Apps');
+  /* Home is the dashboard again. #40 made the apps board the landing view for EVERYONE; that is a
+     change every person in the company meets on their next sign-in, and it went out between two
+     unrelated deploys rather than at a moment anyone chose. Reverted to the previous behaviour while
+     the owner decides. Nothing else from #40 is undone — the board is still there and still built by
+     _applyAppAccess, one click away on the Apps control; only the DEFAULT landing view moves back.
+     Restore by swapping this block for showView('apps', null, 'Apps'). */
+  /* navigate to correct home — Company Dashboard is Management (Approver) level and above only */
+  if (isManager && _lvlRank(_userLevel) >= _lvlRank('management')) {
+    showView('dashboard', document.getElementById('nav-company-dash'), 'Company Dashboard');
+  } else {
+    showView('staff-dashboard', document.getElementById('nav-my-dash'), 'My Dashboard');
+  }
 }
 
 /* ── Staff dashboard init ── */
