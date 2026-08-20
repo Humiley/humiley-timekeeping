@@ -21029,7 +21029,60 @@ function _pdHtml(pid) {
       '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
     '</div>' +
     _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table) +
-    _pdGantt(pid, rows, cats, day);
+    _pdGantt(pid, rows, cats, day) + _pdBiCard();
+}
+
+/* ── Power BI feed ────────────────────────────────────────────────────────────────────────────
+   The datasets are already correct; this is just the door. Three URLs and one revocable key —
+   deliberately not a session token, because a Power BI dataset refreshes unattended for months. */
+function _pdBiCard() {
+  if (typeof _pmSeeAll === 'function' && !_pmSeeAll()) return '';
+  const base = location.origin;
+  const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+  const q = pid ? ('?project=' + encodeURIComponent(pid)) : '';
+  const row = (name, path, why) =>
+    '<div style="display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">' +
+    '<div style="min-width:120px"><b style="font-size:12.5px">' + name + '</b><div style="font-size:11px;color:var(--text-light)">' + why + '</div></div>' +
+    '<code style="flex:1;min-width:230px;font-size:11px;background:var(--soft-bg);padding:5px 8px;border-radius:5px;overflow-x:auto;white-space:nowrap">' + _pmEsc(base + path) + '</code>' +
+    '<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdCopy(' + JSON.stringify(base + path).replace(/"/g, '&quot;') + ')">' + _t('Copy') + '</button></div>';
+
+  return '<div class="card" style="padding:15px 17px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div style="font-weight:700;font-size:13px">' + _t('Power BI feed') + '</div>' +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-outline btn-sm" onclick="pdBiKey(false)">' + _t('Generate key') + '</button>' +
+        '<button class="btn btn-ghost btn-sm" style="color:#C00000" onclick="pdBiKey(true)">' + _t('Revoke') + '</button>' +
+      '</div></div>' +
+    row(_t('Progress (fact)'), '/api/bi/progress' + q, _t('one row per item per day')) +
+    row(_t('Items'), '/api/bi/items' + q, _t('dimension')) +
+    row(_t('Master activities'), '/api/bi/activities' + q, _t('dimension')) +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:10px;line-height:1.65">' +
+      '<b style="color:var(--text)">' + _t('In Power BI') + ':</b> Get Data → Web → paste a URL → ' +
+      _t('Basic authentication, user') + ' <code>bi</code>, ' + _t('password = the key') + '.<br>' +
+      '<b style="color:var(--text)">' + _t('Percent complete must be weighted') + ':</b> ' +
+      _t('use') + ' <code>DIVIDE(SUM(progress[weightedAccum]), SUM(progress[weight]))</code> — ' +
+      _t('an average of accumulatedPct is wrong at every grain above a single item.') + '<br>' +
+      _t('Add ?format=csv for a file, and ?from=&to= to narrow the window.') +
+    '</div></div>';
+}
+/* clipboard with a visible outcome — a silent copy button that did nothing is worse than none */
+async function pdCopy(text) {
+  try { await navigator.clipboard.writeText(text); toast(_t('Copied')); }
+  catch (_) { toast(_t('Could not copy — select the address and copy it manually.'), 'warn', 5000); }
+}
+async function pdBiKey(revoke) {
+  if (revoke && !(await tkConfirm(_t('Revoke the BI key? Any Power BI dataset using it stops refreshing.')))) return;
+  try {
+    const j = await tkApi('/api/bi/key', { method: 'POST', body: { revoke: !!revoke } });
+    if (revoke) { toast(_t('BI key revoked')); return; }
+    // Shown once. Only its hash is stored, so there is no second chance to read it — say so plainly
+    // rather than letting somebody close the dialog and find out later.
+    await tkAlert({ title: _t('BI key issued'),
+      body: '<div style="font-size:13px;margin-bottom:8px">' + _t('Copy this now — it is shown once and cannot be shown again.') + '</div>' +
+        '<code style="display:block;word-break:break-all;background:var(--soft-bg);padding:10px;border-radius:6px;font-size:12px">' + _pmEsc(j.key) + '</code>' +
+        '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' + _t('Power BI: Basic authentication, user') + ' <b>bi</b>, ' + _t('password = this key') + '.</div>' });
+    try { await navigator.clipboard.writeText(j.key); toast(_t('Key copied to the clipboard')); } catch (_) {}
+  } catch (e) { toast(_t('Could not update the BI key') + ': ' + _errMsg(e), 'error', 6000); }
 }
 
 /* Grouped Gantt: one rolled-up bar per trade, then its items. Light bar = planned window, solid
@@ -23077,6 +23130,30 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Power BI feed (2026-08-17) */
+  'Power BI feed': 'Nguồn dữ liệu Power BI',
+  'Generate key': 'Tạo khoá',
+  'Progress (fact)': 'Tiến độ (bảng sự kiện)',
+  'one row per item per day': 'mỗi hạng mục một dòng mỗi ngày',
+  'dimension': 'bảng chiều',
+  'Master activities': 'Công việc tổng thể',
+  'In Power BI': 'Trong Power BI',
+  'Basic authentication, user': 'Xác thực Basic, tài khoản',
+  'password = the key': 'mật khẩu = khoá',
+  'password = this key': 'mật khẩu = khoá này',
+  'Percent complete must be weighted': 'Phần trăm hoàn thành phải có trọng số',
+  'use': 'dùng',
+  'an average of accumulatedPct is wrong at every grain above a single item.': 'lấy trung bình accumulatedPct là sai ở mọi cấp trên một hạng mục.',
+  'Add ?format=csv for a file, and ?from=&to= to narrow the window.': 'Thêm ?format=csv để tải tệp, và ?from=&to= để thu hẹp khoảng thời gian.',
+  'Copy this now — it is shown once and cannot be shown again.': 'Sao chép ngay — khoá chỉ hiển thị một lần và không thể xem lại.',
+  'BI key issued': 'Đã tạo khoá BI',
+  'BI key revoked': 'Đã thu hồi khoá BI',
+  'Revoke the BI key? Any Power BI dataset using it stops refreshing.': 'Thu hồi khoá BI? Mọi tập dữ liệu Power BI đang dùng sẽ ngừng làm mới.',
+  'Could not update the BI key': 'Không thể cập nhật khoá BI',
+  'Key copied to the clipboard': 'Đã sao chép khoá',
+  'Copied': 'Đã sao chép',
+  'Could not copy — select the address and copy it manually.': 'Không sao chép được — hãy chọn địa chỉ và sao chép thủ công.',
+
   /* Detail Schedule (2026-08-17) */
   'Report': 'Ghi nhận',
   'Report progress': 'Ghi nhận tiến độ',

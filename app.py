@@ -19,6 +19,7 @@ import threading
 from datetime import datetime, timedelta
 import os
 import base64
+import hmac
 import re
 import secrets
 import time
@@ -65,6 +66,7 @@ import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
 import datespan          # one month-count, shared by contracts / settlement / certificates (pure)
 import hashlib
+import bi
 import zipfile
 import xml.etree.ElementTree as ET
 import unicodedata
@@ -3942,6 +3944,11 @@ class Handler(BaseHTTPRequestHandler):
             _cid, _, _kind = _rest.partition("/file/")
             return self._guard(lambda u: self._contract_file_ep(
                 u, urllib.parse.unquote(_cid), urllib.parse.unquote(_kind)))
+        if path.startswith("/api/bi/"):
+            _w = path[len("/api/bi/"):].strip("/")
+            if _w in ("progress", "items", "activities"):
+                return self._bi_guard(lambda uu: self._bi_ep(uu, _w, qs))
+            return self._err("Unknown BI dataset.", 404)
         if path.startswith("/api/hr/cv/"):
             return self._guard(lambda u: self._cv_file_ep(
                 u, urllib.parse.unquote(path[len("/api/hr/cv/"):])))
@@ -4054,6 +4061,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._contract_create_ep(u, body), manager=True)
         if path == "/api/hr/contract/file":
             return self._guard(lambda u: self._contract_attach_ep(u, body), manager=True)
+        if path == "/api/bi/key":
+            return self._guard(lambda u: self._bi_key_ep(u, body), manager=True)
         if path == "/api/hr/cv":
             return self._guard(lambda u: self._cv_attach_ep(u, body), manager=True)
         if path == "/api/hr/incidents":
@@ -9037,6 +9046,89 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("No document of that kind is attached to this contract yet.", 404)
         return self._json({"ok": True, "id": rec.get("id"), "file": rec.get(f_key) or "",
                            "fileName": rec.get(n_key) or "contract.pdf"})
+
+    # ── Power BI / BI feed ───────────────────────────────────────────────────────────────────────
+    # A dedicated, revocable, READ-ONLY credential — not a session token. A Power BI dataset refreshes
+    # unattended for months, and a 30-day sliding session is the wrong lifetime for that. Never a
+    # query parameter either: a key in a URL ends up in browser history, proxy logs and the .pbix.
+    #
+    # Basic auth is supported because Power BI's connector offers exactly Anonymous / Basic / OAuth —
+    # username `bi`, password = the key. Bearer works too, for curl and everything else.
+    def _bi_key_ok(self):
+        want = str(db.get_setting("portal_biKeyHash") or "")
+        if not want:
+            return False
+        auth = self.headers.get("Authorization", "") or ""
+        got = ""
+        if auth.startswith("Bearer "):
+            got = auth[7:].strip()
+        elif auth.startswith("Basic "):
+            try:
+                raw = base64.b64decode(auth[6:].strip() + "==").decode("utf-8", "replace")
+                got = raw.split(":", 1)[1] if ":" in raw else ""
+            except Exception:
+                got = ""
+        if not got:
+            return False
+        return hmac.compare_digest(_tok_hash(got), want)
+
+    def _bi_guard(self, fn):
+        """The BI key, or a signed-in manager previewing the feed from inside the app."""
+        if self._bi_key_ok():
+            return fn(None)
+        u = self._user()
+        if u and u.get("role") == "manager":
+            return fn(u)
+        # A challenge, not a bare 403 — Power BI then PROMPTS for credentials instead of failing
+        # with an opaque error the person configuring it cannot act on.
+        body = json.dumps({"error": "A BI key is required — Company Portal → Power BI feed."}).encode("utf-8")
+        self.send_response(401)
+        self.send_header("WWW-Authenticate", 'Basic realm="Humiley BI"')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        try:
+            self.wfile.write(body)
+        except Exception:
+            pass
+        return None
+
+    def _bi_send(self, rows, cols, qs, name):
+        if (qs.get("format", [""])[0] or "").lower() == "csv":
+            return self._send(bi.to_csv(rows, cols), "text/csv; charset=utf-8")
+        return self._json({"ok": True, "dataset": name, "columns": cols,
+                           "rowCount": len(rows), "rows": rows})
+
+    def _bi_scope(self, qs, coll):
+        pid = (qs.get("project", [""])[0] or "").strip()
+        rows = db.list_collection(coll) or []
+        return [r for r in rows if not pid or str(r.get("projectId") or "") == pid]
+
+    def _bi_ep(self, u, which, qs):
+        if which == "items":
+            return self._bi_send(bi.items_dim(self._bi_scope(qs, "pm_detail")),
+                                 bi.ITEM_COLS, qs, "schedule_items")
+        if which == "activities":
+            return self._bi_send(bi.activities_dim(self._bi_scope(qs, "pm_tasks")),
+                                 bi.ACTIVITY_COLS, qs, "master_activities")
+        pid = (qs.get("project", [""])[0] or "").strip()
+        proj = (db.get_collection_item("pm_projects", pid) or {}) if pid else {}
+        rows = bi.progress_fact(self._bi_scope(qs, "pm_detail"), proj,
+                                (qs.get("from", [""])[0] or None), (qs.get("to", [""])[0] or None))
+        return self._bi_send(rows, bi.PROGRESS_COLS, qs, "schedule_progress")
+
+    def _bi_key_ep(self, u, body):
+        """Mint or revoke. The key is shown ONCE — only its hash is stored, exactly like a session."""
+        if self._level_rank(self._caller_level(u)) < self._level_rank("management"):
+            return self._err("Approver (management) level or above is required to manage the BI key.", 403)
+        if (body or {}).get("revoke"):
+            db.set_setting("portal_biKeyHash", "")
+            self._audit_cv(u, "BI key revoked", {"id": "bi", "name": "Power BI feed"})
+            return self._json({"ok": True, "revoked": True})
+        key = secrets.token_urlsafe(32)
+        db.set_setting("portal_biKeyHash", _tok_hash(key))
+        self._audit_cv(u, "BI key issued", {"id": "bi", "name": "Power BI feed"})
+        return self._json({"ok": True, "key": key})   # returned exactly once; nothing can show it again
 
     # ── candidate CVs ────────────────────────────────────────────────────────────────────────────
     # A CV is personal data belonging to someone who does not work here and cannot see what we hold.
