@@ -5,7 +5,15 @@
    fallback when the network is offline OR slower than the timeout (keeps the "fast to open on 4G"
    behaviour + offline use). Every successful load refreshes the cached shell, so the fallback is always
    the last-known-good version; static assets + CDN libs stay cache-first. */
-const CACHE = 'hml-pwa-v294';
+/* MUST be unique per deploy, and higher than whatever is on main when you branch — /api/build reports
+   this string as the deployed BUILD, and "Check for updates" compares against it. Two branches picked
+   v294 independently (#43 and #44) and both merged, so production answered v294 both before and after
+   the second deploy: the version could not distinguish two different builds, and a deploy check that
+   polled /api/build returned green ~20s after a merge that had not deployed yet.
+   Re-read main immediately before merging and bump again if someone got there first. And verify a
+   deploy by the CONTENT of what is served — `curl -s https://portal.humiley.com/ | shasum -a 256`
+   against `git show <sha>:templates/index.html | shasum -a 256` — never by this string alone. */
+const CACHE = 'hml-pwa-v295';
 const SHELL = ['/', '/static/manifest.webmanifest', '/static/icons/icon-192.png', '/static/icons/apple-touch-icon.png',
   '/static/vendor/chart.umd.min.js', '/static/vendor/msal-browser.min.js'];   // self-hosted libs — precache for offline
 
