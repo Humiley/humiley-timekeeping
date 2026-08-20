@@ -188,6 +188,25 @@ state — the same honesty your `/v1` API applies to `API_KEYS`:
 
 What the portal will not do is call an unverified document verified, or skip a failed hash.
 
+### Turning signing on — the order matters
+
+A configured secret means signatures are **required**. Setting it before AeroSelect signs refuses
+every import, so:
+
+1. **AeroSelect ships the exporter** and signs with the shared value.
+2. **Set the same value on both sides.** On the portal: `TK_AEROSELECT_SECRET` in `.env` on the VPS,
+   then `docker compose up -d portal`. On the AeroSelect side, wherever its export reads it from.
+3. **Re-import one selection** and confirm the unit shows *Signature verified* rather than
+   *Signature not verified*.
+
+Generate the value with `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` — or any
+CSPRNG. It is a credential: it belongs in the environment on both hosts and in your password
+manager, never in either repository.
+
+Rotating it is safe and uneventful. Documents already imported keep the `selectionVerified` flag
+they were imported under; re-importing one signed with the old secret is refused, which is the
+correct behaviour and is why the flag records the state at import time rather than being recomputed.
+
 ---
 
 ## What the portal does with it
