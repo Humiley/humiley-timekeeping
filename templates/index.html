@@ -21450,7 +21450,7 @@ async function pdBiKey(revoke) {
      tracing a finger up the screen.
    · Rows are ACTIONABLE — click an activity to file its progress, click a trade to fold it away.
      Everything visible here is something a site engineer wants to do next. */
-const _PD_LABW = 252;                     // label gutter, px — shared by header, rows and gridlines
+const _PD_LABW = 404;   // gutter: name · who · start · finish · duration                     // label gutter, px — shared by header, rows and gridlines
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
 
@@ -21473,9 +21473,79 @@ function _schRoll(rows) {
   return ws ? { acc: a / ws, planned: p / ws } : { acc: 0, planned: 0 };
 }
 
+/* Row status — the thing a schedule is actually asked. Finished ones are judged against the date
+   they were DUE (early / on time / late); unfinished ones against where they should be TODAY.
+   "Overdue" outranks "behind": a line past its finish date with work left is a different
+   conversation from one that is merely trailing its planned curve. */
+function _schFlag(r, day) {
+  const acc = +r.acc || 0, pl = +r.planned || 0;
+  if (acc >= 100) {
+    if (r.doneOn && r.finish) {
+      const d = _pmDateDiff(r.finish, r.doneOn);
+      if (d < 0) return { k: 'early', label: Math.abs(d) + 'd ' + _t('early'), hex: '#00B060' };
+      if (d > 0) return { k: 'late', label: d + 'd ' + _t('late'), hex: '#F59E0B' };
+    }
+    return { k: 'done', label: _t('Done'), hex: '#00B060' };
+  }
+  if (r.finish && r.finish < day) {
+    return { k: 'overdue', label: _pmDateDiff(r.finish, day) + 'd ' + _t('overdue'), hex: '#EF4444' };
+  }
+  const v = acc - pl;
+  if (v >= 5) return { k: 'ahead', label: '+' + v.toFixed(0) + '%', hex: '#00B060' };
+  if (v >= -0.5) return { k: 'onplan', label: _t('On plan'), hex: '#5C6470' };
+  if (v >= -10) return { k: 'slip', label: v.toFixed(0) + '%', hex: '#F59E0B' };
+  return { k: 'behind', label: v.toFixed(0) + '%', hex: '#EF4444' };
+}
+const _SCH_FILTERS = [['all', 'All'], ['behind', 'Behind'], ['slip', 'Slipping'], ['onplan', 'On plan'],
+                      ['ahead', 'Ahead'], ['overdue', 'Overdue'], ['done', 'Done']];
+let _schFilt = { m: { q: '', k: 'all' }, d: { q: '', k: 'all' } };
+function schFiltKind(ns, k) { _schFilt[ns].k = k; _pmReload(); }
+function schFiltQ(ns, v) {
+  _schFilt[ns].q = v;
+  // Re-render on a debounce, not per keystroke: this redraws a few hundred absolutely-positioned
+  // bars and typing must not wait for it.
+  clearTimeout(_schFilt._t);
+  _schFilt._t = setTimeout(() => _pmReload(), 260);
+}
+function _schFilterBar(ns, shown, total) {
+  const f = _schFilt[ns];
+  const chip = (k, label) => '<button onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
+    (f.k === k ? 'var(--navy)' : 'var(--line)') + ';background:' + (f.k === k ? 'var(--navy)' : 'var(--card,#fff)') +
+    ';color:' + (f.k === k ? '#fff' : 'var(--text-light)') + ';border-radius:999px;padding:3px 11px;' +
+    'font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' + _t(label) + '</button>';
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line)">' +
+    '<input value="' + _tkEscA(f.q) + '" oninput="schFiltQ(\'' + ns + '\',this.value)" placeholder="' +
+      _tkEscA(_t('Find an activity or who…')) + '" style="flex:0 1 220px;min-width:150px;font-size:12px;padding:4px 9px;' +
+      'border:1px solid var(--line);border-radius:7px;background:var(--card,#fff);color:var(--text);font-family:inherit">' +
+    _SCH_FILTERS.map(x => chip(x[0], x[1])).join('') +
+    (shown < total ? '<span style="font-size:11px;color:var(--text-light);margin-left:2px">' + shown + ' / ' + total + '</span>' : '') +
+    '</div>';
+}
+function _schApplyFilter(rows, ns, day) {
+  const f = _schFilt[ns], q = (f.q || '').trim().toLowerCase();
+  return rows.filter(r => {
+    if (q && (String(r.name || '') + ' ' + String(r.group || '') + ' ' + String(r.who || '')).toLowerCase().indexOf(q) < 0) return false;
+    if (f.k !== 'all' && _schFlag(r, day).k !== f.k) return false;
+    return true;
+  });
+}
+/* One initial-avatar, matching the rest of the app. */
+function _schWho(who) {
+  if (!who) return '<span style="width:22px;height:22px;border-radius:50%;background:var(--soft-bg);flex:none"></span>';
+  const ini = String(who).split(/\s+/).filter(Boolean).slice(-2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  let h = 0; for (let i = 0; i < who.length; i++) h = (h * 31 + who.charCodeAt(i)) % 360;
+  return '<span title="' + _tkEscA(who) + '" style="width:22px;height:22px;border-radius:50%;flex:none;background:hsl(' + h +
+    ',52%,45%);color:#fff;font:700 9px ui-sans-serif,system-ui,sans-serif;display:flex;align-items:center;justify-content:center">' + ini + '</span>';
+}
+
 function _schTimeline(rows, o) {
   o = o || {};
   const day = o.day || _pmToday();
+  const ns = o.ns || 'd', total = rows.length;
+  rows = _schApplyFilter(rows, ns, day);
+  if (!rows.length) return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
+    _schFilterBar(ns, 0, total) + '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+    _t('Nothing matches this filter.') + '</div></div>';
   const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
   if (!ds.length) return '';
   ds.push(day);
@@ -21526,8 +21596,14 @@ function _schTimeline(rows, o) {
   const header =
     '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
       '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
-        'border-right:1px solid var(--line);padding:6px 12px;display:flex;align-items:flex-end;font:600 11px ui-sans-serif,system-ui,sans-serif;' +
-        'letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + _t(o.labelHead || 'Trade / Activity') + '</div>' +
+        'border-right:1px solid var(--line);padding:6px 10px;display:flex;align-items:flex-end;gap:6px;' +
+        'font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' +
+        '<span style="flex:1;min-width:0">' + _t(o.labelHead || 'Trade / Activity') + '</span>' +
+        '<span style="width:26px;text-align:center">' + _t('Who') + '</span>' +
+        '<span style="width:52px;text-align:right">' + _t('Start') + '</span>' +
+        '<span style="width:52px;text-align:right">' + _t('Finish') + '</span>' +
+        '<span style="width:38px;text-align:right">' + _t('Dur') + '</span>' +
+        '<span style="width:62px;text-align:right">' + _t('Status') + '</span></div>' +
       '<div style="flex:1;position:relative;height:46px">' +
         band(quarters, 22, 11, 700) +
         '<div style="position:absolute;top:22px;left:0;right:0;height:24px">' +
@@ -21547,10 +21623,22 @@ function _schTimeline(rows, o) {
            '<div style="position:absolute;left:' + b + '%;top:' + (top - 2) + 'px;margin-left:7px;font-size:10.5px;' +
              'font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
   };
-  const lab = (html, indent) =>
-    '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
-      'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:7px;' +
-      'overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + html + '</div>';
+  const dur = r => (r.start && r.finish) ? ((_pmDateDiff(r.start, r.finish) || 0) + 1) + 'd' : '—';
+  const cell = (v, w, extra) => '<span style="width:' + w + 'px;text-align:right;flex:none;font-size:10.5px;' +
+    'font-variant-numeric:tabular-nums;color:var(--text-light);' + (extra || '') + '">' + v + '</span>';
+  const lab = (html, indent, r) => {
+    const f = r ? _schFlag(r, day) : null;
+    return '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
+      'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:6px;' +
+      'overflow:hidden;white-space:nowrap">' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px">' + html + '</span>' +
+      (r ? '<span style="width:26px;display:flex;justify-content:center;flex:none">' + _schWho(r.who) + '</span>' +
+           cell(r.start ? tkFmtDate(r.start).slice(0, 6) : '—', 52) +
+           cell(r.finish ? tkFmtDate(r.finish).slice(0, 6) : '—', 52) +
+           cell(dur(r), 38) +
+           cell(f.label, 62, 'color:' + f.hex + ';font-weight:700')
+         : '<span style="width:230px;flex:none"></span>') + '</div>';
+  };
 
   const groups = []; rows.forEach(r => { if (groups.indexOf(r.group) < 0) groups.push(r.group); });
   const collapsed = o.collapsed || {};
@@ -21564,8 +21652,8 @@ function _schTimeline(rows, o) {
         'onclick="' + (o.toggle || '').replace('{g}', encodeURIComponent(g)) + '" title="' + _tkEscA(_t('Show or hide this group')) + '">' +
       lab('<span style="width:11px;color:var(--text-light);font-weight:700">' + (open ? '−' : '+') + '</span>' +
           '<span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' +
-          '<span style="font-weight:700;font-size:12.5px">' + _pmEsc(g) + '</span>' +
-          '<span style="font-size:10.5px;color:var(--text-light)">' + gr.length + '</span>', 10) +
+          '<span style="font-weight:700;font-size:12.5px;overflow:hidden;text-overflow:ellipsis">' + _pmEsc(g) + '</span>' +
+          '<span style="font-size:10.5px;color:var(--text-light);flex:none">' + gr.length + '</span>', 10, null) +
       '<div style="flex:1;position:relative">' +
         bar({ start: gs, finish: gf, acc: roll.acc, name: g }, color, Math.round(roll.acc) + '%', true) + '</div></div>';
     if (!open) return;
@@ -21575,7 +21663,8 @@ function _schTimeline(rows, o) {
           'border-bottom:1px solid var(--line)"' + (r.click ? ' onclick="' + r.click + '"' : '') +
           ' title="' + _tkEscA(o.rowHint || '') + '">' +
         lab('<span style="width:5px;height:5px;border-radius:50%;background:' + _pdVarColor(v) + ';flex:none"></span>' +
-            '<span style="font-size:12px;color:var(--text)">' + _pmEsc(r.name || '') + '</span>', 26) +
+            '<span style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis">' + _pmEsc(r.name || '') + '</span>' +
+            (r.note ? '<span title="' + _tkEscA(r.note) + '" style="flex:none;font-size:10px;color:var(--navy);cursor:help">\u270e</span>' : ''), 22, r) +
         '<div style="flex:1;position:relative">' + bar(r, color, Math.round(+r.acc || 0) + '%', false) + '</div></div>';
     });
   });
@@ -21588,6 +21677,7 @@ function _schTimeline(rows, o) {
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
+    _schFilterBar(ns, rows.length, total) +
     '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (_PD_LABW + plotW) + 'px">' +
       header +
       '<div style="position:relative">' +
@@ -21650,20 +21740,29 @@ function _pmTaskNorm(pid, day) {
     const d = _pdTaskPct(t, pid);
     const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
     return { id: t.id, group: t.phase || _t('Activities'), name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || ''),
-             start: t.start, finish: t.finish, w: dur,
+             start: t.start, finish: t.finish, w: dur, who: t.assignee || '', note: t.note || '',
+             doneOn: t.actualFinish || '',
              acc: d ? d.pct : _pmPct(t.pctComplete),
              planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
              click: "tkQuickAdd('pm_tasks','" + t.id + "')" };
   });
 }
 function _pdNorm(rows, day) {
-  return rows.map(r => ({ id: r.id, group: r.category || 'Uncategorised', name: r.name || '',
-    start: r.start, finish: r.finish, w: _pdWeight(r),
-    acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" }));
+  return rows.map(r => {
+    const log = _pdLog(r);
+    // The day it actually finished is the FIRST reading that reached 100 — not the last reading, and
+    // not the planned finish. That is what makes "3d early" a fact rather than a guess.
+    const doneRow = log.find(e => _pmPct(e.pct) >= 100);
+    const last = log[log.length - 1];
+    return { id: r.id, group: r.category || 'Uncategorised', name: r.name || '',
+      start: r.start, finish: r.finish, w: _pdWeight(r),
+      who: (last && last.by) || '', note: r.note || '', doneOn: doneRow ? String(doneRow.d) : '',
+      acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" };
+  });
 }
 
 function _pdTimeline(pid, rows, cats, day) {
-  return _schTimeline(_pdNorm(rows, day), { day: day, collapsed: _pdCol,
+  return _schTimeline(_pdNorm(rows, day), { day: day, ns: 'd', collapsed: _pdCol,
     toggle: "pdToggleCat(decodeURIComponent('{g}'))", labelHead: 'Trade / Activity',
     rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
     actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
@@ -21830,7 +21929,7 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild = {};
   _pmSchedBuild['m-timeline'] = () => {
     const _n = _pmTaskNorm(pid, _pmToday());
-    return _n.length ? _schTimeline(_n, { day: _pmToday(), collapsed: _pmPhCol,
+    return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol,
         toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
         rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
         actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' })
@@ -23707,6 +23806,16 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Timeline columns + filter (2026-08-20) */
+  'Dur': 'Thời lượng',
+  'Status': 'Trạng thái',
+  'early': 'sớm',
+  'late': 'trễ',
+  'Ahead': 'Vượt kế hoạch',
+  'Overdue': 'Quá hạn',
+  'Find an activity or who…': 'Tìm công việc hoặc người…',
+  'Nothing matches this filter.': 'Không có mục nào khớp bộ lọc.',
+
   /* Shared schedule kit (2026-08-20) */
   'Phase / Activity': 'Giai đoạn / Công việc',
   'Open this activity': 'Mở công việc này',
