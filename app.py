@@ -45,6 +45,7 @@ import working_time     # Labour Code Art. 105/106/109/110/111 + Decree 145: hou
 import doc_number       # controlled-document numbering: the format and the series (pure)
 import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations, the test matrix (pure)
 import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
+import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4052,6 +4053,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/ahu/unit/") and path.endswith("/route"):
             _uid = path[len("/api/ahu/unit/"):-len("/route")]
             return self._guard(lambda u: self._ahu_route_build_ep(u, urllib.parse.unquote(_uid)))
+        if path.startswith("/api/ahu/unit/") and path.endswith("/selection"):
+            _uid = path[len("/api/ahu/unit/"):-len("/selection")]
+            return self._guard(lambda u: self._ahu_selection_ep(u, urllib.parse.unquote(_uid), body))
         if path == "/api/invtrack/sync":
             return self._guard(lambda u: self._invtrack_sync_ep(u))
         if path == "/api/invtrack/sptest":
@@ -4883,6 +4887,24 @@ class Handler(BaseHTTPRequestHandler):
         "sales":      ("salesOwner", "accountManager"),
     }
 
+    def _ahu_check_family(self, item):
+        """Refuse a unit whose product family cannot be turned into a route.
+
+        `ahu_units` is a generic collection, so nothing used to stop "kappa" being stored in
+        `family`. The route library then raised on it, and because the production board builds every
+        unit's route, ONE mistyped record returned 500 to every user on the landing screen. The
+        board is now resilient to it as well (ahu.safe_build_for), but a record that cannot be built
+        should never have been accepted in the first place — a unit with no valid family has no
+        workstations and no test matrix, which is not a state worth storing.
+        """
+        fam = str((item or {}).get("family") or "").strip().lower()
+        if not fam or fam in ahu_route.FAMILIES:
+            return None
+        return self._err(
+            "%r is not an AHU product family. Use one of: %s — the family decides which "
+            "workstations and which tests apply to the unit."
+            % (item.get("family"), ", ".join(sorted(ahu_route.FAMILIES))), 400)
+
     def _ahu_unit_of(self, rec):
         """The AHU a production record belongs to, or {}."""
         uid = (rec or {}).get("unitId")
@@ -5164,6 +5186,125 @@ class Handler(BaseHTTPRequestHandler):
             "detail": "%s · %d step(s)" % (unit.get("family") or "?", len(rows))})
         orphans = [r["code"] for r in rows if r.get("orphan")]
         return self._json({"ok": True, "steps": len(rows), "orphans": orphans})
+
+    # ── The AeroSelect selection handoff ──────────────────────────────────────────────────────────
+    # A unit is sold on numbers AeroSelect computed, and production builds and tests against exactly
+    # those numbers. Retyping them is how a casing comes to be tested against the wrong limit, so
+    # they are imported as a document instead — hashed, optionally signed, and stamped with where
+    # they came from.
+    AHU_SELECTION_SECRET_ENV = "TK_AEROSELECT_SECRET"
+
+    def _ahu_selection_secret(self):
+        return (os.environ.get(self.AHU_SELECTION_SECRET_ENV) or "").strip() or None
+
+    def _ahu_selection_ep(self, u, uid, body):
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        unit = db.get_collection_item("ahu_units", uid)
+        if not unit:
+            return self._err("AHU not found.", 404)
+        ctx = ahu.load_ctx(uid)
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+        if not (is_mgr or self._ahu_named(u, ctx, "engineering")
+                or self._ahu_named(u, ctx, "production")):
+            return self._err("Importing a selection is done by engineering or production.", 403)
+
+        raw = (body or {}).get("document")
+        if isinstance(raw, str) and raw.startswith("data:"):
+            # A file picked in the browser arrives as a data: URI.
+            _head, _sep, _b64 = raw.partition(",")
+            if not _sep:
+                return self._err("That upload is not a readable file.", 400)
+            try:
+                raw = base64.b64decode(_b64, validate=False)
+            except Exception:
+                return self._err("That upload could not be decoded.", 400)
+        if raw in (None, ""):
+            return self._err("Attach the selection document exported from AeroSelect.", 400)
+
+        try:
+            doc = ahu_selection.parse(raw, self._ahu_selection_secret())
+        except ahu_selection.SelectionError as exc:
+            return self._err(str(exc), 400)
+
+        fields = ahu_selection.to_unit_fields(doc)
+        if not fields.get("family") and not unit.get("family"):
+            return self._err(
+                "This selection does not say which product family the unit is — modular, packaged, "
+                "hygienic or outdoor. The family decides which workstations and which tests apply, "
+                "so it is set by a person rather than guessed. Set it on the unit and import again.",
+                400)
+
+        # Re-importing a DIFFERENT selection onto a unit that has already been released to the shop
+        # floor is an engineering change, not an import. The design has moved under a unit somebody
+        # is already building, and that decision belongs to a person who can see what moved.
+        already = ahu.signed_codes(ctx["steps"])
+        released = "G2" in already
+        same = ahu_selection.is_same_selection(doc, unit)
+        diffs = ahu_selection.differences(doc, unit)
+        if released and not same and not (body or {}).get("supersede"):
+            return self._err(
+                "This unit passed gate G2 against selection %s, and this document is a different "
+                "selection (%s). Changing it now is an engineering change: raise one, record the "
+                "impact, and re-import with that decision attached." % (
+                    unit.get("selectionRef") or "(unrecorded)",
+                    ", ".join("%s %s -> %s" % (f, a if a not in (None, "") else "unset", b)
+                              for f, a, b in diffs[:6]) or "no visible field changed"),
+                409)
+        if released and not same and (body or {}).get("supersede") and not is_mgr:
+            return self._err("Superseding the selection a released unit was built to is a "
+                             "manager's decision.", 403)
+
+        before = {k: unit.get(k) for k in fields}
+        unit.update(fields)
+        unit["selectionImportedBy"] = u.get("name")
+        unit["selectionImportedOn"] = time.strftime("%Y-%m-%d")
+        db.put_collection_item("ahu_units", unit)
+
+        # Gate G2 asks for a selection report against the unit. The import IS that record, so it is
+        # filed as one rather than leaving somebody to attach a second copy by hand.
+        doc_id = "%s-selection" % uid
+        db.put_collection_item("ahu_docs", {
+            "id": doc_id, "unitId": uid, "kind": "Selection report",
+            "docNo": doc.get("selectionRef"),
+            "title": "AeroSelect selection — " + ahu_selection.summary(doc),
+            "rev": doc.get("engineVersion") or "", "status": "Issued",
+            "issuedOn": (doc.get("generatedOn") or "")[:10] or time.strftime("%Y-%m-%d"),
+            "form": "HML-AHU-SEL-001",
+            "selectionHash": doc.get("contentHash"),
+            "selectionVerified": bool(doc.get("verified")),
+            "createdBy": u.get("name"),
+        })
+
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "AeroSelect selection imported"
+                      + (" (superseding)" if released and not same else ""),
+            "target": "ahu_units/" + str(uid),
+            "detail": "%s · %s · %s" % (
+                ahu_selection.summary(doc),
+                "signature verified" if doc.get("verified")
+                else ("signed, not verified — no shared secret configured" if doc.get("signed")
+                      else "unsigned"),
+                doc.get("contentHash"))})
+
+        return self._json({
+            "ok": True,
+            "summary": ahu_selection.summary(doc),
+            "verified": bool(doc.get("verified")),
+            "signed": bool(doc.get("signed")),
+            "secretConfigured": bool(self._ahu_selection_secret()),
+            "applied": fields,
+            "changed": [{"field": k, "from": before.get(k), "to": v}
+                        for k, v in fields.items()
+                        if str(before.get(k) or "") != str(v or "")],
+            # The whole point of the integration, said out loud: these two are targets the factory
+            # still has to prove, not results anybody computed.
+            "targetsToProve": ahu_selection.classes_measured_by_test(doc),
+            "routeStale": bool(fields.get("family")
+                               and fields["family"] != (before.get("family") or "")),
+        })
 
     def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None, rec=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
@@ -8653,6 +8794,10 @@ class Handler(BaseHTTPRequestHandler):
         if name.startswith("pm_") or name.startswith("eng_") or name.startswith("ahu_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
+        if name == "ahu_units":
+            _err_fam = self._ahu_check_family(item)
+            if _err_fam:
+                return _err_fam
         if name.startswith("ahu_"):
             # Same reasoning as the eng_ strip below: a signature is applied by /api/esign and by
             # nothing else. A POST arriving with signedBy already filled would produce a workstation
@@ -14497,6 +14642,10 @@ class Handler(BaseHTTPRequestHandler):
         # dispute a factory record exists to settle. So signer identity is restored from the stored
         # row on every generic write, and a signed step is frozen, except for observations added
         # later ABOUT the step rather than changes TO it.
+        if name == "ahu_units":
+            _err_fam = self._ahu_check_family(item)
+            if _err_fam:
+                return _err_fam
         if name.startswith("ahu_"):
             existing = db.get_collection_item(name, iid)
             if existing:
@@ -14776,6 +14925,32 @@ class Handler(BaseHTTPRequestHandler):
             if existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"):
                 return self._err("This record has been signed and cannot be deleted. "
                                  "Raise a superseding change request instead.", 403)
+        # A signed production step is the same kind of evidence, and deleting one is strictly worse
+        # than editing it — which _coll_update already refuses. Without this, the operator who signed
+        # a hold point could destroy the record of what was measured, and the as-built dossier would
+        # simply show one fewer step with nothing saying it had ever existed. Admin included: an
+        # admin repairing a mistake can still correct the unit, but not erase a signature.
+        if name in ("ahu_steps", "ahu_ncr"):
+            if (existing.get("signatures") or existing.get("signedBy")
+                    or existing.get("gateSignedBy") or existing.get("closedBy")):
+                return self._err(
+                    "This step has been signed and cannot be deleted — it records what was measured "
+                    "when somebody put their name to it. Record a failure against it, or raise a "
+                    "non-conformance, rather than removing it.", 403)
+        # The sell side carries the same kind of evidence the PMC pair above does, and had none of
+        # the same protection. An APPLIED variation is the record that raised the value every later
+        # progress claim is measured against; a CERTIFIED application is the one the customer was
+        # invoiced from; an APPLIED credit note is what reversed a certified claim. Each is signed
+        # through /api/esign, and each was deletable by any manager-tier account — the ownership
+        # guard below did not list sales_, so nothing looked at it at all.
+        if name.startswith("sales_"):
+            _sig = (existing.get("signatures") or existing.get("appliedBy")
+                    or existing.get("certifiedBy") or existing.get("issuedBy"))
+            _st = str(existing.get("status") or "").strip().lower()
+            if _sig or _st in ("applied", "certified", "issued", "accepted", "paid", "received"):
+                return self._err(
+                    "This record has been signed or issued and is contract evidence — it cannot be "
+                    "deleted. Raise a superseding variation or a credit note instead.", 403)
         # Approved / paid financial records are immutable evidence — block deletion (admin included).
         if name in ("claims", "travel", "payments"):
             st = str(existing.get("status") or "").strip().lower()
@@ -14787,7 +14962,8 @@ class Handler(BaseHTTPRequestHandler):
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
             if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
-                    or name.startswith("eng_")) and not mine:
+                    or name.startswith("eng_") or name.startswith("ahu_")
+                    or name.startswith("sales_") or name.startswith("est_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:
