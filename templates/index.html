@@ -6815,7 +6815,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_schedules: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
   // Publishing a document used to redraw the ONBOARDING view, because that was the only place the
   // register lived. Now that the register also mounts on the Compliance tab, redrawing onboarding
   // repainted a hidden screen — and, worse, set _hrHostSfx to '-onb', so the next render of the
@@ -15507,6 +15507,7 @@ const _QA_SPECS = {
     { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path? (auto if predecessors set)', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_detail: { title: 'Detail Schedule Item', coll: 'pm_detail', reload: 'pm_detail', fields: [
+    { k: 'scheduleId', label: 'Detail schedule', type: 'select', options: 'pm_sched_opts' },
     { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
     { k: 'name', label: 'Report item' },
     { k: 'taskRef', label: 'Rolls up to master activity (WBS or name)', type: 'select', options: 'pm_task_opts' },
@@ -15889,6 +15890,11 @@ async function tkQuickAddSave() {
       item = res.item; const i = (_HR[spec.coll] || []).findIndex(x => x.id === _qaEditId); if (i >= 0) _HR[spec.coll][i] = item;
     } else {
       if (_qaType === 'onboarding') { data.tasks = _onboardTasks(); data.milestones = _onboardMilestones(data.role || ''); }
+      // A line added while looking at a schedule belongs to it — asking again would be a question
+      // whose answer is already on screen.
+      if (_qaType === 'pm_detail' && !data.scheduleId) {
+        const _cs = _pdCurSched(_pmPid()); if (_cs && _cs.id !== '_unfiled') data.scheduleId = _cs.id;
+      }
       const res = await tkApi('/api/coll/' + spec.coll, { method: 'POST', body: data });
       item = res.item; (_HR[spec.coll] = _HR[spec.coll] || []).push(item);
     }
@@ -19223,6 +19229,10 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
   if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
+  if (src === 'pm_sched_opts') {   // value is the id; the label is the name, resolved at render
+    const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+    return _pdScheds(pid).map(x => x.id);
+  }
   if (src === 'pm_detail_cats') {   // trades already in use on this project, then the usual ones
     const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.category) : [];
@@ -19637,7 +19647,7 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_schedules', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
 // after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
@@ -20276,7 +20286,7 @@ function _pmMyActionsHtml() {
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail'] },
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20582,7 +20592,8 @@ function pmRenderScope(pid) {
 
 /* ---------- 3. Schedule (Gantt) ---------- */
 let _pmSchedSel = '';
-let _pmSchedTab = 'gantt';   // Schedule sub-view: 'gantt' | 'activities' | 'board' | 'calendar'
+let _pmSchedTab = 'm-timeline';   // '<level>-<view>' — see _PM_SCHED_PANES
+let _pmSchedLast = { m: 'm-timeline', d: 'd-timeline' };   // remember where you were in each level
 let _pmCalMonth = '', _pmCalPid = '', _pmCalFilter = 'all';   // calendar sub-view state
 let _pmCalHost = { el: 'psch-calendar', render: () => _pmCalendarHtml(_pmPid()), portfolio: false };   // which calendar nav/filter/export act on
 function pmSchedSet(v) { _pmSchedSel = v; pmTab('schedule'); }
@@ -20898,11 +20909,174 @@ function _pmGTipHide() { const t = document.getElementById('pm-gtip'); if (t) t.
       how far it has got. */
 
 const _PD_COLL = 'pm_detail';
-function _pdRows(pid) {
+/* ══ DETAIL SCHEDULES — one project can define several ════════════════════════════════════════════
+   A cleanroom fit-out does not have one detail programme. It has the MEP programme for Block E, the
+   cleanroom finishes for Zone 3, a T&C programme — each with its own trades, its own dates and its
+   own reporting cadence, often its own subcontractor. Forcing them into a single list makes the
+   roll-up meaningless (whose 80%?) and the register unreadable.
+
+   pm_schedules holds the definitions; every pm_detail row carries scheduleId. Rows written before
+   this existed have no scheduleId and are NEVER hidden — they surface under "Unfiled" so a schedule
+   that was there yesterday cannot quietly vanish behind a filter. */
+let _pdSchedId = '';                        // '' = the first defined schedule, or everything
+function _pdScheds(pid) {
+  return _pmScopeFor('pm_schedules', pid).slice()
+    .sort((a, b) => (+a.order || 0) - (+b.order || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+}
+/* Every row for this project, unfiltered — the denominator for "is anything unfiled?" */
+function _pdAllRows(pid) {
   return _pmScopeFor(_PD_COLL, pid).slice().sort((a, b) =>
     String(a.category || '').localeCompare(String(b.category || '')) ||
     (a.start || '').localeCompare(b.start || '') ||
     String(a.name || '').localeCompare(String(b.name || '')));
+}
+function _pdUnfiled(pid) {
+  const ids = _pdScheds(pid).map(s => s.id);
+  return _pdAllRows(pid).filter(r => !r.scheduleId || ids.indexOf(r.scheduleId) < 0);
+}
+/* The schedule currently being looked at. With none defined the project has one implicit programme
+   and everything belongs to it — no empty state, no ceremony before the first useful screen. */
+function _pdCurSched(pid) {
+  const ss = _pdScheds(pid);
+  if (!ss.length) return null;
+  return ss.find(s => s.id === _pdSchedId) || (_pdSchedId === '_unfiled' ? { id: '_unfiled', name: _t('Unfiled') } : ss[0]);
+}
+function pdSchedPick(id) { _pdSchedId = id; _pmReload(); }
+async function pdSchedNew(pid) {
+  const name = await tkPrompt(_t('Name this detail schedule'), '', _t('e.g. Block E — MEP, Zone 3 — Cleanroom, Testing & Commissioning'));
+  if (!name) return;
+  try {
+    const res = await tkApi('/api/coll/pm_schedules', { method: 'POST',
+      body: { projectId: pid, name: name, order: _pdScheds(pid).length + 1 } });
+    (_HR.pm_schedules = _HR.pm_schedules || []).push(res.item);
+    _pdSchedId = res.item.id;
+    tkAudit('Detail schedule created', name, pid);
+    toast(_t('Schedule created') + ' — ' + name);
+    _pmReload();
+  } catch (e) { toast(_t('Could not create the schedule') + ': ' + _errMsg(e), 'error', 6000); }
+}
+/* The picker. Also the honest place to surface unfiled rows rather than dropping them. */
+function _pdSchedBar(pid) {
+  const ss = _pdScheds(pid), unf = _pdUnfiled(pid), cur = _pdCurSched(pid);
+  const chip = (id, label, n, on) =>
+    '<button onclick="pdSchedPick(\'' + id + '\')" style="border:1px solid ' + (on ? 'var(--emerald)' : 'var(--line)') +
+    ';background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text)') +
+    ';border-radius:999px;padding:5px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' +
+    _pmEsc(label) + ' <span style="opacity:.7;font-weight:500">' + n + '</span></button>';
+  if (!ss.length && !unf.length) return '';
+  const chips = ss.map(s => chip(s.id, s.name || _t('Untitled'),
+      _pdAllRows(pid).filter(r => r.scheduleId === s.id).length, !!cur && cur.id === s.id)).join('') +
+    (unf.length ? chip('_unfiled', _t('Unfiled'), unf.length, !!cur && cur.id === '_unfiled') : '');
+  return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+    '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light)">' +
+      _t('Schedule') + '</span>' + chips +
+    '<button class="btn btn-ghost btn-sm" onclick="pdSchedNew(\'' + pid + '\')" title="' + _tkEscA(_t('Define another detail schedule for this project')) + '">+ ' + _t('New') + '</button>' +
+    (unf.length ? '<span style="font-size:11px;color:var(--warn,#B26A00)">' + unf.length + ' ' + _t('item(s) not assigned to a schedule') + '</span>' : '') +
+    '</div>';
+}
+
+/* ══ DETAIL · BOARD ══════════════════════════════════════════════════════════════════════════════
+   Columns are HEALTH, not stage. A detail line has no workflow to move through — it has a number
+   that is either keeping up or not, and the only question worth asking a site team is "what is
+   behind?". Sorting by lateness puts the worst thing first. */
+function _pdBoard(pid, rows, day) {
+  const COLS = [
+    { k: 'behind',  label: 'Behind',      hex: '#EF4444', hit: (a, p) => a < 100 && a - p < -10 },
+    { k: 'slip',    label: 'Slipping',    hex: '#F59E0B', hit: (a, p) => a < 100 && a - p < -0.5 && a - p >= -10 },
+    { k: 'onplan',  label: 'On plan',     hex: '#00B060', hit: (a, p) => a < 100 && a - p >= -0.5 },
+    { k: 'done',    label: 'Complete',    hex: '#5C6470', hit: a => a >= 100 },
+  ];
+  const bucket = r => {
+    const a = _pdAcc(r, day), p = _pdPlanned(r, day);
+    return (COLS.find(c => c.hit(a, p)) || COLS[2]).k;
+  };
+  const cols = COLS.map(c => {
+    const mine = rows.filter(r => bucket(r) === c.k)
+      .sort((x, y) => (_pdAcc(x, day) - _pdPlanned(x, day)) - (_pdAcc(y, day) - _pdPlanned(y, day)));
+    const cards = mine.map(r => {
+      const a = _pdAcc(r, day), v = a - _pdPlanned(r, day), dly = _pdDaily(r, day);
+      return '<div onclick="pdProgress(\'' + r.id + '\')" style="background:var(--card,#fff);border:1px solid var(--line);' +
+        'border-left:3px solid ' + c.hex + ';border-radius:8px;padding:9px 11px;margin-bottom:8px;cursor:pointer" ' +
+        'title="' + _tkEscA(_t('File progress')) + '">' +
+        '<div style="font-size:12.5px;font-weight:600;line-height:1.35">' + _pmEsc(r.name || '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + _pmEsc(r.category || '') +
+          (r.finish ? ' · ' + _t('due') + ' ' + tkFmtDate(r.finish) : '') + '</div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-variant-numeric:tabular-nums">' +
+          '<span style="font-size:13px;font-weight:700">' + a + '%</span>' +
+          '<span style="font-size:11.5px;font-weight:700;color:' + _pdVarColor(v) + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</span>' +
+        '</div>' + (dly > 0 ? '<div style="font-size:10.5px;color:var(--emerald);margin-top:3px;font-weight:600">+' + dly + '% ' + _t('today') + '</div>' : '') +
+        '</div>';
+    }).join('') || '<div style="font-size:11.5px;color:var(--text-light);padding:6px 2px">' + _t('Nothing here') + '</div>';
+    return '<div style="flex:1;min-width:210px">' +
+      '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">' +
+        '<span style="width:9px;height:9px;border-radius:50%;background:' + c.hex + '"></span>' +
+        '<span style="font-weight:700;font-size:12.5px">' + _t(c.label) + '</span>' +
+        '<span style="font-size:11px;color:var(--text-light)">' + mine.length + '</span></div>' + cards + '</div>';
+  }).join('');
+  return '<div class="card" style="padding:15px 17px">' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:12px">' +
+      _t('Grouped by how far each activity is from its planned position today. Click a card to file progress.') + '</div>' +
+    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">' + cols + '</div></div>';
+}
+
+/* ══ DETAIL · CALENDAR ═══════════════════════════════════════════════════════════════════════════
+   What a site team wants from a calendar is not "everything happening" — it is what STARTS and what
+   is DUE. Both are commitments; the middle of a bar is not. */
+let _pdCalM = '';
+function pdCalMove(n) {
+  const cur = _pdCalM || _pmToday().slice(0, 7);
+  const d = new Date(+cur.slice(0, 4), +cur.slice(5, 7) - 1 + n, 1);
+  _pdCalM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  _pmReload();
+}
+function _pdCalendar(pid, rows, day) {
+  const ym = _pdCalM || day.slice(0, 7);
+  const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
+  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;               // Monday-first, the site week
+  const iso = dd => y + '-' + String(m + 1).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.4"></div>';
+  for (let dd = 1; dd <= days; dd++) {
+    const d = iso(dd);
+    const starts = rows.filter(r => r.start === d);
+    const ends = rows.filter(r => r.finish === d);
+    const isToday = d === day;
+    const pill = (r, hex, glyph) =>
+      '<div onclick="event.stopPropagation();pdProgress(\'' + r.id + '\')" title="' + _tkEscA(r.name || '') + '" ' +
+      'style="font-size:10.5px;line-height:1.3;padding:2px 5px;border-radius:4px;background:' + hex + '1f;color:' + hex +
+      ';font-weight:600;margin-top:3px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      glyph + ' ' + _pmEsc(r.name || '') + '</div>';
+    cells += '<div style="min-height:92px;background:var(--card,#fff);border:1px solid ' + (isToday ? '#EF4444' : 'var(--line)') +
+      ';border-radius:8px;padding:5px 6px;overflow:hidden">' +
+      '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? '#EF4444' : 'var(--text-light)') + '">' + dd + '</div>' +
+      starts.slice(0, 3).map(r => pill(r, '#38BDF8', '▶')).join('') +
+      ends.slice(0, 3).map(r => pill(r, '#F97316', '■')).join('') +
+      ((starts.length + ends.length) > 6 ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">+' + (starts.length + ends.length - 6) + '</div>' : '') +
+      '</div>';
+  }
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return '<div class="card" style="padding:15px 17px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:13.5px">' + _t(MON[m]) + ' ' + y + '</div>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span style="font-size:11px;color:var(--text-light)"><b style="color:#38BDF8">▶</b> ' + _t('starts') +
+        ' &nbsp;<b style="color:#F97316">■</b> ' + _t('due') + '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(-1)">‹</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(1)">›</button></div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">' +
+      DOW.map(d => '<div style="font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">' + cells + '</div></div>';
+}
+
+function _pdRows(pid) {
+  const all = _pdAllRows(pid), cur = _pdCurSched(pid);
+  if (!cur) return all;                                   // no schedules defined = one implicit one
+  if (cur.id === '_unfiled') return _pdUnfiled(pid);
+  return all.filter(r => r.scheduleId === cur.id);
 }
 /* The reported readings, oldest first. Defensive: the log is user data and may arrive malformed. */
 function _pdLog(r) {
@@ -21173,26 +21347,40 @@ async function pdImportRun(pid) {
 let _pdCol = {};                       // collapsed categories, by name
 function pdToggleCat(c) { _pdCol[c] = !_pdCol[c]; _pmReload(); }
 
-function _pdHtml(pid) {
+/* Every detail view shares the same head: which schedule, and where it stands. The view-specific
+   part is the only thing that changes underneath — so switching Timeline↔Board↔Calendar never moves
+   the numbers or the picker, and you keep your place. */
+function _pdView(pid, view) {
   const rows = _pdRows(pid), day = _pmToday();
-  if (!rows.length) {
-    return _pmCard('Detail Schedule', _PD_COLL, 'Add report item',
-      '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
-      'No detail lines yet.<br><span style="font-size:12px">The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.</span>' +
-      '<div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import from Excel') + '</button></div></div>');
-  }
-  const all = _pdRollup(rows, day);
+  const head = _pdSchedBar(pid) + _pdKpis(pid, rows, day);
+  if (!rows.length) return head + _pdEmpty(pid);
   const cats = []; rows.forEach(r => { const c = r.category || 'Uncategorised'; if (cats.indexOf(c) < 0) cats.push(c); });
-
-  const kpis = _hrKpiRow([
+  if (view === 'board') return head + _pdBoard(pid, rows, day);
+  if (view === 'calendar') return head + _pdCalendar(pid, rows, day);
+  if (view === 'timeline') return head + _pdTimeline(pid, rows, cats, day) + _pdSCurve(rows, day);
+  return head + _pdRegister(pid, rows, cats, day) + _pdBiCard();     // 'register'
+}
+function _pdEmpty(pid) {
+  return _pmCard('Detail Schedule', _PD_COLL, 'Add report item',
+    '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+    _t('No lines in this schedule yet.') + '<br><span style="font-size:12px">' +
+    _t('The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.') +
+    '</span><div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
+    _t('Import from Excel') + '</button></div></div>');
+}
+/* The five numbers, shown above every detail view so switching view never changes the headline. */
+function _pdKpis(pid, rows, day) {
+  const all = _pdRollup(rows, day);
+  return _hrKpiRow([
     _hrKpi('Report items', rows.length),
     _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
     _hrKpi('Planned to date', Math.round(all.planned) + '%', '#8B5CF6'),
     _hrKpi('Variance', (all.variance >= 0 ? '+' : '') + all.variance.toFixed(1) + '%', _pdVarColor(all.variance)),
     _hrKpi('Reported today', rows.filter(r => _pdDaily(r, day) > 0).length)
   ]);
-
-  /* ── the table, grouped by category exactly like the site's daily report ── */
+}
+/* The register — the daily-report table itself. */
+function _pdRegister(pid, rows, cats, day) {
   const bar = (pct, color) => '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden">' +
     '<span style="display:block;height:100%;width:' + _pmPct(pct) + '%;background:' + color + '"></span></span>';
 
@@ -21230,18 +21418,14 @@ function _pdHtml(pid) {
     ['Category', 'Report Items', 'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
 
-  return kpis +
-    '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
-      '<span><b style="color:var(--text)">Daily</b> is today’s increment — 0% unless a reading was filed today.</span>' +
+  return '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
+      '<span><b style="color:var(--text)">Daily</b> is today\u2019s increment — 0% unless a reading was filed today.</span>' +
       '<span><b style="color:var(--text)">Planned</b> is straight-line between start and finish.</span>' +
       '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
     '</div>' +
-    _pdTimeline(pid, rows, cats, day) +
-    _pdSCurve(rows, day) +
     _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table,
       '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
-      '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>') +
-    _pdBiCard();
+      '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' + _t('Import') + '</button>');
 }
 
 /* ── Power BI feed ────────────────────────────────────────────────────────────────────────────
@@ -21603,9 +21787,12 @@ function pmRenderSchedule(pid) {
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
   // had; pmSchedTab() builds a pane the first time it is shown.
   _pmSchedBuild = {};
-  _pmSchedBuild.gantt = () => _pmGanttHtml(pid);
-  _pmSchedBuild.detail = () => _pdHtml(pid);
-  _pmSchedBuild.activities = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
+  _pmSchedBuild['m-timeline'] = () => _pmGanttHtml(pid);
+  _pmSchedBuild['d-timeline'] = () => _pdView(pid, 'timeline');
+  _pmSchedBuild['d-register'] = () => _pdView(pid, 'register');
+  _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
+  _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
+  _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
@@ -21621,9 +21808,26 @@ function pmRenderSchedule(pid) {
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
-  _pmSchedBuild.board = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
-  _pmSchedBuild.calendar = () => _pmCalendarHtml(pid);
-  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Master Schedule') + _pmSchedTabBtn('detail', 'Detail Schedule') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
+  _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
+  _pmSchedBuild['m-calendar'] = () => _pmCalendarHtml(pid);
+  // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four
+  // views, because "where am I" and "how do I want to see it" are separate questions and answering
+  // them on one flat bar made four master-only views look like peers of the whole detail programme.
+  const _lv = _pmSchedLevel();
+  const lvBtn = (k, label, sub) => {
+    const on = _lv === k;
+    return '<button onclick="pmSchedLevel(\'' + k + '\')" style="flex:0 0 auto;text-align:left;border:1px solid ' +
+      (on ? 'var(--navy)' : 'var(--line)') + ';background:' + (on ? 'var(--navy)' : 'var(--card,#fff)') + ';color:' +
+      (on ? '#fff' : 'var(--text)') + ';border-radius:10px;padding:8px 15px;cursor:pointer;font-family:inherit">' +
+      '<div style="font-weight:700;font-size:13px">' + _t(label) + '</div>' +
+      '<div style="font-size:10.5px;opacity:' + (on ? '.8' : '.65') + ';margin-top:1px">' + _t(sub) + '</div></button>';
+  };
+  const levels = '<div style="display:flex;gap:8px;margin:2px 0 10px;flex-wrap:wrap">' +
+    lvBtn('m', 'Master Schedule', 'Contract activities · WBS · critical path') +
+    lvBtn('d', 'Detail Schedule', 'What the site reports each day') + '</div>';
+  const views = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">' +
+    _PM_SCHED_VIEWS[_lv].map(v => _pmSchedTabBtn(v[0], v[1])).join('') + '</div>';
+  const subtabs = '<div data-html2canvas-ignore="true">' + levels + views + '</div>';
   const _pane = k => '<div id="psch-' + k + '"' + (_pmSchedTab === k ? ' data-built="1"' : ' style="display:none"') + '>' +
     (_pmSchedTab === k ? _pmSchedBuild[k]() : '') + '</div>';
   _pmSet(kpis + subtabs + _PM_SCHED_PANES.map(_pane).join(''));
@@ -21635,9 +21839,26 @@ function _pmSchedTabBtn(key, label) {
 /* The Schedule sub-panes, in order. Declared ONCE: this list is read by the renderer and by the
    show/hide loop, and when it existed twice a new pane added to only one of them rendered fine
    and was never displayed — every pane hidden, none shown, and nothing logged. */
-const _PM_SCHED_PANES = ['gantt', 'detail', 'activities', 'board', 'calendar'];
+const _PM_SCHED_PANES = ['m-timeline', 'm-activities', 'm-board', 'm-calendar',
+                         'd-timeline', 'd-register', 'd-board', 'd-calendar'];
+const _PM_SCHED_VIEWS = {
+  m: [['m-timeline', 'Timeline'], ['m-activities', 'Activities'], ['m-board', 'Board'], ['m-calendar', 'Calendar']],
+  d: [['d-timeline', 'Timeline'], ['d-register', 'Register'], ['d-board', 'Board'], ['d-calendar', 'Calendar']],
+};
+function _pmSchedLevel() { return _pmSchedTab.charAt(0) === 'd' ? 'd' : 'm'; }
+/* Switching level returns you to the view you were last using THERE, not to a fixed one — moving
+   between the master plan and a detail programme should not also throw away which view you wanted.
+   It must RE-RENDER, not just toggle panes: the level-2 bar shows only the current level's four
+   views and the level-1 buttons carry the selected state, so a cheap pane swap left the chrome
+   describing one level while the content showed the other. */
+function pmSchedLevel(lv) {
+  _pmSchedTab = _pmSchedLast[lv] || (lv + '-timeline');
+  _pmSchedLast[lv] = _pmSchedTab;
+  _pmReload();
+}
 function pmSchedTab(name) {
   _pmSchedTab = name;
+  _pmSchedLast[_pmSchedLevel()] = name;
   // Build this pane the first time it is shown. pmRenderSchedule re-creates the hosts on every
   // reload, so data-built resets naturally and a pane can never show stale rows.
   const host = document.getElementById('psch-' + name);
@@ -23430,6 +23651,49 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Two-level schedule + multi detail schedules (2026-08-20) */
+  'Schedule': 'Tiến độ',
+  'Unfiled': 'Chưa phân loại',
+  'Untitled': 'Chưa đặt tên',
+  'Define another detail schedule for this project': 'Tạo thêm một tiến độ chi tiết cho dự án',
+  'item(s) not assigned to a schedule': 'hạng mục chưa gán vào tiến độ nào',
+  'Name this detail schedule': 'Đặt tên cho tiến độ chi tiết',
+  'e.g. Block E — MEP, Zone 3 — Cleanroom, Testing & Commissioning': 'VD: Block E — MEP, Zone 3 — Phòng sạch, Chạy thử & nghiệm thu',
+  'Schedule created': 'Đã tạo tiến độ',
+  'Could not create the schedule': 'Không thể tạo tiến độ',
+  'Detail schedule': 'Tiến độ chi tiết',
+  'Contract activities · WBS · critical path': 'Công việc hợp đồng · WBS · đường găng',
+  'What the site reports each day': 'Công trường ghi nhận mỗi ngày',
+  'No lines in this schedule yet.': 'Tiến độ này chưa có hạng mục.',
+  'The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.': 'Tiến độ tổng thể chứa các công việc hợp đồng; cấp này chứa các hạng mục công trường ghi nhận mỗi ngày — theo từng bộ môn và vị trí.',
+  'Behind': 'Trễ',
+  'Slipping': 'Chậm nhẹ',
+  'On plan': 'Đúng kế hoạch',
+  'Complete': 'Hoàn thành',
+  'Nothing here': 'Không có mục nào',
+  'File progress': 'Ghi nhận tiến độ',
+  'due': 'hạn',
+  'today': 'hôm nay',
+  'Grouped by how far each activity is from its planned position today. Click a card to file progress.': 'Nhóm theo mức chênh so với kế hoạch đến hôm nay. Bấm vào thẻ để ghi nhận tiến độ.',
+  'starts': 'bắt đầu',
+  'Tue': 'T3',
+  'Wed': 'T4',
+  'Thu': 'T5',
+  'Sat': 'T7',
+  'Sun': 'CN',
+  'January': 'Tháng 1',
+  'February': 'Tháng 2',
+  'March': 'Tháng 3',
+  'April': 'Tháng 4',
+  'May': 'Tháng 5',
+  'June': 'Tháng 6',
+  'July': 'Tháng 7',
+  'August': 'Tháng 8',
+  'September': 'Tháng 9',
+  'October': 'Tháng 10',
+  'November': 'Tháng 11',
+  'December': 'Tháng 12',
+
   /* Timeline-first Detail Schedule (2026-08-20) */
   'Trade / Activity': 'Bộ môn / Công việc',
   'Timeline': 'Dòng thời gian',
