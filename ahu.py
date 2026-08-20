@@ -72,7 +72,22 @@ def route_opts(unit, order=None):
 
 
 def build_for(unit, order=None):
+    """This unit's route. Raises ValueError if its family is not one the Design Standards define."""
     return R.build_route(_norm(unit.get("family")) or "modular", route_opts(unit, order))
+
+
+def safe_build_for(unit, order=None):
+    """(steps, error) — the route, or an empty route and a sentence saying why there isn't one.
+
+    `ahu_units` is a generic collection, so a `family` typed as "kappa" is stored without complaint
+    and then cannot be turned into a route. Letting that ValueError escape took down the whole
+    production board — a 500 on the landing screen for EVERY user, because one row out of hundreds
+    could not be built. One unreadable unit should cost that unit's row, not everybody's screen.
+    """
+    try:
+        return build_for(unit, order), None
+    except ValueError as exc:
+        return [], str(exc)
 
 
 # ── Instantiating a unit's route ─────────────────────────────────────────────────────────────────
@@ -114,7 +129,7 @@ def instantiate(unit, order=None, existing=None):
     for code, prior in existing.items():
         if code in seen:
             continue
-        if is_signed(prior):
+        if has_signature(prior):
             orphan = dict(prior)
             orphan["orphan"] = True
             out.append(orphan)
@@ -122,8 +137,28 @@ def instantiate(unit, order=None, existing=None):
     return out
 
 
-def is_signed(step):
+# Two different questions, and conflating them is a real hazard.
+#
+#   is_passed(step)      did this step COMPLETE SUCCESSFULLY? Gates, progress and "what can start
+#                        next" all ask this one. A FAILED step must answer no, or G4 would pass a
+#                        unit with a failed workstation and the next station would unlock behind it.
+#
+#   has_signature(step)  has somebody PUT THEIR NAME to it, for any outcome? Only the route rebuild
+#                        asks this — a failed hold point that later leaves the route still has to be
+#                        carried forward and flagged, because it is the record you would most want
+#                        to still see. /api/esign deliberately stamps signedBy on 'Failed' and
+#                        'Held' too: who decided a unit failed is what an investigation needs.
+def is_passed(step):
     return _norm((step or {}).get("status")) in SIGNED_STATUSES
+
+
+def has_signature(step):
+    step = step or {}
+    return is_passed(step) or bool(str(step.get("signedBy") or "").strip())
+
+
+# Kept as the old name for the pass-semantics question, which is what every existing caller meant.
+is_signed = is_passed
 
 
 def signed_codes(steps):
@@ -419,7 +454,7 @@ def gate_blockers(gate_code, ctx):
 
 # ── Progress and the live picture ────────────────────────────────────────────────────────────────
 def unit_progress(ctx):
-    steps = build_for(ctx["unit"], ctx["order"])
+    steps, _err = safe_build_for(ctx["unit"], ctx["order"])
     return R.route_progress(steps, signed_codes(ctx["steps"]))
 
 
@@ -429,7 +464,7 @@ def unit_state(ctx):
     unit, steps = ctx["unit"], ctx["steps"]
     live = [s for s in steps if not s.get("orphan")]
     done = signed_codes(live)
-    spec = build_for(unit, ctx["order"])
+    spec, route_error = safe_build_for(unit, ctx["order"])
     nxt = R.next_steps(spec, done)
     running = [s for s in live if _norm(s.get("status")) in ("in progress", "started")]
     failed = [s for s in live if _norm(s.get("status")) == "failed"]
@@ -449,17 +484,33 @@ def unit_state(ctx):
         "failed": [s.get("code") for s in failed],
         "openNcr": len(open_ncrs(ctx)),
         "signed": len(done), "total": len(spec),
+        # Set only when the unit has no buildable route. The board shows the row and says so,
+        # instead of the screen failing for everybody.
+        "routeError": route_error,
     }
 
 
 def board():
-    """Every unit not yet dispatched, with where it is — the shop-floor board."""
+    """Every unit not yet dispatched, with where it is — the shop-floor board.
+
+    A unit that cannot be summarised at all still gets a row saying so. This screen is the one
+    people leave open on a wall, and it must not be the thing that breaks when a single record is
+    malformed.
+    """
     out = []
     for unit in db.list_collection(UNITS):
         if _norm(unit.get("status")) in ("dispatched", "cancelled", "closed"):
             continue
-        out.append(unit_state(load_ctx(unit.get("id"))))
-    out.sort(key=lambda s: (-(s["progress"] or 0), s.get("pin") or ""))
+        try:
+            out.append(unit_state(load_ctx(unit.get("id"))))
+        except Exception as exc:                       # one bad row costs its own row, not the board
+            out.append({"unitId": unit.get("id"), "pin": unit.get("pin"),
+                        "tag": unit.get("tag"), "family": unit.get("family"),
+                        "orderId": unit.get("orderId"), "progress": 0, "stage": 1,
+                        "stageTitle": "", "running": [], "next": [], "nextTitle": "",
+                        "failed": [], "openNcr": 0, "signed": 0, "total": 0,
+                        "routeError": "This unit could not be read (%s)." % exc})
+    out.sort(key=lambda s: (-(s.get("progress") or 0), s.get("pin") or ""))
     return out
 
 
