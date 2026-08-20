@@ -26,9 +26,9 @@ const PRELUDE = `
 `;
 const api = {};
 new Function(PRELUDE + src.slice(i, j) + `
-  Object.assign(this, { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdLog });
+  Object.assign(this, { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdLog, _pdQtyPlan, _pdQtyAt, _pdReadPct });
 `).call(api);
-const { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup } = api;
+const { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdQtyPlan, _pdQtyAt } = api;
 
 let pass = 0, fail = 0;
 const t = (name, got, want) => {
@@ -78,6 +78,36 @@ t('a percentage over 100 is clamped', _pdAcc({ log: [{ d: TODAY, pct: 9999 }] },
 t('an item with no dates still has a weight', _pdWeight({}), 1);
 t('readings filed out of order are sorted', _pdAcc({ log: [{ d: '2026-08-15', pct: 95 }, { d: '2026-08-10', pct: 40 }] }, TODAY), 95);
 
+
+// ── quantity-measured progress ───────────────────────────────────────────────────────────────────
+// With a scheduled quantity, percent complete stops being a judgement: it is what is installed at
+// site over what the schedule says to install. These assert the arithmetic AND the fallbacks,
+// because a half-adopted measure is where this kind of thing goes wrong.
+const QP = { start: '2026-08-01', finish: '2026-08-31', qtyPlan: 500, unit: 'm' };
+
+t('350 of 500 m is 70%', _pdAcc(Object.assign({}, QP, { log: [{ d: '2026-08-10', pct: 0, qty: 350 }] }), TODAY), 70);
+t('the site quantity comes back as measured',
+  _pdQtyAt(Object.assign({}, QP, { log: [{ d: '2026-08-10', pct: 0, qty: 350 }] }), TODAY), { q: 350, inferred: false });
+t('a quantity beyond the plan is still capped at 100%',
+  _pdAcc(Object.assign({}, QP, { log: [{ d: '2026-08-10', pct: 0, qty: 900 }] }), TODAY), 100);
+t('the daily figure is the measured increment', _pdDaily(Object.assign({}, QP, {
+  log: [{ d: '2026-08-14', pct: 0, qty: 300 }, { d: TODAY, pct: 0, qty: 350 }] }), TODAY), 10);
+
+// mixed history — the reason this decides per READING and not per item
+t('readings before a quantity existed keep their percentage', _pdAcc(Object.assign({}, QP, {
+  log: [{ d: '2026-08-05', pct: 40 }, { d: '2026-08-10', pct: 0, qty: 350 }] }), '2026-08-05'), 40);
+t('...and the measured reading takes over once it arrives', _pdAcc(Object.assign({}, QP, {
+  log: [{ d: '2026-08-05', pct: 40 }, { d: '2026-08-10', pct: 0, qty: 350 }] }), TODAY), 70);
+
+// no quantity: the judged path must be untouched
+t('no scheduled quantity -> the typed percentage still rules',
+  _pdAcc({ start: '2026-08-01', finish: '2026-08-31', log: [{ d: '2026-08-10', pct: 62 }] }, TODAY), 62);
+t('a zero or blank quantity is not a quantity', _pdQtyPlan({ qtyPlan: 0 }) + _pdQtyPlan({ qtyPlan: '' }) + _pdQtyPlan({}), 0);
+t('a negative scheduled quantity is refused', _pdQtyPlan({ qtyPlan: -50 }), 0);
+t('an inferred site figure is flagged as inferred', _pdQtyAt(Object.assign({}, QP, {
+  log: [{ d: '2026-08-10', pct: 50 }] }), TODAY), { q: 250, inferred: true });
+t('a quantity of exactly zero is a real measurement, not "nothing filed"',
+  _pdQtyAt(Object.assign({}, QP, { log: [{ d: '2026-08-10', pct: 0, qty: 0 }] }), TODAY), { q: 0, inferred: false });
 
 // ── the import parser ────────────────────────────────────────────────────────────────────────────
 // It decides what gets written, so its REJECTIONS matter as much as its acceptances. A parser that

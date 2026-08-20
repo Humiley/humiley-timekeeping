@@ -15515,7 +15515,10 @@ const _QA_SPECS = {
     { k: 'name', label: 'Report item' },
     { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
     { k: 'start', label: 'Start date', type: 'date' }, { k: 'finish', label: 'Finish date', type: 'date' },
-    { k: 'unit', label: 'Unit / location (optional)' },
+    // Quantity + unit is what turns a judgement into a measurement. Optional, because some lines
+    // (mobilisation, testing, a permit) genuinely have no quantity and are judged.
+    { k: 'qtyPlan', label: 'Scheduled quantity (optional)', type: 'number' },
+    { k: 'unit', label: 'Unit of work (m, m², m³, no., set, lot…)', type: 'combo', dyn: 'pm_units' },
     // Blank is the right default: duration in days is a defensible weight and the alternative is
     // making somebody invent a number. Set it when a short item carries disproportionate value.
     { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
@@ -19236,6 +19239,11 @@ function _qaDynOptions(src, ex) {
     const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
     return _pdScheds(pid).map(x => x.id);
   }
+  if (src === 'pm_units') {
+    const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.unit) : [];
+    return [...new Set([].concat(used, ['m', 'm²', 'm³', 'kg', 'no.', 'set', 'lot', 'point', 'zone']).filter(Boolean))];
+  }
   if (src === 'pm_detail_cats') {   // trades already in use on this project, then the usual ones
     const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.category) : [];
@@ -21044,12 +21052,40 @@ function _pdLog(r) {
   const l = Array.isArray(r && r.log) ? r.log : [];
   return l.filter(e => e && e.d).slice().sort((a, b) => String(a.d).localeCompare(String(b.d)));
 }
+/* The scheduled quantity of work — 500 m of pipe, 240 m2 of ceiling. When it is set, percent
+   complete stops being somebody's judgement and becomes a measurement: what is installed at site
+   divided by what the schedule says to install. */
+function _pdQtyPlan(r) { const q = +((r && r.qtyPlan) || 0); return q > 0 ? q : 0; }
+/* One reading, as a percentage. A reading carrying a QUANTITY is a measurement; one carrying only a
+   percentage is an estimate. Prefer the measurement — and decide per READING, not per item, so a
+   line that gained a quantity halfway through keeps the history it already had instead of resetting
+   to zero. */
+function _pdReadPct(r, e) {
+  const qp = _pdQtyPlan(r);
+  if (qp > 0 && e && e.qty !== undefined && e.qty !== null && e.qty !== '') {
+    return _pmPct((+e.qty || 0) / qp * 100);
+  }
+  return _pmPct(e && e.pct);
+}
 /* Accumulated % as at `day` (default today) — the latest reading on or before it. */
 function _pdAcc(r, day) {
   day = day || _pmToday();
   const l = _pdLog(r); let v = 0;
-  for (const e of l) { if (String(e.d) <= day) v = _pmPct(e.pct); else break; }
+  for (const e of l) { if (String(e.d) <= day) v = _pdReadPct(r, e); else break; }
   return v;
+}
+/* Quantity installed at site as at `day` — the measured half of the same reading. */
+function _pdQtyAt(r, day) {
+  day = day || _pmToday();
+  let v = 0, seen = false;
+  for (const e of _pdLog(r)) {
+    if (String(e.d) > day) break;
+    if (e.qty !== undefined && e.qty !== null && e.qty !== '') { v = +e.qty || 0; seen = true; }
+  }
+  // No measured reading yet: infer from the percentage so the column is not blank on a line that
+  // has genuinely progressed. Shown in a lighter weight so an inferred figure never reads as measured.
+  if (!seen) { const qp = _pdQtyPlan(r); return qp > 0 ? { q: qp * _pdAcc(r, day) / 100, inferred: true } : { q: 0, inferred: true }; }
+  return { q: v, inferred: false };
 }
 /* Today's increment. Zero unless a reading was actually filed for `day` — that is the whole point. */
 function _pdDaily(r, day) {
@@ -21058,8 +21094,8 @@ function _pdDaily(r, day) {
   const todays = l.filter(e => String(e.d) === day).pop();
   if (!todays) return 0;
   let prev = 0;
-  for (const e of l) { if (String(e.d) < day) prev = _pmPct(e.pct); }
-  return Math.max(0, _pmPct(todays.pct) - prev);
+  for (const e of l) { if (String(e.d) < day) prev = _pdReadPct(r, e); }
+  return Math.max(0, _pdReadPct(r, todays) - prev);
 }
 /* Planned % at `day`, linear between start and finish (inclusive of both). */
 function _pdPlanned(r, day) {
@@ -21179,13 +21215,17 @@ function pdDailyEntry(pid) {
       lastCat = cat;
       body += '<tr style="background:var(--soft-bg)"><td colspan="4" style="font-weight:700;font-size:12px">' + _pmEsc(cat) + '</td></tr>';
     }
-    const acc = _pdAcc(r, day), pl = _pdPlanned(r, day);
+    const acc = _pdAcc(r, day), pl = _pdPlanned(r, day), qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
     body += '<tr>' +
-      '<td style="font-size:12.5px">' + _pmEsc(r.name || '') + '</td>' +
+      '<td style="font-size:12.5px">' + _pmEsc(r.name || '') +
+        (qp ? '<div style="font-size:10.5px;color:var(--text-light)">' + _t('of') + ' ' +
+              (Math.round(qp * 100) / 100).toLocaleString() + ' ' + _pmEsc(r.unit || '') + '</div>' : '') + '</td>' +
       '<td style="text-align:right;font-size:12px;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
       '<td style="text-align:right;font-size:12px;font-variant-numeric:tabular-nums">' + acc + '%</td>' +
-      '<td style="text-align:right"><input type="number" min="0" max="100" step="1" inputmode="numeric" class="form-control pd-e" ' +
-        'data-id="' + r.id + '" data-was="' + acc + '" value="' + acc + '" style="width:78px;text-align:right;padding:3px 6px;font-size:12.5px"></td>' +
+      '<td style="text-align:right"><input type="number" min="0" ' + (qp ? 'step="any"' : 'max="100" step="1"') + ' inputmode="decimal" class="form-control pd-e" ' +
+        'data-id="' + r.id + '" data-plan="' + qp + '" data-was="' + (qp ? (at.inferred ? '' : at.q) : acc) + '" value="' + (qp ? (at.inferred ? '' : at.q) : acc) + '" ' +
+        'title="' + _tkEscA(qp ? _t('Quantity installed at site (total)') : _t('Accumulated progress today (%)')) + '" ' +
+        'style="width:86px;text-align:right;padding:3px 6px;font-size:12.5px"></td>' +
       '</tr>';
   });
   const el = document.createElement('div'); el.id = 'pdEntryOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
@@ -21204,15 +21244,23 @@ function pdDailyEntry(pid) {
 }
 async function pdDailyEntrySave() {
   const day = _pmToday();
-  const changed = [...document.querySelectorAll('.pd-e')].filter(i => _pmPct(i.value) !== +i.dataset.was);
+  // Compare RAW values, not percentages: two different site quantities can round to the same
+  // percent, and treating those as "unchanged" would silently drop a real measurement.
+  const changed = [...document.querySelectorAll('.pd-e')].filter(i => String(i.value).trim() !== String(i.dataset.was).trim());
   if (!changed.length) { toast(_t('Nothing changed — no readings filed.'), 'warn'); return; }
   const btn = document.getElementById('pd-entry-save'); if (btn) { btn.disabled = true; btn.textContent = _t('Filing…'); }
   let ok = 0; const failed = [];
   for (const inp of changed) {
     const r = (_HR[_PD_COLL] || []).find(x => x.id === inp.dataset.id); if (!r) continue;
-    const v = _pmPct(inp.value);
+    const qp = +inp.dataset.plan || 0;
+    const raw = String(inp.value).trim();
+    if (qp > 0 && raw === '') continue;                       // cleared, not measured — file nothing
+    const qty = qp > 0 ? Math.max(0, +raw || 0) : null;
+    const v = qp > 0 ? _pmPct(qty / qp * 100) : _pmPct(raw);
     const log = _pdLog(r).filter(e => String(e.d) !== day);
-    log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() });
+    const entry = { d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString() };
+    if (qty !== null) entry.qty = qty;
+    log.push(entry);
     try { await tkApi('/api/coll/' + _PD_COLL + '/' + r.id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) }); r.log = log; ok++; }
     catch (e) { failed.push((r.name || r.id) + ': ' + _errMsg(e)); }
   }
@@ -21352,7 +21400,8 @@ function _pdRegister(pid, rows, cats, day) {
     body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
       '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
       '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' item' + (cr.length === 1 ? '' : 's') + '</td>' +
-      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (roll.acc > 0 ? '' : '') + '</td>' +
+      '<td colspan="3"></td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums"></td>' +
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
       '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' + (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
@@ -21362,7 +21411,20 @@ function _pdRegister(pid, rows, cats, day) {
       const acc = _pdAcc(r, day), dly = _pdDaily(r, day), pl = _pdPlanned(r, day), v = acc - pl;
       body += '<tr>' +
         '<td></td>' +
-        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (r.unit ? ' <span style="color:var(--text-light);font-size:11px">(' + _pmEsc(r.unit) + ')</span>' : '') + '</td>' +
+        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span></td>' +
+        (function () {
+          const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day), u = r.unit ? ' ' + _pmEsc(r.unit) : '';
+          const n = v => (Math.round(v * 100) / 100).toLocaleString();
+          if (!qp) return '<td colspan="3" style="text-align:center;font-size:11px;color:var(--text-light)">' +
+            _t('no quantity — progress is judged') + '</td>';
+          // An inferred site figure is shown lighter and italic: it was back-calculated from a
+          // percentage somebody typed, and must never be mistaken for something measured on site.
+          return '<td style="text-align:right;font-variant-numeric:tabular-nums">' + n(qp) + u + '</td>' +
+            '<td style="text-align:right;font-variant-numeric:tabular-nums' + (at.inferred ? ';color:var(--text-light);font-style:italic' : ';font-weight:600') + '"' +
+              (at.inferred ? ' title="' + _tkEscA(_t('Derived from the reported percentage — no site quantity filed yet')) + '"' : '') + '>' +
+              n(at.q) + u + '</td>' +
+            '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + _pmPct(at.q / qp * 100) + '%</td>';
+        })() +
         '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b></td>' +
         '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
@@ -21376,7 +21438,8 @@ function _pdRegister(pid, rows, cats, day) {
     });
   });
   const table = '<div class="table-wrap"><table style="min-width:980px"><thead><tr>' +
-    ['Category', 'Report Items', 'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
+    ['Category', 'Report Items', 'Scheduled<br>quantity', 'Actual<br>at site', '% Complete<br>(site / scheduled)',
+     'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
     '</tr></thead><tbody>' + body + '</tbody></table></div>';
 
   return '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
@@ -21807,6 +21870,7 @@ function _pdTimeline(pid, rows, cats, day) {
 function pdProgress(id) {
   const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
   const day = _pmToday(), acc = _pdAcc(r, day), pl = _pdPlanned(r, day);
+  const qp = _pdQtyPlan(r), at = _pdQtyAt(r, day);
   document.getElementById('pdProgOverlay')?.remove();
   const hist = _pdLog(r).slice(-6).reverse().map(e =>
     '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="color:var(--text-light)">' + tkFmtDate(e.d) + (e.by ? ' · ' + _pmEsc(e.by) : '') + '</span><b>' + _pmPct(e.pct) + '%</b></div>').join('') ||
@@ -21815,26 +21879,47 @@ function pdProgress(id) {
   el.innerHTML = '<div class="modal" style="max-width:430px"><div class="modal-header"><div class="modal-title">' + _t('Report progress') + '</div><button class="modal-close" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
     '<div style="font-size:13px;font-weight:600">' + _pmEsc(r.name || '') + '</div>' +
     '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + _pmEsc(r.category || '') + ' · ' + tkFmtDate(day) + ' · ' + _t('planned to date') + ' ' + pl + '%</div>' +
-    '<div class="form-group"><label class="form-label">' + _t('Accumulated progress today (%)') + '</label>' +
-    '<input type="number" min="0" max="100" step="1" class="form-control" id="pd-acc" value="' + acc + '" inputmode="numeric">' +
-    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.') + '</div></div>' +
+    (qp ? '<div class="form-group"><label class="form-label">' + _t('Quantity installed at site (total)') + '</label>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+        '<input type="number" min="0" step="any" class="form-control" id="pd-qty" data-plan="' + qp + '" value="' + (at.inferred ? '' : at.q) + '" inputmode="decimal" oninput="pdQtyPct()" style="flex:1">' +
+        '<span style="font-size:12.5px;color:var(--text-light);white-space:nowrap">' + _pmEsc(r.unit || '') + ' / ' + qp + '</span></div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('Percent complete is worked out from this — ') +
+        '<b id="pd-qtypct" style="color:var(--navy)">' + (qp ? _pmPct((at.inferred ? 0 : at.q) / qp * 100) : 0) + '%</b></div></div>'
+      : '<div class="form-group"><label class="form-label">' + _t('Accumulated progress today (%)') + '</label>' +
+        '<input type="number" min="0" max="100" step="1" class="form-control" id="pd-acc" value="' + acc + '" inputmode="numeric">' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.') + '</div></div>') +
     '<div class="form-group"><label class="form-label">' + _t('Note (optional)') + '</label><input class="form-control" id="pd-note" placeholder="' + _tkEscA(_t('Delay reason, area handed over, etc.')) + '"></div>' +
     '<div style="font-size:11px;font-weight:700;color:var(--navy);margin:10px 0 2px">' + _t('Recent readings') + '</div>' + hist +
     '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-emerald" onclick="pdProgressSave(\'' + id + '\')">' + _t('File reading') + '</button></div></div>';
   document.body.appendChild(el);
   setTimeout(() => { const i = document.getElementById('pd-acc'); if (i) { i.focus(); i.select(); } }, 30);
 }
+/* Live echo of what the measurement means, so nobody files a quantity and discovers the percentage
+   it implies only afterwards. */
+function pdQtyPct() {
+  const el = document.getElementById('pd-qtypct'), q = document.getElementById('pd-qty');
+  if (!el || !q) return;
+  const qp = +q.getAttribute('data-plan') || 0;
+  el.textContent = (qp > 0 ? _pmPct((+q.value || 0) / qp * 100) : 0) + '%';
+}
 async function pdProgressSave(id) {
   const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
   const day = _pmToday();
-  const v = _pmPct(document.getElementById('pd-acc').value);
+  const qp = _pdQtyPlan(r), qEl = document.getElementById('pd-qty');
+  const qty = qEl ? (qEl.value === '' ? null : Math.max(0, +qEl.value || 0)) : null;
+  const v = qp > 0 && qty !== null ? _pmPct(qty / qp * 100)
+          : _pmPct((document.getElementById('pd-acc') || {}).value);
   const note = (document.getElementById('pd-note').value || '').trim();
   const prev = _pdAcc(r, day);
   // Going backwards is legitimate (a re-measure, a rejected section) but it is never a typo worth
   // saving silently — it changes the reported position of the works.
   if (v < prev && !(await tkConfirm(_t('That is lower than the last reading') + ' (' + prev + '% → ' + v + '%). ' + _t('File it anyway?')))) return;
   const log = _pdLog(r).filter(e => String(e.d) !== day);       // one reading per day — the latest wins
-  log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString(), note: note });
+  // Store BOTH: the quantity is the evidence, the percentage is what everything downstream reads.
+  // Keeping only the percentage would throw away the measurement that produced it.
+  const entry = { d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString(), note: note };
+  if (qp > 0 && qty !== null) entry.qty = qty;
+  log.push(entry);
   try {
     await tkApi('/api/coll/' + _PD_COLL + '/' + id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) });
     r.log = log;
@@ -23842,6 +23927,18 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Quantity-based progress (2026-08-20) */
+  'Scheduled quantity (optional)': 'Khối lượng theo kế hoạch (không bắt buộc)',
+  'Unit of work (m, m², m³, no., set, lot…)': 'Đơn vị công việc (m, m², m³, cái, bộ, lô…)',
+  'Scheduled quantity': 'Khối lượng kế hoạch',
+  'Actual at site': 'Thực tế tại công trường',
+  '% Complete (site / scheduled)': '% Hoàn thành (thực tế / kế hoạch)',
+  'no quantity — progress is judged': 'không có khối lượng — đánh giá theo nhận định',
+  'Derived from the reported percentage — no site quantity filed yet': 'Suy ra từ phần trăm đã báo — chưa ghi khối lượng thực tế',
+  'Quantity installed at site (total)': 'Khối lượng đã thi công (luỹ kế)',
+  'Percent complete is worked out from this — ': 'Phần trăm hoàn thành được tính từ đây — ',
+  'of': 'trên',
+
   /* Master↔detail linkage + date filter (2026-08-20) */
   'Not linked to a master activity': 'Chưa gắn với công việc tổng thể',
   'detail line(s)': 'hạng mục chi tiết',

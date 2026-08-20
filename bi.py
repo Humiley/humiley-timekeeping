@@ -69,12 +69,53 @@ def clean_log(item):
     return sorted(good, key=lambda e: str(e.get("d")))
 
 
+def qty_plan(item):
+    """The scheduled quantity — 500 m of pipe, 240 m2 of ceiling. Zero means the line is judged."""
+    try:
+        q = float(item.get("qtyPlan") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    return q if q > 0 else 0.0
+
+
+def read_pct(item, e):
+    """One reading as a percentage. A reading carrying a QUANTITY is a measurement; one carrying only
+    a percentage is an estimate. Decided per READING so a line that gained a quantity partway keeps
+    the history it already had."""
+    qp = qty_plan(item)
+    q = (e or {}).get("qty")
+    if qp > 0 and q not in (None, ""):
+        try:
+            return _pct(float(q) / qp * 100.0)
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+    return _pct((e or {}).get("pct"))
+
+
+def qty_at(item, day):
+    """Quantity installed at site as at `day`, and whether it was measured or inferred."""
+    v, seen = 0.0, False
+    for e in clean_log(item):
+        if str(e.get("d")) > day:
+            break
+        q = e.get("qty")
+        if q not in (None, ""):
+            try:
+                v, seen = float(q), True
+            except (TypeError, ValueError):
+                pass
+    if seen:
+        return (v, False)
+    qp = qty_plan(item)
+    return ((qp * accumulated_at(item, day) / 100.0) if qp else 0.0, True)
+
+
 def accumulated_at(item, day):
     """The latest reading on or before `day`. Zero before the first one."""
     v = 0
     for e in clean_log(item):
         if str(e.get("d")) <= day:
-            v = _pct(e.get("pct"))
+            v = read_pct(item, e)
         else:
             break
     return v
@@ -93,8 +134,8 @@ def daily_at(item, day):
     prev = 0
     for e in log:
         if str(e.get("d")) < day:
-            prev = _pct(e.get("pct"))
-    return max(0, _pct(todays[-1].get("pct")) - prev)
+            prev = read_pct(item, e)
+    return max(0, read_pct(item, todays[-1]) - prev)
 
 
 def planned_pct(item, day):
@@ -127,7 +168,7 @@ def weight_of(item):
 
 PROGRESS_COLS = [
     "date", "projectId", "project", "category", "itemId", "item", "masterRef", "unit",
-    "startDate", "finishDate", "weight",
+    "startDate", "finishDate", "weight", "qtyPlanned", "qtyAtSite", "qtyMeasured",
     "accumulatedPct", "dailyPct", "plannedPct", "variancePct",
     "weightedAccum", "weightedPlanned", "reportedToday",
 ]
@@ -182,6 +223,12 @@ def progress_fact(items, project=None, frm=None, to=None, today=None):
                 "startDate": it.get("start") or "",
                 "finishDate": it.get("finish") or "",
                 "weight": round(w, 4),
+                "qtyPlanned": round(qty_plan(it), 4),
+                # qtyMeasured=0 means the site figure was back-calculated from a typed percentage.
+                # Summing an inferred quantity as if it were measured is the mistake this flag exists
+                # to make visible in the model rather than invisible in a chart.
+                "qtyAtSite": round(qty_at(it, day)[0], 4),
+                "qtyMeasured": 0 if qty_at(it, day)[1] else 1,
                 "accumulatedPct": acc,
                 "dailyPct": dly,
                 "plannedPct": pl,
