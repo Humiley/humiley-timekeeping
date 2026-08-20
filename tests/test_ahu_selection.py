@@ -337,6 +337,47 @@ def test_the_summary_reads_like_something_a_person_would_confirm():
 
 # ── the example the spec hands to AeroSelect ─────────────────────────────────────────────────────
 
+@pytest.mark.parametrize("verdict", ["PASS", "FAIL", "UNDETERMINED", "NOT_ASSESSED"])
+def test_the_erp_verdict_is_carried_verbatim_including_the_undetermined_states(verdict):
+    """AeroSelect's ErP verdict is TRI-STATE, not PASS/FAIL.
+
+    Its resolver withholds a verdict when a required input was never declared, and exports
+    UNDETERMINED rather than the PASS its legacy `erp.label` field would have claimed. The portal
+    must carry that through untouched: coercing an unknown verdict to PASS would put a compliance
+    claim on a unit whose compliance nobody established, and coercing it to FAIL would condemn one
+    for the same absence of evidence.
+
+    So this field is PROVENANCE, not a validated enum — whatever AeroSelect concluded, recorded as
+    it concluded it. Pinned because the exporting side asked whether we accept these values, and a
+    promise in a message is not an answer a year from now.
+    """
+    p = {"unit": {"tag": "AHU-1", "family": "modular"},
+         "performance": {"erp": {"verdict": verdict, "sfpIntWm3s": 810}}}
+    env = {"document": "selection", "specVersion": S.SPEC_VERSION, "selectionRef": "AS-1",
+           "engine": "AeroSelect", "engineVersion": "2.0.0",
+           "generatedOn": "2026-01-01T00:00:00Z"}
+    env["contentHash"] = S.content_hash(env, p)
+    f = S.to_unit_fields(S.parse({"aeroselect": env, "payload": p}))
+    assert f["selectionErp"] == verdict
+
+
+def test_a_selection_that_omits_the_unmodelled_fields_still_imports():
+    """AeroSelect genuinely does not model supply voltage, coil design pressure or cleanroom class,
+    and declines to invent them. Omission must therefore be ordinary, not an error — and must not
+    blank a value the unit already holds. What the portal does instead is refuse to JUDGE the tests
+    that depend on them, which is the honest outcome."""
+    p = {"unit": {"tag": "AHU-1", "family": "modular"},
+         "classes": {"D": "D2", "L": "L2"}}
+    env = {"document": "selection", "specVersion": S.SPEC_VERSION, "selectionRef": "AS-2",
+           "engine": "AeroSelect", "engineVersion": "2.0.0",
+           "generatedOn": "2026-01-01T00:00:00Z"}
+    env["contentHash"] = S.content_hash(env, p)
+    f = S.to_unit_fields(S.parse({"aeroselect": env, "payload": p}))
+    for absent in ("voltage", "coilDesignBar", "cleanroom"):
+        assert absent not in f, "%s must be left alone, not written blank" % absent
+    assert f["classL"] == "L2"
+
+
 def test_the_worked_example_carries_no_whole_number_float():
     """A whole-number float makes the example unreproducible by the side it is FOR.
 

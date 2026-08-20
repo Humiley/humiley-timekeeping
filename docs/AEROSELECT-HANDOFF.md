@@ -68,6 +68,20 @@ One JSON file. Two top-level keys: `aeroselect` (the envelope) and `payload` (th
 Everything is optional except `unit`. **A field you omit is left alone on the portal side, not
 written blank** — importing a partial selection can never erase something already known.
 
+**The ErP verdict is tri-state and is carried verbatim.** `performance.erp.verdict` may be `PASS`,
+`FAIL`, `UNDETERMINED` or `NOT_ASSESSED`. The portal stores whatever AeroSelect concluded, as
+provenance rather than as a validated enum — it is never coerced. Coercing an unknown verdict to
+`PASS` would put a compliance claim on a unit whose compliance nobody established; coercing it to
+`FAIL` would condemn one for the same absence of evidence. Send the resolver's answer, including
+when the resolver withheld one.
+
+**Fields AeroSelect does not model should simply be omitted.** `voltage_v`, `coilDesignBar` and
+`cleanroom` are not attributes of a selection. Omitting them is correct and expected: the portal
+leaves whatever the unit already holds, and where nothing is known it reports the dependent test
+(hi-pot, coil pressure, particle count) as **undeterminable** rather than inventing a limit. That is
+the honest outcome, and inventing a supply voltage would be the same class of defect as a mistyped
+`L2`.
+
 **A class code the portal cannot read is refused, not dropped.** `classes.D = "D4"` or
 `unit.cleanroom = "Class 100"` fails the import and names the offending value. This is deliberate:
 dropping it silently would leave the unit tested against whatever class it held before, while the
