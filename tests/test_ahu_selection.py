@@ -276,3 +276,21 @@ def test_a_unit_with_no_selection_yet_shows_everything_as_a_change():
 def test_the_summary_reads_like_something_a_person_would_confirm():
     s = S.summary(S.parse(doc()))
     assert "AS-2026-0410" in s and "AHU-B-01" in s and "hygienic" in s
+
+
+# ── the example the spec hands to AeroSelect ─────────────────────────────────────────────────────
+
+def test_the_worked_example_in_the_spec_actually_imports():
+    """docs/examples/aeroselect-selection-example.json is what the AeroSelect side will assert its
+    exporter against. A spec whose own example fails the check it documents is worse than none, so
+    the example is generated (tools/make_selection_example.py) and pinned here."""
+    import os
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(here, "docs", "examples", "aeroselect-selection-example.json")
+    with open(path, encoding="utf-8") as fh:
+        d = S.parse(fh.read())
+    assert d["selectionRef"] == "AS-2026-0410"
+    assert d["verified"] is False           # unsigned on purpose — imports on any portal
+    assert S.classes_measured_by_test(d) == {"L": "T3", "F": "T4"}
+    f = S.to_unit_fields(d)
+    assert f["family"] == "hygienic" and f["airflow"] == 12000 and f["classL"] == "L1"

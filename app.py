@@ -5290,8 +5290,8 @@ class Handler(BaseHTTPRequestHandler):
             "signed": bool(doc.get("signed")),
             "secretConfigured": bool(self._ahu_selection_secret()),
             "applied": fields,
-            "changed": [{"field": f, "from": a, "to": b} for f, a, b in
-                        [(k, before.get(k), v) for k, v in fields.items()]
+            "changed": [{"field": k, "from": before.get(k), "to": v}
+                        for k, v in fields.items()
                         if str(before.get(k) or "") != str(v or "")],
             # The whole point of the integration, said out loud: these two are targets the factory
             # still has to prove, not results anybody computed.
