@@ -107,6 +107,30 @@ ASSUMPTIONS = [
     ("markupPct", "Pricing", "Default mark-up on landed cost", 25.0, "%", "Override per line on the quotation."),
     ("discountCapPct", "Pricing", "Discount cap", 10.0, "%", "Maximum discount sales may offer without approval."),
 
+    ("pmFeePct", "Project fees", "Project management fee", 0.0, "% of goods value",
+     "PMO, planning, progress reporting, client interface. Charge it or absorb it — but price it."),
+    ("pmFeeLump", "Project fees", "Project management fee (fixed)", 0, "VND",
+     "A lump sum instead of, or on top of, the percentage above."),
+    ("designFeePct", "Project fees", "Design / engineering fee", 0.0, "% of goods value",
+     "Shop drawings, calculations, selection, as-builts."),
+    ("supervisionPct", "Project fees", "Site supervision", 0.0, "% of goods value",
+     "Supervisors and site management for the installation period."),
+    ("installPct", "Project fees", "Installation & labour", 0.0, "% of goods value",
+     "Where installation is in scope and not already a costed line."),
+    ("commissioningPct", "Project fees", "Testing & commissioning", 0.0, "% of goods value",
+     "T&C, balancing, validation documentation, handover."),
+    ("trainingPct", "Project fees", "Training & handover", 0.0, "% of goods value",
+     "Operator training, O&M manuals, as-built dossier."),
+    ("sparesPct", "Project fees", "Spare parts & consumables", 0.0, "% of goods value",
+     "Commissioning spares and the first-year consumable set."),
+
+    ("escalationPct", "Risk", "Price escalation", 0.0, "% of goods value",
+     "For a long lead time or a tender that stays open past its validity."),
+    ("contingencyPct", "Risk", "Contingency", 0.0, "% of goods value",
+     "What is not yet known. Priced openly here rather than hidden in the mark-up."),
+    ("warrantyCostPct", "Risk", "Warranty provision", 0.0, "% of goods value",
+     "The cost of honouring the warranty stated in the conditions."),
+
     ("commPct", "Opex", "Sales commission", 2.0, "% of revenue", "Paid to sales upon collection."),
     ("financePct", "Opex", "Bank / finance charges", 0.5, "% of revenue", "Project-level financing cost."),
     ("adminLump", "Opex", "Salary and admin allocation", 30000000, "VND", "Lump sum allocated to this tender."),
@@ -449,6 +473,43 @@ def quotation(tender, master=None, rollup=None, overrides=None):
     }
 
 
+PROJECT_FEES = [
+    ("pmFeePct", "Project management", "pmFeeLump"),
+    ("designFeePct", "Design / engineering", None),
+    ("supervisionPct", "Site supervision", None),
+    ("installPct", "Installation & labour", None),
+    ("commissioningPct", "Testing & commissioning", None),
+    ("trainingPct", "Training & handover", None),
+    ("sparesPct", "Spare parts & consumables", None),
+    ("escalationPct", "Price escalation", None),
+    ("contingencyPct", "Contingency", None),
+    ("warrantyCostPct", "Warranty provision", None),
+]
+
+
+def project_fees(tender, goods):
+    """What it costs to DELIVER the goods, on top of buying them.
+
+    Priced off the goods value, which is the cost of the things themselves — not off the selling
+    price, because a fee that moves when the mark-up moves is not a fee, it is more mark-up.
+
+    Every one of these is zero unless somebody sets it. A zero line is left out entirely rather
+    than listed at nil: a schedule of ten fees all reading zero teaches a reader to skip the block,
+    which is the last thing it should teach them.
+    """
+    a = assumptions(tender.get("assump"))
+    base = _num(goods)
+    out = []
+    for key, label, lump_key in PROJECT_FEES:
+        amount = vnd(base * _frac(a.get(key)))
+        lump = vnd(a.get(lump_key)) if lump_key else 0
+        if not amount and not lump:
+            continue
+        out.append({"key": key, "label": label, "pct": _num(a.get(key)),
+                    "lump": lump, "amount": amount + lump, "base": base})
+    return {"lines": out, "total": sum(l["amount"] for l in out)}
+
+
 def pnl(quote, tender):
     """Revenue down to net profit, on the rates this tender was priced with.
 
@@ -458,7 +519,12 @@ def pnl(quote, tender):
     """
     a = assumptions(tender.get("assump"))
     rev = quote["net"]
-    cogs = quote["cogs"]
+    goods = quote["cogs"]
+    fees = project_fees(tender, goods)
+    # Delivery costs sit in COGS, not in opex: they are what this job costs, not what the company
+    # costs. Putting them below the gross-profit line would flatter every gross margin the business
+    # reports and hide the jobs that are only profitable if nobody installs them.
+    cogs = goods + fees["total"]
     gp = rev - cogs
     opex = [
         ("Sales commission", -vnd(rev * _frac(a["commPct"])), "Revenue x commission %"),
@@ -473,7 +539,11 @@ def pnl(quote, tender):
     def share(v):
         return round(v / rev * 100, 2) if rev else 0.0
     return {
-        "revenue": rev, "cogs": -cogs, "grossProfit": gp, "grossMarginPct": share(gp),
+        "revenue": rev, "cogs": -cogs, "goodsCost": -goods,
+        "projectFees": [{"label": l["label"], "amount": -l["amount"], "pct": l["pct"],
+                         "pctRevenue": share(-l["amount"])} for l in fees["lines"]],
+        "projectFeesTotal": -fees["total"],
+        "grossProfit": gp, "grossMarginPct": share(gp),
         "opex": [{"label": l, "amount": v, "note": n, "pctRevenue": share(v)} for l, v, n in opex],
         "opexTotal": opex_total,
         "ebit": ebit, "ebitMarginPct": share(ebit),
@@ -485,6 +555,16 @@ def pnl(quote, tender):
 # ══════════════════════════════════════════════════════════════════════════════
 #   4. What a quotation must carry before it may leave the building
 # ══════════════════════════════════════════════════════════════════════════════
+
+# The firm's own public details. A quotation with an empty company block is not on anybody's
+# letterhead, so these stand in when the portal's company settings have not been filled — the same
+# values the Excel template and every other portal PDF already show.
+LETTERHEAD = {
+    "name": "HUMILEY ENGINEERING & SOLUTIONS",
+    "address": "2nd Floor, 68 Nguyen Hue, Sai Gon Ward, HCMC, Vietnam",
+    "website": "www.humiley.com", "email": "contact@humiley.com", "phone": "+84 2877776668",
+}
+
 
 _MONTHS = ("January", "February", "March", "April", "May", "June",
            "July", "August", "September", "October", "November", "December")
@@ -548,30 +628,82 @@ def issue_check(tender, quote):
     return {"canIssue": not missing, "missing": missing, "warnings": warnings}
 
 
-def terms_paragraph(tender):
-    """The terms as one paragraph, the way the letterhead states them.
+# The conditions a quotation goes out under. These are DEFAULTS, not a fixed set: a tender that
+# stores its own list replaces them entirely, so a condition can be reworded, dropped, or added to
+# — a retention clause, a site-access assumption, an exchange-rate clause — without touching code.
+#
+# Each default is a sentence with a slot. A sentence whose slot has nothing in it is left out
+# rather than printed with a blank or an invented value: "Payment terms are ." on a quotation is
+# worse than no sentence about payment at all. The three with no slot always appear.
+CONDITIONS_DEFAULT = [
+    ("validity", "Validity", "This quotation is valid until {validUntil} and is quoted {incoterm}.",
+     ("validUntil",)),
+    ("delivery", "Delivery", "Delivery lead time is {leadTime} after receipt of order and deposit.",
+     ("leadTime",)),
+    ("payment", "Payment", "Payment terms are {paymentTerms}.", ("paymentTerms",)),
+    ("warranty", "Warranty", "All equipment is covered by {warranty}.", ("warranty",)),
+    ("scope", "Scope", "Scope is strictly as described; any variation requires a written change "
+                       "order and a revised quotation.", ()),
+    ("currency", "Currency", "All prices are in Vietnamese Dong (VND).", ()),
+]
 
-    The template runs validity, Incoterm, lead time, payment, warranty, variation and currency
-    together in prose rather than as a numbered list. That is a deliberate choice about tone — a
-    letter, not a contract annex — so the sentences are assembled in that fixed order and any of
-    them can be edited on the tender.
+
+def default_conditions(tender):
+    """The standard conditions, with this tender's own particulars filled in."""
+    vals = {
+        "validUntil": _long_date(tender.get("validUntil")) or "the date stated above",
+        "incoterm": str(tender.get("incoterm") or "Ex-Works (EXW)").strip(),
+        "leadTime": str(tender.get("leadTime") or "").strip(),
+        "paymentTerms": str(tender.get("paymentTerms") or "").strip(),
+        "warranty": str(tender.get("warranty") or "").strip(),
+    }
+    out = []
+    for key, label, text, needs in CONDITIONS_DEFAULT:
+        if any(not vals.get(n) for n in needs):
+            continue
+        out.append({"key": key, "label": label, "text": text.format(**vals)})
+    return out
+
+
+def conditions(tender):
+    """The conditions actually in force, and whether they are still the standard ones.
+
+    A stored list wins outright. That is the point of storing one: somebody edited the wording,
+    added a clause, or removed one that did not apply, and the defaults must not creep back in
+    underneath them.
+    """
+    stored = tender.get("conditions")
+    if isinstance(stored, list) and stored:
+        out = []
+        for i, c in enumerate(stored):
+            if not isinstance(c, dict):
+                continue
+            text = str(c.get("text") or "").strip()
+            if not text:
+                continue
+            out.append({"key": str(c.get("key") or ("c%d" % (i + 1))),
+                        "label": str(c.get("label") or "").strip(), "text": text})
+        if out:
+            return out
+    return default_conditions(tender)
+
+
+def is_default_conditions(tender):
+    stored = tender.get("conditions")
+    return not (isinstance(stored, list) and any(
+        isinstance(c, dict) and str(c.get("text") or "").strip() for c in stored))
+
+
+def terms_paragraph(tender):
+    """The conditions as one paragraph, the way the letterhead states them.
+
+    The template runs them together in prose rather than as a numbered list — a letter, not a
+    contract annex. A whole hand-written paragraph still overrides everything, for the tender that
+    needs to say something the clause list cannot express.
     """
     if str(tender.get("termsParagraph") or "").strip():
         return tender["termsParagraph"].strip()
-    valid = str(tender.get("validUntil") or "").strip()
-    bits = []
-    bits.append("This quotation is valid until %s and is quoted %s."
-                % (valid or "the date stated above", tender.get("incoterm") or "Ex-Works (EXW)"))
-    if tender.get("leadTime"):
-        bits.append("Delivery lead time is %s after receipt of order and deposit." % tender["leadTime"])
-    if tender.get("paymentTerms"):
-        bits.append("Payment terms are %s." % tender["paymentTerms"])
-    if tender.get("warranty"):
-        bits.append("All equipment is covered by %s." % tender["warranty"])
-    bits.append("Scope is strictly as described; any variation requires a written change order "
-                "and a revised quotation.")
-    bits.append("All prices are in Vietnamese Dong (VND).")
-    return " ".join(bits)
+    return " ".join(c["text"] for c in conditions(tender))
 
 
 def document(tender, quote, company=None):
@@ -630,11 +762,13 @@ def document(tender, quote, company=None):
 
         # ── the letterhead letter ──
         "company": {
-            "name": (company.get("name") or "HUMILEY ENGINEERING & SOLUTIONS").upper(),
-            "address": company.get("address") or "",
+            "name": str(company.get("name") or LETTERHEAD["name"]).upper(),
+            "address": company.get("address") or LETTERHEAD["address"],
             # The company's own line, not a person's: it goes on every quotation the firm sends.
-            "contact": " · ".join(x for x in (company.get("website"), company.get("email"),
-                                              company.get("phone")) if x) or "",
+            "contact": "   ·   ".join(
+                x for x in (company.get("website") or LETTERHEAD["website"],
+                            company.get("email") or LETTERHEAD["email"],
+                            company.get("phone") or LETTERHEAD["phone"]) if x),
         },
         "placeDate": ((tender.get("place") or "Ho Chi Minh City") + ", "
                       + _long_date(tender.get("issueDate"))),
@@ -644,6 +778,8 @@ def document(tender, quote, company=None):
                     or ("Sales Quotation No. " + (tender.get("quoteNo") or "")
                         + (" — " + tender["projectName"] if tender.get("projectName") else ""))),
         "termsParagraph": terms_paragraph(tender),
+        "conditions": conditions(tender),
+        "conditionsAreDefault": is_default_conditions(tender),
         "closing": tender.get("closingParagraph") or (
             "We trust this proposal meets your requirements and would be glad to clarify any "
             "technical or commercial point."

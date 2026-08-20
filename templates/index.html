@@ -10074,7 +10074,7 @@ const HUMILEY_LOGO_WHITE_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAW
 const _LH = {
   name: 'HUMILEY ENGINEERING & SOLUTIONS',
   addr: '2nd Floor, 68 Nguyen Hue, Sai Gon Ward, HCMC, Vietnam',
-  web: 'www.humiley.com', email: 'contact@humiley.com', tel: '+84 90 9840 714',
+  web: 'www.humiley.com', email: 'contact@humiley.com', tel: '+84 2877776668',
   logo: HUMILEY_LOGO_B64,
   logoWhite: HUMILEY_LOGO_WHITE_B64   // reverse mark, for dark backgrounds
 };
@@ -17385,7 +17385,7 @@ async function crmRenderLeads() {
     _hrKpi('Est. value', _crmMoney(leads.reduce((s, l) => s + (+l.value || 0), 0)), '#F59E0B')
   ]);
   const fbar = _crmFiltBar(_crmFiltSearch('crm-leads-q', 'Search name / company / email…', 'crmFillLeads') + _crmFiltSel('crm-leads-status', 'All status', ['New', 'Contacted', 'Qualified', 'Unqualified'], 'crmFillLeads') + _crmFiltSel('crm-leads-source', 'All sources', _crmDistinct(allLeads, 'source'), 'crmFillLeads') + _crmFiltSel('crm-leads-owner', 'All owners', _crmDistinct(allLeads, 'owner'), 'crmFillLeads') + _crmFiltPeriod('crm-leads-period', 'crmRenderLeads'));
-  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>Lead</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th style="text-align:right">Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
+  root.innerHTML = kpis + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Leads</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' + _crmIeBtns('crm_leads') + '<button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'crm_leads\')">' + _PLUS_SVG + ' Add Lead</button></div></div>' + fbar + '<div class="table-wrap"><table style="min-width:720px"><thead><tr><th>' + _t2('Lead', 'Khách hàng tiềm năng') + '</th><th>Company</th><th>Contact</th><th>Source</th><th>Status</th><th style="text-align:right">Est. value</th><th></th></tr></thead><tbody id="crm-leads-tbody"></tbody></table></div></div>';
   crmFillLeads();
 }
 function crmFillLeads() {
@@ -27611,7 +27611,11 @@ function tndTabPnl() {
     '<th>' + _t('Line item') + '</th><th style="text-align:right">' + _t('Amount') + '</th><th style="text-align:right">' + _t('% of revenue') + '</th><th>' + _t('Note') + '</th>' +
     '</tr></thead><tbody>' +
     row('Revenue (excl VAT)', _tndMoney(p.revenue), 100, 'Quotation subtotal', true) +
-    row('Cost of goods sold', _tndMoney(p.cogs), null, 'Landed cost of the quoted items') +
+    row('Cost of goods sold', _tndMoney(p.goodsCost != null ? p.goodsCost : p.cogs), null, 'Landed cost of the quoted items') +
+    (p.projectFees || []).map(f => row(f.label, _tndMoney(f.amount), f.pctRevenue,
+      (f.pct ? _tndNum(f.pct, 2) + '% ' + _t('of goods value') : _t('fixed')))).join('') +
+    ((p.projectFees || []).length ? row('Total project delivery cost', _tndMoney(p.projectFeesTotal), null,
+      _t('In cost of sales, not below it — a delivery cost below the line flatters every gross margin')) : '') +
     row('Gross profit', _tndMoney(p.grossProfit), p.grossMarginPct, 'Revenue less COGS', true, 'var(--emerald-deep)') +
     p.opex.map(o => row(o.label, _tndMoney(o.amount), o.pctRevenue, o.note)).join('') +
     row('Total operating expenses', _tndMoney(p.opexTotal), null, '', true) +
@@ -27656,7 +27660,8 @@ function tndTabQuote() {
     : '';
 
   const bar = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">' +
-    '<div style="font-size:12.5px;color:var(--text-light)">' + _t('This is exactly what the customer will receive. Nothing here shows cost or mark-up.') + '</div>' +
+    '<div style="font-size:12.5px;color:var(--text-light)">' + _t('This is exactly what the customer will receive. Nothing here shows cost or mark-up.') +
+    (_tndEditable() ? ' <b style="color:var(--emerald-deep)">' + _t('Click any text to edit it in place.') + '</b>' : '') + '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
     (can ? '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'est_projects\',\'' + e.id + '\')">' + _PENCIL + ' ' + _t('Quotation details') + '</button>' : '') +
     '<button class="btn btn-outline btn-sm" onclick="tndQuoteXlsx()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
@@ -27664,80 +27669,236 @@ function tndTabQuote() {
     '<button class="btn btn-primary btn-sm" onclick="tndQuotePDF()"' + (iss.canIssue ? '' : ' disabled title="' + _tkEscA(_t('Complete the missing fields first')) + '"') + '>' +
     tkIcon('download', 13) + ' ' + _t('Export PDF') + '</button></div></div>';
 
-  _estSet(bar + gate + warn + _tndQuoteSheet(doc, q));
+  _estSet(bar + gate + warn + _tndQuoteSheet(doc, q) + _tndConditionsEditor(doc, can));
 }
 
-/* The preview. Deliberately shaped like the document, not like a data table — somebody
-   about to send this to a customer is checking a LETTER, and a grid of cells does not let
-   them see what the customer will see. */
+/* The preview. Shaped like the LETTER, not like a data table — somebody about to send this to a
+   customer is checking a letter, and a grid of cells does not let them see what the customer sees.
+   Every proportion here comes from HML-QT-2026-0001: the column widths, the two-tone bar, the
+   light band on the subtotal rows, the green grand-total bar, the rule above the signature. */
+const _QT_COLS = [5.29, 12.71, 30.71, 6.71, 8.71, 14.29, 14.71];   // template char widths
+const _QT_W = _QT_COLS.reduce((a, b) => a + b, 0);
+function _qtPct(i) { return (_QT_COLS[i] / _QT_W * 100).toFixed(3) + '%'; }
+
+/* A field you can type into where you are reading it. Checking a letter and correcting it are the
+   same act, so they happen in the same place — the alternative is a form beside the preview and a
+   person comparing two copies of the same sentence.
+
+   Saved on blur, not per keystroke: a PATCH per character would fight the re-render, and the whole
+   record goes back each time because the collection PATCH replaces the item. Escape reverts the
+   field, Enter commits it, so a mistyped line never needs a reload to undo. */
+function _qtEd(field, value, css, multiline) {
+  if (!_tndEditable()) return _estEsc(value || '');
+  return '<span contenteditable="true" spellcheck="false" data-qtf="' + field + '"' +
+    ' data-qtorig="' + _tkEscA(value || '') + '"' +
+    ' onblur="tndSaveField(this)" onkeydown="_qtKey(event,this,' + (multiline ? 'true' : 'false') + ')"' +
+    ' style="outline:none;border-radius:4px;padding:0 3px;margin:0 -3px;transition:background .12s;cursor:text;' + (css || '') + '"' +
+    ' onfocus="this.style.background=\'rgba(0,176,96,.10)\'"' +
+    ' onmouseover="if(document.activeElement!==this)this.style.background=\'rgba(32,80,144,.05)\'"' +
+    ' onmouseout="if(document.activeElement!==this)this.style.background=\'transparent\'"' +
+    ' title="' + _tkEscA(_t('Click to edit')) + '">' + _estEsc(value || '') + '</span>';
+}
+function _tndEditable() { const e = _estById(_estCur); return !!e && _estCanPrice() && !_estFrozen(e); }
+function _qtKey(ev, el, multiline) {
+  if (ev.key === 'Escape') { el.textContent = el.getAttribute('data-qtorig') || ''; el.blur(); ev.preventDefault(); return; }
+  if (ev.key === 'Enter' && !multiline) { el.blur(); ev.preventDefault(); }
+}
+/* The preview's field names are the letter's; these are the tender's. One map, so a rename breaks
+   in one place rather than in six. */
+const _QT_FIELD = {
+  salutationTo: 'salutationTo', clientName: 'client', clientAddress: 'clientAddress',
+  quoteNo: 'quoteNo', subject: 'subject', salutation: 'salutation', intro: 'intro',
+  amountInWords: 'amountInWords', closing: 'closingParagraph', contactLine: 'contactLine',
+  signerName: 'preparedBy', signerTitle: 'preparedByTitle', signerContactRaw: 'signerContact',
+  encl: 'encl'
+};
+async function tndSaveField(el) {
+  const key = el.getAttribute('data-qtf'), orig = el.getAttribute('data-qtorig') || '';
+  const val = (el.textContent || '').replace(/\s+$/, '');
+  el.style.background = 'transparent';
+  if (val === orig) return;
+  const e = _estById(_estCur); if (!e) return;
+  const field = _QT_FIELD[key]; if (!field) return;
+  const patch = Object.assign({}, e); patch[field] = val;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: patch });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) {
+    el.textContent = orig;                       // put back what was there before it failed
+    toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000);
+  }
+}
+
 function _tndQuoteSheet(doc, q) {
   if (!doc) return '';
-  const kv = (l, v) => '<div style="display:flex;gap:8px;font-size:12.5px;margin-bottom:3px"><span style="color:var(--text-light);min-width:104px">' + _t(l) + '</span><span style="font-weight:600">' + (_estEsc(v) || '—') + '</span></div>';
-  const lines = (doc.lines || []).map((l, i) => '<tr>' +
-    '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums">' + (i + 1) + '</td>' +
-    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(l.itemCode || '') + '</td>' +
-    '<td>' + _estEsc(l.desc) + '</td>' +
-    '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + _estEsc(l.hsCode || '') + '</td>' +
-    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 3) + '</td>' +
-    '<td style="font-size:12px">' + _estEsc(l.unit || '') + '</td>' +
-    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(l.unitSell) + '</td>' +
-    '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(l.net) + '</td>' +
-    '<td style="text-align:right;font-size:12px">' + _tndNum(l.vatPct, 1) + '%</td>' +
-    '<td style="text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(l.gross) + '</td></tr>').join('');
+  const co = doc.company || {}, client = doc.client || {}, tot = doc.totals || {};
+  const sig = (doc.signatures || [])[0] || {};
+  const money = n => _tndNum(n, 0);
+  const blankRows = Math.max(0, 8 - (doc.lines || []).length);
 
-  return '<div class="card" id="tnd-quote-sheet" style="padding:0;overflow:hidden">' +
-    /* letterhead band */
-    '<div style="padding:20px 26px 16px;border-bottom:3px solid var(--emerald);background:linear-gradient(180deg,#fff,var(--soft-bg))">' +
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap">' +
-    '<img src="/static/brand/portal-logo-login.png" alt="Humiley" style="height:38px">' +
-    '<div style="text-align:right"><div style="font-size:19px;font-weight:300;letter-spacing:4px;color:var(--navy)">' + _t('SALES QUOTATION') + '</div>' +
-    '<div style="font-size:11.5px;color:var(--text-light);letter-spacing:1px">' + _t('Engineering &amp; Solutions') + '</div></div></div></div>' +
+  const line = (l, i) => '<tr>' +
+    '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums;border:1px solid #CFD6E2;padding:6px 4px">' + (i + 1) + '</td>' +
+    '<td style="font-weight:700;color:var(--navy);border:1px solid #CFD6E2;padding:6px 8px">' + _estEsc(l.itemCode || '') + '</td>' +
+    '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') + '</td>' +
+    '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 2) + '</td>' +
+    '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px">' + _estEsc(l.unit || '') + '</td>' +
+    '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.unitSell) + '</td>' +
+    '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.net) + '</td></tr>';
 
-    '<div style="padding:20px 26px">' +
-    '<div style="display:flex;gap:26px;flex-wrap:wrap;margin-bottom:18px">' +
-    '<div style="flex:1 1 260px"><div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Bill to / Customer') + '</div>' +
-    kv('Customer', doc.client.name) + kv('Address', doc.client.address) + kv('Tax code', doc.client.taxCode) +
-    kv('Attn.', doc.client.attn) + kv('Email / phone', doc.client.contact) + '</div>' +
-    '<div style="flex:1 1 260px"><div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Quotation info') + '</div>' +
-    kv('Quotation No.', doc.quoteNo) + kv('Issue date', doc.issueDate) + kv('Valid until', doc.validUntil) +
-    kv('Project', doc.project.name) + kv('Project code', doc.project.code) + '</div></div>' +
+  const spacer = '<tr>' + _QT_COLS.map(() => '<td style="border:1px solid #CFD6E2;padding:9px 8px">&nbsp;</td>').join('') + '</tr>';
+  const totRow = (label, pct, value, opts) => {
+    const o = opts || {};
+    const bg = o.grand ? 'var(--emerald)' : '#EAF0F8';
+    const fg = o.grand ? '#fff' : 'var(--navy)';
+    const pctCell = o.showPct
+      ? '<td style="text-align:center;background:' + bg + ';color:' + fg + ';font-weight:700;border:1px solid #CFD6E2;padding:6px 4px">' + _tndNum(pct, 0) + '%</td>'
+      : '';
+    // The label spans the columns the template merges it across: C:F when there is no rate cell,
+    // C:E when the rate sits in F.
+    return '<tr><td colspan="2" style="border:none"></td>' +
+      '<td colspan="' + (o.showPct ? 3 : 4) + '" style="text-align:right;background:' + bg + ';color:' + fg +
+      ';font-weight:' + (o.grand ? '800' : '700') + ';font-size:' + (o.grand ? '14px' : '12.5px') +
+      ';border:1px solid #CFD6E2;padding:' + (o.grand ? '9px 10px' : '6px 10px') + '">' + _t(label) + '</td>' +
+      pctCell +
+      '<td style="text-align:right;background:' + bg + ';color:' + fg + ';font-weight:800;font-size:' + (o.grand ? '15px' : '13px') +
+      ';border:1px solid #CFD6E2;padding:' + (o.grand ? '9px 8px' : '6px 8px') + ';font-variant-numeric:tabular-nums">' + money(value) + '</td></tr>';
+  };
 
-    '<div style="font-size:12.5px;color:var(--text-dark);line-height:1.6;margin-bottom:16px">' + _estEsc(doc.intro) + '</div>' +
+  return '<div class="card" id="tnd-quote-sheet" style="padding:0;overflow:hidden;background:#fff">' +
+    /* the two-tone bar the page header carries */
+    '<div style="display:flex;height:7px"><div style="width:19%;background:var(--emerald)"></div>' +
+    '<div style="width:13.5%;background:var(--navy)"></div><div style="flex:1"></div></div>' +
 
-    '<div class="table-wrap"><table style="min-width:880px"><thead><tr>' +
-    ['No.', 'Item code', 'Description', 'HS code', 'Qty', 'UOM', 'Unit price', 'Subtotal (excl VAT)', 'VAT', 'Total (incl VAT)']
-      .map((h, i) => '<th style="font-size:10.5px' + (i >= 4 && i !== 5 ? ';text-align:right' : (i === 0 ? ';text-align:center' : '')) + '">' + _t(h) + '</th>').join('') +
-    '</tr></thead><tbody>' + (lines || tkEmptyRow(10, _t('No lines to quote yet.'), { icon: 'inbox' })) + '</tbody></table></div>' +
+    '<div style="padding:26px 34px 30px">' +
+    /* company block + logo */
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px;flex-wrap:wrap">' +
+    '<div><div style="font-size:16px;font-weight:700;color:var(--navy);letter-spacing:.2px">' + _estEsc(co.name || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dark);margin-top:3px">' + _estEsc(co.address || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dark)">' + _estEsc(co.contact || '') + '</div></div>' +
+    '<img src="/static/brand/portal-logo-login.png" alt="Humiley" style="height:42px">' +
+    '</div>' +
 
-    '<div style="display:flex;justify-content:flex-end;margin-top:14px">' +
-    '<table style="min-width:330px;font-size:13px">' +
-    '<tr><td style="padding:4px 12px;color:var(--text-light)">' + _t('Subtotal (excl VAT)') + '</td><td style="padding:4px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(doc.totals.net) + '</td></tr>' +
-    '<tr><td style="padding:4px 12px;color:var(--text-light)">' + _t('VAT (output)') + '</td><td style="padding:4px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:600">' + _tndMoney(doc.totals.vat) + '</td></tr>' +
-    '<tr style="border-top:2px solid var(--navy)"><td style="padding:7px 12px;font-weight:800;color:var(--navy)">' + _t('GRAND TOTAL (incl VAT)') + '</td>' +
-    '<td style="padding:7px 0;text-align:right;font-variant-numeric:tabular-nums;font-weight:800;color:var(--navy);font-size:15px">' + _tndMoney(doc.totals.gross) + '</td></tr></table></div>' +
+    /* place, date and reference, right-aligned as the template has them */
+    '<div style="text-align:right;margin-top:16px">' +
+    '<div style="font-size:13px;color:var(--navy)">' + _estEsc(doc.placeDate || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--navy);font-style:italic">Ref: ' + _qtEd('quoteNo', doc.quoteNo) + '</div></div>' +
 
-    (doc.amountInWords ? '<div style="font-size:12.5px;margin-top:10px"><span style="color:var(--text-light)">' + _t('Amount in words') + ': </span><i>' + _estEsc(doc.amountInWords) + '</i></div>' : '') +
+    /* addressee */
+    '<div style="margin-top:18px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + _qtEd('salutationTo', doc.salutationTo) + '</div>' +
+    '<div style="font-size:13px">' + _qtEd('clientName', client.name) + '</div>' +
+    '<div style="font-size:13px">' + _qtEd('clientAddress', client.address) + '</div></div>' +
 
-    '<div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin:22px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Terms &amp; conditions') + '</div>' +
-    '<ol style="font-size:12px;color:var(--text-dark);line-height:1.65;padding-left:20px;margin:0">' +
-    (doc.terms || []).map(t => '<li style="margin-bottom:2px"><b>' + _estEsc(_t(t.label)) + '.</b> ' + _estEsc(_t(t.text)) + '</li>').join('') + '</ol>' +
+    /* the RE: line, ruled above and below */
+    '<div style="margin-top:14px;padding:7px 0;border-top:1px solid #CFD6E2;border-bottom:1px solid #CFD6E2;' +
+    'font-size:13px;font-weight:700;color:var(--navy)">RE:&nbsp;&nbsp; ' + _qtEd('subject', doc.subject) + '</div>' +
 
-    (doc.bank && (doc.bank.beneficiary || doc.bank.bank) ?
-      '<div style="font-size:10px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:var(--navy);margin:20px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--line)">' + _t('Payment / bank details') + '</div>' +
-      kv('Beneficiary', doc.bank.beneficiary) + kv('Bank', doc.bank.bank) + kv('Account No.', doc.bank.account) + kv('SWIFT', doc.bank.swift) : '') +
+    '<div style="font-size:13px;margin-top:14px">' + _qtEd('salutation', doc.salutation) + '</div>' +
+    '<div style="font-size:13px;line-height:1.6;margin-top:6px">' + _qtEd('intro', doc.intro, '', true) + '</div>' +
 
-    '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:26px">' +
-    (doc.signatures || []).map(s => '<div style="flex:1 1 180px;text-align:center">' +
-      '<div style="font-size:10.5px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--navy);margin-bottom:44px">' + _t(s.role) + '</div>' +
-      '<div style="border-top:1px solid var(--text-light);padding-top:6px;font-size:12px;font-weight:600">' + (_estEsc(s.name) || '&nbsp;') + '</div>' +
-      '<div style="font-size:11px;color:var(--text-light)">' + _estEsc(_t(s.title)) + '</div></div>').join('') + '</div>' +
+    /* the priced table */
+    '<div class="table-wrap" style="margin-top:16px"><table style="width:100%;min-width:640px;border-collapse:collapse;font-size:12.5px">' +
+    '<colgroup>' + _QT_COLS.map((_c, i) => '<col style="width:' + _qtPct(i) + '">').join('') + '</colgroup>' +
+    '<thead><tr>' + ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)']
+      // The global theme sets `th{background:transparent !important}` so table headers stay flat
+      // everywhere else in the portal. This one is not a table header in that sense — it is the
+      // navy band the letterhead prints. Inline !important is what beats a stylesheet !important.
+      .map(h => '<th style="background:var(--navy) !important;color:#fff !important;font-size:11.5px;font-weight:700;text-align:center;border:1px solid var(--navy) !important;padding:7px 6px">' + _t(h) + '</th>').join('') +
+    '</tr></thead><tbody>' +
+    (doc.lines || []).map(line).join('') +
+    Array(blankRows).fill(spacer).join('') +
+    totRow('SUBTOTAL', null, tot.net, {}) +
+    totRow('Project Discount', doc.discountPct, Math.round((tot.net || 0) * (+doc.discountPct || 0) / 100), { showPct: true }) +
+    totRow('Tax / VAT (if applicable)', doc.vatPct, tot.vat, { showPct: true }) +
+    totRow('GRAND TOTAL', null, tot.gross, { grand: true }) +
+    '</tbody></table></div>' +
+
+    '<div style="font-size:12.5px;margin-top:10px"><span style="color:var(--text-light)">' + _t('Amount in words') + ': </span><i>' +
+    _qtEd('amountInWords', doc.amountInWords) + '</i></div>' +
+
+    /* Read-only on purpose: this paragraph is assembled from the Conditions below, which is where
+       it is edited. Two places to change one sentence is how they come to disagree. */
+    '<div style="font-size:13px;line-height:1.65;margin-top:16px" title="' + _tkEscA(_t('Edited in Conditions, below')) + '">' + _estEsc(doc.termsParagraph || '') + '</div>' +
+    '<div style="font-size:13px;line-height:1.65;margin-top:12px">' + _qtEd('closing', doc.closing, '', true) + '</div>' +
+    '<div style="font-size:13px;line-height:1.65;margin-top:12px">' + _qtEd('contactLine', doc.contactLine, '', true) + '</div>' +
+    '<div style="font-size:13px;margin-top:2px">' + _t('Yours sincerely,') + '</div>' +
+
+    /* signature block: the green rule, then the name */
+    '<div style="margin-top:46px;max-width:330px;border-top:2.5px solid var(--emerald);padding-top:7px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--navy);letter-spacing:.3px">' + _qtEd('signerName', sig.name, 'text-transform:uppercase') + '</div>' +
+    '<div style="font-size:12.5px;font-style:italic;color:var(--text-dark)">' + _qtEd('signerTitle', sig.title) + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dark);margin-top:2px">' + _qtEd('signerContactRaw', doc.signerContact) + '</div>' +
+    '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);font-style:italic;margin-top:16px"><b style="color:var(--navy);font-style:normal">Encl.</b>&nbsp;&nbsp; ' + _qtEd('encl', doc.encl) + '</div>' +
+
+    /* the footer strip */
+    '<div style="display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-top:26px;padding-top:9px;border-top:1px solid #CFD6E2">' +
+    // The footer carries the full lockup, as the template's does — the bare H mark alone reads as
+    // a broken image at this size, not as a brand.
+    '<img src="/static/brand/portal-logo-login.png" alt="Humiley" style="height:17px;width:auto">' +
+    '<div style="font-size:11px;font-weight:700;letter-spacing:3px;color:var(--navy)">LETTERHEAD</div>' +
+    '<div style="text-align:right"><div style="font-size:11.5px;font-weight:700;color:var(--navy)">' + _t('Page') + ' 1 / 1</div>' +
+    '<div style="font-size:9.5px;color:var(--text-light);font-style:italic">[ ' + _estEsc(doc.quoteNo || '') + '&nbsp; Rev 01.0 ]</div></div></div>' +
     '</div></div>';
 }
 
+/* The conditions this quotation goes out under. They arrive as a standard set with the tender's
+   own particulars filled in — and every one of them can be reworded, removed, or added to, because
+   a quotation for a cleanroom and a quotation for five pumps do not go out on the same terms. */
+function _tndConditionsEditor(doc, can) {
+  const list = doc.conditions || [];
+  const isDef = !!doc.conditionsAreDefault;
+  const rows = list.map((c, i) =>
+    '<tr><td style="width:150px;vertical-align:top;padding:7px 10px 7px 0">' +
+    (can ? '<input class="form-control" style="padding:5px 9px;font-size:12.5px" value="' + _tkEscA(c.label || '') + '" onchange="tndSetCondition(' + i + ',\'label\',this.value)">'
+         : '<b>' + _estEsc(c.label) + '</b>') + '</td>' +
+    '<td style="vertical-align:top;padding:7px 0">' +
+    (can ? '<textarea class="form-control" rows="2" style="padding:5px 9px;font-size:12.5px;line-height:1.5" onchange="tndSetCondition(' + i + ',\'text\',this.value)">' + _estEsc(c.text || '') + '</textarea>'
+         : _estEsc(c.text)) + '</td>' +
+    '<td style="width:40px;text-align:right;vertical-align:top;padding:7px 0 7px 8px">' +
+    (can ? '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Remove')) + '" style="color:#C00000;padding:6px 8px" onclick="tndRemoveCondition(' + i + ')">' + _TRASH + '</button>' : '') +
+    '</td></tr>').join('');
+  return '<div class="card" style="padding:16px 18px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+    '<div><div style="font-size:12.5px;font-weight:800;color:var(--navy)">' + _t('Conditions') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _t('The standard set, filled in from this tender. Reword any of them, remove what does not apply, add what does — they print as the paragraph above.') +
+    (isDef ? '' : ' <b style="color:var(--warning)">' + _t('Edited for this tender.') + '</b>') + '</div></div>' +
+    (can ? '<div style="display:flex;gap:6px"><button class="btn btn-outline btn-sm" style="font-size:11px" onclick="tndAddCondition()">' + tkIcon('plus') + _t('Add condition') + '</button>' +
+      (isDef ? '' : '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tndResetConditions()">' + _t('Reset to standard') + '</button>') + '</div>' : '') +
+    '</div>' +
+    '<table style="width:100%;border-collapse:collapse"><tbody>' + rows + '</tbody></table></div>';
+}
+
+async function _tndSaveConditions(list) {
+  const e = _estById(_estCur); if (!e) return;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: Object.assign({}, e, { conditions: list }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) { toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 5000); }
+}
+function _tndCondList() { return ((_tndSum || {}).document || {}).conditions || []; }
+function tndSetCondition(i, field, v) {
+  const list = _tndCondList().map(c => ({ key: c.key, label: c.label, text: c.text }));
+  if (!list[i]) return; list[i][field] = v; _tndSaveConditions(list);
+}
+function tndRemoveCondition(i) {
+  const list = _tndCondList().map(c => ({ key: c.key, label: c.label, text: c.text }));
+  list.splice(i, 1);
+  // An empty list would read as "use the defaults", which is not what removing the last one means.
+  _tndSaveConditions(list.length ? list : [{ key: 'none', label: '', text: ' ' }]);
+}
+function tndAddCondition() {
+  const list = _tndCondList().map(c => ({ key: c.key, label: c.label, text: c.text }));
+  list.push({ key: 'c' + (list.length + 1), label: _t('New condition'), text: _t('Type the condition here.') });
+  _tndSaveConditions(list);
+}
+function tndResetConditions() { _tndSaveConditions([]); }
+
 /* The Excel letterhead. The server fills the REAL template — the same .xlsx the sales team
    already sends — so the header bar, the logo, the footer and the fonts are never re-derived
-   here. Downloaded through a blob rather than a plain link so the Authorization header goes
-   with it; the endpoint is session-gated like everything else. */
+   here. Fetched rather than linked so the Authorization header goes with it. */
 async function tndQuoteXlsx() {
   const e = _estById(_estCur); if (!e) return;
   const iss = (_tndSum || {}).issue || {};
@@ -27759,120 +27920,197 @@ async function tndQuoteXlsx() {
   } catch (x) { toast(_t('Could not build the workbook') + ': ' + _errMsg(x), 'error', 6000); }
 }
 
-/* ── The PDF. Same document object, drawn onto the Humiley letterhead. ── */
+/* ── The PDF: the same letter, on the same letterhead, drawn to the template's geometry. ──
+   Not the portal's generic report chrome — a quotation goes out on the sales letterhead, which
+   has its own two-tone bar and its own footer. Column widths are the template's own, converted
+   from character units to millimetres so the proportions survive the change of medium. */
+const _QT_ML = 30, _QT_MR = 15;                       // template page margins, in mm
+const _QT_TW = 210 - _QT_ML - _QT_MR;                 // 165mm of usable width
+function _qtColMm() { return _QT_COLS.map(c => c / _QT_W * _QT_TW); }
+
+function _qtBar(doc) {
+  doc.setFillColor(0, 176, 96); doc.rect(0, 0, 40, 4, 'F');
+  doc.setFillColor(32, 80, 144); doc.rect(40, 0, 28, 4, 'F');
+}
+function _qtFoot(doc, page, total, ref) {
+  const y = 281;
+  doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.2); doc.line(_QT_ML, y - 4, 210 - _QT_MR, y - 4);
+  try { doc.addImage(_lhLogo(), 'PNG', _QT_ML, y - 2.5, 16, 5.6, 'HMLLOGO', 'FAST'); } catch (e) { }
+  _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(32, 80, 144);
+  doc.text('L E T T E R H E A D', 105, y + 1, { align: 'center' });
+  doc.setFontSize(8);
+  doc.text(_pmPdfTxt('Page ' + page + ' / ' + total), 210 - _QT_MR, y - 0.5, { align: 'right' });
+  _pdfFont(doc, 'italic'); doc.setFontSize(6.5); doc.setTextColor(92, 100, 112);
+  doc.text(_pmPdfTxt('[ ' + (ref || '') + '  Rev 01.0 ]'), 210 - _QT_MR, y + 3, { align: 'right' });
+}
+
 function tndQuotePDF() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
-  const doc0 = _tndSum.document, iss = _tndSum.issue || {};
-  if (!iss.canIssue) {
-    toast(_t('Complete these first') + ': ' + (iss.missing || []).join(', '), 'warn', 6000);
-    return;
-  }
-  const o = _engPdfOpen('Sales Quotation', _pmPdfTxt((doc0.quoteNo || '') + '  ' + (doc0.client.name || '')), 'HML-QT');
-  if (!o) return;
-  const doc = o.doc; let y = o.y, page = 1;
-  const M = 15;
+  const d = _tndSum.document, iss = _tndSum.issue || {};
+  if (!iss.canIssue) { toast(_t('Complete these first') + ': ' + (iss.missing || []).join(', '), 'warn', 6000); return; }
+  const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!J) { toast(_t('PDF library not loaded — try again in a moment'), 'warn'); return; }
 
-  /* Header blocks — bill-to on the left, quotation info on the right, as the workbook has them. */
-  const pair = (x, label, val, yy) => {
-    _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(92, 100, 112);
-    doc.text(_pmPdfTxt(String(label).toUpperCase()), x, yy);
-    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
-    const lines = doc.splitTextToSize(_pmPdfTxt(val || '-'), 58);
-    doc.text(lines, x + 26, yy);
-    return yy + Math.max(4.6, lines.length * 4.2);
+  const doc = new J('p', 'mm', 'a4');
+  const co = d.company || {}, client = d.client || {}, tot = d.totals || {};
+  const sig = (d.signatures || [])[0] || {};
+  const W = _qtColMm(), money = n => _pmPdfTxt(_tndNum(n, 0));
+  let page = 1;
+  // Pages are stamped ONCE, at the end, when the real total is known.
+  const newPage = () => { doc.addPage(); page++; _qtBar(doc); return 24; };
+
+  _qtBar(doc);
+  let y = 24;
+
+  /* company block, logo right */
+  _pdfFont(doc, 'bold'); doc.setFontSize(13); doc.setTextColor(32, 80, 144);
+  doc.text(_pmPdfTxt(co.name || ''), _QT_ML, y);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+  doc.text(_pmPdfTxt(co.address || ''), _QT_ML, y + 5.2);
+  doc.text(_pmPdfTxt(co.contact || ''), _QT_ML, y + 9.8);
+  try { doc.addImage(_lhLogo(), 'PNG', 210 - _QT_MR - 46, y - 5, 46, 16.1, 'HMLLOGO', 'FAST'); } catch (x) { }
+  y += 20;
+
+  /* place, date, reference */
+  _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  doc.text(_pmPdfTxt(d.placeDate || ''), 210 - _QT_MR, y, { align: 'right' });
+  _pdfFont(doc, 'italic'); doc.setFontSize(9);
+  doc.text(_pmPdfTxt('Ref: ' + (d.quoteNo || '')), 210 - _QT_MR, y + 4.6, { align: 'right' });
+  y += 13;
+
+  /* addressee */
+  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  doc.text(_pmPdfTxt(d.salutationTo || ''), _QT_ML, y);
+  _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
+  doc.text(_pmPdfTxt(client.name || ''), _QT_ML, y + 5);
+  doc.text(_pmPdfTxt(client.address || ''), _QT_ML, y + 9.8);
+  y += 16;
+
+  /* the RE: line between two rules */
+  doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.2);
+  doc.line(_QT_ML, y, 210 - _QT_MR, y);
+  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  const re = doc.splitTextToSize(_pmPdfTxt('RE:   ' + (d.subject || '')), _QT_TW);
+  doc.text(re, _QT_ML, y + 5);
+  y += 5 + re.length * 4.6;
+  doc.line(_QT_ML, y, 210 - _QT_MR, y);
+  y += 7;
+
+  _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(31, 41, 55);
+  doc.text(_pmPdfTxt(d.salutation || ''), _QT_ML, y); y += 5.5;
+  const intro = doc.splitTextToSize(_pmPdfTxt(d.intro || ''), _QT_TW);
+  doc.text(intro, _QT_ML, y); y += intro.length * 4.6 + 5;
+
+  /* the priced table */
+  const heads = ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)'];
+  const drawHead = () => {
+    doc.setFillColor(32, 80, 144); doc.rect(_QT_ML, y, _QT_TW, 7, 'F');
+    _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+    let x = _QT_ML;
+    heads.forEach((h, i) => { doc.text(_pmPdfTxt(h), x + W[i] / 2, y + 4.6, { align: 'center' }); x += W[i]; });
+    y += 7;
   };
-  _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor(32, 80, 144);
-  doc.text(_pmPdfTxt('BILL TO / CUSTOMER'), M, y);
-  doc.text(_pmPdfTxt('QUOTATION INFO'), M + 97, y);
-  doc.setDrawColor(207, 214, 226); doc.line(M, y + 1.6, M + 88, y + 1.6); doc.line(M + 97, y + 1.6, M + 180, y + 1.6);
-  let yl = y + 6.5, yr = y + 6.5;
-  yl = pair(M, 'Customer', doc0.client.name, yl);
-  yl = pair(M, 'Address', doc0.client.address, yl);
-  yl = pair(M, 'Tax code', doc0.client.taxCode, yl);
-  yl = pair(M, 'Attn.', doc0.client.attn, yl);
-  yl = pair(M, 'Contact', doc0.client.contact, yl);
-  yr = pair(M + 97, 'Quotation No.', doc0.quoteNo, yr);
-  yr = pair(M + 97, 'Issue date', doc0.issueDate, yr);
-  yr = pair(M + 97, 'Valid until', doc0.validUntil, yr);
-  yr = pair(M + 97, 'Project', doc0.project.name, yr);
-  yr = pair(M + 97, 'Project code', doc0.project.code, yr);
-  y = Math.max(yl, yr) + 3;
-
-  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(60, 66, 74);
-  const intro = doc.splitTextToSize(_pmPdfTxt(doc0.intro), 180);
-  doc.text(intro, M, y); y += intro.length * 4.2 + 4;
-
-  /* The priced lines. Widths total 180mm — A4 portrait, as _engPdfTable requires. */
-  const money = n => _pmPdfTxt(_PAY_FMT(n || 0));
-  const t = _engPdfTable(doc, {
-    y: y, page: page, code: 'HML-QT', title: 'Sales Quotation', subtitle: _pmPdfTxt(doc0.quoteNo || ''),
-    cols: [
-      { label: 'NO.', w: 9, get: (r) => r._n },
-      { label: 'CODE', w: 21, get: r => r.itemCode },
-      { label: 'DESCRIPTION', w: 56, get: r => r.desc },
-      { label: 'HS', w: 15, get: r => r.hsCode },
-      { label: 'QTY', w: 12, get: r => _pmPdfTxt(_tndNum(r.qty, 2)) },
-      { label: 'UOM', w: 11, get: r => r.unit },
-      { label: 'UNIT PRICE', w: 20, get: r => money(r.unitSell) },
-      { label: 'SUBTOTAL', w: 20, get: r => money(r.net) },
-      { label: 'TOTAL', w: 16, get: r => money(r.gross) }
-    ],
-    rows: (doc0.lines || []).map((l, i) => Object.assign({ _n: i + 1 }, l))
-  });
-  y = t.y + 3; page = t.page;
-
-  /* Totals, right-aligned against the table's right edge. */
-  const totRow = (label, val, bold) => {
-    if (y > 262) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
-    _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 10 : 9);
-    doc.setTextColor.apply(doc, bold ? [32, 80, 144] : [92, 100, 112]);
-    doc.text(_pmPdfTxt(label), M + 108, y);
-    doc.setTextColor.apply(doc, bold ? [32, 80, 144] : [31, 41, 55]);
-    doc.text(money(val), M + 180, y, { align: 'right' });
-    y += bold ? 6.5 : 5;
+  drawHead();
+  const cellBorders = (h) => {
+    doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.15);
+    let x = _QT_ML;
+    W.forEach(w => { doc.rect(x, y, w, h); x += w; });
   };
-  totRow('Subtotal (excl VAT)', doc0.totals.net);
-  totRow('VAT (output)', doc0.totals.vat);
-  doc.setDrawColor(32, 80, 144); doc.setLineWidth(0.5); doc.line(M + 106, y - 3.4, M + 180, y - 3.4); doc.setLineWidth(0.2);
-  totRow('GRAND TOTAL (incl VAT)', doc0.totals.gross, true);
-  if (doc0.amountInWords) {
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(92, 100, 112);
-    doc.text(_pmPdfTxt('Amount in words: ' + doc0.amountInWords), M, y); y += 6;
-  }
-
-  /* Terms — the part a dispute is read against, so it goes in full, never truncated. */
-  y = _engPdfSection(doc, 'Terms & Conditions', y + 2, 'HML-QT', 'Sales Quotation', _pmPdfTxt(doc0.quoteNo || ''));
-  (doc0.terms || []).forEach((tm, i) => {
-    const txt = doc.splitTextToSize(_pmPdfTxt((i + 1) + '.  ' + tm.label + ' — ' + tm.text), 180);
-    if (y + txt.length * 4 > 272) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(45, 51, 60);
-    doc.text(txt, M, y); y += txt.length * 4 + 1.4;
+  (d.lines || []).forEach((l, i) => {
+    _pdfFont(doc, 'normal'); doc.setFontSize(8.5);
+    const desc = doc.splitTextToSize(_pmPdfTxt(l.desc || ''), W[2] - 4);
+    const h = Math.max(7, desc.length * 4 + 3);
+    if (y + h > 258) { y = newPage(); drawHead(); }
+    cellBorders(h);
+    doc.setTextColor(92, 100, 112);
+    doc.text(String(i + 1), _QT_ML + W[0] / 2, y + 5, { align: 'center' });
+    _pdfFont(doc, 'bold'); doc.setTextColor(32, 80, 144);
+    doc.text(_pmPdfTxt(l.itemCode || ''), _QT_ML + W[0] + 2, y + 5);
+    _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
+    doc.text(desc, _QT_ML + W[0] + W[1] + 2, y + 5);
+    const x3 = _QT_ML + W[0] + W[1] + W[2];
+    doc.text(_pmPdfTxt(_tndNum(l.qty, 2)), x3 + W[3] / 2, y + 5, { align: 'center' });
+    doc.text(_pmPdfTxt(l.unit || ''), x3 + W[3] + W[4] / 2, y + 5, { align: 'center' });
+    doc.text(money(l.unitSell), x3 + W[3] + W[4] + W[5] - 2, y + 5, { align: 'right' });
+    doc.text(money(l.net), _QT_ML + _QT_TW - 2, y + 5, { align: 'right' });
+    y += h;
   });
-
-  if (doc0.bank && (doc0.bank.beneficiary || doc0.bank.bank)) {
-    y = _engPdfSection(doc, 'Payment / Bank Details', y + 2, 'HML-QT', 'Sales Quotation', _pmPdfTxt(doc0.quoteNo || ''));
-    y = _engPdfRow(doc, 'Beneficiary', doc0.bank.beneficiary, y);
-    y = _engPdfRow(doc, 'Bank', doc0.bank.bank, y);
-    y = _engPdfRow(doc, 'Account No.', doc0.bank.account, y);
-    y = _engPdfRow(doc, 'SWIFT', doc0.bank.swift, y);
+  for (let b = (d.lines || []).length; b < 8; b++) {
+    if (y + 7 > 258) break;
+    cellBorders(7); y += 7;
   }
 
-  /* Signature blocks — three, side by side, with room to actually sign. */
-  if (y > 232) { _brandFooter(doc, page, page, 'HML-QT'); doc.addPage(); page++; y = _brandHeader(doc, { title: 'Sales Quotation (cont.)', docCode: 'HML-QT' }) + 4; }
+  /* the totals block: light band, then the green grand total */
+  const totRow = (label, pctVal, value, grand) => {
+    const h = grand ? 9 : 7;
+    if (y + h > 262) { y = newPage(); }
+    const x0 = _QT_ML + W[0] + W[1];
+    const labelW = pctVal == null ? (W[2] + W[3] + W[4] + W[5]) : (W[2] + W[3] + W[4]);
+    if (grand) { doc.setFillColor(0, 176, 96); } else { doc.setFillColor(234, 240, 248); }
+    doc.rect(x0, y, _QT_ML + _QT_TW - x0, h, 'F');
+    doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.15);
+    doc.rect(x0, y, labelW, h);
+    if (pctVal != null) doc.rect(x0 + labelW, y, W[5], h);
+    doc.rect(_QT_ML + _QT_TW - W[6], y, W[6], h);
+    const baseline = y + (grand ? 6 : 4.8);
+    _pdfFont(doc, 'bold');
+    doc.setTextColor.apply(doc, grand ? [255, 255, 255] : [32, 80, 144]);
+    doc.setFontSize(grand ? 11 : 9);
+    const amount = money(value), right = _QT_ML + _QT_TW - 2;
+    doc.text(amount, right, baseline, { align: 'right' });
+    // The label ends clear of the amount wherever the amount actually starts — not at the column
+    // rule, which a billion-dong figure overruns.
+    doc.setFontSize(grand ? 10.5 : 8.5);
+    const amountLeft = right - doc.getTextWidth(amount);
+    doc.text(_pmPdfTxt(label), Math.min(x0 + labelW - 3, amountLeft - 3), baseline, { align: 'right' });
+    if (pctVal != null) doc.text(_pmPdfTxt(_tndNum(pctVal, 0) + '%'), x0 + labelW + W[5] / 2, y + 4.8, { align: 'center' });
+    y += h;
+  };
+  totRow('SUBTOTAL', null, tot.net, false);
+  totRow('Project Discount', +d.discountPct || 0, Math.round((tot.net || 0) * (+d.discountPct || 0) / 100), false);
+  totRow('Tax / VAT (if applicable)', +d.vatPct || 0, tot.vat, false);
+  totRow('GRAND TOTAL', null, tot.gross, true);
   y += 6;
-  (doc0.signatures || []).forEach((s, i) => {
-    const x = M + i * 60;
-    _pdfFont(doc, 'bold'); doc.setFontSize(8); doc.setTextColor(32, 80, 144);
-    doc.text(_pmPdfTxt(String(s.role).toUpperCase()), x, y);
-    doc.setDrawColor(150, 158, 170); doc.line(x, y + 24, x + 52, y + 24);
-    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
-    doc.text(_pmPdfTxt(s.name || ' '), x, y + 28.5);
-    doc.setFontSize(7.5); doc.setTextColor(92, 100, 112);
-    doc.text(_pmPdfTxt(s.title || ''), x, y + 32.5);
-  });
 
-  _engSave(doc, 'Quotation_' + String(doc0.quoteNo || 'HML').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf', page, 'HML-QT');
-  try { tkAudit('Quotation exported', doc0.quoteNo || '', (doc0.client.name || '') + ' · ' + _PAY_FMT(doc0.totals.gross)); } catch (x) { }
+  if (d.amountInWords) {
+    _pdfFont(doc, 'italic'); doc.setFontSize(8.5); doc.setTextColor(92, 100, 112);
+    const w = doc.splitTextToSize(_pmPdfTxt('Amount in words: ' + d.amountInWords), _QT_TW);
+    doc.text(w, _QT_ML, y); y += w.length * 4 + 3;
+  }
+
+  /* the closing paragraphs — the part a dispute is read against, so never truncated */
+  [d.termsParagraph, d.closing, d.contactLine].forEach(par => {
+    if (!par) return;
+    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(31, 41, 55);
+    const t = doc.splitTextToSize(_pmPdfTxt(par), _QT_TW);
+    if (y + t.length * 4.4 > 262) { y = newPage(); }
+    doc.text(t, _QT_ML, y); y += t.length * 4.4 + 4;
+  });
+  doc.text(_pmPdfTxt('Yours sincerely,'), _QT_ML, y); y += 4;
+
+  /* signature: room to actually sign, then the green rule and the name */
+  if (y + 34 > 268) { y = newPage(); }
+  y += 22;
+  doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.8);
+  doc.line(_QT_ML, y, _QT_ML + 78, y); doc.setLineWidth(0.2);
+  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  doc.text(_pmPdfTxt((sig.name || '').toUpperCase()), _QT_ML, y + 5.6);
+  _pdfFont(doc, 'italic'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+  doc.text(_pmPdfTxt(sig.title || ''), _QT_ML, y + 10.4);
+  if (d.signerContact) {
+    _pdfFont(doc, 'normal'); doc.setFontSize(8.5);
+    doc.text(_pmPdfTxt(d.signerContact), _QT_ML, y + 15);
+  }
+  y += 22;
+  if (d.encl) {
+    _pdfFont(doc, 'italic'); doc.setFontSize(8); doc.setTextColor(92, 100, 112);
+    doc.text(_pmPdfTxt('Encl.   ' + d.encl), _QT_ML, y);
+  }
+
+  const total = doc.getNumberOfPages();
+  for (let i = 1; i <= total; i++) { doc.setPage(i); _qtFoot(doc, i, total, d.quoteNo); }
+  doc.save('Quotation_' + String(d.quoteNo || 'HML').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
+  try { tkAudit('Quotation exported', d.quoteNo || '', (client.name || '') + ' · ' + _PAY_FMT(tot.gross)); } catch (x) { }
 }
 
 /* Adding a costing line: the tender it belongs to is seeded, so it shows in the form
@@ -29417,7 +29655,7 @@ const _VI = {
   "Direct cost of one unit": "Chi phí trực tiếp cho một đơn vị",
   "Distributed across the priced lines pro-rata to cost": "Phân bổ cho các dòng có giá theo tỷ lệ chi phí",
   "Draft, submitted or approved": "Nháp, đã nộp hoặc đã duyệt",
-  "EXW → international leg → CIF → converted at the rate for that supplier’s currency → duty → special consumption tax → VAT → local charges → landed cost. The three taxes CASCADE: duty on CIF, SCT on CIF plus duty, VAT on all three. Import VAT is recoverable and never enters the cost.": "EXW → chặng quốc tế → CIF → quy đổi theo tỷ giá của đồng tiền nhà cung cấp → thuế nhập khẩu → thuế TTĐB → VAT → chi phí nội địa → giá vốn nhập kho. Ba sắc thuế TÍNH LŨY TIẾN: thuế NK trên CIF, TTĐB trên CIF cộng thuế NK, VAT trên cả ba. VAT nhập khẩu được khấu trừ nên không bao giờ vào giá vốn.",
+  "EXW → international leg → CIF → converted at the rate for that supplier’s currency → duty → special consumption tax → VAT → local charges → landed cost. The three taxes CASCADE: duty on CIF, SCT on CIF plus duty, VAT on all three. Import VAT is recoverable and never enters the cost.": "EXW → chặng quốc tế → CIF → quy đổi theo tỷ giá của đồng tiền nhà cung cấp → thuế nhập khẩu → thuế TTĐB → VAT → chi phí nội địa → giá vốn nhập kho. Ba sắc thuế TÍNH CHỒNG LÊN NHAU: thuế NK trên CIF, TTĐB trên CIF cộng thuế NK, VAT trên cả ba. VAT nhập khẩu được khấu trừ nên không bao giờ vào giá vốn.",
   "Edit the tender": "Sửa hồ sơ thầu",
   "Effective mark-up across the whole quotation": "Tỷ lệ cộng giá thực tế của toàn bộ báo giá",
   "Engineering &amp; Solutions": "Kỹ thuật &amp; Giải pháp",
@@ -29572,7 +29810,7 @@ const _VI = {
      rest of the portal already reads Mua sắm. A second 'Mua hàng' here never reached a screen —
      it only made the launcher tile's own word unpredictable. See tests/vi_duplicate_keys.js. */
   'System Settings': 'Cài đặt hệ thống',
-  'Your dashboard, attendance and personal requests': 'Bảng điều khiển, chuyên cần và các đề nghị cá nhân của bạn',
+  'Your dashboard, attendance and personal requests': 'Bảng điều khiển, chấm công và các đề nghị cá nhân của bạn',
   'Company and executive dashboards': 'Bảng điều khiển công ty và ban điều hành',
   'What is waiting for your decision, and how your team is doing': 'Những việc đang chờ bạn quyết định, và tình hình nhóm của bạn',
   'Leads, pipeline, quotations and customer orders': 'Khách hàng tiềm năng, cơ hội, báo giá và đơn hàng',
@@ -30033,9 +30271,9 @@ const _VI = {
   'These lines do not add up to the total — do not use this report':
     'Các dòng không khớp tổng — không dùng báo cáo này',
   'This month has not been signed off, so people are costed from their current salary. Treat these figures as provisional — a signed pay run carries the real employer cost, including overtime and contributions.':
-    'Tháng này chưa được ký duyệt nên chi phí lấy theo lương hiện tại. Hãy xem đây là số tạm tính — bảng lương đã ký mới có chi phí thực của người sử dụng lao động, gồm cả tăng ca và các khoản đóng.',
+    'Tháng này chưa được ký duyệt nên chi phí lấy theo lương hiện tại. Hãy xem đây là số tạm tính — bảng lương đã ký mới có chi phí thực của người sử dụng lao động, gồm cả tiền lương làm thêm giờ và các khoản đóng.',
   'Costed from the signed pay run for this month — the frozen, e-signed figures, including overtime and employer contributions.':
-    'Tính theo bảng lương đã ký của tháng này — số liệu đã chốt và ký điện tử, gồm tăng ca và các khoản đóng.',
+    'Tính theo bảng lương đã ký của tháng này — số liệu đã chốt và ký điện tử, gồm tiền lương làm thêm giờ và các khoản đóng.',
   'No labour cost for this month': 'Không có chi phí nhân công trong tháng này',
   'Could not load the labour report': 'Không tải được báo cáo nhân công',
   'Load the report first': 'Hãy tải báo cáo trước',
@@ -30419,8 +30657,8 @@ const _VI = {
   'Value (₫)': 'Giá trị (₫)',
   'Retention %': 'Giữ lại %',
   'Award date': 'Ngày trao thầu',
-  'Payment Certificate': 'Chứng nhận thanh toán',
-  'Certificate No.': 'Số chứng nhận',
+  'Payment Certificate': 'Chứng chỉ thanh toán',
+  'Certificate No.': 'Số chứng chỉ',
   'Gross claimed (₫)': 'Tổng yêu cầu (₫)',
   'Retention deducted (₫)': 'Khấu trừ giữ lại (₫)',
   'Net certified (₫)': 'Giá trị xác nhận thuần (₫)',
@@ -30428,7 +30666,7 @@ const _VI = {
   'Stakeholder': 'Bên liên quan',
   'Internal / External': 'Nội bộ / Bên ngoài',
   'Engagement strategy': 'Chiến lược gắn kết',
-  'RFI / Submittal': 'RFI / Đệ trình',
+  'RFI / Submittal': 'RFI / Hồ sơ trình duyệt',
   'Question / detail': 'Câu hỏi / chi tiết',
   'Response date': 'Ngày phản hồi',
   'Site Daily Report': 'Báo cáo công trường hàng ngày',
@@ -30524,7 +30762,7 @@ const _VI = {
   'Passed with actions': 'Đạt kèm hành động', 'Failed': 'Không đạt', 
   'At gate': 'Đang tại cổng',
   'Document No.': 'Số hiệu tài liệu', 'Drawing No.': 'Số hiệu bản vẽ',
-  'Rev': 'PB', 'Issued': 'Đã phát hành',
+  'Rev': 'Rev.', 'Issued': 'Đã phát hành',
   'Revisions': 'Phiên bản', 'Sheet': 'Khổ bản vẽ', 'Hold': 'Tạm dừng',
   'Requirement': 'Yêu cầu', 'Source': 'Nguồn', 'Addressed by': 'Được đáp ứng bởi',
   'Verification': 'Thẩm tra', 'Verification method': 'Phương pháp thẩm tra',
@@ -30636,7 +30874,7 @@ const _VI = {
   'Design Plan': 'Kế hoạch thiết kế',
   'Seed from stage template': 'Tạo từ mẫu giai đoạn',
   'Transmittal note': 'Phiếu chuyển tài liệu',
-  'Certificate': 'Chứng nhận',
+  'Certificate': 'Chứng chỉ',
   'History': 'Lịch sử',
   'Edit document': 'Sửa tài liệu',
   'How this works': 'Cách hoạt động',
@@ -30682,7 +30920,7 @@ const _VI = {
   'Construction / Execution': 'Thi công / Thực hiện',
   'Design': 'Thiết kế',
   'Initiation': 'Khởi tạo',
-  'Closeout': 'Nghiệm thu & Bàn giao',
+  'Closeout': 'Kết thúc & quyết toán',
   'Commissioning': 'Chạy thử & Nghiệm thu',
   'Handover': 'Bàn giao',
   'Feasibility': 'Nghiên cứu khả thi',
@@ -30762,7 +31000,7 @@ const _VI = {
   /* Undo window — taking back a decision within the grace period. */
   'Undo': 'Hoàn tác',
   'Dismiss': 'Bỏ qua',
-  'Reversed ✓ — ': 'Đã hoàn tác ✓ — ',
+  'Reversed ✓ — ': 'Đã ghi đảo ✓ — ',
   'Taken back. The original signature stays on the record, marked reversed.': 'Đã hoàn tác. Chữ ký gốc vẫn nằm trên hồ sơ, được đánh dấu là đã đảo.',
   'Reverse this payment': 'Hoàn tác thanh toán này',
   'This corrects the record. It does not recall a transfer that has already left the bank — if money did move, reverse it with your bank first.': 'Thao tác này sửa hồ sơ. Nó KHÔNG thu hồi khoản tiền đã rời khỏi ngân hàng — nếu tiền đã chuyển, hãy làm việc với ngân hàng trước.',
@@ -30851,7 +31089,7 @@ const _VI = {
   'Ret %': 'Giữ lại %',
   'Contractor / Vendor': 'Nhà thầu / NCC',
   'Cert': 'Chứng chỉ',
-  'Net certified': 'Xác nhận ròng',
+  'Net certified': 'Giá trị xác nhận thuần',
   'Organization': 'Tổ chức',
   'Role': 'Vai trò',
   'Influence': 'Ảnh hưởng',
@@ -30884,7 +31122,7 @@ const _VI = {
   'Add cert': 'Thêm chứng chỉ',
   'Weekly': 'Tuần',
   'Monthly': 'Tháng',
-  'Charter': 'Hiến chương',
+  'Charter': 'Điều lệ dự án',
   'All projects': 'Tất cả dự án',
   'Clear': 'Xóa lọc',
   'Filter': 'Lọc',
@@ -31001,7 +31239,7 @@ const _VI = {
   'Assess Employee': 'Đánh giá nhân viên', 'Course link': 'Liên kết khóa học', 'Material': 'Tài liệu',
   'Assets': 'Tài sản', 'Manage': 'Quản lý', 'Complete': 'Hoàn thành', 'Initiate Exit': 'Khởi tạo thôi việc',
   // Statuses
- 'Inactive': 'Ngừng', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Từ chối',
+ 'Inactive': 'Ngừng làm việc', 'Approved': 'Đã duyệt', 'Pending': 'Chờ duyệt', 'Rejected': 'Đã từ chối',
   'Completed': 'Hoàn thành', 'In progress': 'Đang thực hiện', 'Enrolled': 'Đã đăng ký', 'Submitted': 'Đã gửi',
   'Assigned': 'Đã cấp phát', 'Available': 'Sẵn có', 'In Repair': 'Đang sửa', 'Retired': 'Thanh lý',
   'On Time': 'Đúng giờ', 'Absent': 'Vắng', 'Not started': 'Chưa bắt đầu',
@@ -31055,10 +31293,10 @@ const _VI = {
   'TOTAL DEDUCTIONS': 'TỔNG KHẤU TRỪ', 'Earnings — 3P': 'Thu nhập — 3P', 'Other deductions — Employee': 'Khấu trừ khác — Nhân viên',
   'Confidential Payslip': 'Phiếu lương (bảo mật)', 'Download PDF': 'Tải PDF', 'Payslip': 'Phiếu lương',
   'Ready to check in': 'Sẵn sàng chấm công', 'Checked In': 'Đã chấm công vào',
-  'Open positions': 'Vị trí đang tuyển', 'Vacancies': 'Chỗ trống', 'Offer acceptance': 'Tỷ lệ nhận offer', 'Hired (cycle)': 'Đã tuyển (kỳ)',
+  'Open positions': 'Vị trí đang tuyển', 'Vacancies': 'Vị trí cần tuyển', 'Offer acceptance': 'Tỷ lệ nhận offer', 'Hired (cycle)': 'Đã tuyển (kỳ)',
   'Candidate Funnel & Conversion': 'Phễu ứng viên & Chuyển đổi', 'Source of Hire Mix': 'Nguồn tuyển dụng',
-  'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí chủ SDLĐ theo phòng',
-  'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Bảo hiểm — NV và DN',
+  'Cost by Department': 'Chi phí theo phòng ban', 'Employer Cost by Department': 'Chi phí NSDLĐ theo phòng ban',
+  'Gross Cost Composition (3P)': 'Cơ cấu chi phí gộp (3P)', 'Statutory — Employee vs Employer': 'Các khoản đóng bắt buộc — NLĐ và NSDLĐ',
   /* Onboarding & policy compliance */
   'Create employee folders': 'Tạo thư mục nhân viên',
   'folder(s) created or refreshed': 'thư mục đã tạo hoặc cập nhật', 'Create': 'Tạo',
@@ -31130,15 +31368,15 @@ const _VI = {
   'These employees have no salary on file, so the system has no figure to pay them:': 'Những nhân viên sau chưa có mức lương trong hồ sơ nên hệ thống không có số liệu để chi trả:',
   'Set each one’s monthly gross on their employee record, then roll out again.': 'Hãy nhập lương gộp hằng tháng vào hồ sơ từng người, sau đó chốt lại.',
   'The selected range is all weekend and public holidays — no leave would be used.': 'Khoảng thời gian đã chọn toàn ngày nghỉ và lễ — sẽ không trừ ngày phép nào.',
-  'Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.': 'Ban hành tài liệu công ty dành cho Nhân sự, Biên tập viên và Quản trị viên — quản trị viên có thể thêm bạn ở mục Phân quyền.',
+  'Publishing a company document is for HR, Editors and Administrators — an administrator can add you under Access & Permissions.': 'Ban hành tài liệu công ty dành cho Nhân sự, cấp Người chỉnh sửa và Quản trị viên — quản trị viên có thể thêm bạn ở mục Phân quyền.',
   'signature(s) are waiting on a document HR has not uploaded yet — they are not counted above.': 'chữ ký đang chờ tài liệu mà Nhân sự chưa tải lên — không được tính ở trên.',
   'Already signed': 'Đã ký', 'Assigned to me': 'Được giao cho tôi', 'To sign': 'Cần ký',
   'Outstanding': 'Chưa ký', 'Overdue since': 'Quá hạn từ', 'Not applicable': 'Không áp dụng',
   'Effective': 'Hiệu lực từ', 'Open document': 'Mở tài liệu', 'Read & sign': 'Đọc & ký',
   'Your signature': 'Chữ ký của bạn', 'Policy compliance': 'Tuân thủ tài liệu',
   'Who has signed what': 'Ai đã ký tài liệu nào', 'Publish a document': 'Ban hành tài liệu',
-  'Send reminders now': 'Gửi nhắc nhở ngay', 'All departments': "Tất cả bộ phận",
- 'Department': "Bộ phận", 'Overdue': 'Quá hạn',
+  'Send reminders now': 'Gửi nhắc nhở ngay', 'All departments': "Tất cả phòng ban",
+ 'Department': "Phòng ban", 'Overdue': 'Quá hạn',
   'By signing I confirm that I have received and read this document, that I understand it, and that I agree to follow it.': 'Bằng việc ký, tôi xác nhận đã nhận, đã đọc và hiểu tài liệu này và đồng ý tuân thủ.',
   'Please open each document, read it, and sign to confirm. Your signature is filed in your HR record.': 'Vui lòng mở từng tài liệu, đọc và ký xác nhận. Chữ ký của bạn được lưu vào hồ sơ nhân sự.',
   'Please sign to confirm you have read this document.': 'Vui lòng ký để xác nhận bạn đã đọc tài liệu này.',
@@ -31232,7 +31470,7 @@ const _VI = {
   'Assign Access Levels': 'Gán cấp truy cập', 'Admin & Settings': 'Quản trị & Cài đặt',
   'Compliance & Policy Configuration': 'Cấu hình tuân thủ & chính sách',
   'Vietnamese Labour Code — leave entitlements configured': 'Bộ luật Lao động Việt Nam — đã cấu hình chế độ nghỉ phép',
-  'Overtime rate 1.5× applied for hours > 8/day': 'Áp dụng hệ số tăng ca 1,5× cho giờ làm trên 8 giờ/ngày',
+  'Overtime rate 1.5× applied for hours > 8/day': 'Áp dụng hệ số làm thêm giờ 1,5× cho giờ làm trên 8 giờ/ngày',
   'Annual leave balance reset scheduled 1 January': 'Đặt lại số ngày phép năm vào ngày 1 tháng 1',
   '21 CFR Part 11 e-signatures enforced on every submission & approval': 'Bắt buộc chữ ký điện tử 21 CFR Part 11 cho mọi lần gửi & phê duyệt',
   'Attendance & leave records retained in the system database': 'Lưu trữ hồ sơ chấm công & nghỉ phép trong cơ sở dữ liệu hệ thống',
@@ -31278,7 +31516,7 @@ const _VI = {
   'Check-out reminder': 'Nhắc nhở chấm ra',
   'Claim title / trip': 'Tiêu đề yêu cầu / chuyến đi',
   'Claims': 'Yêu cầu hoàn ứng',
-  'Clearance': 'Thanh toán nghỉ việc',
+  'Clearance': 'Bàn giao & thanh toán',
   'Click': 'Nhấp',
   'Click a claim to see its items': 'Nhấp vào một yêu cầu để xem chi tiết',
   'Comments': 'Bình luận',
@@ -31297,12 +31535,12 @@ const _VI = {
   'Competency / Skill Matrix': 'Ma trận Năng lực / Kỹ năng',
   'Competency Matrix': 'Ma trận năng lực',
   'removed permanently': 'đã xóa vĩnh viễn',
-  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Quy trình theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
+  'Products': 'Sản phẩm', 'Negotiation': 'Đàm phán', 'Sales by salesman': 'Doanh số theo nhân viên', 'Product / Service type': 'Loại Sản phẩm / Dịch vụ', 'Pipeline by product / service type': 'Pipeline theo loại SP/DV', 'Salesman': 'Nhân viên KD', 'App access': 'Quyền ứng dụng', 'Forecast (weighted)': 'Dự báo (theo xác suất)', 'Import': 'Nhập', 'Template': 'Mẫu', 'Product & Service Catalog': 'Danh mục Sản phẩm & Dịch vụ', 'Add Product': 'Thêm sản phẩm',
   'Upcoming activities': 'Hoạt động sắp tới', 'Activities overdue': 'Hoạt động quá hạn', 'Due today': 'Đến hạn hôm nay',
   'Top 5 opportunities (by value)': 'Top 5 cơ hội (theo giá trị)', 'Top 5 leads (by value)': 'Top 5 KH tiềm năng (theo giá trị)',
   'PMC / Projects': 'PMC / Dự án', 'Portfolio': 'Danh mục dự án', 'Project Workspace': 'Không gian dự án', 'New Project': 'Dự án mới',
   'Active projects': 'Dự án đang chạy', 'On-track': 'Đúng tiến độ', 'Portfolio CPI': 'CPI danh mục', 'Portfolio SPI': 'SPI danh mục', 'Project Portfolio': 'Danh mục dự án',
-  'Project Charter': 'Hiến chương dự án', 'Sponsor': 'Nhà tài trợ', 'Contract Value': 'Giá trị hợp đồng', 'Approved Budget': 'Ngân sách duyệt',
+  'Project Charter': 'Điều lệ dự án', 'Sponsor': 'Nhà tài trợ', 'Contract Value': 'Giá trị hợp đồng', 'Approved Budget': 'Ngân sách duyệt',
   'Scope / WBS': 'Phạm vi / WBS', 'Schedule': 'Tiến độ', 'Cost / EVM': 'Chi phí / EVM', 'Quality': 'Chất lượng', 'Resources': 'Nguồn lực', 'Comms & Issues': 'Trao đổi & Vấn đề',
   'Risk': 'Rủi ro', 'Procurement': 'Mua sắm', 'Stakeholders': 'Bên liên quan', 'Doc Control': 'Kiểm soát tài liệu', 'Overview': 'Tổng quan', 'Deliverables': 'Sản phẩm bàn giao',
   'Work Breakdown Structure (Deliverables)': 'Cấu trúc phân chia công việc (WBS)', 'Scope Statement': 'Tuyên bố phạm vi', 'Schedule — Gantt': 'Tiến độ — Gantt',
@@ -31333,7 +31571,7 @@ const _VI = {
   'Course Catalog': 'Danh mục khóa học',
   'Courses': 'Khóa học',
   'Courses available': 'Khóa học hiện có',
-  'Create the Site': 'Tạo công trường',
+  'Create the Site': 'Tạo Site SharePoint',
   'Current Balance:': 'Số dư hiện tại:',
   'Custom': 'Tùy chỉnh',
   'Cycle': 'Chu kỳ',
@@ -31365,16 +31603,16 @@ const _VI = {
   'Approved by': "Người phê duyệt",
   'Paid on': 'Đã chi ngày',
   'Not yet approved.': 'Chưa phê duyệt.',
-  'Overtime request': 'Yêu cầu tăng ca',
-  'Request overtime': 'Gửi yêu cầu tăng ca',
+  'Overtime request': 'Đề nghị làm thêm giờ',
+  'Request overtime': 'Gửi đề nghị làm thêm giờ',
   // ── Overtime pay + the Art. 107 caps ──
  'approved': 'đã duyệt', 'rejected': 'đã từ chối', 'night': 'đêm',
   'over cap': 'vượt trần', 'Normal working day': 'Ngày làm việc bình thường',
   'Weekly rest day': 'Ngày nghỉ hằng tuần', 'Public holiday': 'Ngày lễ, tết',
   'of which at night (22:00–06:00)': 'trong đó làm ban đêm (22:00–06:00)',
-  'Hourly rate': 'Đơn giá giờ', 'Overtime pay': 'Tiền lương tăng ca',
+  'Hourly rate': 'Đơn giá giờ', 'Overtime pay': 'Tiền lương làm thêm giờ',
   'of which exempt from PIT (premium above the normal rate)': 'trong đó được miễn thuế TNCN (phần trả cao hơn mức bình thường)',
-  'This overtime is over the statutory limit': 'Số giờ tăng ca này vượt giới hạn luật định',
+  'This overtime is over the statutory limit': 'Số giờ làm thêm này vượt giới hạn luật định',
   'would reach': 'sẽ lên tới',
   'The hours are not being deleted — they were worked. You can approve them anyway, but the approval will be recorded in the audit trail under your name with the reason you give.':
     'Số giờ này không bị xoá — người lao động đã làm thật. Bạn vẫn có thể duyệt, nhưng việc duyệt sẽ được ghi vào nhật ký kiểm toán dưới tên bạn kèm lý do bạn nêu.',
@@ -31449,7 +31687,7 @@ const _VI = {
   'Employer contributions': 'Người sử dụng lao động đóng',
   'Union fund': 'Kinh phí công đoàn',
   'PIT withheld': 'Thuế TNCN đã khấu trừ',
-  'Contribution base': 'Mức đóng',
+  'Contribution base': 'Tiền lương làm căn cứ đóng',
   'Record a certificate': 'Ghi nhận chứng chỉ',
   'Certificate recorded': 'Đã ghi nhận chứng chỉ',
   'Kind': 'Loại',
@@ -31533,7 +31771,7 @@ const _VI = {
   'Job title': 'Chức danh',
   'Place of work': 'Địa điểm làm việc',
   'Wage (₫/month)': 'Mức lương (₫/tháng)',
-  'Wage paid on': 'Thời hạn trả lương',
+  'Wage paid on': 'Kỳ hạn trả lương',
   'Probation (days)': 'Thử việc (ngày)',
   'Kind of post': 'Loại vị trí',
   'sets the Art. 25 ceiling': 'quyết định mức trần theo Điều 25',
@@ -31565,9 +31803,9 @@ const _VI = {
   'Expiring': 'Sắp hết hạn', 'Active': "Đang làm", 'Indefinite-term': 'Không xác định thời hạn',
   // ── Correcting an attendance record ──
   'Correct': 'Sửa', 'corrected': 'đã sửa', 'Correct attendance': 'Sửa chấm công',
- 'Check-out': "Giờ ra", 'Overtime hours': 'Số giờ tăng ca',
+ 'Check-out': "Giờ ra", 'Overtime hours': 'Số giờ làm thêm',
   'Overtime on this record is already approved. Changing the times or the hours sends it back for a decision — the approval described the shift as it was.':
-    'Tăng ca của bản ghi này đã được duyệt. Việc thay đổi giờ hoặc số giờ sẽ đưa nó trở lại chờ duyệt — phê duyệt trước đó áp dụng cho ca làm việc như cũ.',
+    'Giờ làm thêm của bản ghi này đã được duyệt. Việc thay đổi giờ hoặc số giờ sẽ đưa nó trở lại chờ duyệt — phê duyệt trước đó áp dụng cho ca làm việc như cũ.',
   'Reason for the correction': 'Lý do sửa',
   'e.g. forgot to check out; site sign-out sheet shows 18:30': 'ví dụ: quên chấm công ra; sổ ký ra tại công trình ghi 18:30',
   'The before and after, your name and this reason go into the audit trail. Attendance feeds payroll, so a correction here can change what somebody is paid.':
@@ -31575,7 +31813,7 @@ const _VI = {
   'Save correction': 'Lưu chỉnh sửa',
   'Give a reason for the correction — it goes on the record': 'Vui lòng nhập lý do sửa — lý do này sẽ được lưu vào hồ sơ',
   'Nothing was changed': 'Không có thay đổi nào', 'Attendance corrected': 'Đã sửa chấm công',
-  'overtime sent back for approval': 'tăng ca được gửi lại để duyệt',
+  'overtime sent back for approval': 'giờ làm thêm được gửi lại để duyệt',
   // ── Certificates, licences & health checks ──
   'Certificates, licences &amp; health checks': 'Chứng chỉ, giấy phép &amp; khám sức khoẻ',
   'Law on OSH 2015 Art. 21(1) — a health examination at least once a year, and every six months for hazardous work, minors, elderly and disabled workers · Decree 44/2016 Art. 24 — safety training valid 2 years, where the company has classified somebody into a group.':
@@ -31622,13 +31860,13 @@ const _VI = {
   'the figures below are the grade band mid-point, not this employee’s pay. Enter their agreed salary before issuing this payslip.': 'các con số dưới đây là mức giữa của khung bậc lương, không phải lương của nhân viên này. Vui lòng nhập mức lương đã thoả thuận trước khi phát hành phiếu lương.',
   'Payroll cannot be run yet': 'Chưa thể chạy bảng lương',
   'Set each one’s monthly gross on their employee record, then try again.': 'Vui lòng nhập lương gộp hằng tháng trên hồ sơ của từng người, rồi thử lại.',
-  'Overtime &amp; statutory limits': 'Tăng ca &amp; giới hạn luật định',
+  'Overtime &amp; statutory limits': 'Làm thêm giờ &amp; giới hạn luật định',
   'Labour Code Art. 107 — 4h a day · 40h a month · ': 'Bộ luật Lao động Đ.107 — 4h/ngày · 40h/tháng · ',
   'h a year': 'h/năm', 'over the limit': 'vượt giới hạn',
  'Of which at night': 'Trong đó ban đêm',
   'Breakdown': 'Chi tiết',
-  'No overtime': 'Không tăng ca',
-  'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Gửi yêu cầu tăng ca để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
+  'No overtime': 'Không làm thêm giờ',
+  'You worked beyond the standard hours. Request overtime for approval — it is added to the system only after your manager approves.': 'Bạn đã làm vượt giờ chuẩn. Hãy gửi đề nghị làm thêm giờ để duyệt — chỉ được tính sau khi quản lý phê duyệt.',
   'e.g. urgent site work': 'ví dụ: công việc khẩn tại công trường',
   'Definition': 'Định nghĩa',
   'Demo Mode': 'Chế độ dùng thử',
@@ -31654,7 +31892,7 @@ const _VI = {
   'Edit Leave Balance': 'Sửa số dư nghỉ phép',
   'Edit Profile': 'Sửa hồ sơ',
   'Editing balance for:': 'Đang sửa số dư của:',
-  'Editor (Payroll)': 'Biên tập viên (Bảng lương)',
+  'Editor (Payroll)': 'Người chỉnh sửa (Bảng lương)',
   'Education': 'Học vấn',
   'Education Level': 'Trình độ học vấn',
   'Email Notification Address': 'Địa chỉ email nhận thông báo',
@@ -31685,7 +31923,7 @@ const _VI = {
   'Evaluate': 'Đánh giá',
   'Evening Shift 14:00 – 22:00': 'Ca chiều 14:00 – 22:00',
   'Every employee is entitled to a safe, respectful workplace.': 'Mọi nhân viên đều có quyền được làm việc trong môi trường an toàn và tôn trọng.',
-  'Exit Clearance Checklist (FRM-014) — attach proof for returned assets': 'Danh mục kiểm tra thanh lý nghỉ việc (FRM-014) — đính kèm bằng chứng cho tài sản đã trả',
+  'Exit Clearance Checklist (FRM-014) — attach proof for returned assets': 'Danh mục bàn giao khi nghỉ việc (FRM-014) — đính kèm bằng chứng cho tài sản đã trả',
   'Exit Register': 'Sổ đăng ký nghỉ việc',
   'Exit type': 'Loại hình nghỉ việc',
   'Export': 'Xuất',
@@ -31694,7 +31932,7 @@ const _VI = {
   'Export Employee List': 'Xuất danh sách nhân viên',
   'Export Excel': 'Xuất Excel',
   'Export Leave Requests': 'Xuất yêu cầu nghỉ phép',
-  'Export Pay Run': 'Xuất kỳ trả lương',
+  'Export Pay Run': 'Xuất đợt chi lương',
   'Export Report': 'Xuất báo cáo',
   'Extend': 'Gia hạn',
   'Factory': 'Nhà máy',
@@ -31722,7 +31960,7 @@ const _VI = {
   'Flagged for PIP (rating ≤ 2)': 'Bị gắn cờ PIP (đánh giá ≤ 2)',
   'Flexible (Field Services)': 'Linh hoạt (Dịch vụ hiện trường)',
   'Flight': 'Chuyến bay',
-  'Fri': 'Thứ 6',
+  'Fri': 'T6',
   'From': 'Từ',
   'Full Guide (DOCX)': 'Hướng dẫn đầy đủ (DOCX)',
   'Full Name': 'Họ và tên',
@@ -31769,7 +32007,7 @@ const _VI = {
   'The mid-shift break inside these hours. Art. 109 requires at least 30 consecutive minutes on a day of 6 hours or more, 45 where 3 or more hours fall between 22:00 and 06:00. It only counts as paid working time for continuous shift work (Decree 145 Art. 63(3)). Working-time compliance is measured after this comes off.':
     'Thời gian nghỉ giữa giờ trong ca. Điều 109 yêu cầu ít nhất 30 phút liên tục nếu làm việc từ 6 giờ trở lên trong ngày, 45 phút nếu có từ 3 giờ trở lên trong khoảng 22:00–06:00. Chỉ được tính vào giờ làm việc có hưởng lương đối với ca liên tục (khoản 3 Điều 63 Nghị định 145). Việc kiểm tra giờ làm việc được tính sau khi trừ khoảng này.',
   'Grace Period (min)': 'Thời gian ân hạn (phút)',
-  'Grade': "Bậc lương",
+  'Grade': "Bậc",
   'Gross': 'Tổng (gộp)',
   'HQ District 10 · Late (15 min)': 'Trụ sở Quận 10 · Trễ (15 phút)',
   'HQ District 10 · On Time': 'Trụ sở Quận 10 · Đúng giờ',
@@ -31789,7 +32027,7 @@ const _VI = {
   'Hospital': 'Bệnh viện',
   'Hours': 'Giờ',
   'How it works:': 'Cách hoạt động:',
-  'The active schedule for each employee\'s department defines the valid check-in window, grace period and overtime rate used when their attendance is recorded.': 'Lịch làm việc đang áp dụng cho phòng ban của mỗi nhân viên quy định khung giờ chấm công hợp lệ, thời gian ân hạn và hệ số tăng ca được sử dụng khi ghi nhận chấm công của họ.',
+  'The active schedule for each employee\'s department defines the valid check-in window, grace period and overtime rate used when their attendance is recorded.': 'Lịch làm việc đang áp dụng cho phòng ban của mỗi nhân viên quy định khung giờ chấm công hợp lệ, thời gian ân hạn và hệ số làm thêm giờ được sử dụng khi ghi nhận chấm công của họ.',
   'Humiley Group Inc. — People & Workplace Portal': 'Humiley Group Inc. — Cổng Nhân sự & Nơi làm việc',
   'Humiley Timekeeping': 'Chấm công Humiley',
   'Huy Nguyen checked in': 'Huy Nguyen đã chấm vào',
@@ -31884,7 +32122,7 @@ const _VI = {
   'Medical': 'Y tế',
   'Medical Certificate': 'Giấy chứng nhận y tế',
   'Mgr': 'Quản lý',
-  'Microsoft 365 Licences Required': 'Yêu cầu giấy phép Microsoft 365',
+  'Microsoft 365 Licences Required': 'Yêu cầu bản quyền Microsoft 365',
   'Microsoft Teams Channel Webhook': 'Webhook kênh Microsoft Teams',
   'Microsoft Teams — Incoming Webhook URL (optional)': 'Microsoft Teams — URL Webhook nhận (tùy chọn)',
   'Mid': 'Trung bình',
@@ -32008,11 +32246,11 @@ const _VI = {
   'Other': 'Khác',
   'Out Zone': 'Ngoài vùng',
   'Outcome': 'Kết quả',
-  'Overtime': 'Tăng ca',
-  'Overtime Rate': 'Đơn giá tăng ca',
-  'Overtime Threshold (hrs/day)': 'Ngưỡng tăng ca (giờ/ngày)',
-  'Overtime compensation': 'Trợ cấp tăng ca',
-  'Overtime warning': 'Cảnh báo tăng ca',
+  'Overtime': 'Làm thêm giờ',
+  'Overtime Rate': 'Hệ số làm thêm giờ',
+  'Overtime Threshold (hrs/day)': 'Ngưỡng làm thêm giờ (giờ/ngày)',
+  'Overtime compensation': 'Tiền lương làm thêm giờ',
+  'Overtime warning': 'Cảnh báo làm thêm giờ',
   'Owner': 'Người phụ trách',
   'Owners:': 'Người phụ trách:',
   'P1 – Position:': 'P1 – Vị trí:',
@@ -32035,7 +32273,7 @@ const _VI = {
   'Performance →': 'Hiệu suất →',
   'Period': 'Kỳ',
   'Permission Levels': 'Cấp quyền',
-  'Personal travel': 'Công tác cá nhân',
+  'Personal travel': 'Đi lại cá nhân',
   'Phone Number': 'Số điện thoại',
   'Photo': 'Ảnh',
   'Phuc Dang checked in': 'Phuc Dang đã chấm vào',
@@ -32099,7 +32337,7 @@ const _VI = {
   'Require real GPS for check-in/out (no simulation)': 'Yêu cầu GPS thật để chấm vào/ra (không giả lập)',
   'Reset Demo Data': 'Đặt lại dữ liệu demo',
   'Reset to formula': 'Đặt lại theo công thức',
-  'Resignation · clearance · final settlement': 'Từ chức · thanh toán bàn giao · quyết toán cuối cùng',
+  'Resignation · clearance · final settlement': 'Nghỉ việc · bàn giao · quyết toán',
   'Rest Advised': 'Khuyến nghị nghỉ ngơi',
   'Return?': 'Trả lại?',
   'Reviews': 'Đánh giá',
@@ -32158,7 +32396,7 @@ const _VI = {
   'Stop work if conditions are unsafe.': 'Dừng công việc nếu điều kiện không an toàn.',
   'Strong Hire': 'Rất nên tuyển',
   'Submit Request': 'Gửi yêu cầu',
-  'Submit a Claim': 'Gửi đề nghị thanh toán',
+  'Submit a Claim': 'Gửi đề nghị chi phí',
   'Subtotal': 'Tạm tính',
   'Succession': 'Kế nhiệm',
   'Summary': 'Tóm tắt',
@@ -32198,7 +32436,7 @@ const _VI = {
   'Could not send': 'Không gửi được', 'Could not generate': 'Không tạo được',
   'Network error': 'Lỗi mạng', 'Upload failed': 'Tải lên thất bại',
   'Hire failed': 'Tuyển dụng thất bại', 'Could not start PIP': 'Không khởi tạo được PIP',
-  'Could not create cycle': 'Không tạo được chu kỳ', 'Could not update overtime': 'Không cập nhật được tăng ca',
+  'Could not create cycle': 'Không tạo được chu kỳ', 'Could not update overtime': 'Không cập nhật được giờ làm thêm',
   // ── toast long-tail: common standalone messages ──
   'Deleted': "Đã xoá", 'Saved': 'Đã lưu', 'Removed': "Đã xoá", 'Updated': 'Đã cập nhật',
   // ── empty-state messages rolled onto tkEmptyRow ──
@@ -32319,7 +32557,7 @@ const _VI = {
   'Total Days': 'Tổng số ngày',
   'Total Hours': 'Tổng số giờ',
   'Total Hours Worked': 'Tổng số giờ làm việc',
-  'Total Overtime Hours:': 'Tổng số giờ tăng ca:',
+  'Total Overtime Hours:': 'Tổng số giờ làm thêm:',
   'Total Records': 'Tổng số bản ghi',
   'Total Regular Hours:': 'Tổng số giờ làm chuẩn:',
   'Total Requests': 'Tổng số yêu cầu',
@@ -32793,7 +33031,7 @@ const _VI = {
   "Azure AD Application": "Ứng dụng Azure AD",
   "SharePoint Site": "Site SharePoint",
   "Automated Notifications": "Thông báo tự động",
-  "Succession & Readiness": "Kế thừa & Sẵn sàng",
+  "Succession & Readiness": "Kế nhiệm & Sẵn sàng",
   "Enrolments & Progress": "Ghi danh & Tiến độ",
   "Expense & Benefit Claims": "Đề nghị chi phí & Phúc lợi",
   "SP_CONFIG — Live Values": "SP_CONFIG — Giá trị hiện hành",
@@ -32973,8 +33211,8 @@ const _VI = {
   "Load": "Tải",
   "Minimum Wage": "Lương tối thiểu vùng",
   "Onboarding & Policies": "Hội nhập & Chính sách",
-  "Overtime & statutory limits": "Tăng ca & giới hạn luật định",
-  "Overtime could not be read for this period": "Không đọc được dữ liệu tăng ca cho kỳ này",
+  "Overtime & statutory limits": "Làm thêm giờ & giới hạn luật định",
+  "Overtime could not be read for this period": "Không đọc được dữ liệu làm thêm giờ cho kỳ này",
   "PIN set": "Đã đặt PIN",
   "PIN status": "Trạng thái PIN",
   "Pay to": "Trả cho",
@@ -32983,7 +33221,7 @@ const _VI = {
   "Reload the page and try again.": "Hãy tải lại trang và thử lại.",
   "Reversed ✓ —": "Đã ghi đảo ✓ —",
   "Sales Compliance": "Tuân thủ bán hàng",
-  "Statutory Returns": "Báo cáo luật định",
+  "Statutory Returns": "Báo cáo, tờ khai bắt buộc",
   "Testing…": "Đang kiểm tra…",
   "Upload the bank transfer confirmation (proof of payment) for": "Tải lên uỷ nhiệm chi (chứng từ thanh toán) cho",
   "When (UTC)": "Thời gian (UTC)",
@@ -33003,7 +33241,284 @@ const _VI = {
   "No documents published yet": "Chưa ban hành tài liệu nào",
   "Publish a document and everyone it applies to will be asked to sign it.": "Ban hành một tài liệu và tất cả những người thuộc phạm vi áp dụng sẽ được yêu cầu ký.",
   "pages": "trang",
-  "Open the full document": "Mở toàn bộ tài liệu"
+  "Open the full document": "Mở toàn bộ tài liệu",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Access restricted — this section requires Approver level.": "Hạn chế truy cập — mục này yêu cầu cấp Phê duyệt.",
+  "Cryptographic tamper-evidence: each entry is HMAC-chained to the previous one.": "Chống sửa đổi bằng mật mã: mỗi bản ghi được móc xích HMAC với bản ghi liền trước.",
+  "Could not read the appraisal ratings — refusing to produce a run rather than paying everybody the neutral rating.": "Không đọc được kết quả đánh giá — hệ thống từ chối lập bảng lương thay vì trả cho tất cả mọi người theo mức đánh giá trung bình.",
+  "The approved overtime for the month(s) below could not be loaded, so every payslip would show none — which is a wrong figure, not a missing one, and a signed run makes it permanent.": "Không tải được số giờ làm thêm đã duyệt của (các) tháng dưới đây, nên mọi phiếu lương sẽ hiển thị bằng không — đó là số liệu SAI chứ không phải số liệu thiếu, và một bảng lương đã ký thì không sửa được nữa.",
+  "This is required to mark the payment paid, and is filed with the request, approval and invoice.": "Chứng từ này bắt buộc để đánh dấu đã thanh toán, và được lưu cùng đề nghị, phê duyệt và hoá đơn.",
+  "The stored file has no document pages — the original upload did not survive the merge.": "Tệp đã lưu không có trang tài liệu nào — bản tải lên gốc đã mất khi gộp tệp.",
+  "Readings filed": "Đã lưu các lần ghi nhận",
+  "Copy": "Sao chép",
+  "Power BI: Basic authentication, user": "Power BI: Xác thực Basic, tài khoản",
+  "This rewrites every percentage already reported against it — e.g. \"Variation VO-014 reduced the run\".": "Việc này viết lại mọi phần trăm đã báo cáo theo con số cũ — VD: \"Phát sinh VO-014 giảm chiều dài tuyến\".",
+  "Write the response before closing — a closed comment with no answer against it is how an objection goes missing.": "Hãy ghi nội dung trả lời trước khi đóng — một ý kiến đóng lại mà không có câu trả lời chính là cách một phản biện bị bỏ quên.",
+  "The hours this estimate promises, by trade. These are the only physical quantities in a build-up that can later be checked against what actually happened — Projects → Labour cost reports the real cost per hour of a finished job, on a stated basis of recorded or allocated. Comparing the two is how next year’s estimate stops being a guess.": "Số giờ công mà dự toán này cam kết, theo từng bộ môn. Đây là những đại lượng vật lý duy nhất trong phần bóc tách có thể đối chiếu về sau với thực tế — Dự án → Chi phí nhân công cho biết chi phí thật trên mỗi giờ công của một công trình đã xong, trên cơ sở đã ghi nhận hoặc phân bổ. So sánh hai con số này là cách để dự toán năm sau không còn là phỏng đoán.",
+  "Could not set the budget": "Không đặt được ngân sách",
+  "Yours sincerely,": "Trân trọng,",
+  "Page": "Trang",
+  "PDF library not loaded — try again in a moment": "Chưa tải thư viện PDF — vui lòng thử lại sau giây lát",
+  "Privacy Policy": "Chính sách quyền riêng tư",
+  "Skip to main content": "Chuyển tới nội dung chính",
+  "Welcome": "Chào mừng",
+  "All apps": "Tất cả ứng dụng",
+  "Menu": "Menu",
+  "English": "Tiếng Anh",
+  "My account": "Tài khoản của tôi",
+  "Humiley Procurement": "Humiley Mua hàng",
+  "Add an employee manually": "Thêm nhân viên thủ công",
+  "Download Excel template": "Tải mẫu Excel",
+  "Import users from your Microsoft 365 directory": "Nhập người dùng từ thư mục Microsoft 365",
+  "Exact day": "Đúng ngày",
+  "Filter by month": "Lọc theo tháng",
+  "Filter by exact date": "Lọc theo ngày cụ thể",
+  "Clear date filters": "Xoá bộ lọc ngày",
+  "The whole company on one screen — people, approvals, finance & projects": "Toàn công ty trên một màn hình — nhân sự, phê duyệt, tài chính & dự án",
+  "For accounting": "Dành cho kế toán",
+  "Loading company summary…": "Đang tải tổng quan công ty…",
+  "Company documents you need to read and sign": "Tài liệu công ty bạn cần đọc và ký",
+  "Your personal home — check in, leave, expenses, goals, training & devices": "Trang cá nhân của bạn — chấm công, nghỉ phép, chi phí, mục tiêu, đào tạo & thiết bị",
+  "Customer relationship management · pipeline, leads, accounts & products": "Quản lý quan hệ khách hàng · pipeline, khách hàng tiềm năng, khách hàng & sản phẩm",
+  "What has to be true before you can bill a customer — and what this portal will never claim": "Những điều kiện phải đủ trước khi xuất hoá đơn cho khách hàng — và những gì cổng này sẽ không bao giờ tự khẳng định",
+  "The 5% your customers are holding, when each slice falls due, and the ones nothing can date yet": "Khoản 5% khách hàng đang giữ lại, thời điểm đến hạn từng phần, và những phần chưa xác định được ngày",
+  "Progress claims, the invoice your provider issued, and who owes you what — on three separate clocks": "Hồ sơ thanh toán theo tiến độ, hoá đơn nhà cung cấp đã phát hành, và ai còn nợ bạn khoản nào — theo ba mốc thời gian riêng biệt",
+  "What was agreed, what is still to bill, and what is being held back": "Những gì đã thoả thuận, còn phải xuất hoá đơn, và phần đang bị giữ lại",
+  "Every quotation you have issued, what happened to it, and why": "Mọi báo giá bạn đã phát hành, kết quả ra sao và vì sao",
+  "Every engineering design commission — stage, progress, and what is holding each one up": "Mọi hợp đồng thiết kế kỹ thuật — giai đoạn, tiến độ và vướng mắc đang giữ lại từng hợp đồng",
+  "Conceptual, basic and detailed design — deliverables, drawings, revisions and the control around them": "Thiết kế ý tưởng, cơ sở và chi tiết — sản phẩm, bản vẽ, phiên bản và cơ chế kiểm soát đi kèm",
+  "Every AHU on the floor right now — the step it is on, what it is waiting for, and what is holding it": "Mọi AHU đang trên chuyền — đang ở công đoạn nào, chờ gì và điều gì đang giữ lại",
+  "Every unit by its Production Identification Number, from order to dispatch": "Từng sản phẩm theo Số hiệu sản xuất, từ đơn hàng đến giao hàng",
+  "Customer purchase orders and contracts, and the units built against each": "Đơn đặt hàng và hợp đồng của khách hàng, cùng các sản phẩm sản xuất theo từng đơn",
+  "AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix": "AHU-SOP-MASTER-001 đúng như nhà máy đang áp dụng — công đoạn, trạm làm việc, điểm dừng kiểm tra và ma trận thử nghiệm",
+  "What a job will cost us, and what we should therefore charge for it": "Công trình sẽ tốn của chúng ta bao nhiêu, và vì vậy nên chào giá bao nhiêu",
+  "The prices you estimate with — copied into a tender, never referenced live": "Bộ đơn giá dùng để lập dự toán — được sao chép vào hồ sơ thầu, không tham chiếu động",
+  "HRBP process · one hub for the whole employee lifecycle": "Quy trình HRBP · một đầu mối cho toàn bộ vòng đời nhân viên",
+  "Overview & stats": "Tổng quan & số liệu",
+  "Job openings & candidate pipeline": "Vị trí tuyển dụng & luồng ứng viên",
+  "New-hire checklists & first-week readiness": "Danh mục việc cho nhân sự mới & mức sẵn sàng tuần đầu",
+  "Track your PADR goals, self-assess & add your own development goals": "Theo dõi mục tiêu PADR, tự đánh giá & thêm mục tiêu phát triển của riêng bạn",
+  "Your enrolled courses · update progress & leave feedback": "Các khoá học bạn đã đăng ký · cập nhật tiến độ & gửi phản hồi",
+  "Resignation, clearance checklist & final settlement": "Nghỉ việc, danh mục bàn giao & quyết toán cuối cùng",
+  "Review cycles, ratings & company goals": "Chu kỳ đánh giá, xếp hạng & mục tiêu công ty",
+  "9-box grid, high potentials & succession": "Ma trận 9 ô, nhân sự tiềm năng cao & kế nhiệm",
+  "Course catalog & enrollment": "Danh mục khoá học & đăng ký",
+  "Who has enrolled a signing PIN, and the full electronic-signature audit trail": "Ai đã đăng ký mã PIN chữ ký, và toàn bộ nhật ký kiểm toán chữ ký điện tử",
+  "Grant each employee their access level — User · Contributor · Approver · Editor · Admin": "Cấp cho từng nhân viên cấp truy cập — Người dùng · Cộng tác viên · Người duyệt · Người chỉnh sửa · Quản trị",
+  "Master data & governance for the Procurement app — administered here, alongside access & permissions.": "Dữ liệu chuẩn & quản trị cho ứng dụng Mua hàng — quản lý tại đây, cùng với phân quyền truy cập.",
+  "Real-time attendance, lateness & GPS oversight (approvals are in the Inbox)": "Chấm công thời gian thực, đi muộn & giám sát GPS (phê duyệt nằm ở Hộp phê duyệt)",
+  "Leave, travel, claims, requisitions and PADR reviews are now all approved in one place.": "Nghỉ phép, công tác, chi phí, đề nghị mua sắm và đánh giá PADR nay đều được phê duyệt tại một nơi.",
+  "Leave balances · Payroll hours · Policies & employee admin": "Số ngày phép còn lại · Giờ công tính lương · Chính sách & quản trị nhân viên",
+  "Manage what employees see on their dashboard. Changes apply to everyone after saving.": "Quản lý nội dung nhân viên nhìn thấy trên bảng điều khiển. Thay đổi áp dụng cho tất cả sau khi lưu.",
+  "Monthly pay run · gross, deductions & net": "Kỳ lương hằng tháng · lương gộp, khấu trừ & thực lãnh",
+  "All records": "Tất cả bản ghi",
+  "No records": "Không có bản ghi",
+  "No insights yet — they appear once attendance data is recorded.": "Chưa có phân tích — nội dung sẽ xuất hiện khi có dữ liệu chấm công.",
+  "check-ins": "lượt chấm vào",
+  "Today's Hours": "Số giờ hôm nay",
+  "Today's records": "Bản ghi hôm nay",
+  "Which job are you on today?": "Hôm nay bạn làm ở dự án nào?",
+  "(optional)": "(không bắt buộc)",
+  "— Not on a specific job —": "— Không thuộc dự án cụ thể —",
+  "Naming the job is what makes labour cost per project a real figure instead of an estimate. It never affects your check-in — leave it blank and the day is simply not attributed.": "Chọn đúng dự án là điều làm cho chi phí nhân công theo dự án trở thành số liệu thật thay vì ước tính. Việc này không ảnh hưởng đến chấm công của bạn — để trống thì ngày công đơn giản là không được phân bổ.",
+  "System Integrations": "Tích hợp hệ thống",
+  "Microsoft 365, approval email, SharePoint & the Procurement launcher. Admin only — these control where data is sent.": "Microsoft 365, email phê duyệt, SharePoint & lối vào Mua hàng. Chỉ Quản trị viên — các thiết lập này quyết định dữ liệu được gửi đi đâu.",
+  "Save integrations": "Lưu tích hợp",
+  "When set, approval notifications also post to your Teams channel. Teams → channel → Connectors → Incoming Webhook.": "Khi được thiết lập, thông báo phê duyệt cũng được đăng vào kênh Teams của bạn. Teams → kênh → Connectors → Incoming Webhook.",
+  "Paste the SharePoint folder link where payment / claim / travel files should be stored. On submit the file uploads here and the SharePoint link is shown to the requester and approver (like the project document folders). Files are filed by the SERVER on submit into <Payments|Claims|Travel>/<year>/<month>/<reference>/, so it works whether or not anyone is signed in to Microsoft. Leave blank to keep files inside the portal.": "Dán đường dẫn thư mục SharePoint nơi lưu tệp thanh toán / chi phí / công tác. Khi gửi, tệp được tải lên đây và đường dẫn SharePoint hiển thị cho người đề nghị và người duyệt (giống thư mục tài liệu dự án). Tệp do MÁY CHỦ lưu khi gửi vào <Payments|Claims|Travel>/<năm>/<tháng>/<số tham chiếu>/, nên hoạt động bất kể có ai đang đăng nhập Microsoft hay không. Để trống nếu muốn giữ tệp trong cổng.",
+  "HR SharePoint folder (URL)": "Thư mục SharePoint Nhân sự (URL)",
+  "Paste the SharePoint folder link for HR documents. Job Descriptions attached to a requisition are filed by the SERVER into JD/<year>/, so it works whether or not anyone is signed in to Microsoft. Leave blank and JDs stay inside the portal, and signed policy acknowledgements stay in the portal too.": "Dán đường dẫn thư mục SharePoint cho tài liệu nhân sự. Bản mô tả công việc đính kèm yêu cầu tuyển dụng do MÁY CHỦ lưu vào JD/<năm>/, nên hoạt động bất kể có ai đang đăng nhập Microsoft hay không. Để trống thì bản mô tả công việc vẫn nằm trong cổng, và các xác nhận ký chính sách cũng lưu trong cổng.",
+  "Who is HR — who may publish company documents": "Ai là Nhân sự — ai được ban hành tài liệu công ty",
+  "Editor and Admin can already publish.": "Cấp Người chỉnh sửa và Quản trị viên vốn đã có quyền ban hành.",
+  "Naming somebody here": "Chỉ định một người ở đây sẽ",
+  "adds": "thêm quyền",
+  "to that — use it for the HR officer who writes the policies, so she gets": "— dùng cho cán bộ nhân sự soạn chính sách, để họ có",
+  "+ Publish a document": "+ Ban hành tài liệu",
+  "and the Edit / Re-issue / Archive controls without being promoted to Editor. Several addresses may be listed, separated by commas. A department manager still cannot publish: committing every employee to signing something is not something you inherit by running a department. Leave blank and it falls back to “Approver (Management) or above”.": "và các thao tác Sửa / Ban hành lại / Lưu trữ mà không cần nâng lên cấp Người chỉnh sửa. Có thể liệt kê nhiều địa chỉ, phân tách bằng dấu phẩy. Trưởng phòng vẫn không được ban hành: buộc toàn bộ nhân viên phải ký một tài liệu không phải quyền mặc nhiên có khi phụ trách một phòng ban. Để trống thì áp dụng mặc định “cấp Phê duyệt (Ban quản lý) trở lên”.",
+  "Reconstructs each employee's dated salary, grade, title and department history from the pay runs a Director has": "Dựng lại lịch sử lương, bậc, chức danh và phòng ban có ngày hiệu lực của từng nhân viên từ các bảng lương đã được Giám đốc",
+  ". Rows somebody recorded by hand are never touched — only the reconstruction is rebuilt, and what it removes is written to the audit trail. Safe to run more than once. Run this if the portal's employment history was ever built by an earlier version, which read the payslip total as salary.": ". Các dòng do người dùng tự nhập không bao giờ bị đụng tới — chỉ phần suy luận được dựng lại, và phần bị xoá được ghi vào nhật ký kiểm toán. Có thể chạy lại nhiều lần. Hãy chạy nếu lịch sử công tác trong cổng từng được dựng bởi phiên bản cũ, vốn đọc nhầm tổng phiếu lương thành mức lương.",
+  "Rebuild from signed pay runs": "Dựng lại từ bảng lương đã ký",
+  "Annual overtime ceiling (hours)": "Trần làm thêm giờ trong năm (giờ)",
+  "Labour Code Art. 107 allows": "Bộ luật Lao động Điều 107 cho phép",
+  "200 hours a year": "200 giờ mỗi năm",
+  ", and": ", và",
+  "only for the industries Art. 107(3) lists, after notifying the labour authority. Leave blank for 200 — the answer for any company that has not taken and recorded that decision. The daily (4h) and monthly (40h) limits are fixed by the article and are not editable. Approving beyond a limit is still possible, but only with a reason, and it is written into the audit trail under the approver's name.": "chỉ với các ngành nghề Điều 107(3) liệt kê, sau khi đã thông báo cho cơ quan quản lý lao động. Để trống sẽ lấy 200 — đáp án đúng cho mọi doanh nghiệp chưa ra và chưa lưu quyết định đó. Giới hạn theo ngày (4 giờ) và theo tháng (40 giờ) do điều luật ấn định và không sửa được. Vẫn có thể duyệt vượt giới hạn, nhưng bắt buộc nêu lý do, và việc đó được ghi vào nhật ký kiểm toán dưới tên người duyệt.",
+  "Bank salary-file layout": "Bố cục tệp chi lương ngân hàng",
+  "Every Vietnamese bank publishes its own upload template. Set the columns your bank expects and in what order — changing bank is a setting here, not a new release. Download a sample file from your bank's portal (Techcombank F@st EBank:": "Mỗi ngân hàng Việt Nam có mẫu tệp tải lên riêng. Hãy đặt đúng các cột ngân hàng của bạn yêu cầu và theo đúng thứ tự — đổi ngân hàng chỉ là thay đổi thiết lập tại đây, không cần bản cập nhật mới. Tải tệp mẫu từ cổng của ngân hàng (Techcombank F@st EBank:",
+  "Payroll → Bulk transfer → Download template": "Payroll → Bulk transfer → Download template",
+  ") and copy its headings exactly; the bank matches on the heading text. Leave it untouched to use the shipped layout.": ") rồi sao chép chính xác các tiêu đề cột; ngân hàng đối chiếu theo đúng chữ trên tiêu đề. Giữ nguyên nếu muốn dùng bố cục mặc định.",
+  "Disbursement segregation of duties — a different person pays than approved": "Phân tách trách nhiệm khi chi tiền — người chi phải khác người duyệt",
+  "When on (recommended), the person who releases a payment must not be the one who gave final approval — and no one can pay their own request. This needs at least": "Khi bật (khuyến nghị), người chi tiền không được là người đã phê duyệt lần cuối — và không ai được chi cho đề nghị của chính mình. Cần ít nhất",
+  "two": "hai",
+  "authorised payers. Turn OFF only if your finance function is a single person; paying your": "người được uỷ quyền chi. Chỉ TẮT nếu bộ phận tài chính chỉ có một người; việc chi cho đề nghị của",
+  "own": "chính mình",
+  "request stays blocked either way.": "vẫn luôn bị chặn trong mọi trường hợp.",
+  "Authorised payers — who may mark a request paid": "Người được uỷ quyền chi — ai được đánh dấu đã thanh toán",
+  "Releasing money is a": "Chi tiền là một nhiệm vụ",
+  "named": "được giao đích danh",
+  ". Being listed is the grant, so a payer does not need Editor/Admin — but they do need access to the Finance page. Leave blank to fall back to “any Editor or Admin”. The rules above still apply on top: never your own request, and never one you approved.": ". Có tên trong danh sách chính là được cấp quyền, nên người chi không cần cấp Người chỉnh sửa/Quản trị — nhưng vẫn cần quyền vào trang Tài chính. Để trống sẽ áp dụng mặc định “bất kỳ Người chỉnh sửa hoặc Quản trị viên nào”. Các quy tắc trên vẫn được áp dụng chồng lên: không bao giờ chi cho đề nghị của chính mình, và không bao giờ chi cho đề nghị mình đã duyệt.",
+  "Approval emails — branded, sent per department": "Email phê duyệt — theo nhận diện thương hiệu, gửi theo từng phòng ban",
+  "application consent on the Humiley app.": "cấp quyền cấp ứng dụng trên ứng dụng Humiley.",
+  "HR sender · leave, PADR": "Người gửi Nhân sự · nghỉ phép, PADR",
+  "Finance sender · claims, travel, payments": "Người gửi Tài chính · chi phí, công tác, thanh toán",
+  "Procurement sender": "Người gửi Mua hàng",
+  "Send a test email to me": "Gửi email thử cho tôi",
+  "Overdue reminders — nudge whoever must act": "Nhắc quá hạn — thúc người phải xử lý",
+  "Remind after": "Nhắc sau",
+  "day(s) waiting, then once a day.": "ngày chờ, sau đó mỗi ngày một lần.",
+  "Run sweep now": "Chạy quét ngay",
+  "Escalate after": "Chuyển cấp trên sau",
+  "day(s) overdue": "ngày quá hạn",
+  "(0 = off)": "(0 = tắt)",
+  "on the nudge.": "trong nội dung nhắc.",
+  "Weekly digest — summary email to managers & leadership": "Bản tin tuần — email tổng hợp gửi quản lý & ban lãnh đạo",
+  "Once a week, each manager gets what’s awaiting their review; leadership gets a company‑wide roll‑up (pending · overdue · total value). Uses the same Mail.Send as above.": "Mỗi tuần một lần, từng quản lý nhận danh sách việc đang chờ họ xem xét; ban lãnh đạo nhận bản tổng hợp toàn công ty (đang chờ · quá hạn · tổng giá trị). Dùng chung quyền Mail.Send ở trên.",
+  "Send every": "Gửi vào",
+  "Monday": "Thứ Hai",
+  "Tuesday": "Thứ Ba",
+  "Wednesday": "Thứ Tư",
+  "Thursday": "Thứ Năm",
+  "Friday": "Thứ Sáu",
+  "Saturday": "Thứ Bảy",
+  "Sunday": "Chủ Nhật",
+  "· Leadership email": "· Email ban lãnh đạo",
+  "Send me a test digest": "Gửi tôi bản tin thử",
+  "Monthly report pack — month-end summary to leadership": "Bộ báo cáo tháng — tổng hợp cuối tháng gửi ban lãnh đạo",
+  "On the chosen day each month, emails leadership a branded summary of the closed month (payments, invoices & VAT, approvals, headcount) with a link to open & export the full pack in the portal.": "Vào ngày đã chọn mỗi tháng, gửi ban lãnh đạo bản tổng hợp tháng đã chốt theo nhận diện thương hiệu (thanh toán, hoá đơn & thuế GTGT, phê duyệt, nhân sự) kèm liên kết mở & xuất toàn bộ hồ sơ trong cổng.",
+  "Send on day": "Gửi vào ngày",
+  "Send me a test pack": "Gửi tôi bộ báo cáo thử",
+  "Timekeeping nudges — remind staff to check in / out": "Nhắc chấm công — nhắc nhân viên chấm vào / chấm ra",
+  "On working days, pushes a reminder to any active employee who hasn't checked in by the check-in time, and to anyone still checked in at the check-out time. Skips weekends, holidays & staff on leave. Uses Web Push (not email).": "Vào ngày làm việc, đẩy thông báo nhắc tới nhân viên đang làm việc chưa chấm vào đến giờ chấm vào, và tới người vẫn đang chấm vào tại giờ chấm ra. Bỏ qua cuối tuần, ngày lễ & người đang nghỉ phép. Dùng Web Push (không phải email).",
+  "Check-in reminder at": "Nhắc chấm vào lúc",
+  ":00 · Check-out reminder at": ":00 · Nhắc chấm ra lúc",
+  "Send me a test nudge": "Gửi tôi thông báo nhắc thử",
+  "Check now": "Kiểm tra ngay",
+  "Verify each go‑live switch‑on actually worked — Microsoft 365, invoice sync, approval email, SharePoint, push.": "Kiểm chứng từng hạng mục bật khi vận hành thật đã hoạt động — Microsoft 365, đồng bộ hoá đơn, email phê duyệt, SharePoint, thông báo đẩy.",
+  "Where the Procurement Portal is served — an app of this portal at": "Nơi Cổng Mua hàng được phục vụ — một ứng dụng của cổng này tại",
+  ". The sidebar entry opens it (no second login) for every employee an admin has granted the Procurement app in Access & Permissions. Leave blank to use the default (localhost:3000/procurement in development).": ". Mục trên thanh bên sẽ mở ứng dụng (không cần đăng nhập lần hai) cho mọi nhân viên đã được quản trị viên cấp ứng dụng Mua hàng trong mục Phân quyền. Để trống sẽ dùng mặc định (localhost:3000/procurement khi phát triển).",
+  "30 min": "30 phút",
+  "15 min": "15 phút",
+  "8h after in": "8 giờ sau khi chấm vào",
+  "12 days / year": "12 ngày / năm",
+  "30 days / year (SHUI)": "30 ngày / năm (BHXH)",
+  "6 months (female)": "6 tháng (lao động nữ)",
+  "5–14 days": "5–14 ngày",
+  "3 days (immediate family)": "3 ngày (thân nhân trực hệ)",
+  "3 days": "3 ngày",
+  "Human Resource & Operation (HRO)": "Nhân sự & Vận hành (HRO)",
+  "Project Management Consultant (PMC)": "Tư vấn quản lý dự án (PMC)",
+  "Engineering Consultant (ENG)": "Tư vấn kỹ thuật (ENG)",
+  "Solution Sales (SAL)": "Kinh doanh giải pháp (SAL)",
+  "Customer Service & Maintenance (CSM)": "Dịch vụ khách hàng & Bảo trì (CSM)",
+  "Factory (FAC)": "Nhà máy (FAC)",
+  "Finance Accountant (FA)": "Tài chính Kế toán (FA)",
+  "Board Management (BM)": "Ban điều hành (BM)",
+  "Register an app in Azure AD to enable Microsoft 365 single sign-on and SharePoint access.": "Đăng ký một ứng dụng trong Azure AD để bật đăng nhập một lần Microsoft 365 và quyền truy cập SharePoint.",
+  "Found in Azure Portal → Azure Active Directory → Overview": "Xem tại Azure Portal → Azure Active Directory → Overview",
+  "Found in Azure Portal → App Registrations → your app → Overview": "Xem tại Azure Portal → App Registrations → ứng dụng của bạn → Overview",
+  "Test Azure AD": "Kiểm tra Azure AD",
+  "SharePoint Tenant URL": "URL tổ chức SharePoint",
+  "Site URL (relative path)": "URL site (đường dẫn tương đối)",
+  "Full URL will be: [Tenant URL] + [Site URL]": "URL đầy đủ sẽ là: [URL tổ chức] + [URL site]",
+  "Required SharePoint Lists:": "Các danh sách SharePoint bắt buộc:",
+  "Test SharePoint": "Kiểm tra SharePoint",
+  "Google Maps API": "Google Maps API",
+  "Used for reverse geocoding (address lookup from GPS coordinates). The browser's native Geolocation API is used for GPS — no Maps API key required for that.": "Dùng để tra ngược địa chỉ từ toạ độ GPS. Việc định vị GPS dùng Geolocation API sẵn có của trình duyệt — phần đó không cần khoá Maps API.",
+  "Enable: Geocoding API + Maps JavaScript API. Restrict to your domain.": "Cần bật: Geocoding API + Maps JavaScript API. Giới hạn theo tên miền của bạn.",
+  "Notifications and approval routing are built into the portal — leave, claim and payment requests notify the chosen approver automatically by": "Thông báo và định tuyến phê duyệt đã tích hợp sẵn trong cổng — đề nghị nghỉ phép, chi phí và thanh toán tự động báo cho người duyệt đã chọn qua",
+  "web push": "thông báo đẩy",
+  "Microsoft 365 email": "email Microsoft 365",
+  ", and reminders are handled server-side. No external Power Automate flows are required.": ", và việc nhắc nhở do máy chủ xử lý. Không cần luồng Power Automate bên ngoài.",
+  "Approved GPS zones where employees can check in and out. All zones are validated against the device's real GPS coordinates.": "Các vùng GPS đã duyệt, nơi nhân viên được chấm vào và chấm ra. Mọi vùng đều được đối chiếu với toạ độ GPS thật của thiết bị.",
+  "Your current location has been added as an approved zone for testing. You can now check in/out from where you are.": "Vị trí hiện tại của bạn đã được thêm làm vùng đã duyệt để thử nghiệm. Bây giờ bạn có thể chấm vào/ra ngay tại chỗ.",
+  "Block check-in if GPS accuracy > threshold": "Chặn chấm vào nếu sai số GPS vượt ngưỡng",
+  "Annual Leave (days/yr)": "Phép năm (ngày/năm)",
+  "Sick Leave (days/yr)": "Nghỉ ốm (ngày/năm)",
+  "Alert when employee exceeds 2h overtime": "Cảnh báo khi nhân viên làm thêm quá 2 giờ",
+  "Alert when annual leave < 3 days remaining": "Cảnh báo khi phép năm còn dưới 3 ngày",
+  "Keep your personal details current. Job title, department and leave balances are managed by HR.": "Hãy giữ thông tin cá nhân luôn cập nhật. Chức danh, phòng ban và số ngày phép do Nhân sự quản lý.",
+  "The blue circle shows the check-in radius. Drag the pin or click anywhere to move it.": "Vòng tròn xanh là bán kính chấm công. Kéo ghim hoặc bấm vào bất kỳ đâu để di chuyển.",
+  "SharePoint Configuration": "Cấu hình SharePoint",
+  "Azure AD Client ID": "Azure AD Client ID",
+  "Azure AD Tenant ID": "Azure AD Tenant ID",
+  "SharePoint Site ID": "SharePoint Site ID",
+  "After saving, the page will reload and authenticate with Azure AD. Ensure your Azure AD app Redirect URI includes this page's URL.": "Sau khi lưu, trang sẽ tải lại và xác thực với Azure AD. Hãy đảm bảo Redirect URI của ứng dụng Azure AD có chứa URL của trang này.",
+  "Save & Reload": "Lưu & Tải lại",
+  "(login)": "(đăng nhập)",
+  "(approves leave)": "(duyệt nghỉ phép)",
+  "— Auto from job title —": "— Tự động theo chức danh —",
+  "Registered dependants (người phụ thuộc)": "Số người phụ thuộc đã đăng ký",
+  "Each registered dependant reduces taxable income by ₫4,400,000/month.": "Mỗi người phụ thuộc đã đăng ký được giảm trừ ₫4.400.000/tháng vào thu nhập chịu thuế.",
+  "Pick a grade to load the band; salary must be set explicitly before an employee can be included in a pay run. Gross splits into": "Chọn bậc để nạp khung lương; phải nhập mức lương cụ thể thì nhân viên mới được đưa vào kỳ tính lương. Lương gộp được tách thành",
+  "automatically.": "một cách tự động.",
+  "Dependants must be registered with the tax authority": "Người phụ thuộc phải được đăng ký với cơ quan thuế",
+  "before the relief may be applied — record here only what has been accepted.": "trước khi được giảm trừ — chỉ ghi tại đây những trường hợp đã được chấp nhận.",
+  "Access & Provisioning": "Quyền truy cập & Cấp phát",
+  "Work schedule": "Lịch làm việc",
+  "— Standard office (Mon–Fri) —": "— Văn phòng tiêu chuẩn (T2–T6) —",
+  "Which days this person normally works. It decides their": "Những ngày người này thường làm việc. Thiết lập này quyết định",
+  "rest days": "ngày nghỉ hằng tuần",
+  ", and therefore whether overtime on a given day is paid at 150% or the 200% rest-day rate — and it sets the threshold for a late arrival. Patterns are defined in HR Admin → Work Schedules. Left blank, they are treated as Mon–Fri with Saturday and Sunday as rest days.": "của họ, và do đó quyết định tiền lương làm thêm giờ trong một ngày được trả 150% hay 200% theo mức ngày nghỉ hằng tuần — đồng thời đặt mốc xác định đi muộn. Các mẫu lịch được khai báo tại Quản trị NS → Lịch làm việc. Để trống thì mặc định là T2–T6, với Thứ Bảy và Chủ Nhật là ngày nghỉ hằng tuần.",
+  "Working conditions": "Điều kiện lao động",
+  "Normal — 12 days annual leave": "Bình thường — 12 ngày phép năm",
+  "Heavy / hazardous / dangerous — 14 days": "Nặng nhọc / độc hại / nguy hiểm — 14 ngày",
+  "Especially heavy / hazardous / dangerous — 16 days": "Đặc biệt nặng nhọc / độc hại / nguy hiểm — 16 ngày",
+  "Labour Code Art. 113(1). A classification the company makes against the MOLISA occupational list — it is not inferred from a job title, because two people with the same title can be on different duties. It also sets the health-check cadence to every 6 months instead of 12.": "Bộ luật Lao động Điều 113(1). Đây là phân loại do doanh nghiệp tự xác định theo danh mục nghề của Bộ LĐ-TB&XH — không suy ra từ chức danh, vì hai người cùng chức danh có thể làm công việc khác nhau. Phân loại này cũng chuyển chu kỳ khám sức khoẻ từ 12 tháng xuống 6 tháng một lần.",
+  "Occupational safety & health group": "Nhóm huấn luyện an toàn, vệ sinh lao động",
+  "— None (office duties) —": "— Không thuộc nhóm nào (công việc văn phòng) —",
+  "Group 1 — managers responsible for OSH": "Nhóm 1 — người quản lý phụ trách công tác ATVSLĐ",
+  "Group 2 — OSH officers": "Nhóm 2 — người làm công tác ATVSLĐ",
+  "Group 3 — workers on jobs with strict OSH requirements": "Nhóm 3 — người làm công việc có yêu cầu nghiêm ngặt về ATVSLĐ",
+  "Group 4 — other workers": "Nhóm 4 — người lao động khác",
+  "Group 5 — occupational health staff": "Nhóm 5 — người làm công tác y tế",
+  "Group 6 — safety & health network members": "Nhóm 6 — an toàn, vệ sinh viên",
+  "Decree 44/2016 Art. 24. Safety training is only required — and only chased — where a group is set. Leaving this blank asserts the training requirement for nobody.": "Nghị định 44/2016 Điều 24. Huấn luyện an toàn chỉ bắt buộc — và chỉ được nhắc — khi đã phân nhóm. Để trống nghĩa là không đặt yêu cầu huấn luyện cho ai cả.",
+  "Person with disabilities": "Người khuyết tật",
+  "Raises the annual-leave base to at least 14 days (Art. 113(1)(b)), as does being under 18 — which is taken from the date of birth.": "Nâng mức phép năm cơ sở lên ít nhất 14 ngày (Điều 113(1)(b)), tương tự trường hợp người chưa đủ 18 tuổi — được xác định theo ngày sinh.",
+  "Exempt from the fixed-term renewal limit": "Được loại trừ khỏi giới hạn ký lại hợp đồng xác định thời hạn",
+  "— Not exempt (the normal case) —": "— Không thuộc trường hợp loại trừ (thông thường) —",
+  "Elderly employee": "Người lao động cao tuổi",
+  "Foreign worker on a work permit": "Người lao động nước ngoài có giấy phép lao động",
+  "Appointed director of a state-capital enterprise": "Giám đốc doanh nghiệp có vốn nhà nước được bổ nhiệm",
+  "Trade-union officer serving a term": "Cán bộ công đoàn không chuyên trách đang trong nhiệm kỳ",
+  "Art. 20(2)(c) recognises exactly these four cases, who may be renewed on fixed terms indefinitely. Everyone else may be renewed once, after which the next contract must be indefinite. It records WHICH exemption applies, not merely that one does — that is the question an inspector asks.": "Điều 20(2)(c) chỉ thừa nhận đúng bốn trường hợp này được ký hợp đồng xác định thời hạn nhiều lần. Mọi trường hợp khác chỉ được ký thêm một lần, sau đó hợp đồng tiếp theo bắt buộc là không xác định thời hạn. Trường này ghi rõ ÁP DỤNG trường hợp loại trừ NÀO, chứ không chỉ ghi là có — đó chính là câu hỏi của thanh tra lao động.",
+  "Bank name": "Tên ngân hàng",
+  "Bank account number": "Số tài khoản ngân hàng",
+  "Both are needed before this person can appear in a salary payment file — the file is refused outright rather than produced without them, because a file missing one row uploads cleanly and looks correct.": "Phải có đủ cả hai thì người này mới xuất hiện trong tệp chi lương — hệ thống từ chối tạo tệp thay vì tạo thiếu, vì một tệp thiếu một dòng vẫn tải lên trót lọt và trông vẫn đúng.",
+  "Account holder": "Chủ tài khoản",
+  "(only if different from their name)": "(chỉ nhập nếu khác với họ tên)",
+  "Bank branch": "Chi nhánh ngân hàng",
+  "(auto-creates assets assigned to this employee)": "(tự động tạo tài sản đã cấp cho nhân viên này)",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "Engineering & Solutions": "Kỹ thuật & Giải pháp",
+  "Terms & conditions": "Điều khoản & điều kiện",
+  "Headcount & Turnover": "Nhân sự & Biến động",
+  "duty, not something everyone with an access level inherits. Only these people see": "— không phải quyền mặc nhiên có theo cấp truy cập. Chỉ những người này nhìn thấy",
+  "Emails the reviewer, approver and requester at every step of the approval flow (submit → review → approve / reject / paid). Decisions are still made in the portal with an e‑signature — the email carries a secure “Review in portal” button, never a one‑click approve link. Requires Microsoft 365": "Gửi email cho người xem xét, người phê duyệt và người đề nghị ở từng bước của quy trình phê duyệt (gửi → xem xét → duyệt / từ chối / đã chi). Quyết định vẫn được thực hiện trong cổng bằng chữ ký điện tử — email chỉ mang nút “Xem xét trong cổng” an toàn, không bao giờ có liên kết duyệt một chạm. Yêu cầu quyền Microsoft 365",
+  "Built in": "Tích hợp sẵn",
+  "Register Azure AD App": "Đăng ký ứng dụng Azure AD",
+  "portal.azure.com → App Registrations → New → add API permissions (Sites.ReadWrite.All, User.Read)": "portal.azure.com → App Registrations → New → thêm API permissions (Sites.ReadWrite.All, User.Read)",
+  "Create SharePoint Site & Lists": "Tạo Site & danh sách SharePoint",
+  "Create /sites/HumileyHR with 6 required lists. See Integration Guide for column schemas.": "Tạo /sites/HumileyHR với 6 danh sách bắt buộc. Xem Hướng dẫn tích hợp để biết cấu trúc cột.",
+  "Fill in SP_CONFIG": "Điền SP_CONFIG",
+  "Enter Tenant ID and Client ID in the M365 Connection tab above, then save settings.": "Nhập Tenant ID và Client ID ở tab Kết nối M365 phía trên, rồi lưu cài đặt.",
+  "Build Power Automate Flows": "Xây dựng luồng Power Automate",
+  "Create 5 flows: Late Alert, Leave Approval, GPS Anomaly, Monthly Report, Check-out Reminder.": "Tạo 5 luồng: Cảnh báo đi muộn, Duyệt nghỉ phép, Bất thường GPS, Báo cáo tháng, Nhắc chấm ra.",
+  "Test Connection → verify data flows → share the page URL with your team. GPS gate is active.": "Kiểm tra kết nối → xác nhận dữ liệu chạy thông → chia sẻ URL trang cho nhóm của bạn. Cổng kiểm soát GPS đang hoạt động.",
+  /* ── QA i18n pass 2026-08-21: coverage gaps (static UI + _t call sites) ── */
+  "of goods value": "trên giá trị hàng hoá",
+  "fixed": "cố định",
+  "In cost of sales, not below it — a delivery cost below the line flatters every gross margin": "Nằm trong giá vốn hàng bán, không nằm dưới — chi phí giao hàng để dưới dòng sẽ làm đẹp giả tạo mọi tỷ suất lợi nhuận gộp",
+  "Click any text to edit it in place.": "Bấm vào bất kỳ đoạn nào để sửa trực tiếp.",
+  "Click to edit": "Bấm để sửa",
+  "Edited in Conditions, below": "Được sửa tại mục Điều kiện bên dưới",
+  "Conditions": "Điều kiện",
+  "The standard set, filled in from this tender. Reword any of them, remove what does not apply, add what does — they print as the paragraph above.": "Bộ điều kiện chuẩn, đã điền theo hồ sơ thầu này. Bạn có thể viết lại bất kỳ điều nào, bỏ điều không áp dụng, thêm điều cần thiết — chúng được in ra thành đoạn văn ở trên.",
+  "Edited for this tender.": "Đã chỉnh sửa cho hồ sơ thầu này.",
+  "Add condition": "Thêm điều kiện",
+  "Reset to standard": "Khôi phục bộ chuẩn",
+  "New condition": "Điều kiện mới",
+  "Type the condition here.": "Nhập nội dung điều kiện tại đây.",
 };
 const _LANG = { cur: (function () { try { return localStorage.getItem('tkLang') || 'en'; } catch (e) { return 'en'; } })() };
 let _viObs = null, _viNodes = [];
@@ -33011,11 +33526,15 @@ function _updateLangButtons() { document.querySelectorAll('.lang-btn').forEach(b
 function _viTranslateText(tn) {
   const raw = tn.nodeValue; if (!raw) return;
   const key = raw.trim(); if (!key || key.length > 400) return;
-  const vi = _VI[key];
+  // A source `&nbsp;` reaches the DOM as U+00A0, which never equals the plain space a _VI key is
+  // written with — so a string that LOOKS translated in the dict silently never matches. Fall back
+  // to a space-normalised lookup; `key` itself stays intact so the replace below still finds it.
+  let vi = _VI[key];
+  if (!vi && key.indexOf('\u00a0') >= 0) vi = _VI[key.replace(/\u00a0/g, ' ')];
   if (vi && vi !== key) { const nv = raw.replace(key, vi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } return; }
   // Fallback for dynamic counts the exact-match can't reach ("15 employees", "8 items", "3 folders"):
   // translate just the trailing UNIT word(s) if they're a _VI key, keeping the number as-is.
-  const m = key.match(/^(\d[\d.,]*)\s+([A-Za-z][A-Za-z ]*)$/);
+  const m = key.match(/^(\d[\d.,]*)\s+([A-Za-z][A-Za-z -]*)$/);
   if (m) { const unit = m[2], uvi = _VI[unit]; if (uvi && uvi !== unit) { const nv = raw.replace(unit, uvi); if (nv !== raw) { _viNodes.push({ n: tn, en: raw }); tn.nodeValue = nv; } } }
 }
 function _viWalk(root) {

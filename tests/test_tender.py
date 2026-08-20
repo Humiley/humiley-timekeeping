@@ -272,6 +272,14 @@ def test_the_customers_copy_of_the_document_carries_no_cost_and_no_markup():
     assert doc["totals"]["net"] == q["net"]
 
 
+def est_doc(**kw):
+    """A finished document from a trading tender, for the letter-shape tests."""
+    company = kw.pop("company", None)
+    td = _trading_tender(**kw)
+    m = t.cost_master([_imp()], [], A)
+    return t.document(td, t.quotation(td, master=m), company)
+
+
 # ── 4. P&L ───────────────────────────────────────────────────────────────────────────────────────
 
 def test_the_pnl_runs_revenue_through_to_net_profit():
@@ -337,3 +345,136 @@ def test_the_document_falls_back_to_the_standard_terms_when_none_were_written():
     doc = t.document(_trading_tender(), t.quotation(_trading_tender(), master=t.cost_master([], [], A)))
     assert len(doc["terms"]) == len(t.TERMS_DEFAULT)
     assert doc["terms"][0]["label"] == "Currency"
+
+
+# ── the letter, not a data table ─────────────────────────────────────────────────────────────────
+
+def test_the_document_is_a_letter_with_a_place_a_date_and_a_reference():
+    doc = est_doc()
+    assert doc["placeDate"].startswith("Ho Chi Minh City, ")
+    assert doc["quoteNo"] == "QT-2026-001"
+    assert doc["subject"].startswith("Sales Quotation No.")
+
+
+def test_a_letter_dates_itself_in_words_not_in_iso():
+    """\"valid until 2026-09-19\" mid-sentence reads as a database field, which is what it is and
+    what the customer must not see."""
+    doc = est_doc(validUntil="2026-09-19")
+    assert "19 September 2026" in doc["termsParagraph"]
+    assert "2026-09-19" not in doc["termsParagraph"]
+
+
+def test_an_unconfigured_deployment_still_produces_a_real_letterhead():
+    """A quotation with an empty company block is not on anybody's letterhead."""
+    doc = est_doc()
+    assert doc["company"]["name"] == "HUMILEY ENGINEERING & SOLUTIONS"
+    assert doc["company"]["address"]
+    assert "www.humiley.com" in doc["company"]["contact"]
+
+
+def test_configured_company_settings_win_over_the_fallback():
+    doc = est_doc(company={"name": "Humiley Trading JSC", "address": "Somewhere else",
+                           "website": "w", "email": "e", "phone": "p"})
+    assert doc["company"]["name"] == "HUMILEY TRADING JSC"
+    assert doc["company"]["contact"] == "w   ·   e   ·   p"
+
+
+def test_the_terms_read_as_prose_in_a_fixed_order():
+    doc = est_doc(incoterm="CIF Ho Chi Minh City", leadTime="10 weeks",
+                  paymentTerms="30% / 70%", warranty="24 months")
+    t = doc["termsParagraph"]
+    assert t.index("CIF Ho Chi Minh City") < t.index("10 weeks") < t.index("30% / 70%") < t.index("24 months")
+    assert t.endswith("All prices are in Vietnamese Dong (VND).")
+
+
+def test_a_hand_written_terms_paragraph_replaces_the_assembled_one_entirely():
+    doc = est_doc(termsParagraph="Net 30. Nothing else applies.")
+    assert doc["termsParagraph"] == "Net 30. Nothing else applies."
+
+
+# ── the cost of DELIVERING the goods, not just buying them ───────────────────────────────────────
+
+def test_project_fees_are_priced_off_the_goods_value_not_off_the_selling_price():
+    """A fee that moves when the mark-up moves is not a fee, it is more mark-up."""
+    f = t.project_fees({"assump": {"pmFeePct": 5}}, 1_000_000_000)
+    assert f["total"] == 50_000_000
+    assert f["lines"][0]["base"] == 1_000_000_000
+
+
+def test_a_fee_can_be_a_percentage_a_lump_or_both():
+    f = t.project_fees({"assump": {"pmFeePct": 5, "pmFeeLump": 20_000_000}}, 1_000_000_000)
+    assert f["lines"][0]["amount"] == 70_000_000
+
+
+def test_every_project_fee_defaults_to_zero_so_no_existing_tender_reprices():
+    assert t.project_fees({}, 1_000_000_000)["total"] == 0
+
+
+def test_a_fee_left_at_zero_is_omitted_rather_than_listed_at_nil():
+    """Ten fees all reading zero teaches a reader to skip the block, which is the last thing it
+    should teach them."""
+    f = t.project_fees({"assump": {"commissioningPct": 2}}, 1_000_000_000)
+    assert [l["label"] for l in f["lines"]] == ["Testing & commissioning"]
+
+
+def test_delivery_costs_sit_in_cogs_so_they_cannot_flatter_the_gross_margin():
+    """Below the gross-profit line they would hide every job that is only profitable if nobody
+    installs it."""
+    m = t.cost_master([_imp()], [], A)
+    plain = _trading_tender()
+    withfee = _trading_tender(assump={"pmFeePct": 5, "supervisionPct": 3})
+    q = t.quotation(plain, master=m)
+    p0, p1 = t.pnl(q, plain), t.pnl(t.quotation(withfee, master=m), withfee)
+    assert p1["projectFeesTotal"] < 0
+    assert p1["cogs"] < p0["cogs"]                      # more cost, so more negative
+    assert p1["grossMarginPct"] < p0["grossMarginPct"]  # and the gross margin feels it
+    assert p1["goodsCost"] == p0["goodsCost"]           # the goods themselves did not change
+
+
+def test_the_pnl_still_reconciles_with_fees_in_it():
+    td = _trading_tender(assump={"pmFeePct": 5, "contingencyPct": 2})
+    m = t.cost_master([_imp()], [], A)
+    q = t.quotation(td, master=m)
+    p = t.pnl(q, td)
+    assert p["grossProfit"] == p["revenue"] + p["cogs"]        # cogs is negative
+    assert p["ebit"] == p["grossProfit"] + p["opexTotal"]
+    assert p["netProfit"] == p["ebit"] + p["cit"]
+
+
+# ── conditions: default, but editable and extensible ─────────────────────────────────────────────
+
+def test_the_conditions_default_to_the_standard_set_filled_in_from_the_tender():
+    c = t.conditions(_trading_tender(leadTime="6 to 8 weeks", paymentTerms="50/50"))
+    labels = [x["label"] for x in c]
+    assert labels[:3] == ["Validity", "Delivery", "Payment"]
+    assert "6 to 8 weeks" in c[1]["text"]
+    assert t.is_default_conditions(_trading_tender()) is True
+
+
+def test_a_condition_with_nothing_to_say_is_left_out_rather_than_printed_blank():
+    """'Payment terms are .' on a quotation is worse than no sentence about payment."""
+    c = t.conditions(_trading_tender())          # no leadTime, no paymentTerms, no warranty
+    assert [x["key"] for x in c] == ["validity", "scope", "currency"]
+
+
+def test_a_stored_list_replaces_the_defaults_outright():
+    """Somebody edited the wording or removed a clause; the defaults must not creep back in."""
+    td = _trading_tender(conditions=[{"label": "Retention", "text": "5% retained for 12 months."}])
+    c = t.conditions(td)
+    assert len(c) == 1 and c[0]["label"] == "Retention"
+    assert t.is_default_conditions(td) is False
+    assert t.document(td, t.quotation(td, master=t.cost_master([], [], A)))["termsParagraph"] \
+        == "5% retained for 12 months."
+
+
+def test_conditions_can_be_added_to_not_only_edited():
+    td = _trading_tender(conditions=t.default_conditions(_trading_tender())
+                         + [{"label": "Site access", "text": "Continuous site access assumed."}])
+    c = t.conditions(td)
+    assert c[-1]["label"] == "Site access"
+    assert "Continuous site access assumed." in t.terms_paragraph(td)
+
+
+def test_an_empty_or_malformed_stored_list_falls_back_to_the_defaults():
+    for bad in ([], [{}], [{"text": "  "}], "not a list", None):
+        assert t.conditions(_trading_tender(conditions=bad))[0]["key"] == "validity"
