@@ -150,8 +150,10 @@ the next revision rather than quietly diverging.
 
 * `tools/check_index_js.py` — `node --check` over every inline script block in `templates/index.html`.
   A bad splice there fails silently in the browser rather than loudly.
-* `tools/check_vi_keys.py` — finds `_VI` keys claimed twice with *different* values. Walks the object
-  to its matching brace rather than using a line regex, because the older entries pack several keys
-  per line.
+* `tests/vi_duplicate_keys.js` (already on main, in CI) — finds `_VI` keys claimed twice with
+  *different* values. Worth running before touching the dictionary: `_VI` is one flat object shared
+  by the whole portal, so a bare generic word is a claim on that word in every module and the later
+  definition wins silently. Every VN key this module adds is qualified for that reason —
+  `Production stage`, not `Stage`.
 * `tools/seed_ahu_demo.py` — a small demo order with three units for looking at the module with real
   data in it. Writes to `TK_DB_PATH`; point it at a throwaway file.

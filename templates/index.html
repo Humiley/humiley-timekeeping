@@ -26884,7 +26884,7 @@ const _AHU_VERDICT_TONE = {
 };
 /* Qualified on purpose. `_VI` is one flat dictionary shared by the whole portal, so a bare 'Gate'
    or 'Test' would be a claim on that word everywhere — and the later definition silently wins.
-   tools/check_vi_keys.py exists because that has already shipped a regression once. */
+   tests/vi_duplicate_keys.js exists because that has already shipped a regression once. */
 const _AHU_KIND_LABEL = { gate: 'Stage gate', op: 'Workstation', ipqc: 'Hold point', test: 'Factory test' };
 
 function _ahuEsc(s) { return (typeof _crmEsc === 'function') ? _crmEsc(s) : String(s == null ? '' : s); }
@@ -28122,7 +28122,7 @@ const _VI = {
   /* 'Procurement' is deliberately NOT redefined here. The PMC register already claims it as
      'Mua sắm', that definition comes later in this object and therefore wins portal-wide, and the
      rest of the portal already reads Mua sắm. A second 'Mua hàng' here never reached a screen —
-     it only made the launcher tile's own word unpredictable. See tools/check_vi_keys.py. */
+     it only made the launcher tile's own word unpredictable. See tests/vi_duplicate_keys.js. */
   'System Settings': 'Cài đặt hệ thống',
   'Your dashboard, attendance and personal requests': 'Bảng điều khiển, chuyên cần và các đề nghị cá nhân của bạn',
   'Company and executive dashboards': 'Bảng điều khiển công ty và ban điều hành',
@@ -28136,7 +28136,7 @@ const _VI = {
   'Access, signatures, audit trail, schedules and locations': 'Phân quyền, chữ ký, vết kiểm toán, lịch làm việc và địa điểm',
   /* AHU Production (2026-08-20). Every key here is QUALIFIED — 'Production stage', not 'Stage'.
      _VI is one flat object shared by the whole portal, so a bare generic word is a claim on that
-     word in every module and the later definition wins silently. See tools/check_vi_keys.py. */
+     word in every module and the later definition wins silently. See tests/vi_duplicate_keys.js. */
   'AHU Production': 'Sản xuất AHU',
   'Production Board': 'Bảng sản xuất',
   'AHU Register': 'Sổ đăng ký AHU',
