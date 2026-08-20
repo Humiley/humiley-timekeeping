@@ -64,6 +64,14 @@ jobs:
       - name: Detail Schedule arithmetic
         run: node tests/detail_schedule_math.js
 
+      # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
+      # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
+      # so one screen's wording was overwriting another's. The check that should have caught it was a
+      # regex blind to 516 of the 3,764 pairs and had reported zero for months — this one scans the
+      # literal properly and verifies itself against the JS engine before trusting its own answer.
+      - name: Vietnamese dictionary has no duplicate keys
+        run: node tests/vi_duplicate_keys.js
+
       - name: The staging service must not be called 'app'
         run: |
           # Compose registers the service name as a network alias. A staging service named 'app' on
