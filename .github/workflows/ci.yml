@@ -81,6 +81,50 @@ jobs:
       - name: JavaScript in index.html parses
         run: python3 tools/check_index_js.py
 
+      # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
+      # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
+      # it landed, two further branches picked the same version anyway (v295, then v298), and the
+      # symptom is invisible — production answers the same build string before and after a deploy,
+      # so "Check for updates" has nothing to compare and a deploy check reports green on a deploy
+      # that has not happened. Hence a check rather than a request.
+      #
+      # Only demanded when the PR actually changes what gets DEPLOYED. A docs-only or
+      # workflow-only PR alters nothing a browser is served, and requiring a bump for those would
+      # make the guard something people route around — including, on its first attempt, its own PR.
+      - name: The service-worker version must be new when the deployed app changes
+        if: github.event_name == 'pull_request'
+        run: |
+          set -eu
+          base="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only "$base"...HEAD)
+          deployed=$(printf '%s\n' "$changed" | grep -vE '^(docs/|tests/|tools/|\.github/|README|.*\.md$)' || true)
+          if [ -z "$deployed" ]; then
+            echo "No deployed file changed — a version bump is not required."
+            printf 'changed:\n%s\n' "$changed"
+            exit 0
+          fi
+          printf 'deployed files changed:\n%s\n' "$deployed"
+          mine=$(grep -oE 'hml-pwa-v[0-9]+' static/sw.js | head -1)
+          theirs=$(git show "$base:static/sw.js" | grep -oE 'hml-pwa-v[0-9]+' | head -1)
+          echo "this branch: ${mine:-none}    ${{ github.base_ref }}: ${theirs:-none}"
+          if [ -z "$mine" ] || [ -z "$theirs" ]; then
+            echo "::error::Could not read hml-pwa-vNNN from static/sw.js on one side."
+            exit 1
+          fi
+          m=${mine#hml-pwa-v}; t=${theirs#hml-pwa-v}
+          if [ "$m" = "$t" ]; then
+            echo "::error::static/sw.js is still $theirs, the same version ${{ github.base_ref }} is on."
+            echo "::error::Bump it — otherwise /api/build cannot tell this build from the one before it."
+            exit 1
+          fi
+          # Numeric, not lexical: v1000 must beat v999.
+          if [ "$(printf '%s\n%s\n' "$m" "$t" | sort -n | tail -1)" != "$m" ]; then
+            echo "::error::$mine is LOWER than ${{ github.base_ref }}'s $theirs. The version only goes up."
+            exit 1
+          fi
+          echo "OK: $mine is newer than $theirs."
+
       - name: The staging service must not be called 'app'
         run: |
           # Compose registers the service name as a network alias. A staging service named 'app' on
