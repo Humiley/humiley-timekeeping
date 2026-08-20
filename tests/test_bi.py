@@ -223,3 +223,41 @@ def test_a_revoked_key_stops_working_immediately(base_url, api, tokens):
     assert _raw(base_url, "/api/bi/progress", _basic(key))[0] == 200
     api("POST", "/api/bi/key", tokens["admin"], {"revoke": True})
     assert _raw(base_url, "/api/bi/progress", _basic(key))[0] == 401
+
+
+# ── quantity-measured progress reaches the model ─────────────────────────────────────────────────
+
+def test_quantity_drives_the_percentage():
+    it = _item(qtyPlan=500, unit="m", log=[{"d": "2026-08-10", "pct": 0, "qty": 350}])
+    assert bi.accumulated_at(it, TODAY) == 70
+    assert bi.qty_at(it, TODAY) == (350.0, False)
+
+
+def test_a_reading_without_a_quantity_keeps_its_percentage():
+    """Per-reading, not per-item — a line that gained a quantity partway must not lose its history."""
+    it = _item(qtyPlan=500, log=[{"d": "2026-08-05", "pct": 40}, {"d": "2026-08-10", "pct": 0, "qty": 350}])
+    assert bi.accumulated_at(it, "2026-08-05") == 40
+    assert bi.accumulated_at(it, TODAY) == 70
+
+
+def test_no_quantity_leaves_the_judged_path_alone():
+    assert bi.accumulated_at(_item(log=[{"d": "2026-08-10", "pct": 62}]), TODAY) == 62
+    assert bi.qty_plan({"qtyPlan": 0}) == 0 and bi.qty_plan({"qtyPlan": -5}) == 0 and bi.qty_plan({}) == 0
+
+
+def test_the_fact_table_marks_inferred_quantities():
+    measured = _item(id="m", qtyPlan=500, log=[{"d": TODAY, "pct": 0, "qty": 350}])
+    judged = _item(id="j", qtyPlan=500, log=[{"d": TODAY, "pct": 50}])
+    rows = {r["itemId"]: r for r in bi.progress_fact([measured, judged], {"id": "P1"}, TODAY, TODAY)}
+    assert rows["m"]["qtyAtSite"] == 350 and rows["m"]["qtyMeasured"] == 1
+    assert rows["j"]["qtyAtSite"] == 250 and rows["j"]["qtyMeasured"] == 0, \
+        "a back-calculated quantity must be flagged, or a BI user sums it as if it were measured"
+    assert rows["m"]["qtyPlanned"] == 500
+
+
+def test_the_python_port_agrees_with_the_javascript():
+    """Same cases, same numbers as tests/detail_schedule_math.js. If these drift, one of the two
+    implementations changed alone."""
+    qp = _item(qtyPlan=500, log=[{"d": "2026-08-14", "pct": 0, "qty": 300}, {"d": TODAY, "pct": 0, "qty": 350}])
+    assert bi.daily_at(qp, TODAY) == 10
+    assert bi.accumulated_at(_item(qtyPlan=500, log=[{"d": TODAY, "pct": 0, "qty": 900}]), TODAY) == 100
