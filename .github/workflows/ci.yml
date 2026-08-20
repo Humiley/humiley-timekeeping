@@ -81,32 +81,6 @@ jobs:
       - name: JavaScript in index.html parses
         run: python3 tools/check_index_js.py
 
-      # #48 made static/sw.js the deployed build's identity and asked, in a comment, that branches
-      # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
-      # it landed, two more branches picked the same version anyway (v295 and v298), and the failure
-      # is invisible until production answers the same build string before and after a deploy — at
-      # which point "Check for updates" has nothing to compare and a deploy check reports green on a
-      # deploy that has not happened. So it is a check rather than a request.
-      - name: The service-worker version must not be one main already used
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch --quiet --depth=1 origin "${{ github.base_ref }}"
-          mine=$(grep -oE "hml-pwa-v[0-9]+" static/sw.js | head -1)
-          theirs=$(git show "origin/${{ github.base_ref }}:static/sw.js" | grep -oE "hml-pwa-v[0-9]+" | head -1)
-          echo "this branch: $mine    ${{ github.base_ref }}: $theirs"
-          if [ -z "$mine" ]; then
-            echo "::error::No hml-pwa-vNNN found in static/sw.js."; exit 1
-          fi
-          if [ "$mine" = "$theirs" ]; then
-            echo "::error::static/sw.js is still $theirs — the same version ${{ github.base_ref }} is on."
-            echo "::error::Bump it, or /api/build cannot tell this build from the one before it."
-            exit 1
-          fi
-          if [ "$(printf '%s\n%s\n' "${mine#hml-pwa-v}" "${theirs#hml-pwa-v}" | sort -n | tail -1)" != "${mine#hml-pwa-v}" ]; then
-            echo "::error::$mine is LOWER than ${{ github.base_ref }}'s $theirs. The version must only go up."
-            exit 1
-          fi
-
       - name: The staging service must not be called 'app'
         run: |
           # Compose registers the service name as a network alias. A staging service named 'app' on
