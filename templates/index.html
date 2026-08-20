@@ -21007,7 +21007,7 @@ function _pdBoard(pid, rows, day) {
         '</div>' + (dly > 0 ? '<div style="font-size:10.5px;color:var(--emerald);margin-top:3px;font-weight:600">+' + dly + '% ' + _t('today') + '</div>' : '') +
         '</div>';
     }).join('') || '<div style="font-size:11.5px;color:var(--text-light);padding:6px 2px">' + _t('Nothing here') + '</div>';
-    return '<div style="flex:1;min-width:210px">' +
+    return '<div style="flex:1;min-width:172px;background:var(--soft-bg);border-radius:10px;padding:10px">' +
       '<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px">' +
         '<span style="width:9px;height:9px;border-radius:50%;background:' + c.hex + '"></span>' +
         '<span style="font-weight:700;font-size:12.5px">' + _t(c.label) + '</span>' +
@@ -21016,7 +21016,7 @@ function _pdBoard(pid, rows, day) {
   return '<div class="card" style="padding:15px 17px">' +
     '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:12px">' +
       _t('Grouped by how far each activity is from its planned position today. Click a card to file progress.') + '</div>' +
-    '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">' + cols + '</div></div>';
+    '<div style="display:flex;gap:10px;overflow-x:auto;padding-bottom:4px">' + cols + '</div></div>';
 }
 
 /* ══ DETAIL · CALENDAR ═══════════════════════════════════════════════════════════════════════════
@@ -21029,49 +21029,7 @@ function pdCalMove(n) {
   _pdCalM = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   _pmReload();
 }
-function _pdCalendar(pid, rows, day) {
-  const ym = _pdCalM || day.slice(0, 7);
-  const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
-  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
-  const lead = (first.getDay() + 6) % 7;               // Monday-first, the site week
-  const iso = dd => y + '-' + String(m + 1).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
-  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-  let cells = '';
-  for (let i = 0; i < lead; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.4"></div>';
-  for (let dd = 1; dd <= days; dd++) {
-    const d = iso(dd);
-    const starts = rows.filter(r => r.start === d);
-    const ends = rows.filter(r => r.finish === d);
-    const isToday = d === day;
-    const pill = (r, hex, glyph) =>
-      '<div onclick="event.stopPropagation();pdProgress(\'' + r.id + '\')" title="' + _tkEscA(r.name || '') + '" ' +
-      'style="font-size:10.5px;line-height:1.3;padding:2px 5px;border-radius:4px;background:' + hex + '1f;color:' + hex +
-      ';font-weight:600;margin-top:3px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      glyph + ' ' + _pmEsc(r.name || '') + '</div>';
-    cells += '<div style="min-height:92px;background:var(--card,#fff);border:1px solid ' + (isToday ? '#EF4444' : 'var(--line)') +
-      ';border-radius:8px;padding:5px 6px;overflow:hidden">' +
-      '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? '#EF4444' : 'var(--text-light)') + '">' + dd + '</div>' +
-      starts.slice(0, 3).map(r => pill(r, '#38BDF8', '▶')).join('') +
-      ends.slice(0, 3).map(r => pill(r, '#F97316', '■')).join('') +
-      ((starts.length + ends.length) > 6 ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">+' + (starts.length + ends.length - 6) + '</div>' : '') +
-      '</div>';
-  }
-  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  return '<div class="card" style="padding:15px 17px">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
-      '<div style="font-weight:700;font-size:13.5px">' + _t(MON[m]) + ' ' + y + '</div>' +
-      '<div style="display:flex;gap:6px;align-items:center">' +
-        '<span style="font-size:11px;color:var(--text-light)"><b style="color:#38BDF8">▶</b> ' + _t('starts') +
-        ' &nbsp;<b style="color:#F97316">■</b> ' + _t('due') + '</span>' +
-        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(-1)">‹</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(1)">›</button></div></div>' +
-    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">' +
-      DOW.map(d => '<div style="font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
-    '</div>' +
-    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">' + cells + '</div></div>';
-}
-
+function _pdCalendar(pid, rows, day) { return _schCalendar(_pdNorm(rows, day), { day: day }); }
 function _pdRows(pid) {
   const all = _pdAllRows(pid), cur = _pdCurSched(pid);
   if (!cur) return all;                                   // no schedules defined = one implicit one
@@ -21496,7 +21454,28 @@ const _PD_LABW = 252;                     // label gutter, px — shared by head
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
 
-function _pdTimeline(pid, rows, cats, day) {
+/* ══ SHARED SCHEDULE KIT ═════════════════════════════════════════════════════════════════════════
+   Master and Detail are two levels of the SAME thing, so they render through the same components —
+   not two implementations that look alike on the day they are written and drift by the next change.
+
+   Each level supplies rows in one normalised shape and the kit does the rest:
+
+     { id, group, name, start, finish, acc, planned, w, click }
+
+   acc / planned are already resolved by the caller, because the two levels answer them differently:
+   a detail line reads its progress log, a master activity is the weighted roll-up of the detail
+   lines beneath it (or its own typed % when it has none). Everything downstream — bars, grouping,
+   roll-ups, colours, gridlines — is identical by construction. */
+const _SCH_PAL = ['#00B060', '#F97316', '#38BDF8', '#8B5CF6', '#EAB308', '#EC4899'];
+function _schRoll(rows) {
+  let ws = 0, a = 0, p = 0;
+  (rows || []).forEach(r => { const w = +r.w || 1; ws += w; a += w * (+r.acc || 0); p += w * (+r.planned || 0); });
+  return ws ? { acc: a / ws, planned: p / ws } : { acc: 0, planned: 0 };
+}
+
+function _schTimeline(rows, o) {
+  o = o || {};
+  const day = o.day || _pmToday();
   const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
   if (!ds.length) return '';
   ds.push(day);
@@ -21504,8 +21483,6 @@ function _pdTimeline(pid, rows, cats, day) {
   const span = Math.max(1, _pmDateDiff(min, max) || 1);
   const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
 
-  // Month boundaries, each with its share of the width — the same numbers drive the header labels,
-  // the gridlines and the quarter band, so they cannot drift apart.
   const months = [];
   let cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
   const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
@@ -21517,7 +21494,6 @@ function _pdTimeline(pid, rows, cats, day) {
                   m: cur.getMonth(), y: cur.getFullYear() });
     cur = nxt;
   }
-  // Quarters, merged from the months so the two bands always line up.
   const quarters = [];
   months.forEach(mo => {
     const q = 'Q' + (Math.floor(mo.m / 3) + 1) + ' ' + mo.y;
@@ -21527,11 +21503,9 @@ function _pdTimeline(pid, rows, cats, day) {
 
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const plotW = _pdWide ? Math.max(760, months.length * 132) : Math.max(520, months.length * 74);
-  const innerW = _PD_LABW + plotW;
   const seg = (a, b, style, txt, title) =>
     '<div style="position:absolute;left:' + a + '%;width:' + Math.max(0, b - a) + '%;' + style + '"' +
     (title ? ' title="' + _tkEscA(title) + '"' : '') + '>' + (txt || '') + '</div>';
-
   const band = (items, h, fs, weight) => items.map(x =>
     seg(x.from, x.to, 'top:0;height:' + h + 'px;border-left:1px solid var(--line);display:flex;align-items:center;' +
         'justify-content:center;font-size:' + fs + 'px;font-weight:' + weight + ';color:var(--text-light);overflow:hidden;white-space:nowrap',
@@ -21553,7 +21527,7 @@ function _pdTimeline(pid, rows, cats, day) {
     '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
       '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
         'border-right:1px solid var(--line);padding:6px 12px;display:flex;align-items:flex-end;font:600 11px ui-sans-serif,system-ui,sans-serif;' +
-        'letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + _t('Trade / Activity') + '</div>' +
+        'letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' + _t(o.labelHead || 'Trade / Activity') + '</div>' +
       '<div style="flex:1;position:relative;height:46px">' +
         band(quarters, 22, 11, 700) +
         '<div style="position:absolute;top:22px;left:0;right:0;height:24px">' +
@@ -21561,72 +21535,139 @@ function _pdTimeline(pid, rows, cats, day) {
         '</div>' + todayChip +
       '</div></div>';
 
-  // Gridlines + today, drawn ONCE behind every row so nothing can fall out of alignment.
   const gridlines = months.map(mo =>
     '<div style="position:absolute;left:' + mo.from + '%;top:0;bottom:0;border-left:1px solid var(--line);opacity:.7"></div>').join('');
 
   const bar = (r, color, label, big) => {
     if (!r.start || !r.finish) return '';
-    const a = pct(r.start), b = pct(r.finish), acc = r._acc, h = big ? 13 : 10, top = big ? 6 : 8;
+    const a = pct(r.start), b = pct(r.finish), acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
     return seg(a, b, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color + '2e', '',
-               (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + acc + '%') +
+               (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + Math.round(acc) + '%') +
            seg(a, a + (b - a) * acc / 100, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color, '') +
            '<div style="position:absolute;left:' + b + '%;top:' + (top - 2) + 'px;margin-left:7px;font-size:10.5px;' +
              'font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
   };
-
-  const PAL = ['#00B060', '#F97316', '#38BDF8', '#8B5CF6', '#EAB308', '#EC4899'];
-  const lab = (html, indent, extra) =>
+  const lab = (html, indent) =>
     '<div style="width:' + _PD_LABW + 'px;flex:none;position:sticky;left:0;z-index:2;background:inherit;' +
       'border-right:1px solid var(--line);padding:0 10px 0 ' + indent + 'px;display:flex;align-items:center;gap:7px;' +
-      'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;' + (extra || '') + '">' + html + '</div>';
+      'overflow:hidden;white-space:nowrap;text-overflow:ellipsis">' + html + '</div>';
 
+  const groups = []; rows.forEach(r => { if (groups.indexOf(r.group) < 0) groups.push(r.group); });
+  const collapsed = o.collapsed || {};
   let body = '';
-  cats.forEach((cat, i) => {
-    const cr = rows.filter(r => (r.category || 'Uncategorised') === cat), roll = _pdRollup(cr, day), color = PAL[i % PAL.length];
-    const open = !_pdCol[cat];
-    const cs = cr.map(r => r.start).filter(Boolean).sort()[0];
-    const cf = cr.map(r => r.finish).filter(Boolean).sort().slice(-1)[0];
+  groups.forEach((g, i) => {
+    const gr = rows.filter(r => r.group === g), roll = _schRoll(gr), color = _SCH_PAL[i % _SCH_PAL.length];
+    const open = !collapsed[g];
+    const gs = gr.map(r => r.start).filter(Boolean).sort()[0];
+    const gf = gr.map(r => r.finish).filter(Boolean).sort().slice(-1)[0];
     body += '<div style="display:flex;height:30px;background:var(--soft-bg);cursor:pointer;border-bottom:1px solid var(--line)" ' +
-        'onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')" title="' + _tkEscA(_t('Show or hide this trade')) + '">' +
+        'onclick="' + (o.toggle || '').replace('{g}', encodeURIComponent(g)) + '" title="' + _tkEscA(_t('Show or hide this group')) + '">' +
       lab('<span style="width:11px;color:var(--text-light);font-weight:700">' + (open ? '−' : '+') + '</span>' +
           '<span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' +
-          '<span style="font-weight:700;font-size:12.5px">' + _pmEsc(cat) + '</span>' +
-          '<span style="font-size:10.5px;color:var(--text-light)">' + cr.length + '</span>', 10) +
+          '<span style="font-weight:700;font-size:12.5px">' + _pmEsc(g) + '</span>' +
+          '<span style="font-size:10.5px;color:var(--text-light)">' + gr.length + '</span>', 10) +
       '<div style="flex:1;position:relative">' +
-        bar({ start: cs, finish: cf, _acc: roll.acc, name: cat }, color, Math.round(roll.acc) + '%', true) + '</div></div>';
+        bar({ start: gs, finish: gf, acc: roll.acc, name: g }, color, Math.round(roll.acc) + '%', true) + '</div></div>';
     if (!open) return;
-    cr.forEach(r => {
-      const acc = _pdAcc(r, day), v = acc - _pdPlanned(r, day);
-      body += '<div style="display:flex;height:27px;background:var(--card,#fff);cursor:pointer;border-bottom:1px solid var(--line)" ' +
-          'onclick="pdProgress(\'' + r.id + '\')" title="' + _tkEscA(_t('File progress for this activity')) + '">' +
+    gr.forEach(r => {
+      const v = (+r.acc || 0) - (+r.planned || 0);
+      body += '<div style="display:flex;height:27px;background:var(--card,#fff);' + (r.click ? 'cursor:pointer;' : '') +
+          'border-bottom:1px solid var(--line)"' + (r.click ? ' onclick="' + r.click + '"' : '') +
+          ' title="' + _tkEscA(o.rowHint || '') + '">' +
         lab('<span style="width:5px;height:5px;border-radius:50%;background:' + _pdVarColor(v) + ';flex:none"></span>' +
             '<span style="font-size:12px;color:var(--text)">' + _pmEsc(r.name || '') + '</span>', 26) +
-        '<div style="flex:1;position:relative">' + bar(Object.assign({}, r, { _acc: acc }), color, acc + '%', false) + '</div></div>';
+        '<div style="flex:1;position:relative">' + bar(r, color, Math.round(+r.acc || 0) + '%', false) + '</div></div>';
     });
   });
 
   return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px">' +
     '<div style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:1px solid var(--line)">' +
       '<div><div style="font-weight:700;font-size:13px">' + _t('Timeline') + '</div>' +
-        '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) + ' · ' +
-        _t('click an activity to file progress') + '</div></div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) +
+        (o.sub ? ' · ' + o.sub : '') + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
-        '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' +
-      '</div></div>' +
-    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + innerW + 'px">' +
+        (o.actions || '') + '</div></div>' +
+    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (_PD_LABW + plotW) + 'px">' +
       header +
       '<div style="position:relative">' +
         '<div style="position:absolute;left:' + _PD_LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
-          gridlines + todayLine + '</div>' +
-        body +
+          gridlines + todayLine + '</div>' + body +
       '</div></div></div>' +
     '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
       _t('Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind') +
     '</div></div>';
 }
 
+/* Calendar — what STARTS and what is DUE. Both are commitments; the middle of a bar is not. */
+function _schCalendar(rows, o) {
+  o = o || {};
+  const day = o.day || _pmToday();
+  const ym = _pdCalM || day.slice(0, 7);
+  const y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1;
+  const first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate();
+  const lead = (first.getDay() + 6) % 7;               // Monday-first, the site week
+  const iso = dd => y + '-' + String(m + 1).padStart(2, '0') + '-' + String(dd).padStart(2, '0');
+  const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let cells = '';
+  for (let i = 0; i < lead; i++) cells += '<div style="min-height:92px;background:var(--soft-bg);border-radius:8px;opacity:.4"></div>';
+  for (let dd = 1; dd <= days; dd++) {
+    const d = iso(dd), starts = rows.filter(r => r.start === d), ends = rows.filter(r => r.finish === d), isToday = d === day;
+    const pill = (r, hex, glyph) =>
+      '<div' + (r.click ? ' onclick="event.stopPropagation();' + r.click + '"' : '') + ' title="' + _tkEscA(r.name || '') + '" ' +
+      'style="font-size:10.5px;line-height:1.3;padding:2px 5px;border-radius:4px;background:' + hex + '1f;color:' + hex +
+      ';font-weight:600;margin-top:3px;' + (r.click ? 'cursor:pointer;' : '') + 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      glyph + ' ' + _pmEsc(r.name || '') + '</div>';
+    cells += '<div style="min-height:92px;background:var(--card,#fff);border:1px solid ' + (isToday ? '#EF4444' : 'var(--line)') +
+      ';border-radius:8px;padding:5px 6px;overflow:hidden">' +
+      '<div style="font-size:11px;font-weight:' + (isToday ? '800' : '600') + ';color:' + (isToday ? '#EF4444' : 'var(--text-light)') + '">' + dd + '</div>' +
+      starts.slice(0, 3).map(r => pill(r, '#38BDF8', '▶')).join('') +
+      ends.slice(0, 3).map(r => pill(r, '#F97316', '■')).join('') +
+      ((starts.length + ends.length) > 6 ? '<div style="font-size:10px;color:var(--text-light);margin-top:2px">+' + (starts.length + ends.length - 6) + '</div>' : '') +
+      '</div>';
+  }
+  const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return '<div class="card" style="padding:15px 17px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+      '<div style="font-weight:700;font-size:13.5px">' + _t(MON[m]) + ' ' + y + '</div>' +
+      '<div style="display:flex;gap:6px;align-items:center">' +
+        '<span style="font-size:11px;color:var(--text-light)"><b style="color:#38BDF8">▶</b> ' + _t('starts') +
+        ' &nbsp;<b style="color:#F97316">■</b> ' + _t('due') + '</span>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(-1)">‹</button>' +
+        '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(1)">›</button></div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">' +
+      DOW.map(d => '<div style="font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
+    '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">' + cells + '</div></div>';
+}
+
+/* ── the two adapters ─────────────────────────────────────────────────────────────────────────── */
+let _pmPhCol = {};
+function pmPhToggle(g) { g = decodeURIComponent(g); _pmPhCol[g] = !_pmPhCol[g]; _pmReload(); }
+/* Master activities. Progress is the detail roll-up where detail lines exist — one source of truth,
+   the same rule the Activities table already shows as "rolled up". */
+function _pmTaskNorm(pid, day) {
+  return _pmScopeFor('pm_tasks', pid).filter(t => t.start || t.finish).map(t => {
+    const d = _pdTaskPct(t, pid);
+    const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
+    return { id: t.id, group: t.phase || _t('Activities'), name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || ''),
+             start: t.start, finish: t.finish, w: dur,
+             acc: d ? d.pct : _pmPct(t.pctComplete),
+             planned: _pdPlanned({ start: t.start, finish: t.finish }, day),
+             click: "tkQuickAdd('pm_tasks','" + t.id + "')" };
+  });
+}
+function _pdNorm(rows, day) {
+  return rows.map(r => ({ id: r.id, group: r.category || 'Uncategorised', name: r.name || '',
+    start: r.start, finish: r.finish, w: _pdWeight(r),
+    acc: _pdAcc(r, day), planned: _pdPlanned(r, day), click: "pdProgress('" + r.id + "')" }));
+}
+
+function _pdTimeline(pid, rows, cats, day) {
+  return _schTimeline(_pdNorm(rows, day), { day: day, collapsed: _pdCol,
+    toggle: "pdToggleCat(decodeURIComponent('{g}'))", labelHead: 'Trade / Activity',
+    rowHint: _t('File progress for this activity'), sub: _t('click an activity to file progress'),
+    actions: '<button class="btn btn-emerald btn-sm" onclick="pdDailyEntry(\'' + pid + '\')">' + _t('Daily progress') + '</button>' });
+}
 /* ── filing a reading ─────────────────────────────────────────────────────────────────────────── */
 function pdProgress(id) {
   const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
@@ -21787,7 +21828,15 @@ function pmRenderSchedule(pid) {
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
   // had; pmSchedTab() builds a pane the first time it is shown.
   _pmSchedBuild = {};
-  _pmSchedBuild['m-timeline'] = () => _pmGanttHtml(pid);
+  _pmSchedBuild['m-timeline'] = () => {
+    const _n = _pmTaskNorm(pid, _pmToday());
+    return _n.length ? _schTimeline(_n, { day: _pmToday(), collapsed: _pmPhCol,
+        toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
+        rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
+        actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' })
+      : '<div class="card" style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+        _t('No activities with dates yet.') + '</div>';
+  };
   _pmSchedBuild['d-timeline'] = () => _pdView(pid, 'timeline');
   _pmSchedBuild['d-register'] = () => _pdView(pid, 'register');
   _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
@@ -21809,7 +21858,7 @@ function pmRenderSchedule(pid) {
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild['m-board'] = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
-  _pmSchedBuild['m-calendar'] = () => _pmCalendarHtml(pid);
+  _pmSchedBuild['m-calendar'] = () => _schCalendar(_pmTaskNorm(pid, _pmToday()), { day: _pmToday() });
   // LEVEL 1 picks the schedule; LEVEL 2 picks how to look at it. Both levels offer the same four
   // views, because "where am I" and "how do I want to see it" are separate questions and answering
   // them on one flat bar made four master-only views look like peers of the whole detail programme.
@@ -21857,8 +21906,15 @@ function pmSchedLevel(lv) {
   _pmReload();
 }
 function pmSchedTab(name) {
+  // Crossing LEVELS cannot be a pane swap. The level-2 bar only contains the current level's four
+  // buttons and the level-1 buttons carry the selection, so swapping to the other level's pane left
+  // the chrome describing master while a detail pane was on screen. Clicking cannot reach that state
+  // — level changes go through pmSchedLevel — but any future caller could, so guard it here where
+  // the invariant actually lives rather than trusting every call site to know.
+  const crossing = name.charAt(0) !== _pmSchedTab.charAt(0);
   _pmSchedTab = name;
   _pmSchedLast[_pmSchedLevel()] = name;
+  if (crossing) { _pmReload(); return; }
   // Build this pane the first time it is shown. pmRenderSchedule re-creates the hosts on every
   // reload, so data-built resets naturally and a pane can never show stale rows.
   const host = document.getElementById('psch-' + name);
@@ -23651,6 +23707,13 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Shared schedule kit (2026-08-20) */
+  'Phase / Activity': 'Giai đoạn / Công việc',
+  'Open this activity': 'Mở công việc này',
+  'grouped by phase · click an activity to open it': 'nhóm theo giai đoạn · bấm để mở công việc',
+  'No activities with dates yet.': 'Chưa có công việc nào có ngày.',
+  'Show or hide this group': 'Ẩn/hiện nhóm này',
+
   /* Two-level schedule + multi detail schedules (2026-08-20) */
   'Schedule': 'Tiến độ',
   'Unfiled': 'Chưa phân loại',
