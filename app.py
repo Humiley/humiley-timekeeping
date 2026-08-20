@@ -63,6 +63,7 @@ import payroll_journal   # Circular 200/2014 double-entry lines from a finalised
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
+import estimating        # a tender price built from its parts: rates, mark-ups, take-offs (pure)
 import workforce         # headcount and turnover over time, from dated facts (pure)
 import appraisal         # appraisal cycles + which rating may move pay (pure)
 import statutory         # SI/PIT/labour-usage returns, and the contribution-cap variance (pure)
@@ -2846,6 +2847,24 @@ def _invtrack_enrich_existing(items, limit=400):
     return done
 
 
+def _est_seq(v):
+    """Sort key for a bill-of-quantities sequence: 1, 1.2, 1.10, 2.
+
+    Plain text sort puts "1.10" before "1.9", which silently reorders a customer's bill. Split on
+    the dots and compare the parts as numbers, falling back to the text for anything non-numeric.
+    """
+    parts = []
+    for p in str(v or "").replace(",", ".").split("."):
+        p = p.strip()
+        if not p:
+            continue
+        try:
+            parts.append((0, float(p), ""))
+        except ValueError:
+            parts.append((1, 0.0, p.lower()))
+    return parts or [(2, 0.0, "")]
+
+
 def _invtrack_audit(trigger, added, needlook, err=""):
     try:
         db.put_collection_item("audit", {
@@ -3980,6 +3999,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._hr_doc_file_ep(u, urllib.parse.unquote(_did)))
         if path == "/api/myspace/summary":
             return self._guard(lambda u: self._myspace_summary(u))
+        if path == "/api/est/summary":
+            return self._guard(lambda u: self._est_summary_ep(u, qs))
         if path == "/api/exec/summary":
             return self._guard(lambda u: self._exec_summary(u))
         if path == "/api/exec/trends":
@@ -4147,6 +4168,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._attendance_ot(u, aid, body), manager=True)
         if path == "/api/leave":
             return self._guard(lambda u: self._leave_create(u, body))
+        if path == "/api/est/adopt":
+            return self._guard(lambda u: self._est_adopt_ep(u, body), manager=True)
         if path == "/api/push/subscribe":
             return self._guard(lambda u: self._push_subscribe(u, body))
         if path == "/api/push/unsubscribe":
@@ -7037,6 +7060,145 @@ class Handler(BaseHTTPRequestHandler):
                            "invoices": [round(inv[lb], 2) for lb in labels],
                            "vat": [round(vat[lb], 2) for lb in labels]})
 
+    # ══════════════════════════════════════════════════════════════════════════
+    #   ESTIMATING — the tender price, and what it hands to the rest of the business
+    #
+    #   Every figure an estimate shows is computed HERE and drawn by the browser. The
+    #   browser never derives one. `payroll_calc` exists because the same arithmetic was
+    #   once written twice, in two languages, and drifted; this module does not repeat it.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _est_rows(self, est_id):
+        """The bill and the build-up for one estimate, in the shape `estimating` expects."""
+        items = [i for i in db.list_collection("est_items") if i.get("estId") == est_id]
+        # A bill is an ordered document — a rate that appears above its heading is a different
+        # document. Sort is by the stored sequence, falling back to code so a bill imported
+        # without one still reads in a stable order rather than in insert order.
+        items.sort(key=lambda i: (_est_seq(i.get("seq")), str(i.get("code") or ""), str(i.get("id") or "")))
+        res = {}
+        for r in db.list_collection("est_resources"):
+            if r.get("estId") != est_id:
+                continue
+            res.setdefault(r.get("itemId"), []).append(r)
+        return items, res
+
+    def _est_markups(self, e):
+        return {
+            "siteOverhead": e.get("siteOverhead"),
+            "overheadPct": e.get("overheadPct"),
+            "riskPct": e.get("riskPct"),
+            "profitPct": e.get("profitPct"),
+            "profitBasis": e.get("profitBasis") or estimating.MARKUP,
+        }
+
+    def _est_get(self, est_id):
+        return next((e for e in db.list_collection("est_projects") if e.get("id") == est_id), None)
+
+    def _est_summary_ep(self, u, qs):
+        """Cost, price, margin, take-offs and rate drift for one estimate."""
+        if self._lvl_rank(self._caller_level(u)) < self._lvl_rank(self.EST_MIN):
+            return self._err("Manager access required — an estimate holds the company's cost and margin.", 403)
+        if "est" in self._apps_denied(u):
+            return self._err("Access restricted — Estimating is not enabled for your account.", 403)
+        est_id = (qs.get("id") or [""])[0].strip()
+        e = self._est_get(est_id)
+        if not e:
+            return self._err("Estimate not found.", 404)
+        items, res = self._est_rows(est_id)
+        markups = self._est_markups(e)
+        try:
+            summary = estimating.summarise(items, res, markups)
+            lines = estimating.line_prices(items, res, markups)
+        except ValueError as ex:
+            # A margin of 100%+ has no finite price. Say so in the field the user can fix
+            # rather than returning a 500 they cannot act on.
+            return self._err(str(ex), 400)
+        except AssertionError as ex:
+            # A reconciliation failure is a bug in the arithmetic, not bad input. It must be
+            # loud: a bill whose lines do not sum to its own total has already been wrong on
+            # somebody's screen, and quietly serving it is how it reaches a customer.
+            return self._err("This estimate did not reconcile (%s). It has not been served — please report it." % ex, 500)
+        flat = [r for rows in res.values() for r in rows]
+        return self._json({
+            "estimate": e,
+            "summary": summary,
+            "lines": lines["lines"],
+            "takeOff": estimating.take_off(items, res),
+            "labour": estimating.labour_take_off(items, res),
+            "rateDrift": estimating.stale_rates(flat, db.list_collection("est_rates")),
+            "budget": estimating.budget_lines(items, res, markups),
+        })
+
+    def _est_adopt_ep(self, u, body):
+        """Hand a won estimate to a project as its budget.
+
+        The whole point of the module: the number a job is measured against stops being one
+        somebody typed and becomes the one the tender was actually built from.
+
+        Three refusals, each for a different reason:
+          · below management — pricing is built by the commercial team, committed by management;
+          · not yet approved — a draft is a working document, not a baseline;
+          · already adopted — a baseline that can be silently rewritten is not a baseline. It is
+            the same rule the frozen drawing revision and the finalised pay run already follow.
+        """
+        if not self._is_mgmt(u):
+            return self._err("Management access required to set a project budget from an estimate.", 403)
+        est_id = str(body.get("estId") or "").strip()
+        proj_id = str(body.get("projectId") or "").strip()
+        e = self._est_get(est_id)
+        if not e:
+            return self._err("Estimate not found.", 404)
+        if str(e.get("status") or "").strip().lower() not in ("approved", "won"):
+            return self._err("Only an approved or won estimate can become a project budget. "
+                             "This one is '%s'." % (e.get("status") or "Draft"), 400)
+        if e.get("adoptedProjectId"):
+            return self._err("This estimate was already adopted as the budget for project %s on %s. "
+                             "Re-baselining a live job is a decision, not a re-click — raise a "
+                             "revised estimate instead." % (e.get("adoptedProjectId"), (e.get("adoptedAt") or "")[:10]), 409)
+        proj = next((p for p in db.list_collection("pm_projects") if p.get("id") == proj_id), None)
+        if not proj:
+            return self._err("Project not found.", 404)
+        items, res = self._est_rows(est_id)
+        try:
+            budget = estimating.budget_lines(items, res, self._est_markups(e))
+        except (ValueError, AssertionError) as ex:
+            return self._err(str(ex), 400)
+        if not budget["lines"]:
+            return self._err("This estimate has nothing to budget yet.", 400)
+        ref = e.get("estNo") or est_id
+        made = []
+        for ln in budget["lines"]:
+            row = db.put_collection_item("pm_costs", {
+                "projectId": proj_id,
+                "item": ln["note"],
+                "category": ln["category"],
+                "budget": ln["amount"],
+                "status": "Planned",
+                "period": _now_iso()[:7],
+                # Where this figure came from, on the row itself. A budget line whose origin is
+                # only recorded in an audit log is one nobody reading the budget will ever see.
+                "note": "Adopted from estimate " + ref,
+                "estimateId": est_id,
+                "estimateNo": ref,
+            })
+            made.append(row.get("id"))
+        e["adoptedProjectId"] = proj_id
+        e["adoptedAt"] = _now_iso()
+        e["adoptedBy"] = u.get("name") or u.get("email")
+        db.put_collection_item("est_projects", e)
+        try:
+            db.put_collection_item("audit", {
+                "ts": _now_iso(), "by": u.get("email"), "actor": u.get("name") or u.get("email"),
+                "action": "Estimate adopted as project budget", "target": ref,
+                "detail": "%s → project %s · %d line(s) · cost base %s (profit of %s deliberately not budgeted)"
+                          % (ref, proj.get("name") or proj_id, len(made),
+                             _money_vnd(budget["total"]), _money_vnd(budget["excludesProfit"]))})
+        except Exception:
+            pass
+        return self._json({"ok": True, "lines": len(made), "total": budget["total"],
+                           "excludesProfit": budget["excludesProfit"],
+                           "project": proj.get("name") or proj_id})
+
     def _exec_summary(self, u):
         """Company-on-one-screen aggregate for the Executive Dashboard (management+). Reuses the tested
            digest gatherer for approvals-in-flight; everything else is a bounded read of collections."""
@@ -7227,7 +7389,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -7316,7 +7478,12 @@ class Handler(BaseHTTPRequestHandler):
     # Publishing a company document commits every employee to signing it and starts chasing them.
     # That is a management act, not a line-manager one.
     HRDOC_MIN = "management"
-    READ_MIN = {"sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
+    # An estimate is what a job costs us and what margin we are taking on it — the most
+    # commercially sensitive number the company holds. Manager and above, matching pm_costs,
+    # which is where a won estimate lands.
+    EST_MIN = "manager"
+    READ_MIN = {"est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
+                "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
                 # and above, matching payruns. An employee reads their own through _coll_list's
                 # self-scoped branch, never anyone else's.
@@ -7477,7 +7644,7 @@ class Handler(BaseHTTPRequestHandler):
             # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
-        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if app and app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
@@ -8239,7 +8406,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
@@ -13694,7 +13861,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
@@ -14397,7 +14564,7 @@ class Handler(BaseHTTPRequestHandler):
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None))))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot

@@ -7,6 +7,16 @@ script block, and every function defined below the break silently stops existing
 `node --check` over each block so a syntax error is caught at edit time instead of by a user
 clicking a button that no longer has a handler.
 
+Two things this deliberately refuses to do quietly:
+  · pass when it found NO blocks to check. If the regex ever stops matching — the file gets
+    restructured, someone switches to a build step — "checked 0 blocks, 0 failed" is a green tick
+    that means nothing was examined. That is the same shape as a size assertion that passed while
+    six functions were being deleted from this very file. Zero blocks is a failure.
+  · crash with a traceback when node is missing. Then it is not obvious whether the code is fine or
+    the checker never ran.
+
+Written by the AHU-production session; adopted here with those two guards added.
+
 Usage:  python3 tools/check_index_js.py [path-to-html]
 """
 import os
@@ -24,6 +34,11 @@ BLOCK = re.compile(r"<script\b([^>]*)>(.*?)</script>", re.S | re.I)
 
 
 def main():
+    try:
+        subprocess.run(["node", "--version"], capture_output=True, check=True)
+    except (OSError, subprocess.CalledProcessError):
+        print("FAIL  node is not available — the JavaScript in index.html was NOT checked.")
+        return 1
     html = open(SRC, encoding="utf-8").read()
     blocks, bad = 0, 0
     for m in BLOCK.finditer(html):
@@ -47,6 +62,11 @@ def main():
                 print("FAIL  block at line %d\n%s\n" % (line, err))
         finally:
             os.unlink(tmp)
+    if not blocks:
+        print("FAIL  found no inline script blocks in %s — nothing was checked.\n"
+              "      Either the file changed shape or this pattern stopped matching; either way\n"
+              "      a pass here would be meaningless." % SRC)
+        return 1
     print("checked %d inline script block(s), %d failed" % (blocks, bad))
     return 1 if bad else 0
 
