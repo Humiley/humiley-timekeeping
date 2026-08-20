@@ -14643,6 +14643,20 @@ class Handler(BaseHTTPRequestHandler):
             if existing.get("signatures") or existing.get("decidedBy") or existing.get("certifiedBy"):
                 return self._err("This record has been signed and cannot be deleted. "
                                  "Raise a superseding change request instead.", 403)
+        # The sell side carries the same kind of evidence the PMC pair above does, and had none of
+        # the same protection. An APPLIED variation is the record that raised the value every later
+        # progress claim is measured against; a CERTIFIED application is the one the customer was
+        # invoiced from; an APPLIED credit note is what reversed a certified claim. Each is signed
+        # through /api/esign, and each was deletable by any manager-tier account — the ownership
+        # guard below did not list sales_, so nothing looked at it at all.
+        if name.startswith("sales_"):
+            _sig = (existing.get("signatures") or existing.get("appliedBy")
+                    or existing.get("certifiedBy") or existing.get("issuedBy"))
+            _st = str(existing.get("status") or "").strip().lower()
+            if _sig or _st in ("applied", "certified", "issued", "accepted", "paid", "received"):
+                return self._err(
+                    "This record has been signed or issued and is contract evidence — it cannot be "
+                    "deleted. Raise a superseding variation or a credit note instead.", 403)
         # Approved / paid financial records are immutable evidence — block deletion (admin included).
         if name in ("claims", "travel", "payments"):
             st = str(existing.get("status") or "").strip().lower()
@@ -14654,7 +14668,8 @@ class Handler(BaseHTTPRequestHandler):
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
             if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
-                    or name.startswith("eng_")) and not mine:
+                    or name.startswith("eng_") or name.startswith("ahu_")
+                    or name.startswith("sales_") or name.startswith("est_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:
