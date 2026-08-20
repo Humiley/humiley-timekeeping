@@ -21055,7 +21055,20 @@ function _pdSchedBar(pid) {
     ';background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text)') +
     ';border-radius:999px;padding:5px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' +
     _pmEsc(label) + ' <span style="opacity:.7;font-weight:500">' + n + '</span></button>';
-  if (!ss.length && !unf.length) return '';
+  // NEVER return '' here. pdSchedNew has exactly ONE call site — the button below — so hiding this
+  // row on a project that has no detail schedules yet hid the only way to create the first one:
+  // the door existed only once you were already inside. A project with nothing in it is precisely
+  // when somebody needs it, so on an empty project the row is just the label and the button.
+  if (!ss.length && !unf.length) {
+    return '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+      '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;' +
+        'text-transform:uppercase;color:var(--text-light)">' + _t('Schedule') + '</span>' +
+      '<button class="btn btn-emerald btn-sm" onclick="pdSchedNew(\'' + pid + '\')">+ ' +
+        _t('New detail schedule') + '</button>' +
+      '<span style="font-size:11.5px;color:var(--text-light)">' +
+        _t('One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.') +
+      '</span></div>';
+  }
   const chips = ss.map(s => chip(s.id, s.name || _t('Untitled'),
       _pdAllRows(pid).filter(r => r.scheduleId === s.id).length, !!cur && cur.id === s.id)).join('') +
     (unf.length ? chip('_unfiled', _t('Unfiled'), unf.length, !!cur && cur.id === '_unfiled') : '');
@@ -21455,7 +21468,9 @@ function _pdEmpty(pid) {
     '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
     _t('No lines in this schedule yet.') + '<br><span style="font-size:12px">' +
     _t('The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.') +
-    '</span><div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
+    '</span><div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+    '<button class="btn btn-emerald btn-sm" onclick="pdSchedNew(\'' + pid + '\')">+ ' + _t('New detail schedule') + '</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
     _t('Import from Excel') + '</button></div></div>');
 }
 /* The five numbers, shown above every detail view so switching view never changes the headline. */
@@ -26657,6 +26672,11 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* The door to the FIRST detail schedule (2026-08-20) */
+  'New detail schedule': 'Tiến độ chi tiết mới',
+  'One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.':
+    'Mỗi khu vực, bộ môn hoặc gói thầu một tiến độ — Block E — Cơ điện, Zone 3 — Phòng sạch, Chạy thử & Nghiệm thu.',
+
   /* Grouped register header + the KPI labels that were never keyed (2026-08-20) */
   'Progress (%)': 'Tiến độ (%)',
   'Quantity of work': 'Khối lượng công việc',
