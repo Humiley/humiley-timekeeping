@@ -21238,7 +21238,20 @@ function _pdSchedBar(pid) {
     ';background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text)') +
     ';border-radius:999px;padding:5px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' +
     _pmEsc(label) + ' <span style="opacity:.7;font-weight:500">' + n + '</span></button>';
-  if (!ss.length && !unf.length) return '';
+  // NEVER return '' here. pdSchedNew has exactly ONE call site — the button below — so hiding this
+  // row on a project that has no detail schedules yet hid the only way to create the first one:
+  // the door existed only once you were already inside. A project with nothing in it is precisely
+  // when somebody needs it, so on an empty project the row is just the label and the button.
+  if (!ss.length && !unf.length) {
+    return '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
+      '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;' +
+        'text-transform:uppercase;color:var(--text-light)">' + _t('Schedule') + '</span>' +
+      '<button class="btn btn-emerald btn-sm" onclick="pdSchedNew(\'' + pid + '\')">+ ' +
+        _t('New detail schedule') + '</button>' +
+      '<span style="font-size:11.5px;color:var(--text-light)">' +
+        _t('One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.') +
+      '</span></div>';
+  }
   const chips = ss.map(s => chip(s.id, s.name || _t('Untitled'),
       _pdAllRows(pid).filter(r => r.scheduleId === s.id).length, !!cur && cur.id === s.id)).join('') +
     (unf.length ? chip('_unfiled', _t('Unfiled'), unf.length, !!cur && cur.id === '_unfiled') : '');
@@ -21638,7 +21651,9 @@ function _pdEmpty(pid) {
     '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
     _t('No lines in this schedule yet.') + '<br><span style="font-size:12px">' +
     _t('The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.') +
-    '</span><div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
+    '</span><div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">' +
+    '<button class="btn btn-emerald btn-sm" onclick="pdSchedNew(\'' + pid + '\')">+ ' + _t('New detail schedule') + '</button>' +
+    '<button class="btn btn-outline btn-sm" onclick="pdImport(\'' + pid + '\')">' +
     _t('Import from Excel') + '</button></div></div>');
 }
 /* The five numbers, shown above every detail view so switching view never changes the headline. */
@@ -25196,7 +25211,7 @@ function engRenderDeliverables(pid) {
     { label: 'Document title', sk: 'title', render: r => '<div style="font-weight:600;max-width:270px">' + _engEsc(r.title || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc([r.docType, r.discipline].filter(Boolean).join(' · ')) + '</div>' },
     { label: 'Stage', render: r => { const s = _engStage(r.stage); return _engBadge(s.short, s.hex); } },
     { label: 'Rev', render: _engRevCell },
-    { label: 'Issue', sk: 'x_issue', render: _engStatusCell },
+    { label: 'Issue status', sk: 'x_issue', render: _engStatusCell },
     { label: 'Progress', sk: 'creditStatus', render: _engCreditCell },
     { label: 'Wt', align: 'right', sk: 'weight', render: r => '<span style="font-size:11px;color:var(--text-light)">' + (+r.weight || 1) + '</span>' },
     { label: 'Planned issue', sk: 'plannedIssue', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.plannedIssue) + _engOverdueChip(r.plannedIssue, _engDelivCredit(r) >= 100) + '</span>' },
@@ -25488,7 +25503,7 @@ function engRenderDrawings(pid) {
     { label: 'Drawing title', sk: 'title', render: r => '<div style="font-weight:600;max-width:250px">' + _engEsc(r.title || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc([r.docType, r.discipline].filter(Boolean).join(' · ')) + '</div>' },
     { label: 'Sheet', render: r => '<span style="font-size:11px;white-space:nowrap">' + _engEsc([r.sheetSize, r.sheetOf, r.scale].filter(Boolean).join(' · ') || '—') + '</span>' },
     { label: 'Rev', render: _engRevCell },
-    { label: 'Issue', sk: 'x_iss', render: _engStatusCell },
+    { label: 'Issue status', sk: 'x_iss', render: _engStatusCell },
     { label: 'Issued', sk: 'x_on', render: r => { const c = _engCurrentRev(r.id); return c ? '<span style="font-size:11.5px;white-space:nowrap">' + _engFmt(c.issuedOn || c.revDate) + '</span>' : '<span style="color:var(--text-light)">—</span>'; } },
     { label: 'Issued by', sk: 'x_by', render: r => { const c = _engCurrentRev(r.id); return c && c.issuedBy ? '<span style="font-size:10.5px;color:var(--text-light);white-space:nowrap">✍ ' + _engEsc(c.issuedBy) + '</span>' : '<span style="color:var(--text-light)">—</span>'; } },
     { label: 'Hold', sk: 'hold', render: r => String(r.hold || '') === 'Yes' ? '<span title="' + _tkEscA(r.holdReason || 'On hold') + '" style="font-size:10px;font-weight:800;color:#fff;background:#EF4444;padding:2px 7px;border-radius:9px">HOLD</span>' : '<span style="color:var(--text-light)">—</span>' },
@@ -25576,7 +25591,7 @@ function engRenderComments(pid) {
   const turns = closed.map(c => { const a = _engDaysAgo(c.raisedDate), b = _engDaysAgo(c.closedOn || c.responseDate); return (a != null && b != null) ? (a - b) : null; }).filter(x => x != null && x >= 0);
   const avgTurn = turns.length ? Math.round(turns.reduce((s, x) => s + x, 0) / turns.length) : null;
   const kpis = _hrKpiRow([
-    _hrKpi('Comments', cs.length),
+    _hrKpi('Review comments', cs.length),
     _hrKpi('Open', open.length, open.length ? '#F59E0B' : '#00B060'),
     _hrKpi('Needing resubmission', resubmit.length, resubmit.length ? '#EF4444' : '#00B060'),
     _hrKpi('Avg turnaround', avgTurn == null ? '—' : avgTurn + 'd', avgTurn == null ? 'var(--navy)' : avgTurn > 14 ? '#EF4444' : '#00B060')
@@ -25813,7 +25828,7 @@ function engRenderTransmittals(pid) {
     { label: 'Method', k: 'method' },
     { label: 'Response due', sk: 'responseDue', render: r => r.responseDue ? '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.responseDue) + _engOverdueChip(r.responseDue, ['Responded', 'Closed'].indexOf(r.status || '') >= 0) + '</span>' : '<span style="color:var(--text-light)">—</span>' },
     { label: 'Status', render: r => _engBadge(r.status || 'Draft', r.status === 'Closed' || r.status === 'Responded' ? '#00B060' : r.status === 'Acknowledged' ? '#0EA5E9' : r.status === 'Issued' ? '#205090' : '#94A3B8') },
-    { label: 'Issue', sk: 'x_sign', render: r => r.issuedBy ? '<span style="font-size:10.5px;color:var(--text-light);white-space:nowrap">✍ ' + _engEsc(r.issuedBy) + '</span>' : (_engIsLead(p) ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px;white-space:nowrap" onclick="engTrnIssue(\'' + r.id + '\')">' + tkIcon('check', 12) + ' Issue &amp; sign</button>' : '<span style="color:var(--text-light)">draft</span>') },
+    { label: 'Issue &amp; sign', sk: 'x_sign', render: r => r.issuedBy ? '<span style="font-size:10.5px;color:var(--text-light);white-space:nowrap">✍ ' + _engEsc(r.issuedBy) + '</span>' : (_engIsLead(p) ? '<button class="btn btn-primary btn-sm" style="font-size:10px;padding:4px 8px;white-space:nowrap" onclick="engTrnIssue(\'' + r.id + '\')">' + tkIcon('check', 12) + ' Issue &amp; sign</button>' : '<span style="color:var(--text-light)">draft</span>') },
     { label: 'PDF', sk: 'x_pdf', render: r => '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;color:var(--navy)" onclick="engTransmittalPDF(\'' + r.id + '\')">' + tkIcon('download', 12) + '</button>' },
     { label: 'Receipt', sk: 'x_file', render: r => _engFileCell('eng_transmittals', r) }
   ], rows, { minw: 1340 }));
@@ -27719,6 +27734,11 @@ const _VI = {
   'Payments, payroll and invoice tracking': 'Thanh toán, tiền lương và theo dõi hoá đơn',
   'Purchasing, inventory, trade reference and insights': 'Mua hàng, kho, tra cứu thương mại và phân tích',
   'Access, signatures, audit trail, schedules and locations': 'Phân quyền, chữ ký, vết kiểm toán, lịch làm việc và địa điểm',
+  /* The door to the FIRST detail schedule (2026-08-20) */
+  'New detail schedule': 'Tiến độ chi tiết mới',
+  'One per area, trade or package — Block E — MEP, Zone 3 — Cleanroom, Testing &amp; Commissioning.':
+    'Mỗi khu vực, bộ môn hoặc gói thầu một tiến độ — Block E — Cơ điện, Zone 3 — Phòng sạch, Chạy thử & Nghiệm thu.',
+
   /* Grouped register header + the KPI labels that were never keyed (2026-08-20) */
   'Progress (%)': 'Tiến độ (%)',
   'Quantity of work': 'Khối lượng công việc',
@@ -27744,7 +27764,6 @@ const _VI = {
   'Accumulated Progress (%)': 'Tiến độ luỹ kế (%)',
   'Planned to date (%)': 'Kế hoạch đến nay (%)',
   'Finish Date': 'Ngày kết thúc',
-  'Category': 'Loại',
 
   /* Baseline guard + tab order (2026-08-20) */
   'Board': 'Bảng',
@@ -27771,21 +27790,20 @@ const _VI = {
   'Derived from the reported percentage — no site quantity filed yet': 'Suy ra từ phần trăm đã báo — chưa ghi khối lượng thực tế',
   'Quantity installed at site (total)': 'Khối lượng đã thi công (luỹ kế)',
   'Percent complete is worked out from this — ': 'Phần trăm hoàn thành được tính từ đây — ',
-  'of': 'trên',
 
   /* Master↔detail linkage + date filter (2026-08-20) */
   'Not linked to a master activity': 'Chưa gắn với công việc tổng thể',
   'detail line(s)': 'hạng mục chi tiết',
-  'to': 'đến',
+  
   'Part of master activity (WBS or name)': 'Thuộc công việc tổng thể (WBS hoặc tên)',
 
   /* Timeline columns + filter (2026-08-20) */
   'Dur': 'Thời lượng',
-  'Status': 'Trạng thái',
+  
   'early': 'sớm',
-  'late': 'trễ',
+  
   'Ahead': 'Vượt kế hoạch',
-  'Overdue': 'Quá hạn',
+  
   'Find an activity or who…': 'Tìm công việc hoặc người…',
   'Nothing matches this filter.': 'Không có mục nào khớp bộ lọc.',
 
@@ -27797,7 +27815,7 @@ const _VI = {
   'Show or hide this group': 'Ẩn/hiện nhóm này',
 
   /* Two-level schedule + multi detail schedules (2026-08-20) */
-  'Schedule': 'Tiến độ',
+  
   'Unfiled': 'Chưa phân loại',
   'Untitled': 'Chưa đặt tên',
   'Define another detail schedule for this project': 'Tạo thêm một tiến độ chi tiết cho dự án',
@@ -27814,10 +27832,10 @@ const _VI = {
   'Behind': 'Trễ',
   'Slipping': 'Chậm nhẹ',
   'On plan': 'Đúng kế hoạch',
-  'Complete': 'Hoàn thành',
+  
   'Nothing here': 'Không có mục nào',
   'File progress': 'Ghi nhận tiến độ',
-  'due': 'hạn',
+  
   'today': 'hôm nay',
   'Grouped by how far each activity is from its planned position today. Click a card to file progress.': 'Nhóm theo mức chênh so với kế hoạch đến hôm nay. Bấm vào thẻ để ghi nhận tiến độ.',
   'starts': 'bắt đầu',
@@ -27872,8 +27890,7 @@ const _VI = {
   'Copy the rows from Excel and paste them here. Column order:': 'Sao chép các dòng từ Excel và dán vào đây. Thứ tự cột:',
   'Dates as YYYY-MM-DD. The last three columns are optional. A header row is detected and skipped.': 'Ngày theo dạng YYYY-MM-DD. Ba cột cuối không bắt buộc. Dòng tiêu đề sẽ được tự động bỏ qua.',
   'to import': 'sẽ nhập',
-  'rejected': 'bị từ chối',
-  'line': 'dòng',
+  
   'category and item are both required': 'bắt buộc có cả nhóm và hạng mục',
   'start is not YYYY-MM-DD': 'ngày bắt đầu không đúng dạng YYYY-MM-DD',
   'finish is not YYYY-MM-DD': 'ngày kết thúc không đúng dạng YYYY-MM-DD',
@@ -27882,7 +27899,6 @@ const _VI = {
   'Importing…': 'Đang nhập…',
   'Some rows were not imported': 'Một số dòng chưa được nhập',
   'imported': 'đã nhập',
-  'Imported': 'Đã nhập',
 
   /* Power BI feed (2026-08-17) */
   'Power BI feed': 'Nguồn dữ liệu Power BI',
@@ -27913,7 +27929,7 @@ const _VI = {
   'Report progress': 'Ghi nhận tiến độ',
   'Accumulated progress today (%)': 'Luỹ kế đến hôm nay (%)',
   'Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.': 'Nhập tổng đã đạt, không phải phần tăng hôm nay — phần trong ngày được tính từ lần ghi trước.',
-  'Note (optional)': 'Ghi chú (không bắt buộc)',
+  
   'Delay reason, area handed over, etc.': 'Lý do chậm, khu vực bàn giao, v.v.',
   'Recent readings': 'Các lần ghi gần đây',
   'File reading': 'Lưu ghi nhận',
@@ -28386,7 +28402,7 @@ const _VI = {
   'Source of need': 'Nguồn nhu cầu',
   'Candidate Name': 'Tên ứng viên',
   'Applying For': 'Ứng tuyển vị trí',
-  'Source': 'Nguồn',
+  
   'Rating (0–5)': 'Đánh giá (0–5)',
   'Role / Position': 'Vai trò / Vị trí',
   'New Company Goal': 'Mục tiêu công ty mới',
@@ -28569,6 +28585,9 @@ const _VI = {
   'Save & build folders': 'Lưu & tạo thư mục',
   'View all folders': 'Xem tất cả thư mục',
   /* ---------- Engineering Design Control ---------- */
+  'Issue status': 'Trạng thái phát hành',
+  'Issue &amp; sign': 'Phát hành & ký',
+  'Review comments': 'Ý kiến rà soát',
   'Document title': 'Tên tài liệu',
   'Drawing title': 'Tên bản vẽ',
   'Mandatory still open': 'Bắt buộc còn mở',
@@ -28586,15 +28605,15 @@ const _VI = {
   'Actions due': 'Hạn hành động',
   'Comment': 'Ý kiến',
   'Change': 'Thay đổi',
-  'Retention': 'Thời hạn lưu',
+  
   'Planned issue': 'Ngày phát hành dự kiến',
   'Drawings': 'Bản vẽ', 'At IFC': 'Đã phát hành thi công', 'Never issued': 'Chưa phát hành',
-  'Deliverables': 'Sản phẩm bàn giao', 'Complete': 'Hoàn thành', 'Overdue / on hold': 'Quá hạn / tạm dừng',
+  'Overdue / on hold': 'Quá hạn / tạm dừng',
   'Design inputs': 'Đầu vào thiết kế', 'Allocated to a deliverable': 'Đã gán cho sản phẩm',
   'Reviews recorded': 'Rà soát đã ghi nhận', 'Held': 'Đã họp', 'Actions open': 'Hành động còn mở',
-  'Actions overdue': 'Hành động quá hạn', 'Comments': 'Ý kiến', 'Open': 'Đang mở',
-  'Needing resubmission': 'Cần nộp lại', 'Avg turnaround': 'Thời gian xử lý TB',
-  'Changes raised': 'Thay đổi đã lập', 'Awaiting decision': 'Chờ quyết định',
+  'Actions overdue': 'Hành động quá hạn', 
+  'Needing resubmission': 'Cần nộp lại', 
+  'Changes raised': 'Thay đổi đã lập',
   'Approved impact': 'Tác động đã duyệt', 'Chargeable to client': 'Tính phí cho khách hàng',
   'Queries': 'Câu hỏi', 'Blocking design': 'Đang chặn thiết kế', 'Avg answer time': 'Thời gian trả lời TB',
   'Awaiting response': 'Chờ phản hồi', 'Response overdue': 'Phản hồi quá hạn',
@@ -28607,22 +28626,22 @@ const _VI = {
   'QA / Approver': 'QA / Người phê duyệt', 'Design period': 'Thời gian thiết kế',
   'Document numbering': 'Đánh số tài liệu', 'Revision scheme': 'Quy tắc phiên bản',
   'Codes & standards': 'Quy chuẩn & tiêu chuẩn', 'Statutory route': 'Trình tự pháp lý',
-  'Scope of design services': 'Phạm vi dịch vụ thiết kế', 'Exclusions': 'Loại trừ',
+  'Scope of design services': 'Phạm vi dịch vụ thiết kế', 
   'Gate criteria met': 'Tiêu chí cổng đã đạt', 'Gate review': 'Họp cổng phê duyệt',
   'Client approval': 'Phê duyệt của khách hàng', 'Typical outputs': 'Sản phẩm điển hình',
-  'Exit criteria': 'Tiêu chí kết thúc', 'Decision': 'Quyết định', 'Passed': 'Đạt',
-  'Passed with actions': 'Đạt kèm hành động', 'Failed': 'Không đạt', 'Not started': 'Chưa bắt đầu',
-  'In progress': 'Đang thực hiện', 'At gate': 'Đang tại cổng',
-  'Document No.': 'Số hiệu tài liệu', 'Drawing No.': 'Số hiệu bản vẽ', 'Title': 'Tên gọi',
-  'Stage': 'Giai đoạn', 'Rev': 'PB', 'Issue': 'Phát hành', 'Issued': 'Đã phát hành',
-  'Revisions': 'Phiên bản', 'Discipline': 'Bộ môn', 'Sheet': 'Khổ bản vẽ', 'Hold': 'Tạm dừng',
+  'Exit criteria': 'Tiêu chí kết thúc', 'Passed': 'Đạt',
+  'Passed with actions': 'Đạt kèm hành động', 'Failed': 'Không đạt', 
+  'At gate': 'Đang tại cổng',
+  'Document No.': 'Số hiệu tài liệu', 'Drawing No.': 'Số hiệu bản vẽ',
+  'Rev': 'PB', 'Issued': 'Đã phát hành',
+  'Revisions': 'Phiên bản', 'Sheet': 'Khổ bản vẽ', 'Hold': 'Tạm dừng',
   'Requirement': 'Yêu cầu', 'Source': 'Nguồn', 'Addressed by': 'Được đáp ứng bởi',
   'Verification': 'Thẩm tra', 'Verification method': 'Phương pháp thẩm tra',
   'Docs affected': 'Tài liệu ảnh hưởng', 'Authorise': 'Phê duyệt', 'Chargeable': 'Tính phí',
-  'Response due': 'Hạn phản hồi', 'Needed by': 'Cần trước ngày', 'Priority': 'Ưu tiên',
-  'Impact': 'Tác động', 'Name': 'Họ tên', 'Role': 'Vai trò', 'Authority': 'Thẩm quyền',
-  'Checking': 'Đang kiểm tra', 'Approving': 'Đang phê duyệt', 'Weight': 'Trọng số',
-  'Create in SharePoint': 'Tạo trên SharePoint', 'Copy folder list': 'Sao chép danh sách thư mục',
+  'Response due': 'Hạn phản hồi', 'Needed by': 'Cần trước ngày', 
+  'Impact': 'Tác động', 'Authority': 'Thẩm quyền',
+  'Checking': 'Đang kiểm tra', 'Approving': 'Đang phê duyệt', 
+  'Create in SharePoint': 'Tạo trên SharePoint', 
   'View folder structure': 'Xem cấu trúc thư mục',
   'Engineering Design': 'Thiết kế kỹ thuật',
   'Design Portfolio': 'Danh mục thiết kế',
@@ -28704,18 +28723,17 @@ const _VI = {
   'New revision': 'Phiên bản mới',
   'Create revision': 'Tạo phiên bản',
   'Issue & sign': 'Phát hành & ký',
-  'Issue &amp; sign': 'Phát hành & ký',
-  'Decide & sign': 'Quyết định & ký',
+  
   'Gate decision & sign': 'Quyết định cổng & ký',
   'Gate decision': 'Quyết định cổng phê duyệt',
   'Approve & sign': 'Phê duyệt & ký',
   'Authorise engineering change': 'Phê duyệt thay đổi kỹ thuật',
   'Close comment': 'Đóng ý kiến',
-  'Add deliverable': 'Thêm sản phẩm',
+  
   'Add drawing': 'Thêm bản vẽ',
   'Add input': 'Thêm đầu vào',
   'Add comment': 'Thêm ý kiến',
-  'Add member': 'Thêm thành viên',
+  
   'Raise a change': 'Lập thay đổi',
   'Raise a query': 'Lập câu hỏi',
   'Record a review': 'Ghi nhận rà soát',
@@ -28734,7 +28752,7 @@ const _VI = {
   'Hide': 'Ẩn',
   /* toasts and guards */
   'Gate decision signed': 'Quyết định cổng đã được ký',
-  'Certificate certified': 'Chứng chỉ đã được xác nhận',
+  
   'You will sign this on the next step. Once signed, the gate record is locked.': 'Bạn sẽ ký ở bước tiếp theo. Sau khi ký, hồ sơ cổng sẽ bị khóa.',
   'You will sign this on the next step. Once signed, the revision record is locked — a later change means a new revision.': 'Bạn sẽ ký ở bước tiếp theo. Sau khi ký, hồ sơ phiên bản bị khóa — thay đổi sau đó phải lập phiên bản mới.',
   'You will sign this on the next step. Once signed, the record is locked; the revisions that implement it cite this ECN.': 'Bạn sẽ ký ở bước tiếp theo. Sau khi ký, hồ sơ bị khóa; các phiên bản thực hiện sẽ dẫn chiếu ECN này.',

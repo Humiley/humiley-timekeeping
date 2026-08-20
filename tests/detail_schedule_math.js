@@ -199,5 +199,55 @@ t('the group header carries the measured block rule', /colspan="3"[^>]*border-le
 t('the unit datalist is offered', html.indexOf('<datalist id="pd-units">') > -1, true);
 t('a measured line locks its scheduled quantity', html.indexOf('&#128274;') > -1, true);
 
+/* ── the door to the FIRST detail schedule ───────────────────────────────────────────────────────
+ *
+ * pdSchedNew has exactly ONE call site: the button inside _pdSchedBar. That bar used to return ''
+ * when a project had no schedules and no unfiled rows, so on a brand-new project the only way to
+ * create the first detail schedule did not exist — the door was inside the room it opened. Nothing
+ * failed, nothing logged; the button was simply absent, which is why it survived every check we had.
+ *
+ * These assert the door is reachable from an EMPTY project, which is the only case that was broken.
+ */
+const BAR_START = 'function _pdSchedBar(', EMPTY_START = 'function _pdEmpty(';
+const bi = src.indexOf(BAR_START), bj = src.indexOf('\nfunction ', bi + 10);
+const ei = src.indexOf(EMPTY_START), ej = src.indexOf('\nfunction ', ei + 10);
+if (bi < 0 || ei < 0) {
+  console.error('Could not find _pdSchedBar / _pdEmpty — update the markers, do NOT delete this test.');
+  process.exit(2);
+}
+const doorStubs = `
+  const _PD_COLL = 'pm_detail';
+  function _t(s){ return s; }
+  function _tkEscA(s){ return String(s).replace(/"/g,'&quot;'); }
+  function _pmEsc(s){ return String(s==null?'':s); }
+  function _pdScheds(){ return EMPTY ? [] : [{id:'S1',name:'Block E — MEP'}]; }
+  function _pdUnfiled(){ return []; }
+  function _pdCurSched(){ return EMPTY ? null : {id:'S1'}; }
+  function _pdAllRows(){ return []; }
+  function _pmCard(title, coll, addLabel, inner, extra){
+    return '<card add="' + (addLabel||'') + '">' + (extra||'') + inner + '</card>';
+  }
+  let EMPTY = true;
+`;
+const door = {};
+new Function(doorStubs + src.slice(bi, bj) + src.slice(ei, ej) + `
+  this.bar = p => _pdSchedBar(p);
+  this.empty = p => _pdEmpty(p);
+  this.setEmpty = v => { EMPTY = v; };
+`).call(door);
+
+door.setEmpty(true);
+const barEmpty = door.bar('P1'), emptyCard = door.empty('P1');
+t('an empty project still renders the schedule row', barEmpty.length > 0, true);
+t('an empty project can create its first detail schedule', barEmpty.indexOf('pdSchedNew') > -1, true);
+t('the empty card also offers it, where the eye lands', emptyCard.indexOf('pdSchedNew') > -1, true);
+t('the empty card still offers the Excel import', emptyCard.indexOf('pdImport') > -1, true);
+t('the empty card still offers Add report item', emptyCard.indexOf('add="Add report item"') > -1, true);
+
+door.setEmpty(false);
+const barFull = door.bar('P1');
+t('a project WITH schedules still shows its chips', barFull.indexOf('pdSchedPick') > -1, true);
+t('a project WITH schedules still offers another', barFull.indexOf('pdSchedNew') > -1, true);
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
