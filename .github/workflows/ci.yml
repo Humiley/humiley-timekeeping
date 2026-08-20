@@ -61,6 +61,9 @@ jobs:
             -v "$PWD/caddy.d:/etc/caddy/conf.d:ro" \
             caddy:2 caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile
 
+      - name: Detail Schedule arithmetic
+        run: node tests/detail_schedule_math.js
+
       - name: The staging service must not be called 'app'
         run: |
           # Compose registers the service name as a network alias. A staging service named 'app' on

@@ -6815,7 +6815,7 @@ function _hrEditDel(type, id, reload) {
   return '<button class="btn btn-ghost btn-sm" title="Edit" aria-label="Edit" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px" onclick="tkQuickAdd(\'' + type + '\',\'' + id + '\')">' + _PENCIL + '</button>' +
     '<button class="btn btn-ghost btn-sm" title="Delete" aria-label="Delete" style="font-size:10px;padding:6px 8px;min-width:32px;min-height:32px;color:#C00000" onclick="tkCollDelete(\'' + type + '\',\'' + id + '\',\'' + reload + '\')">' + _TRASH + '</button>';
 }
-const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
+const _HR_RELOAD = { recruitment: () => tkRenderRecruitment(), onboarding: () => tkRenderOnboarding(), offboarding: () => tkRenderOffboarding(), performance: () => tkRenderPerformance(), training: () => tkRenderTraining(), talent: () => tkRenderTalent(), benefits: () => tkRenderBenefitsAdmin(), devices: () => tkRenderDevices(), crm_deals: () => crmRenderPipeline(), crm_companies: () => crmRenderCompanies(), crm_contacts: () => crmRenderContacts(), crm_leads: () => crmRenderLeads(), crm_products: () => crmRenderProducts(), pm_projects: () => _pmReload(), pm_changes: () => _pmReload(), pm_lessons: () => _pmReload(), pm_deliverables: () => _pmReload(), pm_tasks: () => _pmReload(), pm_detail: () => _pmReload(), pm_costs: () => _pmReload(), pm_quality: () => _pmReload(), pm_quality_itp: () => _pmReload(), pm_resources: () => _pmReload(), pm_comms: () => _pmReload(), pm_issues: () => _pmReload(), pm_risks: () => _pmReload(), pm_procurement: () => _pmReload(), pm_procurement_payments: () => _pmReload(), pm_stakeholders: () => _pmReload(), pm_rfis: () => _pmReload(), pm_sitereports: () => _pmReload(), pm_weekreports: () => _pmReload(),
   // Publishing a document used to redraw the ONBOARDING view, because that was the only place the
   // register lived. Now that the register also mounts on the Compliance tab, redrawing onboarding
   // repainted a hidden screen — and, worse, set _hrHostSfx to '-onb', so the next render of the
@@ -15506,6 +15506,16 @@ const _QA_SPECS = {
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
     { k: 'isMilestone', label: 'Milestone?', type: 'select', options: ['No', 'Yes'] }, { k: 'critical', label: 'Critical path? (auto if predecessors set)', type: 'select', options: ['No', 'Yes'] },
     { k: 'status', label: 'Status', type: 'select', options: ['Not started', 'In progress', 'Completed', 'On hold'] }, { k: 'note', label: 'Notes', type: 'textarea' }] },
+  pm_detail: { title: 'Detail Schedule Item', coll: 'pm_detail', reload: 'pm_detail', fields: [
+    { k: 'category', label: 'Category / trade', type: 'combo', dyn: 'pm_detail_cats' },
+    { k: 'name', label: 'Report item' },
+    { k: 'taskRef', label: 'Rolls up to master activity (WBS or name)', type: 'select', options: 'pm_task_opts' },
+    { k: 'start', label: 'Start date', type: 'date' }, { k: 'finish', label: 'Finish date', type: 'date' },
+    { k: 'unit', label: 'Unit / location (optional)' },
+    // Blank is the right default: duration in days is a defensible weight and the alternative is
+    // making somebody invent a number. Set it when a short item carries disproportionate value.
+    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
+    { k: 'note', label: 'Notes', type: 'textarea' }] },
   pm_costs: { title: 'Cost Line', coll: 'pm_costs', reload: 'pm_costs', fields: [
     { k: 'item', label: 'Cost item' },
     { k: 'category', label: 'Category', type: 'select', options: ['Labor', 'Material', 'Subcontract', 'Equipment', 'Overhead', 'Other'] },
@@ -19213,6 +19223,17 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
   if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
+  if (src === 'pm_detail_cats') {   // trades already in use on this project, then the usual ones
+    const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_detail', _pmPid()).map(r => r.category) : [];
+    return [...new Set([].concat(used, ['Electrical Works', 'HVAC Works', 'Plumbing Works',
+      'Fire Protection Works', 'Cleanroom / Architectural', 'Controls & BMS', 'Testing & Commissioning']).filter(Boolean))];
+  }
+  if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
+    const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
+      ? _pmScopeFor('pm_tasks', _pmPid()) : [];
+    return [...new Set(ts.map(t => String((t.wbs || t.name) || '').trim()).filter(Boolean))];
+  }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
     const mem = (p && typeof _pmMembers === 'function') ? (_pmMembers(p) || []) : [];
@@ -19616,7 +19637,7 @@ function _pmVisIds() { return new Set(_pmMine(_HR.pm_projects || []).map(p => p.
 function _pmProj(id) { return (_HR.pm_projects || []).find(p => p.id === (id || _pmPid())); }
 function _pmCanEditProject(p) { if (_pmSeeAll()) return true; const me = ((TK.user && TK.user.name) || '').toLowerCase(); return p && ((p.manager || '').toLowerCase() === me || _userLevel === 'manager'); }
 
-const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
+const _PM_ALL_COLLS = ['pm_projects', 'pm_deliverables', 'pm_tasks', 'pm_detail', 'pm_costs', 'pm_quality', 'pm_quality_itp', 'pm_resources', 'pm_comms', 'pm_issues', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_procurement', 'pm_procurement_payments', 'pm_stakeholders', 'pm_rfis', 'pm_sitereports', 'pm_weekreports', 'pm_chat'];
 // The Projects LIST + Portfolio only need these for their rows, health (RAG/EVM) and rollups —
 // visibility keys off fields on the project record itself. Loading just these makes the list paint
 // after ~5 requests instead of 18 (the other 13 load lazily when a project is opened). tkLoadColl
@@ -20255,7 +20276,7 @@ function _pmMyActionsHtml() {
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables'] },
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20858,6 +20879,263 @@ function _pmGTip(el) {
   tip.style.left = left + 'px'; tip.style.top = top + 'px';
 }
 function _pmGTipHide() { const t = document.getElementById('pm-gtip'); if (t) t.style.display = 'none'; }
+/* ══ DETAIL SCHEDULE (Level 3) ═══════════════════════════════════════════════════════════════════
+   pm_tasks is the MASTER schedule — WBS, CPM, float, milestones, the contractual dates. This is the
+   level beneath it: the daily-report line items a site engineer actually reports against
+   ("Install underground pipe — Zone 2 1FL"), grouped by trade.
+
+   Three decisions make this a control document rather than a second table:
+
+   1. ACCUMULATED IS A LOG, DAILY IS DERIVED. The progress column that gets typed is the accumulated
+      one; each report is appended to `log` with its date. Daily = today's accumulated minus the last
+      reading before today, so an item nobody touched today reads 0% instead of showing last week's
+      increment forever. That stale-daily-number is the classic failure of these reports on paper.
+   2. ROLL-UP IS WEIGHTED. A category is not the average of its items' percentages — a two-day item
+      would count the same as a two-month one. Weight defaults to duration in days and can be
+      overridden with contract value or man-hours.
+   3. PLANNED IS COMPUTED, NOT TYPED. Linear distribution between start and finish gives planned %
+      at today, so every line has a variance and the report says whether work is behind, not just
+      how far it has got. */
+
+const _PD_COLL = 'pm_detail';
+function _pdRows(pid) {
+  return _pmScopeFor(_PD_COLL, pid).slice().sort((a, b) =>
+    String(a.category || '').localeCompare(String(b.category || '')) ||
+    (a.start || '').localeCompare(b.start || '') ||
+    String(a.name || '').localeCompare(String(b.name || '')));
+}
+/* The reported readings, oldest first. Defensive: the log is user data and may arrive malformed. */
+function _pdLog(r) {
+  const l = Array.isArray(r && r.log) ? r.log : [];
+  return l.filter(e => e && e.d).slice().sort((a, b) => String(a.d).localeCompare(String(b.d)));
+}
+/* Accumulated % as at `day` (default today) — the latest reading on or before it. */
+function _pdAcc(r, day) {
+  day = day || _pmToday();
+  const l = _pdLog(r); let v = 0;
+  for (const e of l) { if (String(e.d) <= day) v = _pmPct(e.pct); else break; }
+  return v;
+}
+/* Today's increment. Zero unless a reading was actually filed for `day` — that is the whole point. */
+function _pdDaily(r, day) {
+  day = day || _pmToday();
+  const l = _pdLog(r);
+  const todays = l.filter(e => String(e.d) === day).pop();
+  if (!todays) return 0;
+  let prev = 0;
+  for (const e of l) { if (String(e.d) < day) prev = _pmPct(e.pct); }
+  return Math.max(0, _pmPct(todays.pct) - prev);
+}
+/* Planned % at `day`, linear between start and finish (inclusive of both). */
+function _pdPlanned(r, day) {
+  day = day || _pmToday();
+  const s = r && r.start, f = r && r.finish;
+  if (!s || !f) return 0;
+  if (day < s) return 0;
+  if (day >= f) return 100;
+  const total = Math.max(1, (_pmDateDiff(s, f) || 0) + 1);
+  const done = Math.max(0, (_pmDateDiff(s, day) || 0) + 1);
+  return _pmPct(done * 100 / total);
+}
+/* Weight for the roll-up. Duration in days unless the user gave a value (contract ₫ or man-hours). */
+function _pdWeight(r) {
+  const w = +(r && r.weight) || 0;
+  if (w > 0) return w;
+  if (r && r.start && r.finish) return Math.max(1, (_pmDateDiff(r.start, r.finish) || 0) + 1);
+  return 1;
+}
+/* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
+function _pdRollup(rows, day) {
+  let wsum = 0, a = 0, p = 0;
+  (rows || []).forEach(r => { const w = _pdWeight(r); wsum += w; a += w * _pdAcc(r, day); p += w * _pdPlanned(r, day); });
+  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0 };
+  const acc = a / wsum, planned = p / wsum;
+  return { acc: acc, planned: planned, variance: acc - planned, weight: wsum };
+}
+/* The master activity's % when detail lines exist beneath it — derived, never typed. */
+function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
+function _pdTaskPct(task, pid) {
+  const ref = _pdTaskRef(task); if (!ref) return null;
+  const rows = _pdRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
+}
+function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
+function _pdVarLabel(v) { return v >= -0.5 ? 'On/ahead' : (v >= -10 ? 'Slipping' : 'Behind'); }
+
+/* ── the report table + grouped Gantt ─────────────────────────────────────────────────────────── */
+let _pdCol = {};                       // collapsed categories, by name
+function pdToggleCat(c) { _pdCol[c] = !_pdCol[c]; _pmReload(); }
+
+function _pdHtml(pid) {
+  const rows = _pdRows(pid), day = _pmToday();
+  if (!rows.length) {
+    return _pmCard('Detail Schedule', _PD_COLL, 'Add report item',
+      '<div style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
+      'No detail lines yet.<br><span style="font-size:12px">The master schedule holds the contractual activities; this level holds the items the site reports against each day — one per trade and location.</span></div>');
+  }
+  const all = _pdRollup(rows, day);
+  const cats = []; rows.forEach(r => { const c = r.category || 'Uncategorised'; if (cats.indexOf(c) < 0) cats.push(c); });
+
+  const kpis = _hrKpiRow([
+    _hrKpi('Report items', rows.length),
+    _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
+    _hrKpi('Planned to date', Math.round(all.planned) + '%', '#8B5CF6'),
+    _hrKpi('Variance', (all.variance >= 0 ? '+' : '') + all.variance.toFixed(1) + '%', _pdVarColor(all.variance)),
+    _hrKpi('Reported today', rows.filter(r => _pdDaily(r, day) > 0).length)
+  ]);
+
+  /* ── the table, grouped by category exactly like the site's daily report ── */
+  const bar = (pct, color) => '<span style="display:inline-block;width:52px;height:6px;border-radius:3px;background:var(--line);vertical-align:middle;margin-right:6px;overflow:hidden">' +
+    '<span style="display:block;height:100%;width:' + _pmPct(pct) + '%;background:' + color + '"></span></span>';
+
+  let body = '';
+  cats.forEach(cat => {
+    const cr = rows.filter(r => (r.category || 'Uncategorised') === cat), roll = _pdRollup(cr, day);
+    const open = !_pdCol[cat];
+    body += '<tr style="background:var(--soft-bg);cursor:pointer" onclick="pdToggleCat(' + JSON.stringify(cat).replace(/"/g, '&quot;') + ')">' +
+      '<td style="font-weight:700"><span style="display:inline-block;width:12px;color:var(--text-light)">' + (open ? '−' : '+') + '</span> ' + _pmEsc(cat) + '</td>' +
+      '<td style="color:var(--text-light);font-size:12px">' + cr.length + ' item' + (cr.length === 1 ? '' : 's') + '</td>' +
+      '<td style="text-align:right;font-variant-numeric:tabular-nums">' + (roll.acc > 0 ? '' : '') + '</td>' +
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
+      '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' + (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
+      '<td colspan="3"></td></tr>';
+    if (!open) return;
+    cr.forEach(r => {
+      const acc = _pdAcc(r, day), dly = _pdDaily(r, day), pl = _pdPlanned(r, day), v = acc - pl;
+      body += '<tr>' +
+        '<td></td>' +
+        '<td><span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (r.unit ? ' <span style="color:var(--text-light);font-size:11px">(' + _pmEsc(r.unit) + ')</span>' : '') + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b></td>' +
+        '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
+        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '" title="' + _pdVarLabel(v) + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.start ? tkFmtDate(r.start) : '—') + '</td>' +
+        '<td style="font-variant-numeric:tabular-nums;font-size:12px">' + (r.finish ? tkFmtDate(r.finish) : '—') + '</td>' +
+        '<td style="text-align:right;white-space:nowrap">' +
+          '<button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:11px" onclick="pdProgress(\'' + r.id + '\')">' + _t('Report') + '</button> ' +
+          '<button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:11px" onclick="tkQuickAdd(\'' + _PD_COLL + '\',\'' + r.id + '\')">' + _t('Edit') + '</button>' +
+        '</td></tr>';
+    });
+  });
+  const table = '<div class="table-wrap"><table style="min-width:980px"><thead><tr>' +
+    ['Category', 'Report Items', 'Daily<br>Progress (%)', 'Accumulated<br>Progress (%)', 'Planned<br>to date (%)', 'Variance', 'Start Date', 'Finish Date', ''].map(h => '<th>' + h + '</th>').join('') +
+    '</tr></thead><tbody>' + body + '</tbody></table></div>';
+
+  return kpis +
+    '<div class="card" style="padding:11px 15px;margin-bottom:12px;font-size:12px;color:var(--text-light);display:flex;gap:16px;flex-wrap:wrap">' +
+      '<span><b style="color:var(--text)">Daily</b> is today’s increment — 0% unless a reading was filed today.</span>' +
+      '<span><b style="color:var(--text)">Planned</b> is straight-line between start and finish.</span>' +
+      '<span><b style="color:var(--text)">Roll-up</b> is weighted by duration (or by the weight you set), never a plain average.</span>' +
+    '</div>' +
+    _pmCard('Detail Schedule — ' + tkFmtDate(day), _PD_COLL, 'Add report item', table) +
+    _pdGantt(pid, rows, cats, day);
+}
+
+/* Grouped Gantt: one rolled-up bar per trade, then its items. Light bar = planned window, solid
+   overlay = accumulated progress, red line = today. */
+function _pdGantt(pid, rows, cats, day) {
+  const ds = []; rows.forEach(r => { if (r.start) ds.push(r.start); if (r.finish) ds.push(r.finish); });
+  if (!ds.length) return '';
+  ds.push(day);
+  const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
+  const span = Math.max(1, (_pmDateDiff(min, max) || 1));
+  const x = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
+  const todayX = x(day);
+
+  /* Month ruler across the same scale. */
+  let ticks = '', cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
+  const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
+  while (cur <= end) {
+    const ym = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
+    const lx = x(ym < min ? min : ym);
+    ticks += '<div style="position:absolute;left:' + lx + '%;top:0;bottom:0;border-left:1px solid var(--line)"></div>' +
+             '<div style="position:absolute;left:calc(' + lx + '% + 4px);top:2px;font-size:10px;color:var(--text-light);white-space:nowrap">' +
+             cur.toLocaleString('en-US', { month: 'short' }) + ' ' + String(cur.getFullYear()).slice(-2) + '</div>';
+    cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+  }
+
+  const track = (r, color, label) => {
+    const s = r.start, f = r.finish;
+    if (!s || !f) return '<div style="height:18px"></div>';
+    const l = x(s), w = Math.max(0.8, x(f) - x(s)), acc = _pdAcc(r, day);
+    return '<div style="position:relative;height:18px">' +
+      '<div style="position:absolute;left:' + l + '%;width:' + w + '%;top:4px;height:10px;border-radius:5px;background:' + color + '33"></div>' +
+      '<div style="position:absolute;left:' + l + '%;width:' + (w * acc / 100) + '%;top:4px;height:10px;border-radius:5px;background:' + color + '"></div>' +
+      '<div style="position:absolute;left:calc(' + (l + w) + '% + 6px);top:2px;font-size:10.5px;color:var(--text-light);font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>' +
+      '</div>';
+  };
+
+  const PAL = ['#00B060', '#F97316', '#38BDF8', '#8B5CF6', '#EAB308', '#EC4899'];
+  let lanes = '';
+  cats.forEach((cat, i) => {
+    const cr = rows.filter(r => (r.category || 'Uncategorised') === cat), roll = _pdRollup(cr, day), color = PAL[i % PAL.length];
+    const cs = cr.map(r => r.start).filter(Boolean).sort()[0];
+    const cf = cr.map(r => r.finish).filter(Boolean).sort().slice(-1)[0];
+    lanes += '<div style="display:flex;align-items:center;gap:10px;margin-top:9px">' +
+      '<div style="width:230px;flex:none;font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:' + color + ';flex:none"></span>' + _pmEsc(cat) + '</div>' +
+      '<div style="flex:1;position:relative">' + track({ start: cs, finish: cf, log: [{ d: day, pct: roll.acc }] }, color, Math.round(roll.acc) + '%') + '</div></div>';
+    if (_pdCol[cat]) return;
+    cr.forEach(r => {
+      lanes += '<div style="display:flex;align-items:center;gap:10px">' +
+        '<div style="width:230px;flex:none;font-size:12px;color:var(--text-light);padding-left:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + _tkEscA(r.name || '') + '">' + _pmEsc(r.name || '') + '</div>' +
+        '<div style="flex:1;position:relative">' + track(r, color, _pdAcc(r, day) + '%') + '</div></div>';
+    });
+  });
+
+  return '<div class="card" style="padding:14px 16px;overflow:hidden"><div style="font-weight:700;font-size:13px;margin-bottom:6px">Detail Schedule — Gantt</div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:2px"><div style="width:230px;flex:none"></div>' +
+    '<div style="flex:1;position:relative;height:16px">' + ticks + '</div></div>' +
+    '<div style="position:relative">' +
+      '<div style="position:absolute;left:calc(230px + 10px);right:0;top:0;bottom:0;pointer-events:none">' +
+        '<div style="position:absolute;left:' + todayX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div></div>' +
+      lanes +
+    '</div>' +
+    '<div style="margin-top:10px;font-size:11px;color:var(--text-light)">Pale bar = planned window · solid = accumulated progress · red line = today (' + tkFmtDate(day) + ')</div></div>';
+}
+
+/* ── filing a reading ─────────────────────────────────────────────────────────────────────────── */
+function pdProgress(id) {
+  const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
+  const day = _pmToday(), acc = _pdAcc(r, day), pl = _pdPlanned(r, day);
+  document.getElementById('pdProgOverlay')?.remove();
+  const hist = _pdLog(r).slice(-6).reverse().map(e =>
+    '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--line)"><span style="color:var(--text-light)">' + tkFmtDate(e.d) + (e.by ? ' · ' + _pmEsc(e.by) : '') + '</span><b>' + _pmPct(e.pct) + '%</b></div>').join('') ||
+    '<div style="font-size:12px;color:var(--text-light)">No readings filed yet.</div>';
+  const el = document.createElement('div'); el.id = 'pdProgOverlay'; el.className = 'modal-overlay'; el.style.display = 'flex';
+  el.innerHTML = '<div class="modal" style="max-width:430px"><div class="modal-header"><div class="modal-title">' + _t('Report progress') + '</div><button class="modal-close" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + tkIcon('x', 16) + '</button></div>' +
+    '<div style="font-size:13px;font-weight:600">' + _pmEsc(r.name || '') + '</div>' +
+    '<div style="font-size:12px;color:var(--text-light);margin-bottom:12px">' + _pmEsc(r.category || '') + ' · ' + tkFmtDate(day) + ' · ' + _t('planned to date') + ' ' + pl + '%</div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Accumulated progress today (%)') + '</label>' +
+    '<input type="number" min="0" max="100" step="1" class="form-control" id="pd-acc" value="' + acc + '" inputmode="numeric">' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:4px">' + _t('Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.') + '</div></div>' +
+    '<div class="form-group"><label class="form-label">' + _t('Note (optional)') + '</label><input class="form-control" id="pd-note" placeholder="' + _tkEscA(_t('Delay reason, area handed over, etc.')) + '"></div>' +
+    '<div style="font-size:11px;font-weight:700;color:var(--navy);margin:10px 0 2px">' + _t('Recent readings') + '</div>' + hist +
+    '<div class="modal-footer"><button class="btn btn-ghost" onclick="document.getElementById(\'pdProgOverlay\').remove()">' + _t('Cancel') + '</button><button class="btn btn-emerald" onclick="pdProgressSave(\'' + id + '\')">' + _t('File reading') + '</button></div></div>';
+  document.body.appendChild(el);
+  setTimeout(() => { const i = document.getElementById('pd-acc'); if (i) { i.focus(); i.select(); } }, 30);
+}
+async function pdProgressSave(id) {
+  const r = (_HR[_PD_COLL] || []).find(x => x.id === id); if (!r) return;
+  const day = _pmToday();
+  const v = _pmPct(document.getElementById('pd-acc').value);
+  const note = (document.getElementById('pd-note').value || '').trim();
+  const prev = _pdAcc(r, day);
+  // Going backwards is legitimate (a re-measure, a rejected section) but it is never a typo worth
+  // saving silently — it changes the reported position of the works.
+  if (v < prev && !(await tkConfirm(_t('That is lower than the last reading') + ' (' + prev + '% → ' + v + '%). ' + _t('File it anyway?')))) return;
+  const log = _pdLog(r).filter(e => String(e.d) !== day);       // one reading per day — the latest wins
+  log.push({ d: day, pct: v, by: (TK.user && TK.user.name) || '', at: new Date().toISOString(), note: note });
+  try {
+    await tkApi('/api/coll/' + _PD_COLL + '/' + id, { method: 'PATCH', body: Object.assign({}, r, { log: log }) });
+    r.log = log;
+    document.getElementById('pdProgOverlay').remove();
+    tkAudit('Detail progress reported', r.name, (r.category || '') + ' · ' + v + '%' + (note ? ' · ' + note : ''));
+    toast(_t('Reading filed') + ' — ' + v + '%');
+    _pmReload();
+  } catch (e) { toast(_t('Could not save') + ': ' + _errMsg(e), 'error', 5000); }
+}
+
 function _pmGanttHtml(pid) {
   const p = _pmProj(pid); if (!p) return '';
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
@@ -20977,21 +21255,29 @@ function pmRenderSchedule(pid) {
   // had; pmSchedTab() builds a pane the first time it is shown.
   _pmSchedBuild = {};
   _pmSchedBuild.gantt = () => _pmGanttHtml(pid);
+  _pmSchedBuild.detail = () => _pdHtml(pid);
   _pmSchedBuild.activities = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
     { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
-    { label: '%', sk: 'pctComplete', align: 'right', render: r => _pmPct(r.pctComplete) + '%' },
+    { label: '%', sk: 'pctComplete', align: 'right', render: r => {
+        // One source of truth: when detail lines report against this activity, its percentage is
+        // their weighted roll-up. A typed number that disagrees with the site's own daily report is
+        // the thing this whole level exists to stop.
+        const d = _pdTaskPct(r, pid);
+        return d ? ('<span title="Rolled up from ' + d.n + ' detail item' + (d.n === 1 ? '' : 's') + '" style="font-weight:700">' + d.pct + '%</span><span style="font-size:9.5px;color:var(--text-light);display:block;line-height:1">rolled up</span>')
+                 : (_pmPct(r.pctComplete) + '%');
+      } },
     { label: 'Status', sk: 'status', render: r => _pmBadge(r.status || 'Not started', _pmStatusColor(r.status)) },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
   ], allTasks), pmImportBtn());   // Activities lists every task (independent of the Gantt period filter) for easy data entry
   _pmSchedBuild.board = () => '<div class="card" style="padding:16px 18px"><div style="font-size:11px;color:var(--text-light);margin-bottom:10px">Drag a card between columns to update its status.</div><div id="pm-board">' + _pmTaskBoardHtml() + '</div></div>';
   _pmSchedBuild.calendar = () => _pmCalendarHtml(pid);
-  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Schedule — Gantt') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
+  const subtabs = '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin:2px 0 14px;flex-wrap:wrap">' + _pmSchedTabBtn('gantt', 'Master Schedule') + _pmSchedTabBtn('detail', 'Detail Schedule') + _pmSchedTabBtn('activities', 'Activities') + _pmSchedTabBtn('board', 'Board') + _pmSchedTabBtn('calendar', 'Calendar') + '</div>';
   const _pane = k => '<div id="psch-' + k + '"' + (_pmSchedTab === k ? ' data-built="1"' : ' style="display:none"') + '>' +
     (_pmSchedTab === k ? _pmSchedBuild[k]() : '') + '</div>';
-  _pmSet(kpis + subtabs + ['gantt', 'activities', 'board', 'calendar'].map(_pane).join(''));
+  _pmSet(kpis + subtabs + ['gantt', 'detail', 'activities', 'board', 'calendar'].map(_pane).join(''));
 }
 function _pmSchedTabBtn(key, label) {
   const on = _pmSchedTab === key;
@@ -22791,6 +23077,22 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  /* Detail Schedule (2026-08-17) */
+  'Report': 'Ghi nhận',
+  'Report progress': 'Ghi nhận tiến độ',
+  'Accumulated progress today (%)': 'Luỹ kế đến hôm nay (%)',
+  'Enter the total reached, not today’s increment — the daily figure is worked out from the previous reading.': 'Nhập tổng đã đạt, không phải phần tăng hôm nay — phần trong ngày được tính từ lần ghi trước.',
+  'Note (optional)': 'Ghi chú (không bắt buộc)',
+  'Delay reason, area handed over, etc.': 'Lý do chậm, khu vực bàn giao, v.v.',
+  'Recent readings': 'Các lần ghi gần đây',
+  'File reading': 'Lưu ghi nhận',
+  'Reading filed': 'Đã lưu ghi nhận',
+  'planned to date': 'kế hoạch đến nay',
+  'That is lower than the last reading': 'Thấp hơn lần ghi trước',
+  'File it anyway?': 'Vẫn lưu?',
+  'Detail Schedule': 'Tiến độ chi tiết',
+  'Master Schedule': 'Tiến độ tổng thể',
+
   'CV / Resume': 'CV / Hồ sơ',
   'Saved, but the CV did not attach': 'Đã lưu, nhưng chưa đính kèm được CV',
   'open the candidate to attach it.': 'mở hồ sơ ứng viên để đính kèm.',
