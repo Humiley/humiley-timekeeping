@@ -4673,7 +4673,147 @@ class Handler(BaseHTTPRequestHandler):
             return "Your authority for this step has changed — you can no longer reverse this."
         return None
 
-    def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None):
+    # ---------------------------------------------------------------- design authority
+    ENG_ISSUE_EXTERNAL = ("ifa", "ifc", "ift", "ifp", "ab", "asbuilt", "as-built", "approved")
+
+    def _eng_project_of(self, rec):
+        """The design commission a register row belongs to, or {}."""
+        pid = (rec or {}).get("projectId")
+        if not pid:
+            return {}
+        return next((p for p in db.list_collection("eng_projects") if p.get("id") == pid), {})
+
+    def _eng_is_lead(self, u, proj, *extra):
+        """Is this person a design authority for the commission?
+
+        Deliberately NOT the portal access level. The person entitled to approve a general-arrangement
+        drawing for construction is the discipline lead named on that drawing, and in a design office
+        they are almost always an ordinary staff account. Gating on `manager` would force a choice
+        between handing every engineer manager access — which reaches payroll-adjacent screens — and
+        having the wrong person sign every drawing."""
+        me = str(u.get("name") or "").strip().lower()
+        if not me:
+            return False
+        names = [proj.get("designManager"), proj.get("leadEngineer"), proj.get("qaApprover")]
+        names.extend(extra)
+        for n in names:
+            if n and self._pm_same_person(n, u.get("name")):
+                return True
+            if n and str(n).strip().lower() == me:
+                return True
+        return False
+
+    ENG_NAMED_FIELDS = ("preparedBy", "checkedBy", "approvedBy", "approver", "responsible",
+                        "responsibleParty", "chair", "originator", "assignedTo", "raisedBy",
+                        "leadEngineer", "owner", "discipline_lead", "issuedBy")
+
+    def _eng_owns_record(self, u, coll, item):
+        """Whether the caller is one of the people this design record is ABOUT."""
+        me = str(u.get("name") or "").strip().lower()
+        if not me:
+            return False
+        for f in self.ENG_NAMED_FIELDS:
+            v = item.get(f)
+            if v and (str(v).strip().lower() == me or self._pm_same_person(v, u.get("name"))):
+                return True
+        proj = self._eng_project_of(item) if coll != "eng_projects" else (item or {})
+        if not proj:
+            return False
+        if self._eng_is_lead(u, proj):
+            return True
+        members = proj.get("members")
+        if isinstance(members, list):
+            names = members
+        else:
+            names = [x.strip() for x in str(members or "").split(",")]
+        return any(n and (n.strip().lower() == me or self._pm_same_person(n, u.get("name")))
+                   for n in names)
+
+    def _eng_appr_check(self, u, coll, cur_status, set_status, rec):
+        t = str(set_status or "").strip().lower()
+        if not t:
+            return None                     # an unsigned attestation carries no authority claim
+        proj = self._eng_project_of(rec)
+        is_mgr = self._level_rank(self._caller_level(u)) >= self._level_rank("manager")
+        rec = rec or {}
+
+        if coll == "eng_revisions":
+            if t != "issued":
+                return None
+            # The named Approver on the deliverable itself is an authority for THIS document even
+            # when they are nobody in particular elsewhere in the portal.
+            deliv = next((d for d in db.list_collection("eng_deliverables")
+                          if d.get("id") == rec.get("deliverableId")), {})
+            if not (is_mgr or self._eng_is_lead(u, proj, deliv.get("approver"), deliv.get("discipline_lead"))):
+                return ("Issuing a controlled document is the act of its named Approver. Ask the "
+                        "discipline lead to sign, or have the commission's Lead Engineer / Design "
+                        "Manager record you as the Approver on this deliverable.")
+            # ISO 9001 8.3.4(b): verification confirms the output meets the input, and nobody
+            # verifies their own work. Applied only to issues that LEAVE the office — an internal
+            # review copy (IFR / S0 work in progress) is exactly the thing a single engineer should
+            # be able to circulate without hunting for a second signature.
+            _iss = str(rec.get("issueStatus") or "").strip().lower()
+            _suit = str(rec.get("suitability") or "").strip().lower()
+            _external = any(_iss.startswith(k) for k in self.ENG_ISSUE_EXTERNAL) or _suit.startswith("a")
+            if _external and self._caller_level(u) != "admin":
+                prep = rec.get("preparedBy")
+                if prep and (self._pm_same_person(prep, u.get("name"))
+                             or str(prep).strip().lower() == str(u.get("name") or "").strip().lower()):
+                    return ("The engineer who prepared a document does not approve their own issue "
+                            "of it. Record the checker / approver, or keep this issue internal "
+                            "(IFR) until somebody else can sign it.")
+            return None
+
+        if coll == "eng_stages":
+            if t not in ("passed", "passed with actions", "held", "failed", "closed"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("A stage gate is decided by the Design Manager or Lead Engineer named on "
+                        "the commission.")
+            return None
+
+        if coll == "eng_changes":
+            if t not in ("approved", "rejected"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("An engineering change is authorised by the Design Manager or Lead "
+                        "Engineer named on the commission.")
+            # The originator of a change does not approve it — the same rule the payroll run and
+            # the sell-side variation already carry.
+            _orig = rec.get("originator") or rec.get("createdBy")
+            if _orig and self._caller_level(u) != "admin" and \
+                    (self._pm_same_person(_orig, u.get("name"))
+                     or str(_orig).strip().lower() == str(u.get("name") or "").strip().lower()):
+                return "A change is authorised by somebody other than the person who raised it."
+            return None
+
+        if coll == "eng_transmittals":
+            if t not in ("issued", "sent"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj)):
+                return ("A transmittal leaves the office over somebody's name — the Design Manager "
+                        "or Lead Engineer issues it.")
+            return None
+
+        if coll == "eng_reviews":
+            if t not in ("approved", "closed"):
+                return None
+            if not (is_mgr or self._eng_is_lead(u, proj, rec.get("chair"))):
+                return "Design review minutes are approved by the review chair or the Design Manager."
+            return None
+
+        if coll == "eng_comments":
+            # Closing a comment is not an authority act — it is a statement that the comment was
+            # answered, and the person who answered it is the right one to make it. What matters is
+            # that an ANSWER exists: a comment closed with nothing written against it is the single
+            # commonest way a client's objection disappears from a register.
+            if t in ("closed", "resolved") and not str(rec.get("response") or "").strip():
+                return ("Record the response before closing the comment — a closed comment with no "
+                        "answer against it is how an objection goes missing.")
+            return None
+        return None
+
+    def _appr_check(self, u, coll, cur_status, set_status, sigs, owner_id, owns=None, rec=None):
         """Enforce the 3-level approval flow. Returns None if allowed, else an error string.
         Review = direct manager; Approve / Paid = Management (Director); Reject = manager at either stage.
 
@@ -4703,6 +4843,16 @@ class Handler(BaseHTTPRequestHandler):
                     self._level_rank(self._caller_level(u)) < self._level_rank("manager"):
                 return "Manager access is required to decide a change request or certify a payment certificate."
             return None
+        # ---- Engineering design control -------------------------------------------------
+        # Authority here is NOT the portal's HR access level. The person who may approve a general
+        # arrangement drawing for construction is the discipline lead named on that drawing, and in a
+        # design office they are very often an ordinary staff account. Gating on `manager` would have
+        # meant either handing every engineer manager access — which opens payroll-adjacent screens —
+        # or having the wrong person sign every drawing. So the check is: a portal manager, OR the
+        # commission's Design Manager / Lead Engineer, OR the person actually named as Approver on
+        # the deliverable being issued.
+        if coll.startswith("eng_"):
+            return self._eng_appr_check(u, coll, cur_status, set_status, rec)
         if coll not in self.THREE_LEVEL_COLLS:
             if t in ("approved", "rejected", "paid") and u.get("role") != "manager":
                 return "Manager access required to approve, reject or mark paid."
@@ -4943,6 +5093,13 @@ class Handler(BaseHTTPRequestHandler):
         if not _owns_rec and coll == "pm_quality":
             _owns_rec = bool((item.get("assignedTo") and item.get("assignedTo") == u.get("name"))
                 or (item.get("raisedBy") and item.get("raisedBy") == u.get("name")))
+        # A design record is "owned" by the people the register itself names — the preparer, the
+        # checker, the named Approver, the review chair, the responsible discipline — plus anyone on
+        # the commission's team. Without this the whole design-authority model above is unreachable:
+        # a Lead Engineer on a staff-level account could never sign the issue of a drawing somebody
+        # else typed into the register, which is every drawing.
+        if not _owns_rec and coll.startswith("eng_"):
+            _owns_rec = self._eng_owns_record(u, coll, item)
         if u.get("role") != "manager" and not _owns_rec:
             return self._err("You can only sign your own record.", 403)
         # ── Undo ─────────────────────────────────────────────────────────────────────────────────
@@ -5076,7 +5233,7 @@ class Handler(BaseHTTPRequestHandler):
         # (empId on an individual run is the employee the run is FOR).
         _appr_owner = item.get("preparedById") if coll == "payruns" else item.get("empId")
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), _appr_owner,
-                                owns=_owns_rec)
+                                owns=_owns_rec, rec=item)
         if _err:
             return self._err(_err, 403)
         # A payment disbursement MUST carry the bank transfer slip (proof of payment). Enforce it BEFORE
@@ -5190,6 +5347,29 @@ class Handler(BaseHTTPRequestHandler):
                 item.setdefault("closedDate", time.strftime("%Y-%m-%d"))
                 if not str(item.get("result") or "").strip():
                     item["result"] = "Closed"
+            # ---- Engineering design control: the signer's identity is stamped here, from the
+            # re-authenticated session, and nowhere else. Everything downstream — the drawing
+            # register's "issued by", the gate certificate, the transmittal note — reads these.
+            if coll == "eng_revisions" and set_status == "Issued":
+                item["issuedBy"] = signer_name
+                item.setdefault("issuedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_stages" and set_status in ("Passed", "Passed with actions", "Held", "Failed"):
+                item["gateDecision"] = set_status
+                item["gateSignedBy"] = signer_name
+                item.setdefault("gateSignedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_changes" and set_status in ("Approved", "Rejected"):
+                item["decision"] = set_status
+                item["decidedBy"] = signer_name
+                item.setdefault("decidedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_transmittals" and set_status in ("Issued", "Sent"):
+                item["issuedBy"] = signer_name
+                item.setdefault("issuedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_reviews" and set_status in ("Approved", "Closed"):
+                item["approvedBy"] = signer_name
+                item.setdefault("approvedOn", time.strftime("%Y-%m-%d"))
+            if coll == "eng_comments" and set_status in ("Closed", "Resolved"):
+                item["closedBy"] = signer_name
+                item.setdefault("closedOn", time.strftime("%Y-%m-%d"))
             if set_status in ("Finalised", "Finalized") and coll == "payruns":
                 item["finalisedBy"] = signer_name                       # the Director who signed off payroll
                 item["approvedBy"] = signer_name
@@ -6688,9 +6868,9 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits"}
     # Collections any authenticated user (incl. staff) may create for self-service.
-    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat"}
+    STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
     # minimum access LEVEL required to READ a collection. Sensitive HR data raised to
     # management; recruitment/audit stay manager. Anything not listed AND not in
@@ -6938,7 +7118,7 @@ class Handler(BaseHTTPRequestHandler):
             # and how many rows it has. It is simply not a collection this route serves.
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
-        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("hr" if name in self.HR_APP_COLLS else None)))
         if app and app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
@@ -7700,7 +7880,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Invalid record.", 400)
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("hr" if name in self.HR_APP_COLLS else None)))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
@@ -7716,9 +7896,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("%s is issued through %s, which checks what the law requires of it "
                              "before it exists. Creating one here would skip those checks."
                              % (_what[0].upper() + _what[1:], _where), 400)
-        if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
+        if (name.startswith("pm_") or name.startswith("eng_")) and name not in self.STAFF_WRITE \
+                and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
+        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -7810,7 +7991,7 @@ class Handler(BaseHTTPRequestHandler):
         # arrived, and a browser that could choose it could backdate a lead out of an aging report.
         if name.startswith("crm_"):
             item["ts"] = self._utc_now()
-        if name.startswith("pm_"):
+        if name.startswith("pm_") or name.startswith("eng_"):
             item.setdefault("createdBy", u.get("name"))
             item.setdefault("createdById", u.get("id"))
         # A chat message says who said it, so authorship is stamped from the SESSION and the client's
@@ -13136,7 +13317,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — mirror the READ gate in _coll_list on the WRITE path too, otherwise a
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("hr" if name in self.HR_APP_COLLS else None)))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
@@ -13283,9 +13464,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._err("%s cannot be rewritten after it is issued — %s decides what it "
                                  "says. Issue a superseding one instead. Refused change to: %s."
                                  % (_what[0].upper() + _what[1:], _where, ", ".join(_bad)), 400)
-        if name.startswith("pm_") and name not in self.STAFF_WRITE and u.get("role") != "manager":
+        if (name.startswith("pm_") or name.startswith("eng_")) and name not in self.STAFF_WRITE \
+                and u.get("role") != "manager":
             return self._err("Manager access required.", 403)
-        if name.startswith("crm_") or name.startswith("pm_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
+        if name.startswith("crm_") or name.startswith("pm_") or name.startswith("eng_") or name in ("claims", "travel", "payments", "leave", "audit", "padr", "acks", "enrollments", "onboarding", "jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "benefits", "devices", "handovers", "goals"):
             body = self._crm_sanitize(body)
         if name in self.PAYROLL_ADMIN and self._level_rank(self._caller_level(u)) < self._level_rank("editor"):
             return self._err("Payroll changes require Editor level or above.", 403)
@@ -13568,6 +13750,73 @@ class Handler(BaseHTTPRequestHandler):
                                          "Raise a superseding one instead.", 403)
             elif name in ("pm_changes", "pm_procurement_payments"):
                 item.pop("signatures", None)      # never create an already-signed record via PATCH
+        # ---------------- Engineering design control (ISO 9001 8.3 / ISO 10007 / ISO 19650) ----------------
+        # Three records in this module ARE the controlled evidence rather than a description of it:
+        #   a REVISION  — what was issued, at which suitability, on which date, checked by whom;
+        #   a STAGE GATE — the decision to leave Concept / Basic / Detail design;
+        #   an ECN      — the authority under which an issued design was allowed to change.
+        # Every one of them is signed through /api/esign, which stamps the signer from the
+        # re-authenticated session. So the signature chain and the signer stamps are restored from
+        # the stored row on EVERY generic write, and a live signed decision freezes the record —
+        # otherwise a drawing could be issued for construction at one revision and the register
+        # afterwards edited to say something else, with the signature still rendering underneath it.
+        if name.startswith("eng_"):
+            existing = db.get_collection_item(name, iid)
+            if existing:
+                for _k in ("createdBy", "createdById"):
+                    if existing.get(_k) is not None:
+                        item[_k] = existing.get(_k)
+            _SIG_KEYS = {
+                "eng_revisions": ("signatures", "issuedBy", "issuedOn"),
+                "eng_stages": ("signatures", "gateSignedBy", "gateSignedOn"),
+                "eng_changes": ("signatures", "decidedBy", "decidedOn"),
+                "eng_reviews": ("signatures", "approvedBy", "approvedOn"),
+                "eng_comments": ("signatures", "closedBy", "closedOn"),
+                "eng_transmittals": ("signatures", "issuedBy", "issuedOn"),
+            }
+            if name in _SIG_KEYS:
+                if existing:
+                    for _k in _SIG_KEYS[name]:
+                        if _k in existing:
+                            item[_k] = existing[_k]
+                        else:
+                            item.pop(_k, None)
+                else:
+                    item.pop("signatures", None)   # never create an already-signed record via PATCH
+            # A LIVE signer stamp is the freeze test, not the presence of `signatures` — an undo
+            # appends a reversal rather than deleting, so testing the chain would leave a reversed
+            # record frozen for ever. Each register keeps exactly one later fact editable, because
+            # that fact is about the document rather than a change to it.
+            _frozen_by = {"eng_revisions": "issuedBy", "eng_stages": "gateSignedBy",
+                          "eng_changes": "decidedBy", "eng_transmittals": "issuedBy"}
+            if name in _frozen_by and existing and existing.get(_frozen_by[name]) \
+                    and self._caller_level(u) != "admin":
+                _keep = dict(existing)
+                _keep["id"] = iid
+                _after = {
+                    # Issuing revision B is what makes revision A superseded — recording that on A
+                    # is not rewriting A, it is the register staying true.
+                    "eng_revisions": ("status", ("superseded",), ("supersededBy", "supersededOn")),
+                    # A gate decision is final; only the record of the actions it was conditional on
+                    # may still be completed.
+                    "eng_stages": ("status", ("closed",), ("gateActionsClosedOn",)),
+                    # An approved change gets built, and then it is done.
+                    "eng_changes": ("status", ("implemented", "closed"), ("implementedOn",)),
+                    # A transmittal is acknowledged by the recipient, days after it went out.
+                    "eng_transmittals": ("status", ("acknowledged", "closed"), ("acknowledgedOn", "acknowledgedBy")),
+                }[name]
+                _fld, _allowed, _extra = _after
+                _new = str(item.get(_fld) or "").strip().lower()
+                if _new and _new in _allowed:
+                    _keep[_fld] = item.get(_fld)
+                    for _e in _extra:
+                        if _e in item:
+                            _keep[_e] = item.get(_e)
+                    item = _keep
+                else:
+                    return self._err(
+                        "This record has been signed and can no longer be edited. "
+                        "Issue a superseding revision instead.", 403)
         # Preserve server-trusted ownership on staff-owned records (a manager edit/approve
         # must not be able to rewrite who a claim/travel/exit belongs to).
         if name in ("claims", "travel", "payments", "acks"):
@@ -13677,7 +13926,7 @@ class Handler(BaseHTTPRequestHandler):
         if name == "audit":
             return self._err("Audit-trail entries cannot be deleted.", 403)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
-        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("hr" if name in self.HR_APP_COLLS else None))
+        _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("hr" if name in self.HR_APP_COLLS else None)))
         if _app and _app in self._apps_denied(u):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
@@ -13766,7 +14015,8 @@ class Handler(BaseHTTPRequestHandler):
             owner_id = existing.get("empId") or existing.get("createdById")
             owner_nm = existing.get("owner") or existing.get("name")
             mine = (owner_id and owner_id == u.get("id")) or (not owner_id and owner_nm and owner_nm == u.get("name"))
-            if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")) and not mine:
+            if (name in self.SELF_OWNED or name.startswith("crm_") or name.startswith("pm_")
+                    or name.startswith("eng_")) and not mine:
                 if not (u.get("role") == "manager" and self._is_mgmt(u)):
                     return self._err("You can only delete your own records.", 403)
         # A completed exit is the file you produce if a former employee disputes their settlement:
