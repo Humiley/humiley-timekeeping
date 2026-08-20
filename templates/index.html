@@ -15,7 +15,12 @@
 <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-input,textarea,select,button{font-family:Calibri,'Segoe UI',system-ui,Arial,sans-serif}
+/* `inherit`, not a family. Browsers do NOT inherit the page font into form controls, so this rule
+   has to exist — but naming a family here meant every button, input, select and textarea in the
+   portal rendered in Calibri while the text beside it rendered in Poppins (the theme sets Poppins on
+   body with !important, which cannot reach an element that has its own rule). That is most of the
+   "why are there so many fonts" answer: 57 elements on one screen. */
+input,textarea,select,button{font-family:inherit}
 :root{
   --navy:#205090;--navy-deep:#163866;--navy-light:#3168A8;
   --emerald:#00B060;--emerald-deep:#008548;
@@ -2048,21 +2053,21 @@ window.addEventListener('orientationchange', _setLoginBg);
           <tbody id="zones-tbody">
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><line x1="8" y1="6" x2="8" y2="6"/><line x1="16" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/></svg></div><div><div style="font-size:13px;font-weight:700">HQ — District 10, HCMC</div><div style="font-size:11px;color:var(--text-light)">200 3/2 Street · Primary office</div></div></div></td>
-              <td style="font-family:monospace;font-size:11px;color:var(--navy)">10.7769°N<br>106.6985°E</td>
+              <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">10.7769°N<br>106.6985°E</td>
               <td><span class="badge b-navy">200m</span></td><td>All Depts</td>
               <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
               <td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,'HQ — District 10, HCMC',10.7769,106.6985,200)">Edit</button></td>
             </tr>
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/></svg></div><div><div style="font-size:13px;font-weight:700">Factory — Long An Province</div><div style="font-size:11px;color:var(--text-light)">Manufacturing facility · 15,000m²</div></div></div></td>
-              <td style="font-family:monospace;font-size:11px;color:var(--navy)">10.5427°N<br>106.4139°E</td>
+              <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">10.5427°N<br>106.4139°E</td>
               <td><span class="badge b-navy">350m</span></td><td>Engineering, Field</td>
               <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
               <td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,'Factory — Long An',10.5427,106.4139,350)">Edit</button></td>
             </tr>
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div><div style="font-size:13px;font-weight:700">WFH — Registered Addresses</div><div style="font-size:11px;color:var(--text-light)">Per-employee home coordinates</div></div></div></td>
-              <td style="font-family:monospace;font-size:11px;color:var(--text-light)">Various</td>
+              <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-light)">Various</td>
               <td><span class="badge b-navy">100m</span></td><td>Approved only</td>
               <td><button class="toggle off" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
               <td><button class="btn btn-ghost btn-sm" onclick="editLocationRow(this,'WFH — Registered Addresses',0,0,100)">Edit</button></td>
@@ -2641,7 +2646,7 @@ window.addEventListener('orientationchange', _setLoginBg);
           <tbody id="cfg-zones-tbody">
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:34px;height:34px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><line x1="8" y1="6" x2="8" y2="6"/><line x1="16" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="8" y2="10"/><line x1="16" y1="10" x2="16" y2="10"/></svg></div><div><div style="font-weight:700;font-size:13px">HQ — District 10, HCMC</div><div style="font-size:11px;color:var(--text-light)">Head Office · Main building</div></div></div></td>
-              <td style="font-family:monospace;font-size:11px;color:var(--navy)">10.7769°N<br>106.6985°E</td>
+              <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">10.7769°N<br>106.6985°E</td>
               <td><span class="badge b-navy">200m</span></td>
               <td>All</td>
               <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
@@ -2649,7 +2654,7 @@ window.addEventListener('orientationchange', _setLoginBg);
             </tr>
             <tr>
               <td><div style="display:flex;align-items:center;gap:9px"><div style="width:34px;height:34px;border-radius:8px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#205090" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><path d="M2 20a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8l-7 5V8l-7 5V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/></svg></div><div><div style="font-weight:700;font-size:13px">Factory — Long An Province</div><div style="font-size:11px;color:var(--text-light)">Manufacturing facility</div></div></div></td>
-              <td style="font-family:monospace;font-size:11px;color:var(--navy)">10.5427°N<br>106.4139°E</td>
+              <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">10.5427°N<br>106.4139°E</td>
               <td><span class="badge b-navy">350m</span></td>
               <td>Field Services</td>
               <td><button class="toggle on" onclick="this.classList.toggle('on');this.classList.toggle('off')"></button></td>
@@ -2826,7 +2831,7 @@ window.addEventListener('orientationchange', _setLoginBg);
         </div>
         <div class="card">
           <div class="card-hdr"><div class="card-title">SP_CONFIG — Live Values</div></div>
-          <div style="font-family:monospace;font-size:11px;background:#0f2040;color:#a8d8a8;padding:14px;border-radius:8px;line-height:1.8" id="cfg-live-preview">
+          <div style="font-variant-numeric:tabular-nums;font-size:11px;background:#0f2040;color:#a8d8a8;padding:14px;border-radius:8px;line-height:1.8" id="cfg-live-preview">
             Loading config preview…
           </div>
           <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;justify-content:center" onclick="updateCfgPreview()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>Refresh Preview</button>
@@ -3476,7 +3481,7 @@ function tkRenderZones() {
     return '<tr>' +
       '<td><div style="display:flex;align-items:center;gap:9px"><div style="width:32px;height:32px;border-radius:8px;background:var(--light-tint);display:flex;align-items:center;justify-content:center">' + icon + '</div>' +
       '<div><div style="font-size:13px;font-weight:700">' + nm + '</div><div style="font-size:11px;color:var(--text-light)">Approved zone</div></div></div></td>' +
-      '<td style="font-family:monospace;font-size:11px;color:var(--navy)">' + lat.toFixed(4) + '°N<br>' + lon.toFixed(4) + '°E</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">' + lat.toFixed(4) + '°N<br>' + lon.toFixed(4) + '°E</td>' +
       '<td><span class="badge b-navy">' + (z.radius || 0) + 'm</span></td>' +
       '<td>All Depts</td>' +
       '<td><button class="toggle on" onclick="this.classList.toggle(\'on\');this.classList.toggle(\'off\')"></button></td>' +
@@ -11553,7 +11558,7 @@ async function tkRenderInbox() {
   const reqRows = '<thead><tr><th>Position</th><th>Dept</th><th>Grade</th><th>Stage</th><th></th></tr></thead><tbody>' + reqs.map(j => '<tr><td style="font-weight:600">' + (j.title || '') + '</td><td>' + (j.dept || '') + '</td><td>' + (j.grade || '') + '</td><td><span class="badge b-warn" style="font-size:10px">' + (j.status || 'Draft') + '</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkReqRouting(\'' + j.id + '\')">Review</button></td></tr>').join('') + '</tbody>';
   const padrRows = '<thead><tr><th>Employee</th><th>Cycle</th><th>Stage</th><th></th></tr></thead><tbody>' + padr.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (p.name || '') + '</span></div></td><td>' + (p.cycle || '') + '</td><td><span class="badge b-warn" style="font-size:10px">Self-assessment submitted</span></td><td><button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px" onclick="tkPadrManage(\'' + p.id + '\')">Review &amp; score</button></td></tr>'; }).join('') + '</tbody>';
   const travelRows = '<thead><tr><th>Employee</th><th>Destination</th><th>Dates</th><th>Est. cost</th><th></th></tr></thead><tbody>' + travel.map(t => { const e = _hrEmp(t.empId) || { name: t.name, ini: '' }; return '<tr><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + (t.name || '') + '</span></div></td><td>' + (t.dest || '') + '</td><td style="font-size:12px">' + tkFmtDate(t.from) + ' → ' + tkFmtDate(t.to) + '</td><td>' + _PAY_FMT(t.cost || 0) + '</td><td style="white-space:nowrap"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkTravelDecision(\'' + t.id + '\',\'Rejected\')">Reject</button></td></tr>'; }).join('') + '</tbody>';
-  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; const did = 'inbox-pay-' + p.id; const chev = '<svg id="fin-chev-' + did + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'; const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + did + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; const detail = '<tr id="fin-det-' + did + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment', did) + '<div style="margin-top:10px;font-size:12px;color:var(--text-light)">' + _crmEsc(p.method || '') + (p.dueDate ? ' · ' + tkFmtDate(p.dueDate) : '') + (p.department ? ' · ' + _crmEsc(p.department) : '') + '</div>' + (p.purpose ? '<div style="font-size:12px;margin-top:4px">' + _crmEsc(p.purpose) + '</div>' : '') + _payBankHtml(p) + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>'; return summary + detail; }).join('') + '</tbody>';
+  const payRows = '<thead><tr><th>No.</th><th>Requested by</th><th>Payee</th><th>Category</th><th style="text-align:right">Amount</th><th></th></tr></thead><tbody>' + payments.map(p => { const e = _hrEmp(p.empId) || { name: p.name, ini: '' }; const did = 'inbox-pay-' + p.id; const chev = '<svg id="fin-chev-' + did + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'; const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'' + did + '\')"><td style="font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="display:flex;align-items:center;gap:9px">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(p.name || '') + '</span></div></td><td>' + _crmEsc(p.payee || '') + _attachLink(p) + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="text-align:right;font-weight:600">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap" onclick="event.stopPropagation()"><button class="btn-approve" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Approved\')">Approve</button> <button class="btn-reject" style="font-size:11px;padding:4px 10px" onclick="tkPaymentDecision(\'' + p.id + '\',\'Rejected\')">Reject</button></td></tr>'; const detail = '<tr id="fin-det-' + did + '" style="display:none"><td colspan="6" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment', did) + '<div style="margin-top:10px;font-size:12px;color:var(--text-light)">' + _crmEsc(p.method || '') + (p.dueDate ? ' · ' + tkFmtDate(p.dueDate) : '') + (p.department ? ' · ' + _crmEsc(p.department) : '') + '</div>' + (p.purpose ? '<div style="font-size:12px;margin-top:4px">' + _crmEsc(p.purpose) + '</div>' : '') + _payBankHtml(p) + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>'; return summary + detail; }).join('') + '</tbody>';
   const pendingHtml = '<div id="inbox-pending">' + (total ? '' : '<div class="card" style="padding:28px;text-align:center;color:var(--text-light);margin-bottom:18px">You are all caught up — no pending approvals.</div>') +
     sec('Leave Requests', leave.length, leaveRows) +
     sec('Travel Requests', travel.length, travelRows) +
@@ -11975,7 +11980,7 @@ function payFillTable() {
     const _peBank = (_lvlRank(_userLevel) >= _lvlRank('editor') && _payBankMissing(p))
       ? '<button class="btn btn-outline btn-sm" style="font-size:10px;padding:3px 9px" title="' + _tkEscA(_t('Add the beneficiary bank details Finance needs to release this payment')) + '" onclick="event.stopPropagation();tkPayBankFill(\'' + p.id + '\')">' + tkIcon('edit', 11) + _t('Bank details') + '</button> ' : '';
     const chev = '<svg id="fin-chev-pay-' + p.id + '" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--text-light)" stroke-width="2.4" style="transition:transform .15s;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>';
-    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-family:monospace;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + tkFmtDate(p.ts) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peBank + _peEdit + act + '</td></tr>';
+    const summary = '<tr style="cursor:pointer" onclick="tkFinToggle(\'pay-' + p.id + '\')"><td style="font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap"><span style="display:inline-flex;align-items:center;gap:6px">' + chev + _crmEsc(p.reqNo || '') + '</span></td><td><div style="font-weight:600">' + _crmEsc(p.name || '') + '</div><div style="font-size:11px;color:var(--text-light)">' + _crmEsc(p.method || '') + '</div></td><td>' + _crmEsc(p.payee || '') + '</td><td><span class="badge b-navy" style="font-size:10px">' + _crmEsc(p.category || '') + '</span></td><td style="font-size:12px">' + _crmEsc(p.purpose || '') + _attachLink(p) + '</td><td>' + _crmEsc(p.department || '') + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(p.amount || 0) + '</td><td style="white-space:nowrap;font-size:12px;color:var(--text-light)">' + tkFmtDate(p.ts) + '</td><td style="white-space:nowrap;font-size:12px">' + tkFmtDate(p.dueDate) + '</td><td><span class="badge ' + _payCls(s) + '" style="font-size:10px">' + _aprLabel(s) + '</span></td><td style="white-space:nowrap" onclick="event.stopPropagation()">' + (_recHasBill(p) ? _finShowBtn('tkFinShow(\'payments\',\'' + p.id + '\')', _t('Show')) + ' ' : '') + _peBank + _peEdit + act + '</td></tr>';
     const detail = '<tr id="fin-det-pay-' + p.id + '" style="display:none"><td colspan="11" style="background:var(--soft-bg);padding:14px 18px"><div style="display:grid;gap:16px;grid-template-columns:1fr 1fr"><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Bill / supporting documents') + '</div>' + _finBillsHtml(p, 'payment') + '</div><div><div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-light);margin-bottom:7px">' + _t('Approval') + '</div>' + _finApprovalHtml(p) + '</div></div></td></tr>';
     return summary + detail;
   }).join('') : '<tr><td colspan="11" style="text-align:center;color:var(--text-light);padding:16px">' + ((_HR.payments || []).length ? 'No payments match your filters.' : 'No payment requests yet — click “New Payment Request”.') + '</td></tr>';
@@ -13672,8 +13677,8 @@ function _invRegRows(list) {
     html += '<tr onclick="_invToggleDetail(this,' + _n + ',event)" style="cursor:pointer" title="' + _t('Click for full details / fill amount') + '">' +
       '<td style="white-space:nowrap;font-size:11.5px">' + esc(_invDMY(i.dateISO) || i.dateRaw) + '</td>' +
       '<td><div style="font-weight:600;font-size:12px">' + esc(i.supplier) + '</div><div style="font-size:10.5px;color:var(--text-light)">' + badge + (i.taxCode ? '  ·  MST ' + esc(i.taxCode) : '') + '</div></td>' +
-      '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.invNo) + '</td>' +
-      '<td style="font-family:monospace;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">' + esc(i.invNo) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:11px;white-space:nowrap">' + esc(i.serial) + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.before) ? _invMoney(i.before) : '—') + '</td>' +
       '<td style="text-align:right;font-size:11.5px">' + (_invNum(i.vat) ? _invMoney(i.vat) : '—') + '</td>' +
       '<td style="text-align:right;font-weight:700;font-size:12px;color:var(--navy)">' + (_invNum(i.after) ? _invMoney(i.after) : (function(){ var _f = _invDlLink(i, 'Download'); if (_f) return _f; var u = _invLookupUrl(i); return u ? '<a href="' + _tkEscA(u) + '" target="_blank" rel="noopener" title="' + _tkEscA((i.lookup || '') + ' — ' + _t('open the issuer portal to get the amount + invoice file')) + '" style="color:#E5A54B;text-decoration:underline;white-space:nowrap">' + _t('lookup') + ' ↗</a>' : '<span style="color:#E5A54B" title="' + _tkEscA(i.lookup || '') + '">' + _t('lookup') + '</span>'; })()) + '</td>' +
@@ -17515,7 +17520,7 @@ function crmFillProducts() {
   const q = (document.getElementById('crm-pr-q') ? document.getElementById('crm-pr-q').value : '').toLowerCase();
   const ty = document.getElementById('crm-pr-type') ? document.getElementById('crm-pr-type').value : '';
   const rows = (_HR.crm_products || []).filter(p => (!q || ((p.name || '') + ' ' + (p.code || '')).toLowerCase().indexOf(q) >= 0) && (!ty || (p.category || '') === ty));
-  tb.innerHTML = rows.length ? rows.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-family:monospace;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : tkEmptyRow(6, 'No products match your filters.', { icon: 'search' });
+  tb.innerHTML = rows.length ? rows.map(p => '<tr><td style="font-weight:600">' + _crmEsc(p.name || '') + '</td><td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-light)">' + _crmEsc(p.code || '—') + '</td><td>' + _crmEsc(p.category || '—') + '</td><td>' + _crmEsc(p.unit || 'pcs') + '</td><td style="font-weight:600;text-align:right">' + _crmMoney(p.price) + '</td><td style="white-space:nowrap">' + _hrEditDel('crm_products', p.id, 'crm_products') + '</td></tr>').join('') : tkEmptyRow(6, 'No products match your filters.', { icon: 'search' });
 }
 /* ── Quotation builder (multi-line, catalog picker, live totals) ── */
 let _crmQB = null;
@@ -20624,7 +20629,7 @@ function pmFillProjects() {
     const rag = _pmEffectiveRag(p), sr = pmScopeRollup(p.id);
     const pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
     return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')">' +
-      '<td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td>' +
       '<td style="font-weight:600">' + _pmEsc(p.name || '(untitled)') + '<span data-pm-chat-badge="' + p.id + '"></span>' + (p.phase ? '<div style="font-size:11px;color:var(--text-light)">' + _pmEsc(p.phase) + '</div>' : '') + '</td>' +
       '<td>' + _pmEsc(p.account || p.client || '—') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span title="' + rag + '" style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '"></span></td>' +
@@ -20760,8 +20765,11 @@ async function pmRenderWorkspace() {
     '<button class="btn btn-ghost btn-sm" onclick="pmCloseoutPDF(\'' + p.id + '\')" style="font-size:11px" title="Project Closeout Report (PDF)">' + tkIcon('download', 12) + ' Closeout</button>' +
     pmReportBtns(p.id) + _pmSpBtn(p) +
     (_pmCanEditProject(p) ? '<button class="btn btn-ghost btn-sm" onclick="tkQuickAdd(\'pm_projects\',\'' + p.id + '\')" style="font-size:11px">' + _PENCIL + ' Edit</button>' : '') + '</div></div>' +
-    '<div id="pm-tabbar" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:14px;border-top:1px solid var(--line);padding-top:10px">' +
-    _PM_TABS.map(t => '<button class="tab" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')" style="border:none;background:' + (t.k === _pmTabK ? 'var(--emerald)' : 'transparent') + ';color:' + (t.k === _pmTabK ? '#fff' : 'var(--text-light)') + ';font-size:12px;font-weight:600;padding:6px 12px;border-radius:7px;cursor:pointer">' + t.label + (t.k === 'chat' ? '<span data-pm-chat-badge="' + _pmPid() + '"></span>' : '') + '</button>').join('') + '</div></div>';
+    /* .tabs, like HR, Finance, CRM, My Space and Procurement. This bar used to be a hand-rolled flex
+       row of emerald pills, which is why the Projects screens were the one place in the portal whose
+       tabs looked different — and why a sub-tab bar underneath could never match it. */
+    '<div id="pm-tabbar" class="tabs" style="margin-top:14px;margin-bottom:0">' +
+    _PM_TABS.map(t => '<button class="tab' + (t.k === _pmTabK ? ' active' : '') + '" data-k="' + t.k + '" onclick="pmTab(\'' + t.k + '\')">' + t.label + (t.k === 'chat' ? '<span data-pm-chat-badge="' + _pmPid() + '"></span>' : '') + '</button>').join('') + '</div></div>';
   root.innerHTML = hdr + '<div id="pm-tab-body"></div>';
   pmTab(_pmTabK);
   pmChatUnreadLoad();      // one small call; never downloads messages to draw a badge
@@ -20770,7 +20778,9 @@ async function pmRenderWorkspace() {
 }
 async function pmTab(k) {
   const t = _PM_TABS.find(x => x.k === k); if (!t) return; _pmTabK = k;
-  document.querySelectorAll('#pm-tabbar .tab').forEach(b => { const on = b.dataset.k === k; b.style.background = on ? 'var(--emerald)' : 'transparent'; b.style.color = on ? '#fff' : 'var(--text-light)'; });
+  // .tab/.active carries the styling now; setting inline colours here would beat the stylesheet and
+  // put the Projects tabs back to looking like nothing else in the portal.
+  document.querySelectorAll('#pm-tabbar .tab').forEach(b => b.classList.toggle('active', b.dataset.k === k));
   // A tab loads what IT reads, and nothing else. Anything already resident is free (tkLoadColl
    // caches for 45s), so moving between tabs that share data costs no request at all.
   const _body = document.getElementById('pm-tab-body');
@@ -20934,7 +20944,7 @@ function pmRenderOverview() {
   // change log
   const ch = _pmScope(_HR.pm_changes).sort((a, b) => (b.requestedDate || '').localeCompare(a.requestedDate || ''));
   const changeTbl = _pmCard('Change Control Log', 'pm_changes', 'Add CR', _pmTable('pm_changes', [
-    { label: 'CR No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.crNo || '—') + '</span>' },
+    { label: 'CR No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.crNo || '—') + '</span>' },
     { label: 'Title', k: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Type', render: r => _pmBadge(r.type || '—', '#3168A8') },
     { label: 'Sched Δ (d)', align: 'right', render: r => _pmEsc(r.impactScheduleDays || 0) },
@@ -21004,7 +21014,7 @@ function pmRenderScope(pid) {
   const scopeStmt = (p.scopeStatement || p.scopeSummary || p.scopeInclusions || p.scopeExclusions || p.scopeAssumptions || p.assumptions || p.constraints) ? '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Scope Statement</div>' +
     [['Statement', p.scopeStatement || p.scopeSummary], ['Inclusions', p.scopeInclusions], ['Exclusions', p.scopeExclusions], ['Assumptions', p.scopeAssumptions || p.assumptions], ['Constraints', p.constraints]].filter(r => r[1]).map(r => '<div style="margin-bottom:7px"><span style="font-size:10.5px;font-weight:700;text-transform:uppercase;color:var(--text-light)">' + r[0] + '</span><div style="font-size:13px;white-space:pre-wrap">' + _pmEsc(r[1]) + '</div></div>').join('') + '<div style="font-size:11px;color:var(--text-light);margin-top:4px">Edit scope text via the project <b>Edit</b> button.</div></div>' : '';
   const tbl = _pmCard('Work Breakdown Structure (Deliverables)', 'pm_deliverables', 'Add deliverable', _pmTable('pm_deliverables', [
-    { label: 'WBS', sk: 'wbsCode', render: r => '<span style="font-family:monospace;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
+    { label: 'WBS', sk: 'wbsCode', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy);font-weight:700">' + _pmEsc(r.wbsCode || '—') + '</span>' },
     { label: 'Deliverable', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' },
     { label: 'Contractor', sk: 'owner', render: r => r.owner ? _pmBadge(r.owner, '#3168A8') : '—' },
     { label: 'Supervisor', sk: 'supervisor', render: r => r.supervisor ? '<div style="display:flex;align-items:center;gap:6px">' + _crmAva(r.supervisor) + '<span>' + _pmEsc(r.supervisor) + '</span></div>' : '—' },
@@ -21387,7 +21397,7 @@ function _pdSchedBar(pid) {
   const chip = (id, label, n, on) =>
     '<button onclick="pdSchedPick(\'' + id + '\')" style="border:1px solid ' + (on ? 'var(--emerald)' : 'var(--line)') +
     ';background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text)') +
-    ';border-radius:999px;padding:5px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' +
+    ';border-radius:999px;padding:5px 13px;font-weight:600;font-size:12px;cursor:pointer;white-space:nowrap">' +
     _pmEsc(label) + ' <span style="opacity:.7;font-weight:500">' + n + '</span></button>';
   // NEVER return '' here. pdSchedNew has exactly ONE call site — the button below — so hiding this
   // row on a project that has no detail schedules yet hid the only way to create the first one:
@@ -21395,7 +21405,7 @@ function _pdSchedBar(pid) {
   // when somebody needs it, so on an empty project the row is just the label and the button.
   if (!ss.length && !unf.length) {
     return '<div style="display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-      '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;' +
+      '<span style="font-weight:600;font-size:10.5px;letter-spacing:.06em;' +
         'text-transform:uppercase;color:var(--text-light)">' + _t('Schedule') + '</span>' +
       '<button class="btn btn-emerald btn-sm" onclick="pdSchedNew(\'' + pid + '\')">+ ' +
         _t('New detail schedule') + '</button>' +
@@ -21407,7 +21417,7 @@ function _pdSchedBar(pid) {
       _pdAllRows(pid).filter(r => r.scheduleId === s.id).length, !!cur && cur.id === s.id)).join('') +
     (unf.length ? chip('_unfiled', _t('Unfiled'), unf.length, !!cur && cur.id === '_unfiled') : '');
   return '<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin-bottom:12px">' +
-    '<span style="font:600 10.5px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light)">' +
+    '<span style="font-weight:600;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light)">' +
       _t('Schedule') + '</span>' + chips +
     '<button class="btn btn-ghost btn-sm" onclick="pdSchedNew(\'' + pid + '\')" title="' + _tkEscA(_t('Define another detail schedule for this project')) + '">+ ' + _t('New') + '</button>' +
     (unf.length ? '<span style="font-size:11px;color:var(--warn,#B26A00)">' + unf.length + ' ' + _t('item(s) not assigned to a schedule') + '</span>' : '') +
@@ -22080,7 +22090,7 @@ function _schFilterBar(ns, shown, total) {
   const chip = (k, label) => '<button class="sch-chip" onclick="schFiltKind(\'' + ns + '\',\'' + k + '\')" style="border:1px solid ' +
     (f.k === k ? 'var(--navy)' : 'var(--line)') + ';background:' + (f.k === k ? 'var(--navy)' : 'var(--card,#fff)') +
     ';color:' + (f.k === k ? '#fff' : 'var(--text-light)') + ';border-radius:999px;padding:3px 11px;' +
-    'font:600 11px ui-sans-serif,system-ui,sans-serif;cursor:pointer;white-space:nowrap">' + _t(label) + '</button>';
+    'font-weight:600;font-size:11px;cursor:pointer;white-space:nowrap">' + _t(label) + '</button>';
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:9px 16px;border-bottom:1px solid var(--line)">' +
     '<input value="' + _tkEscA(f.q) + '" oninput="schFiltQ(\'' + ns + '\',this.value)" placeholder="' +
       _tkEscA(_t('Find an activity or who…')) + '" style="flex:0 1 220px;min-width:150px;font-size:12px;padding:4px 9px;' +
@@ -22114,7 +22124,7 @@ function _schWho(who) {
   const ini = String(who).split(/\s+/).filter(Boolean).slice(-2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
   let h = 0; for (let i = 0; i < who.length; i++) h = (h * 31 + who.charCodeAt(i)) % 360;
   return '<span title="' + _tkEscA(who) + '" style="width:22px;height:22px;border-radius:50%;flex:none;background:hsl(' + h +
-    ',52%,45%);color:#fff;font:700 9px ui-sans-serif,system-ui,sans-serif;display:flex;align-items:center;justify-content:center">' + ini + '</span>';
+    ',52%,45%);color:#fff;font-weight:700;font-size:9px;display:flex;align-items:center;justify-content:center">' + ini + '</span>';
 }
 
 function _schTimeline(rows, o) {
@@ -22169,7 +22179,7 @@ function _schTimeline(rows, o) {
     '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
   const todayChip = tX === null ? '' :
     '<div style="position:absolute;left:' + tX + '%;bottom:1px;transform:translateX(-50%);background:#EF4444;color:#fff;' +
-      'font:700 9.5px ui-sans-serif,system-ui,sans-serif;padding:2px 6px;border-radius:4px;white-space:nowrap;' +
+      'font-weight:700;font-size:9.5px;padding:2px 6px;border-radius:4px;white-space:nowrap;' +
       'pointer-events:none">' + tkFmtDate(day) + '</div>' +
     '<div style="position:absolute;left:' + tX + '%;top:0;bottom:0;border-left:2px solid #EF4444"></div>';
 
@@ -22177,7 +22187,7 @@ function _schTimeline(rows, o) {
     '<div style="display:flex;position:sticky;top:0;z-index:3;background:var(--card,#fff);border-bottom:1px solid var(--line)">' +
       '<div style="width:' + LABW + 'px;flex:none;position:sticky;left:0;z-index:4;background:var(--card,#fff);' +
         'border-right:1px solid var(--line);padding:6px 10px;display:flex;align-items:flex-end;gap:6px;' +
-        'font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' +
+        'font-weight:600;font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--text-light)">' +
         '<span style="flex:1;min-width:0">' + _t(o.labelHead || 'Trade / Activity') + '</span>' +
         (NARROW ? '' :
           '<span style="width:26px;text-align:center">' + _t('Who') + '</span>' +
@@ -22308,7 +22318,7 @@ function _schCalendar(rows, o) {
         '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(-1)">‹</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="pdCalMove(1)">›</button></div></div>' +
     '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px">' +
-      DOW.map(d => '<div style="font:600 10px ui-sans-serif,system-ui,sans-serif;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
+      DOW.map(d => '<div style="font-weight:600;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-light);text-align:center">' + _t(d) + '</div>').join('') +
     '</div><div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px">' + cells + '</div></div>';
 }
 
@@ -22610,7 +22620,7 @@ function pmRenderSchedule(pid) {
   _pmSchedBuild['d-board'] = () => _pdView(pid, 'board');
   _pmSchedBuild['d-calendar'] = () => _pdView(pid, 'calendar');
   _pmSchedBuild['m-activities'] = () => _pmCard('Activities', 'pm_tasks', 'Add task', _pmTable('pm_tasks', [
-    { label: 'WBS', sk: 'wbs', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
+    { label: 'WBS', sk: 'wbs', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
     { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
@@ -22642,7 +22652,7 @@ function pmRenderSchedule(pid) {
   const levels = '<div style="display:flex;gap:8px;margin:2px 0 10px;flex-wrap:wrap">' +
     lvBtn('m', 'Master Schedule', 'Contract activities · WBS · critical path') +
     lvBtn('d', 'Detail Schedule', 'What the site reports each day') + '</div>';
-  const views = '<div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">' +
+  const views = '<div class="tabs" style="margin:0 0 14px" data-html2canvas-ignore="true">' +
     _PM_SCHED_VIEWS[_lv].map(v => _pmSchedTabBtn(v[0], v[1])).join('') + '</div>';
   // The schedule picker sits ABOVE the view tabs: which programme am I looking at is the outer
   // question, how do I want to see it is the inner one. It read the other way round, which asked
@@ -22654,8 +22664,12 @@ function pmRenderSchedule(pid) {
   _pmSet(kpis + subtabs + _PM_SCHED_PANES.map(_pane).join(''));
 }
 function _pmSchedTabBtn(key, label) {
-  const on = _pmSchedTab === key;
-  return '<button id="pschtab-' + key + '" onclick="pmSchedTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (on ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (on ? '#fff' : 'var(--text-light)') + ';font-weight:600;font-size:12.5px;padding:7px 16px;border-radius:9px;cursor:pointer;white-space:nowrap">' + label + '</button>';
+  /* .tab / .tabs, the same classes HR, Finance, CRM, My Space and Procurement use. This used to be a
+     hand-rolled inline-styled button, so the Schedule was the one screen in the portal whose tabs did
+     not match the rest — different height, different radius, its own hover and active colours, and it
+     missed every phone rule keyed on .tab (min-height:40px among them). Styling belongs in the sheet. */
+  return '<button id="pschtab-' + key + '" class="tab' + (_pmSchedTab === key ? ' active' : '') +
+    '" onclick="pmSchedTab(\'' + key + '\')">' + _t(label) + '</button>';
 }
 /* The Schedule sub-panes, in order. Declared ONCE: this list is read by the renderer and by the
    show/hide loop, and when it existed twice a new pane added to only one of them rendered fine
@@ -22696,7 +22710,9 @@ function pmSchedTab(name) {
   }
   _PM_SCHED_PANES.forEach(k => {
     const p = document.getElementById('psch-' + k); if (p) p.style.display = (k === name) ? '' : 'none';
-    const b = document.getElementById('pschtab-' + k); if (b) { const on = k === name; b.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; b.style.color = on ? '#fff' : 'var(--text-light)'; }
+    // .tab/.active carries the styling now — setting inline colours here would beat the stylesheet
+    // and put the Schedule back to looking like nothing else in the portal.
+    const b = document.getElementById('pschtab-' + k); if (b) b.classList.toggle('active', k === name);
   });
 }
 
@@ -22829,7 +22845,7 @@ function pmRenderQuality(pid) {
   const insp = q.filter(x => x.type === 'Inspection'); const passRate = insp.length ? Math.round(insp.filter(x => x.result === 'Pass').length / insp.length * 100) : 0;
   const kpis = _hrKpiRow([_hrKpi('Quality records', q.length), _hrKpi('NCRs open', ncrOpen, '#EF4444'), _hrKpi('NCRs overdue', ncrOverdue, ncrOverdue ? '#C00000' : 'var(--text-light)'), _hrKpi('Inspection pass rate', passRate + '%', 'var(--emerald)'), _hrKpi('ITP plans', itp.length, '#3168A8')]);
   const tbl = _pmCard('Quality Register (Inspections · NCRs · Audits · Tests)', 'pm_quality', 'Add record', filterBar + _pmTable('pm_quality', [
-    { label: 'Ref', sk: 'refNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
+    { label: 'Ref', sk: 'refNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.refNo || '—') + '</span>' },
     { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', r.type === 'NCR' ? '#EF4444' : r.type === 'Audit' ? '#8B5CF6' : '#3168A8') },
     { label: 'Title', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' },
@@ -22851,7 +22867,7 @@ function pmRenderQuality(pid) {
       : '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 8px;color:var(--emerald);white-space:nowrap" onclick="pmCloseToday(\'pm_quality\',\'' + r.id + '\')" title="Tested & completed today — close with today\'s date">✓ Close today</button>') }
   ], q));
   const itpTbl = _pmCard('Inspection & Test Plans (ITP)', 'pm_quality_itp', 'Add ITP', _pmTable('pm_quality_itp', [
-    { label: 'ITP No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
+    { label: 'ITP No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.itpNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' }, { label: 'Contractor', sk: 'contractor', render: r => r.contractor ? _pmBadge(r.contractor, '#3168A8') : '—' }, { label: 'Package', k: 'discipline' },
     { label: 'Standard', k: 'standardRef' }, { label: 'Planned', sk: 'plannedStart', render: r => (r.plannedStart || r.plannedFinish) ? _pmFmt(r.plannedStart) + (r.plannedFinish && r.plannedFinish !== r.plannedStart ? ' → ' + _pmFmt(r.plannedFinish) : '') : '—' }, { label: 'Status', render: r => _pmBadge(r.status || 'Draft', r.status === 'Approved' ? '#00B060' : '#94a3b8') }, { label: 'File', render: r => _pmFileCell('pm_quality_itp', r) }
   ], itp.slice().sort(_cmpNewest('plannedStart'))));   // a COPY: the timeline below must stay ascending
@@ -22891,7 +22907,7 @@ function _pmRaciMatrix(pid) {
   const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map(m => '<th style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc((m.split(' ')[0]) || m) + '</th>').join('');
   const rows = dels.map(d => {
     const map = d.raciMap || {};
-    return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-family:monospace;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
+    return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-variant-numeric:tabular-nums;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
       const v = map[m] || '';
       const cell = v ? '<span style="display:inline-block;min-width:22px;background:' + (RACI_HEX[v] || '#94a3b8') + ';color:#fff;border-radius:5px;font-size:11px;font-weight:700;padding:1px 5px">' + v + '</span>' : '<span style="color:var(--line)">·</span>';
       return '<td style="text-align:center;padding:5px 8px;border-top:1px solid var(--line-soft,#eef2f8)' + (canEdit ? ';cursor:pointer' : '') + '"' + (canEdit ? ' onclick="pmRaciCycle(\'' + d.id + '\',' + mi + ')"' : '') + '>' + cell + '</td>';
@@ -23590,7 +23606,7 @@ function pmRenderComms(pid) {
   const _iSpecs = [{ k: 'priority', label: 'Priority' }, { k: 'status', label: 'Status' }, { k: 'owner', label: 'Owner' }];
   const _iBar = _pmFiltBar('pm_issues', issues, _iSpecs), _iRows = _pmFiltApply('pm_issues', issues, _iSpecs);
   const issuesTbl = _pmCard('Issue Log', 'pm_issues', 'Add issue', _iBar + _pmTable('pm_issues', [
-    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
+    { label: 'No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.issueNo || '—') + '</span>' },
     { label: 'Title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Priority', render: r => _pmBadge(r.priority || 'Med', r.priority === 'High' || r.priority === 'Critical' ? '#EF4444' : r.priority === 'Low' ? '#94a3b8' : '#F59E0B') },
     { label: 'Owner', k: 'owner' }, { label: 'Due', sk: 'due', render: r => _pmFmt(r.due) },
@@ -23621,7 +23637,7 @@ function pmRenderRisks(pid) {
   const _rSpecs = [{ k: 'category', label: 'Category' }, { k: 'responseStrategy', label: 'Response' }, { k: 'owner', label: 'Owner' }, { k: 'contractor', label: 'Contractor' }, { k: 'status', label: 'Status' }];
   const _rBar = _pmFiltBar('pm_risks', risks, _rSpecs), _rRows = _pmFiltApply('pm_risks', risks, _rSpecs);
   const tbl = _pmCard('Risk Register', 'pm_risks', 'Add risk', _rBar + _pmTable('pm_risks', [
-    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.riskNo || '—') + '</span>' },
+    { label: 'No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.riskNo || '—') + '</span>' },
     { label: 'Risk', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Type', align: 'center', render: r => _pmIsOpp(r) ? _pmBadge('Opportunity', '#00B060') : _pmBadge('Threat', '#EF4444') },
     { label: 'Category', k: 'category' },
@@ -23644,7 +23660,7 @@ function pmRenderProcurement(pid) {
   const _pSpecs = [{ k: 'type', label: 'Type' }, { k: 'status', label: 'Status' }, { k: 'vendor', label: 'Contractor / Vendor' }];
   const _pBar = _pmFiltBar('pm_procurement', ps, _pSpecs), _pRows = _pmFiltApply('pm_procurement', ps, _pSpecs);
   const tbl = _pmCard('Procurement & Subcontracts', 'pm_procurement', 'Add package', _pBar + _pmTable('pm_procurement', [
-    { label: 'Pkg', sk: 'pkgNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
+    { label: 'Pkg', sk: 'pkgNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.pkgNo || '—') + '</span>' },
     { label: 'Package / Scope', sk: 'title', render: r => '<span style="font-weight:600">' + _pmEsc(r.title || '') + '</span>' },
     { label: 'Contractor / Vendor', sk: 'vendor', render: r => r.vendor ? _pmBadge(r.vendor, '#3168A8') : '—' }, { label: 'Type', sk: 'type', render: r => _pmBadge(r.type || '—', '#8B5CF6') },
     { label: 'Value', sk: 'value', align: 'right', render: r => _pmMoney(r.value) }, { label: 'Ret %', sk: 'retentionPct', align: 'right', render: r => _pmEsc((r.retentionPct || 0) + '%') },
@@ -23654,7 +23670,7 @@ function pmRenderProcurement(pid) {
   const _paySpecs = [{ k: 'status', label: 'Status' }, { k: 'period', label: 'Period' }];
   const _payBar = _pmFiltBar('pm_procurement_payments', pays, _paySpecs), _payRows = _pmFiltApply('pm_procurement_payments', pays, _paySpecs);
   const payTbl = _pmCard('Payment Certificates (IPC)', 'pm_procurement_payments', 'Add cert', _payBar + _pmTable('pm_procurement_payments', [
-    { label: 'Cert', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.certNo || '—') + '</span>' },
+    { label: 'Cert', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.certNo || '—') + '</span>' },
     { label: 'Period', k: 'period' }, { label: 'Gross', align: 'right', render: r => _pmMoney(r.grossClaimed) },
     { label: 'Retention', align: 'right', render: r => _pmMoney(r.retentionDeducted) }, { label: 'Net certified', align: 'right', render: r => _pmMoney(r.netCertified) },
     { label: 'Status', render: r => _pmBadge(r.status || 'Submitted', r.status === 'Paid' ? '#00B060' : r.status === 'Certified' ? '#205090' : '#F59E0B') },
@@ -24012,7 +24028,7 @@ function pmRenderRfis(pid) {
   const avg = turns.length ? Math.round(turns.reduce((a, b) => a + b, 0) / turns.length) : 0;
   const kpis = _hrKpiRow([_hrKpi('RFIs / Submittals', rfis.length), _hrKpi('Open', open, '#F59E0B'), _hrKpi('Overdue', overdue, '#EF4444'), _hrKpi('Avg turnaround', avg + ' d', '#3168A8')]);
   const tbl = _pmCard('RFIs · Submittals · Transmittals', 'pm_rfis', 'Add RFI', _pmTable('pm_rfis', [
-    { label: 'No.', render: r => '<span style="font-family:monospace;font-size:11px">' + _pmEsc(r.number || '—') + '</span>' },
+    { label: 'No.', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.number || '—') + '</span>' },
     { label: 'Type', render: r => _pmBadge(r.type || 'RFI', '#3168A8') },
     { label: 'Subject', render: r => '<span style="font-weight:600">' + _pmEsc(r.subject || '') + '</span>' }, { label: 'Discipline', k: 'discipline' },
     { label: 'Ball in court', k: 'ballInCourt' }, { label: 'Required by', render: r => _pmFmt(r.requiredBy) },
@@ -24124,7 +24140,7 @@ async function pmRenderPortfolio() {
   // table
   const rows = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).map(p => {
     const rag = _pmEffectiveRag(p), e = _pmEvm(p), sr = pmScopeRollup(p.id), pct = sr.total ? sr.pct : _pmPct(p.percentComplete);
-    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
+    return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:6px">' + _pmBar(pct) + '<span style="font-size:11px">' + pct + '%</span></div></td>' +
       '<td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.cpi)) + ';font-weight:700">' + e.cpi.toFixed(2) + '</td><td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.spi)) + ';font-weight:700">' + e.spi.toFixed(2) + '</td>' +
@@ -25299,7 +25315,7 @@ function engRenderInputs(pid) {
   const bar = _engFiltBar('eng_inputs', inputs, specs), rows = _engFiltApply('eng_inputs', inputs, specs);
   const stHex = s => ({ Open: '#94A3B8', Allocated: '#8B5CF6', Addressed: '#0EA5E9', Verified: '#00B060', Waived: '#64748B', Superseded: '#64748B' })[s] || '#94A3B8';
   const tbl = _engCard('Design Input Register', 'eng_inputs', 'Add input', bar + _engTable('eng_inputs', [
-    { label: 'Ref', k: 'reqNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _engEsc(r.reqNo || '—') + '</span>' },
+    { label: 'Ref', k: 'reqNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r.reqNo || '—') + '</span>' },
     { label: 'Requirement', render: r => '<div style="font-weight:600;max-width:290px">' + _engEsc(r.requirement || '') + '</div>' + (r.acceptanceCriteria ? '<div style="font-size:10.5px;color:var(--text-light);max-width:290px">Accept: ' + _engEsc(r.acceptanceCriteria) + '</div>' : '') },
     { label: 'Source', render: r => '<div style="font-size:11.5px">' + _engEsc(r.source || '—') + '</div>' + (r.sourceRef ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.sourceRef) + '</div>' : '') },
     { label: 'Discipline', k: 'discipline' },
@@ -25714,7 +25730,7 @@ function engRenderReviews(pid) {
   const bar = _engFiltBar('eng_reviews', revs, specs), rows = _engFiltApply('eng_reviews', revs, specs);
   const outHex = o => o === 'Satisfactory' ? '#00B060' : o === 'Satisfactory with actions' ? '#F59E0B' : o === 'Deferred' ? '#94A3B8' : '#EF4444';
   const tbl = _engCard('Design Review & Verification Register', 'eng_reviews', 'Record a review', bar + _engTable('eng_reviews', [
-    { label: 'Ref', k: 'reviewNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _engEsc(r.reviewNo || '—') + '</span>' },
+    { label: 'Ref', k: 'reviewNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r.reviewNo || '—') + '</span>' },
     { label: 'Subject', render: r => '<div style="font-weight:600;max-width:250px">' + _engEsc(r.title || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.reviewType || '') + '</div>' },
     { label: 'Clause', sk: 'clause', render: r => '<span style="font-size:10.5px;color:var(--text-light);white-space:nowrap">' + _engEsc(String(r.clause || '').split('—')[0].trim() || '—') + '</span>' },
     { label: 'Stage', render: r => { const s = _engStage(r.stage); return _engBadge(s.short, s.hex); } },
@@ -25776,8 +25792,8 @@ function engRenderComments(pid) {
   { k: 'doc', label: 'Document', get: r => (docOf(r.deliverableId).docNo || '(unlinked)') }];
   const bar = _engFiltBar('eng_comments', cs, specs), rows = _engFiltApply('eng_comments', cs, specs);
   const tbl = _engCard('Comment Resolution Sheet (CRS)', 'eng_comments', 'Add comment', bar + _engTable('eng_comments', [
-    { label: 'No.', k: 'commentNo', render: r => '<span style="font-family:monospace;font-size:11px">' + _engEsc(r.commentNo || '—') + '</span>' },
-    { label: 'Document', sk: 'x_doc', render: r => { const d = docOf(r.deliverableId); return d.id ? '<a href="javascript:void(0)" onclick="engGoto(\'' + pid + '\',\'drawings\')" style="font-family:monospace;font-size:11px;color:var(--navy);text-decoration:none;white-space:nowrap">' + _engEsc(d.docNo || '') + '</a>' + (r.revRef ? '<div style="font-size:10px;color:var(--text-light)">Rev ' + _engEsc(r.revRef) + '</div>' : '') : '<span style="color:var(--text-light)">—</span>'; } },
+    { label: 'No.', k: 'commentNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r.commentNo || '—') + '</span>' },
+    { label: 'Document', sk: 'x_doc', render: r => { const d = docOf(r.deliverableId); return d.id ? '<a href="javascript:void(0)" onclick="engGoto(\'' + pid + '\',\'drawings\')" style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy);text-decoration:none;white-space:nowrap">' + _engEsc(d.docNo || '') + '</a>' + (r.revRef ? '<div style="font-size:10px;color:var(--text-light)">Rev ' + _engEsc(r.revRef) + '</div>' : '') : '<span style="color:var(--text-light)">—</span>'; } },
     { label: 'Ref', k: 'sheetRef' },
     { label: 'Comment', render: r => '<div style="max-width:290px;font-size:12px">' + _engEsc(r.comment || '') + '</div>' + (r.raisedBy ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.raisedBy + (r.organization ? ' · ' + r.organization : '')) + '</div>' : '') },
     { label: 'Cat', sk: 'severity', render: r => r.severity ? '<span style="font-size:10px;font-weight:800;color:' + _engSevHex(r.severity) + '">' + _engEsc(r.severity) + '</span>' : '<span style="color:var(--text-light)">—</span>' },
@@ -25863,7 +25879,7 @@ function engRenderChanges(pid) {
   const specs = [{ k: 'reason', label: 'Reason' }, { k: 'changeClass', label: 'Class' }, { k: 'discipline', label: 'Discipline' }, { k: 'stage', label: 'Stage' }, { k: 'decision', label: 'Decision' }, { k: 'status', label: 'Status' }, { k: 'clientChargeable', label: 'Chargeable' }];
   const bar = _engFiltBar('eng_changes', cs, specs), rows = _engFiltApply('eng_changes', cs, specs);
   const tbl = _engCard('Engineering Change Register (ECR / ECN)', 'eng_changes', 'Raise a change', bar + _engTable('eng_changes', [
-    { label: 'ECN', k: 'ecnNo', render: r => '<span style="font-family:monospace;font-size:11px;font-weight:700">' + _engEsc(r.ecnNo || '—') + '</span>' },
+    { label: 'ECN', k: 'ecnNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.ecnNo || '—') + '</span>' },
     { label: 'Change', render: r => '<div style="font-weight:600;max-width:270px">' + _engEsc(r.title || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc([r.reason, r.discipline].filter(Boolean).join(' · ')) + '</div>' },
     { label: 'Class', sk: 'changeClass', render: r => r.changeClass ? _engBadge(String(r.changeClass).split('—')[0].trim(), String(r.changeClass).indexOf('Class 1') === 0 ? '#EF4444' : String(r.changeClass).indexOf('Class 2') === 0 ? '#F59E0B' : '#94A3B8') : '<span style="color:var(--text-light)">—</span>' },
     { label: 'Raised', sk: 'raisedDate', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.raisedDate) + '</span><div style="font-size:10px;color:var(--text-light)">' + _engEsc(r.originator || '') + '</div>' },
@@ -25940,7 +25956,7 @@ function engRenderTq(pid) {
   const specs = [{ k: 'direction', label: 'Direction' }, { k: 'party', label: 'Party' }, { k: 'discipline', label: 'Discipline' }, { k: 'priority', label: 'Priority' }, { k: 'impact', label: 'Impact' }, { k: 'status', label: 'Status' }];
   const bar = _engFiltBar('eng_tq', tqs, specs), rows = _engFiltApply('eng_tq', tqs, specs);
   const tbl = _engCard('Technical Query Register', 'eng_tq', 'Raise a query', bar + _engTable('eng_tq', [
-    { label: 'TQ', k: 'tqNo', render: r => '<span style="font-family:monospace;font-size:11px;font-weight:700">' + _engEsc(r.tqNo || '—') + '</span>' },
+    { label: 'TQ', k: 'tqNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.tqNo || '—') + '</span>' },
     { label: 'Subject', render: r => '<div style="font-weight:600;max-width:250px">' + _engEsc(r.subject || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc([r.direction, r.party].filter(Boolean).join(' · ')) + '</div>' },
     { label: 'Question', render: r => '<div style="max-width:280px;font-size:11.5px;color:var(--text-light)">' + _engEsc(r.question || '—') + '</div>' },
     { label: 'Disc', k: 'discipline' },
@@ -25989,7 +26005,7 @@ function engRenderTransmittals(pid) {
   const specs = [{ k: 'toOrg', label: 'To' }, { k: 'purpose', label: 'Purpose' }, { k: 'method', label: 'Method' }, { k: 'status', label: 'Status' }, { k: 'responseRequired', label: 'Response' }];
   const bar = _engFiltBar('eng_transmittals', ts, specs), rows = _engFiltApply('eng_transmittals', ts, specs);
   const tbl = _engCard('Transmittal Register', 'eng_transmittals', 'New transmittal', bar + _engTable('eng_transmittals', [
-    { label: 'No.', k: 'trnNo', render: r => '<span style="font-family:monospace;font-size:11px;font-weight:700">' + _engEsc(r.trnNo || '—') + '</span>' },
+    { label: 'No.', k: 'trnNo', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.trnNo || '—') + '</span>' },
     { label: 'Subject', render: r => '<div style="font-weight:600;max-width:230px">' + _engEsc(r.subject || '') + '</div><div style="font-size:10.5px;color:var(--text-light)">' + _engEsc([r.toOrg, r.toPerson].filter(Boolean).join(' · ')) + '</div>' },
     { label: 'Issued', sk: 'issueDate', render: r => '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.issueDate) + '</span>' },
     { label: 'Purpose', sk: 'purpose', render: r => r.purpose ? _engBadge(String(r.purpose).split('—')[0].trim(), _engIssue(String(r.purpose).split('—')[0].trim()).hex) : '—' },
@@ -26218,7 +26234,7 @@ function engRenderDocuments(pid) {
   ['Design reviews', '08_Design_Reviews_Verification'], ['Comments', '09_Comments_Resolution'], ['Engineering changes', '10_Design_Change_ECR_ECN'],
   ['Technical queries', '11_Technical_Queries'], ['Transmittals', '07_Issued_Transmittals'], ['Stage gates', '12_Stage_Gates_Approvals']];
   const routeCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:8px">Where each register files its attachments</div>' +
-    '<div class="table-wrap"><table style="min-width:420px;font-size:12px"><tbody>' + routing.map(r => '<tr><td style="padding:4px 12px 4px 0;color:var(--text-light)">' + _engEsc(r[0]) + '</td><td style="padding:4px 0;font-family:monospace;font-size:11px">' + _engEsc(r[1]) + '</td></tr>').join('') + '</tbody></table></div></div>';
+    '<div class="table-wrap"><table style="min-width:420px;font-size:12px"><tbody>' + routing.map(r => '<tr><td style="padding:4px 12px 4px 0;color:var(--text-light)">' + _engEsc(r[0]) + '</td><td style="padding:4px 0;font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(r[1]) + '</td></tr>').join('') + '</tbody></table></div></div>';
   _engSet(guide + card + routeCard);
 }
 
@@ -26333,15 +26349,15 @@ async function engRenderPortfolio() {
   const projName = id => { const p = all.find(x => x.id === id); return p ? (p.code || p.name) : ''; };
   const dueCard = soon.length ? '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="card-hdr" style="padding:12px 16px"><div class="card-title">Issues due in the next 30 days (and overdue)</div></div>' +
     '<div class="table-wrap"><table style="min-width:820px"><thead><tr><th>Commission</th><th>Document</th><th>Title</th><th>Discipline</th><th>Planned issue</th><th>Progress</th></tr></thead><tbody>' +
-    soon.map(x => '<tr style="cursor:pointer" onclick="engGoto(\'' + x.d.projectId + '\',\'mdr\')"><td style="font-family:monospace;font-size:11px;font-weight:700">' + _engEsc(projName(x.d.projectId)) + '</td>' +
-      '<td style="font-family:monospace;font-size:11px">' + _engEsc(x.d.docNo || '—') + '</td><td style="max-width:260px">' + _engEsc(x.d.title || '') + '</td><td>' + _engEsc(x.d.discipline || '—') + '</td>' +
+    soon.map(x => '<tr style="cursor:pointer" onclick="engGoto(\'' + x.d.projectId + '\',\'mdr\')"><td style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(projName(x.d.projectId)) + '</td>' +
+      '<td style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(x.d.docNo || '—') + '</td><td style="max-width:260px">' + _engEsc(x.d.title || '') + '</td><td>' + _engEsc(x.d.discipline || '—') + '</td>' +
       '<td style="white-space:nowrap;font-size:11.5px">' + _engFmt(x.d.plannedIssue) + _engOverdueChip(x.d.plannedIssue, false) + '</td>' +
       '<td style="min-width:110px">' + _engCreditCell(x.d) + '</td></tr>').join('') + '</tbody></table></div></div>' : '';
 
   const projRows = health.sort((a, b) => ({ Red: 0, Amber: 1, Grey: 2, Green: 3 })[a.h.rag] - ({ Red: 0, Amber: 1, Grey: 2, Green: 3 })[b.h.rag]).map(x => {
     const p = x.p, pd = _engScopeFor('eng_deliverables', p.id), g = _engProgress(pd), gp = _engPlanned(pd);
     return '<tr style="cursor:pointer" onclick="engOpenProject(\'' + p.id + '\')"><td><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:' + x.h.hex + '" title="' + _tkEscA(x.h.why) + '"></span></td>' +
-      '<td><b style="font-family:monospace;font-size:11px">' + _engEsc(p.code || '') + '</b> ' + _engEsc(p.name || '') + '</td>' +
+      '<td><b style="font-variant-numeric:tabular-nums;font-size:11px">' + _engEsc(p.code || '') + '</b> ' + _engEsc(p.name || '') + '</td>' +
       '<td>' + _engBadge(_engStage(p.currentStage || 'Concept').short, _engStage(p.currentStage || 'Concept').hex) + '</td>' +
       '<td style="min-width:120px">' + _engBar(g.pct, x.h.hex) + '</td>' +
       '<td style="text-align:right;font-weight:700">' + g.pct.toFixed(0) + '%</td>' +
@@ -34516,7 +34532,7 @@ function _renderEmployeeTable(filter) {
     const active = (e.status || 'Active').toLowerCase() !== 'inactive';
     return `<tr>
       <td>${tkAvatar(e,'ava-sm')}</td>
-      <td style="font-family:monospace;font-size:11px;color:var(--text-light)">${D(e.id)}</td>
+      <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--text-light)">${D(e.id)}</td>
       <td><div style="font-weight:700;font-size:13px;white-space:nowrap">${_crmEsc(e.name)}</div><div style="font-size:11px;color:var(--text-light)">${D(e.email)}</div></td>
       <td style="font-size:12px">${D(e.gender)}</td>
       <td style="font-size:12px;white-space:nowrap">${tkFmtDate(e.dob)}</td>
@@ -36593,7 +36609,7 @@ function _viewEmpProfile(id) {
             <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Gender</span><span style="font-weight:600">${dash(e.gender)}</span></div>
             <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Family Status</span><span style="font-weight:600">${dash(e.familyStatus)}</span></div>
             <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">Education</span><span style="font-weight:600;font-size:11px;text-align:right;max-width:150px">${dash(e.education)}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">ID / Passport</span><span style="font-weight:600;font-family:monospace;font-size:11px">${dash(e.personalId)}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="color:var(--text-light)">ID / Passport</span><span style="font-weight:600;font-variant-numeric:tabular-nums;font-size:11px">${dash(e.personalId)}</span></div>
           </div>
         </div>
         <!-- Employment -->
@@ -37751,7 +37767,7 @@ function addMyLocationAsTestZone(btn) {
             <div style="width:34px;height:34px;border-radius:8px;background:#FEF3C7;display:flex;align-items:center;justify-content:center;color:#92400E"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:0px"><path d="M9 3h6M10 3v6l-4.5 8a2 2 0 0 0 1.8 3h9.4a2 2 0 0 0 1.8-3L14 9V3"/></svg></div>
             <div><div style="font-weight:700;font-size:13px">My Location (Testing)</div>
             <div style="font-size:11px;color:var(--text-light)">Temporary · GPS ±${acc}m · radius ${radius}m</div></div></div></td>
-          <td style="font-family:monospace;font-size:11px;color:var(--navy)">${lat.toFixed(5)}°N<br>${lon.toFixed(5)}°E</td>
+          <td style="font-variant-numeric:tabular-nums;font-size:11px;color:var(--navy)">${lat.toFixed(5)}°N<br>${lon.toFixed(5)}°E</td>
           <td><span class="badge" style="background:#fef3c7;color:#92400e">${radius}m</span></td>
           <td>Testing</td>
           <td><button class="toggle on"></button></td>
