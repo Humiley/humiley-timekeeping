@@ -250,7 +250,12 @@ ok('the Status PDF declines instead of asserting',
    /eacMeasurable \? _pmMoney\(ev\.eac\) : 'not computable/.test(src));
 ok('the client-headed progress report declines too',
    /eacMeasurable\n?\s*\? \(_pmMoney\(ev\.eac\)/.test(src) || /eacMeasurable$/m.test(src));
-ok('the Closeout PDF declines too', /\['Final CPI', ev\.eacMeasurable \?/.test(src));
+// The Closeout PDF's "Final CPI" was briefly gated on eacMeasurable — the wrong flag. The two
+// happen to agree today (both require ev > 0 && ac > 0 && bac > 0), but they answer different
+// questions, and a guard that is right by coincidence breaks the moment either definition moves.
+// It now consults cpiMeasurable; tests/evm_index_honesty.js owns that assertion.
+ok('the Closeout PDF gates Final CPI on the CPI flag, not the EAC flag',
+   /\['Final CPI', _pmIndexTxt\(ev\.cpi, ev\.cpiMeasurable\)\]/.test(src));
 
 /* ── and the SPI guard must test the CAUSE, not the symptom ─────────────────── */
 // The first version tested `pv > 0`. PV falls back to EV when there is no baseline and no phased
