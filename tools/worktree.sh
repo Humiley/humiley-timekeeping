@@ -236,9 +236,19 @@ cmd_rm() {
         # So do not believe the number until the COMMIT agrees. The PR records the head it merged,
         # and GitHub keeps that after the remote branch is deleted — which is exactly when the hole
         # would otherwise open, because a live remote makes the divergence check fire first and
-        # masks it. Ancestry rather than equality, because a branch can legitimately collect
-        # commits after its merge (an sw.js bump pushed to an already-merged branch did just that);
-        # those are worth naming, not worth calling the whole branch unlanded.
+        # masks it.
+        #
+        # ANCESTRY, NOT EQUALITY. A branch can sit ahead of the head its PR merged — anyone who
+        # pushes to a branch after the squash lands leaves it there, and every worktree that keeps
+        # working after its PR merges will. Equality would call those unlanded, which is the false
+        # negative this whole change exists to remove, arriving by another route. Ancestry accepts
+        # them and reports the extra commits as their own finding: they are on no PR, so they are
+        # worth reading before anything is deleted.
+        #
+        # (An earlier draft of this comment cited a specific commit as an instance. It was not one
+        # — it was the PR's own head, pushed before the merge and squashed in normally. The shape
+        # is real and worth handling; that example was not, and a false example in a comment is a
+        # trap for whoever trusts it next.)
         if [ -n "$merged_pr" ] && [ "$merged_pr" != "null" ] && [ -n "$pr_head" ]; then
           if ! git -C "$MAIN_REPO" cat-file -e "$pr_head^{commit}" 2>/dev/null; then
             :   # cannot see the commit that PR merged — unverifiable, so keep the branch
