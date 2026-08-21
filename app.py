@@ -1837,14 +1837,18 @@ _INVLINK_HOSTS = ("vnpt-invoice.vn", "vnpt-invoice.com.vn", "vnpt.vn", "meinvoic
 # Content-Security-Policy for the portal HTML — allowlists exactly the CDNs + APIs the app loads.
 _CSP = (
     "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://unpkg.com "
+    # No cdnjs: jsPDF, html2canvas, xlsx and pdf.js are served from /static/vendor/ (see
+    # static/vendor/VENDOR.md). They used to be pulled from that CDN at runtime with no integrity,
+    # so anything it returned ran with full page privileges here. Nothing loads from it now, so the
+    # origin comes out of script-src, connect-src and worker-src rather than being left standing.
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com "
     "https://alcdn.msauth.net https://*.msftauth.net https://login.microsoftonline.com https://maps.googleapis.com; "
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; "
     "font-src 'self' data: https://fonts.gstatic.com; "
     "img-src 'self' data: blob: https:; "
     "connect-src 'self' https://graph.microsoft.com https://login.microsoftonline.com https://*.msftauth.net "
     "https://nominatim.openstreetmap.org https://*.sharepoint.com https://*.webhook.office.com "
-    "https://maps.googleapis.com https://cdnjs.cloudflare.com; "
+    "https://maps.googleapis.com; "
     # frame-src allows blob:/data: so the in-app file preview (tkFilePreview) can render an attached
     # PDF inline in an <iframe> — attachments are held client-side as base64/blob, so the src is a
     # blob:/data: URL, not a same-origin path. These framed docs are opaque-origin (same-origin policy
@@ -1859,7 +1863,7 @@ _CSP = (
     # so this path is reached routinely: every morning, and the first time anyone needs the SharePoint
     # scope. Self-inflicted, by the CSP hardening pass. Microsoft's interactive pages set their own
     # frame-ancestors and still refuse to be framed, so only the prompt=none flow benefits.
-    "worker-src 'self' blob: https://cdnjs.cloudflare.com; "
+    "worker-src 'self' blob:; "
     "frame-src 'self' blob: data: https://login.microsoftonline.com https://*.msftauth.net"
 )
 
@@ -3593,7 +3597,7 @@ class Handler(BaseHTTPRequestHandler):
     def _emit_sec_headers(self, ctype):
         """Baseline security headers for EVERY response, plus CSP + Permissions-Policy on HTML
         documents only (both are meaningless on JSON/static assets). The CSP allowlists exactly the
-        CDNs/APIs the app really loads (cdnjs, MSAL, Graph, Google Fonts, unpkg/Leaflet, OSM/Nominatim,
+        CDNs/APIs the app really loads (MSAL, Graph, Google Fonts, unpkg/Leaflet, OSM/Nominatim,
         SharePoint, Teams webhook) and locks down object-src / base-uri / form-action / frame-ancestors
         — defence-in-depth on top of the output-escaping. 'unsafe-inline'/'unsafe-eval' stay until the
         inline scripts move to nonces (a modularisation follow-up). HSTS is added at the TLS edge by

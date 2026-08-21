@@ -3135,11 +3135,25 @@ window.addEventListener('orientationchange', _setLoginBg);
   const HEAVY = [
     // The brand PDF font, Carlito (~48 KB gzipped, both weights). It rides the lazy path with the
     // export engines because it is useless without jsPDF and unwanted by a check-in-and-leave session.
-    '/static/vendor/tk-font-brand.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+    // SELF-HOSTED, as chart.umd and msal-browser already are. These four used to be pulled from
+    // cdnjs at runtime with no integrity and no crossorigin, so whatever that CDN returned executed
+    // with full page privileges on a portal holding payroll, e-signatures, contracts and HR records.
+    // Verifying them with SRI would have closed the hole; serving them ourselves removes it, and
+    // removes the third-party availability dependency with it — an export no longer fails because
+    // someone's network blocks a CDN. Each file was checked against the sha512 cdnjs publishes for
+    // it before being committed (see static/vendor/VENDOR.md to re-verify or upgrade).
+    //
+    // The hashes stay. They are cheap, they still detect a corrupted or wrongly-swapped file in our
+    // own tree, and being same-origin they need no crossorigin attribute and raise no CORS question.
+    { src: '/static/vendor/tk-font-brand.js' },
+    { src: '/static/vendor/jspdf.umd.min.js',
+      integrity: 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk' },
+    { src: '/static/vendor/html2canvas.min.js',
+      integrity: 'sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H' },
+    { src: '/static/vendor/xlsx.full.min.js',
+      integrity: 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw' },
+    { src: '/static/vendor/pdf.min.js',
+      integrity: 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e' }
   ];
   let _started = null;
   // Returns a PROMISE that settles when the engines have actually arrived.
@@ -3161,10 +3175,13 @@ window.addEventListener('orientationchange', _setLoginBg);
   const LOAD_MS = 12000;
   function loadHeavy() {
     if (_started) return _started;
-    const all = Promise.all(HEAVY.map(src => new Promise(res => {
-      const el = document.createElement('script'); el.src = src; el.async = true;
+    const all = Promise.all(HEAVY.map(item => new Promise(res => {
+      const el = document.createElement('script'); el.src = item.src; el.async = true;
+      // No crossOrigin: these are same-origin now, so the response is not opaque and SRI can hash
+      // it directly. Setting it would be harmless but misleading about where the file comes from.
+      if (item.integrity) { el.integrity = item.integrity; }
       const done = () => {
-        try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+        try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdf.worker.min.js'; } catch (e) {}
         res();
       };
       el.onload = done; el.onerror = done;
@@ -39048,7 +39065,7 @@ document.addEventListener('DOMContentLoaded', () => {
   ['leave-start','leave-end'].forEach(id => { const el=document.getElementById(id); if(el) el.value=today; });
 
   /* pdf.js worker path — set here because pdf.js now loads deferred (ready by DOMContentLoaded) */
-  try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
+  try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/vendor/pdf.worker.min.js'; } catch (e) {}
   /* register Chart.js plugins/defaults now that the deferred Chart.js has loaded */
   try { _registerChartPlugins(); } catch (e) {}
 
