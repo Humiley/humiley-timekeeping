@@ -38,6 +38,9 @@ that the achieved margin is always reported.
 
 import estimating
 from estimating import vnd, MARKUP, MARGIN, apply_profit, achieved_margin
+# The same largest-remainder splitter the estimate distributes preliminaries with. A cash
+# flow that loses a few dong per month to rounding stops reconciling with its own cost.
+from labour_cost import apportion
 
 TRADING = "trading"
 EPC = "epc"
@@ -550,6 +553,248 @@ def pnl(quote, tender):
         "cit": cit, "netProfit": net_profit, "netMarginPct": share(net_profit),
         "vatRecoverable": (quote.get("vatRecoverable") or 0),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   5. CASH FLOW — when the money leaves and when it comes back
+# ══════════════════════════════════════════════════════════════════════════════
+
+# The S-curves the EPC model spends each cost centre over, transcribed from the workbook rather
+# than approximated: civil starts in month 3 and is finished by 12, the cleanroom cannot start
+# until the building is closed in month 9, the production lines follow it, and QC and the
+# warehouse are fitted out last. Consultant fees and overheads run flat across the job.
+#
+# Each curve MUST sum to 1. A curve summing to 0.9 does not look wrong on screen — it silently
+# forecasts spending 90% of a cost centre and flatters the funding requirement by the rest, which
+# is the one number this whole page exists to produce. It is checked, not trusted.
+SPEND_CURVES = {
+    "CIV": [0, 0, .05, .10, .13, .15, .16, .15, .12, .08, .05, .01],
+    "MEP": [0, 0, 0, 0, .04, .06, .10, .13, .15, .16, .14, .10, .08, .04],
+    "BUT": [0, 0, 0, 0, 0, .03, .05, .08, .12, .15, .16, .15, .13, .08, .05],
+    "CUT": [0, 0, 0, 0, 0, .03, .05, .08, .12, .15, .16, .15, .13, .08, .05],
+    "CLR": [0, 0, 0, 0, 0, 0, 0, 0, .05, .10, .13, .16, .16, .14, .12, .08, .04, .02],
+    "OSD": [0, 0, 0, 0, 0, 0, 0, 0, 0, .05, .08, .12, .15, .17, .15, .13, .08, .05, .02],
+    "PFI": [0, 0, 0, 0, 0, 0, 0, 0, 0, .05, .08, .12, .15, .17, .15, .13, .08, .05, .02],
+    "LVP": [0, 0, 0, 0, 0, 0, 0, 0, 0, .05, .08, .12, .15, .17, .15, .13, .08, .05, .02],
+    "SVP": [0, 0, 0, 0, 0, 0, 0, 0, 0, .05, .08, .12, .15, .17, .15, .13, .08, .05, .02],
+    "QCL": [0] * 12 + [.06, .10, .14, .16, .16, .14, .10, .08, .04, .02],
+    "WHS": [0] * 12 + [.06, .10, .14, .16, .16, .14, .10, .08, .04, .02],
+    # The workbook's exact figures, not a rounded reading of them: rounding these to two places
+    # made the curve sum to 1.01, which would have spent 1% more on consultants than the estimate
+    # says they cost.
+    "CON": [.039604, .049505, .059406, .059406, .059406, .059406,
+            .049505, .049505, .049505, .049505, .049505, .049505,
+            .039604, .039604, .039604, .039604, .039604, .039604,
+            .029703, .029703, .019802, .019802, .019802, .019802],
+}
+
+# Trading has no S-curve worth the name: the goods are bought, they arrive, they are installed.
+# Spreading a purchase order over eighteen months would be a picture of a job nobody is doing.
+TRADING_CURVE = [.30, .40, .20, .10]
+
+DEFAULT_MILESTONES = [
+    {"label": "Signing", "pct": 15, "month": 1},
+    {"label": "Design complete", "pct": 25, "month": 6},
+    {"label": "Installation", "pct": 30, "month": 14},
+    {"label": "Mechanical completion", "pct": 20, "month": 18},
+    {"label": "PQ / handover", "pct": 10, "month": 24},
+]
+DEFAULT_MONTHS = 24
+
+
+def spread(amount, curve, months):
+    """One cost centre's money laid out month by month, reconciling to the whole.
+
+    Rounding 24 fractions of a billion dong independently loses money; the parts are made to sum
+    to the total with the same largest-remainder splitter the estimate uses, so the cash flow and
+    the cost can never disagree by a rounding error nobody can find.
+    """
+    curve = [max(0.0, _num(x)) for x in (curve or [])]
+    if not curve or not sum(curve):
+        return [0] * months
+    # A curve longer than the job is COMPRESSED into it, never truncated. Truncating looked
+    # harmless and was not: a cleanroom curve that starts in month 9, on a six-month job, fell
+    # entirely outside the horizon and quietly dropped its whole cost from the forecast — the one
+    # place the money must not go missing. A short job still spends what it spends; it spends it
+    # sooner.
+    weights = {}
+    for i, w in enumerate(curve):
+        slot = min(months - 1, int(i * months / len(curve))) if len(curve) > months else i
+        weights[slot] = weights.get(slot, 0.0) + w
+    parts = apportion(vnd(amount), weights)
+    return [parts.get(i, 0) for i in range(months)]
+
+
+def _curve_for(key, tender, months):
+    custom = (tender.get("spendCurves") or {}).get(key)
+    if isinstance(custom, list) and any(_num(x) for x in custom):
+        return [_num(x) for x in custom]
+    if key in SPEND_CURVES:
+        return SPEND_CURVES[key]
+    return TRADING_CURVE
+
+
+def cash_flow(tender, quote, rollup=None, master=None):
+    """Money out by month, money in by milestone, and the hole in between.
+
+    The number this exists to produce is the PEAK FUNDING REQUIREMENT — the deepest the cumulative
+    position goes before the client's payments catch up. A job can be profitable on every line of
+    the P&L and still be one the company cannot afford to take, and nothing else in this module
+    would say so.
+    """
+    months = int(_num(tender.get("durationMonths"), DEFAULT_MONTHS)) or DEFAULT_MONTHS
+    months = max(1, min(months, 120))
+    a = assumptions(tender.get("assump"))
+    rows, warnings = [], []
+
+    def add(key, label, amount):
+        amount = vnd(amount)
+        if not amount:
+            return
+        curve = _curve_for(key, tender, months)
+        total = sum(_num(x) for x in curve)
+        if abs(total - 1.0) > 0.01:
+            warnings.append("The spend curve for %s adds up to %.0f%%, not 100%% — its cash flow "
+                            "has been scaled to the cost so the two still reconcile." % (label, total * 100))
+        cells = spread(amount, curve, months)
+        assert sum(cells) == amount, "%s cash flow (%d) does not reconcile to its cost (%d)" % (
+            label, sum(cells), amount)
+        rows.append({"key": key, "label": label, "total": amount, "months": cells})
+
+    if rollup:
+        for c in rollup.get("centres", []):
+            add(c["costCentre"], c["label"], c["costVnd"])
+    elif master:
+        add("GOODS", "Goods — landed cost", master.get("landedTotal"))
+
+    fees = project_fees(tender, quote.get("cogs") if quote else 0)
+    for f in fees["lines"]:
+        add("CON", f["label"], f["amount"])
+
+    contract = _num((quote or {}).get("net"))
+    stored = tender.get("milestones")
+    miles = [m for m in (stored if isinstance(stored, list) and stored else DEFAULT_MILESTONES)
+             if _num(m.get("pct"))]
+    pct_total = sum(_num(m.get("pct")) for m in miles)
+    if miles and abs(pct_total - 100.0) > 0.01:
+        warnings.append("The payment milestones add up to %.1f%% of the contract, not 100%% — "
+                        "this forecast collects %s than the quotation is worth."
+                        % (pct_total, "less" if pct_total < 100 else "more"))
+    inflows = []
+    for mm in miles:
+        month = max(1, min(int(_num(mm.get("month"), 1)), months))
+        cells = [0] * months
+        cells[month - 1] = vnd(contract * _frac(mm.get("pct")))
+        inflows.append({"label": str(mm.get("label") or ""), "pct": _num(mm.get("pct")),
+                        "month": month, "total": cells[month - 1], "months": cells})
+
+    out_m = [sum(r["months"][i] for r in rows) for i in range(months)]
+    in_m = [sum(r["months"][i] for r in inflows) for i in range(months)]
+    net = [in_m[i] - out_m[i] for i in range(months)]
+    cum, run = [], 0
+    for v in net:
+        run += v
+        cum.append(run)
+    peak = min(cum) if cum else 0
+    return {
+        "months": months,
+        "outflows": rows, "inflows": inflows,
+        "outTotal": sum(out_m), "inTotal": sum(in_m),
+        "outByMonth": out_m, "inByMonth": in_m,
+        "netByMonth": net, "cumulative": cum,
+        # Negative means the company is out of pocket. Reported as a positive requirement because
+        # that is how it will be asked for: "how much do we need to fund this job".
+        "peakFunding": -peak if peak < 0 else 0,
+        "peakMonth": (cum.index(peak) + 1) if cum else 0,
+        "closingPosition": cum[-1] if cum else 0,
+        "warnings": warnings,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   6. RISK — what it is worth, against what has been set aside for it
+# ══════════════════════════════════════════════════════════════════════════════
+
+RISK_BANDS = [(0.05, "Very low"), (0.15, "Low"), (0.30, "Medium"), (0.60, "High"), (1.01, "Very high")]
+
+
+def risk_band(p):
+    p = _frac(p) if _num(p) > 1 else _num(p)
+    for edge, label in RISK_BANDS:
+        if p <= edge:
+            return label
+    return "Very high"
+
+
+def risk_register(risks, tender=None, quote=None):
+    """Expected value of each risk, and whether the contingency actually covers the total.
+
+    Probability times impact is arithmetic anybody can do. The judgement this adds is the
+    comparison the workbook only hints at: an expected risk value of a million against a
+    contingency of four hundred thousand is not a register, it is a warning, and it should say so
+    on the same screen rather than in somebody's head.
+    """
+    out = []
+    for r in risks or []:
+        p = _num(r.get("probability"))
+        p = p / 100.0 if p > 1 else p            # 30 and 0.3 both mean 30%
+        impact = vnd(r.get("impact"))
+        ev = vnd(impact * p)
+        out.append({
+            "id": r.get("id"), "code": str(r.get("code") or "").strip(),
+            "risk": str(r.get("risk") or r.get("riskEn") or "").strip(),
+            "category": str(r.get("category") or "").strip(),
+            "owner": str(r.get("owner") or "").strip(),
+            "status": str(r.get("status") or "Open").strip(),
+            "mitigation": str(r.get("mitigation") or "").strip(),
+            "probability": round(p * 100, 2), "band": risk_band(p),
+            "impact": impact, "expected": ev,
+        })
+    out.sort(key=lambda x: -x["expected"])
+    open_rows = [r for r in out if r["status"].lower() not in ("closed", "retired")]
+    expected = sum(r["expected"] for r in open_rows)
+    worst = sum(r["impact"] for r in open_rows)
+
+    contingency = 0
+    if tender is not None and quote is not None:
+        a = assumptions(tender.get("assump"))
+        contingency = vnd(_num(quote.get("cogs")) * _frac(a.get("contingencyPct")))
+    return {
+        "rows": out, "openCount": len(open_rows),
+        "expectedValue": expected, "worstCase": worst,
+        "contingency": contingency,
+        "shortfall": max(0, expected - contingency),
+        # Covered is a fact about two numbers, not an opinion — but it is the fact somebody
+        # signing the tender most needs on the screen in front of them.
+        "covered": contingency >= expected,
+    }
+
+
+SENSITIVITY_STEPS = [-5.0, 0.0, 5.0, 10.0, 15.0]
+
+
+def sensitivity(quote, tender, target_margin=12.0):
+    """What a cost overrun does to the margin, and at what point the job stops being worth taking.
+
+    Costs are what move on a tender; the price has already been given to the customer. So the
+    price is held and the cost is flexed, which is the honest direction — flexing both would let
+    an overrun be absorbed by a price rise nobody has agreed to.
+    """
+    rev = _num(quote.get("net"))
+    base = _num(quote.get("cogs")) + project_fees(tender, quote.get("cogs"))["total"]
+    rows = []
+    for step in SENSITIVITY_STEPS:
+        cost = vnd(base * (1.0 + step / 100.0))
+        profit = vnd(rev - cost)
+        margin = round(profit / rev * 100, 2) if rev else 0.0
+        rows.append({"step": step, "cost": cost, "profit": profit, "marginPct": margin,
+                     "vsTarget": round(margin - target_margin, 2),
+                     "verdict": ("On target" if margin >= target_margin
+                                 else ("Thin" if margin > 0 else "Loss-making"))})
+    # The overrun that takes the margin to zero: the number to quote when somebody asks how much
+    # room there is.
+    breakeven = round((rev - base) / base * 100, 2) if base else 0.0
+    return {"rows": rows, "targetMarginPct": target_margin, "breakEvenOverrunPct": breakeven}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
