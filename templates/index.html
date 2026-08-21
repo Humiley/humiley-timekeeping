@@ -3133,9 +3133,9 @@ window.addEventListener('orientationchange', _setLoginBg);
 <script>
 (function () {
   const HEAVY = [
-    // The Vietnamese PDF font (~48 KB gzipped, both weights). It rides the lazy path with the export
-    // engines because it is useless without jsPDF and unwanted by a check-in-and-leave session.
-    '/static/vendor/tk-font-vn.js',
+    // The brand PDF font, Carlito (~48 KB gzipped, both weights). It rides the lazy path with the
+    // export engines because it is useless without jsPDF and unwanted by a check-in-and-leave session.
+    '/static/vendor/tk-font-brand.js',
     'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
@@ -10110,6 +10110,31 @@ const _LH = {
   logoWhite: HUMILEY_LOGO_WHITE_B64   // reverse mark, for dark backgrounds
 };
 const _LH_NAVY = [32, 80, 144], _LH_GREEN = [0, 176, 96], _LH_GREY = [92, 100, 112], _LH_DARK = [31, 41, 55], _LH_HAIR = [207, 214, 226];
+
+/* THE BRAND TYPE SCALE, read out of the official template (humiley-brand/assets/document/
+   HML_Document_EN.docx): body is 11pt, secondary text 9, captions 7, headings 13 and 14, title 26.
+   Nothing else is a brand size.
+
+   The PDF code had drifted to twenty-two different sizes across 144 call sites — 6.5, 7.3, 7.4,
+   7.6, 7.8, 8.2, 8.6, 8.8, 10.5 among them. Sizes that fine apart are not a decision anybody made;
+   they accumulate one document at a time, and the result is that two documents from the same
+   company do not look like each other.
+
+   The bands below map the three visual ROLES onto brand steps rather than snapping each value to
+   its nearest neighbour: 8.5 and 9 sit half a point apart and do the same job, so they have to land
+   on the same step — nearest-neighbour would have split that cluster down the middle. Ordering is
+   preserved: nothing that was smaller than something else becomes larger than it. */
+const _LH_TYPE = { caption: 7, small: 9, body: 11, h2: 13, h1: 14, title: 26 };
+function _brandSize(v) {
+  const n = Number(v);
+  if (!isFinite(n) || n <= 0) return _LH_TYPE.small;
+  if (n <= 8) return _LH_TYPE.caption;
+  if (n <= 9.5) return _LH_TYPE.small;
+  if (n <= 11) return _LH_TYPE.body;
+  if (n <= 13) return _LH_TYPE.h2;
+  if (n <= 20) return _LH_TYPE.h1;
+  return _LH_TYPE.title;
+}
 let _lhCur = {};   // remembers the current doc's title/code so _brandFooter can label itself without touching call sites
 function _lhDateStr() { return 'Ho Chi Minh City, ' + tkFmtDateObj(new Date()); }
 /* The master logo PNG is 820×287 but is drawn at only ~40-46mm, and jsPDF re-decodes the full-size
@@ -10206,7 +10231,7 @@ function _brandHeader(doc, opts) {
   /* company block — name / address / contact on the left, full-colour logo on the right */
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, _LH_NAVY);
   doc.text(_LH.name, M, 15.5);
-  _pdfFont(doc, 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, _LH_GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, _LH_GREY);
   doc.text(_LH.addr, M, 20);
   doc.text(_LH.web + '   ·   ' + _LH.email, M, 23.6);
   try { doc.addImage(_lhLogo(), 'PNG', W - M - 46, 9.5, 46, 16.1, 'HMLLOGO', 'FAST'); } catch (e) {}
@@ -10214,13 +10239,13 @@ function _brandHeader(doc, opts) {
   let y = 30;
   if (opts.title) {
     y = 34;
-    _pdfFont(doc, 'bold'); doc.setFontSize(15); doc.setTextColor.apply(doc, _LH_GREEN);
+    _pdfFont(doc, 'bold'); doc.setFontSize(14); doc.setTextColor.apply(doc, _LH_GREEN);
     doc.text(_pdfSafe(String(opts.title)), W / 2, y, { align: 'center' });
     y += 5.6;
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_GREY);
     const sub = _pdfSafe([opts.subtitle, _lhDateStr()].filter(Boolean).join('   ·   '));
     if (sub) doc.text(sub, W / 2, y, { align: 'center' });
-    if (opts.confidential) { doc.setTextColor(192, 57, 43); doc.setFontSize(7.5); doc.text('CONFIDENTIAL', W / 2, y + 4.2, { align: 'center' }); y += 4.2; }
+    if (opts.confidential) { doc.setTextColor(192, 57, 43); doc.setFontSize(7); doc.text('CONFIDENTIAL', W / 2, y + 4.2, { align: 'center' }); y += 4.2; }
     y += 4;
   }
   return y;
@@ -10231,10 +10256,10 @@ function _brandFooter(doc, pageNo, total, docCode, footLabel) {
   const code = docCode || _lhCur.code || 'HML-DOC';
   doc.setDrawColor.apply(doc, _LH_HAIR); doc.setLineWidth(0.3); doc.line(M, fy, W - M, fy);
   try { doc.addImage(_lhLogo(), 'PNG', M, fy + 1.7, 17, 5.95, 'HMLLOGO', 'FAST'); } catch (e) {}
-  _pdfFont(doc, 'bold'); doc.setFontSize(8); doc.setTextColor.apply(doc, _LH_NAVY);
+  _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor.apply(doc, _LH_NAVY);
   doc.text(label, W / 2, fy + 5, { align: 'center' });
   doc.text('Page ' + pageNo + ' / ' + total, W - M, fy + 3.6, { align: 'right' });
-  _pdfFont(doc, 'normal'); doc.setFontSize(6.8); doc.setTextColor.apply(doc, _LH_GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, _LH_GREY);
   doc.text('[ ' + code + '   Rev 01.0 ]', W - M, fy + 7.4, { align: 'right' });
 }
 /* Slice a tall source canvas onto A4 pages, each carrying the Humiley letterhead. */
@@ -10335,8 +10360,8 @@ function _payslipPDF(e, c, period) {
   doc.setFontSize(9); doc.setTextColor.apply(doc, GREY);
   doc.text('Working days: ' + c.workingDays + '     Unpaid days: ' + c.unpaidDays + '     KPI factor: ' + c.pf.toFixed(2) + '×     PADR: ' + c.rating + '/5', M, y); y += 8;
   // ── helpers ──
-  const sec = (t) => { _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY); doc.text(t, M, y); y += 5; };
-  const row = (k, v, color) => { _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(80, 80, 80); doc.text(k, M + 3, y); _pdfFont(doc, 'bold'); if (color) doc.setTextColor.apply(doc, color); else doc.setTextColor.apply(doc, DARK); doc.text(v, W - M, y, { align: 'right' }); y += 6; };
+  const sec = (t) => { _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, NAVY); doc.text(t, M, y); y += 5; };
+  const row = (k, v, color) => { _pdfFont(doc, 'normal'); doc.setFontSize(11); doc.setTextColor(80, 80, 80); doc.text(k, M + 3, y); _pdfFont(doc, 'bold'); if (color) doc.setTextColor.apply(doc, color); else doc.setTextColor.apply(doc, DARK); doc.text(v, W - M, y, { align: 'right' }); y += 6; };
   const rule = () => { doc.setDrawColor(225, 228, 232); doc.setLineWidth(0.3); doc.line(M, y - 3, W - M, y - 3); };
   // ── Earnings ──
   sec('EARNINGS — Salary 3P (per HML-CB-001)');
@@ -10364,12 +10389,12 @@ function _payslipPDF(e, c, period) {
   // ── Net pay band ──
   doc.setFillColor.apply(doc, NAVY); doc.roundedRect(M, y, W - 2 * M, 16, 2, 2, 'F');
   doc.setTextColor(255, 255, 255); _pdfFont(doc, 'normal'); doc.setFontSize(11); doc.text('NET PAY', M + 6, y + 10);
-  _pdfFont(doc, 'bold'); doc.setFontSize(16); doc.text(fmt(c.net), W - M - 6, y + 11, { align: 'right' }); y += 24;
+  _pdfFont(doc, 'bold'); doc.setFontSize(14); doc.text(fmt(c.net), W - M - 6, y + 11, { align: 'right' }); y += 24;
   // ── Footer ──
-  _pdfFont(doc, 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY);
   doc.text('Employer also contributes ' + fmt(c.erTotal) + ' (SI/HI/UI + 2% Trade Union). Total cost to company ' + fmt(c.employerCost) + '.', M, y); y += 4;
   doc.text('Confidential · generated per HML-CB-FRM-016 · please report any discrepancy within 5 working days.', M, y);
-  doc.setFontSize(8); doc.setTextColor(160, 165, 172); doc.text('Humiley Group Inc. — People & Workplace Portal', W / 2, 288, { align: 'center' });
+  doc.setFontSize(7); doc.setTextColor(160, 165, 172); doc.text('Humiley Group Inc. — People & Workplace Portal', W / 2, 288, { align: 'center' });
   return doc;
 }
 function _payslipFilename(e, period) { return 'Humiley_Payslip_' + (e.name || 'employee').replace(/\s+/g, '_') + '_' + (period || '').replace(/\s+/g, '_') + '.pdf'; }
@@ -10614,7 +10639,7 @@ function _assetHandoverPDF(e, devs, mgr) {
   const today = tkFmtDateObj(new Date());
   // ── Humiley letterhead (shared Track B engine) ──
   y = _brandHeader(doc, { title: 'ASSET & EQUIPMENT HANDOVER', subtitle: 'BM.HR-02-06  ·  Onboarding Package', docCode: 'BM.HR-02-06' });
-  _pdfFont(doc, 'normal'); doc.setFontSize(8); doc.setTextColor.apply(doc, GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY);
   doc.text('Asset & Equipment Handover Protocol  ·  Ban giao Tai san & Trang bi', W / 2, y, { align: 'center' }); y += 6;
   // ── Employee info box ──
   doc.setDrawColor(225, 228, 232); doc.setFillColor(247, 249, 252); doc.setLineWidth(0.3);
@@ -10622,7 +10647,7 @@ function _assetHandoverPDF(e, devs, mgr) {
   const cX = [M + 4, M + 64, M + 124];
   const field = (x, yy, lab, val) => {
     _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
-    _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
   };
   field(cX[0], y + 6, 'Employee / Nhan vien', e.name);
   field(cX[1], y + 6, 'Employee ID / Ma NV', e.id);
@@ -10631,15 +10656,15 @@ function _assetHandoverPDF(e, devs, mgr) {
   field(cX[2], y + 14.5, 'Manager / Quan ly', mgr ? mgr.name : D(e.managerEmail));
   y += 27;
   // ── Assets table ──
-  _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY);
+  _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, NAVY);
   doc.text('ASSETS & EQUIPMENT ISSUED  ·  Tai san & Trang bi ban giao', M, y); y += 4;
   const cols = [{ t: 'Item / Tai san', w: 34 }, { t: 'Make / Model', w: 46 }, { t: 'Asset Tag / Ma', w: 30 }, { t: 'S/N', w: 34 }, { t: 'Condition / Tinh trang', w: 34 }];
   const tW = cols.reduce((a, c) => a + c.w, 0);
   doc.setFillColor.apply(doc, NAVY); doc.rect(M, y, tW, 7, 'F');
-  _pdfFont(doc, 'bold'); doc.setFontSize(7.3); doc.setTextColor(255, 255, 255);
+  _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
   let hx = M; cols.forEach(c => { doc.text(c.t, hx + 1.6, y + 4.6); hx += c.w; }); y += 7;
   const rows = devs.length ? devs : [{}];
-  _pdfFont(doc, 'normal'); doc.setFontSize(8);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7);
   rows.forEach((d, i) => {
     const cells = [D(d.category), D(d.name), D(d.id), D(d.serial), (d.note && String(d.note).trim()) ? String(d.note) : 'New / Good'];
     const wrapped = cells.map((v, ci) => doc.splitTextToSize(String(v), cols[ci].w - 3));
@@ -10653,9 +10678,9 @@ function _assetHandoverPDF(e, devs, mgr) {
   });
   y += 7;
   // ── Acknowledgement ──
-  _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, NAVY);
+  _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, NAVY);
   doc.text('ACKNOWLEDGEMENT  ·  Cam ket', M, y); y += 5;
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(70, 75, 82);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(70, 75, 82);
   ['I have received the items listed above in good working condition.',
    'I will use these assets only for Company business and protect them from loss or unauthorized access.',
    'I will report any loss, theft, or damage to IT and HSE within 24 hours.',
@@ -10667,14 +10692,14 @@ function _assetHandoverPDF(e, devs, mgr) {
   const half = (W - 2 * M - 12) / 2;
   const sig = (x, en, vn, nm) => {
     doc.setDrawColor(120, 128, 138); doc.setLineWidth(0.4); doc.line(x, y + 16, x + half, y + 16);
-    _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, DARK); doc.text(D(nm), x, y + 15);
-    _pdfFont(doc, 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK); doc.text(D(nm), x, y + 15);
+    _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY);
     doc.text(en, x, y + 20); doc.text(vn, x, y + 23.5); doc.text('Signature & Date / Chu ky & Ngay', x, y + 28);
   };
   sig(M, 'Received by (Employee)', 'Nguoi nhan (Nhan vien)', e.name);
   sig(M + half + 12, 'Issued by (IT / HR)', 'Ban giao (IT / HR)', '');
   // ── Footer ──
-  doc.setFontSize(7.5); doc.setTextColor(150, 156, 164);
+  doc.setFontSize(7); doc.setTextColor(150, 156, 164);
   doc.text(_LH.name + '  ·  ' + _LH.web + '  ·  BM.HR-02-06 Rev 01.0', W / 2, 290, { align: 'center' });
   return doc;
 }
@@ -11098,14 +11123,14 @@ async function _onbAckPdf(d, me, ack, sigImg) {
   doc.roundedRect(M, y, W - 2 * M, 21, 1.5, 1.5, 'FD');
   const f = (x, yy, lab, val) => {
     _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY); doc.text(lab, x, yy);
-    _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK); doc.text(D(val), x, yy + 4.6);
   };
   f(M + 4, y + 6, 'Employee / Nhan vien', me.name); f(M + 64, y + 6, 'Employee ID / Ma NV', me.id);
   f(M + 124, y + 6, 'Date / Ngay', tkFmtDate(String(ack.ts || '').slice(0, 10)));
   f(M + 4, y + 14.5, 'Document / Tai lieu', d.code || d.title);
   f(M + 64, y + 14.5, 'Version / Phien ban', d.version); f(M + 124, y + 14.5, 'Department / Bo phan', me.dept);
   y += 28;
-  _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, DARK);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, DARK);
   doc.splitTextToSize('I confirm that I have received and read "' + D(d.title) + '"' +
     (d.version ? ' (version ' + d.version + ')' : '') + ', that I understand it, and that I agree to follow it. ' +
     'Toi xac nhan da nhan, da doc va hieu tai lieu nay va dong y tuan thu.', W - 2 * M)
@@ -11113,7 +11138,7 @@ async function _onbAckPdf(d, me, ack, sigImg) {
   y += 8;
   try { doc.addImage(sigImg, 'PNG', M, y, 62, 22); } catch (e) { }
   doc.setDrawColor(180, 186, 196); doc.line(M, y + 24, M + 62, y + 24);
-  _pdfFont(doc, 'normal'); doc.setFontSize(7.5); doc.setTextColor.apply(doc, GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, GREY);
   doc.text('Signature / Chu ky  ·  ' + D(me.name), M, y + 28);
   doc.text('Signed electronically in the Humiley Portal  ·  ' + String(ack.ts || ''), M, y + 33);
   const out = doc.output('datauristring');
@@ -11323,11 +11348,17 @@ async function _combineToPdf(drawPage1, files) {
    rather than transliteration. `_brandFooter` uppercased the document title and drew it without
    sanitising at all, so every document was affected in its footer.
 
-   Be Vietnam Pro (SIL OFL, already vendored for the Procurement app) is subsetted by
-   tools/make_vn_font.py and registered on first use. `_pdfSafe` then becomes a passthrough; it
-   stays a transliterator only as a fallback, so an export still succeeds — badly but legibly — if
-   the font asset fails to load. */
-const TK_VN_FONT_NAME = 'BeVietnamPro';
+   Carlito (SIL OFL) is subsetted by tools/make_pdf_font.py and registered on first use.
+   `_pdfSafe` then becomes a passthrough; it stays a transliterator only as a fallback, so an export
+   still succeeds — badly but legibly — if the font asset fails to load.
+
+   WHY CARLITO AND NOT BE VIETNAM PRO, which held this slot first: the brand documents set their
+   Normal style to Calibri, so anything we send a customer in a different face is off-brand however
+   well it renders. Calibri is proprietary and cannot ship in a public repository; Carlito is the
+   metric-compatible open substitute made for that substitution — same 2048 units/em and the same
+   advance widths, so a line takes the space it would in Calibri. It covers the Vietnamese blocks
+   completely, so it satisfies the reason Be Vietnam Pro was chosen as well as the brand. */
+const TK_BRAND_FONT_NAME = 'Carlito';
 let _vnFontState = 'idle';          // idle | unavailable
 
 /* Whether the font CAN be drawn, decided from the asset alone. This deliberately does not depend on
@@ -11336,7 +11367,7 @@ let _vnFontState = 'idle';          // idle | unavailable
    export of a session transliterate while later ones did not. */
 function _vnFontUsable() {
   return _vnFontState !== 'unavailable' &&
-    !!(window.TK_VN_FONT && window.TK_VN_FONT.regular && window.TK_VN_FONT.bold);
+    !!(window.TK_BRAND_FONT && window.TK_BRAND_FONT.regular && window.TK_BRAND_FONT.bold);
 }
 
 /* Registration is per-document — jsPDF keeps its virtual file system on the instance. */
@@ -11344,11 +11375,11 @@ function _pdfVnFontReady(doc) {
   if (!doc || !_vnFontUsable()) return false;
   try {
     const list = doc.getFontList ? doc.getFontList() : {};
-    if (!list[TK_VN_FONT_NAME]) {
-      doc.addFileToVFS(TK_VN_FONT_NAME + '-Regular.ttf', window.TK_VN_FONT.regular);
-      doc.addFont(TK_VN_FONT_NAME + '-Regular.ttf', TK_VN_FONT_NAME, 'normal');
-      doc.addFileToVFS(TK_VN_FONT_NAME + '-Bold.ttf', window.TK_VN_FONT.bold);
-      doc.addFont(TK_VN_FONT_NAME + '-Bold.ttf', TK_VN_FONT_NAME, 'bold');
+    if (!list[TK_BRAND_FONT_NAME]) {
+      doc.addFileToVFS(TK_BRAND_FONT_NAME + '-Regular.ttf', window.TK_BRAND_FONT.regular);
+      doc.addFont(TK_BRAND_FONT_NAME + '-Regular.ttf', TK_BRAND_FONT_NAME, 'normal');
+      doc.addFileToVFS(TK_BRAND_FONT_NAME + '-Bold.ttf', window.TK_BRAND_FONT.bold);
+      doc.addFont(TK_BRAND_FONT_NAME + '-Bold.ttf', TK_BRAND_FONT_NAME, 'bold');
     }
     return true;
   } catch (e) {
@@ -11362,7 +11393,7 @@ function _pdfVnFontReady(doc) {
    swaps the family for one that can actually draw the characters. */
 function _pdfFont(doc, weight) {
   const w = (weight === 'bold' || weight === 'bolditalic') ? 'bold' : 'normal';
-  if (_pdfVnFontReady(doc)) { try { doc.setFont(TK_VN_FONT_NAME, w); return; } catch (e) {} }
+  if (_pdfVnFontReady(doc)) { try { doc.setFont(TK_BRAND_FONT_NAME, w); return; } catch (e) {} }
   try { doc.setFont('helvetica', w); } catch (e) {}
 }
 
@@ -11378,21 +11409,21 @@ function _reqFormPage1(doc, title, rows, meta) {
   const W = 210, M = 16; let y = 20;
   const NAVY = [32, 80, 144], GREY = [92, 100, 112], DARK = [31, 41, 55];
   try { doc.addImage(_lhLogo(), 'PNG', M, y - 6, 38, 13, 'HMLLOGO', 'FAST'); } catch (e) {}
-  _pdfFont(doc, 'normal'); doc.setFontSize(7.6); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
+  _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
   doc.text(_LH.name || 'Humiley Group Inc.', W - M, y - 2, { align: 'right' });
   y += 14; doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.8); doc.line(M, y, W - M, y); y += 9;
-  _pdfFont(doc, 'bold'); doc.setFontSize(15); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
+  _pdfFont(doc, 'bold'); doc.setFontSize(14); doc.setTextColor(NAVY[0], NAVY[1], NAVY[2]);
   doc.text(title, M, y); y += 7;
   if (meta) { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(GREY[0], GREY[1], GREY[2]); doc.text(String(meta), M, y); y += 6; }
   y += 4;
   (rows || []).forEach(([l, v]) => {
-    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(GREY[0], GREY[1], GREY[2]); doc.text(_pdfSafe(l), M, y);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(GREY[0], GREY[1], GREY[2]); doc.text(_pdfSafe(l), M, y);
     _pdfFont(doc, 'bold'); doc.setTextColor(DARK[0], DARK[1], DARK[2]);
     doc.text(doc.splitTextToSize(_pdfSafe(v == null || v === '' ? '—' : v), W - M - (M + 58)), M + 58, y);
     y += 7;
   });
   y += 4; doc.setDrawColor(220, 225, 232); doc.setLineWidth(0.3); doc.line(M, y, W - M, y); y += 6;
-  _pdfFont(doc, 'italic'); doc.setFontSize(8); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
+  _pdfFont(doc, 'italic'); doc.setFontSize(7); doc.setTextColor(GREY[0], GREY[1], GREY[2]);
   doc.text('Supporting bills / photos follow on the next page(s).', M, y);
 }
 
@@ -12334,7 +12365,7 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
   // phone was a stack of captions where the actual invoices and bills should have been.
   try { await tkEnsureExportLibs(); } catch (e) {}
   const W = 210, M = 12, PW = W - 2 * M;
-  const banner = () => { doc.addPage(); doc.setFillColor(32, 80, 144); doc.rect(0, 0, W, 12, 'F'); doc.setTextColor(255, 255, 255); _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.text(_pdfSafe(heading || ''), M, 8); doc.setTextColor(0, 0, 0); };
+  const banner = () => { doc.addPage(); doc.setFillColor(32, 80, 144); doc.rect(0, 0, W, 12, 'F'); doc.setTextColor(255, 255, 255); _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.text(_pdfSafe(heading || ''), M, 8); doc.setTextColor(0, 0, 0); };
   const isPdf = /^data:application\/pdf/i.test(dataUri) || /\.pdf(\?|$)/i.test(String(heading || ''));
   try {
     if (isPdf && window.pdfjsLib) {
@@ -12358,7 +12389,7 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
       // That is the "still nothing consolidated" everyone was looking at.
       if (!_drew) {
         banner();
-        doc.setFontSize(10);
+        doc.setFontSize(11);
         doc.text(_pdfSafe(_t('The stored file has no document pages — the original upload did not survive the merge.')), M, 26);
         return false;
       }
@@ -12367,9 +12398,9 @@ async function _appendFileToPdf(doc, dataUri, heading, skipFirst) {
       const img = await new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = dataUri; });
       banner();
       if (img) { doc.addImage(dataUri, M, 16, PW, Math.min(PW * (img.height / img.width), 270)); return true; }
-      doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not render).'), M, 26); return false;
-    } else { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached to the record.'), M, 26); return false; }
-  } catch (e) { banner(); doc.setFontSize(10); doc.text(_pdfSafe((heading || '') + ' — attached (could not embed).'), M, 26); return false; }
+      doc.setFontSize(11); doc.text(_pdfSafe((heading || '') + ' — attached (could not render).'), M, 26); return false;
+    } else { banner(); doc.setFontSize(11); doc.text(_pdfSafe((heading || '') + ' — attached to the record.'), M, 26); return false; }
+  } catch (e) { banner(); doc.setFontSize(11); doc.text(_pdfSafe((heading || '') + ' — attached (could not embed).'), M, 26); return false; }
   // Returns whether the document was really EMBEDDED. A caption page saying a file exists is not the
   // file, and the consolidated dossier has to be able to tell the difference — otherwise "all docs
   // included" is measured by page count rather than by content.
@@ -13112,9 +13143,9 @@ function _finVoucherDoc(kind, rec) {
   y += 4;
   const row = (l, v, big) => {
     if (y > 268) return;                                     // hard stop before the footer band
-    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, _LH_GREY);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_GREY);
     doc.text(_pdfSafe(l), M + 2, y);
-    _pdfFont(doc, 'bold'); doc.setFontSize(big ? 13 : 10);
+    _pdfFont(doc, 'bold'); doc.setFontSize(big ? _LH_TYPE.h2 : _LH_TYPE.body);
     if (big) doc.setTextColor.apply(doc, _LH_NAVY); else doc.setTextColor.apply(doc, _LH_DARK);
     const tx = doc.splitTextToSize(_pdfSafe(v == null || v === '' ? '—' : v), W - M - 80);
     doc.text(tx, M + 62, y);
@@ -13167,15 +13198,15 @@ function _finVoucherDoc(kind, rec) {
     const cx = M + cw * i + cw / 2;
     doc.setDrawColor(154, 164, 178); doc.setLineWidth(0.3); doc.line(M + cw * i + 8, y, M + cw * (i + 1) - 8, y);
     _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK); doc.text(r[0], cx, y + 4.6, { align: 'center' });
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_GREY);
     if (r[1]) doc.text(_pdfSafe(r[1]), cx, y + 9, { align: 'center' });
   });
   y += 15;
   /* electronic signatures (Part 11 audit trail) */
   if (rec.signatures && rec.signatures.length) {
     doc.setDrawColor(238, 241, 244); doc.setLineWidth(0.25); doc.line(M, y, W - M, y); y += 5;
-    _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_NAVY); doc.text('Electronic signatures', M, y); y += 4.4;
-    _pdfFont(doc, 'normal'); doc.setFontSize(7.8); doc.setTextColor.apply(doc, _LH_GREY);
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_NAVY); doc.text('Electronic signatures', M, y); y += 4.4;
+    _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor.apply(doc, _LH_GREY);
     rec.signatures.forEach(s => {
       const line = '· ' + (s.name || '') + ' — ' + (s.meaning || '') + ' — ' + String(s.ts || '').replace('T', ' ').replace('Z', ' UTC') + (s.method ? ' — ' + s.method : '');
       doc.splitTextToSize(_pdfSafe(line), W - 2 * M - 2).forEach(tl => { if (y < 283) { doc.text(tl, M + 2, y); y += 3.8; } });
@@ -14155,7 +14186,7 @@ function tkInvExportPDF() {
   let y = (typeof _brandHeader === 'function') ? _brandHeader(doc, { title: 'INVOICE TRACKING REGISTER', subtitle: 'hd@humiley.com', docCode: 'HML-FIN-INV' }) : 30;
   y += 2;
   const cols = [['Date', 20], ['Supplier / Seller', 62], ['Inv no', 20], ['Serial', 18], ['Before tax', 26], ['VAT', 22], ['Total (after tax)', 28], ['Type', 26], ['Sender', 40]];
-  const drawHead = () => { let x = M; doc.setFillColor.apply(doc, (typeof _LH_NAVY !== 'undefined' ? _LH_NAVY : [32, 80, 144])); doc.rect(M, y, W - 2 * M, 7, 'F'); _pdfFont(doc, 'bold'); doc.setFontSize(7.4); doc.setTextColor(255, 255, 255); cols.forEach(c => { const right = /tax|VAT|Total/.test(c[0]); doc.text(_pdfSafe(c[0]), right ? x + c[1] - 2 : x + 1.5, y + 4.7, { align: right ? 'right' : 'left' }); x += c[1]; }); y += 7; };
+  const drawHead = () => { let x = M; doc.setFillColor.apply(doc, (typeof _LH_NAVY !== 'undefined' ? _LH_NAVY : [32, 80, 144])); doc.rect(M, y, W - 2 * M, 7, 'F'); _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255); cols.forEach(c => { const right = /tax|VAT|Total/.test(c[0]); doc.text(_pdfSafe(c[0]), right ? x + c[1] - 2 : x + 1.5, y + 4.7, { align: right ? 'right' : 'left' }); x += c[1]; }); y += 7; };
   drawHead();
   _pdfFont(doc, 'normal');
   inv.forEach(i => {
@@ -19756,19 +19787,19 @@ function crmQuotePDF(deal) {
   const cols = [8, 16, 74, 12, 14, 28, 28];
   const heads = ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)'];
   let y = _brandHeader(doc, { title: 'Sales Quotation', subtitle: m.ref }) + 1;
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_GREY);
   doc.text(m.dateStr, W - M, y, { align: 'right' }); doc.text('Ref: ' + m.ref, W - M, y + 4.5, { align: 'right' });
   doc.setTextColor.apply(doc, _LH_DARK); doc.setFontSize(9);
   doc.text('To:', M, y);
   _pdfFont(doc, 'bold'); doc.text(String(deal.contact || 'Sir / Madam'), M + 8, y);
   _pdfFont(doc, 'normal'); doc.text(String(deal.company || ''), M + 8, y + 4.5);
   y += 12;
-  _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, _LH_NAVY);
+  _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_NAVY);
   doc.text(doc.splitTextToSize('RE:  Sales Quotation No. ' + m.ref + ' — ' + (deal.title || ''), W - 2 * M), M, y); y += 8;
   _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK);
   doc.text('Dear Sir / Madam,', M, y); y += 5;
   doc.text(doc.splitTextToSize("Thank you for your enquiry. We are pleased to submit Humiley's quotation, reference " + m.ref + ", as set out below.", W - 2 * M), M, y); y += 9;
-  const drawHead = () => { let x = M; doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(M, y, W - 2 * M, 8, 'F'); _pdfFont(doc, 'bold'); doc.setFontSize(7.6); doc.setTextColor(255, 255, 255); heads.forEach((h, i) => { const right = i >= 3; doc.text(h, right ? x + cols[i] - 2 : x + 2, y + 5.3, right ? { align: 'right' } : undefined); x += cols[i]; }); y += 8; _pdfFont(doc, 'normal'); doc.setTextColor.apply(doc, _LH_DARK); doc.setFontSize(8.5); };
+  const drawHead = () => { let x = M; doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(M, y, W - 2 * M, 8, 'F'); _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255); heads.forEach((h, i) => { const right = i >= 3; doc.text(h, right ? x + cols[i] - 2 : x + 2, y + 5.3, right ? { align: 'right' } : undefined); x += cols[i]; }); y += 8; _pdfFont(doc, 'normal'); doc.setTextColor.apply(doc, _LH_DARK); doc.setFontSize(9); };
   drawHead();
   m.lines.forEach((ln, idx) => {
     const dh = doc.splitTextToSize(String(ln.desc || ''), cols[2] - 4); const rh = Math.max(8, dh.length * 4 + 3);
@@ -19783,18 +19814,18 @@ function crmQuotePDF(deal) {
   });
   y += 2;
   const tw = cols[5] + cols[6]; const tx = W - M - tw;
-  const totRow = (lab, val, bold) => { _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 9 : 8.5); if (bold) { doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(tx, y, tw, 7, 'F'); doc.setTextColor(255, 255, 255); } else { doc.setTextColor.apply(doc, _LH_DARK); } doc.text(lab, tx + 2, y + 5); doc.text(val, W - M - 2, y + 5, { align: 'right' }); if (!bold) { doc.setDrawColor(225, 229, 234); doc.line(tx, y + 7, W - M, y + 7); } y += 7; };
+  const totRow = (lab, val, bold) => { _pdfFont(doc, bold ? 'bold' : 'normal'); doc.setFontSize(_LH_TYPE.small); if (bold) { doc.setFillColor.apply(doc, _LH_NAVY); doc.rect(tx, y, tw, 7, 'F'); doc.setTextColor(255, 255, 255); } else { doc.setTextColor.apply(doc, _LH_DARK); } doc.text(lab, tx + 2, y + 5); doc.text(val, W - M - 2, y + 5, { align: 'right' }); if (!bold) { doc.setDrawColor(225, 229, 234); doc.line(tx, y + 7, W - M, y + 7); } y += 7; };
   totRow('Subtotal', money(m.subtotal));
   if (m.discount) totRow('Project Discount', '-' + money(m.discount));
   totRow(m.vatStated ? 'VAT ' + m.vatLabel : 'VAT — ' + m.vatLabel, m.vatStated ? money(m.vat) : '—');
   totRow(m.grandLabel, money(m.grand), true);
   y += 8;
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_DARK);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK);
   doc.text(doc.splitTextToSize('This quotation is valid until ' + m.validStr + ' and is quoted EXW. Prices are in Vietnamese Dong (VND). Payment terms: 30 days net unless otherwise agreed.', W - 2 * M), M, y); y += 9;
   doc.text(doc.splitTextToSize('We trust this proposal meets your requirements and would be glad to clarify any technical or commercial point.', W - 2 * M), M, y); y += 11;
   doc.text('Yours sincerely,', M, y); y += 9;
-  _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, _LH_DARK); doc.text(m.signName, M, y); y += 4.5;
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor.apply(doc, _LH_GREY);
+  _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_DARK); doc.text(m.signName, M, y); y += 4.5;
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor.apply(doc, _LH_GREY);
   doc.text(m.signTitle + ', Humiley Engineering & Solutions', M, y); y += 4.5;
   doc.text('E  ' + _LH.email + '        T  ' + _LH.tel, M, y);
   const tp = doc.internal.getNumberOfPages();
@@ -20237,7 +20268,7 @@ async function pmSyncMembers(pid) {
 /* ---- Letterhead PDFs: Project Charter + Status Report (native jsPDF) ---- */
 function _pmPdfTxt(s) { return String(s == null ? '' : s).replace(/₫/g, 'VND ').replace(/→/g, ' to ').replace(/[—–]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"'); }
 function _pmDoc() { const J = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF; return J ? new J('p', 'mm', 'a4') : null; }
-function _pmRow(doc, label, val, y) { const M = 15; _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104); doc.text(_pmPdfTxt(String(label).toUpperCase()), M, y); _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(30, 36, 44); const lines = doc.splitTextToSize(_pmPdfTxt(val == null || val === '' ? '-' : val), 120); doc.text(lines, 70, y); return y + Math.max(6, lines.length * 5); }
+function _pmRow(doc, label, val, y) { const M = 15; _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(90, 96, 104); doc.text(_pmPdfTxt(String(label).toUpperCase()), M, y); _pdfFont(doc, 'normal'); doc.setFontSize(11); doc.setTextColor(30, 36, 44); const lines = doc.splitTextToSize(_pmPdfTxt(val == null || val === '' ? '-' : val), 120); doc.text(lines, 70, y); return y + Math.max(6, lines.length * 5); }
 function pmCharterPDF(pid) {
   const p = _pmProj(pid); if (!p) return; const doc = _pmDoc(); if (!doc) { toast('PDF library not loaded', 'warn'); return; }
   let y = _brandHeader(doc, { title: 'Project Charter', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CHR', confidential: true });
@@ -20253,8 +20284,8 @@ function pmCharterPDF(pid) {
   ['Inclusions', p.scopeInclusions, 0], ['Exclusions', p.scopeExclusions, 0],
   ['Success Criteria', p.successCriteria || p.acceptanceCriteriaProject, 1],
   ['Assumptions', p.scopeAssumptions || p.assumptions, 1], ['Constraints', p.constraints, 0]].filter(b => b[2] || b[1]).forEach(b => {
-    _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(b[0], M, y); y += 5;
-    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt(b[1] || '-'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(b[0], M, y); y += 5;
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt(b[1] || '-'), 180); doc.text(L, M, y); y += L.length * 4.6 + 4;
     if (y > 250) { _brandFooter(doc, 1, 1, 'HML-PMC-CHR'); doc.addPage(); y = _brandHeader(doc, { title: 'Project Charter (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CHR' }); }
   });
   _brandFooter(doc, 1, 1, 'HML-PMC-CHR');
@@ -20267,19 +20298,19 @@ function pmStatusPDF(pid) {
   y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Manager', p.manager], ['Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall Progress', sr.pct + '%'], ['Health (RAG)', _pmEffectiveRag(p) + (p.ragReason ? '  —  ' + p.ragReason : '')]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; const M = 15; doc.setDrawColor(220, 224, 230); doc.line(M, y, 195, y); y += 6;
-  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
   const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
   const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
   [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', _pmMoney(ev.eac)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
-  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
   const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
   const openRfis = _pmScopeFor('pm_rfis', p.id).filter(r => r.status === 'Open');
   const chs = _pmScopeFor('pm_changes', p.id);
   const chPend = chs.filter(c => (c.decision || 'Pending') === 'Pending'), chAppr = chs.filter(c => c.decision === 'Approved');
   const chCost = chAppr.reduce((s, c) => s + (+c.impactCost || 0), 0), chDays = chAppr.reduce((s, c) => s + (+c.impactScheduleDays || 0), 0);
   [['Deliverables Accepted', sr.accepted + ' / ' + sr.total], ['Milestones (overdue)', tr.milestones + ' (' + tr.overdueMs + ')'], ['Open Risks (High+)', rr.open + ' (' + rr.high + ')'], ['Open Issues', openIssues.length], ['Open RFIs', openRfis.length], ['Change Requests', chs.length + ' total  ·  ' + chPend.length + ' pending  ·  ' + chAppr.length + ' approved'], ['Approved change impact', _pmMoney(chCost) + '   ·   ' + chDays + ' days']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
-  const sectionT = t => { if (y > 250) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } y += 2; _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
+  const sectionT = t => { if (y > 250) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } y += 2; _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Status Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-STA' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   const topRisks = openRisks.slice().sort((a, b) => (+b.score || 0) - (+a.score || 0)).slice(0, 5);
   if (topRisks.length) { sectionT('Top Open Risks'); topRisks.forEach(r => bullet((r.riskNo ? r.riskNo + '  ' : '') + (r.title || '') + '  —  score ' + (r.score || 0) + ' (' + _pmRiskBand(+r.score || 0).band + ')' + (r.owner ? ', owner ' + r.owner : '') + (+r.costImpact ? ', EMV ' + _pmMoney(_pmEmv(r)) : ''))); }
@@ -20303,7 +20334,7 @@ async function pmCloseoutPDF(pid) {
   let y = _brandHeader(doc, { title: 'Project Closeout Report', subtitle: _pmPdfTxt((p.code || p.name) + '  -  ' + _pmFmt(_pmToday())), docCode: 'HML-PMC-CLO', confidential: true });
   y += 2; const ev = _pmEvm(p), sr = pmScopeRollup(p.id);
   [['Project', (p.code ? p.code + ' — ' : '') + (p.name || '')], ['Client / Account', p.account || p.client], ['Project Manager', p.manager], ['Sponsor', p.sponsor], ['Contract Type / Value', (p.contractType || '') + (p.contractValue ? '  ·  ' + _pmMoney(p.contractValue) : '')], ['Final Status / Phase', (p.status || '') + (p.phase ? '  ·  ' + p.phase : '')], ['Overall % Complete', sr.pct + '%'], ['Final Health (RAG)', _pmEffectiveRag(p)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
-  const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
+  const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
   [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
@@ -20317,7 +20348,7 @@ async function pmCloseoutPDF(pid) {
   if (lessons.length) { sect('Lessons Learned'); lessons.slice(0, 8).forEach(l => bullet((l.title || '') + (l.recommendation ? '  —  ' + l.recommendation : ''))); }
   y += 10; if (y > 250) { doc.addPage(); y = 40; }
   doc.setDrawColor(154, 164, 178); const cw = 180 / 2;
-  [['Project Manager', p.manager || ''], ['Sponsor / Client', p.sponsor || '']].forEach((s, i) => { const cx = M + cw * i; doc.line(cx + 4, y + 12, cx + cw - 8, y + 12); _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); doc.text(s[0], cx + 4, y + 17); _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(120, 128, 138); if (s[1]) doc.text(_pmPdfTxt(s[1]), cx + 4, y + 21); });
+  [['Project Manager', p.manager || ''], ['Sponsor / Client', p.sponsor || '']].forEach((s, i) => { const cx = M + cw * i; doc.line(cx + 4, y + 12, cx + cw - 8, y + 12); _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); doc.text(s[0], cx + 4, y + 17); _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(120, 128, 138); if (s[1]) doc.text(_pmPdfTxt(s[1]), cx + 4, y + 21); });
   const tot = doc.internal.getNumberOfPages(); for (let i = 1; i <= tot; i++) { doc.setPage(i); _brandFooter(doc, i, tot, 'HML-PMC-CLO'); }
   doc.save('Closeout_' + (p.code || p.name || 'project').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
   try { tkAudit('PM Closeout report exported', p.name || '', p.code || ''); } catch (e) { }
@@ -20488,8 +20519,8 @@ function pmReport(pid, mode) {
   const np = () => { doc.addPage(); y = _brandHeader(doc, { title: 'Project Progress Report — ' + R.kind + ' (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: DOC }); };
   const sect = t => { if (y > 262) np(); y += 3; _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(_pmPdfTxt(t), M, y); doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.7); doc.line(M, y + 1.6, M + 20, y + 1.6); y += 7; };
   const line = (l, v) => { if (y > 274) np(); y = _pmRow(doc, l, v, y); };
-  const sub = t => { if (y > 274) np(); _pdfFont(doc, 'bold'); doc.setFontSize(9.5); doc.setTextColor(70, 76, 84); doc.text(_pmPdfTxt(t), M, y); y += 5; };
-  const bullet = t => { if (y > 278) np(); _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + t), 180); doc.text(L, M + 2, y); y += L.length * 4.6 + 1.6; };
+  const sub = t => { if (y > 274) np(); _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(70, 76, 84); doc.text(_pmPdfTxt(t), M, y); y += 5; };
+  const bullet = t => { if (y > 278) np(); _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + t), 180); doc.text(L, M + 2, y); y += L.length * 4.6 + 1.6; };
   const none = () => { if (y > 278) np(); _pdfFont(doc, 'italic'); doc.setFontSize(9); doc.setTextColor(140, 146, 154); doc.text('None in this period.', M + 2, y); y += 6; };
 
   sect('1. Project Snapshot');
@@ -26382,7 +26413,7 @@ function _engDoc() { return _pmDoc(); }
 function _engPdfRow(doc, label, val, y) { return _pmRow(doc, label, val, y); }
 function _engPdfSection(doc, t, y, code, title, sub) {
   if (y > 252) { _brandFooter(doc, 1, 1, code); doc.addPage(); y = _brandHeader(doc, { title: title, subtitle: sub, docCode: code }) + 2; }
-  y += 2; _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144); doc.text(_pmPdfTxt(t), 15, y);
+  y += 2; _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144); doc.text(_pmPdfTxt(t), 15, y);
   return y + 6;
 }
 /* A simple paginating table writer, shared by the register exports. Column widths are in mm and
@@ -26392,13 +26423,13 @@ function _engPdfTable(doc, opts) {
   const cols = opts.cols, rows = opts.rows;
   let y = opts.y, page = opts.page || 1;
   const header = () => {
-    _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 96, 104);
+    _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(90, 96, 104);
     let x = M; cols.forEach(c => { doc.text(_pmPdfTxt(c.label), x, y); x += c.w; });
     y += 2; doc.setDrawColor(200, 206, 214); doc.line(M, y, M + W, y); y += 4;
   };
   header();
   rows.forEach(r => {
-    _pdfFont(doc, 'normal'); doc.setFontSize(7.5); doc.setTextColor(35, 41, 49);
+    _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(35, 41, 49);
     const cells = cols.map(c => doc.splitTextToSize(_pmPdfTxt(c.get(r) == null || c.get(r) === '' ? '-' : String(c.get(r))), c.w - 2));
     const h = Math.max.apply(null, cells.map(x => x.length)) * 3.3 + 1.6;
     if (y + h > (land ? 190 : 278)) {
@@ -26441,7 +26472,7 @@ function engDesignPlanPDF(pid) {
   y = _engPdfSection(doc, 'Scope of design services (8.3.2 a-b)', y, 'HML-ENG-DDP', 'Design & Development Plan', p.code || p.name);
   _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54);
   [['Objectives', p.objectives], ['Scope', p.scopeSummary], ['Exclusions', p.exclusions], ['Assumptions', p.assumptions]].filter(b => String(b[1] || '').trim()).forEach(b => {
-    _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.text(_pmPdfTxt(b[0]), 15, y); y += 4;
+    _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.text(_pmPdfTxt(b[0]), 15, y); y += 4;
     _pdfFont(doc, 'normal'); doc.setFontSize(9);
     const L = doc.splitTextToSize(_pmPdfTxt(b[1]), 180); doc.text(L, 15, y); y += L.length * 4.3 + 3;
     if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Design & Development Plan (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-ENG-DDP' }) + 2; }
@@ -26471,7 +26502,7 @@ function engDesignPlanPDF(pid) {
   y = t2.y + 3;
 
   y = _engPdfSection(doc, 'Deliverables and verification (8.3.2 d, 8.3.4)', y, 'HML-ENG-DDP', 'Design & Development Plan', p.code || p.name);
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(90, 96, 104);
   const prog = _engProgress(dels);
   doc.text(_pmPdfTxt(dels.length + ' deliverables registered  ·  ' + prog.done + ' complete  ·  earned progress ' + prog.pct.toFixed(1) +
     '%  ·  see the Master Deliverable Register for the full list and each item\'s verification method.'), 15, y);
@@ -26488,7 +26519,7 @@ function engMdrPDF(pid) {
   const doc = o.doc; let y = o.y;
   const dels = _engScopeFor('eng_deliverables', pid).sort((a, b) => String(a.docNo || '').localeCompare(String(b.docNo || '')));
   const prog = _engProgress(dels), plan = _engPlanned(dels);
-  _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(90, 96, 104);
   doc.text(_pmPdfTxt(dels.length + ' documents  ·  earned progress ' + prog.pct.toFixed(1) + '%  ·  planned to date ' +
     (plan.pct == null ? 'n/a' : plan.pct.toFixed(1) + '%') + '  ·  ' + prog.done + ' complete  ·  ' + _engOverdue(dels).length + ' overdue'), 15, y);
   y += 7;
@@ -26582,12 +26613,12 @@ function engTransmittalPDF(id) {
   });
   y = tt.y + 8;
   if (y > 235) { doc.addPage(); y = _brandHeader(doc, { title: 'Document Transmittal (cont.)', subtitle: _pmPdfTxt(t.trnNo || ''), docCode: 'HML-ENG-TRN' }) + 6; }
-  _pdfFont(doc, 'bold'); doc.setFontSize(8.5); doc.setTextColor(90, 96, 104);
+  _pdfFont(doc, 'bold'); doc.setFontSize(9); doc.setTextColor(90, 96, 104);
   doc.text('ISSUED BY', 15, y); doc.text('RECEIVED BY', 110, y); y += 5;
-  _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(30, 36, 44);
+  _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(30, 36, 44);
   doc.text(_pmPdfTxt(t.issuedBy || ((TK.user || {}).name || '')), 15, y);
   doc.text(_pmPdfTxt(t.acknowledgedBy || ''), 110, y); y += 4;
-  doc.setFontSize(8); doc.setTextColor(120, 126, 134);
+  doc.setFontSize(7); doc.setTextColor(120, 126, 134);
   doc.text(_pmPdfTxt(t.issuedOn ? _engFmt(t.issuedOn) : (t.issuedBy ? '' : 'draft - not yet signed')), 15, y);
   doc.text(_pmPdfTxt(t.acknowledgedOn ? _engFmt(t.acknowledgedOn) : 'Name / date / signature'), 110, y);
   y += 12; doc.setDrawColor(200, 206, 214); doc.line(15, y, 90, y); doc.line(110, y, 185, y);
@@ -28015,11 +28046,11 @@ function _qtFoot(doc, page, total, ref) {
   const y = 281;
   doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.2); doc.line(_QT_ML, y - 4, 210 - _QT_MR, y - 4);
   try { doc.addImage(_lhLogo(), 'PNG', _QT_ML, y - 2.5, 16, 5.6, 'HMLLOGO', 'FAST'); } catch (e) { }
-  _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(32, 80, 144);
+  _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(32, 80, 144);
   doc.text('L E T T E R H E A D', 105, y + 1, { align: 'center' });
-  doc.setFontSize(8);
+  doc.setFontSize(7);
   doc.text(_pmPdfTxt('Page ' + page + ' / ' + total), 210 - _QT_MR, y - 0.5, { align: 'right' });
-  _pdfFont(doc, 'italic'); doc.setFontSize(6.5); doc.setTextColor(92, 100, 112);
+  _pdfFont(doc, 'italic'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
   doc.text(_pmPdfTxt('[ ' + (ref || '') + '  Rev 01.0 ]'), 210 - _QT_MR, y + 3, { align: 'right' });
 }
 
@@ -28051,14 +28082,14 @@ function tndQuotePDF() {
   y += 20;
 
   /* place, date, reference */
-  _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  _pdfFont(doc, 'normal'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
   doc.text(_pmPdfTxt(d.placeDate || ''), 210 - _QT_MR, y, { align: 'right' });
   _pdfFont(doc, 'italic'); doc.setFontSize(9);
   doc.text(_pmPdfTxt('Ref: ' + (d.quoteNo || '')), 210 - _QT_MR, y + 4.6, { align: 'right' });
   y += 13;
 
   /* addressee */
-  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
   doc.text(_pmPdfTxt(d.salutationTo || ''), _QT_ML, y);
   _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
   doc.text(_pmPdfTxt(client.name || ''), _QT_ML, y + 5);
@@ -28068,14 +28099,14 @@ function tndQuotePDF() {
   /* the RE: line between two rules */
   doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.2);
   doc.line(_QT_ML, y, 210 - _QT_MR, y);
-  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
   const re = doc.splitTextToSize(_pmPdfTxt('RE:   ' + (d.subject || '')), _QT_TW);
   doc.text(re, _QT_ML, y + 5);
   y += 5 + re.length * 4.6;
   doc.line(_QT_ML, y, 210 - _QT_MR, y);
   y += 7;
 
-  _pdfFont(doc, 'normal'); doc.setFontSize(10); doc.setTextColor(31, 41, 55);
+  _pdfFont(doc, 'normal'); doc.setFontSize(11); doc.setTextColor(31, 41, 55);
   doc.text(_pmPdfTxt(d.salutation || ''), _QT_ML, y); y += 5.5;
   const intro = doc.splitTextToSize(_pmPdfTxt(d.intro || ''), _QT_TW);
   doc.text(intro, _QT_ML, y); y += intro.length * 4.6 + 5;
@@ -28084,7 +28115,7 @@ function tndQuotePDF() {
   const heads = ['#', 'Item', 'Description', 'Qty', 'Unit', 'Unit Price (VND)', 'Amount (VND)'];
   const drawHead = () => {
     doc.setFillColor(32, 80, 144); doc.rect(_QT_ML, y, _QT_TW, 7, 'F');
-    _pdfFont(doc, 'bold'); doc.setFontSize(7.5); doc.setTextColor(255, 255, 255);
+    _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255);
     let x = _QT_ML;
     heads.forEach((h, i) => { doc.text(_pmPdfTxt(h), x + W[i] / 2, y + 4.6, { align: 'center' }); x += W[i]; });
     y += 7;
@@ -28096,7 +28127,7 @@ function tndQuotePDF() {
     W.forEach(w => { doc.rect(x, y, w, h); x += w; });
   };
   (d.lines || []).forEach((l, i) => {
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9);
     const desc = doc.splitTextToSize(_pmPdfTxt(l.desc || ''), W[2] - 4);
     const h = Math.max(7, desc.length * 4 + 3);
     if (y + h > 258) { y = newPage(); drawHead(); }
@@ -28134,12 +28165,12 @@ function tndQuotePDF() {
     const baseline = y + (grand ? 6 : 4.8);
     _pdfFont(doc, 'bold');
     doc.setTextColor.apply(doc, grand ? [255, 255, 255] : [32, 80, 144]);
-    doc.setFontSize(grand ? 11 : 9);
+    doc.setFontSize(grand ? _LH_TYPE.body : _LH_TYPE.small);
     const amount = money(value), right = _QT_ML + _QT_TW - 2;
     doc.text(amount, right, baseline, { align: 'right' });
     // The label ends clear of the amount wherever the amount actually starts — not at the column
     // rule, which a billion-dong figure overruns.
-    doc.setFontSize(grand ? 10.5 : 8.5);
+    doc.setFontSize(grand ? _LH_TYPE.body : _LH_TYPE.small);
     const amountLeft = right - doc.getTextWidth(amount);
     doc.text(_pmPdfTxt(label), Math.min(x0 + labelW - 3, amountLeft - 3), baseline, { align: 'right' });
     if (pctVal != null) doc.text(_pmPdfTxt(_tndNum(pctVal, 0) + '%'), x0 + labelW + W[5] / 2, y + 4.8, { align: 'center' });
@@ -28152,7 +28183,7 @@ function tndQuotePDF() {
   y += 6;
 
   if (d.amountInWords) {
-    _pdfFont(doc, 'italic'); doc.setFontSize(8.5); doc.setTextColor(92, 100, 112);
+    _pdfFont(doc, 'italic'); doc.setFontSize(9); doc.setTextColor(92, 100, 112);
     const w = doc.splitTextToSize(_pmPdfTxt('Amount in words: ' + d.amountInWords), _QT_TW);
     doc.text(w, _QT_ML, y); y += w.length * 4 + 3;
   }
@@ -28160,7 +28191,7 @@ function tndQuotePDF() {
   /* the closing paragraphs — the part a dispute is read against, so never truncated */
   [d.termsParagraph, d.closing, d.contactLine].forEach(par => {
     if (!par) return;
-    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(31, 41, 55);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
     const t = doc.splitTextToSize(_pmPdfTxt(par), _QT_TW);
     if (y + t.length * 4.4 > 262) { y = newPage(); }
     doc.text(t, _QT_ML, y); y += t.length * 4.4 + 4;
@@ -28172,17 +28203,17 @@ function tndQuotePDF() {
   y += 22;
   doc.setDrawColor(0, 176, 96); doc.setLineWidth(0.8);
   doc.line(_QT_ML, y, _QT_ML + 78, y); doc.setLineWidth(0.2);
-  _pdfFont(doc, 'bold'); doc.setFontSize(10); doc.setTextColor(32, 80, 144);
+  _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
   doc.text(_pmPdfTxt((sig.name || '').toUpperCase()), _QT_ML, y + 5.6);
   _pdfFont(doc, 'italic'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
   doc.text(_pmPdfTxt(sig.title || ''), _QT_ML, y + 10.4);
   if (d.signerContact) {
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9);
     doc.text(_pmPdfTxt(d.signerContact), _QT_ML, y + 15);
   }
   y += 22;
   if (d.encl) {
-    _pdfFont(doc, 'italic'); doc.setFontSize(8); doc.setTextColor(92, 100, 112);
+    _pdfFont(doc, 'italic'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
     doc.text(_pmPdfTxt('Encl.   ' + d.encl), _QT_ML, y);
   }
 
@@ -29626,12 +29657,12 @@ function _ahuPdfBreak(o, need) {
 }
 function _ahuPdfHead(o, t) {
   _ahuPdfBreak(o, 14);
-  o.y += 2; _pdfFont(o.doc, 'bold'); o.doc.setFontSize(10); o.doc.setTextColor(32, 80, 144);
+  o.y += 2; _pdfFont(o.doc, 'bold'); o.doc.setFontSize(11); o.doc.setTextColor(32, 80, 144);
   o.doc.text(_pdfSafe(t), 15, o.y); o.y += 5.5;
 }
 function _ahuPdfLine(o, label, val) {
   _ahuPdfBreak(o, 7);
-  _pdfFont(o.doc, 'normal'); o.doc.setFontSize(8.6); o.doc.setTextColor(90, 96, 106);
+  _pdfFont(o.doc, 'normal'); o.doc.setFontSize(9); o.doc.setTextColor(90, 96, 106);
   o.doc.text(_pdfSafe(String(label)), 15, o.y);
   o.doc.setTextColor(28, 32, 38); _pdfFont(o.doc, 'bold');
   const txt = o.doc.splitTextToSize(_pdfSafe(String(val == null || val === '' ? '—' : val)), o.land ? 180 : 110);
@@ -29672,7 +29703,7 @@ async function ahuDossierPDF() {
   _ahuPdfHead(o, 'Route — every step, who signed it, and what was measured');
   (d.steps || []).forEach(s => {
     _ahuPdfBreak(o, 12);
-    _pdfFont(o.doc, 'bold'); o.doc.setFontSize(8.8); o.doc.setTextColor(28, 32, 38);
+    _pdfFont(o.doc, 'bold'); o.doc.setFontSize(9); o.doc.setTextColor(28, 32, 38);
     o.doc.text(_pdfSafe(s.code + '  ' + (s.title || '')), 15, o.y);
     _pdfFont(o.doc, 'normal'); o.doc.setTextColor(90, 96, 106);
     o.doc.text(_pdfSafe((s.status || '') + (s.signedBy ? '   ' + s.signedBy : '') +
@@ -29680,7 +29711,7 @@ async function ahuDossierPDF() {
     o.y += 4.4;
     (s.checks || []).forEach(c => {
       _ahuPdfBreak(o, 6);
-      o.doc.setFontSize(8.2); o.doc.setTextColor(110, 116, 126);
+      o.doc.setFontSize(9); o.doc.setTextColor(110, 116, 126);
       o.doc.text(_pdfSafe('   ' + (c.label || c.key)), 15, o.y);
       o.doc.setTextColor(c.status === 'fail' ? 190 : 60, c.status === 'fail' ? 30 : 70, 40);
       o.doc.text(_pdfSafe(String(c.message || c.status || '')), 120, o.y);
@@ -37121,15 +37152,15 @@ async function tkPackPdf() {
 
   (r.sections || []).forEach((s, i) => {
     if (y > H - 40) { doc.addPage(); y = 24; }
-    _pdfFont(doc, 'bold'); doc.setFontSize(10.5); doc.setTextColor(32, 80, 144);
+    _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor(32, 80, 144);
     doc.text(_pdfSafe((i + 1) + '. ' + s.label), M, y); y += 5;
-    _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(120, 128, 140);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(120, 128, 140);
     doc.splitTextToSize(_pdfSafe(s.basis || ''), W - M * 2).forEach(l => { doc.text(l, M, y); y += 3.6; });
-    _pdfFont(doc, 'normal'); doc.setFontSize(9.5); doc.setTextColor(31, 41, 55);
+    _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(31, 41, 55);
     doc.splitTextToSize(_pdfSafe(s.statement || ''), W - M * 2).forEach(l => { doc.text(l, M, y); y += 4.4; });
     (s.findings || []).slice(0, 12).forEach(f => {
       if (y > H - 30) { doc.addPage(); y = 24; }
-      _pdfFont(doc, 'normal'); doc.setFontSize(8.5); doc.setTextColor(183, 121, 31);
+      _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(183, 121, 31);
       doc.splitTextToSize(_pdfSafe('· ' + f), W - M * 2 - 4).forEach(l => { doc.text(l, M + 4, y); y += 3.8; });
     });
     y += 4;
@@ -37548,12 +37579,12 @@ async function _qdPdf(doc, save) {
   const emp = doc.employee || {}, er = doc.employer || {};
   const page = (need) => { if (y + (need || 6) > 268) { p.addPage(); y = 20; } };
   const txt = (s, x, size, weight, colour, align) => {
-    _pdfFont(p, weight || 'normal'); p.setFontSize(size || 9);
+    _pdfFont(p, weight || 'normal'); p.setFontSize(_brandSize(size));
     p.setTextColor.apply(p, colour || [31, 41, 55]);
     p.text(_pdfSafe(String(s == null ? '' : s)), x, y, align ? { align: align } : undefined);
   };
   const para = (s, x, size, weight) => {
-    _pdfFont(p, weight || 'normal'); p.setFontSize(size || 9); p.setTextColor(31, 41, 55);
+    _pdfFont(p, weight || 'normal'); p.setFontSize(_brandSize(size)); p.setTextColor(31, 41, 55);
     p.splitTextToSize(_pdfSafe(String(s || '')), W - M * 2).forEach(l => { page(); p.text(l, x, y); y += 4.8; });
   };
 
@@ -37565,7 +37596,7 @@ async function _qdPdf(doc, save) {
   p.setDrawColor(32, 80, 144); p.setLineWidth(0.4);
   p.line(W - M - 52, y - 2.6, W - M, y - 2.6);
   y += 8;
-  _pdfFont(p, 'normal'); p.setFontSize(8.5); p.setTextColor(92, 100, 112);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(92, 100, 112);
   p.text(_pdfSafe('TP. Hồ Chí Minh, ngày ' + (doc.issuedOn || '')), W - M, y, { align: 'right' });
   y += 10;
 
@@ -37580,19 +37611,19 @@ async function _qdPdf(doc, save) {
   (doc.articles || []).forEach(a => {
     page(12);
     para('Điều ' + a.no + '. ' + (a.textVn || ''), M, 9, 'bold');
-    if (a.text) { _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+    if (a.text) { _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
       p.splitTextToSize(_pdfSafe(a.text), W - M * 2).forEach(l => { page(); p.text(l, M, y); y += 3.8; }); }
     y += 2.5;
   });
 
   y = Math.max(y + 6, 228); page();
   txt('Nơi nhận:', M, 8.5, 'bold', [31, 41, 55]); y += 4.2;
-  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(92, 100, 112);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(92, 100, 112);
   (doc.recipients || []).forEach(r => { p.text(_pdfSafe('- ' + r), M, y); y += 3.6; });
   const sy = Math.max(y - ((doc.recipients || []).length * 3.6) - 4, 232);
   _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
   p.text(_pdfSafe((er.repTitle || 'GIÁM ĐỐC').toUpperCase()), W - M - 46, sy);
-  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
   p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 46, sy + 4);
   _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
   p.text(_pdfSafe(er.repName || ''), W - M - 46, sy + 24);
@@ -37731,13 +37762,13 @@ async function _xnPdf(doc, save) {
   let y = _brandHeader(p, HDR) + 6;
   const er = doc.employer || {};
   if (doc.addressedTo) {
-    _pdfFont(p, 'bold'); p.setFontSize(9.5); p.setTextColor(32, 80, 144);
+    _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
     p.text(_pdfSafe('Kính gửi: ' + doc.addressedTo), M, y); y += 7;
   }
-  _pdfFont(p, 'normal'); p.setFontSize(9.5); p.setTextColor(31, 41, 55);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
   p.splitTextToSize(_pdfSafe(doc.bodyVn || ''), W - M * 2).forEach(l => { p.text(l, M, y); y += 5.2; });
   y += 2;
-  _pdfFont(p, 'normal'); p.setFontSize(8); p.setTextColor(120, 128, 140);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
   p.splitTextToSize(_pdfSafe(doc.body || ''), W - M * 2).forEach(l => { p.text(l, M, y); y += 4; });
   y += 5;
   (doc.rows || []).forEach(r => {
@@ -37748,14 +37779,14 @@ async function _xnPdf(doc, save) {
     y += 5.2;
   });
   y += 6;
-  _pdfFont(p, 'normal'); p.setFontSize(8.5); p.setTextColor(92, 100, 112);
+  _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(92, 100, 112);
   p.splitTextToSize(_pdfSafe('Giấy xác nhận này được cấp theo đề nghị của người lao động, dùng cho mục đích: '
     + (doc.purposeLabelVn || '—') + '.'), W - M * 2).forEach(l => { p.text(l, M, y); y += 4.4; });
 
   y = Math.max(y + 10, 232);
   _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
   p.text(_pdfSafe((er.repTitle || 'GIÁM ĐỐC').toUpperCase()), W - M - 50, y);
-  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
   p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 50, y + 4);
   _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
   p.text(_pdfSafe(er.repName || ''), W - M - 50, y + 24);
@@ -38055,9 +38086,9 @@ async function _ctContractPdf(doc, save) {
   // of content, so a particular never ends up titled on one page and answered on the next.
   const page = (need) => { if (y + (need || 6) > 268) { p.addPage(); y = _brandHeader(p, HDR) + 4; } };
   const heading = (code, vn, en) => {
-    page(14); _pdfFont(p, 'bold'); p.setFontSize(10); p.setTextColor(32, 80, 144);
+    page(14); _pdfFont(p, 'bold'); p.setFontSize(11); p.setTextColor(32, 80, 144);
     p.text(_pdfSafe(code + ') ' + vn), M, y); y += 4.4;
-    _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+    _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
     p.text(_pdfSafe(en), M, y); y += 4.6;
   };
   const line = (label, value) => {
@@ -38115,7 +38146,7 @@ async function _ctContractPdf(doc, save) {
   line('', (c.k && c.k.text) || '—');
   y += 4;
   page();
-  _pdfFont(p, 'normal'); p.setFontSize(8); p.setTextColor(120, 128, 140);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
   p.splitTextToSize(_pdfSafe(doc.copiesVn || ''), W - M * 2).forEach(w => { page(); p.text(w, M, y); y += 4; });
 
   // The two signature blocks. Art. 14 — in writing, two copies of equal effect.
@@ -38123,7 +38154,7 @@ async function _ctContractPdf(doc, save) {
   _pdfFont(p, 'bold'); p.setFontSize(9); p.setTextColor(32, 80, 144);
   p.text(_pdfSafe('NGƯỜI LAO ĐỘNG'), M + 8, y);
   p.text(_pdfSafe('NGƯỜI SỬ DỤNG LAO ĐỘNG'), W - M - 52, y);
-  _pdfFont(p, 'normal'); p.setFontSize(7.5); p.setTextColor(120, 128, 140);
+  _pdfFont(p, 'normal'); p.setFontSize(7); p.setTextColor(120, 128, 140);
   p.text(_pdfSafe('(Ký, ghi rõ họ tên)'), M + 8, y + 4);
   p.text(_pdfSafe('(Ký, đóng dấu, ghi rõ họ tên)'), W - M - 52, y + 4);
   _pdfFont(p, 'normal'); p.setFontSize(9); p.setTextColor(31, 41, 55);
