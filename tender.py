@@ -1197,6 +1197,44 @@ def terms_paragraph(tender):
     return " ".join(c["text"] for c in conditions(tender))
 
 
+# What KIND of letter this is — the word that belongs in the footer band, and on the tab of any
+# register that lists it. The footer used to print the literal string "LETTERHEAD", which names the
+# stationery rather than the document: every letter Humiley sends said the same thing, and a
+# customer holding two of them could not tell a budgetary estimate from a firm offer by looking.
+#
+# Taken from the SUBJECT, because that is where it is already written and already reviewed — the
+# subject line is the one field somebody edits per document, so deriving from it means the footer
+# cannot drift from the letter's own heading. `docKind` overrides it when the subject says
+# something the list below does not cover.
+DOC_KINDS = [
+    "Budgetary Estimate",   # longest first — "Revised Quotation" must win over "Quotation"
+    "Revised Quotation",
+    "Pro Forma Invoice",
+    "Letter of Intent",
+    "Quotation",
+    "Proposal",
+    "Tender",
+    "Offer",
+    "Estimate",
+    "Invoice",
+]
+
+
+def doc_kind(tender):
+    """The document's own word for itself, for the footer band."""
+    explicit = str(tender.get("docKind") or "").strip()
+    if explicit:
+        return explicit
+    subject = str(tender.get("subject") or "").lower()
+    for kind in DOC_KINDS:
+        if kind.lower() in subject:
+            return kind
+    # The default subject reads "Sales Quotation No. ...", so this is only reached when somebody
+    # has replaced it wholesale. A quotation is the safe assumption for this module, and it is
+    # still a real word rather than the name of the paper it is printed on.
+    return "Quotation"
+
+
 def document(tender, quote, company=None):
     """The quotation as the customer will read it — shaped as the LETTERHEAD, not as a data table.
 
@@ -1274,6 +1312,7 @@ def document(tender, quote, company=None):
         "subject": (tender.get("subject")
                     or ("Sales Quotation No. " + (tender.get("quoteNo") or "")
                         + (" — " + tender["projectName"] if tender.get("projectName") else ""))),
+        "docKind": doc_kind(tender),
         "termsParagraph": terms_paragraph(tender),
         "conditions": conditions(tender),
         "conditionsAreDefault": is_default_conditions(tender),
