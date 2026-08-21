@@ -9,8 +9,9 @@
  *
  * Four measurements of "how many keys does a single-quote regex miss" have produced four different
  * answers, and not one disagreement was arithmetic. Every one was the instrument. The counts below
- * are a DATED SAMPLE at 3d71d42, not an inventory — the same scanner reports 4325 keys on main
- * today. Never quote a total from this dictionary without the pattern that produced it:
+ * are a DATED SAMPLE at 3d71d42, not an inventory. This run prints its own live decomposition
+ * two lines below — if a number here is quoted as current, the tool's own output contradicts it.
+ * Never quote a total from this dictionary without the pattern that produced it:
  *
  *     keys quoted '                      3253
  *     keys quoted "                       511
@@ -29,7 +30,14 @@
  * commits by different sessions (017d995 +60, 25886e2 +2, seven others +1), each matching the style
  * beside it. Nobody chose double quotes. So the blind spot cannot be found by reading the strings,
  * and it MOVES whenever anyone appends near the block — which is why the fix is a scanner that
- * checks itself against the engine, not a better pattern.
+ * checks itself against the engine, not a better pattern. It is still moving: in the days between
+ * that sample and this commit the run went 504 -> 778 and the double-quoted keys 511 -> 948. Read
+ * the current figures off this run's output, never off this comment.
+ *
+ * 'Retention' is the case in miniature. It was already defined TWICE (both single-quoted) before
+ * 6942bde, which made it a triplicate; the cleanup then kept the double-quoted copy — the one the
+ * attractor had made the winner. A Set-based count cannot see any of that: it collapses the
+ * duplicates it is meant to find, which is why the scanner below keeps every pair and dedupes last.
  *
  * Two instruments that lie while dating this, both of which produced confident wrong answers here:
  *   - `git log -S"<key>"` on a bare key dates when the English string first appeared ANYWHERE,
@@ -66,8 +74,8 @@ function scan(literal) {
       }
       k++;
       let m = k; while (m < literal.length && /\s/.test(literal[m])) m++;
-      if (depth === 1 && literal[m] === ':') pending = { raw: s, line };
-      else if (pending && depth === 1) { pairs.push({ key: pending.raw, value: s, line: pending.line }); pending = null; }
+      if (depth === 1 && literal[m] === ':') pending = { raw: s, line, q };
+      else if (pending && depth === 1) { pairs.push({ key: pending.raw, value: s, line: pending.line, q: pending.q }); pending = null; }
       continue;
     }
     k++;
@@ -118,4 +126,17 @@ if (dup.length) {
                 'English text (as the design register did with "Issue status"), or use _t2(en, vi).\n');
   process.exit(1);
 }
+// Everything the header asserts about quote styles, RE-DERIVED on every run rather than
+// remembered. The header was wrong about this for months while the code below was right; prose
+// has no failure mode, so the numbers are printed where a wrong header contradicts itself.
+const sq = pairs.filter(p => p.q === "'").length;
+const dq = pairs.filter(p => p.q === '"').length;
+let run = 0, longest = 0;
+for (const p of pairs) { if (p.q === '"') { run++; if (run > longest) longest = run; } else run = 0; }
+const dqApos = pairs.filter(p => p.q === '"' && p.key.indexOf("'") >= 0).length;
+
 console.log('_VI: ' + engine + ' keys, ' + pairs.length + ' definitions, no duplicates (scanner agrees with the engine)');
+console.log('     quote styles: ' + sq + " single + " + dq + ' double = ' + (sq + dq) +
+            '   longest unbroken double-quoted run: ' + longest);
+console.log('     of those ' + dq + ' double-quoted keys, ' + dqApos + ' contain an apostrophe' +
+            ' — the header explains why that number is not the reason for them.');
