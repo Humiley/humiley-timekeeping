@@ -47,6 +47,7 @@ import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations
 import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
 import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
 import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
+import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4036,6 +4037,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
         if path == "/api/ahu/process":
             return self._guard(lambda u: self._ahu_process_ep(u, qs))
+        if path == "/api/ahu/capacity":
+            return self._guard(lambda u: self._ahu_capacity_ep(u, qs))
         if path == "/api/ahu/kpi":
             return self._guard(lambda u: self._ahu_kpi_ep(u, qs))
         if path == "/api/ahu/board":
@@ -5126,6 +5129,43 @@ class Handler(BaseHTTPRequestHandler):
             if fam not in ahu_route.FAMILIES:
                 return self._err("Unknown AHU family: %s" % fam, 400)
             out["route"] = ahu_route.build_route(fam, {"fat": True, "sound_test": True})
+        return self._json(self._ahu_json_safe(out))
+
+    def _ahu_capacity_ep(self, u, qs):
+        """SOP section 6.7's rolling load chart — the control against promising an impossible date.
+
+        The SOP names this by name and nothing computed it. Every unit's route already carries the
+        tact per workstation, so the hours were always known; this reads them.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        try:
+            weeks = max(1, min(26, int((qs.get("weeks") or ["8"])[0])))
+        except (TypeError, ValueError):
+            weeks = 8
+        today = (qs.get("today") or [""])[0].strip() or time.strftime("%Y-%m-%d")
+        rows = []
+        for unit in db.list_collection("ahu_units"):
+            if str(unit.get("status") or "").strip().lower() in ("dispatched", "cancelled", "closed"):
+                continue
+            ctx = ahu.load_ctx(unit.get("id"))
+            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "order": ctx["order"]})
+        chart = ahu_capacity.load_by_week(rows, today, weeks)
+        try:
+            cap = float(db.get_setting("ahu_weekly_capacity_h") or 0) or None
+        except (TypeError, ValueError):
+            cap = None
+        out = ahu_capacity.against_capacity(chart, cap)
+        out["today"] = today
+        out["liveUnits"] = len(rows)
+        out["cycleNote"] = ahu_capacity.cycle_note()
+        # Elapsed against tact, per live unit — the second half of what the tact times are for.
+        out["elapsed"] = [
+            {"pin": r["unit"].get("pin"),
+             "steps": ahu_capacity.elapsed_between_signoffs(r["unit"], r["steps"])}
+            for r in rows]
+        out["elapsed"] = [e for e in out["elapsed"] if e["steps"]]
         return self._json(self._ahu_json_safe(out))
 
     def _ahu_kpi_ep(self, u, qs):

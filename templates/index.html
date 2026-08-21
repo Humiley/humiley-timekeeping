@@ -1107,6 +1107,10 @@ window.addEventListener('orientationchange', _setLoginBg);
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>
     <span class="nav-label">Orders &amp; Contracts</span>
   </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-capacity',this,'Capacity &amp; Load')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="13" y="5" width="3" height="13"/></svg></span>
+    <span class="nav-label">Capacity &amp; Load</span>
+  </div>
   <div class="nav-item" data-app="ahu" onclick="showView('ahu-standard',this,'Production Standard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
     <span class="nav-label">Production Standard</span>
@@ -1498,6 +1502,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-ahu-units" class="view"><div class="page-header"><div><h1>AHU Register</h1><p>Every unit by its Production Identification Number, from order to dispatch</p></div></div><div id="ahu-units-root"></div></div>
 <div id="view-ahu-orders" class="view"><div class="page-header"><div><h1>Orders &amp; Contracts</h1><p>Customer purchase orders and contracts, and the units built against each</p></div></div><div id="ahu-orders-root"></div></div>
 <div id="view-ahu-standard" class="view"><div class="page-header"><div><h1>Production Standard</h1><p>AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix</p></div></div><div id="ahu-standard-root"></div></div>
+<div id="view-ahu-capacity" class="view"><div class="page-header"><div><h1>Capacity &amp; Load</h1><p>The rolling load chart AHU-SOP-MASTER-001 &sect;6.7 calls for &mdash; hours of committed work against the weeks they fall in</p></div></div><div id="ahu-capacity-root"></div></div>
 <div id="view-ahu-unit" class="view"><div id="ahu-unit-root"></div></div>
 
 <!-- ═══ ESTIMATING: the tender price, built from its parts ═══ -->
@@ -29624,6 +29629,102 @@ async function ahuRebuildRoute() {
   finally { _AHU.busy = false; }
 }
 
+/* ───────────────────────── Capacity & load (SOP §6.7) ─────────────────────────
+   The SOP names a rolling 8-week load chart as the CONTROL against the risk "delivery date shorter
+   than feasible", and nothing computed it. Every unit's route already carries the SOP tact per
+   workstation, so the hours were always known.
+
+   Two honesty rules the server enforces and this screen must not soften: hours are booked at the
+   UPPER end of each tact band, and a unit whose section count is unknown is reported rather than
+   assumed to have one section — assuming one would understate a five-section unit fivefold, and
+   understating capacity is exactly how an impossible date gets promised. */
+async function ahuRenderCapacity() {
+  const root = document.getElementById('ahu-capacity-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let d;
+  try { d = await tkApi('/api/ahu/capacity?weeks=8'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000">Could not build the load chart: ' +
+      _ahuEsc(e.message) + '</div>');
+    return;
+  }
+  const weeks = d.weeks || [];
+  const peak = Math.max(1, ...weeks.map(w => w.hours || 0), d.capacity || 0);
+
+  const bars = weeks.map(w => {
+    const h = w.hours || 0;
+    const pct = Math.round(100 * h / peak);
+    const tone = w.over ? '#DC2626' : (d.capacity && h > d.capacity * 0.85 ? '#F59E0B' : 'var(--emerald)');
+    return '<div style="flex:1;min-width:64px;text-align:center">' +
+      '<div style="height:130px;display:flex;align-items:flex-end;justify-content:center">' +
+      '<div title="' + _ahuA(h + ' h' + (w.utilisation != null ? ' · ' + w.utilisation + '% of capacity' : '')) +
+      '" style="width:70%;height:' + Math.max(2, pct) + '%;background:' + tone +
+      ';border-radius:5px 5px 0 0"></div></div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;margin-top:4px">' +
+      _ahuEsc(h) + ' h</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light)">' + _ahuEsc((w.week || '').slice(5)) + '</div>' +
+      (w.utilisation != null ? '<div style="font-size:10.5px;color:' + tone + ';font-weight:600">' +
+        _ahuEsc(w.utilisation) + '%</div>' : '') + '</div>';
+  }).join('');
+
+  const capLine = d.capacity
+    ? '<div style="font-size:11.5px;color:var(--text-light)"><span>Weekly capacity</span> ' +
+      _ahuEsc(d.capacity) + ' h · ' + _ahuEsc(weeks.filter(w => w.over).length) +
+      ' <span>weeks over capacity</span></div>'
+    : '<div style="font-size:11.5px;color:#A16207">' + _ahuEsc(d.note || '') + '</div>';
+
+  const problem = (title, rows, fmt, tone) => rows && rows.length
+    ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:' + tone +
+      '10;border:1px solid ' + tone + '30;font-size:12px">' +
+      '<div style="font-weight:700;color:' + tone + ';margin-bottom:3px">' + _ahuEsc(title) + '</div>' +
+      rows.map(fmt).join('') + '</div>' : '';
+
+  const unknown = Object.keys(d.unknown || {});
+  const unknownBlock = unknown.length
+    ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#A1620710;' +
+      'border:1px solid #A1620730;font-size:12px">' +
+      '<div style="font-weight:700;color:#A16207;margin-bottom:3px">' + unknown.length + ' ' +
+      '<span>unit(s) have hours this chart cannot count</span></div>' +
+      '<div style="color:var(--text-light);font-size:11.5px;margin-bottom:4px">Five workstations are ' +
+      'quoted per section. Rather than assume one section — which would understate the floor — those ' +
+      'stations are left out and named here. Importing the AeroSelect selection supplies the count.</div>' +
+      unknown.slice(0, 6).map(p => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(p) +
+        '</div>').join('') + '</div>'
+    : '';
+
+  const elapsed = (d.elapsed || []).filter(e => (e.steps || []).some(s => s.overTact));
+  const elapsedBlock = elapsed.length
+    ? _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:4px">Running longer than tact</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+      _ahuEsc(d.cycleNote || '') + '</div>' +
+      elapsed.map(e => '<div style="padding:6px 0;border-bottom:1px solid var(--line)">' +
+        '<span style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' +
+        _ahuEsc(e.pin) + '</span> ' +
+        e.steps.filter(s => s.overTact).map(s =>
+          '<span style="font-size:11.5px;color:#DC2626">' + _ahuEsc(s.code) + ' ' +
+          _ahuEsc(s.elapsedH) + ' h vs ' + _ahuEsc(s.tactHiH) + ' h</span>').join(' · ') +
+        '</div>').join('')) + '<div style="height:12px"></div>'
+    : '';
+
+  root.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Remaining work by week</span>' +
+    /* The static half is its OWN text node so the DOM-walk translator can reach it — a phrase built
+       by concatenating a number into a sentence is one node the walker will never match. */
+    '<span style="font-size:11.5px;color:var(--text-light)"> — ' + _ahuEsc(d.liveUnits) + '&nbsp;</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)">live units, booked at the upper end of ' +
+    'each SOP tact band</span></div>' + capLine + '</div>' +
+    '<div style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding-bottom:4px">' +
+    bars + '</div>' +
+    problem('Past their delivery date', d.overdue,
+      r => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.pin) + ' — due ' +
+        _ahuEsc(r.due) + ', ' + _ahuEsc(r.hours) + ' h still to do</div>', '#DC2626') +
+    problem('No delivery date, so not placed on the chart', d.undated,
+      r => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.pin) + ' — ' +
+        _ahuEsc(r.hours) + ' h</div>', '#A16207') +
+    unknownBlock) + '<div style="height:12px"></div>' + elapsedBlock;
+}
+
 /* ───────────────────────── The standard, as reference ─────────────────────────
    AHU-SOP-MASTER-001 rendered from the server's own copy. Somebody on the floor asking "what is
    IPQC-3 supposed to measure?" gets the same answer the gate will enforce. */
@@ -29914,6 +30015,7 @@ function showView(id, navEl, title) {
   if (id === 'ahu-units') { try { ahuRenderUnits(); } catch (e) { console.warn('ahu-units:', e.message); } }
   if (id === 'ahu-unit') { try { ahuRenderTraveller(); } catch (e) { console.warn('ahu-unit:', e.message); } }
   if (id === 'ahu-standard') { try { ahuRenderStandard(); } catch (e) { console.warn('ahu-standard:', e.message); } }
+  if (id === 'ahu-capacity') { try { ahuRenderCapacity(); } catch (e) { console.warn('ahu-capacity:', e.message); } }
   if (id === 'est-projects') { try { estRenderProjects(); } catch (e) { console.warn('est-projects:', e.message); } }
   if (id === 'est-rates') { try { estRenderRates(); } catch (e) { console.warn('est-rates:', e.message); } }
   if (id === 'est-estimate') { try { estRenderWorkspace(); } catch (e) { console.warn('est-estimate:', e.message); } }
@@ -30412,6 +30514,16 @@ const _VI = {
   'AHU Register': 'Sổ đăng ký AHU',
   'Orders & Contracts': 'Đơn hàng & Hợp đồng',
   'Production Standard': 'Tiêu chuẩn sản xuất',
+  'Capacity & Load': 'Năng lực & Tải sản xuất',
+  'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
+  'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'live units, booked at the upper end of each SOP tact band': 'sản phẩm đang sản xuất, tính theo mức nhịp cao nhất của SOP',
+  'Weekly capacity': 'Năng lực theo tuần',
+  'weeks over capacity': 'tuần vượt năng lực',
+  'unit(s) have hours this chart cannot count': 'sản phẩm có số giờ mà biểu đồ này không thể tính',
+  'Past their delivery date': 'Đã quá ngày giao hàng',
+  'No delivery date, so not placed on the chart': 'Chưa có ngày giao hàng nên chưa đưa vào biểu đồ',
+  'Running longer than tact': 'Chạy lâu hơn nhịp sản xuất',
   'Order to dispatch — the shop floor, hold points, tests and the as-built record': 'Từ đơn hàng đến giao hàng — xưởng sản xuất, điểm dừng kiểm tra, thử nghiệm và hồ sơ hoàn công',
   'Production stage': 'Công đoạn sản xuất',
   'Route & sign-off': 'Lộ trình & ký duyệt',
