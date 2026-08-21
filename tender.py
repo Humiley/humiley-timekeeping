@@ -624,9 +624,16 @@ def quotation(tender, master=None, rollup=None, overrides=None):
                 "unitSell": net, "net": net,
                 "vatPct": round(vat, 4), "vat": vnd(net * _frac(vat)),
                 "gross": net + vnd(net * _frac(vat)), "cogs": p["cost"],
-                # Carried so the document can show fee and expenses in separate columns, which is
-                # how the client's form asks for them.
+                # The client's tender form asks for professional fee and travel & expenses
+                # separately. The letterhead table is built on the template's seven fixed columns,
+                # so rather than restructure a customer-facing document the split travels as a
+                # sub-line under the description — the same information, and it renders identically
+                # in the PDF, the on-screen preview and the Excel export instead of only in
+                # whichever of the three got new columns.
                 "professionalFee": p["professionalFee"], "expenses": p["expensesQuoted"],
+                "descNote": ("Professional fee %s  ·  Travel & expenses %s  ·  %s consultant days"
+                             % (format(p["professionalFee"], ","), format(p["expensesQuoted"], ","),
+                                ("%g" % p["days"]))) if p["days"] else "",
                 "durationMonths": p["durationMonths"], "days": p["days"],
             })
     else:
