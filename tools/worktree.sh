@@ -206,7 +206,7 @@ cmd_rm() {
     # that record is not affected by anything that happens to main afterwards. `gh` is already this
     # repo's tool of record for PRs; with no network the answer is unknown, and unknown falls back
     # to keeping the branch, which is the safe direction to be wrong in.
-    local landed=no merged_tree main_tree merge_conflicts="" MERGED_PR=""
+    local landed=no merged_tree main_tree merge_conflicts="" MERGED_PR="" AFTER_MERGE=0 REUSED_PR="" PR_HEAD=""
     if [ -z "$tip" ]; then
       landed=diverged
     elif git -C "$MAIN_REPO" merge-base --is-ancestor "$tip" origin/main 2>/dev/null; then
@@ -223,12 +223,33 @@ cmd_rm() {
         merge_conflicts=yes
       fi
       if [ "$landed" != yes ] && command -v gh >/dev/null 2>&1; then
-        local merged_pr
-        merged_pr=$(gh pr list --state merged --head "$branch" --json number \
-                      --jq '.[0].number' --limit 1 2>/dev/null || true)
-        if [ -n "$merged_pr" ] && [ "$merged_pr" != "null" ]; then
-          landed=stale
-          MERGED_PR="$merged_pr"
+        local merged_pr pr_head
+        merged_pr=$(gh pr list --state merged --head "$branch" --json number,headRefOid \
+                      --jq '.[0] | "\(.number) \(.headRefOid)"' --limit 1 2>/dev/null || true)
+        pr_head=${merged_pr#* }; merged_pr=${merged_pr%% *}
+        # The lookup answers about a NAME, and the name is the one thing here that gets reused —
+        # worktree names are short and descriptive. Reuse one whose old PR merged and the forge
+        # cheerfully returns that old PR for entirely new work: "its work LANDED, delete it", for a
+        # commit that exists nowhere else. That is the losing-work direction, the one direction
+        # this tool is not allowed to be wrong in.
+        #
+        # So do not believe the number until the COMMIT agrees. The PR records the head it merged,
+        # and GitHub keeps that after the remote branch is deleted — which is exactly when the hole
+        # would otherwise open, because a live remote makes the divergence check fire first and
+        # masks it. Ancestry rather than equality, because a branch can legitimately collect
+        # commits after its merge (an sw.js bump pushed to an already-merged branch did just that);
+        # those are worth naming, not worth calling the whole branch unlanded.
+        if [ -n "$merged_pr" ] && [ "$merged_pr" != "null" ] && [ -n "$pr_head" ]; then
+          if ! git -C "$MAIN_REPO" cat-file -e "$pr_head^{commit}" 2>/dev/null; then
+            :   # cannot see the commit that PR merged — unverifiable, so keep the branch
+          elif git -C "$MAIN_REPO" merge-base --is-ancestor "$pr_head" "$tip" 2>/dev/null; then
+            landed=stale
+            MERGED_PR="$merged_pr"
+            AFTER_MERGE=$(git -C "$MAIN_REPO" rev-list --count "$pr_head..$tip" 2>/dev/null || echo 0)
+            PR_HEAD="$pr_head"
+          else
+            REUSED_PR="$merged_pr"   # same name, different lineage
+          fi
         fi
       fi
     fi
@@ -247,13 +268,22 @@ cmd_rm() {
     elif [ "$landed" = stale ]; then
       echo "kept branch $branch — its work LANDED (merged as #$MERGED_PR), but the branch is stale:"
       echo "  merging it now WOULD change main, so do not merge it — delete it."
+      if [ "${AFTER_MERGE:-0}" != "0" ]; then
+        echo "  BUT $AFTER_MERGE commit(s) sit after the merge point and are on no PR — read them first:"
+        echo "    git log --oneline $(git -C "$MAIN_REPO" rev-parse --short "$PR_HEAD" 2>/dev/null)..$tip"
+      fi
       [ -n "$merge_conflicts" ] && echo "  (it also conflicts with main, which is what staleness looks like)"
       [ -n "$stale" ] && echo "  (judged $remote — your local $branch is behind it)"
       echo "  confirm:  gh pr view $MERGED_PR"
       echo "  delete:   git branch -D $branch"
     else
-      echo "kept branch $branch — no merged PR for it, and merging it into main WOULD change main,"
-      echo "  so this work has not landed. Push it and get it merged before deleting anything."
+      if [ -n "$REUSED_PR" ]; then
+        echo "kept branch $branch — a merged PR (#$REUSED_PR) has this NAME, but it merged a"
+        echo "  different commit, so this branch is new work under a reused name. Not landed."
+      else
+        echo "kept branch $branch — no merged PR for it, and merging it into main WOULD change main,"
+        echo "  so this work has not landed. Push it and get it merged before deleting anything."
+      fi
       [ -n "$merge_conflicts" ] && echo "  (it conflicts with main — rebase before opening a PR)"
       command -v gh >/dev/null 2>&1 \
         || echo "  (gh is not installed, so whether a PR merged could not be checked)"
