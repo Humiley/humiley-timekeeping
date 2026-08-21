@@ -68,6 +68,20 @@ One JSON file. Two top-level keys: `aeroselect` (the envelope) and `payload` (th
 Everything is optional except `unit`. **A field you omit is left alone on the portal side, not
 written blank** — importing a partial selection can never erase something already known.
 
+**The ErP verdict is tri-state and is carried verbatim.** `performance.erp.verdict` may be `PASS`,
+`FAIL`, `UNDETERMINED` or `NOT_ASSESSED`. The portal stores whatever AeroSelect concluded, as
+provenance rather than as a validated enum — it is never coerced. Coercing an unknown verdict to
+`PASS` would put a compliance claim on a unit whose compliance nobody established; coercing it to
+`FAIL` would condemn one for the same absence of evidence. Send the resolver's answer, including
+when the resolver withheld one.
+
+**Fields AeroSelect does not model should simply be omitted.** `voltage_v`, `coilDesignBar` and
+`cleanroom` are not attributes of a selection. Omitting them is correct and expected: the portal
+leaves whatever the unit already holds, and where nothing is known it reports the dependent test
+(hi-pot, coil pressure, particle count) as **undeterminable** rather than inventing a limit. That is
+the honest outcome, and inventing a supply voltage would be the same class of defect as a mistyped
+`L2`.
+
 **A class code the portal cannot read is refused, not dropped.** `classes.D = "D4"` or
 `unit.cleanroom = "Class 100"` fails the import and names the offending value. This is deliberate:
 dropping it silently would leave the unit tested against whatever class it held before, while the
@@ -169,6 +183,30 @@ const bytes = new TextEncoder().encode(JSON.stringify(canonical(attested)))
 
 A document whose hash does not match its contents is **refused outright**. That is the case where
 somebody opened the JSON and changed the airflow.
+
+#### Two rules that are invisible until they bite
+
+**The hash is over the PARSED VALUES, not the file's bytes.** A JSON number is a number: `810` and
+`810.0` are the same value to one side and different text to the other. Python's `json.dumps`
+preserves a float's trailing `.0`; JavaScript has no int/float distinction and cannot emit it at
+all:
+
+```
+python3 -c "import json;print(json.dumps(810.0))"   ->  810.0
+node    -e "console.log(JSON.stringify(810.0))"     ->  810
+```
+
+So **never put a whole-number float in a payload.** Write `810`, not `810.0`. The shipped example
+originally carried `810.0`, which made it unreproducible from JavaScript — the exact file offered as
+the thing to assert against. `tools/make_selection_example.py` now refuses to write one, and
+`tests/handoff_example_cross_language.js` runs the recipe below over the committed example in Node
+and fails CI if the hashes disagree.
+
+**Sort object KEYS recursively; never sort ARRAY elements.** `payload.sections` is ordered — it is
+the module chain in airflow order. A canonicaliser that sorted array contents would silently reorder
+a unit's sections and still hash "successfully", which is worse than failing. Python's
+`json.dumps(sort_keys=True)` never touches list order, so this is a hazard for the TypeScript side
+only — and this is where a TypeScript implementer will look.
 
 ### `signature` — checked when the two are paired
 
