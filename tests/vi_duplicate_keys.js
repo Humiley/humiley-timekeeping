@@ -140,6 +140,14 @@ const dq = pairs.filter(p => p.q === '"').length;
 let run = 0, longest = 0;
 for (const p of pairs) { if (p.q === '"') { run++; if (run > longest) longest = run; } else run = 0; }
 const dqApos = pairs.filter(p => p.q === '"' && p.key.indexOf("'") >= 0).length;
+// This decomposition must account for every pair the scanner found. Without it, a scanner that
+// stopped recording the quote character would print "0 single + 0 double = 0" and stay green —
+// the silent zero this whole file is about, in the guard added to defend against it.
+if (sq + dq !== pairs.length) {
+  console.error('FAIL  quote decomposition covers ' + (sq + dq) + ' of ' + pairs.length +
+                ' pairs — the classifier is broken, so the printed figures below would be fiction.');
+  process.exit(1);
+}
 
 console.log('_VI: ' + engine + ' keys, ' + pairs.length + ' definitions, no duplicates (scanner agrees with the engine)');
 let at = 'this working tree';
