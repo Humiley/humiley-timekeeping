@@ -7,8 +7,12 @@
  *
  * WHY THIS FILE DOES NOT USE A REGEX, and what four attempts to count the dictionary proved.
  *
- * Four measurements of "how many keys does a single-quote regex miss" have produced four different
- * answers, and not one disagreement was arithmetic. Every one was the instrument. The counts below
+ * Five measurements of this dictionary have produced five different answers, and they failed in two
+ * distinct ways that need two distinct defences. FOUR were true answers to unstated questions —
+ * key-quote only vs key-and-value, line-anchored, "slots added" vs "keys new to the dictionary".
+ * Those die to stating your predicate. The FIFTH asked the right question and simply counted wrong
+ * (`grep -c`, below). No predicate would have saved it; only a second instrument would — which is
+ * what the print at the bottom of this file is, permanently installed. The counts below
  * are a DATED SAMPLE at 3d71d42, not an inventory. This run prints its own live decomposition
  * two lines below — if a number here is quoted as current, the tool's own output contradicts it.
  * Never quote a total from this dictionary without the pattern that produced it:
