@@ -316,6 +316,12 @@ def to_unit_fields(doc):
             out[k] = v
 
     put("selectionRef", doc.get("selectionRef"))
+    # The number of sections drives every "per section" tact time in the capacity chart, and the
+    # portal has no other source for it — a person would be guessing. AeroSelect knows exactly,
+    # because the section chain IS the selection.
+    secs = doc.get("sections")
+    if isinstance(secs, list) and secs:
+        put("sectionCount", len(secs))
     put("tag", str(unit.get("tag") or "").strip() or None)
     put("model", str(unit.get("model") or "").strip() or None)
     put("family", family_of(doc))

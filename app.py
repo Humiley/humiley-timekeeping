@@ -46,6 +46,11 @@ import doc_number       # controlled-document numbering: the format and the seri
 import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations, the test matrix (pure)
 import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
 import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
+import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
+import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
+import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
+import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as reference (pure)
+import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -1326,6 +1331,127 @@ def _tk_nudges(kind, today=None):
         else:
             _tk_push(targets, "Check-out reminder", "You're still checked in — tap to check out before you leave.", "/?checkin=1", "tk-checkout-" + today)
     return targets
+
+
+# ── AHU: telling open screens that something moved ──────────────────────────────────────────────
+# The production board is the one screen somebody leaves open on a wall, and it refreshed on a 30
+# second timer. Thirty seconds is not slow; the problem is that a board which redraws on a timer
+# cannot tell "nothing happened" from "the network went away", and the person watching it cannot
+# either. So writes bump a counter and a held-open request answers the moment it moves.
+#
+# The counter is in memory ON PURPOSE. It is a change NOTIFICATION, not a fact about production —
+# every screen re-reads the real data from the API when it wakes. A restart resets it to zero, every
+# connected client reconnects, sees a version it does not recognise and refreshes once. That is the
+# correct behaviour after a deploy anyway.
+_AHU_REV = {"n": 0}
+_AHU_REV_LOCK = threading.Lock()
+
+# Each waiting request parks a thread, and this process serves requests with a thread per request.
+# So the number of simultaneous waiters is capped, and a client turned away keeps its timer instead
+# of being left with a board that has quietly stopped updating.
+AHU_WAIT_MAX = 24
+# How long one poll waits before answering "nothing yet". Long enough that reconnects are cheap,
+# short enough that a held request cannot outlive the session that authorised it by much.
+AHU_WAIT_SECONDS = 25
+_AHU_WAITERS = {"n": 0}
+
+
+def _ahu_touch():
+    """Record that something in AHU production changed. Cheap enough to call on every write."""
+    with _AHU_REV_LOCK:
+        _AHU_REV["n"] += 1
+        return _AHU_REV["n"]
+
+
+# ── AHU: non-conformances that have sat open too long ───────────────────────────────────────────
+# A daily sweep, at 08:00 ICT, so it lands before the morning production meeting rather than in the
+# middle of the night. Fires once when an NCR crosses the threshold and then once a week while it
+# stays open: a daily repeat of the same alert is how people learn to swipe it away, and never
+# repeating means an NCR that nobody actioned goes quiet exactly when it matters most.
+_AHU_NCR_LOCK = threading.Lock()
+_AHU_NCR_REPEAT_DAYS = 7
+
+
+def _ahu_ncr_age_days(ncr, today):
+    """Days this non-conformance has been open. None when it carries no readable raised date."""
+    for k in ("raisedOn", "date", "createdOn", "ts"):
+        v = str((ncr or {}).get(k) or "")[:10]
+        if not v:
+            continue
+        try:
+            return (today - datetime.strptime(v, "%Y-%m-%d").date()).days
+        except ValueError:
+            continue
+    return None
+
+
+def _ahu_ncr_sweep(notify, today, threshold):
+    """Alert on every open NCR older than `threshold` days. Returns the number of alerts sent.
+
+    `notify(ctx, msg)` is injected rather than reached for, so a test can run the whole sweep — the
+    open/punch filter, the aging arithmetic, the repeat suppression and the unaged report — and read
+    back exactly what would have been sent, without a push subscription or a network.
+
+    An NCR with no readable raised date is NOT treated as zero days old and quietly skipped — it is
+    reported as unaged, because "we never chased it because the date was blank" is the failure this
+    sweep exists to prevent, and a silent skip is indistinguishable from there being nothing to
+    chase.
+    """
+    try:
+        seen = json.loads(db.get_setting("_ahuNcrChased") or "{}")
+    except Exception:
+        seen = {}
+    now = time.time()
+    sent = unaged = 0
+    for ncr in db.list_collection("ahu_ncr"):
+        if ahu._norm(ncr.get("status")) not in ahu.OPEN_NCR_STATUSES:
+            continue
+        if ahu._norm(ncr.get("kind")) == "punch":
+            continue                     # a punch-list item is snagging, not a non-conformance
+        age = _ahu_ncr_age_days(ncr, today)
+        if age is None:
+            unaged += 1
+            continue
+        if age < threshold:
+            continue
+        key = str(ncr.get("id") or "")
+        last = seen.get(key)
+        if last and (now - float(last)) < _AHU_NCR_REPEAT_DAYS * 86400:
+            continue
+        ctx = ahu.load_ctx(ncr.get("unitId"))
+        if notify(ctx, ahu_notify.ncr_aging(ctx, ncr, age, threshold)):
+            sent += 1
+        seen[key] = now
+    if unaged:
+        db.put_collection_item("audit", {
+            "actor": "System", "action": "AHU alert — ncr-aging sweep",
+            "target": "ahu_ncr",
+            "detail": ("%d open non-conformance(s) carry no readable raised date and could not be "
+                       "aged. They are not being chased." % unaged),
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+    seen = {k: v for k, v in seen.items()
+            if v and (now - float(v)) < 90 * 86400}
+    db.set_setting("_ahuNcrChased", json.dumps(seen))
+    return sent
+
+
+def _ahu_ncr_scheduler():
+    """Hourly wake; runs the aging sweep once a day at 08:00 ICT."""
+    while True:
+        time.sleep(3600)
+        try:
+            now_vn = datetime.utcnow() + timedelta(hours=7)
+            if now_vn.hour != 8:
+                continue
+            day = now_vn.strftime("%Y-%m-%d")
+            with _AHU_NCR_LOCK:
+                if (db.get_setting("_ahuNcrSweptDay", "") or "") == day:
+                    continue
+                threshold = ahu_notify.aging_threshold(db.get_setting("ahu_ncr_aging_days"))
+                _ahu_ncr_sweep(Handler._ahu_notify_send, now_vn.date(), threshold)
+                db.set_setting("_ahuNcrSweptDay", day)
+        except Exception:
+            pass
 
 
 def _tk_nudge_scheduler():
@@ -4035,6 +4161,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
         if path == "/api/ahu/process":
             return self._guard(lambda u: self._ahu_process_ep(u, qs))
+        if path == "/api/ahu/capacity":
+            return self._guard(lambda u: self._ahu_capacity_ep(u, qs))
+        if path == "/api/ahu/settings":
+            return self._guard(lambda u: self._ahu_settings_get(u))
+        if path == "/api/ahu/changes":
+            return self._guard(lambda u: self._ahu_changes_ep(u, qs))
+        if path.startswith("/api/ahu/unit/") and path.endswith("/card"):
+            _uid = path[len("/api/ahu/unit/"):-len("/card")]
+            return self._guard(lambda u: self._ahu_card_ep(u, urllib.parse.unquote(_uid), qs))
+        if path == "/api/ahu/kpi":
+            return self._guard(lambda u: self._ahu_kpi_ep(u, qs))
         if path == "/api/ahu/board":
             return self._guard(lambda u: self._ahu_board_ep(u))
         if path.startswith("/api/ahu/unit/") and path.endswith("/dossier"):
@@ -4225,6 +4362,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if path == "/api/me":
             return self._guard(lambda u: self._me_update(u, body))
+        if path == "/api/ahu/settings":
+            return self._guard(lambda u: self._ahu_settings_set(u, body), manager=True)
         if path == "/api/portal":
             return self._guard(lambda u: self._portal_update(u, body), manager=True)
         if path.startswith("/api/coll/"):
@@ -4964,6 +5103,124 @@ class Handler(BaseHTTPRequestHandler):
         ctx = {"unit": unit, "order": order}
         return any(self._ahu_named(u, ctx, role) for role in self.AHU_ROLE_FIELDS)
 
+    # ── Telling somebody ─────────────────────────────────────────────────────────────────────────
+    # A board that shows a failed test only helps whoever is looking at it. ahu_notify decides who
+    # and what; this turns those NAMES into people and pushes. The two halves are split so the
+    # decision can be tested without a database and the delivery can be changed without touching it.
+
+    @staticmethod
+    def _ahu_people_for(names):
+        """(emails, matched_names) for a list of role-holder NAMES from a production record.
+
+        Production records name people the way the factory says them — "Tran Van Long" on the unit
+        against "Long Tran Van" in the employee register — so the same tolerant comparison the
+        authority checks use decides a match here. Returning the matched names, not just the count,
+        is what lets the caller see which role holder it could NOT reach.
+        """
+        emps = db.list_employees()
+        emails, matched = [], []
+        for n in names or []:
+            n = str(n or "").strip()
+            if not n:
+                continue
+            for e in emps:
+                en = str(e.get("name") or "").strip()
+                if not en:
+                    continue
+                if en.lower() == n.lower() or Handler._pm_same_person(en, n):
+                    if str(e.get("status") or "").strip().lower() == "inactive":
+                        continue     # an ex-employee is not a recipient
+                    if e.get("email"):
+                        emails.append(str(e["email"]).lower())
+                    matched.append(n)
+                    break
+        return sorted(set(emails)), matched
+
+    @staticmethod
+    def _ahu_notify_send(ctx, msg):
+        """Push one ahu_notify message and RECORD what happened to it, gaps included.
+
+        _tk_push returns a count, and a count of zero is ambiguous — nobody subscribed, or the role
+        holder is spelled in a way the employee register does not recognise, and those need
+        different fixes. So the audit row carries who was chosen, who was reachable and who was not.
+        An alert that went nowhere has to be findable afterwards; that is the entire reason this
+        function writes anything at all.
+        """
+        try:
+            chosen = ahu_notify.recipients(ctx, msg.get("roles") or ())
+            emails, matched = Handler._ahu_people_for(chosen)
+            missing = ahu_notify.unresolved(chosen, matched)
+            sent = _tk_push(emails, msg.get("title") or "", msg.get("body") or "",
+                            msg.get("url") or "/", msg.get("tag") or "") if emails else 0
+            unit = (ctx or {}).get("unit") or {}
+            db.put_collection_item("audit", {
+                "actor": "System", "action": "AHU alert — " + str(msg.get("event") or ""),
+                "target": "ahu_units/" + str(unit.get("id") or ""),
+                "detail": "%s | chose: %s | reachable: %s | UNREACHABLE: %s | pushes: %d"
+                          % (msg.get("body") or "", ", ".join(chosen) or "nobody",
+                             ", ".join(matched) or "nobody",
+                             ", ".join(missing) or "none", sent),
+                "ts": Handler._utc_now()})
+            return {"chosen": chosen, "reachable": matched, "unreachable": missing, "sent": sent}
+        except Exception:
+            # Never let a notification break the write that triggered it. The production record is
+            # the thing that matters; the alert is a courtesy on top of it.
+            return None
+
+    def _ahu_notify_step_fail(self, before_readings, step):
+        """Alert on a step that has JUST gone from not-failing to failing.
+
+        The comparison is against the readings as they were, judged by the same evaluator that
+        would refuse the sign-off — so the alert and the refusal can never disagree about whether
+        something failed. Two consequences worth naming:
+
+        A step that was already failing and is saved again alerts nobody. That is deliberate: an
+        inspector adding a photo to a failed hold point should not re-page the QA manager.
+
+        A step whose readings are merely incomplete alerts nobody either. Incomplete is not failed,
+        and treating it as failed would fire an alarm on every half-entered form on the floor.
+        """
+        if not isinstance(step, dict):
+            return None
+        unit = self._ahu_unit_of(step)
+        if not unit:
+            return None
+        ctx = ahu.load_ctx(unit.get("id"))
+        spec = ahu.spec_for(unit, step.get("code"), ctx.get("order"))
+        if not spec:
+            return None
+        decl = ahu.unit_decl(unit)
+        now = ahu_route.evaluate_step(spec, ahu.readings_of(step), decl)
+        if now["status"] != ahu_route.FAIL:
+            return None
+        if before_readings is not None:
+            was = ahu_route.evaluate_step(spec, before_readings, decl)
+            if was["status"] == ahu_route.FAIL:
+                return None          # already failing before this write — not news
+        return self._ahu_notify_send(ctx, ahu_notify.step_failed(ctx, step, now["failures"]))
+
+    def _ahu_notify_gate_held(self, step):
+        """Alert when a GATE could not be passed, naming what is holding it.
+
+        Only gates, and only when the stage's exit criteria are what blocked it. A step refused for
+        a missing predecessor, an unjudged reading or the wrong signatory is a matter for the person
+        at the screen — telling three other people about it would bury the one alert that means the
+        line has stopped.
+        """
+        if not isinstance(step, dict):
+            return None
+        unit = self._ahu_unit_of(step)
+        if not unit:
+            return None
+        ctx = ahu.load_ctx(unit.get("id"))
+        spec = ahu.spec_for(unit, step.get("code"), ctx.get("order"))
+        if not spec or spec.get("kind") != "gate":
+            return None
+        blockers = ahu.gate_blockers(step.get("code"), ctx)
+        if not blockers:
+            return None
+        return self._ahu_notify_send(ctx, ahu_notify.gate_held(ctx, step, blockers))
+
     def _ahu_appr_check(self, u, coll, cur_status, set_status, rec):
         t = str(set_status or "").strip().lower()
         if not t:
@@ -5115,6 +5372,10 @@ class Handler(BaseHTTPRequestHandler):
                        "thermalU": ahu_route.EN1886_THERMAL_U,
                        "bridging": ahu_route.EN1886_BRIDGING,
                        "bypass": ahu_route.EN1886_BYPASS},
+            # What the European AHU industry recommends, alongside what this factory's SOP says.
+            # Reference only — nothing here refuses a gate. Where the two differ that is a decision
+            # for the QA/QC Manager, in the same way SOP_DISCREPANCIES already handles one.
+            "eurovent": ahu_eurovent.summary(None, ahu_route.DOSSIER),
             # Published so the difference between the SOP and the standard is visible in the app
             # rather than buried in a module nobody opens.
             "discrepancies": ahu_route.SOP_DISCREPANCIES,
@@ -5123,6 +5384,265 @@ class Handler(BaseHTTPRequestHandler):
             if fam not in ahu_route.FAMILIES:
                 return self._err("Unknown AHU family: %s" % fam, 400)
             out["route"] = ahu_route.build_route(fam, {"fat": True, "sound_test": True})
+        return self._json(self._ahu_json_safe(out))
+
+    def _ahu_capacity_ep(self, u, qs):
+        """SOP section 6.7's rolling load chart — the control against promising an impossible date.
+
+        The SOP names this by name and nothing computed it. Every unit's route already carries the
+        tact per workstation, so the hours were always known; this reads them.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        try:
+            weeks = max(1, min(26, int((qs.get("weeks") or ["8"])[0])))
+        except (TypeError, ValueError):
+            weeks = 8
+        today = (qs.get("today") or [""])[0].strip() or time.strftime("%Y-%m-%d")
+        rows = []
+        for unit in db.list_collection("ahu_units"):
+            if str(unit.get("status") or "").strip().lower() in ("dispatched", "cancelled", "closed"):
+                continue
+            ctx = ahu.load_ctx(unit.get("id"))
+            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "order": ctx["order"]})
+        chart = ahu_capacity.load_by_week(rows, today, weeks)
+        try:
+            cap = float(db.get_setting("ahu_weekly_capacity_h") or 0) or None
+        except (TypeError, ValueError):
+            cap = None
+        out = ahu_capacity.against_capacity(chart, cap)
+        out["today"] = today
+        out["liveUnits"] = len(rows)
+        out["cycleNote"] = ahu_capacity.cycle_note()
+        # Elapsed against tact, per live unit — the second half of what the tact times are for.
+        out["elapsed"] = [
+            {"pin": r["unit"].get("pin"),
+             "steps": ahu_capacity.elapsed_between_signoffs(r["unit"], r["steps"])}
+            for r in rows]
+        out["elapsed"] = [e for e in out["elapsed"] if e["steps"]]
+        return self._json(self._ahu_json_safe(out))
+
+    def _ahu_settings_get(self, u):
+        """The two production numbers this module needs and cannot derive.
+
+        Weekly capacity is a fact about the factory — how many productive hours the floor has in a
+        week — and there is no honest way to infer it from the records. The NCR aging threshold is a
+        policy the SOP does not set. Both are returned with the aging DEFAULT applied, so the screen
+        shows the number that will actually be used rather than a blank that hides one.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        raw = db.get_setting("ahu_weekly_capacity_h")
+        try:
+            cap = float(raw) if raw not in (None, "") else None
+        except (TypeError, ValueError):
+            cap = None
+        return self._json({
+            "weeklyCapacityH": cap,
+            "ncrAgingDays": ahu_notify.aging_threshold(db.get_setting("ahu_ncr_aging_days")),
+            "ncrAgingDefault": ahu_notify.NCR_AGING_DAYS_DEFAULT,
+            "canEdit": u.get("role") == "manager"})
+
+    def _ahu_settings_set(self, u, body):
+        """Set them. Manager only, and audited — a capacity figure decides what the factory promises.
+
+        A blank capacity CLEARS it rather than being read as zero. Zero hours a week would mark every
+        week over capacity for ever, which reads as a catastrophe and is really a missing number; the
+        chart already knows how to report hours with no verdict, and that is the honest state.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        def _blank(v):
+            """True only for an actually absent value.
+
+            `v in (None, "", False)` reads naturally and is wrong: 0 == False in Python, so a typed
+            zero would take the clear-it branch instead of the range check below — the field would
+            appear to accept 0 and silently mean "unset". Identity against None, and an emptiness
+            test on strings, are the only two things "blank" is allowed to mean here.
+            """
+            return v is None or (isinstance(v, str) and not v.strip()) or v is False
+
+        out = {}
+        if "weeklyCapacityH" in body:
+            v = body.get("weeklyCapacityH")
+            if _blank(v):
+                db.set_setting("ahu_weekly_capacity_h", "")
+                out["weeklyCapacityH"] = None
+            else:
+                try:
+                    cap = float(v)
+                except (TypeError, ValueError):
+                    return self._err("Weekly capacity must be a number of hours.", 400)
+                if cap <= 0 or cap > 10000:
+                    return self._err("Weekly capacity must be between 1 and 10000 hours.", 400)
+                db.set_setting("ahu_weekly_capacity_h", cap)
+                out["weeklyCapacityH"] = cap
+        if "ncrAgingDays" in body:
+            v = body.get("ncrAgingDays")
+            if _blank(v):
+                db.set_setting("ahu_ncr_aging_days", "")
+            else:
+                try:
+                    days = int(v)
+                except (TypeError, ValueError):
+                    return self._err("The aging threshold must be a whole number of days.", 400)
+                if days < 1 or days > 365:
+                    return self._err("The aging threshold must be between 1 and 365 days.", 400)
+                db.set_setting("ahu_ncr_aging_days", days)
+            out["ncrAgingDays"] = ahu_notify.aging_threshold(db.get_setting("ahu_ncr_aging_days"))
+        if not out:
+            return self._err("Nothing to save.", 400)
+        db.put_collection_item("audit", {
+            "actor": u.get("name"), "actorId": u.get("id"),
+            "action": "AHU production settings changed", "target": "ahu_settings",
+            "detail": json.dumps(out), "ts": self._utc_now()})
+        return self._json({"ok": True, **out})
+
+    def _ahu_card_ep(self, u, unit_id, qs):
+        """The traveller card as data: the unit, its remaining route, and a QR per step.
+
+        The code encodes a link back into this portal at that exact step, so scanning it on the
+        floor opens the readings form for the work in front of you instead of a menu. The symbol is
+        built HERE rather than in the browser because the encoder is a hundred lines of Galois-field
+        arithmetic that has to be right, and there is one of it, tested, on the server.
+
+        The origin is taken from the request, not from a setting: a card printed from the office
+        network has to keep working on the tablet that scans it, and a hard-coded hostname is how a
+        card silently points somewhere the shop floor cannot reach.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        unit = db.get_collection_item("ahu_units", unit_id)
+        if not unit:
+            return self._err("Unknown AHU.", 404)
+        ctx = ahu.load_ctx(unit_id)
+        steps, err = ahu.safe_build_for(unit, ctx.get("order"))
+        if err:
+            return self._err(err, 400)
+        origin = (qs.get("origin") or [""])[0].strip() or self._request_origin()
+        signed = ahu.signed_codes(ctx["steps"])
+        by_code = {s.get("code"): s for s in ctx["steps"]}
+        rows, oversized = [], []
+        for spec in steps:
+            code = spec["code"]
+            if code in signed:
+                continue                      # a card is for the work still to do
+            link = "%s/?ahu=%s&step=%s" % (origin, urllib.parse.quote(unit_id),
+                                           urllib.parse.quote(code))
+            try:
+                svg = qr.svg(link, module=3, quiet=3)
+            except ValueError as exc:
+                # Never a blank square where a code should be. A card that silently omits one step's
+                # symbol looks complete, and the operator at that station finds nothing to scan.
+                oversized.append({"code": code, "why": str(exc)})
+                svg = ""
+            rows.append({"code": code, "title": spec.get("title"), "kind": spec.get("kind"),
+                         "tact": spec.get("tact"), "station": spec.get("station"),
+                         "status": (by_code.get(code) or {}).get("status") or "",
+                         "link": link, "qr": svg})
+        return self._json(self._ahu_json_safe({
+            "unit": {k: unit.get(k) for k in ("id", "pin", "tag", "family", "sectionCount")},
+            "order": {k: (ctx.get("order") or {}).get(k)
+                      for k in ("poNumber", "customer", "deliveryDate")},
+            "origin": origin,
+            "steps": rows,
+            "unprintable": oversized,
+            "unitQr": qr.svg("%s/?ahu=%s" % (origin, urllib.parse.quote(unit_id)),
+                             module=4, quiet=3)}))
+
+    def _request_origin(self):
+        """The scheme and host this request actually arrived on.
+
+        Behind Caddy the socket is plain HTTP on localhost, so the scheme has to come from
+        X-Forwarded-Proto where the proxy set it. Getting this wrong prints a card whose codes open
+        an address the phone cannot reach — and the card looks perfect.
+        """
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").strip()
+        host = host.split(",")[0].strip()
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        if proto not in ("http", "https"):
+            proto = "http" if (not host or "localhost" in host or host.startswith("127.")
+                               or ":" in host) else "https"
+        return ("%s://%s" % (proto, host)) if host else ""
+
+    def _ahu_changes_ep(self, u, qs):
+        """Long poll: returns as soon as AHU production changes, or after a bounded wait.
+
+        A held-open request rather than server-sent events, for one reason: EventSource cannot send
+        an Authorization header, so an SSE endpoint has to take the session token in the query
+        string — and a URL is written to the access log of every proxy between the tablet and the
+        server. Long polling keeps the credential in the header where the rest of the API keeps it,
+        costs the same latency, and needs no second kind of credential to mint, expire and revoke.
+
+        Carries no production data, only a revision number. A screen that hears "something moved"
+        re-reads the API, so there is exactly one description of a unit's state rather than two that
+        could drift apart.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        # Each waiting request parks a thread, and this process serves a thread per request. Refuse
+        # rather than exhaust: a client turned away keeps its timer, which still works. Degrading
+        # silently would leave a wall board that looks live and is frozen — the worst option.
+        if _AHU_WAITERS["n"] >= AHU_WAIT_MAX:
+            return self._json({"rev": _AHU_REV["n"], "waited": 0, "busy": True,
+                               "note": "Too many screens are waiting for live updates; this one "
+                                       "will keep refreshing on its timer."})
+        try:
+            since = int((qs.get("since") or ["0"])[0])
+        except (TypeError, ValueError):
+            since = 0
+
+        _AHU_WAITERS["n"] += 1
+        started = time.time()
+        try:
+            while time.time() - started < AHU_WAIT_SECONDS:
+                if _AHU_REV["n"] != since:
+                    break
+                time.sleep(0.5)
+        finally:
+            _AHU_WAITERS["n"] -= 1
+        # The wait is bounded even when nothing happens, so the client reconnects regularly and its
+        # session is re-checked. A request held indefinitely would outlive the authorisation that
+        # opened it and keep feeding a screen after the account behind it was disabled.
+        return self._json({"rev": _AHU_REV["n"], "waited": round(time.time() - started, 1),
+                           "changed": _AHU_REV["n"] != since})
+
+    def _ahu_kpi_ep(self, u, qs):
+        """SOP section 1.4's KPI table, computed from signed production data.
+
+        Deliberately over EVERY unit rather than only the live ones the board shows: first-pass
+        yield and on-time delivery are about units that have finished, and a dashboard that quietly
+        excluded them would report on work in progress and call it performance.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        since = (qs.get("since") or [""])[0].strip()
+        rows = []
+        for unit in db.list_collection("ahu_units"):
+            ctx = ahu.load_ctx(unit.get("id"))
+            if since:
+                # Filter on the DISPATCH date, not on when the record was created: the question a
+                # period KPI answers is "what did we ship in this window".
+                d = (ctx["dispatch"] or [{}])[0] if ctx["dispatch"] else {}
+                when = str(d.get("dispatchedOn") or "")
+                if when and when < since:
+                    continue
+            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "ncr": ctx["ncr"],
+                         "dispatch": ctx["dispatch"], "order": ctx["order"]})
+        incidents = db.list_collection("incidents")
+        try:
+            hours = float(db.get_setting("ahu_worked_hours") or 0) or None
+        except (TypeError, ValueError):
+            hours = None
+        out = ahu_kpi.summary(rows, incidents=incidents, worked_hours=hours)
+        out["units"] = len(rows)
+        out["since"] = since or None
         return self._json(self._ahu_json_safe(out))
 
     def _ahu_board_ep(self, u):
@@ -5153,6 +5673,10 @@ class Handler(BaseHTTPRequestHandler):
                               spec=spec))
         return self._json(self._ahu_json_safe({
             "unit": ctx["unit"], "order": ctx["order"], "declaration": decl,
+            # How this unit's declared casing classes stand against Eurovent 6/18. Advisory: it
+            # never refuses a step, and it reports "not stated" rather than guessing whether a class
+            # was established on a real unit or a model box — those are different claims.
+            "eurovent": ahu_eurovent.assess_casing(decl),
             "state": ahu.unit_state(ctx), "steps": steps,
             "bom": ctx["bom"], "docs": ctx["docs"], "trace": ctx["trace"],
             "ncr": ctx["ncr"], "dispatch": ctx["dispatch"],
@@ -5763,6 +6287,15 @@ class Handler(BaseHTTPRequestHandler):
         _err = self._appr_check(u, coll, item.get("status"), set_status, item.get("signatures"), _appr_owner,
                                 owns=_owns_rec, rec=item)
         if _err:
+            # A gate that will not pass is the event, not the refusal message. Whoever tried already
+            # knows; the production lead who has to go and clear the blockers, and the sales owner
+            # whose date may move, do not. Web Push collapses on the tag, so repeated attempts
+            # replace the alert rather than stacking — the second try is the same news as the first.
+            if coll == "ahu_steps":
+                try:
+                    self._ahu_notify_gate_held(item)
+                except Exception:
+                    pass
             return self._err(_err, 403)
         # A payment disbursement MUST carry the bank transfer slip (proof of payment). Enforce it BEFORE
         # appending the signature so a slip-less attempt never strands an orphan Paid e-signature. Allow
@@ -5942,6 +6475,8 @@ class Handler(BaseHTTPRequestHandler):
                     item["bankSlip"] = _slip
                     item["bankSlipName"] = str(_att.get("bankSlipName") or "bank-payment-slip")[:120]
         db.put_collection_item(coll, item)
+        if coll.startswith("ahu_"):
+            _ahu_touch()          # a sign-off is exactly the event a board is being watched for
         db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
             "action": "E-signature — " + meaning,
             "target": coll + "/" + str(iid),
@@ -7891,12 +8426,13 @@ class Handler(BaseHTTPRequestHandler):
         t = t.replace("\u0111", "d").replace("\u0110", "D").lower()
         return [w for w in re.split(r"[^a-z0-9]+", t) if w]
 
-    def _pm_same_person(self, a, b):
+    @staticmethod
+    def _pm_same_person(a, b):
         """Two spellings of one person. The Team & RACI tab holds "Trung Nguyen" while the employee
         record says "Nguyen Van Trung" — short Western order against full Vietnamese order — so an
         exact comparison locks people out of their own projects. Requires two shared tokens (half this
         company is a Nguyen) and containment one way or the other."""
-        A, B = self._pm_name_tokens(a), self._pm_name_tokens(b)
+        A, B = Handler._pm_name_tokens(a), Handler._pm_name_tokens(b)
         if len(A) < 2 or len(B) < 2:
             return False
         sa, sb = set(A), set(B)
@@ -8874,6 +9410,7 @@ class Handler(BaseHTTPRequestHandler):
             if _err_fam:
                 return _err_fam
         if name.startswith("ahu_"):
+            _ahu_touch()
             # Same reasoning as the eng_ strip below: a signature is applied by /api/esign and by
             # nothing else. A POST arriving with signedBy already filled would produce a workstation
             # sign-off, a passed hold point or a signed gate attributed to somebody who never signed
@@ -14818,8 +15355,13 @@ class Handler(BaseHTTPRequestHandler):
             _err_fam = self._ahu_check_family(item)
             if _err_fam:
                 return _err_fam
+        _before_readings = None
         if name.startswith("ahu_"):
             existing = db.get_collection_item(name, iid)
+            # Kept for the alert at the bottom of this method: whether a step has JUST started
+            # failing can only be answered against what it read before this write.
+            if name == "ahu_steps":
+                _before_readings = ahu.readings_of(existing or {})
             if existing:
                 for _k in ("createdBy", "createdById"):
                     if existing.get(_k) is not None:
@@ -15007,6 +15549,17 @@ class Handler(BaseHTTPRequestHandler):
                                    "conflict": True}, 409)
         else:
             _out = db.put_collection_item(name, item)
+        # A reading that has just gone out of limit is the moment somebody's day changes, and until
+        # now it changed only for whoever happened to be looking at the board. Compared against the
+        # stored readings so re-saving an already-failed step does not alert anyone twice — the
+        # trigger is the TRANSITION into failure, not the state of being failed.
+        if name.startswith("ahu_"):
+            _ahu_touch()
+        if name == "ahu_steps":
+            try:
+                self._ahu_notify_step_fail(_before_readings, _out)
+            except Exception:
+                pass
         return self._json({"ok": True, "item": {k: v for k, v in _out.items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
@@ -15220,6 +15773,7 @@ def main():
         threading.Thread(target=_appr_reminder_scheduler, daemon=True).start()   # overdue-approval nudges
         threading.Thread(target=_digest_scheduler, daemon=True).start()          # weekly manager/leadership digest
         threading.Thread(target=_tk_nudge_scheduler, daemon=True).start()        # check-in/out timekeeping nudges
+        threading.Thread(target=_ahu_ncr_scheduler, daemon=True).start()         # AHU: chase aging non-conformances
         threading.Thread(target=_monthly_scheduler, daemon=True).start()         # month-end report pack to leadership
         print("  Invoice tracking: app-only mailbox sync every %d min for %s" % (INVTRACK["interval"], INVTRACK["mailbox"]))
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

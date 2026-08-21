@@ -947,6 +947,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   #payslipOverlay { position: absolute !important; inset: 0 !important; background:var(--card) !important; display: block !important; padding: 0 !important; }
   #payslipOverlay .modal { box-shadow: none !important; max-width: 100% !important; }
   #payslipOverlay .modal-footer, #payslipOverlay .modal-close { display: none !important; }
+  /* The AHU shop-floor card. Same visibility trick as the payslip: everything is hidden and only
+     this overlay is shown, so one Print prints a card and not the whole portal around it. */
+  #ahuCardOverlay, #ahuCardOverlay * { visibility: visible !important; }
+  #ahuCardOverlay { position: absolute !important; inset: 0 !important; background: #fff !important;
+    display: block !important; padding: 0 !important; overflow: visible !important; }
+  #ahuCardOverlay .ahu-card-noprint { display: none !important; }
+  #ahuCardOverlay .ahu-card-step { break-inside: avoid; page-break-inside: avoid; }
 }
 </style>
 </head>
@@ -1106,6 +1113,10 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="nav-item" data-app="ahu" onclick="showView('ahu-orders',this,'Orders &amp; Contracts')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg></span>
     <span class="nav-label">Orders &amp; Contracts</span>
+  </div>
+  <div class="nav-item" data-app="ahu" onclick="showView('ahu-capacity',this,'Capacity &amp; Load')">
+    <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="10" width="3" height="8"/><rect x="13" y="5" width="3" height="13"/></svg></span>
+    <span class="nav-label">Capacity &amp; Load</span>
   </div>
   <div class="nav-item" data-app="ahu" onclick="showView('ahu-standard',this,'Production Standard')">
     <span class="nav-icon"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></span>
@@ -1498,6 +1509,7 @@ window.addEventListener('orientationchange', _setLoginBg);
 <div id="view-ahu-units" class="view"><div class="page-header"><div><h1>AHU Register</h1><p>Every unit by its Production Identification Number, from order to dispatch</p></div></div><div id="ahu-units-root"></div></div>
 <div id="view-ahu-orders" class="view"><div class="page-header"><div><h1>Orders &amp; Contracts</h1><p>Customer purchase orders and contracts, and the units built against each</p></div></div><div id="ahu-orders-root"></div></div>
 <div id="view-ahu-standard" class="view"><div class="page-header"><div><h1>Production Standard</h1><p>AHU-SOP-MASTER-001 as the factory actually applies it — stages, workstations, hold points and the test matrix</p></div></div><div id="ahu-standard-root"></div></div>
+<div id="view-ahu-capacity" class="view"><div class="page-header"><div><h1>Capacity &amp; Load</h1><p>The rolling load chart AHU-SOP-MASTER-001 &sect;6.7 calls for &mdash; hours of committed work against the weeks they fall in</p></div></div><div id="ahu-capacity-root"></div></div>
 <div id="view-ahu-unit" class="view"><div id="ahu-unit-root"></div></div>
 
 <!-- ═══ ESTIMATING: the tender price, built from its parts ═══ -->
@@ -5759,6 +5771,18 @@ function _applyRole(role) {
       return;
     }
   } catch (e) {}
+  /* Deep-link: a code on the shop-floor card opens /?ahu=<unitId>&step=<code>. The whole value of
+     scanning at the machine is that the very next thing on screen is the readings form for THAT
+     step — landing on a dashboard and making somebody find the unit, the tab and the row is most of
+     the work the scan was meant to remove. */
+  try {
+    const _q = new URLSearchParams(location.search), _au = _q.get('ahu');
+    if (_au && !_appDeniedCurrent('ahu')) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      ahuOpenUnit(_au, 'route', _q.get('step') || '');
+      return;
+    }
+  } catch (e) {}
   /* Home is the dashboard again. #40 made the apps board the landing view for EVERYONE; that is a
      change every person in the company meets on their next sign-in, and it went out between two
      unrelated deploys rather than at a moment anyone chose. Reverted to the previous behaviour while
@@ -7037,6 +7061,7 @@ const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
    Use tkIcon('name') in JS-rendered markup; stroke=currentColor inherits the button colour. */
 const TK_ICON = {
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="17" y1="17" x2="21" y2="17"/><line x1="17" y1="21" x2="17" y2="21.01"/><line x1="21" y1="21" x2="21" y2="21.01"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
@@ -16005,7 +16030,14 @@ const _QA_SPECS = {
     { k: 'receivedQty', label: 'Received quantity', type: 'number' },
     { k: 'shortageQty', label: 'Shortage', type: 'number' },
     { k: 'iqcStatus', label: 'Incoming inspection', type: 'select', options: ['', 'Pending', 'Passed', 'Rejected', 'N/A'] },
-    { k: 'supplier', label: 'Supplier' }, { k: 'notes', label: 'Notes', type: 'textarea' }] },
+    { k: 'supplier', label: 'Supplier' },
+    // Where the material came from. Today this is typed, and the same fact already exists as a
+    // purchase-order line in Procurement — see docs/PROCUREMENT-BOM-LINK.md for the contract that
+    // would fill it automatically. Recording it by hand in the meantime is not busywork: without
+    // it the portal cannot answer "where did this material come from" at all, and a kitted line
+    // with no source is exactly what a link would have to reconcile.
+    { k: 'poRef', label: 'Purchase order / receipt' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
   ahu_trace: { title: 'Component Serial', coll: 'ahu_trace', reload: 'ahu_trace', fields: [
     { k: 'component', label: 'Component', type: 'select', options: ['Fan', 'Motor', 'Coil', 'Filter', 'Controller', 'Damper', 'Heat recovery', 'Other'] },
     { k: 'maker', label: 'Make' }, { k: 'serial', label: 'Serial number' }, { k: 'batch', label: 'Batch / lot' },
@@ -29323,7 +29355,7 @@ async function ahuRenderBoard() {
       ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') + '</td></tr>';
   }).join('');
 
-  root.innerHTML = kpiHtml + _ahuCard(
+  root.innerHTML = kpiHtml + '<div id="ahu-sop-kpi"></div>' + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div style="font-weight:800;color:var(--navy)">Units on the floor</div>' +
     '<div style="font-size:11.5px;color:var(--text-light)" id="ahu-board-stamp"></div></div>' +
@@ -29331,13 +29363,75 @@ async function ahuRenderBoard() {
     '<th>PIN</th><th>Tag</th><th>Family</th><th>Production stage</th><th>Completion</th><th>State</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>');
   _ahuBoardTick();
+  ahuRenderSopKpi();
 }
+
+/* ── The SOP's own KPI table (AHU-SOP-MASTER-001 section 1.4) ──
+   Eight KPIs with a target and an owning function, defined since the procedure was written and
+   never computed. These are arithmetic over records that were e-signed when the work happened,
+   which is the difference between a KPI and a number typed into a monthly slide.
+
+   Three of the eight cannot be computed at all, and say so. A dashboard quietly showing 100% for a
+   class nobody tests would be worse than no dashboard. */
+async function ahuRenderSopKpi() {
+  const root = document.getElementById('ahu-sop-kpi'); if (!root) return;
+  let d;
+  try { d = await tkApi('/api/ahu/kpi'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000;font-size:12.5px">Could not compute the ' +
+      'SOP KPIs: ' + _ahuEsc(e.message) + '</div>') + '<div style="height:12px"></div>';
+    return;
+  }
+  const cell = k => {
+    if (k.status === 'NOT_MEASURED') {
+      return '<div style="border:1px dashed var(--line);border-radius:9px;padding:10px 12px;background:var(--soft-bg)">' +
+        '<div style="font-size:11.5px;font-weight:700;color:var(--text-light)">' + _ahuEsc(k.kpi) + '</div>' +
+        '<div style="font-size:15px;font-weight:800;color:#A16207;margin:3px 0">Not measured</div>' +
+        '<div style="font-size:10.5px;color:var(--text-light);line-height:1.45">' + _ahuEsc(k.why) + '</div></div>';
+    }
+    const has = k.pct != null || k.value != null;
+    const val = k.value != null ? k.value : (k.pct != null ? k.pct + '%' : '—');
+    const tone = !has ? '#94A3B8' : (k.met ? '#00B060' : '#DC2626');
+    const dist = k.distribution && Object.keys(k.distribution).length
+      ? Object.keys(k.distribution).map(c => c + ' x' + k.distribution[c]).join(' · ') : '';
+    return '<div style="border:1px solid ' + tone + '35;border-radius:9px;padding:10px 12px">' +
+      '<div style="font-size:11.5px;font-weight:700;color:var(--navy)">' + _ahuEsc(k.kpi) + '</div>' +
+      '<div style="font-size:21px;font-weight:800;color:' + tone + ';line-height:1.3;font-variant-numeric:tabular-nums">' +
+      _ahuEsc(val) + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light)">Target ' + _ahuEsc(k.target) +
+      ' · ' + _ahuEsc(k.owner) + (k.n != null ? ' · n=' + k.n : '') + '</div>' +
+      (dist ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">Achieved: ' +
+        _ahuEsc(dist) + '</div>' : '') +
+      (!has ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">No data yet</div>' : '') +
+      ((k.late || []).length ? '<div style="font-size:10.5px;color:#DC2626;margin-top:2px">Late: ' +
+        _ahuEsc(k.late.slice(0, 3).map(l => l.pin).join(', ')) + '</div>' : '') + '</div>';
+  };
+  root.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Objectives &amp; KPIs</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)"> — AHU-SOP-MASTER-001 §1.4, over ' +
+    _ahuEsc(d.units) + ' unit(s)</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _ahuEsc(d.meeting) + ' of ' +
+    _ahuEsc(d.ofTargets) + ' targets met · ' + _ahuEsc(d.notMeasured) + ' not measured</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px">' +
+    (d.kpis || []).map(cell).join('') + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
+    'Computed from signed records, not entered. A casing class is the class ACHIEVED at test — a ' +
+    'unit sold as L1 and measured at 0.30 fails its contract and achieves L2, and both facts matter.' +
+    '</div>') + '<div style="height:12px"></div>';
+}
+
 function _ahuBoardTick() {
   const el = document.getElementById('ahu-board-stamp');
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 /* The board is the one screen somebody leaves open on a wall, so it refreshes itself — but only
-   while it is actually the visible view, so a backgrounded tab is not polling the server forever. */
+   while it is actually the visible view, so a backgrounded tab is not polling the server forever.
+
+   The 30-second timer STAYS even while live updates are running. That is not redundancy for its own
+   sake: a live connection that dies quietly leaves a board that looks live and is frozen, which is
+   worse than a slow board. Live updates make the common case immediate; the timer is what makes
+   "stopped" impossible. */
 function _ahuBoardAuto() {
   clearInterval(_AHU.timer);
   _AHU.timer = setInterval(() => {
@@ -29345,7 +29439,47 @@ function _ahuBoardAuto() {
     if (!v || !v.classList.contains('active') || document.hidden) return;
     ahuRenderBoard();
   }, 30000);
+  _ahuLive();
 }
+
+/* Live updates: a request the server holds open until something moves.
+
+   Long polling rather than server-sent events, because EventSource cannot send an Authorization
+   header — an SSE endpoint would have to take the session token in the query string, and a URL is
+   written to the access log of every proxy in between. This keeps the credential where the rest of
+   the API keeps it, at the same latency, with no second kind of credential to mint and revoke.
+
+   The server answers with a revision number and nothing else; the board then re-reads the API. One
+   description of a unit's state, not two that can disagree. */
+function _ahuLive() {
+  if (_AHU.live) return;                       // one loop per screen, not one per render
+  _AHU.live = true;
+  (async () => {
+    while (_AHU.live) {
+      const v = document.getElementById('view-ahu-board');
+      if (!v || !v.classList.contains('active')) { _AHU.live = false; return; }
+      if (document.hidden) { await new Promise(r => setTimeout(r, 5000)); continue; }
+      try {
+        const d = await tkApi('/api/ahu/changes?since=' + (_AHU.rev == null ? 0 : _AHU.rev));
+        if (d.busy) {
+          // The server is at its waiter cap. Back off hard: a tight retry loop from every wall
+          // board is how a cap becomes an outage.
+          _AHU.rev = d.rev;
+          await new Promise(r => setTimeout(r, 60000));
+          continue;
+        }
+        const moved = _AHU.rev != null && d.rev !== _AHU.rev;
+        _AHU.rev = d.rev;
+        if (moved && !document.hidden) ahuRenderBoard();
+      } catch (e) {
+        // A dropped connection, a sleeping tablet, a deploy. The timer is still running, so this
+        // only has to recover eventually — not immediately.
+        await new Promise(r => setTimeout(r, 15000));
+      }
+    }
+  })();
+}
+
 
 /* ───────────────────────── AHU register ───────────────────────── */
 async function ahuRenderUnits() {
@@ -29429,10 +29563,15 @@ function ahuSignOrder(id) {
   });
 }
 
-function ahuOpenUnit(id, tab) {
+function ahuOpenUnit(id, tab, step) {
   _AHU.unitId = id;
   try { sessionStorage.setItem('ahu_unit', id); } catch (e) { }
   _AHU.tab = tab || 'route';
+  // A scanned code names a STEP, and the reason to scan at the machine is that the readings form
+  // for that step is the next thing on screen. Expanding it here rather than leaving somebody to
+  // find the row is the whole feature.
+  _AHU.openStep = step || null;
+  if (step) _AHU.tab = 'route';
   showView('ahu-unit', null, 'AHU Traveller');
 }
 
@@ -29490,6 +29629,9 @@ async function ahuRenderTraveller() {
     tkIcon('download', 12) + ' As-built dossier</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuTravellerPDF()">' +
     tkIcon('download', 12) + ' Traveller card</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuShopCard()" ' +
+    'title="A printable card with a scannable code beside every remaining step, so sign-offs happen at the machine.">' +
+    tkIcon('qr', 12) + ' Shop-floor card</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuRebuildRoute()" ' +
     'title="Re-read the route from the standard after a specification change. Signatures and readings are carried forward.">' +
     tkIcon('refresh', 12) + ' Rebuild route</button>' +
@@ -29520,6 +29662,17 @@ function ahuTab(k) {
                ncr: _ahuTabNcr, dispatch: _ahuTabDispatch, dossier: _ahuTabDossier }[k];
   try { body.innerHTML = fn ? fn(_AHU.unit) : ''; }
   catch (e) { body.innerHTML = _ahuCard('<div style="color:#C00000">Could not draw this tab: ' + _ahuEsc(e.message) + '</div>'); }
+  // A scan opens a step that may be forty rows down a route. Bringing it into view is the
+  // difference between landing on the right step and landing on a long list that contains it.
+  if (k === 'route' && _AHU.openStep) {
+    const el = document.getElementById('ahu-step-' + _AHU.openStep);
+    if (el) {
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { el.scrollIntoView(); }
+      el.style.outline = '2px solid var(--emerald)';
+      el.style.outlineOffset = '2px';
+      setTimeout(() => { el.style.outline = ''; }, 2400);
+    }
+  }
 }
 
 /* ── Route & sign-off ── */
@@ -29582,7 +29735,8 @@ function _ahuStepRow(s, gateBlk) {
       gb.map(b => '<li>' + _ahuEsc(b) + '</li>').join('') + '</ul></div>';
   }
 
-  return '<div style="border:1px solid ' + (blocked ? 'var(--line)' : tone + '40') +
+  return '<div id="ahu-step-' + _ahuA(s.code) + '" style="border:1px solid ' +
+    (blocked ? 'var(--line)' : tone + '40') +
     ';border-radius:9px;padding:10px 12px;background:' + (signed ? '#00B0600A' : 'transparent') + '">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
     '<div style="min-width:220px;flex:1">' +
@@ -29704,6 +29858,52 @@ function ahuFailStep(code) {
    retyping them. This panel says which figures came from where, whether the document was
    signature-verified, and — the part that matters — which declared classes are still only targets
    that a test has to prove. */
+/* ── How this unit stands against what the industry recommends ─────────────────────────────────
+   Eurovent 6/18-2022 is the European AHU industry's own statement of what a good unit is, written
+   by the product group that represents most manufacturers on the market. It is a RECOMMENDATION,
+   not this factory's acceptance criterion — AHU-SOP-MASTER-001 is that — so nothing here refuses a
+   step. It is shown next to the declaration because that is where the difference is actionable.
+
+   The distinction the panel exists for: Eurovent states its strength and leakage minimums as
+   D2 (R) and L2 (R), on a REAL unit. A class established on a model box — a two-section assembly
+   of frame, doors and panels, no dampers or piping — is a different claim, and "D2" on its own does
+   not say which. That is reported as not stated rather than resolved either way. */
+const _AHU_EV_TONE = { MEETS: '#00B060', BELOW: '#DC2626', NOT_DECLARED: '#94A3B8',
+                       UNDETERMINED: '#A16207' };
+const _AHU_EV_LABEL = { MEETS: 'Meets', BELOW: 'Below', NOT_DECLARED: 'Not declared',
+                        UNDETERMINED: 'Basis not stated' };
+
+function _ahuEuroventPanel(d) {
+  const rows = d.eurovent || [];
+  if (!rows.length) return '';
+  const worst = rows.some(r => r.status === 'BELOW') ? '#DC2626'
+    : rows.some(r => r.status === 'UNDETERMINED' || r.status === 'NOT_DECLARED') ? '#A16207'
+    : '#00B060';
+  const body = rows.map(r =>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">' +
+    '<span style="font-weight:600;font-size:12.5px">' + _ahuEsc(r.label) + '</span>' +
+    '<span style="display:flex;gap:6px;align-items:center">' +
+    (r.declared ? '<span style="font-size:12px;font-weight:700;color:var(--navy);' +
+      'font-variant-numeric:tabular-nums">' + _ahuEsc(r.declared) + '</span>' : '') +
+    _ahuBadge(_AHU_EV_LABEL[r.status] || r.status, _AHU_EV_TONE[r.status] || '#94A3B8') +
+    '</span></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' +
+    _ahuEsc(r.says) + '</div>' +
+    '<div style="font-size:11px;color:' + (_AHU_EV_TONE[r.status] || '#64748B') + ';margin-top:2px">' +
+    _ahuEsc(r.why) + '</div>' +
+    (r.note ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px;font-style:italic">' +
+      _ahuEsc(r.note) + '</div>' : '') +
+    '</div>').join('');
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Against the industry recommendation</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Eurovent 6/18-2022, the European AHU ' +
+    'industry\'s own quality criteria. Advisory — the SOP is what a gate refuses on.</div></div>' +
+    '<span style="width:11px;height:11px;border-radius:50%;background:' + worst + '"></span>' +
+    '</div><div style="margin-top:8px">' + body + '</div>');
+}
+
 function _ahuSelectionPanel(d) {
   const u = d.unit || {};
   const has = !!u.selectionRef;
@@ -29866,6 +30066,7 @@ function _ahuTabDocs(d) {
     : '<tr><td colspan="7" style="color:var(--text-light);padding:14px">Nothing filed against this unit yet.</td></tr>';
 
   return _ahuSelectionPanel(d) + '<div style="height:12px"></div>' +
+    _ahuEuroventPanel(d) + (d.eurovent && d.eurovent.length ? '<div style="height:12px"></div>' : '') +
     _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Travels with the unit</div>' +
     '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
     'SOP section 12.5. Gate G6 refuses dispatch until every one of these is attached.</div>' + check) +
@@ -29877,6 +30078,26 @@ function _ahuTabDocs(d) {
       '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:720px"><thead><tr>' +
       '<th>Document no.</th><th>Title</th><th>Kind</th><th>Rev</th><th>Status</th><th>Form</th><th></th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+}
+
+/* How many kitted lines can say where their material came from.
+
+   Deliberately a STATEMENT, not a gate criterion. Kitting from existing stock is normal and its
+   incoming inspection happened on a different record months earlier, so demanding a receipt per
+   line would refuse legitimate work — and inventing an acceptance rule the company has not written
+   is exactly what this module tries not to do. What the count does is make the gap visible, which
+   is the honest position until the Procurement link fills the field automatically. See
+   docs/PROCUREMENT-BOM-LINK.md. */
+function _ahuSourceNote(bom) {
+  const kitted = (bom || []).filter(b => Number(b.kittedQty || 0) > 0);
+  if (!kitted.length) return '';
+  const sourced = kitted.filter(b => String(b.poRef || '').trim()).length;
+  if (sourced === kitted.length) return '';
+  return '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:#A1620710;' +
+    'border:1px solid #A1620730;font-size:11.5px;color:#7A4E05">' +
+    (kitted.length - sourced) + ' of ' + kitted.length + ' kitted line(s) do not record a purchase ' +
+    'order or receipt. G3 does not refuse on this — kitting from stock is normal — but until it is ' +
+    'filled in, the portal cannot say where that material came from.</div>';
 }
 
 /* ── Materials ── */
@@ -29894,17 +30115,21 @@ function _ahuTabBom(d) {
       '<td>' + (b.iqcStatus ? _ahuBadge(b.iqcStatus, _ahuTone(b.iqcStatus === 'Passed' ? 'passed' : 'pending')) : '—') + '</td>' +
       '<td style="font-variant-numeric:tabular-nums;color:' + (n(b.shortageQty) > 0 ? '#DC2626' : 'inherit') + '">' +
       _ahuEsc(b.shortageQty || 0) + '</td>' +
+      '<td style="font-size:11.5px;font-variant-numeric:tabular-nums">' +
+      (b.poRef ? _ahuEsc(b.poRef)
+               : '<span style="color:#A16207" title="This line does not say where the material came from">not recorded</span>') +
+      '</td>' +
       '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_bom\',\'' +
       _ahuA(b.id) + '\')">Edit</button></td></tr>';
-  }).join('') : '<tr><td colspan="8" style="color:var(--text-light);padding:14px">No bill of materials raised.</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="color:var(--text-light);padding:14px">No bill of materials raised.</td></tr>';
   return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div><span style="font-weight:800;color:var(--navy)">Bill of materials</span>' +
     '<div style="font-size:11.5px;color:var(--text-light)">Gate G3 needs every line kitted, incoming inspection closed and no shortage.</div></div>' +
     '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_bom\')">' +
     tkIcon('plus', 12) + ' Add a line</button></div>' +
-    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
-    '<th>Part no.</th><th>Description</th><th>Required</th><th>Kitted</th><th>Received</th><th>IQC</th><th>Short</th><th></th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:860px"><thead><tr>' +
+    '<th>Part no.</th><th>Description</th><th>Required</th><th>Kitted</th><th>Received</th><th>IQC</th><th>Short</th><th>PO / receipt</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' + _ahuSourceNote(bom));
 }
 
 /* ── Traceability ── */
@@ -30056,6 +30281,148 @@ async function ahuRebuildRoute() {
     await ahuRenderTraveller();
   } catch (e) { toast('Could not rebuild the route: ' + e.message, 'warn'); }
   finally { _AHU.busy = false; }
+}
+
+/* The two numbers this module cannot derive: how many productive hours the floor has in a week, and
+   how long a non-conformance may sit before somebody is chased about it. Put HERE, next to the chart
+   that is useless without the first of them, rather than in a settings screen three clicks away —
+   the moment you learn the capacity is missing is the moment to type it in. */
+function _ahuSettingsPanel(d) {
+  const cap = d.capacity == null ? '' : d.capacity;
+  return _ahuCard(
+    '<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">' +
+    '<div><div style="font-size:11px;color:var(--text-light);margin-bottom:3px">Weekly capacity (productive hours)</div>' +
+    '<input id="ahu-cap-h" class="form-control" type="number" min="1" max="10000" step="1" ' +
+    'style="width:150px" value="' + _ahuA(cap) + '" placeholder="not set"></div>' +
+    '<div><div style="font-size:11px;color:var(--text-light);margin-bottom:3px">Chase an NCR after (days)</div>' +
+    '<input id="ahu-ncr-days" class="form-control" type="number" min="1" max="365" step="1" ' +
+    'style="width:150px" value="' + _ahuA(d.ncrAgingDays == null ? '' : d.ncrAgingDays) + '"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="ahuSaveSettings()">Save</button>' +
+    '<div id="ahu-set-msg" style="font-size:11.5px;color:var(--text-light)"></div></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">Leave the capacity blank and ' +
+    'the chart reports hours with no verdict. That is deliberate — a chart drawn against a guessed ' +
+    'capacity looks exactly like one drawn against a real one, and this is the number a delivery ' +
+    'promise rests on.</div>');
+}
+
+async function ahuSaveSettings() {
+  const msg = document.getElementById('ahu-set-msg');
+  const capEl = document.getElementById('ahu-cap-h');
+  const daysEl = document.getElementById('ahu-ncr-days');
+  if (!capEl || !daysEl) return;
+  msg.textContent = 'Saving…';
+  try {
+    await tkApi('/api/ahu/settings', { method: 'PATCH', body: {
+      weeklyCapacityH: capEl.value.trim() === '' ? null : Number(capEl.value),
+      ncrAgingDays: daysEl.value.trim() === '' ? null : Number(daysEl.value)
+    } });
+    msg.style.color = 'var(--emerald)';
+    msg.textContent = 'Saved';
+    ahuRenderCapacity();
+  } catch (e) {
+    msg.style.color = '#C00000';
+    msg.textContent = e.message;
+  }
+}
+
+/* ───────────────────────── Capacity & load (SOP §6.7) ─────────────────────────
+   The SOP names a rolling 8-week load chart as the CONTROL against the risk "delivery date shorter
+   than feasible", and nothing computed it. Every unit's route already carries the SOP tact per
+   workstation, so the hours were always known.
+
+   Two honesty rules the server enforces and this screen must not soften: hours are booked at the
+   UPPER end of each tact band, and a unit whose section count is unknown is reported rather than
+   assumed to have one section — assuming one would understate a five-section unit fivefold, and
+   understating capacity is exactly how an impossible date gets promised. */
+async function ahuRenderCapacity() {
+  const root = document.getElementById('ahu-capacity-root'); if (!root) return;
+  root.innerHTML = tkSkeleton();
+  let d, cfg;
+  try { [d, cfg] = await Promise.all([tkApi('/api/ahu/capacity?weeks=8'), tkApi('/api/ahu/settings')]); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000">Could not build the load chart: ' +
+      _ahuEsc(e.message) + '</div>');
+    return;
+  }
+  d = Object.assign({}, d, cfg || {});
+  const weeks = d.weeks || [];
+  const peak = Math.max(1, ...weeks.map(w => w.hours || 0), d.capacity || 0);
+
+  const bars = weeks.map(w => {
+    const h = w.hours || 0;
+    const pct = Math.round(100 * h / peak);
+    const tone = w.over ? '#DC2626' : (d.capacity && h > d.capacity * 0.85 ? '#F59E0B' : 'var(--emerald)');
+    return '<div style="flex:1;min-width:64px;text-align:center">' +
+      '<div style="height:130px;display:flex;align-items:flex-end;justify-content:center">' +
+      '<div title="' + _ahuA(h + ' h' + (w.utilisation != null ? ' · ' + w.utilisation + '% of capacity' : '')) +
+      '" style="width:70%;height:' + Math.max(2, pct) + '%;background:' + tone +
+      ';border-radius:5px 5px 0 0"></div></div>' +
+      '<div style="font-size:11.5px;font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums;margin-top:4px">' +
+      _ahuEsc(h) + ' h</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light)">' + _ahuEsc((w.week || '').slice(5)) + '</div>' +
+      (w.utilisation != null ? '<div style="font-size:10.5px;color:' + tone + ';font-weight:600">' +
+        _ahuEsc(w.utilisation) + '%</div>' : '') + '</div>';
+  }).join('');
+
+  const capLine = d.capacity
+    ? '<div style="font-size:11.5px;color:var(--text-light)"><span>Weekly capacity</span> ' +
+      _ahuEsc(d.capacity) + ' h · ' + _ahuEsc(weeks.filter(w => w.over).length) +
+      ' <span>weeks over capacity</span></div>'
+    : '<div style="font-size:11.5px;color:#A16207">' + _ahuEsc(d.note || '') + '</div>';
+
+  const problem = (title, rows, fmt, tone) => rows && rows.length
+    ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:' + tone +
+      '10;border:1px solid ' + tone + '30;font-size:12px">' +
+      '<div style="font-weight:700;color:' + tone + ';margin-bottom:3px">' + _ahuEsc(title) + '</div>' +
+      rows.map(fmt).join('') + '</div>' : '';
+
+  const unknown = Object.keys(d.unknown || {});
+  const unknownBlock = unknown.length
+    ? '<div style="margin-top:10px;padding:9px 11px;border-radius:8px;background:#A1620710;' +
+      'border:1px solid #A1620730;font-size:12px">' +
+      '<div style="font-weight:700;color:#A16207;margin-bottom:3px">' + unknown.length + ' ' +
+      '<span>unit(s) have hours this chart cannot count</span></div>' +
+      '<div style="color:var(--text-light);font-size:11.5px;margin-bottom:4px">Five workstations are ' +
+      'quoted per section. Rather than assume one section — which would understate the floor — those ' +
+      'stations are left out and named here. Importing the AeroSelect selection supplies the count.</div>' +
+      unknown.slice(0, 6).map(p => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(p) +
+        '</div>').join('') + '</div>'
+    : '';
+
+  const elapsed = (d.elapsed || []).filter(e => (e.steps || []).some(s => s.overTact));
+  const elapsedBlock = elapsed.length
+    ? _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:4px">Running longer than tact</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+      _ahuEsc(d.cycleNote || '') + '</div>' +
+      elapsed.map(e => '<div style="padding:6px 0;border-bottom:1px solid var(--line)">' +
+        '<span style="font-weight:700;color:var(--navy);font-variant-numeric:tabular-nums">' +
+        _ahuEsc(e.pin) + '</span> ' +
+        e.steps.filter(s => s.overTact).map(s =>
+          '<span style="font-size:11.5px;color:#DC2626">' + _ahuEsc(s.code) + ' ' +
+          _ahuEsc(s.elapsedH) + ' h vs ' + _ahuEsc(s.tactHiH) + ' h</span>').join(' · ') +
+        '</div>').join('')) + '<div style="height:12px"></div>'
+    : '';
+
+  // The panel is for the person who can act on it. Showing a disabled form to the shop floor
+  // invites them to try and be refused; the chart itself is what they came for.
+  const setPanel = d.canEdit ? _ahuSettingsPanel(d) + '<div style="height:12px"></div>' : '';
+  root.innerHTML = setPanel + _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Remaining work by week</span>' +
+    /* The static half is its OWN text node so the DOM-walk translator can reach it — a phrase built
+       by concatenating a number into a sentence is one node the walker will never match. */
+    '<span style="font-size:11.5px;color:var(--text-light)"> — ' + _ahuEsc(d.liveUnits) + '&nbsp;</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)">live units, booked at the upper end of ' +
+    'each SOP tact band</span></div>' + capLine + '</div>' +
+    '<div style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding-bottom:4px">' +
+    bars + '</div>' +
+    problem('Past their delivery date', d.overdue,
+      r => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.pin) + ' — due ' +
+        _ahuEsc(r.due) + ', ' + _ahuEsc(r.hours) + ' h still to do</div>', '#DC2626') +
+    problem('No delivery date, so not placed on the chart', d.undated,
+      r => '<div style="font-variant-numeric:tabular-nums">' + _ahuEsc(r.pin) + ' — ' +
+        _ahuEsc(r.hours) + ' h</div>', '#A16207') +
+    unknownBlock) + '<div style="height:12px"></div>' + elapsedBlock;
 }
 
 /* ───────────────────────── The standard, as reference ─────────────────────────
@@ -30260,6 +30627,97 @@ async function ahuDossierPDF() {
 }
 
 /* A single-page card for the unit itself — what the shop floor pins to the frame. */
+/* ── Scan-to-step ──────────────────────────────────────────────────────────────────────────────
+   A sign-off that has to be walked back to a desk is a sign-off that happens at the end of the
+   shift, from memory, in a batch. The point of this card is that the record is made AT the machine:
+   a phone camera on the code beside the workstation opens that step's readings form and nothing
+   else.
+
+   Printed from the browser rather than drawn into a PDF. The codes are SVG, so they print at the
+   printer's own resolution instead of at whatever raster size a PDF library was handed — and a QR
+   is exactly the kind of image where that difference decides whether it scans. */
+async function ahuShopCard() {
+  const d = _AHU.unit; if (!d) return;
+  const id = ((d.unit || {}).id) || _AHU.unitId;
+  let c;
+  try { c = await tkApi('/api/ahu/unit/' + encodeURIComponent(id) + '/card'); }
+  catch (e) { toast('Could not build the card: ' + e.message, 'warn'); return; }
+  const u = c.unit || {}, o = c.order || {};
+
+  const head =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;' +
+    'border-bottom:2px solid #0B1F3A;padding-bottom:10px;margin-bottom:14px">' +
+    '<div><div style="font-size:22px;font-weight:800;color:#0B1F3A;font-variant-numeric:tabular-nums">' +
+    _ahuEsc(u.pin || u.id) + '</div>' +
+    '<div style="font-size:12px;color:#444;margin-top:2px">' +
+    _ahuEsc([u.tag, u.family, o.poNumber, o.customer].filter(Boolean).join(' · ')) + '</div>' +
+    '<div style="font-size:12px;color:#444">' +
+    (o.deliveryDate ? 'Delivery ' + _ahuEsc(o.deliveryDate) : '') +
+    (u.sectionCount ? ' · ' + _ahuEsc(u.sectionCount) + ' sections' : '') + '</div></div>' +
+    '<div style="text-align:center">' + (c.unitQr || '') +
+    '<div style="font-size:10px;color:#666">Whole unit</div></div></div>';
+
+  const cards = (c.steps || []).map(st =>
+    '<div class="ahu-card-step" style="display:flex;gap:12px;align-items:center;' +
+    'border:1px solid #CBD5E1;border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div style="flex:0 0 auto">' + (st.qr ||
+      '<div style="width:96px;height:96px;border:1px dashed #DC2626;color:#DC2626;font-size:10px;' +
+      'display:flex;align-items:center;justify-content:center;text-align:center;padding:4px">' +
+      'no code — see the note below</div>') + '</div>' +
+    '<div style="flex:1 1 auto;min-width:0">' +
+    '<div style="font-size:16px;font-weight:800;color:#0B1F3A;font-variant-numeric:tabular-nums">' +
+    _ahuEsc(st.code) + '</div>' +
+    '<div style="font-size:13px;color:#111">' + _ahuEsc(st.title || '') + '</div>' +
+    '<div style="font-size:11px;color:#555;margin-top:3px">' +
+    _ahuEsc([st.station, st.tact, _AHU_KIND_LABEL[st.kind] || st.kind].filter(Boolean).join(' · ')) +
+    '</div></div>' +
+    '<div style="flex:0 0 150px;border-left:1px solid #E2E8F0;padding-left:10px;font-size:10px;color:#666">' +
+    'Signed by<div style="height:22px;border-bottom:1px solid #94A3B8;margin:2px 0 8px"></div>' +
+    'Date<div style="height:22px;border-bottom:1px solid #94A3B8;margin-top:2px"></div></div>' +
+    '</div>').join('');
+
+  // A step whose link is too long for a symbol is NAMED. A card with a silent gap where a code
+  // should be looks complete, and the person at that station simply finds nothing to scan.
+  const gaps = (c.unprintable || []).length
+    ? '<div style="margin-top:10px;font-size:11px;color:#DC2626">' +
+      'These steps have no code on this card: ' +
+      _ahuEsc((c.unprintable || []).map(x => x.code).join(', ')) +
+      '. The link was too long to encode. Sign them from the traveller screen.</div>'
+    : '';
+
+  const empty = (c.steps || []).length ? '' :
+    '<div style="font-size:13px;color:#444">Every step on this route is signed. There is nothing ' +
+    'left to scan.</div>';
+
+  let ov = document.getElementById('ahuCardOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'ahuCardOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;' +
+      'overflow:auto;padding:24px';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML =
+    '<div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;padding:22px">' +
+    '<div class="ahu-card-noprint" style="display:flex;justify-content:space-between;' +
+    'align-items:center;gap:10px;margin-bottom:14px">' +
+    '<div style="font-size:12px;color:#555">Print this and hang it with the unit. Scanning a code ' +
+    'opens that step on a phone or tablet, already signed in.</div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button class="btn btn-primary btn-sm" onclick="window.print()">Print</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="ahuCloseCard()">Close</button></div></div>' +
+    head + cards + empty + gaps +
+    '<div style="margin-top:12px;font-size:10px;color:#777">' +
+    _ahuEsc(c.origin || '') + ' · a code opens the portal at this step; signing still needs the ' +
+    'usual e-signature.</div></div>';
+  ov.style.display = 'block';
+}
+
+function ahuCloseCard() {
+  const ov = document.getElementById('ahuCardOverlay');
+  if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+
 async function ahuTravellerPDF() {
   const d = _AHU.unit; if (!d) return;
   const u = d.unit || {}, s = d.state || {};
@@ -30353,6 +30811,7 @@ function showView(id, navEl, title) {
   if (id === 'ahu-units') { try { ahuRenderUnits(); } catch (e) { console.warn('ahu-units:', e.message); } }
   if (id === 'ahu-unit') { try { ahuRenderTraveller(); } catch (e) { console.warn('ahu-unit:', e.message); } }
   if (id === 'ahu-standard') { try { ahuRenderStandard(); } catch (e) { console.warn('ahu-standard:', e.message); } }
+  if (id === 'ahu-capacity') { try { ahuRenderCapacity(); } catch (e) { console.warn('ahu-capacity:', e.message); } }
   if (id === 'est-projects') { try { estRenderProjects(); } catch (e) { console.warn('est-projects:', e.message); } }
   if (id === 'est-rates') { try { estRenderRates(); } catch (e) { console.warn('est-rates:', e.message); } }
   if (id === 'est-estimate') { try { estRenderWorkspace(); } catch (e) { console.warn('est-estimate:', e.message); } }
@@ -30851,6 +31310,33 @@ const _VI = {
   'AHU Register': 'Sổ đăng ký AHU',
   'Orders & Contracts': 'Đơn hàng & Hợp đồng',
   'Production Standard': 'Tiêu chuẩn sản xuất',
+  'Capacity & Load': 'Năng lực & Tải sản xuất',
+  'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
+  'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Against the industry recommendation': 'So với khuyến nghị của ngành',
+  "Eurovent 6/18-2022, the European AHU industry's own quality criteria. Advisory — the SOP is what a gate refuses on.": 'Eurovent 6/18-2022, tiêu chí chất lượng do chính ngành AHU châu Âu đặt ra. Mang tính tham khảo — cổng công đoạn vẫn chỉ từ chối theo SOP.',
+  'Basis not stated': 'Chưa nêu cơ sở đo',
+  'Not declared': 'Chưa khai báo',
+  'Meets': 'Đạt',
+  'Below': 'Chưa đạt',
+  'Purchase order / receipt': 'Đơn mua hàng / phiếu nhập',
+  'PO / receipt': 'ĐMH / phiếu nhập',
+  'not recorded': 'chưa ghi nhận',
+  'Shop-floor card': 'Thẻ xưởng',
+  'Print this and hang it with the unit. Scanning a code opens that step on a phone or tablet, already signed in.': 'In thẻ này và treo cùng sản phẩm. Quét mã sẽ mở đúng bước đó trên điện thoại hoặc máy tính bảng, đã đăng nhập sẵn.',
+  'Whole unit': 'Toàn bộ sản phẩm',
+  'Signed by': 'Người ký',
+  'Every step on this route is signed. There is nothing left to scan.': 'Mọi bước trên lộ trình đã được ký. Không còn gì để quét.',
+  'Weekly capacity (productive hours)': 'Năng lực theo tuần (giờ công hữu ích)',
+  'Chase an NCR after (days)': 'Nhắc xử lý NCR sau (ngày)',
+  'Leave the capacity blank and the chart reports hours with no verdict. That is deliberate — a chart drawn against a guessed capacity looks exactly like one drawn against a real one, and this is the number a delivery promise rests on.': 'Để trống năng lực thì biểu đồ chỉ báo số giờ mà không kết luận. Đây là chủ ý — biểu đồ vẽ theo một năng lực phỏng đoán trông y hệt biểu đồ vẽ theo năng lực thật, mà đây là con số mà cam kết giao hàng dựa vào.',
+  'live units, booked at the upper end of each SOP tact band': 'sản phẩm đang sản xuất, tính theo mức nhịp cao nhất của SOP',
+  'Weekly capacity': 'Năng lực theo tuần',
+  'weeks over capacity': 'tuần vượt năng lực',
+  'unit(s) have hours this chart cannot count': 'sản phẩm có số giờ mà biểu đồ này không thể tính',
+  'Past their delivery date': 'Đã quá ngày giao hàng',
+  'No delivery date, so not placed on the chart': 'Chưa có ngày giao hàng nên chưa đưa vào biểu đồ',
+  'Running longer than tact': 'Chạy lâu hơn nhịp sản xuất',
   'Order to dispatch — the shop floor, hold points, tests and the as-built record': 'Từ đơn hàng đến giao hàng — xưởng sản xuất, điểm dừng kiểm tra, thử nghiệm và hồ sơ hoàn công',
   'Production stage': 'Công đoạn sản xuất',
   'Route & sign-off': 'Lộ trình & ký duyệt',

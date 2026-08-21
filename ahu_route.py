@@ -61,9 +61,23 @@ SOP_DISCREPANCIES = [
          "intended, the target should say D1.")},
 ]
 
-# ── Panel construction, from the Design Standards ────────────────────────────────────────────────
-PANEL_PU_DENSITY_KGM3 = 45.0        # DS-MOD-001 section 4: injected PU 45 kg/m3
-PANEL_PU_DENSITY_TOL = 0.10         # +/-10% on a destructive sample - a foam figure is not a gauge reading
+# ── Panel construction ───────────────────────────────────────────────────────────────────────────
+# The DESIGN figure and the ACCEPTANCE band are two different things, and this module previously
+# conflated them. DS-MOD-001 section 4 specifies injected PU at 45 kg/m3 — that is what the panel is
+# designed to be. It says nothing about how far a destructive sample may fall from it, so the
+# original code invented "+/- 10%", giving 40.5 to 49.5.
+#
+# The company had already answered the question. HML-AHU-IPQC-2-001, the procedure that governs this
+# exact hold point, states the acceptance criterion outright:
+#
+#     Foam density  42-48 kg/m3   Density gauge   1/50 panels
+#
+# So the invented band was WIDER than the real one at both ends: it passed a panel at 41 or at 49
+# that the company's own inspection procedure rejects. The module docstring says "a limit is never
+# invented here"; this was the one place it was, and the source was sitting in the document set.
+PANEL_PU_DENSITY_KGM3 = 45.0        # DS-MOD-001 section 4 — the DESIGN figure, not the limit
+PANEL_DENSITY_MIN_KGM3 = 42.0       # IPQC-2-001 acceptance, stated
+PANEL_DENSITY_MAX_KGM3 = 48.0       # IPQC-2-001 acceptance, stated
 PANEL_LAMBDA_MAX = 0.022            # W/mK, DS-MOD-001 section 4
 
 # Default EN 1886 targets per family, from the Design Standards. A unit may declare its own; these
@@ -223,9 +237,8 @@ IPQC = [
      "checks": [
          {"key": "foam_density", "label": "Foam core density", "label_vn": "Mat do loi foam",
           "unit": "kg/m3", "op": "range",
-          "limit": PANEL_PU_DENSITY_KGM3 * (1 - PANEL_PU_DENSITY_TOL),
-          "limit2": PANEL_PU_DENSITY_KGM3 * (1 + PANEL_PU_DENSITY_TOL),
-          "src": "DS-MOD-001 section 4 (45 kg/m3 +/-10%)"},
+          "limit": PANEL_DENSITY_MIN_KGM3, "limit2": PANEL_DENSITY_MAX_KGM3,
+          "src": "IPQC-2-001 acceptance (42-48 kg/m3, density gauge, 1/50 panels)"},
          {"key": "foam_adhesion", "label": "Adhesion to both skins, no delamination", "op": "yes",
           "src": "SOP 10.3 IPQC-2"},
      ]},

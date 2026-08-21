@@ -74,6 +74,31 @@ def _readings(api, token, step, values):
 
 # ── the process, served rather than duplicated in the browser ────────────────────────────────────
 
+def test_the_kpi_endpoint_serves_every_sop_kpi_with_its_target_and_owner(api, tokens, unit):
+    """SOP section 1.4 defines eight KPIs with targets and owning functions. All eight are
+    reported, and the ones nothing measures say so rather than showing a flattering figure."""
+    st, r = api("GET", "/api/ahu/kpi", tokens["admin"])
+    assert st == 200, r
+    assert len(r["kpis"]) == 8
+    for k in r["kpis"]:
+        assert k["kpi"] and k["target"] and k["owner"]
+    unmeasured = [k for k in r["kpis"] if k.get("status") == "NOT_MEASURED"]
+    assert len(unmeasured) >= 3
+    for k in unmeasured:
+        assert k["why"] and "pct" not in k
+
+
+def test_the_kpi_endpoint_is_closed_when_the_app_is_denied(api, tokens):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/kpi", tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
 def test_the_process_endpoint_serves_the_standard(api, tokens):
     st, r = api("GET", "/api/ahu/process", tokens["staff"])
     assert st == 200
@@ -379,3 +404,317 @@ def test_the_declaration_shows_what_a_limit_will_be_resolved_from(api, tokens, u
     t9 = next(s for s in r["steps"] if s["code"] == "T9")
     applied = next(c for c in t9["checks"] if c["key"] == "applied_v")
     assert applied["limit"] == 2000.0                  # 400 V circuit
+
+
+# ── somebody is told ─────────────────────────────────────────────────────────────────────────────
+# tests/test_ahu_notify.py proves who should be told and what the message says; this proves the
+# server actually reaches that code on the two events that happen inside a request. Without these,
+# the notification module could be perfect and never called — and a notification that never fires
+# looks exactly like a quiet week on the floor.
+#
+# The evidence is the audit row _ahu_notify_send writes. It is written whether or not anybody had
+# push enabled, precisely so "was an alert raised" and "did a device receive it" stay separate
+# questions; the test harness has no push subscriptions, so the row is the only thing to assert on.
+
+def _alerts(unit_id=None):
+    """Every AHU alert row currently in the audit trail, optionally only this unit's.
+
+    Filtered by TARGET rather than taken as a tail slice: db.list_collection orders by the row's
+    random uuid, so "everything after index N" is not "everything written after this point" — a
+    slice here silently reads the wrong rows and can report either a phantom alert or none at all.
+    """
+    import db
+    rows = [r for r in db.list_collection("audit")
+            if str(r.get("action") or "").startswith("AHU alert")]
+    if unit_id:
+        rows = [r for r in rows if str(r.get("target") or "").endswith("/" + unit_id)]
+    return rows
+
+
+def test_recording_a_failing_reading_raises_an_alert(api, tokens, unit):
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 2.5})   # limit is 1.0 mm/m
+    rows = _alerts(unit)
+    assert rows, "a reading outside the limit must alert somebody"
+    assert "step-failed" in rows[0]["action"]
+    assert "IPQC-1" in rows[0]["detail"] and "2.5" in rows[0]["detail"]
+
+
+def test_a_reading_inside_the_limit_alerts_nobody(api, tokens, unit):
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 0.6})
+    assert _alerts(unit) == []
+
+
+def test_an_incomplete_reading_is_not_treated_as_a_failure(api, tokens, unit):
+    """Incomplete is not failed. Alerting on it would fire on every half-entered form on the floor,
+    which is the fastest way to make the real alert worthless."""
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {})
+    assert _alerts(unit) == []
+
+
+def test_re_saving_an_already_failed_step_does_not_alert_again(api, tokens, unit):
+    """An inspector attaching a photo to a failed hold point must not re-page the QA manager. The
+    trigger is the transition into failure, not the state of being failed."""
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 2.5})
+    assert len(_alerts(unit)) == 1
+    again = _steps(api, tokens["admin"], unit)["IPQC-1"]
+    _readings(api, tokens["mgr"], again, {"squareness": 2.5})
+    assert len(_alerts(unit)) == 1, "the second save must not raise a second alert"
+
+
+def test_the_alert_records_who_it_could_not_reach(api, tokens, unit):
+    """The whole point of writing this row. A send count of zero cannot distinguish "nobody
+    subscribed" from "the QC inspector is spelled in a way the register does not recognise"."""
+    steps = _to_ipqc1(api, tokens, unit)
+    st, r = api("PATCH", "/api/coll/%s/%s" % (UNIT, unit), tokens["admin"],
+                dict(_unit(api, tokens, unit), qcInspector="Nguyen Thi Nobody"))
+    assert st == 200, r
+    _readings(api, tokens["mgr"], _steps(api, tokens["admin"], unit)["IPQC-1"],
+              {"squareness": 2.5})
+    rows = _alerts(unit)
+    assert rows and "UNREACHABLE: Nguyen Thi Nobody" in rows[0]["detail"]
+
+
+def test_a_gate_refused_by_its_exit_criteria_alerts_the_people_who_can_clear_it(api, tokens, unit):
+    """G2 will not pass until the drawings are issued. Whoever pressed the button already knows;
+    the production lead who has to go and get them issued does not."""
+    steps = _steps(api, tokens["admin"], unit)
+    _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    st, r = _sign(api, tokens["admin"], _steps(api, tokens["admin"], unit)["G2"]["id"], "Passed")
+    assert st >= 400, r
+    rows = _alerts(unit)
+    assert rows and "gate-held" in rows[0]["action"]
+    assert "G2" in rows[0]["detail"]
+
+
+def test_a_workstation_refused_for_order_alerts_nobody(api, tokens, unit):
+    """Only gates, and only on exit criteria. A step refused for a missing predecessor is a matter
+    for the person at the screen — telling three other people would bury the alert that means the
+    line has stopped."""
+    steps = _steps(api, tokens["admin"], unit)
+    st, r = _sign(api, tokens["admin"], steps["WS-02"]["id"], "Complete")
+    assert st >= 400, r
+    assert _alerts(unit) == []
+
+
+# ── the two numbers this module cannot derive ────────────────────────────────────────────────────
+
+def test_the_capacity_and_aging_settings_round_trip(api, tokens):
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"],
+                {"weeklyCapacityH": 240, "ncrAgingDays": 7})
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/settings", tokens["admin"])
+    assert st == 200 and r["weeklyCapacityH"] == 240.0 and r["ncrAgingDays"] == 7
+
+
+def test_an_unset_aging_threshold_reports_the_default_that_will_be_used(api, tokens):
+    """Not a blank. A blank hides which number the sweep is actually applying."""
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"ncrAgingDays": None})
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/settings", tokens["admin"])
+    assert st == 200 and r["ncrAgingDays"] == r["ncrAgingDefault"]
+
+
+def test_a_blank_capacity_clears_it_rather_than_meaning_zero(api, tokens):
+    """Zero hours a week would mark every week over capacity for ever — a catastrophe on screen
+    that is really a missing number. The chart already knows how to report hours with no verdict."""
+    api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": 240})
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": None})
+    assert st == 200 and r["weeklyCapacityH"] is None
+    st, r = api("GET", "/api/ahu/capacity", tokens["admin"])
+    assert st == 200 and r["capacity"] is None and "No weekly capacity" in r["note"]
+
+
+def test_a_nonsense_capacity_is_refused(api, tokens):
+    for bad in ("soon", 0, -5, 99999):
+        st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": bad})
+        assert st == 400, (bad, st, r)
+
+
+def test_a_nonsense_aging_threshold_is_refused(api, tokens):
+    for bad in ("often", 0, -1, 400):
+        st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"ncrAgingDays": bad})
+        assert st == 400, (bad, st, r)
+
+
+def test_staff_may_read_the_settings_but_not_change_them(api, tokens):
+    st, r = api("GET", "/api/ahu/settings", tokens["staff"])
+    assert st == 200 and r["canEdit"] is False
+    st, r = api("PATCH", "/api/ahu/settings", tokens["staff"], {"weeklyCapacityH": 1})
+    assert st == 403, r
+
+
+def test_changing_a_capacity_is_audited(api, tokens):
+    """It decides what the factory promises. Who moved it, and to what, has to be answerable."""
+    import db
+    def _rows():
+        return [x for x in db.list_collection("audit")
+                if str(x.get("action") or "") == "AHU production settings changed"]
+    before = len(_rows())
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": 321})
+    assert st == 200, r
+    rows = _rows()
+    assert len(rows) == before + 1
+    assert any("321" in str(x.get("detail") or "") for x in rows)
+
+
+# ── the shop-floor card ──────────────────────────────────────────────────────────────────────────
+# The value of a printed code is entirely in whether it opens the right thing. So these check the
+# LINK the symbol carries, not that a symbol was produced: tests/test_qr.py already proves a symbol
+# decodes to the text it was given, and the two together are the round trip.
+
+def test_the_card_carries_a_code_for_every_unsigned_step(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200, r
+    codes = {s["code"] for s in r["steps"]}
+    live = {s["code"] for s in _steps(api, tokens["admin"], unit).values() if not s.get("signedBy")}
+    assert codes == live
+    assert all(s["qr"].startswith("<svg") for s in r["steps"])
+
+
+def test_each_code_links_to_that_step_on_that_unit(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    for s in r["steps"]:
+        assert ("ahu=" + unit) in s["link"]
+        assert ("step=" + s["code"]) in s["link"]
+
+
+def test_a_signed_step_drops_off_the_card(api, tokens, unit):
+    """A card is for the work still to do. Codes for finished steps are noise beside the machine."""
+    steps = _steps(api, tokens["admin"], unit)
+    st, r = _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert "G1" not in {s["code"] for s in r["steps"]}
+
+
+def test_the_card_says_which_steps_it_could_not_encode(api, tokens, unit):
+    """A silent gap where a code should be looks like a complete card, and the operator at that
+    station finds nothing to scan. Nothing is expected to overflow at realistic id lengths — this
+    pins that the field is reported rather than absent."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    assert r["unprintable"] == []
+    assert all(s["qr"] for s in r["steps"])
+
+
+def test_the_origin_comes_from_the_request_not_from_a_constant(api, tokens, unit, base_url):
+    """A card printed in the office has to keep working on the tablet that scans it."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    assert r["origin"] and r["origin"] in r["steps"][0]["link"]
+    assert r["origin"].startswith("http://127.0.0.1:")
+
+
+def test_a_forwarded_request_is_told_it_arrived_over_https(api, tokens, unit):
+    """Behind Caddy the socket is plain HTTP on localhost. Without reading the forwarded headers
+    every printed code would point at http:// on an internal hostname."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"],
+                headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "portal.humiley.com"})
+    assert st == 200
+    assert r["origin"] == "https://portal.humiley.com"
+    assert r["steps"][0]["link"].startswith("https://portal.humiley.com/?ahu=")
+
+
+def test_an_unknown_unit_has_no_card(api, tokens):
+    st, r = api("GET", "/api/ahu/unit/no-such-unit/card", tokens["admin"])
+    assert st == 404
+
+
+def test_the_card_is_closed_when_the_app_is_denied(api, tokens, unit):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
+# ── live updates ─────────────────────────────────────────────────────────────────────────────────
+# The board used to redraw on a 30-second timer, which cannot tell "nothing happened" from "the
+# network went away". Writes now bump a counter and a held-open request answers the moment it moves.
+# The endpoint carries a revision number and nothing else, so there is one description of a unit's
+# state rather than two that can drift apart.
+
+def test_a_poll_that_is_already_behind_returns_at_once(api, tokens, unit):
+    import time
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r["rev"] > 0, "creating a unit must have moved the revision"
+    started = time.time()
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r["changed"] is True
+    assert time.time() - started < 2, "a poll that is already behind must not wait"
+
+
+def test_a_signature_wakes_a_waiting_poll(api, tokens, unit):
+    """The event a wall board exists to show. A sign-off does not go through the generic collection
+    write, so without its own bump the one change that matters would leave every screen waiting."""
+    import threading
+    import time
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    rev = r["rev"]
+    got = {}
+
+    def _wait():
+        got["st"], got["r"] = api("GET", "/api/ahu/changes?since=%d" % rev, tokens["admin"])
+
+    t = threading.Thread(target=_wait)
+    t.start()
+    time.sleep(1.0)
+    steps = _steps(api, tokens["admin"], unit)
+    st, _ = _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    assert st == 200
+    t.join(timeout=20)
+    assert not t.is_alive(), "the poll did not return after a sign-off"
+    assert got["r"]["changed"] is True and got["r"]["rev"] > rev
+
+
+def test_a_poll_with_nothing_to_report_answers_within_a_bound(api, tokens, unit, monkeypatch):
+    """It says "nothing yet" rather than hanging. A request held indefinitely would outlive the
+    authorisation that opened it and keep feeding a screen after the account was disabled.
+
+    The wait is shortened here because the harness gives up on a request after ten seconds — which
+    is itself worth knowing: the real 25-second window is longer than some clients will hold, and
+    any caller of this endpoint has to expect to wait that long or not call it.
+    """
+    import time
+    monkeypatch.setattr(app, "AHU_WAIT_SECONDS", 3)
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    rev = r["rev"]
+    started = time.time()
+    st, r = api("GET", "/api/ahu/changes?since=%d" % rev, tokens["admin"])
+    waited = time.time() - started
+    assert st == 200 and r["changed"] is False
+    assert waited >= 2, "it should wait for a change rather than answer immediately"
+    assert waited < 9, "the wait must be bounded"
+
+
+def test_a_nonsense_since_is_treated_as_zero_rather_than_failing(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/changes?since=soon", tokens["admin"])
+    assert st == 200 and "rev" in r
+
+
+def test_live_updates_are_closed_when_the_app_is_denied(api, tokens):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/changes?since=0", tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
+def test_the_waiter_cap_refuses_politely_instead_of_exhausting_threads(api, tokens, unit,
+                                                                      monkeypatch):
+    """Each waiting request parks a thread. A screen turned away keeps its timer; degrading silently
+    would leave a board that looks live and is frozen."""
+    monkeypatch.setattr(app, "AHU_WAIT_MAX", 0)
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r.get("busy") is True and r.get("note")
