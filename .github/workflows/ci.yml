@@ -88,6 +88,16 @@ jobs:
       - name: The AeroSelect handoff example is reproducible from JavaScript
         run: node tests/handoff_example_cross_language.js
 
+      # A device that keeps showing yesterday's app is the most expensive kind of bug here: the fix
+      # ships, production serves it, and the person reporting it still cannot see it. The check that
+      # was supposed to catch that compared the SERVICE WORKER's cache name against the server's —
+      # which never answers the question, because the worker updates on its own schedule. A current
+      # worker in front of a page loaded three deploys ago agreed with the server on every value
+      # available, so nothing ever healed. This runs the real predicate out of index.html against a
+      # truth table; the pre-fix logic fails four of its rows.
+      - name: The stale-shell check can tell a stale PAGE from a stale worker
+        run: node tests/stale_shell_verdict.js
+
       # #48 made static/sw.js the deployed build's identity, and asked in a comment that a branch
       # re-read main and bump if somebody got there first. A comment cannot enforce that: on the day
       # it landed, two further branches picked the same version anyway (v295, then v298), and the

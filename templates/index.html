@@ -40196,23 +40196,68 @@ let _updReloading = false;
 function _swBuild() {
   return new Promise(function (resolve) {
     var sw = navigator.serviceWorker;
-    if (!sw || !sw.controller) return resolve('');
+    if (!sw || !sw.controller) return resolve('none');       // nothing is controlling this page yet
     var ch = new MessageChannel(), done = false;
-    ch.port1.onmessage = function (e) { done = true; resolve((e.data && e.data.tkBuild) || ''); };
-    try { sw.controller.postMessage('tk-which-build', [ch.port2]); } catch (e) { return resolve(''); }
-    setTimeout(function () { if (!done) resolve(''); }, 2500);   // an old worker answers nothing
+    ch.port1.onmessage = function (e) { done = true; resolve((e.data && e.data.tkBuild) || 'silent'); };
+    try { sw.controller.postMessage('tk-which-build', [ch.port2]); } catch (e) { return resolve('silent'); }
+    /* A worker too old to answer 'tk-which-build' used to resolve '' — which the heal below read as
+       "unknown, leave it alone". So the device most in need of replacing was the one the check gave
+       up on. 'silent' is a positive finding, not a blank: something IS controlling this page and
+       cannot say what it is, which is itself grounds to replace it. */
+    setTimeout(function () { if (!done) resolve('silent'); }, 2500);
   });
+}
+
+/* How old is the HTML actually on screen? `document.lastModified` reports the Last-Modified of the
+   document AS DELIVERED, and the server derives that from the same mtime it returns as appVersion,
+   so the two numbers are directly comparable.
+   If the header is ever missing the browser substitutes "now", which reads as fresh — this check
+   fails toward doing nothing, never toward a reload loop. */
+function _pageBuildAge() {
+  var t = Date.parse(document.lastModified);
+  return isNaN(t) ? null : Math.floor(t / 1000);
+}
+
+/* The DECISION, deliberately split out from the side effects (clearing caches, unregistering,
+   reloading) so it can be exercised directly — see tests/stale_shell_verdict.js. A predicate that
+   can only be reached through a real browser, a real deploy and a real reload is one nobody checks,
+   which is how the worker-current-but-page-old case survived unnoticed.
+   Returns '' when the device is current, otherwise a short reason. */
+function _staleVerdict(serverAge, pageAge, serverBuild, myBuild) {
+  // Strictly older only: a page NEWER than the server (clock skew, a restored file) is not stale,
+  // and treating it as stale would reload on every check.
+  if (serverAge !== null && pageAge !== null && pageAge < serverAge) return 'page';
+  if (myBuild === 'silent') return 'worker-silent';
+  if (serverBuild && myBuild !== 'none' && myBuild !== 'silent' && myBuild !== serverBuild) return 'worker';
+  return '';
 }
 async function _healStaleShell() {
   if (_updReloading) return;
   try {
     var r = await fetch('/api/build', { cache: 'no-store' });
     if (!r.ok) return;
-    var server = ((await r.json()) || {}).build || '';
+    var j = (await r.json()) || {};
+    var server = j.build || '';
+    var serverAge = j.appVersion ? parseInt(j.appVersion, 10) : null;
     var mine = await _swBuild();
-    if (!server || !mine || server === mine) return;            // unknown or already current
-    if (sessionStorage.getItem('tkHealedTo') === server) return; // already tried this build once
-    sessionStorage.setItem('tkHealedTo', server);
+    var pageAge = _pageBuildAge();
+
+    /* TWO independent ways to be stale, and the first is the one this function could not previously
+       see. Comparing the WORKER's cache name against the server answers "is the worker current",
+       which is not the question. A worker updates on its own schedule and activates immediately
+       (skipWaiting + clients.claim), so a device can hold a perfectly current worker in front of a
+       page that was loaded before the deploy and never navigated since — an installed PWA resumed
+       from memory does exactly this. Every version string agreed, so nothing ever healed, and the
+       old screen stayed up indefinitely. Ask instead how old the HTML ON SCREEN is. */
+    var why = _staleVerdict(serverAge, pageAge, server, mine);
+    if (!why) return;
+
+    /* Bounded retry. This used to allow ONE attempt per build per session and then give up for good,
+       so a heal that did not take left the device stale until somebody thought to close the app. */
+    var key = 'tkHealTries:' + (serverAge || server);
+    var tries = parseInt(sessionStorage.getItem(key) || '0', 10);
+    if (tries >= 2) return;
+    sessionStorage.setItem(key, String(tries + 1));
     _updReloading = true;
     try { toast(_t2('Updating to the latest version…', 'Đang cập nhật phiên bản mới nhất…'), undefined, 2500); } catch (e) {}
     try { var ks = await caches.keys(); await Promise.all(ks.map(function (k) { return caches.delete(k); })); } catch (e) {}
