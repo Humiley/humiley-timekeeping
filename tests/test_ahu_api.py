@@ -634,3 +634,87 @@ def test_the_card_is_closed_when_the_app_is_denied(api, tokens, unit):
         assert st == 403 and "not enabled" in r["error"]
     finally:
         db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
+# ── live updates ─────────────────────────────────────────────────────────────────────────────────
+# The board used to redraw on a 30-second timer, which cannot tell "nothing happened" from "the
+# network went away". Writes now bump a counter and a held-open request answers the moment it moves.
+# The endpoint carries a revision number and nothing else, so there is one description of a unit's
+# state rather than two that can drift apart.
+
+def test_a_poll_that_is_already_behind_returns_at_once(api, tokens, unit):
+    import time
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r["rev"] > 0, "creating a unit must have moved the revision"
+    started = time.time()
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r["changed"] is True
+    assert time.time() - started < 2, "a poll that is already behind must not wait"
+
+
+def test_a_signature_wakes_a_waiting_poll(api, tokens, unit):
+    """The event a wall board exists to show. A sign-off does not go through the generic collection
+    write, so without its own bump the one change that matters would leave every screen waiting."""
+    import threading
+    import time
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    rev = r["rev"]
+    got = {}
+
+    def _wait():
+        got["st"], got["r"] = api("GET", "/api/ahu/changes?since=%d" % rev, tokens["admin"])
+
+    t = threading.Thread(target=_wait)
+    t.start()
+    time.sleep(1.0)
+    steps = _steps(api, tokens["admin"], unit)
+    st, _ = _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    assert st == 200
+    t.join(timeout=20)
+    assert not t.is_alive(), "the poll did not return after a sign-off"
+    assert got["r"]["changed"] is True and got["r"]["rev"] > rev
+
+
+def test_a_poll_with_nothing_to_report_answers_within_a_bound(api, tokens, unit, monkeypatch):
+    """It says "nothing yet" rather than hanging. A request held indefinitely would outlive the
+    authorisation that opened it and keep feeding a screen after the account was disabled.
+
+    The wait is shortened here because the harness gives up on a request after ten seconds — which
+    is itself worth knowing: the real 25-second window is longer than some clients will hold, and
+    any caller of this endpoint has to expect to wait that long or not call it.
+    """
+    import time
+    monkeypatch.setattr(app, "AHU_WAIT_SECONDS", 3)
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    rev = r["rev"]
+    started = time.time()
+    st, r = api("GET", "/api/ahu/changes?since=%d" % rev, tokens["admin"])
+    waited = time.time() - started
+    assert st == 200 and r["changed"] is False
+    assert waited >= 2, "it should wait for a change rather than answer immediately"
+    assert waited < 9, "the wait must be bounded"
+
+
+def test_a_nonsense_since_is_treated_as_zero_rather_than_failing(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/changes?since=soon", tokens["admin"])
+    assert st == 200 and "rev" in r
+
+
+def test_live_updates_are_closed_when_the_app_is_denied(api, tokens):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/changes?since=0", tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
+def test_the_waiter_cap_refuses_politely_instead_of_exhausting_threads(api, tokens, unit,
+                                                                      monkeypatch):
+    """Each waiting request parks a thread. A screen turned away keeps its timer; degrading silently
+    would leave a board that looks live and is frozen."""
+    monkeypatch.setattr(app, "AHU_WAIT_MAX", 0)
+    st, r = api("GET", "/api/ahu/changes?since=0", tokens["admin"])
+    assert st == 200 and r.get("busy") is True and r.get("note")

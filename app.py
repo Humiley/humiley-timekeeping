@@ -1332,6 +1332,36 @@ def _tk_nudges(kind, today=None):
     return targets
 
 
+# ── AHU: telling open screens that something moved ──────────────────────────────────────────────
+# The production board is the one screen somebody leaves open on a wall, and it refreshed on a 30
+# second timer. Thirty seconds is not slow; the problem is that a board which redraws on a timer
+# cannot tell "nothing happened" from "the network went away", and the person watching it cannot
+# either. So writes bump a counter and a held-open request answers the moment it moves.
+#
+# The counter is in memory ON PURPOSE. It is a change NOTIFICATION, not a fact about production —
+# every screen re-reads the real data from the API when it wakes. A restart resets it to zero, every
+# connected client reconnects, sees a version it does not recognise and refreshes once. That is the
+# correct behaviour after a deploy anyway.
+_AHU_REV = {"n": 0}
+_AHU_REV_LOCK = threading.Lock()
+
+# Each waiting request parks a thread, and this process serves requests with a thread per request.
+# So the number of simultaneous waiters is capped, and a client turned away keeps its timer instead
+# of being left with a board that has quietly stopped updating.
+AHU_WAIT_MAX = 24
+# How long one poll waits before answering "nothing yet". Long enough that reconnects are cheap,
+# short enough that a held request cannot outlive the session that authorised it by much.
+AHU_WAIT_SECONDS = 25
+_AHU_WAITERS = {"n": 0}
+
+
+def _ahu_touch():
+    """Record that something in AHU production changed. Cheap enough to call on every write."""
+    with _AHU_REV_LOCK:
+        _AHU_REV["n"] += 1
+        return _AHU_REV["n"]
+
+
 # ── AHU: non-conformances that have sat open too long ───────────────────────────────────────────
 # A daily sweep, at 08:00 ICT, so it lands before the morning production meeting rather than in the
 # middle of the night. Fires once when an NCR crosses the threshold and then once a week while it
@@ -4134,6 +4164,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._ahu_capacity_ep(u, qs))
         if path == "/api/ahu/settings":
             return self._guard(lambda u: self._ahu_settings_get(u))
+        if path == "/api/ahu/changes":
+            return self._guard(lambda u: self._ahu_changes_ep(u, qs))
         if path.startswith("/api/ahu/unit/") and path.endswith("/card"):
             _uid = path[len("/api/ahu/unit/"):-len("/card")]
             return self._guard(lambda u: self._ahu_card_ep(u, urllib.parse.unquote(_uid), qs))
@@ -5532,6 +5564,49 @@ class Handler(BaseHTTPRequestHandler):
                                or ":" in host) else "https"
         return ("%s://%s" % (proto, host)) if host else ""
 
+    def _ahu_changes_ep(self, u, qs):
+        """Long poll: returns as soon as AHU production changes, or after a bounded wait.
+
+        A held-open request rather than server-sent events, for one reason: EventSource cannot send
+        an Authorization header, so an SSE endpoint has to take the session token in the query
+        string — and a URL is written to the access log of every proxy between the tablet and the
+        server. Long polling keeps the credential in the header where the rest of the API keeps it,
+        costs the same latency, and needs no second kind of credential to mint, expire and revoke.
+
+        Carries no production data, only a revision number. A screen that hears "something moved"
+        re-reads the API, so there is exactly one description of a unit's state rather than two that
+        could drift apart.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        # Each waiting request parks a thread, and this process serves a thread per request. Refuse
+        # rather than exhaust: a client turned away keeps its timer, which still works. Degrading
+        # silently would leave a wall board that looks live and is frozen — the worst option.
+        if _AHU_WAITERS["n"] >= AHU_WAIT_MAX:
+            return self._json({"rev": _AHU_REV["n"], "waited": 0, "busy": True,
+                               "note": "Too many screens are waiting for live updates; this one "
+                                       "will keep refreshing on its timer."})
+        try:
+            since = int((qs.get("since") or ["0"])[0])
+        except (TypeError, ValueError):
+            since = 0
+
+        _AHU_WAITERS["n"] += 1
+        started = time.time()
+        try:
+            while time.time() - started < AHU_WAIT_SECONDS:
+                if _AHU_REV["n"] != since:
+                    break
+                time.sleep(0.5)
+        finally:
+            _AHU_WAITERS["n"] -= 1
+        # The wait is bounded even when nothing happens, so the client reconnects regularly and its
+        # session is re-checked. A request held indefinitely would outlive the authorisation that
+        # opened it and keep feeding a screen after the account behind it was disabled.
+        return self._json({"rev": _AHU_REV["n"], "waited": round(time.time() - started, 1),
+                           "changed": _AHU_REV["n"] != since})
+
     def _ahu_kpi_ep(self, u, qs):
         """SOP section 1.4's KPI table, computed from signed production data.
 
@@ -6391,6 +6466,8 @@ class Handler(BaseHTTPRequestHandler):
                     item["bankSlip"] = _slip
                     item["bankSlipName"] = str(_att.get("bankSlipName") or "bank-payment-slip")[:120]
         db.put_collection_item(coll, item)
+        if coll.startswith("ahu_"):
+            _ahu_touch()          # a sign-off is exactly the event a board is being watched for
         db.put_collection_item("audit", {"actor": signer_name, "actorId": u.get("id"),
             "action": "E-signature — " + meaning,
             "target": coll + "/" + str(iid),
@@ -9282,6 +9359,7 @@ class Handler(BaseHTTPRequestHandler):
             if _err_fam:
                 return _err_fam
         if name.startswith("ahu_"):
+            _ahu_touch()
             # Same reasoning as the eng_ strip below: a signature is applied by /api/esign and by
             # nothing else. A POST arriving with signedBy already filled would produce a workstation
             # sign-off, a passed hold point or a signed gate attributed to somebody who never signed
@@ -15327,6 +15405,8 @@ class Handler(BaseHTTPRequestHandler):
         # now it changed only for whoever happened to be looking at the board. Compared against the
         # stored readings so re-saving an already-failed step does not alert anyone twice — the
         # trigger is the TRANSITION into failure, not the state of being failed.
+        if name.startswith("ahu_"):
+            _ahu_touch()
         if name == "ahu_steps":
             try:
                 self._ahu_notify_step_fail(_before_readings, _out)

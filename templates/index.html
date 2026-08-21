@@ -28928,7 +28928,12 @@ function _ahuBoardTick() {
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();
 }
 /* The board is the one screen somebody leaves open on a wall, so it refreshes itself — but only
-   while it is actually the visible view, so a backgrounded tab is not polling the server forever. */
+   while it is actually the visible view, so a backgrounded tab is not polling the server forever.
+
+   The 30-second timer STAYS even while live updates are running. That is not redundancy for its own
+   sake: a live connection that dies quietly leaves a board that looks live and is frozen, which is
+   worse than a slow board. Live updates make the common case immediate; the timer is what makes
+   "stopped" impossible. */
 function _ahuBoardAuto() {
   clearInterval(_AHU.timer);
   _AHU.timer = setInterval(() => {
@@ -28936,7 +28941,47 @@ function _ahuBoardAuto() {
     if (!v || !v.classList.contains('active') || document.hidden) return;
     ahuRenderBoard();
   }, 30000);
+  _ahuLive();
 }
+
+/* Live updates: a request the server holds open until something moves.
+
+   Long polling rather than server-sent events, because EventSource cannot send an Authorization
+   header — an SSE endpoint would have to take the session token in the query string, and a URL is
+   written to the access log of every proxy in between. This keeps the credential where the rest of
+   the API keeps it, at the same latency, with no second kind of credential to mint and revoke.
+
+   The server answers with a revision number and nothing else; the board then re-reads the API. One
+   description of a unit's state, not two that can disagree. */
+function _ahuLive() {
+  if (_AHU.live) return;                       // one loop per screen, not one per render
+  _AHU.live = true;
+  (async () => {
+    while (_AHU.live) {
+      const v = document.getElementById('view-ahu-board');
+      if (!v || !v.classList.contains('active')) { _AHU.live = false; return; }
+      if (document.hidden) { await new Promise(r => setTimeout(r, 5000)); continue; }
+      try {
+        const d = await tkApi('/api/ahu/changes?since=' + (_AHU.rev == null ? 0 : _AHU.rev));
+        if (d.busy) {
+          // The server is at its waiter cap. Back off hard: a tight retry loop from every wall
+          // board is how a cap becomes an outage.
+          _AHU.rev = d.rev;
+          await new Promise(r => setTimeout(r, 60000));
+          continue;
+        }
+        const moved = _AHU.rev != null && d.rev !== _AHU.rev;
+        _AHU.rev = d.rev;
+        if (moved && !document.hidden) ahuRenderBoard();
+      } catch (e) {
+        // A dropped connection, a sleeping tablet, a deploy. The timer is still running, so this
+        // only has to recover eventually — not immediately.
+        await new Promise(r => setTimeout(r, 15000));
+      }
+    }
+  })();
+}
+
 
 /* ───────────────────────── AHU register ───────────────────────── */
 async function ahuRenderUnits() {
