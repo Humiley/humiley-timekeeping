@@ -16026,7 +16026,7 @@ function tkQuickAdd(type, id, seed) {
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
-    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
     if (f.type === 'ref') {
       /* A pointer to another record. The stored value is the id — so the link survives a document
          being renumbered — while the dropdown shows the number and title somebody actually
@@ -19671,10 +19671,41 @@ function _qaDynOptions(src, ex) {
     return [...new Set([].concat(used, ['Electrical Works', 'HVAC Works', 'Plumbing Works',
       'Fire Protection Works', 'Cleanroom / Architectural', 'Controls & BMS', 'Testing & Commissioning']).filter(Boolean))];
   }
+/* Order WBS codes the way a schedule reads, not the way strings sort.
+   Plain string order puts "1.10" before "1.2" and "1.4.6.6.4" adjacent to "1.4.5.2"; a person
+   scanning for 1.4.4.1 then cannot find it. Compare segment by segment, numerically where both
+   segments are numeric, so 1.3.2 < 1.4.4.1 < 1.4.4.1.1 < 1.4.4.1.2 < 1.4.10. A code with a name
+   instead of a number (an activity with no WBS) sorts after the numbered ones, by name. */
+function _wbsCmp(a, b) {
+  const A = String(a || '').split('.'), B = String(b || '').split('.');
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = A[i], y = B[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x.trim()), ny = /^\d+$/.test(y.trim());
+    if (nx && ny) { const d = (+x) - (+y); if (d) return d; continue; }
+    if (nx !== ny) return nx ? -1 : 1;           // numbered WBS before a bare name
+    const c = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    if (c) return c;
+  }
+  return 0;
+}
   if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
     const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_tasks', _pmPid()) : [];
-    return [...new Set(ts.map(t => String((t.wbs || t.name) || '').trim()).filter(Boolean))];
+    // The VALUE has to stay exactly _pdTaskRef(t) — _pdMasterOf matches it by string equality, so
+    // changing it would orphan every detail line already filed against a master activity. Only the
+    // label gains the name: a picker of bare codes like "1.4.6.6.4" cannot be used by a site
+    // engineer who knows the work by what it IS, not by its number.
+    const seen = {}, out = [];
+    ts.forEach(t => {
+      const v = String((t.wbs || t.name) || '').trim();
+      if (!v || seen[v]) return;
+      seen[v] = 1;
+      const nm = String(t.name || '').trim();
+      out.push({ v: v, l: (nm && nm !== v) ? (v + ' \u2014 ' + nm) : v });
+    });
+    return out.sort((a, b) => _wbsCmp(a.v, b.v));
   }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
@@ -20765,10 +20796,18 @@ function _pmMyActionsHtml() {
    paints on one collection, and a tab fetches its own on the way in.
    `need` is what the tab CANNOT render without — including what its helpers reach for. Miss one and
    the tab renders empty, so this list is the contract; there is a test that walks it. */
+/* Registers a non-manager can be refused, in words a person recognises — so the tab can say
+   WHICH figures are missing instead of presenting an unexplained zero. */
+const _PM_COLL_LABEL = {
+  pm_costs: 'Project costs and budget',
+  pm_procurement_payments: 'Payment certificates'
+};
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
+  // pm_costs was listed here and is never read by pmRenderSchedule — grep it. All it ever did
+  // was 403 for staff and take the whole tab down with it.
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20839,7 +20878,16 @@ async function pmTab(k) {
   if (_missing.length && _body) _body.innerHTML = tkSkeleton();
   const _failed = await _pmNeed(t.need);
   if (_pmTabK !== k) return;                   // the user moved on while we waited — don't clobber
-  if (_failed.length) {
+  // A 403 is not a failure, it is an ANSWER: this account may not read that register. Treating the
+  // two alike put "Could not load this tab — check your connection and try again" in front of every
+  // staff user who opened a project — on the Overview they land on by default, and on Schedule —
+  // because both listed the manager-only pm_costs. Retrying a permission decision never succeeds,
+  // so the Retry button invited a loop that could not end.
+  // Every register here is read through _pmScopeFor, which is `(_HR[coll] || [])`: a denied
+  // collection is an empty array, not a crash. So the tab can render; the money simply is not there.
+  const _denied = _failed.filter(c => (_COLL_ERR[c] || {}).status === 403);
+  const _broken = _failed.filter(c => (_COLL_ERR[c] || {}).status !== 403);
+  if (_broken.length) {
     // An empty register and a failed fetch look identical once rendered, so say which this was.
     if (_body) _body.innerHTML = '<div class="card" style="padding:18px;color:var(--text-light)">' +
       '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Could not load this tab') + '</div>' +
@@ -20848,6 +20896,18 @@ async function pmTab(k) {
     return;
   }
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
+  // Rendering without the denied register would show a confident 0 against a real budget,
+  // which reads as "this project has no money" rather than "you may not see the money".
+  // A zero nobody can tell from a fact is worse than an absence somebody explains.
+  if (_denied.length) {
+    const _b2 = document.getElementById('pm-tab-body');
+    if (_b2) _b2.insertAdjacentHTML('afterbegin',
+      '<div class="card" style="padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--warning)">' +
+      '<div style="font-size:12.5px;color:var(--text)">' +
+      _pmEsc(_t('Some figures here are hidden by your access level, so any total that depends on them is incomplete.')) +
+      '</div><div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _pmEsc(_t('Hidden')) + ': ' +
+      _denied.map(c => _pmEsc(_t(_PM_COLL_LABEL[c] || c))).join(', ') + '</div></div>');
+  }
 }
 
 /* ---------- Overview tab (Integration: charter summary, EVM headline, changes, lessons) ---------- */
