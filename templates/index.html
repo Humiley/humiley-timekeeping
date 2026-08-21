@@ -29629,6 +29629,48 @@ async function ahuRebuildRoute() {
   finally { _AHU.busy = false; }
 }
 
+/* The two numbers this module cannot derive: how many productive hours the floor has in a week, and
+   how long a non-conformance may sit before somebody is chased about it. Put HERE, next to the chart
+   that is useless without the first of them, rather than in a settings screen three clicks away —
+   the moment you learn the capacity is missing is the moment to type it in. */
+function _ahuSettingsPanel(d) {
+  const cap = d.capacity == null ? '' : d.capacity;
+  return _ahuCard(
+    '<div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">' +
+    '<div><div style="font-size:11px;color:var(--text-light);margin-bottom:3px">Weekly capacity (productive hours)</div>' +
+    '<input id="ahu-cap-h" class="form-control" type="number" min="1" max="10000" step="1" ' +
+    'style="width:150px" value="' + _ahuA(cap) + '" placeholder="not set"></div>' +
+    '<div><div style="font-size:11px;color:var(--text-light);margin-bottom:3px">Chase an NCR after (days)</div>' +
+    '<input id="ahu-ncr-days" class="form-control" type="number" min="1" max="365" step="1" ' +
+    'style="width:150px" value="' + _ahuA(d.ncrAgingDays == null ? '' : d.ncrAgingDays) + '"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="ahuSaveSettings()">Save</button>' +
+    '<div id="ahu-set-msg" style="font-size:11.5px;color:var(--text-light)"></div></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:8px">Leave the capacity blank and ' +
+    'the chart reports hours with no verdict. That is deliberate — a chart drawn against a guessed ' +
+    'capacity looks exactly like one drawn against a real one, and this is the number a delivery ' +
+    'promise rests on.</div>');
+}
+
+async function ahuSaveSettings() {
+  const msg = document.getElementById('ahu-set-msg');
+  const capEl = document.getElementById('ahu-cap-h');
+  const daysEl = document.getElementById('ahu-ncr-days');
+  if (!capEl || !daysEl) return;
+  msg.textContent = 'Saving…';
+  try {
+    await tkApi('/api/ahu/settings', { method: 'PATCH', body: {
+      weeklyCapacityH: capEl.value.trim() === '' ? null : Number(capEl.value),
+      ncrAgingDays: daysEl.value.trim() === '' ? null : Number(daysEl.value)
+    } });
+    msg.style.color = 'var(--emerald)';
+    msg.textContent = 'Saved';
+    ahuRenderCapacity();
+  } catch (e) {
+    msg.style.color = '#C00000';
+    msg.textContent = e.message;
+  }
+}
+
 /* ───────────────────────── Capacity & load (SOP §6.7) ─────────────────────────
    The SOP names a rolling 8-week load chart as the CONTROL against the risk "delivery date shorter
    than feasible", and nothing computed it. Every unit's route already carries the SOP tact per
@@ -29641,13 +29683,14 @@ async function ahuRebuildRoute() {
 async function ahuRenderCapacity() {
   const root = document.getElementById('ahu-capacity-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
-  let d;
-  try { d = await tkApi('/api/ahu/capacity?weeks=8'); }
+  let d, cfg;
+  try { [d, cfg] = await Promise.all([tkApi('/api/ahu/capacity?weeks=8'), tkApi('/api/ahu/settings')]); }
   catch (e) {
     root.innerHTML = _ahuCard('<div style="color:#C00000">Could not build the load chart: ' +
       _ahuEsc(e.message) + '</div>');
     return;
   }
+  d = Object.assign({}, d, cfg || {});
   const weeks = d.weeks || [];
   const peak = Math.max(1, ...weeks.map(w => w.hours || 0), d.capacity || 0);
 
@@ -29706,7 +29749,10 @@ async function ahuRenderCapacity() {
         '</div>').join('')) + '<div style="height:12px"></div>'
     : '';
 
-  root.innerHTML = _ahuCard(
+  // The panel is for the person who can act on it. Showing a disabled form to the shop floor
+  // invites them to try and be refused; the chart itself is what they came for.
+  const setPanel = d.canEdit ? _ahuSettingsPanel(d) + '<div style="height:12px"></div>' : '';
+  root.innerHTML = setPanel + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
     '<div><span style="font-weight:800;color:var(--navy)">Remaining work by week</span>' +
     /* The static half is its OWN text node so the DOM-walk translator can reach it — a phrase built
@@ -30517,6 +30563,9 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Weekly capacity (productive hours)': 'Năng lực theo tuần (giờ công hữu ích)',
+  'Chase an NCR after (days)': 'Nhắc xử lý NCR sau (ngày)',
+  'Leave the capacity blank and the chart reports hours with no verdict. That is deliberate — a chart drawn against a guessed capacity looks exactly like one drawn against a real one, and this is the number a delivery promise rests on.': 'Để trống năng lực thì biểu đồ chỉ báo số giờ mà không kết luận. Đây là chủ ý — biểu đồ vẽ theo một năng lực phỏng đoán trông y hệt biểu đồ vẽ theo năng lực thật, mà đây là con số mà cam kết giao hàng dựa vào.',
   'live units, booked at the upper end of each SOP tact band': 'sản phẩm đang sản xuất, tính theo mức nhịp cao nhất của SOP',
   'Weekly capacity': 'Năng lực theo tuần',
   'weeks over capacity': 'tuần vượt năng lực',

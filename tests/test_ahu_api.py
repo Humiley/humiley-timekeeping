@@ -404,3 +404,158 @@ def test_the_declaration_shows_what_a_limit_will_be_resolved_from(api, tokens, u
     t9 = next(s for s in r["steps"] if s["code"] == "T9")
     applied = next(c for c in t9["checks"] if c["key"] == "applied_v")
     assert applied["limit"] == 2000.0                  # 400 V circuit
+
+
+# ── somebody is told ─────────────────────────────────────────────────────────────────────────────
+# tests/test_ahu_notify.py proves who should be told and what the message says; this proves the
+# server actually reaches that code on the two events that happen inside a request. Without these,
+# the notification module could be perfect and never called — and a notification that never fires
+# looks exactly like a quiet week on the floor.
+#
+# The evidence is the audit row _ahu_notify_send writes. It is written whether or not anybody had
+# push enabled, precisely so "was an alert raised" and "did a device receive it" stay separate
+# questions; the test harness has no push subscriptions, so the row is the only thing to assert on.
+
+def _alerts(unit_id=None):
+    """Every AHU alert row currently in the audit trail, optionally only this unit's.
+
+    Filtered by TARGET rather than taken as a tail slice: db.list_collection orders by the row's
+    random uuid, so "everything after index N" is not "everything written after this point" — a
+    slice here silently reads the wrong rows and can report either a phantom alert or none at all.
+    """
+    import db
+    rows = [r for r in db.list_collection("audit")
+            if str(r.get("action") or "").startswith("AHU alert")]
+    if unit_id:
+        rows = [r for r in rows if str(r.get("target") or "").endswith("/" + unit_id)]
+    return rows
+
+
+def test_recording_a_failing_reading_raises_an_alert(api, tokens, unit):
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 2.5})   # limit is 1.0 mm/m
+    rows = _alerts(unit)
+    assert rows, "a reading outside the limit must alert somebody"
+    assert "step-failed" in rows[0]["action"]
+    assert "IPQC-1" in rows[0]["detail"] and "2.5" in rows[0]["detail"]
+
+
+def test_a_reading_inside_the_limit_alerts_nobody(api, tokens, unit):
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 0.6})
+    assert _alerts(unit) == []
+
+
+def test_an_incomplete_reading_is_not_treated_as_a_failure(api, tokens, unit):
+    """Incomplete is not failed. Alerting on it would fire on every half-entered form on the floor,
+    which is the fastest way to make the real alert worthless."""
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {})
+    assert _alerts(unit) == []
+
+
+def test_re_saving_an_already_failed_step_does_not_alert_again(api, tokens, unit):
+    """An inspector attaching a photo to a failed hold point must not re-page the QA manager. The
+    trigger is the transition into failure, not the state of being failed."""
+    steps = _to_ipqc1(api, tokens, unit)
+    _readings(api, tokens["mgr"], steps["IPQC-1"], {"squareness": 2.5})
+    assert len(_alerts(unit)) == 1
+    again = _steps(api, tokens["admin"], unit)["IPQC-1"]
+    _readings(api, tokens["mgr"], again, {"squareness": 2.5})
+    assert len(_alerts(unit)) == 1, "the second save must not raise a second alert"
+
+
+def test_the_alert_records_who_it_could_not_reach(api, tokens, unit):
+    """The whole point of writing this row. A send count of zero cannot distinguish "nobody
+    subscribed" from "the QC inspector is spelled in a way the register does not recognise"."""
+    steps = _to_ipqc1(api, tokens, unit)
+    st, r = api("PATCH", "/api/coll/%s/%s" % (UNIT, unit), tokens["admin"],
+                dict(_unit(api, tokens, unit), qcInspector="Nguyen Thi Nobody"))
+    assert st == 200, r
+    _readings(api, tokens["mgr"], _steps(api, tokens["admin"], unit)["IPQC-1"],
+              {"squareness": 2.5})
+    rows = _alerts(unit)
+    assert rows and "UNREACHABLE: Nguyen Thi Nobody" in rows[0]["detail"]
+
+
+def test_a_gate_refused_by_its_exit_criteria_alerts_the_people_who_can_clear_it(api, tokens, unit):
+    """G2 will not pass until the drawings are issued. Whoever pressed the button already knows;
+    the production lead who has to go and get them issued does not."""
+    steps = _steps(api, tokens["admin"], unit)
+    _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    st, r = _sign(api, tokens["admin"], _steps(api, tokens["admin"], unit)["G2"]["id"], "Passed")
+    assert st >= 400, r
+    rows = _alerts(unit)
+    assert rows and "gate-held" in rows[0]["action"]
+    assert "G2" in rows[0]["detail"]
+
+
+def test_a_workstation_refused_for_order_alerts_nobody(api, tokens, unit):
+    """Only gates, and only on exit criteria. A step refused for a missing predecessor is a matter
+    for the person at the screen — telling three other people would bury the alert that means the
+    line has stopped."""
+    steps = _steps(api, tokens["admin"], unit)
+    st, r = _sign(api, tokens["admin"], steps["WS-02"]["id"], "Complete")
+    assert st >= 400, r
+    assert _alerts(unit) == []
+
+
+# ── the two numbers this module cannot derive ────────────────────────────────────────────────────
+
+def test_the_capacity_and_aging_settings_round_trip(api, tokens):
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"],
+                {"weeklyCapacityH": 240, "ncrAgingDays": 7})
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/settings", tokens["admin"])
+    assert st == 200 and r["weeklyCapacityH"] == 240.0 and r["ncrAgingDays"] == 7
+
+
+def test_an_unset_aging_threshold_reports_the_default_that_will_be_used(api, tokens):
+    """Not a blank. A blank hides which number the sweep is actually applying."""
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"ncrAgingDays": None})
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/settings", tokens["admin"])
+    assert st == 200 and r["ncrAgingDays"] == r["ncrAgingDefault"]
+
+
+def test_a_blank_capacity_clears_it_rather_than_meaning_zero(api, tokens):
+    """Zero hours a week would mark every week over capacity for ever — a catastrophe on screen
+    that is really a missing number. The chart already knows how to report hours with no verdict."""
+    api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": 240})
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": None})
+    assert st == 200 and r["weeklyCapacityH"] is None
+    st, r = api("GET", "/api/ahu/capacity", tokens["admin"])
+    assert st == 200 and r["capacity"] is None and "No weekly capacity" in r["note"]
+
+
+def test_a_nonsense_capacity_is_refused(api, tokens):
+    for bad in ("soon", 0, -5, 99999):
+        st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": bad})
+        assert st == 400, (bad, st, r)
+
+
+def test_a_nonsense_aging_threshold_is_refused(api, tokens):
+    for bad in ("often", 0, -1, 400):
+        st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"ncrAgingDays": bad})
+        assert st == 400, (bad, st, r)
+
+
+def test_staff_may_read_the_settings_but_not_change_them(api, tokens):
+    st, r = api("GET", "/api/ahu/settings", tokens["staff"])
+    assert st == 200 and r["canEdit"] is False
+    st, r = api("PATCH", "/api/ahu/settings", tokens["staff"], {"weeklyCapacityH": 1})
+    assert st == 403, r
+
+
+def test_changing_a_capacity_is_audited(api, tokens):
+    """It decides what the factory promises. Who moved it, and to what, has to be answerable."""
+    import db
+    def _rows():
+        return [x for x in db.list_collection("audit")
+                if str(x.get("action") or "") == "AHU production settings changed"]
+    before = len(_rows())
+    st, r = api("PATCH", "/api/ahu/settings", tokens["admin"], {"weeklyCapacityH": 321})
+    assert st == 200, r
+    rows = _rows()
+    assert len(rows) == before + 1
+    assert any("321" in str(x.get("detail") or "") for x in rows)
