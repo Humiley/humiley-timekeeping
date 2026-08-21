@@ -8518,7 +8518,7 @@ async function tkRenderDevices() {
     '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-bottom:12px">' + _importBtns('devices') + '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'dev-export\',\'Humiley_Asset_Register.pdf\',{title:\'DEVICE & ASSET REGISTER\',docCode:\'HML-IT-AST\'})">' + tkIcon('download') + 'Export PDF</button>' + (_userLevel === 'admin' ? '<button class="btn btn-outline btn-sm" onclick="tkDeviceAckBackfill()" title="' + _tkEscA(_t('Mark all existing assignments as acknowledged-on-record (one-time)')) + '">' + tkIcon('check') + _t('Backfill sign-offs') + '</button>' : '') + '<button class="btn btn-outline btn-sm" onclick="tkDeviceBatchAdd()">' + tkIcon('plus') + 'Add Several</button><button class="btn btn-primary btn-sm" onclick="tkQuickAdd(\'devices\')">' + tkIcon('plus') + 'Add Device</button></div>' +
     '<div id="dev-export">' + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' + _rptChartCard('Items by Category', 'dev-cat') + _rptChartCard('Status Breakdown', 'dev-status') + _rptChartCard('Asset Value by Department', 'dev-dept') + '</div>' +
-    '<div data-html2canvas-ignore="true" style="display:flex;gap:6px;margin-bottom:14px">' + _devTabBtn('inventory', _t('Inventory'), true) + _devTabBtn('assignments', _t('Assignments'), false) + '</div>' +
+    '<div data-html2canvas-ignore="true" class="tabs" style="margin-bottom:14px">' + _devTabBtn('inventory', _t('Inventory'), true) + _devTabBtn('assignments', _t('Assignments'), false) + '</div>' +
     '<div id="dev-tab-inventory">' +
       '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">' + _t('Inventory') + ' — ' + _t('all assets') + '</div></div>' +
       '<div data-html2canvas-ignore="true" style="padding:10px 14px;border-top:1px solid var(--line);background:var(--soft-bg);display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + _crmFiltSearch('dev-q', 'Search device / serial / assignee…', 'devFillTable') + _crmFiltSel('dev-cat', 'All categories', _crmDistinct(d, 'category'), 'devFillTable') + _crmFiltSel('dev-status', 'All status', _crmDistinct(d, 'status'), 'devFillTable') + _crmFiltSel('dev-dept', 'All departments', _crmDistinct(d, 'department'), 'devFillTable') + _crmFiltPeriod('dev-period-f', 'devFillTable') + '</div>' +
@@ -8574,13 +8574,14 @@ function _devUnasgBtn(devId, asgId) {
 }
 /* Inventory / Assignments tab switch on the Asset Register. */
 function _devTabBtn(key, label, active) {
-  return '<button id="devtab-' + key + '" onclick="tkDevTab(\'' + key + '\')" style="border:1px solid var(--line);background:' + (active ? 'var(--emerald)' : 'var(--card,#fff)') + ';color:' + (active ? '#fff' : 'var(--text)') + ';font-weight:600;font-size:12.5px;padding:8px 16px;border-radius:9px;cursor:pointer">' + label + '</button>';
+  return '<button id="devtab-' + key + '" class="tab' + (active ? ' active' : '') +
+    '" onclick="tkDevTab(\'' + key + '\')">' + label + '</button>';
 }
 function tkDevTab(name) {
   ['inventory', 'assignments'].forEach(k => {
     const pane = document.getElementById('dev-tab-' + k); if (pane) pane.style.display = (k === name) ? '' : 'none';
     const btn = document.getElementById('devtab-' + k);
-    if (btn) { const on = k === name; btn.style.background = on ? 'var(--emerald)' : 'var(--card,#fff)'; btn.style.color = on ? '#fff' : 'var(--text)'; }
+    if (btn) btn.classList.toggle('active', k === name);
   });
   if (name === 'assignments') { try { devAsgFill(); } catch (e) {} }
 }
