@@ -132,6 +132,27 @@ def test_every_step_carries_the_document_that_governs_it():
 
 # ── limits that belong to the unit, not to the process ───────────────────────────────────────────
 
+def test_the_foam_density_band_is_the_one_ipqc_2_actually_states():
+    """The design figure and the acceptance band are different things.
+
+    DS-MOD-001 says the panel is designed at 45 kg/m3 and says nothing about tolerance, so this
+    module originally invented +/-10% — a band of 40.5 to 49.5 that passed panels at 41 and 49 which
+    HML-AHU-IPQC-2-001 rejects. The procedure governing this hold point states 42-48 outright; the
+    limit was in the document set the whole time.
+    """
+    step = next(s for s in R.build_route("modular") if s["code"] == "IPQC-2")
+    chk = next(c for c in step["checks"] if c["key"] == "foam_density")
+    assert (chk["limit"], chk["limit2"]) == (42.0, 48.0)
+    assert "IPQC-2" in chk["src"]
+
+    # The ends of the invented band must now be rejected, which is the whole point.
+    assert R.evaluate_check(chk, 41.0)["status"] == R.FAIL
+    assert R.evaluate_check(chk, 49.0)["status"] == R.FAIL
+    assert R.evaluate_check(chk, 42.0)["status"] == R.PASS
+    assert R.evaluate_check(chk, 48.0)["status"] == R.PASS
+    assert R.evaluate_check(chk, 45.0)["status"] == R.PASS      # the design figure
+
+
 def test_the_deflection_limit_comes_from_the_class_the_unit_was_sold_as():
     chk = {"key": "deflection", "op": "<=", "limit_from": "class_D"}
     assert R.resolve_limit(chk, {"classD": "D1"})[0] == 4.0
