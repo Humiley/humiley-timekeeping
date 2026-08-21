@@ -2450,7 +2450,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
+          <thead><tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
           <tbody id="inout-report-tbody"></tbody>
         </table>
       </div>
@@ -35857,6 +35857,31 @@ function _tkOtOverCapGo(attId) {
   document.getElementById('otCapOverlay')?.remove();
   tkOtDecide(attId, 'approve', reason.trim());
 }
+/* The day a punch belongs to.
+   A log of 185 records spanning many days, with only a clock time on each row, cannot be read:
+   you cannot tell which check-in is which, and the date filters appear to do nothing because
+   nothing on screen shows a date. The weekday is shown alongside because Saturday and Sunday work
+   is what Art. 98 pays differently — worth seeing at a glance, not by counting back from a number.
+   The Date is built from the Y/M/D parts LOCALLY. `new Date("2026-08-21")` parses a bare date as
+   UTC midnight, which names the previous weekday anywhere west of Greenwich — this app already
+   keeps attendance on local dates, so the weekday must be derived the same way. */
+const _IO_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function _ioDayCell(v) {
+  const dash = '<span style="color:var(--text-light)">\u2014</span>';
+  const m = String(v || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return dash;
+  const y = +m[1], mo = +m[2], da = +m[3];
+  const dt = new Date(y, mo - 1, da);                    // built from local parts
+  // Out-of-range parts do not throw, they ROLL OVER: month 13 becomes January of the next
+  // year, Feb 30 becomes Mar 2. Either would print a confident, WRONG weekday. Reading the
+  // parts back off the Date is the only check that catches both.
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== da) return dash;
+  const dow = dt.getDay(), wknd = (dow === 0 || dow === 6);
+  return '<span style="font-weight:600;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums">' +
+    _crmEsc(tkFmtDate(m[0])) + '</span>' +
+    '<div style="font-size:10.5px;font-weight:' + (wknd ? '700' : '500') +
+    ';color:' + (wknd ? 'var(--warning)' : 'var(--text-light)') + '">' + _crmEsc(_t(_IO_DOW[dow])) + '</div>';
+}
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
@@ -35908,6 +35933,7 @@ function renderInOutReport() {
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${_crmEsc(r.name)}</span></div></td>
       <td><span class="badge b-navy" style="font-size:10px">${_crmEsc(r.dept)}</span></td>
+      <td>${_ioDayCell(r.date)}</td>
       <td style="font-weight:700;font-size:13px;color:var(--navy)">${_crmEsc(r.in)||'—'}</td>
       <td style="font-size:13px;color:var(--text-light)">${_crmEsc(r.out)||'<span style="color:var(--warning);font-size:11px">Not checked out</span>'}</td>
       <td style="font-weight:600;font-size:13px">${hoursStr}</td>
@@ -35918,9 +35944,9 @@ function renderInOutReport() {
     </tr>`;
   }).join('');
   if (!window._ioShowAll && rows.length > IO_CAP) {   // reveal the rest without re-filtering
-    tbody.innerHTML += '<tr><td colspan="9" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td colspan="10" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
   }
-  if (!rows.length) tbody.innerHTML = tkEmptyRow(9, 'No records match your filters.', { icon: 'search' });
+  if (!rows.length) tbody.innerHTML = tkEmptyRow(10, 'No records match your filters.', { icon: 'search' });
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;

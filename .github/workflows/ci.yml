@@ -64,6 +64,16 @@ jobs:
       - name: Detail Schedule arithmetic
         run: node tests/detail_schedule_math.js
 
+      # The In/Out Log carries one row per punch across many days. Until the Date column existed
+      # every row showed only a clock time, so nobody could tell which day a check-in belonged to —
+      # and the date filters looked broken because nothing on screen changed when you set one.
+      # Two silent ways to get it wrong: `new Date("2026-08-21")` reads a BARE date as UTC midnight
+      # and names the previous weekday west of Greenwich, and out-of-range parts do not throw but
+      # ROLL OVER, so 2026-13-45 renders as a confident, wrong day. Both are asserted, along with
+      # the column count agreeing across the header, the row and both full-width rows.
+      - name: In/Out Log Date column
+        run: node tests/inout_day_column.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a
