@@ -2324,7 +2324,10 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Reports &amp; Analytics</h1><p>Attendance · Leave · Employee In/Out · Department KPIs</p></div>
     <div style="display:flex;gap:8px">
-      <select class="sel-filter" id="rpt-period"><option value="May 2026">May 2026</option><option value="April 2026">April 2026</option><option value="Q1 2026">Q1 2026</option></select>
+      <!-- Was a hardcoded three-option <select> with no onchange that nothing ever read: the
+           page offered a period control and then reported all-time figures under it. Filled
+           by _rptPeriodSlot() with the same control every other list in the portal uses. -->
+      <span id="rpt-period-slot" style="display:flex;gap:6px;align-items:center"></span>
       <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
     </div>
   </div>
@@ -2392,7 +2395,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-        <div class="card-title">Leave Requests — May 2026</div>
+        <div class="card-title"><span data-i18n>Leave Requests</span><span id="lr-period-label" style="font-weight:600;color:var(--text-light)"></span></div>
         <button class="btn btn-outline btn-sm" onclick="toast('Exporting leave report…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
       </div>
       <div class="table-wrap">
@@ -2450,7 +2453,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
+          <thead><tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
           <tbody id="inout-report-tbody"></tbody>
         </table>
       </div>
@@ -15794,6 +15797,13 @@ const _QA_SPECS = {
     { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
   pm_tasks: { title: 'Task / Milestone', coll: 'pm_tasks', reload: 'pm_tasks', fields: [
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
+    // Which work package this activity delivers. Optional, and stored as the deliverable's ID:
+    // re-coding a deliverable's WBS number must not orphan the link, which is the lesson taskRef
+    // teaches — it matches on `wbs || name` by exact string and therefore can never be renumbered.
+    // While this is blank the deliverable keeps its typed percentage, exactly as before.
+    { k: 'delivId', label: 'Delivers WBS package (optional — links progress to the project total)',
+      type: 'ref', src: 'pm_deliverables', blank: '— not linked to a WBS package —' },
+    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee (type any name — staff or others)', type: 'combo', dyn: 'pm_assignees' },
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
@@ -16026,7 +16036,7 @@ function tkQuickAdd(type, id, seed) {
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
-    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
     if (f.type === 'ref') {
       /* A pointer to another record. The stored value is the id — so the link survives a document
          being renumbered — while the dropdown shows the number and title somebody actually
@@ -19650,6 +19660,25 @@ function _crmBuildDashCharts() {
 }
 
 /* dynamic option sources for the quick-add form (employees / companies / contacts) */
+/* Order WBS codes the way a schedule reads, not the way strings sort.
+   Plain string order puts "1.10" before "1.2" and "1.4.6.6.4" adjacent to "1.4.5.2"; a person
+   scanning for 1.4.4.1 then cannot find it. Compare segment by segment, numerically where both
+   segments are numeric, so 1.3.2 < 1.4.4.1 < 1.4.4.1.1 < 1.4.4.1.2 < 1.4.10. A code with a name
+   instead of a number (an activity with no WBS) sorts after the numbered ones, by name. */
+function _wbsCmp(a, b) {
+  const A = String(a || '').split('.'), B = String(b || '').split('.');
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = A[i], y = B[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x.trim()), ny = /^\d+$/.test(y.trim());
+    if (nx && ny) { const d = (+x) - (+y); if (d) return d; continue; }
+    if (nx !== ny) return nx ? -1 : 1;           // numbered WBS before a bare name
+    const c = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    if (c) return c;
+  }
+  return 0;
+}
 function _qaDynOptions(src, ex) {
   if (src === 'employees') return (_DEMO_EMPLOYEES || []).map(e => e.name).filter(Boolean);
   if (src === 'companies') return (_HR.crm_companies || []).map(c => c.name).filter(Boolean);
@@ -19674,7 +19703,19 @@ function _qaDynOptions(src, ex) {
   if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
     const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_tasks', _pmPid()) : [];
-    return [...new Set(ts.map(t => String((t.wbs || t.name) || '').trim()).filter(Boolean))];
+    // The VALUE has to stay exactly _pdTaskRef(t) — _pdMasterOf matches it by string equality, so
+    // changing it would orphan every detail line already filed against a master activity. Only the
+    // label gains the name: a picker of bare codes like "1.4.6.6.4" cannot be used by a site
+    // engineer who knows the work by what it IS, not by its number.
+    const seen = {}, out = [];
+    ts.forEach(t => {
+      const v = String((t.wbs || t.name) || '').trim();
+      if (!v || seen[v]) return;
+      seen[v] = 1;
+      const nm = String(t.name || '').trim();
+      out.push({ v: v, l: (nm && nm !== v) ? (v + ' \u2014 ' + nm) : v });
+    });
+    return out.sort((a, b) => _wbsCmp(a.v, b.v));
   }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
@@ -19721,6 +19762,12 @@ function _qaRefOptions(src, ex) {
   }
   if (src === 'pm_projects') {
     return (_HR.pm_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
+  }
+  if (src === 'pm_deliverables') {
+    const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+    return (_HR.pm_deliverables || []).filter(d => d && d.projectId === pid)
+      .sort((a, b) => _wbsCmp(a.wbsCode || '', b.wbsCode || ''))
+      .map(d => ({ v: d.id, l: (d.wbsCode ? d.wbsCode + ' — ' : '') + (d.name || '(untitled)') }));
   }
   if (src === 'eng_projects') {
     return (_HR.eng_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
@@ -20212,15 +20259,102 @@ function _pmEvm(p) {
   const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
   const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
-  const spi = (pv > 0 && bac > 0) ? ev / pv : 1;
-  const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null };
+  // A confident 1.00 — "perfectly on schedule" — with NOTHING to measure: no baseline and no
+  // phased cost register means pv falls back to ev on the line above, so the ratio is 1 by
+  // construction whatever the project is doing.
+  // The first version of this guard tested `pv > 0`, which is GUARANTEED whenever ev > 0 on that
+  // fallback branch — so it was true in exactly the case it was written to catch, and could only
+  // be false when the ratio was 0/0 anyway. It tested the symptom. The cause is whether PV was
+  // derived INDEPENDENTLY of EV at all: a time-phased plan, or elapsed time against a baseline.
+  const pvIndependent = (phased != null) || (tp != null);
+  const spiMeasurable = pvIndependent && pv > 0 && bac > 0 && ev > 0;
+  const spi = spiMeasurable ? ev / pv : 1;
+  // A forecast needs earned value. With ev === 0 the old `cpi > 0` test failed and EAC fell
+  // through to `ac` — asserting the project will finish for what has been spent, with ETC ₫0
+  // and a large POSITIVE VAC that reads as an underspend. That is not a cautious estimate, it
+  // is the opposite of the truth on a job that has consumed budget and delivered nothing yet.
+  const eacMeasurable = ev > 0 && ac > 0 && bac > 0;
+  const eac = eacMeasurable ? bac / cpi : null;
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, spiMeasurable, eacMeasurable,
+           eac, vac: eacMeasurable ? bac - eac : null, etc: eacMeasurable ? eac - ac : null,
+           pct: ratio * 100, measurable, phasedPv: phased != null,
+           evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
 function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
 
 /* ---- rollups consumed by Overview + Portfolio ---- */
-function pmScopeRollup(pid) { const ds = _pmScopeFor('pm_deliverables', pid); let wsum = 0, wpct = 0, acc = 0; ds.forEach(d => { const w = Math.max(0, +d.weight || 0) || 1; wsum += w; wpct += w * _pmPct(d.percentComplete); if ((d.status || '') === 'Accepted') acc++; }); const ratio = wsum ? wpct / wsum : 0; return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc }; }
+/* How much of THIS activity is done, and on what basis — never a bare number.
+   Three grades, best evidence first:
+     measured  — detail sub-items reported against it (a quantity, not an opinion)
+     complete  — an actual finish date, or status Completed
+     typed     — somebody's estimate, which is the weakest and is labelled as such
+   The basis travels with the figure so a screen can say where a percentage came from. */
+function _pmActivityPct(t, pid) {
+  const d = (typeof _pdTaskPct === 'function') ? _pdTaskPct(t, pid) : null;
+  if (d) return { pct: _pmPct(d.pct), basis: 'measured', n: d.n };
+  if (t && (t.actualFinish || (t.status || '') === 'Completed')) return { pct: 100, basis: 'complete', n: 0 };
+  return { pct: _pmPct(t && t.pctComplete), basis: 'typed', n: 0 };
+}
+/* What an activity is worth inside its work package.
+   NOT `t.duration`: _pmCPMCompute reads that as NETWORK duration, so tuning the critical path
+   would silently re-price reported progress. Explicit weight wins; otherwise the inclusive
+   calendar span, the same ladder _pdWeight uses for detail rows so there is one rule to learn. */
+function _pmTaskWeight(t) {
+  const w = +(t && t.weight) || 0;
+  if (w > 0) return w;
+  if (t && t.start && t.finish) return Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1);
+  return 1;
+}
+/* The WBS roll-up: sub-items -> activity -> work package -> project.
+
+   The basis is decided PER DELIVERABLE, not per project. A deliverable with linked activities is
+   derived from them; one with none keeps its typed percentage, bit-for-bit as before. That makes
+   adoption monotonic: linking one activity moves one deliverable, and a project that links nothing
+   reports exactly what it reports today.
+
+   Activities with no delivId contribute to NOTHING and are counted in the open, the way
+   _pdGroupOf already surfaces unlinked detail lines. Folding them into a catch-all would hand
+   them scope weight nobody assigned. */
+function pmWbsRollup(pid) {
+  const ds = _pmScopeFor('pm_deliverables', pid);
+  const ts = _pmScopeFor('pm_tasks', pid);
+  const byDeliv = {};
+  let unlinked = 0;
+  ts.forEach(t => {
+    const k = String(t.delivId || '');
+    if (!k) { unlinked++; return; }
+    (byDeliv[k] = byDeliv[k] || []).push(t);
+  });
+  let wsum = 0, wpct = 0, acc = 0, derived = 0;
+  ds.forEach(d => {
+    const w = Math.max(0, +d.weight || 0) || 1;
+    // `d.id ?` is a SECOND, independent guard, not the load-bearing one. Unlinked activities are
+    // keyed '' , so a deliverable whose own id were falsy could absorb every one of them and have
+    // its typed percentage overwritten by work nobody assigned to it. The `return` above already
+    // prevents that by never populating byDeliv['']; removing either one alone changes nothing,
+    // which a mutation test confirmed by surviving. Both must fail together to open the hole —
+    // cheap enough to keep, and stated honestly rather than claimed as the fix.
+    const mine = (d.id ? byDeliv[d.id] : null) || [];
+    let pct;
+    if (mine.length) {
+      let aw = 0, ap = 0;
+      mine.forEach(t => { const tw = _pmTaskWeight(t); aw += tw; ap += tw * _pmActivityPct(t, pid).pct; });
+      pct = aw ? (ap / aw) : 0;
+      derived++;
+    } else {
+      pct = _pmPct(d.percentComplete);
+    }
+    wsum += w; wpct += w * pct;
+    if ((d.status || '') === 'Accepted') acc++;
+  });
+  const ratio = wsum ? wpct / wsum : 0;
+  return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc,
+           derived: derived, typed: ds.length - derived,
+           activities: ts.length, unlinkedActivities: unlinked };
+}
+/* Kept as the name and shape eight call sites already use, so they all inherit the chain. */
+function pmScopeRollup(pid) { return pmWbsRollup(pid); }
 function _pmRiskRollup(pid) { const rs = _pmScopeFor('pm_risks', pid).filter(r => r.status !== 'Closed'); const scored = rs.map(r => +r.score || 0); const high = scored.filter(s => s >= 10).length; const top = scored.length ? Math.max.apply(null, scored) : 0; return { open: rs.length, high: high, top: top, band: _pmRiskBand(top).band }; }
 function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms = ts.filter(t => String(t.isMilestone) === 'Yes'); return { tasks: ts.length, milestones: ms.length, overdueMs: _pmOverdueMilestones(pid), done: ts.filter(t => t.status === 'Completed').length }; }
 
@@ -20318,7 +20452,7 @@ function pmStatusPDF(pid) {
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
   const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
   const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
-  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', _pmMoney(ev.eac)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', ev.eacMeasurable ? _pmMoney(ev.eac) : 'not computable — no earned value recorded'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—'], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
   const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
@@ -20354,7 +20488,7 @@ async function pmCloseoutPDF(pid) {
   const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
-  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.eacMeasurable ? ev.cpi.toFixed(2) : '—'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
   const procs = _pmScopeFor('pm_procurement', p.id), procClosed = procs.filter(x => x.status === 'Closed' || x.status === 'Completed').length;
   const ret = procs.reduce((s, x) => s + (+x.value || 0) * (+x.retentionPct || 0) / 100, 0);
@@ -20555,7 +20689,9 @@ function pmReport(pid, mode) {
   line('Budget (BAC) / Actual (AC)', _pmMoney(ev.bac) + '    /    ' + _pmMoney(ev.ac));
   line('Earned Value (EV)', _pmMoney(ev.ev));
   line('CPI / SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2));
-  line('Forecast (EAC) / Variance (VAC)', _pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac));
+  line('Forecast (EAC) / Variance (VAC)', ev.eacMeasurable
+    ? (_pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac))
+    : 'not computable — no earned value recorded');
 
   const tasks = _pmScopeFor('pm_tasks', p.id);
   sect('3. Progress this ' + R.word);
@@ -20765,10 +20901,18 @@ function _pmMyActionsHtml() {
    paints on one collection, and a tab fetches its own on the way in.
    `need` is what the tab CANNOT render without — including what its helpers reach for. Miss one and
    the tab renders empty, so this list is the contract; there is a test that walks it. */
+/* Registers a non-manager can be refused, in words a person recognises — so the tab can say
+   WHICH figures are missing instead of presenting an unexplained zero. */
+const _PM_COLL_LABEL = {
+  pm_costs: 'Project costs and budget',
+  pm_procurement_payments: 'Payment certificates'
+};
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
+  // pm_costs was listed here and is never read by pmRenderSchedule — grep it. All it ever did
+  // was 403 for staff and take the whole tab down with it.
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20839,7 +20983,16 @@ async function pmTab(k) {
   if (_missing.length && _body) _body.innerHTML = tkSkeleton();
   const _failed = await _pmNeed(t.need);
   if (_pmTabK !== k) return;                   // the user moved on while we waited — don't clobber
-  if (_failed.length) {
+  // A 403 is not a failure, it is an ANSWER: this account may not read that register. Treating the
+  // two alike put "Could not load this tab — check your connection and try again" in front of every
+  // staff user who opened a project — on the Overview they land on by default, and on Schedule —
+  // because both listed the manager-only pm_costs. Retrying a permission decision never succeeds,
+  // so the Retry button invited a loop that could not end.
+  // Every register here is read through _pmScopeFor, which is `(_HR[coll] || [])`: a denied
+  // collection is an empty array, not a crash. So the tab can render; the money simply is not there.
+  const _denied = _failed.filter(c => (_COLL_ERR[c] || {}).status === 403);
+  const _broken = _failed.filter(c => (_COLL_ERR[c] || {}).status !== 403);
+  if (_broken.length) {
     // An empty register and a failed fetch look identical once rendered, so say which this was.
     if (_body) _body.innerHTML = '<div class="card" style="padding:18px;color:var(--text-light)">' +
       '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Could not load this tab') + '</div>' +
@@ -20848,6 +21001,18 @@ async function pmTab(k) {
     return;
   }
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
+  // Rendering without the denied register would show a confident 0 against a real budget,
+  // which reads as "this project has no money" rather than "you may not see the money".
+  // A zero nobody can tell from a fact is worse than an absence somebody explains.
+  if (_denied.length) {
+    const _b2 = document.getElementById('pm-tab-body');
+    if (_b2) _b2.insertAdjacentHTML('afterbegin',
+      '<div class="card" style="padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--warning)">' +
+      '<div style="font-size:12.5px;color:var(--text)">' +
+      _pmEsc(_t('Some figures here are hidden by your access level, so any total that depends on them is incomplete.')) +
+      '</div><div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _pmEsc(_t('Hidden')) + ': ' +
+      _denied.map(c => _pmEsc(_t(_PM_COLL_LABEL[c] || c))).join(', ') + '</div></div>');
+  }
 }
 
 /* ---------- Overview tab (Integration: charter summary, EVM headline, changes, lessons) ---------- */
@@ -21616,7 +21781,12 @@ function _pdRollup(rows, day) {
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
 function _pdTaskPct(task, pid) {
   const ref = _pdTaskRef(task); if (!ref) return null;
-  const rows = _pdRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  // _pdAllRows, NOT _pdRows. _pdRows narrows to the detail schedule the user last clicked, so an
+  // activity fed by sub-items in two schedules — "Zone 3 — Cleanroom" and "Block E — MEP" on the
+  // same ductwork run — reported only the half you happened to be looking at, and its percentage
+  // CHANGED when you clicked the other chip. A master activity's progress is everything reported
+  // against it; which chip is selected is a view, not a fact about the work.
+  const rows = _pdAllRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
   return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
 }
 function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
@@ -22810,7 +22980,8 @@ function pmRenderCosts(pid) {
     (_splan.phased ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _t('Planned is spread evenly — put a Period on each cost line to draw the real plan curve.') + '</div>') +
     '<div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
   const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
-    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
+    // A null forecast prints an em dash and says why, rather than a figure with no basis.
+    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] == null ? 'var(--text-light)' : (r[1] < 0 ? '#EF4444' : 'var(--navy)')) + '">' + (r[1] == null ? '—' : _pmMoney(r[1])) + '</div></div>').join('') + '</div>' + (ev.eacMeasurable ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:9px">' + _pmEsc(_t('No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.')) + '</div>') + '</div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
   const tbl = _pmCard('Cost Register', 'pm_costs', 'Add cost line', _pmTable('pm_costs', [
     { label: 'Item', render: r => '<span style="font-weight:600">' + _pmEsc(r.item || '') + '</span>' },
@@ -22944,6 +23115,43 @@ function pmRenderResources(pid) {
 }
 /* RACI matrix — deliverables (rows) × team members (cols). Managers click a cell to cycle
    R → A → C → I → blank, stored in deliverable.raciMap (a NEW additive field; nothing else touched). */
+/* Which part of a name is the PERSON.
+   "Nguyen Van Trung" is family-middle-given: the person is Trung, and taking token [0] gives
+   "Nguyen" — a name roughly two in five Vietnamese people carry. A four-person team then renders
+   as four columns all reading NGUYEN, which is not a cosmetic problem: the matrix exists to say
+   who is Responsible, and it cannot say it.
+   The register holds BOTH orders — _pmSamePerson exists precisely because rows read "Trung Nguyen"
+   while employee records read "Nguyen Van Trung" — so neither end can be trusted blindly. Decide
+   by looking for a known family name; fall back to the Vietnamese convention (last token), because
+   that is what this company's records overwhelmingly use. */
+const _VN_FAMILY = new Set(['nguyen', 'tran', 'le', 'pham', 'hoang', 'huynh', 'phan', 'vu', 'vo',
+  'dang', 'bui', 'do', 'ho', 'ngo', 'duong', 'ly', 'dinh', 'truong', 'dao', 'mai', 'lam', 'trinh',
+  'cao', 'chu', 'ta', 'ha', 'thai', 'luu', 'quach', 'ton', 'to', 'chau', 'kieu', 'ninh']);
+function _pmGivenName(full) {
+  const raw = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (!raw.length) return '';
+  if (raw.length === 1) return raw[0];
+  const t = _pmNameTokens(full);                       // ASCII-folded, lowercased
+  if (t.length !== raw.length) return raw[raw.length - 1];
+  if (_VN_FAMILY.has(t[0])) return raw[raw.length - 1];        // Nguyen Van Trung -> Trung
+  if (_VN_FAMILY.has(t[t.length - 1])) return raw[0];          // Trung Nguyen     -> Trung
+  return raw[raw.length - 1];                                  // default: Vietnamese order
+}
+/* Given names collide too — two people called Trung on one team would give two columns reading
+   "Trung", which is the same failure one step further along. Where a given name is not unique on
+   THIS team, qualify it with the family name; where it is unique, keep it short. */
+function _pmShortNames(members) {
+  const given = (members || []).map(_pmGivenName);
+  const count = {};
+  given.forEach(g => { const k = g.toLowerCase(); count[k] = (count[k] || 0) + 1; });
+  return (members || []).map((m, i) => {
+    const g = given[i];
+    if (count[g.toLowerCase()] < 2) return g;
+    const raw = String(m || '').trim().split(/\s+/).filter(Boolean);
+    const fam = raw.length > 1 ? (_VN_FAMILY.has(_pmNameTokens(m)[0] || '') ? raw[0] : raw[raw.length - 1]) : '';
+    return fam && fam !== g ? (g + ' ' + fam.charAt(0) + '.') : (m || g);
+  });
+}
 function _pmRaciMembers(pid) {
   const p = _pmProj(pid) || {}; const names = new Set();
   _pmMembers(p).forEach(n => { if (n) names.add(n); });
@@ -22951,11 +23159,17 @@ function _pmRaciMembers(pid) {
   return Array.from(names);
 }
 function _pmRaciMatrix(pid) {
-  const dels = _pmScope(_HR.pm_deliverables); const members = _pmRaciMembers(pid);
+  // Register order put these on screen as 6, E, 2, F, 1, 5, A, C, 4, D, B, 3. Same comparator
+  // as the WBS picker: numbered items in numeric order first, then the lettered ones.
+  const dels = _pmScope(_HR.pm_deliverables).slice()
+    .sort((a, b) => _wbsCmp(a.wbsCode || a.code || '', b.wbsCode || b.code || '')
+                 || String(a.name || '').localeCompare(String(b.name || '')));
+  const members = _pmRaciMembers(pid);
   if (!dels.length || !members.length) return '';
   const canEdit = _pmSeeAll() || _pmCanEditProject(_pmProj(pid));
   const legend = [['R', 'Responsible'], ['A', 'Accountable'], ['C', 'Consulted'], ['I', 'Informed']].map(x => '<span style="display:inline-flex;align-items:center;gap:4px;margin-left:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + (RACI_HEX[x[0]] || '#94a3b8') + '"></span>' + x[1] + '</span>').join('');
-  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map(m => '<th style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc((m.split(' ')[0]) || m) + '</th>').join('');
+  const shortNames = _pmShortNames(members);
+  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map((m, i) => '<th title="' + _pmEsc(m) + '" style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc(shortNames[i] || m) + '</th>').join('');
   const rows = dels.map(d => {
     const map = d.raciMap || {};
     return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-variant-numeric:tabular-nums;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
@@ -29969,6 +30183,11 @@ function showView(id, navEl, title) {
   if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }
   // Report sub-panels live in #content (not inside the view) — hide them off the Reports page, show the default tab on it.
   ['attendance', 'leave', 'inout', 'recruit', 'payroll'].forEach(t => { const p = document.getElementById('rpt-' + t); if (p) p.style.display = (id === 'reports' && t === 'attendance') ? 'block' : 'none'; });
+  // The period control has to exist the moment the page opens, not from the first tab CLICK.
+  // switchReportTab fills the slot, and opening Reports does not call it — the default tab is
+  // active in the markup and rendered directly — so the page appeared with no period control at
+  // all until you happened to click a tab. Found by opening the page, not by any assertion.
+  if (id === 'reports') { _rptTabK = 'attendance'; _rptPeriodSlot(); }
   if (id === 'reports') { document.querySelectorAll('#rpt-tabs .tab').forEach((b, i) => b.classList.toggle('active', i === 0)); setTimeout(initReportCharts, 100); }
   if (id === 'manager') { loadManagerView(); }
   if (id === 'procurement') { try { tkRenderProcurementEmbed(); } catch (e) { console.warn('procurement:', e.message); } }
@@ -33701,7 +33920,6 @@ const _VI = {
   "Enrolments & Progress": "Ghi danh & Tiến độ",
   "Expense & Benefit Claims": "Đề nghị chi phí & Phúc lợi",
   "SP_CONFIG — Live Values": "SP_CONFIG — Giá trị hiện hành",
-  "Leave Requests — May 2026": "Đơn nghỉ phép — Tháng 5, 2026",
   "Time-to-Offer SLA (QĐ.HR-01)": "SLA thời gian gửi đề nghị tuyển (QĐ.HR-01)",
   "Rating Scale & Merit Outcomes (HML-CB-001 §15)": "Thang đánh giá & Kết quả xét thưởng (HML-CB-001 §15)",
   "Salary Structure & Grading (G1–G10) — 3P Model": "Cơ cấu lương & Phân bậc (G1–G10) — Mô hình 3P",
@@ -35626,7 +35844,50 @@ function tkTimesheetCsv() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+/* The Reports period, and the tab it applies to.
+
+   The control on this page was decorative: a <select id="rpt-period"> with three hardcoded months,
+   no onchange, and no reader anywhere in the file. Every tab therefore reported all-time figures
+   under a heading that named a month — the Leave card said "May 2026" over rows dated July.
+
+   A period control that does nothing is worse than none: it does not merely fail to filter, it
+   states a scope the numbers do not have, and somebody reports those numbers to a client. */
+let _rptTabK = 'attendance';
+const _RPT_PERIOD_F = 'rpt-period-f';
+function _rptPeriodSlot() {
+  const slot = document.getElementById('rpt-period-slot');
+  if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod(_RPT_PERIOD_F, '_rptPeriodChanged');
+}
+/* What the chosen period is called, for a heading. Empty when it is "All time", because appending
+   nothing is honest and "— All time" is noise. */
+function _rptPeriodLabel() {
+  const cur = _crmLF[_RPT_PERIOD_F] || '';
+  if (!cur) return '';
+  if (cur === 'Custom range…') {
+    const a = _crmLF[_RPT_PERIOD_F + '-from'] || '', b = _crmLF[_RPT_PERIOD_F + '-to'] || '';
+    return (a || b) ? (' — ' + (a ? tkFmtDate(a) : '…') + ' → ' + (b ? tkFmtDate(b) : '…')) : '';
+  }
+  return ' — ' + _t(cur);
+}
+/* Is this row inside the chosen period? A row with no usable date is KEPT: dropping it would
+   silently shrink a total on a technicality, and an undated record is a data problem to fix, not a
+   row to hide. */
+function _rptInPeriod(dateStr) {
+  if (!_crmLF[_RPT_PERIOD_F]) return true;              // All time
+  if (!dateStr) return true;
+  // An UNPARSEABLE date counts as no date. Without this, `_isoDay` returns '' inside _inPeriod, the
+  // row is dropped, and a total quietly shrinks because one record was typed badly.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(dateStr).trim())) return true;
+  return _inPeriodLF(dateStr, _RPT_PERIOD_F);
+}
+/* Re-render whichever tab is showing. The period belongs to the page, not to one tab. */
+function _rptPeriodChanged() {
+  const el = document.querySelector('#rpt-tabs .tab.active');
+  switchReportTab(_rptTabK, el);
+}
 function switchReportTab(tab, el) {
+  _rptTabK = tab;
+  _rptPeriodSlot();
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
   ['attendance','leave','inout','timesheet','recruit','payroll','labour','workforce'].forEach(id => {
@@ -35715,8 +35976,11 @@ function renderLeaveReport() {
     const matchD = deptF === 'All Employees' || deptF === 'All Departments' || dept === deptF;
     const matchT = typeF === 'All Types' || (l.type || '') === typeF;
     const matchS = statF === 'All Status' || (l.status || '').toLowerCase() === statF.toLowerCase();
-    return matchD && matchT && matchS;
+    // A leave request belongs to the period its leave STARTS in — that is the month a manager is
+    // asking about when they pick one.
+    return matchD && matchT && matchS && _rptInPeriod(l.startDate);
   }).sort(_cmpNewest('startDate'));
+  { const lbl = document.getElementById('lr-period-label'); if (lbl) lbl.textContent = _rptPeriodLabel(); }
   // stat boxes
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('lr-total', rows.length);
@@ -35727,7 +35991,7 @@ function renderLeaveReport() {
   const emp = nm => (_DEMO_EMPLOYEES || []).find(e => e.name === nm);
   tbody.innerHTML = rows.length ? rows.map(l => {
     const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
-    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
+    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.approvedBy || '—') + '</td></tr>';
   }).join('') : tkEmptyRow(9, 'No leave records match your filters.', { icon: 'search' });
   // Leave-by-type bars (data-driven)
   const byType = {}; rows.forEach(l => { const t = l.type || 'Other'; (byType[t] = byType[t] || { n: 0, d: 0 }); byType[t].n++; byType[t].d += (+l.days || 0); });
@@ -35747,7 +36011,8 @@ function renderLeaveReport() {
 
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
-  const att = _DEMO_ATTENDANCE || [];
+  // Was every attendance row ever recorded, under a heading naming a month.
+  const att = (_DEMO_ATTENDANCE || []).filter(r => _rptInPeriod(r.date));
   const total = att.length;
   const ontime = att.filter(r => r.status === 'on-time').length;
   const late = att.filter(r => r.status === 'late').length;
@@ -35873,6 +36138,31 @@ function _tkOtOverCapGo(attId) {
   document.getElementById('otCapOverlay')?.remove();
   tkOtDecide(attId, 'approve', reason.trim());
 }
+/* The day a punch belongs to.
+   A log of 185 records spanning many days, with only a clock time on each row, cannot be read:
+   you cannot tell which check-in is which, and the date filters appear to do nothing because
+   nothing on screen shows a date. The weekday is shown alongside because Saturday and Sunday work
+   is what Art. 98 pays differently — worth seeing at a glance, not by counting back from a number.
+   The Date is built from the Y/M/D parts LOCALLY. `new Date("2026-08-21")` parses a bare date as
+   UTC midnight, which names the previous weekday anywhere west of Greenwich — this app already
+   keeps attendance on local dates, so the weekday must be derived the same way. */
+const _IO_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function _ioDayCell(v) {
+  const dash = '<span style="color:var(--text-light)">\u2014</span>';
+  const m = String(v || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return dash;
+  const y = +m[1], mo = +m[2], da = +m[3];
+  const dt = new Date(y, mo - 1, da);                    // built from local parts
+  // Out-of-range parts do not throw, they ROLL OVER: month 13 becomes January of the next
+  // year, Feb 30 becomes Mar 2. Either would print a confident, WRONG weekday. Reading the
+  // parts back off the Date is the only check that catches both.
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== da) return dash;
+  const dow = dt.getDay(), wknd = (dow === 0 || dow === 6);
+  return '<span style="font-weight:600;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums">' +
+    _crmEsc(tkFmtDate(m[0])) + '</span>' +
+    '<div style="font-size:10.5px;font-weight:' + (wknd ? '700' : '500') +
+    ';color:' + (wknd ? 'var(--warning)' : 'var(--text-light)') + '">' + _crmEsc(_t(_IO_DOW[dow])) + '</div>';
+}
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
@@ -35924,6 +36214,7 @@ function renderInOutReport() {
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${_crmEsc(r.name)}</span></div></td>
       <td><span class="badge b-navy" style="font-size:10px">${_crmEsc(r.dept)}</span></td>
+      <td>${_ioDayCell(r.date)}</td>
       <td style="font-weight:700;font-size:13px;color:var(--navy)">${_crmEsc(r.in)||'—'}</td>
       <td style="font-size:13px;color:var(--text-light)">${_crmEsc(r.out)||'<span style="color:var(--warning);font-size:11px">Not checked out</span>'}</td>
       <td style="font-weight:600;font-size:13px">${hoursStr}</td>
@@ -35934,9 +36225,9 @@ function renderInOutReport() {
     </tr>`;
   }).join('');
   if (!window._ioShowAll && rows.length > IO_CAP) {   // reveal the rest without re-filtering
-    tbody.innerHTML += '<tr><td colspan="9" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td colspan="10" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
   }
-  if (!rows.length) tbody.innerHTML = tkEmptyRow(9, 'No records match your filters.', { icon: 'search' });
+  if (!rows.length) tbody.innerHTML = tkEmptyRow(10, 'No records match your filters.', { icon: 'search' });
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;

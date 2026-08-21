@@ -75,6 +75,50 @@ jobs:
       - name: Detail Schedule arithmetic
         run: node tests/detail_schedule_math.js
 
+      # The In/Out Log carries one row per punch across many days. Until the Date column existed
+      # every row showed only a clock time, so nobody could tell which day a check-in belonged to —
+      # and the date filters looked broken because nothing on screen changed when you set one.
+      # Two silent ways to get it wrong: `new Date("2026-08-21")` reads a BARE date as UTC midnight
+      # and names the previous weekday west of Greenwich, and out-of-range parts do not throw but
+      # ROLL OVER, so 2026-13-45 renders as a confident, wrong day. Both are asserted, along with
+      # the column count agreeing across the header, the row and both full-width rows.
+      - name: In/Out Log Date column
+        run: node tests/inout_day_column.js
+
+      # A staff account opening ANY project met "Could not load this tab — check your connection",
+      # on the Overview it lands on by default and on Schedule, because both listed the
+      # manager-only pm_costs in `need` and pmTab treated a 403 as a fetch failure. Retrying a
+      # permission decision never succeeds, so Retry was a loop with no exit. Also pins the WBS
+      # picker's order: plain string sort puts "1.10" before "1.2", which is how a site engineer
+      # loses 1.4.4.1 in a list of twenty codes.
+      - name: Project tab access + WBS picker order
+        run: node tests/pm_access_and_wbs.js
+
+      # A four-person team rendered as four columns all reading "NGUYEN": the header took
+      # `name.split(' ')[0]`, which in Vietnamese name order is the FAMILY name — carried by roughly
+      # two in five people in the country. A RACI matrix exists to say who is Responsible, and four
+      # identical columns cannot say it. The register holds BOTH name orders (see _pmSamePerson), so
+      # "take the last token" breaks the other half instead. Also pins the deliverable order, which
+      # was rendering 6, E, 2, F, 1, 5, A, C.
+      - name: RACI matrix names the person, in order
+        run: node tests/raci_names_and_order.js
+
+      # The Reports period control was decorative: <select id="rpt-period"> had three hardcoded
+      # months, no onchange, and no reader anywhere in 40,000 lines. Every tab reported ALL-TIME
+      # figures under a control naming a month, and the Leave card's title was the literal string
+      # "Leave Requests — May 2026" over rows dated July. That is worse than no control — it states
+      # a scope the numbers do not have, and somebody reports those numbers to a client.
+      - name: Reports period filter is real
+        run: node tests/reports_period_filter.js
+
+      # The WBS chain: sub-items -> master activity -> project. _pdTaskPct read _pdRows(), which is
+      # narrowed to the detail schedule currently selected in the chip bar, so an activity fed by
+      # two schedules reported only the half on screen and its percentage CHANGED when you clicked
+      # the other chip. Also characterizes what the project percentage is computed from, because
+      # that figure multiplies into EV, and EV into CPI/SPI/EAC on client-facing reports.
+      - name: WBS roll-up chain
+        run: node tests/wbs_rollup_chain.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a
