@@ -457,14 +457,53 @@ def quotation(tender, master=None, rollup=None, overrides=None):
                 continue
             lines.append(quote_line(src, o, a))
 
-    net = sum(l["net"] for l in lines)
-    vat = sum(l["vat"] for l in lines)
+    subtotal = sum(l["net"] for l in lines)
     cogs = sum(l["cogs"] for l in lines)
+
+    # A DISCOUNT IS A PRICE CUT, NOT A LINE ON THE LETTER.
+    #
+    # It used to be neither applied nor propagated. The quotation printed a discount row and then
+    # charged the full grand total — 20% off a 938bn tender moved the printed total by zero — VAT
+    # was assessed on the undiscounted base, and every internal number a decision rests on
+    # (revenue, gross margin, EBIT, net profit, the cash-flow inflows, the peak funding
+    # requirement) was computed as though nothing had been given away. The Excel export was the
+    # only surface that came out right, and only because its cell FORMULAS recomputed the total on
+    # open; the cached values written beside them carried the same wrong figures as the PDF.
+    #
+    # Applied PRO RATA across the lines rather than as a lump against the subtotal, because output
+    # VAT is per line: a tender mixing 10%-rated goods with a 0%-rated export would otherwise have
+    # its VAT relieved on the wrong base. apportion() is the same largest-remainder splitter used
+    # for preliminaries and the cash-flow spread, so the parts sum to the whole exactly — a
+    # discount that loses a dong to rounding makes the customer's own arithmetic fail to add up.
+    disc_pct = _num(tender.get("discountPct"))
+    disc_frac = _frac(disc_pct)
+    discount = vnd(subtotal * disc_frac)
+    if discount and subtotal:
+        parts = apportion(discount, {i: l["net"] for i, l in enumerate(lines)})
+        for i, l in enumerate(lines):
+            cut = parts[i]
+            l["discount"] = cut
+            l["netAfterDiscount"] = l["net"] - cut
+            l["vat"] = vnd(l["netAfterDiscount"] * _frac(l["vatPct"]))
+            l["gross"] = l["netAfterDiscount"] + l["vat"]
+    else:
+        for l in lines:
+            l["discount"] = 0
+            l["netAfterDiscount"] = l["net"]
+
+    net = subtotal - discount
+    vat = sum(l["vat"] for l in lines)
     return {
         "costingType": ctype,
         "lines": lines,
         "lineCount": len(lines),
         "cogs": cogs,
+        # `subtotal` is what the lines add up to; `net` is what the customer actually owes before
+        # tax. They differ by the discount, and the two must never be confused — `net` is the one
+        # that is revenue.
+        "subtotal": subtotal,
+        "discountPct": round(disc_pct, 4),
+        "discount": discount,
         "net": net,
         "vat": vat,
         "gross": net + vat,
@@ -866,6 +905,16 @@ def issue_check(tender, quote):
     if quote.get("net") and not quote.get("vat"):
         warnings.append("No output VAT on any line. Correct for an export or an exempt supply, "
                         "wrong for a domestic sale of goods.")
+    # The discount cap was declared as an assumption — "Maximum discount sales may offer without
+    # approval" — and referenced by nothing. A control nobody enforces is not a control; it reads
+    # like governance in the settings screen while any discount whatsoever went out unremarked.
+    a = assumptions(tender.get("assump"))
+    cap = _num(a.get("discountCapPct"))
+    given = _num(quote.get("discountPct", tender.get("discountPct")))
+    if cap and given > cap:
+        warnings.append("Discount is %.1f%% — above the %.1f%% sales may give without approval. "
+                        "It reduces this quotation by %s VND."
+                        % (given, cap, format(quote.get("discount", 0), ",")))
     zero = [l["itemCode"] or l["desc"] for l in quote["lines"] if not l["unitCost"]]
     if zero:
         warnings.append("Priced with no cost behind it: " + ", ".join(str(z) for z in zero[:4])
@@ -986,7 +1035,13 @@ def document(tender, quote, company=None):
         "currency": "VND",
         "lines": [{k: v for k, v in l.items() if k not in ("unitCost", "cogs", "markupPct")}
                   for l in quote["lines"]],   # the customer's copy carries no cost and no mark-up
-        "totals": {"net": quote["net"], "vat": quote["vat"], "gross": quote["gross"],
+        # `subtotal` and `discount` are carried explicitly so no renderer has to recompute the cut
+        # for itself. Every one that did got it wrong in a different way: the PDF printed the
+        # discount and then charged the undiscounted grand total; the Excel export wrote correct
+        # cell formulas beside incorrect cached values. One authority, four surfaces.
+        "totals": {"subtotal": quote["subtotal"], "discount": quote["discount"],
+                   "discountPct": quote["discountPct"],
+                   "net": quote["net"], "vat": quote["vat"], "gross": quote["gross"],
                    "lineCount": quote["lineCount"]},
         "amountInWords": tender.get("amountInWords") or "",
         "terms": terms or [{"label": l, "text": t} for l, t in TERMS_DEFAULT],
