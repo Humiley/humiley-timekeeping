@@ -30,9 +30,10 @@
  * commits by different sessions (017d995 +60, 25886e2 +2, seven others +1), each matching the style
  * beside it. Nobody chose double quotes. So the blind spot cannot be found by reading the strings,
  * and it MOVES whenever anyone appends near the block — which is why the fix is a scanner that
- * checks itself against the engine, not a better pattern. It is still moving: in the days between
- * that sample and this commit the run went 504 -> 778 and the double-quoted keys 511 -> 948. Read
- * the current figures off this run's output, never off this comment.
+ * checks itself against the engine, not a better pattern. It is still moving, and these two dated
+ * points are the evidence: at 3d71d42 the run was 504 and the double-quoted keys 511; on
+ * 2026-08-21, 778 and 948. Half again in days. Both are fixed historical readings and stay true;
+ * for anything CURRENT read this run's output, never this comment.
  *
  * 'Retention' is the case in miniature. It was already defined TWICE (both single-quoted) before
  * 6942bde, which made it a triplicate; the cleanup then kept the double-quoted copy — the one the
@@ -55,6 +56,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 function scan(literal) {
   const pairs = [];
@@ -136,7 +138,13 @@ for (const p of pairs) { if (p.q === '"') { run++; if (run > longest) longest = 
 const dqApos = pairs.filter(p => p.q === '"' && p.key.indexOf("'") >= 0).length;
 
 console.log('_VI: ' + engine + ' keys, ' + pairs.length + ' definitions, no duplicates (scanner agrees with the engine)');
+let at = 'this working tree';
+try { at = execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || at; }
+catch (e) { /* not a checkout; the label is cosmetic */ }
 console.log('     quote styles: ' + sq + " single + " + dq + ' double = ' + (sq + dq) +
             '   longest unbroken double-quoted run: ' + longest);
 console.log('     of those ' + dq + ' double-quoted keys, ' + dqApos + ' contain an apostrophe' +
             ' — the header explains why that number is not the reason for them.');
+console.log('     measured at ' + at + '. These figures describe that commit and nothing else:' +
+            ' keep them in this output, never in prose. A lone snapshot carries no comparison —' +
+            ' the run was 504 at 3d71d42, which is the only reason today\'s number means anything.');
