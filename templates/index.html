@@ -26767,7 +26767,8 @@ function engStatusPDF(pid) {
 const TND_TYPES = [
   { k: 'boq', label: 'Build-up (BoQ)', desc: 'Installation work priced from material, labour, plant and subcontract' },
   { k: 'trading', label: 'Trading (import / local)', desc: 'Products bought abroad or in Vietnam and resold — landed cost' },
-  { k: 'epc', label: 'EPC / turnkey', desc: 'A plant priced as a bill of materials per cost centre' }
+  { k: 'epc', label: 'EPC / turnkey', desc: 'A plant priced as a bill of materials per cost centre' },
+  { k: 'services', label: 'Services / consultancy', desc: 'An engagement priced by work package from days x grade rate' }
 ];
 const TND_CO_FORMS = ['', 'None', 'Form D (ATIGA)', 'Form E (ACFTA)', 'Form AK (AKFTA)', 'Form AJ (AJCEP)',
   'Form AI (AIFTA)', 'Form AANZ (AANZFTA)', 'Form VK (VKFTA)', 'Form EUR.1 (EVFTA)',
@@ -26888,7 +26889,7 @@ async function estRenderWorkspace() {
   const root = document.getElementById('est-estimate-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
   await _estNeed(['est_projects', 'est_items', 'est_resources', 'est_rates',
-                  'est_landed', 'est_local', 'est_bom', 'est_quote']);
+                  'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
   const e = _estById(_estCur);
   if (!e) { root.innerHTML = '<div class="card" style="padding:20px">' + _t('Estimate not found.') + ' <a href="#" onclick="showView(\'est-projects\',null,\'Estimates\');return false">' + _t('Back to Estimates') + '</a></div>'; return; }
   // Which engine priced this tender decides which summary it reads. A build-up reads
@@ -27380,6 +27381,31 @@ Object.assign(_QA_SPECS, {
       { k: 'origin', label: 'Origin' },
       { k: 'note', label: 'Notes', type: 'textarea' }]
   },
+  est_wbs: {
+    title: 'Work package', coll: 'est_wbs', reload: 'est_wbs', fields: [
+      { k: 'code', label: 'Work package (WP-01)' },
+      { k: 'ursRef', label: 'URS reference — what the client asked for' },
+      { k: 'name', label: 'Title' },
+      { k: 'scope', label: 'Scope of services', type: 'textarea' },
+      { k: 'deliverables', label: 'Key deliverables — what the client receives', type: 'textarea' },
+      { k: 'durationMonths', label: 'Duration (months)', type: 'number' },
+      /* Effort is entered a grade at a time. The form renderer has no repeating-row control, and
+         inventing one for this would be a bigger change than the module — six numbered fields say
+         the same thing and every one of them is a question somebody can answer. */
+      { k: 'daysDIR', label: 'Days — Director / Principal', type: 'number' },
+      { k: 'daysSME', label: 'Days — Senior consultant / SME', type: 'number' },
+      { k: 'daysCON', label: 'Days — Consultant', type: 'number' },
+      { k: 'daysENG', label: 'Days — Validation engineer', type: 'number' },
+      { k: 'daysQAS', label: 'Days — QA / documentation specialist', type: 'number' },
+      { k: 'daysADM', label: 'Days — Project administrator', type: 'number' },
+      { k: 'travelPeople', label: 'Travel — people per trip', type: 'number' },
+      { k: 'travelTrips', label: 'Travel — number of trips', type: 'number' },
+      { k: 'travelNights', label: 'Travel — nights per trip', type: 'number' },
+      { k: 'otherExpenses', label: 'Other expenses (₫)', type: 'money' },
+      { k: 'markupPct', label: 'Mark-up % — blank uses the default', type: 'number' },
+      { k: 'optional', label: 'Optional — the client may decline this package', type: 'select', options: ['No', 'Yes'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
   est_risks: {
     title: 'Risk', coll: 'est_risks', reload: 'est_risks', fields: [
       { k: 'code', label: 'Code' },
@@ -27412,6 +27438,7 @@ Object.assign(_HR_RELOAD, {
   est_landed: () => tndReload(),
   est_local: () => tndReload(),
   est_bom: () => tndReload(),
+  est_wbs: () => tndReload(),
   est_quote: () => tndReload(),
   est_risks: () => tndReload()
 });
@@ -27457,6 +27484,14 @@ function _tndTabs() {
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk', fn: 'tndTabRisk' }
   ];
+  if (t === 'services') return [
+    { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
+    { k: 'wbs', label: 'Work Packages', fn: 'tndTabWbs' },
+    { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
+    { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
+    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' }
+  ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -27478,11 +27513,21 @@ function _tndHeadline() {
   const tile = (lbl, val, sub, hex) => '<div style="flex:1 1 150px;min-width:140px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' + _t(lbl) + '</div>' +
     '<div style="font-size:19px;font-weight:800;color:' + (hex || 'var(--navy)') + ';line-height:1.2;font-variant-numeric:tabular-nums">' + val + '</div>' +
     '<div style="font-size:11px;color:var(--text-light)">' + sub + '</div></div>';
-  const costLbl = ty === 'epc' ? 'Cost of works' : 'Landed cost';
-  const cost = ty === 'epc' ? (_tndSum.rollup || {}).costVnd : (_tndSum.master || {}).landedTotal;
+  /* A services tender has no landed cost, and a headline reading "LANDED COST ₫0" is worse than
+     no headline: a zero in that position looks like a measured figure rather than a category that
+     does not apply. What a consultancy spends is people, so it says so — and it says the days,
+     because that is the number the engagement is actually sized in. */
+  const svc = ty === 'services';
+  const costLbl = svc ? 'Cost of delivery' : (ty === 'epc' ? 'Cost of works' : 'Landed cost');
+  const costSub = svc ? _t('consultant time and expenses')
+                      : _t('what the goods cost us, VAT excluded');
+  const cost = svc ? (_tndSum.rollup || {}).cost
+                   : (ty === 'epc' ? (_tndSum.rollup || {}).costVnd : (_tndSum.master || {}).landedTotal);
   const vatRec = (_tndSum.master || {}).vatRecoverable;
   return '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">' +
-    tile(costLbl, _tndMoney(cost), _t('what the goods cost us, VAT excluded')) +
+    tile(costLbl, _tndMoney(cost), costSub) +
+    (svc ? tile('Consultant days', _tndNum((_tndSum.rollup || {}).days, 1),
+                _tndMoney((_tndSum.rollup || {}).effectiveDayRate) + ' ' + _t('effective day rate')) : '') +
     tile('Quotation (excl VAT)', _tndMoney(q.net), q.lineCount + ' ' + _t('lines') + ' · ' + _t('VAT') + ' ' + _tndMoney(q.vat), 'var(--emerald-deep)') +
     tile('Gross margin', _tndPct(q.grossMarginPct), _tndPct(q.effectiveMarkupPct) + ' ' + _t('effective mark-up'), q.grossMarginPct < 10 ? 'var(--warning)' : 'var(--navy)') +
     (vatRec ? tile('Import VAT recoverable', _tndMoney(vatRec), _t('a receivable, deliberately not in the cost')) : '') +
@@ -27523,7 +27568,7 @@ async function tndSetAssump(key, v) {
 }
 
 async function tndReload() {
-  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_quote']);
+  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
   await estRenderWorkspace();
 }
 
@@ -27662,6 +27707,68 @@ async function tndSetConfig(centre, field, v) {
 }
 
 /* ── EPC: the bill of materials ── */
+/* Work packages — the services engine's costing sheet.
+   Shows the effort BEHIND each fee, not only the fee. A professional fee that cannot be traced to
+   days x grade cannot be defended when the client asks how it was arrived at, and cannot be
+   compared afterwards with what the engagement actually cost. */
+function tndTabWbs() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const roll = _tndSum.rollup || { packages: [] };
+  const can = _estCanPrice() && !_estFrozen(e);
+  const pkgs = roll.packages || [];
+
+  const head = '<div class="card" style="margin-bottom:14px"><div style="display:flex;gap:26px;flex-wrap:wrap">' +
+    [[_t('Packages'), String(pkgs.length)],
+     [_t('Consultant days'), _tndNum(roll.days, 1)],
+     [_t('Cost'), _tndMoney(roll.cost)],
+     [_t('Fee'), _tndMoney(roll.fee)],
+     [_t('Margin'), _tndPct(roll.marginPct)],
+     [_t('Effective day rate'), _tndMoney(roll.effectiveDayRate)],
+     [_t('Duration'), _tndNum(roll.durationMonths, 0) + ' ' + _t('months')]]
+      .map(function (kv) {
+        return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' + kv[0] +
+          '</div><div style="font-size:15px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + kv[1] + '</div></div>';
+      }).join('') + '</div></div>';
+
+  const excl = (roll.excludedPackages || []).length
+    ? '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--warning)"><div style="font-size:12px;color:var(--text-light)">' +
+      _t('Declined by the client and excluded from the quotation') + ': <b>' +
+      roll.excludedPackages.map(_estEsc).join(', ') + '</b></div></div>'
+    : '';
+
+  const rows = pkgs.length ? pkgs.map(function (p) {
+    const eff = (p.effort || []).map(function (x) { return _estEsc(x.label) + ' ' + _tndNum(x.days, 1) + 'd'; }).join(' · ')
+      || '<i>' + _t('no effort priced') + '</i>';
+    const ed = p.expenseDetail || {};
+    return '<tr>' +
+      '<td style="font-weight:700;color:var(--navy);white-space:nowrap">' + _estEsc(p.code || '') +
+        (p.optional ? ' <span style="font-size:10px;color:var(--warning);font-weight:700">' + _t('optional') + '</span>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' + _estEsc(p.ursRef || '—') + '</td>' +
+      '<td><div style="font-weight:600">' + _estEsc(p.name || '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + eff + '</div></td>' +
+      '<td style="text-align:right">' + _tndNum(p.durationMonths, 0) + '</td>' +
+      '<td style="text-align:right">' + _tndNum(p.days, 1) + '</td>' +
+      '<td style="text-align:right">' + _tndMoney(p.labour) + '</td>' +
+      '<td style="text-align:right" title="' + _t('travel') + ' ' + _tndMoney(ed.travel) + ' · ' +
+        _t('hotel') + ' ' + _tndMoney(ed.hotel) + ' · ' + _t('per diem') + ' ' + _tndMoney(ed.perDiem) + '">' +
+        _tndMoney(p.expenses) + '</td>' +
+      '<td style="text-align:right">' + _tndMoney(p.cost) + '</td>' +
+      '<td style="text-align:right">' + _tndPct(p.markupPct) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _tndMoney(p.fee) + '</td>' +
+      '<td style="text-align:right;color:var(--emerald-deep)">' + _tndPct(p.marginPct) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_wbs', p.id, 'est_wbs') : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--text-light);padding:22px">' +
+      _t('No work packages yet. A services tender is priced one package at a time — scope, deliverables, and the days behind them.') + '</td></tr>';
+
+  _estSet(head + excl +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_wbs\')">' +
+      tkIcon('plus') + _t('Add work package') + '</button></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:1040px"><thead><tr>' +
+    ['WP', 'URS ref', 'Package / effort', 'Months', 'Days', 'Labour', 'Expenses', 'Cost', 'Mark-up', 'Fee', 'Margin', '']
+      .map(function (h, i) { return '<th style="font-size:10.5px' + (i >= 3 && i <= 10 ? ';text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>');
+}
+
 function tndTabBom() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const roll = _tndSum.rollup || { lines: [], centres: [] };
@@ -28254,6 +28361,7 @@ function tndAdd(coll) {
   if (coll === 'est_landed') { seed.currency = 'USD'; seed.qty = 1; seed.coForm = 'None'; }
   if (coll === 'est_local') { seed.qty = 1; }
   if (coll === 'est_bom') { seed.costCentre = 'CIV'; seed.qty = 1; }
+  if (coll === 'est_wbs') { seed.optional = 'No'; seed.durationMonths = 1; seed.travelPeople = 1; }
   if (coll === 'est_risks') { seed.status = 'Open'; seed.probability = 20; }
   tkQuickAdd(coll, null, seed);
 }
