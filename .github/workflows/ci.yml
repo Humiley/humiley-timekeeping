@@ -103,6 +103,22 @@ jobs:
       - name: RACI matrix names the person, in order
         run: node tests/raci_names_and_order.js
 
+      # The Reports period control was decorative: <select id="rpt-period"> had three hardcoded
+      # months, no onchange, and no reader anywhere in 40,000 lines. Every tab reported ALL-TIME
+      # figures under a control naming a month, and the Leave card's title was the literal string
+      # "Leave Requests — May 2026" over rows dated July. That is worse than no control — it states
+      # a scope the numbers do not have, and somebody reports those numbers to a client.
+      - name: Reports period filter is real
+        run: node tests/reports_period_filter.js
+
+      # The WBS chain: sub-items -> master activity -> project. _pdTaskPct read _pdRows(), which is
+      # narrowed to the detail schedule currently selected in the chip bar, so an activity fed by
+      # two schedules reported only the half on screen and its percentage CHANGED when you clicked
+      # the other chip. Also characterizes what the project percentage is computed from, because
+      # that figure multiplies into EV, and EV into CPI/SPI/EAC on client-facing reports.
+      - name: WBS roll-up chain
+        run: node tests/wbs_rollup_chain.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a

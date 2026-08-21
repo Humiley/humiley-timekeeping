@@ -2324,7 +2324,10 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Reports &amp; Analytics</h1><p>Attendance · Leave · Employee In/Out · Department KPIs</p></div>
     <div style="display:flex;gap:8px">
-      <select class="sel-filter" id="rpt-period"><option value="May 2026">May 2026</option><option value="April 2026">April 2026</option><option value="Q1 2026">Q1 2026</option></select>
+      <!-- Was a hardcoded three-option <select> with no onchange that nothing ever read: the
+           page offered a period control and then reported all-time figures under it. Filled
+           by _rptPeriodSlot() with the same control every other list in the portal uses. -->
+      <span id="rpt-period-slot" style="display:flex;gap:6px;align-items:center"></span>
       <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
     </div>
   </div>
@@ -2392,7 +2395,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-        <div class="card-title">Leave Requests — May 2026</div>
+        <div class="card-title"><span data-i18n>Leave Requests</span><span id="lr-period-label" style="font-weight:600;color:var(--text-light)"></span></div>
         <button class="btn btn-outline btn-sm" onclick="toast('Exporting leave report…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
       </div>
       <div class="table-wrap">
@@ -21676,7 +21679,12 @@ function _pdRollup(rows, day) {
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
 function _pdTaskPct(task, pid) {
   const ref = _pdTaskRef(task); if (!ref) return null;
-  const rows = _pdRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  // _pdAllRows, NOT _pdRows. _pdRows narrows to the detail schedule the user last clicked, so an
+  // activity fed by sub-items in two schedules — "Zone 3 — Cleanroom" and "Block E — MEP" on the
+  // same ductwork run — reported only the half you happened to be looking at, and its percentage
+  // CHANGED when you clicked the other chip. A master activity's progress is everything reported
+  // against it; which chip is selected is a view, not a fact about the work.
+  const rows = _pdAllRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
   return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
 }
 function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
@@ -30072,6 +30080,11 @@ function showView(id, navEl, title) {
   if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }
   // Report sub-panels live in #content (not inside the view) — hide them off the Reports page, show the default tab on it.
   ['attendance', 'leave', 'inout', 'recruit', 'payroll'].forEach(t => { const p = document.getElementById('rpt-' + t); if (p) p.style.display = (id === 'reports' && t === 'attendance') ? 'block' : 'none'; });
+  // The period control has to exist the moment the page opens, not from the first tab CLICK.
+  // switchReportTab fills the slot, and opening Reports does not call it — the default tab is
+  // active in the markup and rendered directly — so the page appeared with no period control at
+  // all until you happened to click a tab. Found by opening the page, not by any assertion.
+  if (id === 'reports') { _rptTabK = 'attendance'; _rptPeriodSlot(); }
   if (id === 'reports') { document.querySelectorAll('#rpt-tabs .tab').forEach((b, i) => b.classList.toggle('active', i === 0)); setTimeout(initReportCharts, 100); }
   if (id === 'manager') { loadManagerView(); }
   if (id === 'procurement') { try { tkRenderProcurementEmbed(); } catch (e) { console.warn('procurement:', e.message); } }
@@ -33804,7 +33817,6 @@ const _VI = {
   "Enrolments & Progress": "Ghi danh & Tiến độ",
   "Expense & Benefit Claims": "Đề nghị chi phí & Phúc lợi",
   "SP_CONFIG — Live Values": "SP_CONFIG — Giá trị hiện hành",
-  "Leave Requests — May 2026": "Đơn nghỉ phép — Tháng 5, 2026",
   "Time-to-Offer SLA (QĐ.HR-01)": "SLA thời gian gửi đề nghị tuyển (QĐ.HR-01)",
   "Rating Scale & Merit Outcomes (HML-CB-001 §15)": "Thang đánh giá & Kết quả xét thưởng (HML-CB-001 §15)",
   "Salary Structure & Grading (G1–G10) — 3P Model": "Cơ cấu lương & Phân bậc (G1–G10) — Mô hình 3P",
@@ -35729,7 +35741,50 @@ function tkTimesheetCsv() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+/* The Reports period, and the tab it applies to.
+
+   The control on this page was decorative: a <select id="rpt-period"> with three hardcoded months,
+   no onchange, and no reader anywhere in the file. Every tab therefore reported all-time figures
+   under a heading that named a month — the Leave card said "May 2026" over rows dated July.
+
+   A period control that does nothing is worse than none: it does not merely fail to filter, it
+   states a scope the numbers do not have, and somebody reports those numbers to a client. */
+let _rptTabK = 'attendance';
+const _RPT_PERIOD_F = 'rpt-period-f';
+function _rptPeriodSlot() {
+  const slot = document.getElementById('rpt-period-slot');
+  if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod(_RPT_PERIOD_F, '_rptPeriodChanged');
+}
+/* What the chosen period is called, for a heading. Empty when it is "All time", because appending
+   nothing is honest and "— All time" is noise. */
+function _rptPeriodLabel() {
+  const cur = _crmLF[_RPT_PERIOD_F] || '';
+  if (!cur) return '';
+  if (cur === 'Custom range…') {
+    const a = _crmLF[_RPT_PERIOD_F + '-from'] || '', b = _crmLF[_RPT_PERIOD_F + '-to'] || '';
+    return (a || b) ? (' — ' + (a ? tkFmtDate(a) : '…') + ' → ' + (b ? tkFmtDate(b) : '…')) : '';
+  }
+  return ' — ' + _t(cur);
+}
+/* Is this row inside the chosen period? A row with no usable date is KEPT: dropping it would
+   silently shrink a total on a technicality, and an undated record is a data problem to fix, not a
+   row to hide. */
+function _rptInPeriod(dateStr) {
+  if (!_crmLF[_RPT_PERIOD_F]) return true;              // All time
+  if (!dateStr) return true;
+  // An UNPARSEABLE date counts as no date. Without this, `_isoDay` returns '' inside _inPeriod, the
+  // row is dropped, and a total quietly shrinks because one record was typed badly.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(dateStr).trim())) return true;
+  return _inPeriodLF(dateStr, _RPT_PERIOD_F);
+}
+/* Re-render whichever tab is showing. The period belongs to the page, not to one tab. */
+function _rptPeriodChanged() {
+  const el = document.querySelector('#rpt-tabs .tab.active');
+  switchReportTab(_rptTabK, el);
+}
 function switchReportTab(tab, el) {
+  _rptTabK = tab;
+  _rptPeriodSlot();
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
   ['attendance','leave','inout','timesheet','recruit','payroll','labour','workforce'].forEach(id => {
@@ -35818,8 +35873,11 @@ function renderLeaveReport() {
     const matchD = deptF === 'All Employees' || deptF === 'All Departments' || dept === deptF;
     const matchT = typeF === 'All Types' || (l.type || '') === typeF;
     const matchS = statF === 'All Status' || (l.status || '').toLowerCase() === statF.toLowerCase();
-    return matchD && matchT && matchS;
+    // A leave request belongs to the period its leave STARTS in — that is the month a manager is
+    // asking about when they pick one.
+    return matchD && matchT && matchS && _rptInPeriod(l.startDate);
   }).sort(_cmpNewest('startDate'));
+  { const lbl = document.getElementById('lr-period-label'); if (lbl) lbl.textContent = _rptPeriodLabel(); }
   // stat boxes
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('lr-total', rows.length);
@@ -35830,7 +35888,7 @@ function renderLeaveReport() {
   const emp = nm => (_DEMO_EMPLOYEES || []).find(e => e.name === nm);
   tbody.innerHTML = rows.length ? rows.map(l => {
     const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
-    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
+    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.approvedBy || '—') + '</td></tr>';
   }).join('') : tkEmptyRow(9, 'No leave records match your filters.', { icon: 'search' });
   // Leave-by-type bars (data-driven)
   const byType = {}; rows.forEach(l => { const t = l.type || 'Other'; (byType[t] = byType[t] || { n: 0, d: 0 }); byType[t].n++; byType[t].d += (+l.days || 0); });
@@ -35850,7 +35908,8 @@ function renderLeaveReport() {
 
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
-  const att = _DEMO_ATTENDANCE || [];
+  // Was every attendance row ever recorded, under a heading naming a month.
+  const att = (_DEMO_ATTENDANCE || []).filter(r => _rptInPeriod(r.date));
   const total = att.length;
   const ontime = att.filter(r => r.status === 'on-time').length;
   const late = att.filter(r => r.status === 'late').length;
