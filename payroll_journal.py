@@ -15,6 +15,7 @@ transcribed.
   3384    Bảo hiểm y tế — health insurance (employee 1.5% + employer 3%)
   3386    Bảo hiểm thất nghiệp — unemployment insurance (employee 1% + employer 1%)
   3335    Thuế thu nhập cá nhân — personal income tax withheld
+  1388    Phải thu khác — where a manual deduction settles, by default
   642 …   the expense side, by department
 
 Which expense account a department's payroll lands in is a company decision, not something to infer:
@@ -36,6 +37,11 @@ ACC = {
     "ui": "3386",
     "pit": "3335",
     "expense": "642",          # the default expense account when a department is not mapped
+    # A manual deduction is withheld from net pay and has to settle SOMEWHERE. Which account is a
+    # company decision, like the expense mapping: a staff loan repayment credits back the receivable
+    # (1388), an advance recovery credits 141, a fine is another payable. 1388 is the documented
+    # default, not a determination — override it per company, or per deduction line via `acct`.
+    "deduction": "1388",
 }
 
 ACC_NAMES = {
@@ -49,6 +55,9 @@ ACC_NAMES = {
     "641": "Chi phí bán hàng / Selling expense",
     "627": "Chi phí sản xuất chung / Factory overhead",
     "622": "Chi phí nhân công trực tiếp / Direct labour",
+    "1388": "Phải thu khác / Other receivables",
+    "141": "Tạm ứng / Advances to employees",
+    "3388": "Phải trả, phải nộp khác / Other payables",
 }
 
 
@@ -111,6 +120,31 @@ def entries(run, dept_accounts=None, accounts=None, default_expense=None):
         add(credits, acc["ui"], _line(c, "eeBhtn") + _line(c, "erBhtn"))
         add(credits, acc["union"], _line(c, "erTu"))
         add(credits, acc["pit"], _line(c, "pit") or _n(ln.get("pit")))
+
+        # A manual deduction — a staff loan repayment, an advance recovery, a fine — is withheld from
+        # net pay: `net` is already gross − statutory − PIT − unpaid − extraDedTot. The withheld
+        # amount had no account here at all, so every month containing one failed `balanced()` by
+        # exactly the deduction: the Journal tab showed "these entries do not balance — do not post
+        # them", named nothing, and the accountant could not post the month's payroll.
+        #
+        # Each deduction line may carry its own `acct`; anything unnamed settles to the default.
+        _named = 0.0
+        for d in (c.get("extraDeduct") or []):
+            if not isinstance(d, dict):
+                continue
+            amt = _n(d.get("amt"))
+            if not amt:
+                continue
+            add(credits, str(d.get("acct") or acc["deduction"]), amt)
+            _named += amt
+        # `extraDedTot` is what `net` was actually reduced by, so it — not the list — is what has to
+        # be credited for the run to balance. Older runs froze the total without the detail; a run
+        # whose lines disagree with its total posts the difference here rather than leaving it as an
+        # unexplained banner, so the discrepancy is a line somebody can read.
+        _tot = _line(c, "extraDedTot")
+        if not _tot:
+            _tot = _named
+        add(credits, acc["deduction"], round(_tot - _named, 2))
 
     out = []
     for code, amt in sorted(debits.items()):

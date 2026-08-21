@@ -127,6 +127,14 @@ jobs:
       - name: No screen prints an EVM index it did not measure
         run: node tests/evm_index_honesty.js
 
+      # A payslip has one month on it. It used to have two: the unpaid-leave deduction divided by a
+      # hardcoded Mon-Fri 22 while overtime, sixteen lines below, divided by the employee's real
+      # schedule — so a Mon-Sat employee's absent day was priced at 1/22 of their month and their
+      # overtime hour off 1/26 of it, on the document a Director e-signs. payroll_calc.py, the
+      # characterization-locked Python port of the same function, had always used one figure.
+      - name: One payslip, one month
+        run: node tests/payslip_one_month.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a

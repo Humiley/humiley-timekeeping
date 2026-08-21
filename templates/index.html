@@ -9499,7 +9499,20 @@ function _payComputed(e, rating, opts) {
   ee.total = ee.bhxh + ee.bhyt + ee.bhtn;
   const er = { bhxh: siBase * 0.175, bhyt: siBase * 0.03, bhtn: siBase * 0.01, tu: siBase * 0.02 };
   er.total = er.bhxh + er.bhyt + er.bhtn + er.tu;
-  const workingDays = opts.workingDays || 22;
+  // ONE day count for this payslip. Decree 145/2020 Art. 55(1)(a) divides by the normal working
+  // days in the month FOR THIS PERSON, and that same month is what an absent day is priced against.
+  // They used to be two numbers: the unpaid-leave deduction divided by a hardcoded Mon-Fri 22 while
+  // overtime, sixteen lines below, divided by the employee's real schedule from the server. A
+  // Mon-Sat employee's unpaid day was therefore deducted at 1/22 of P1+P2 instead of 1/26 — about
+  // 18% too much — on a document a Director e-signs and the employee receives as their Art. 95 wage
+  // statement, and the same document priced their overtime hour off a 26-day month.
+  //
+  // The resolved count is preferred from wherever it is available: `ot.workingDays` and
+  // `opts.workingDays` are now the same server figure (see _payWDFor), and the OT payload is tried
+  // first so a caller that has not been updated still gets the right divisor rather than the
+  // Mon-Fri fallback.
+  const _wdOt = (opts.ot && +opts.ot.workingDays > 0) ? +opts.ot.workingDays : 0;
+  const workingDays = _wdOt || +opts.workingDays || 22;
   const unpaidDays = opts.unpaidDays || 0;
   const unpaidDeduction = (P1 + P2) / workingDays * unpaidDays;
   // ── Overtime (Labour Code Art. 98, Decree 145/2020 Art. 55) ───────────────────────────────────
@@ -9517,8 +9530,9 @@ function _payComputed(e, rating, opts) {
   // Using their own working days (sent back with the overtime) keeps the two halves of the same
   // calculation agreeing about how many days a week they work; falling back to the Mon–Fri count
   // only when no schedule is known.
-  const otDays = (ot && +ot.workingDays > 0) ? +ot.workingDays : workingDays;
-  const otHourly = (P1 + P2) / Math.max(1, otDays * 8);
+  // `workingDays` above IS that resolved count now — the two halves of this calculation can no
+  // longer disagree about how long the month is, because there is only one of it.
+  const otHourly = (P1 + P2) / Math.max(1, workingDays * 8);
   const otHours = ot ? (+ot.hours || 0) : 0;
   const otNightHours = ot ? (+ot.nightHours || 0) : 0;
   const otPay = ot ? Math.round(otHourly * (+ot.units || 0)) : 0;
@@ -9537,7 +9551,10 @@ function _payComputed(e, rating, opts) {
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
     otHours, otNightHours, otPay, otTaxable, otExempt, otHourly: R(otHourly),
-    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [], otDays,
+    // `otDays` used to be a second, separately-derived day count. It is the same number as
+    // `workingDays` now — there is only one month on a payslip — and is still returned under
+    // its old name because the frozen `calc` of every signed pay run carries that key.
+    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [], otDays: workingDays,
     siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
     erBhxh: R(er.bhxh), erBhyt: R(er.bhyt), erBhtn: R(er.bhtn), erTu: R(er.tu), erTotal: R(er.total),
     pit: R(pit), grossPay: R(grossPay), workingDays, unpaidDays, unpaidDeduction: R(unpaidDeduction),
@@ -9575,6 +9592,12 @@ let _payYM = null, _payCache = {}, _payTotals = {};
    Kept out of _payComputed's signature so the calculation stays synchronous and pure: the fetch
    happens once per period before a render, and every computation after it reads this. */
 let _payOT = {}, _payOTCap = 200, _payOTFailed = {};
+/* 'YYYY-MM' -> { empId: normal working days in that month FOR THAT PERSON }, resolved by the
+   server from their schedule and the public holidays. Kept beside _payOT rather than inside
+   it because it must exist for somebody who worked no overtime: the unpaid-leave deduction
+   needs the same divisor overtime uses, and an absent day priced off a Mon-Fri 22 while the
+   overtime beside it is priced off 26 is one payslip disagreeing with itself. */
+let _payWDMap = {};
 /* A failed fetch is NOT a result. Caching `{}` made it one: an empty object is truthy, so the retry
    was skipped for the rest of the session, every payslip showed zero overtime with no warning, and
    the preparer could roll out a run that froze those zeros into a Director-signed record — which a
@@ -9588,6 +9611,7 @@ async function _payLoadOT(y, months) {
       const r = await tkApi('/api/hr/overtime?period=' + key);
       const by = {}; ((r && r.rows) || []).forEach(x => { by[x.empId] = x; });
       _payOT[key] = by;
+      if (r && r.workingDaysByEmp) _payWDMap[key] = r.workingDaysByEmp;
       delete _payOTFailed[key];
       if (r && r.annualCap) _payOTCap = +r.annualCap;   // 200, or 300 where the company has elected it
     } catch (e) { _payOTFailed[key] = _errMsg(e); }
@@ -9598,9 +9622,16 @@ function _payOTUnread(y, months) {
   return months.map(m => y + '-' + String(m + 1).padStart(2, '0')).filter(k => _payOTFailed[k]);
 }
 /* Newly approved overtime must not be invisible until a page reload. */
-function _payOTInvalidate(key) { if (key) { delete _payOT[key]; delete _payOTFailed[key]; } else { _payOT = {}; _payOTFailed = {}; } }
+function _payOTInvalidate(key) { if (key) { delete _payOT[key]; delete _payOTFailed[key]; delete _payWDMap[key]; } else { _payOT = {}; _payOTFailed = {}; _payWDMap = {}; } }
 function _payOTFor(empId, y, m) {
   return (_payOT[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || null;
+}
+/* The working days in a month for ONE person: their schedule and the public holidays, from the
+   server. Falls back to the Mon-Fri count only when the map could not be read — a wrong divisor is
+   still better than a blank payslip, and _payOTUnread already warns that the month is unreliable. */
+function _payWDFor(empId, y, m) {
+  const n = +((_payWDMap[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || 0);
+  return n > 0 ? n : _payWD(y, m);
 }
 function _payMonthsOf(ym) { return ym.m === -1 ? [0,1,2,3,4,5,6,7,8,9,10,11] : [ym.m]; }
 function _payPeriod() { return _payYM.m === -1 ? ('Year ' + _payYM.y) : (_PAY_MONTHS[_payYM.m] + ' ' + _payYM.y); }
@@ -9619,7 +9650,7 @@ async function _payBuild() {
   emps.forEach(e => {
     let agg = null;
     monthsArr.forEach(m => {
-      const wd = _payWD(_payYM.y, m);
+      const wd = _payWDFor(e.id, _payYM.y, m);
       let c = _payComputed(e, _payRatingFor(e.id), { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m),
                                                 ot: _payOTFor(e.id, _payYM.y, m) });
       c = _payApplyAdj(c, _payAdjFor(e.id, _PAY_MONTHS[m] + ' ' + _payYM.y));
@@ -9883,7 +9914,7 @@ async function tkIndivPayRunGo() {
   const e = _hrEmp(empId); if (!e) return;
   await _payLoadOT(y, [m]);
   await _payLoadRatings(y, m);
-  let c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m),
+  let c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWDFor(empId, y, m), unpaidDays: _payUnpaidDays(empId, y, m),
                                               ot: _payOTFor(empId, y, m) });
   // Apply the month's manual adjustment, exactly as the company roll-out does. Without this an
   // individual run reprinted a month at its UNADJUSTED figures — and because `_payslipFrozen` then
@@ -10485,7 +10516,7 @@ function _payslipComputed(empId) {
   // are badged, because a reconstructed breakdown would be a guess wearing the authority of a record.
   if (f && f.line.calc) return Object.assign({}, f.line.calc, { frozen: true, runStatus: f.run.status || '' });
   const e = _hrEmp(empId); let c = _payCache[empId];
-  if (!c) { const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
+  if (!c) { const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWDFor(empId, ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
   return c;
 }
 function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
