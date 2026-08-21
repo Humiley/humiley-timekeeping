@@ -237,6 +237,42 @@ def test_an_unknown_grade_does_not_silently_cost_zero_days():
     assert p["labour"] == 0
 
 
+def test_the_footer_band_names_the_document_not_the_stationery():
+    """It printed "LETTERHEAD" on every letter Humiley sends — the name of the paper, not of the
+    document. Two of them side by side could not be told apart by looking. Derived from the
+    SUBJECT because that is the one field somebody edits per document, so the band cannot drift
+    from the letter's own heading."""
+    assert tender.doc_kind({"subject": "Sales Quotation No. QT-1"}) == "Quotation"
+    assert tender.doc_kind({"subject": "Proposal for EU-GMP readiness"}) == "Proposal"
+    assert tender.doc_kind({"subject": "Budgetary Estimate — Block B"}) == "Budgetary Estimate"
+
+
+def test_a_longer_kind_wins_over_the_shorter_one_inside_it():
+    """"Revised Quotation" contains "Quotation"; first-match-wins on an unordered list would call
+    a revision an original, which is exactly the distinction a customer needs from the footer."""
+    assert tender.doc_kind({"subject": "Revised Quotation No. QT-2"}) == "Revised Quotation"
+    assert tender.doc_kind({"subject": "Pro Forma Invoice 88"}) == "Pro Forma Invoice"
+
+
+def test_an_explicit_kind_overrides_the_subject():
+    assert tender.doc_kind({"subject": "Sales Quotation No. X",
+                            "docKind": "Letter of Award"}) == "Letter of Award"
+
+
+def test_an_unrecognised_subject_still_gets_a_real_word():
+    """Never back to "LETTERHEAD", and never blank — a footer band with nothing in it reads as a
+    rendering fault on a document going to a customer."""
+    kind = tender.doc_kind({"subject": "Something nobody anticipated"})
+    assert kind and kind.upper() != "LETTERHEAD"
+
+
+def test_the_document_carries_the_kind_so_the_footer_need_not_derive_it():
+    t = _tender(subject="Proposal for EU-GMP readiness")
+    r = tender.services_rollup(PKGS, A)
+    doc = tender.document(t, tender.quotation(t, rollup=r))
+    assert doc["docKind"] == "Proposal"
+
+
 def test_services_is_a_registered_costing_type():
     assert tender.SERVICES in tender.COSTING_TYPES
     assert len(tender.COSTING_TYPES) == 3
