@@ -34,8 +34,13 @@ def base_url():
         db.create_employee({"id": "HML-ADM", "name": "Admin User", "email": "admin@humiley.com",
                              "role": "manager", "level": "admin", "title": "Managing Director",
                              "annualTotal": 12, "annualUsed": 0, "sickTotal": 30, "sickUsed": 0})
+        # HR / Finance / Procurement are OPT-IN apps — an admin grants them per user through
+        # `appsAllowed`. Every manager-tier fixture here stands in for somebody who HAS been granted
+        # HR, because that is what the HR tests exercise. A fixture with no grant would test the
+        # gate, not the feature; test_api.py::test_hr_app_grant_is_what_opens_hr does that directly.
         db.create_employee({"id": "HML-MGR", "name": "Dept Manager", "email": "mgr@humiley.com",
                              "role": "manager", "level": "manager", "title": "Manager",
+                             "appsAllowed": "hr",
                              "managerEmail": "admin@humiley.com"})
         db.create_employee({"id": "HML-STF", "name": "Staff One", "email": "staff1@humiley.com",
                              "role": "staff", "level": "staff", "title": "Engineer",
@@ -46,9 +51,11 @@ def base_url():
                              "managerEmail": "admin@humiley.com"})
         # Finance/Approver (management level) + Editor — for the Invoice Tracking access boundary.
         db.create_employee({"id": "HML-MGT", "name": "Finance Approver", "email": "fin@humiley.com",
-                             "role": "manager", "level": "management", "title": "Finance Approver"})
+                             "role": "manager", "level": "management", "title": "Finance Approver",
+                             "appsAllowed": "hr,finance"})
         db.create_employee({"id": "HML-EDT", "name": "Editor User", "email": "editor@humiley.com",
-                             "role": "manager", "level": "editor", "title": "Finance Editor"})
+                             "role": "manager", "level": "editor", "title": "Finance Editor",
+                             "appsAllowed": "hr,finance"})
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]

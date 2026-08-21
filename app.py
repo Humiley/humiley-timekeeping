@@ -6875,6 +6875,30 @@ class Handler(BaseHTTPRequestHandler):
             return set(str(x).strip().lower() for x in raw if str(x).strip())
         return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
 
+    # HR, Finance and Procurement are OPT-IN: an admin grants them per user through `appsAllowed`.
+    # Everything else is opt-OUT: `appsDenied` takes it away. The browser has always known this
+    # (_appDeniedCurrent), the server did not — it asked only `"hr" in appsDenied`, and nothing in
+    # the product can ever put "hr" there, so the HR gate on /api/coll was a check that could not
+    # fire. Any manager-tier account could read the recruitment board, the appraisal file and the
+    # talent grid of an app they had never been given. One helper now, so the two cannot drift.
+    OPT_IN_APPS = ("hr", "finance", "procurement")
+
+    def _apps_allowed(self, u):
+        raw = u.get("appsAllowed")
+        if isinstance(raw, (list, tuple, set)):
+            return set(str(x).strip().lower() for x in raw if str(x).strip())
+        return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
+
+    def _app_blocked(self, u, app):
+        """True when this user may not reach `app` at all. Admins always may."""
+        if not app:
+            return False
+        if self._caller_level(u) == "admin":
+            return False
+        if app in self.OPT_IN_APPS:
+            return app not in self._apps_allowed(u)
+        return app in self._apps_denied(u)
+
     def _emp_delete(self, u, eid):
         # Deleting an employee record is destructive — require Approver (management) or above,
         # not just any manager-tier (Contributor) account.
@@ -7810,7 +7834,11 @@ class Handler(BaseHTTPRequestHandler):
                 # Project financials must not be world-readable to every staff account (the PM app is
                 # on by default). Line-item costs + vendor payments need manager+; creation is already
                 # manager-gated, so this makes read match write.
-                "pm_costs": "manager", "pm_procurement_payments": "manager",
+                # pm_procurement carries the vendor name and the committed contract value — the
+                # commercial terms of every subcontract on the job. It sat outside this list while the
+                # payments AGAINST it were manager-gated, so the certificate was protected and the
+                # contract it certifies against was served in full to every staff account.
+                "pm_costs": "manager", "pm_procurement": "manager", "pm_procurement_payments": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
                 "certificates": "manager",
@@ -7959,7 +7987,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
         app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if app and app in self._apps_denied(u):
+        if app and self._app_blocked(u, app):
+            # Not being granted the HR APP still leaves your OWN records reachable — the same
+            # carve-out READ_MIN makes below, for the same reason: Art. 13(1) entitles you to a copy
+            # of your contract, and a portal that holds it and refuses to show it to you is worse
+            # than one that never held it.
+            if name in ("contracts", "decisions", "hrletters"):
+                return self._json({"ok": True, "items": [
+                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
         need = self.READ_MIN.get(name)
@@ -8721,7 +8756,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
@@ -14180,7 +14215,7 @@ class Handler(BaseHTTPRequestHandler):
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
         # acknowledge receipt from their own My Devices. Owner-scoped + APPEND-ONLY — exactly one ack
@@ -14382,6 +14417,16 @@ class Handler(BaseHTTPRequestHandler):
         if name == "hrdocs" and not self._is_hr_admin(u):
             return self._err("Publishing or changing a company document is for HR, Editors and "
                              "Administrators. An administrator can add you under Access & Permissions.", 403)
+        # DELETE already refuses here, on the reasoning that a signed acknowledgement is the artefact
+        # this whole feature exists to produce. PATCH did not — and PATCH on this route REPLACES the
+        # whole document, so any account whose employee role is "manager" (Contributor and above)
+        # could rewrite somebody else's signature: the time it was signed, the version acknowledged,
+        # the signer's name, the e-signature block. No owner check, no audit row, nothing left to
+        # show it had been altered. An acknowledgement is written once, by the person signing,
+        # through /api/esign; after that it is evidence. Nothing in the browser PATCHes it.
+        if name == "hrdoc_acks":
+            return self._err("A signed acknowledgement is a permanent record and cannot be edited. "
+                             "Re-issue the document at a new version if it has to be signed again.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -14887,7 +14932,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Audit-trail entries cannot be deleted.", 403)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
         # read a labour contract, a health certificate or a decision — could destroy any of them,
