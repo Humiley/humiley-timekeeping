@@ -143,6 +143,15 @@ jobs:
       - name: A schedule that says what it knows
         run: node tests/schedule_says_what_it_knows.js
 
+      # "GPS Anomalies" counted a literal only the seed data writes, so it read 0 forever on live
+      # data; "Total Hours Worked" dropped every overnight shift to zero while the In/Out tab
+      # counted the same rows correctly; the late-arrivals chart drew bars for departments this
+      # company does not have; the Payroll tab priced missing salaries at the grade mid-point and
+      # called the result "Net paid". And the Check In screen — the one line a Vietnamese fitter
+      # reads before every punch — was hardcoded English claiming to refuse a punch it allows.
+      - name: Reports read the data, and Check In tells the truth
+        run: node tests/reports_and_checkin_honesty.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a

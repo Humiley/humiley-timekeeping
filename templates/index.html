@@ -3637,7 +3637,7 @@ function tkSelectZone() {
 }
 
 function tkVerifySelectedZone(force) {
-  if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
+  if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Select a location first', 'Hãy chọn địa điểm trước'), 'warn'); return; }
   const z = _tkSelectedZone;
   const status = document.getElementById('ci-verify-status');
   const evaluate = (lat, lon, acc, silent) => {
@@ -3653,22 +3653,22 @@ function tkVerifySelectedZone(force) {
     const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
     const accNote = acc ? ', ±' + acc + 'm' : ' (recent)';
     if (inside) {
-      if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">You are at ' + z.name + '</span> (' + distStr + ' from centre' + accNote + '). You can check in now.';
+      if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">' + _t2('You are at', 'Bạn đang ở') + ' ' + z.name + '</span> (' + distStr + ' ' + _t2('from centre', 'từ tâm') + accNote + '). ' + _t2('You can check in now.', 'Bạn có thể chấm công vào ngay.');
       _tkSetCheckinAllowed('in');
     } else if (confidentlyOut) {
-      if (status) status.innerHTML = '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>You are not at ' + z.name + '</span> — ' + distStr + ' away (must be within ' + radius + 'm). Check-in is not allowed here.';
+      if (status) status.innerHTML = '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' + _t2('You are not at', 'Bạn không ở') + ' ' + z.name + '</span> — ' + _t2('you are', 'bạn cách') + ' ' + distStr + ' ' + _t2('away (the site radius is', '(bán kính công trường là') + ' ' + radius + 'm). ' + _t2('You can still check in — it will be recorded as away from site.', 'Bạn vẫn có thể chấm công vào — hệ thống sẽ ghi nhận là ở ngoài công trường.');
       _tkSetCheckinAllowed('out');
     } else {
       /* fix too coarse to decide — allow, record as GPS-unverified, and try to sharpen it */
-      if (status) status.innerHTML = '<span style="color:#F59E0B;font-weight:700">Location not precise enough to confirm ' + z.name + '</span> (' + distStr + accNote + '). You can still check in — it will be recorded as GPS-unverified.';
+      if (status) status.innerHTML = '<span style="color:#F59E0B;font-weight:700">' + _t2('Location not precise enough to confirm', 'Vị trí chưa đủ chính xác để xác nhận') + ' ' + z.name + '</span> (' + distStr + accNote + '). ' + _t2('You can still check in — it will be recorded as GPS-unverified.', 'Bạn vẫn có thể chấm công vào — hệ thống sẽ ghi nhận là chưa xác minh GPS.');
       _tkSetCheckinAllowed('unverified');
       if (typeof _sharpen === 'function') _sharpen();
     }
     return _tkGpsState;
   };
   let _sharpen = null;   // set below once the high-accuracy path exists (evaluate may run earlier from cache)
-  if (status) status.textContent = 'Checking your location…';
-  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.'; _tkSetCheckinAllowed('unverified'); return; }
+  if (status) { status.textContent = _t2('Checking your location…', 'Đang kiểm tra vị trí của bạn…'); status.dataset.phase = 'locating'; }
+  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' + _t2('GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.', 'Thiết bị này không có GPS — bạn vẫn có thể chấm công vào; hệ thống sẽ ghi nhận là chưa xác minh GPS.'); _tkSetCheckinAllowed('unverified'); return; }
   // Instant: reuse a recent fix from the app-wide GPS watch (the common case -> no wait)
   const _cacheFresh = (typeof _lastGpsLat !== 'undefined' && _lastGpsLat !== null && _lastGpsLon !== null && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000);
   if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0, true) === 'in') { evaluate(_lastGpsLat, _lastGpsLon, 0); return; } }   // only a CONFIRMED in-zone cache shows instantly; a far/coarse cached fix is NOT displayed — keep "Checking…" and take a fresh fix
@@ -3688,12 +3688,12 @@ function tkVerifySelectedZone(force) {
     evaluate(lat, lon, acc);
   };
   /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
-  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked</strong> — you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.'; _tkSetCheckinAllowed('unverified'); };
+  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>' + _t2('Location is blocked', 'Quyền vị trí đang bị chặn') + '</strong> — ' + _t2('you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.', 'bạn vẫn có thể chấm công vào (ghi nhận là chưa xác minh GPS). Để xác minh lần sau: biểu tượng ổ khoá trên trình duyệt → Vị trí → Cho phép.'); _tkSetCheckinAllowed('unverified'); };
   const _giveup = (e) => { if (_geoDone) return; _geoDone = true;
     var unavailable = e && e.code === 2;   // POSITION_UNAVAILABLE: the OS/device can\u2019t determine a location at all (usually the OS location setting is OFF, e.g. a desktop with no GPS)
     if (status) status.innerHTML = _alert + (unavailable
-      ? '<strong>Your device can\u2019t determine its location.</strong> Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).'
-      : 'Could not get a GPS fix in time \u2014 move near a window and press \u201CRe-check\u201D, or check in now (recorded as GPS-unverified).');
+      ? '<strong>' + _t2('Your device can\u2019t determine its location.', 'Thiết bị của bạn không xác định được vị trí.') + '</strong> ' + _t2('Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).', 'Hãy BẬT dịch vụ vị trí \u2014 trên máy Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (bật lên và tích chọn trình duyệt của bạn); trên điện thoại: bật Vị trí/GPS cho trình duyệt \u2014 rồi bấm \u201CKiểm tra lại\u201D. Bạn vẫn có thể chấm công vào ngay (ghi nhận là chưa xác minh GPS).')
+      : _t2('Could not get a GPS fix in time \u2014 move near a window and press \u201CRe-check\u201D, or check in now (recorded as GPS-unverified).', 'Không lấy được tín hiệu GPS kịp thời \u2014 hãy ra gần cửa sổ và bấm \u201CKiểm tra lại\u201D, hoặc chấm công vào ngay (ghi nhận là chưa xác minh GPS).'));
     _tkSetCheckinAllowed('unverified'); };
   // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied).
   // Give the high-accuracy pass a real 15s (Wi-Fi/GPS triangulation is slow on first fix) before giving up.
@@ -3739,7 +3739,7 @@ function tkVerifySelectedZone(force) {
   if (_tkGpsState !== 'in' && _tkGpsState !== 'out') _tkSetCheckinAllowed('unverified');
   // Fast network / Wi-Fi fix first \u2014 usually ~1s, and well within an office geofence radius
   navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
-  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating\u2026 you can check in now \u2014 it\u2019ll be recorded as GPS-unverified.'; }, 3000);
+  setTimeout(() => { if (!_geoDone && status && status.dataset.phase === 'locating') status.textContent = _t2('Still locating\u2026 you can check in now \u2014 it\u2019ll be recorded as GPS-unverified.', 'Vẫn đang định vị… bạn có thể chấm công vào ngay — hệ thống sẽ ghi nhận là chưa xác minh GPS.'); }, 3000);
   setTimeout(() => _giveup({ code: 3 }), 24000);   // global backstop \u2014 treat as a timeout (fast 8s + slow 15s + margin)
 }
 
@@ -4044,7 +4044,7 @@ async function _tkDoCheckout(t, otHours, otReason) {
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
   if (typeof toast === 'function') {
-    if (otHours && otHours > 0) toast('Checked out at ' + t + ' · overtime ' + otHours + 'h requested (pending approval)', undefined, 5500);
+    if (otHours && otHours > 0) toast(_t2('Checked out at ', 'Đã chấm công ra lúc ') + t + _t2(' · overtime ', ' · tăng ca ') + otHours + _t2('h requested (pending approval)', ' giờ đã gửi duyệt (chờ phê duyệt)'), undefined, 5500);
     else toast(_t2('Checked out at ' + t, 'Đã chấm công ra lúc ' + t));
   }
   const zsel = document.getElementById('ci-zone-select'); if (zsel) zsel.disabled = false;
@@ -36071,25 +36071,106 @@ async function tkRenderRecruitReport() {
 /* Report chart card (PowerBI-style canvas tile). */
 function _rptChartCard(title, id, h) { return '<div class="card" style="padding:14px 16px"><div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:' + (h || 210) + 'px"><canvas id="' + id + '"></canvas></div></div>'; }
 /* Payroll report — company cost summary + by-department breakdown (no individual figures). */
+/* The first day of the month a pay run's period names, so a run can be tested against the page's
+   period control. Pay runs are stored as 'August 2026' (or 'Year 2026'); this returns '' for
+   anything it cannot read rather than guessing a date. */
+function _payRunMonthISO(period) {
+  const m = /^([A-Za-z]+)\s+(\d{4})$/.exec(String(period || '').trim());
+  if (!m) return '';
+  const i = _PAY_MONTHS.indexOf(m[1]);
+  return i < 0 ? '' : (m[2] + '-' + String(i + 1).padStart(2, '0') + '-01');
+}
 async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
   await tkLoadColl('reviews');
+  try { await tkLoadColl('payruns'); } catch (e) { /* level-gated; the model path below still works */ }
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const byDept = {}; let gross = 0, net = 0, erCost = 0, pit = 0, si = 0, erStat = 0, P1 = 0, P2 = 0, P3 = 0, welfare = 0;
-  emps.forEach(e => { try { const c = _payComputed(e, _payRatingFor(e.id)); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; erStat += (c.erTotal || 0); P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0); P3 += (c.P3 || 0); welfare += (c.welfare || 0); (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
+
+  // What was actually PAID, where a Director has signed for it. This tab used to recompute every
+  // employee's pay from today's record, ignore the period control above it, and label the result
+  // "Net paid" — a number nobody was paid, for a month it was not describing. A finalised run is
+  // the frozen payslip; when one exists for the chosen period, it is the answer.
+  const runs = ((_HR && _HR.payruns) || []).filter(r =>
+    (r.lines || []).length && /final/i.test(String(r.status || '')) &&
+    _rptInPeriod(_payRunMonthISO(r.period) || ''));
+  const fromRuns = runs.length > 0;
+  let headcount = 0, noSalary = [], failed = 0;
+
+  if (fromRuns) {
+    const seen = new Set();
+    runs.forEach(r => (r.lines || []).forEach(l => {
+      const c = (l && typeof l.calc === 'object' && l.calc) ? l.calc : (l || {});
+      const key = String(r.period || '') + '|' + String(l.empId || l.name || '');
+      if (seen.has(key)) return;          // the same person in a roll-out AND a correction run
+      seen.add(key);
+      headcount++;
+      gross += +c.grossPay || 0; net += +c.net || 0; pit += +c.pit || 0;
+      si += (+c.eeBhxh || 0) + (+c.eeBhyt || 0) + (+c.eeBhtn || 0);
+      erStat += +c.erTotal || 0;
+      erCost += (+c.employerCost || ((+c.grossPay || 0) + (+c.erTotal || 0)));
+      P1 += (+c.basic || 0) + (+c.posAllow || 0);
+      P2 += (+c.responsibility || 0) + (+c.skillSen || 0);
+      P3 += +c.P3 || 0; welfare += +c.welfare || 0;
+      const d = l.dept || '—';
+      (byDept[d] = byDept[d] || { n: 0, gross: 0, er: 0 });
+      byDept[d].n++; byDept[d].gross += +c.grossPay || 0;
+      byDept[d].er += (+c.employerCost || ((+c.grossPay || 0) + (+c.erTotal || 0)));
+    }));
+  } else {
+    emps.forEach(e => {
+      let c;
+      // `catch (x) {}` dropped anybody whose computation threw, silently, out of a company total.
+      // A person who cannot be costed is a fact about the data, not a row to delete.
+      try { c = _payComputed(e, _payRatingFor(e.id)); } catch (x) { failed++; return; }
+      // A missing salary is NOT a grade mid-point — _payComputed says so in its own comment, the
+      // payslip screen refuses to present one as pay, and all three pay-run buttons exclude the
+      // person by name. This total used to include the invented figure with no warning at all.
+      if (c.salaryMissing) { noSalary.push(e.name || e.id); return; }
+      headcount++;
+      gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si;
+      erStat += (c.erTotal || 0);
+      P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0);
+      P3 += (c.P3 || 0); welfare += (c.welfare || 0);
+      const d = e.dept || '—';
+      (byDept[d] = byDept[d] || { n: 0, gross: 0, er: 0 });
+      byDept[d].n++; byDept[d].gross += c.grossPay; byDept[d].er += c.employerCost;
+    });
+  }
+
+  const per = _rptPeriodLabel();
+  const _note = (hex, html) => '<div style="background:' + hex + '22;border-left:3px solid ' + hex +
+    ';border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">' + html + '</div>';
+  let banner = fromRuns
+    ? _note('var(--emerald)', '<strong>' + _t('Signed pay runs') + '</strong> — ' +
+        _t('these figures come from the finalised pay run(s) for this period, exactly as signed.') +
+        ' (' + runs.length + ' ' + _t('run(s)') + ')')
+    : _note('#F59E0B', '<strong>' + _t('Cost model, not a payroll') + '</strong> — ' +
+        _t('no finalised pay run covers this period, so these figures are computed from today\u2019s employee records. They exclude overtime, unpaid leave and manual adjustments, and are not what anybody was paid.'));
+  if (noSalary.length) banner += _note('var(--danger)', '<strong>' + noSalary.length + ' ' +
+    _t('employee(s) have no salary on record and are NOT in these totals') + ':</strong> ' +
+    _crmEsc(noSalary.slice(0, 12).join(', ')) + (noSalary.length > 12 ? ' …' : ''));
+  if (failed) banner += _note('var(--danger)', '<strong>' + failed + ' ' +
+    _t('employee(s) could not be costed and are not in these totals.') + '</strong>');
+
   const kpis = _hrKpiRow([
-    _hrKpi('Headcount', emps.length, '#8B5CF6'),
+    _hrKpi(fromRuns ? 'People paid' : 'Costed headcount', headcount, '#8B5CF6'),
     _hrKpi('Gross payroll', _PAY_FMT(gross), '#F59E0B'),
-    _hrKpi('Net paid', _PAY_FMT(net), 'var(--emerald)'),
+    _hrKpi(fromRuns ? 'Net paid' : 'Net (computed)', _PAY_FMT(net), 'var(--emerald)'),
     _hrKpi('Employer cost', _PAY_FMT(erCost), '#205090')
   ]);
   const dk = Object.keys(byDept).sort((a, b) => byDept[b].er - byDept[a].er);
   const drows = dk.map(d => '<tr><td style="font-weight:600">' + d + '</td><td style="text-align:right">' + byDept[d].n + '</td><td style="text-align:right">' + _PAY_FMT(byDept[d].gross) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(byDept[d].er) + '</td></tr>').join('');
-  el.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'PAYROLL REPORT\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + kpis +
+  // The period goes in the HEADING and in the PDF title. A confidential document headed PAYROLL
+  // REPORT with no period on it cannot be filed, disputed or reconciled against anything.
+  const _pdfTitle = ('PAYROLL REPORT' + (per ? per.replace(/^ — /, ' — ') : '')).replace(/'/g, '');
+  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + _t('Payroll') + (per ? _crmEsc(per) : ' — ' + _t('All time')) + '</div>' +
+    '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'' + _tkEscA(_pdfTitle) + '\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + banner + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' +
       _rptChartCard('Employer Cost by Department', 'pr-dept') + _rptChartCard('Gross Cost Composition (3P)', 'pr-3p') + _rptChartCard('Statutory — Employee vs Employer', 'pr-stat') +
     '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + emps.length + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + headcount + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
   if (typeof Chart !== 'undefined') {
     _mkChart('pr-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => byDept[d].er), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
     _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
@@ -36141,6 +36222,33 @@ function renderLeaveReport() {
   if (topEl) topEl.innerHTML = uk.length ? uk.map((nm, i) => { const e2 = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() }; return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' + (i < uk.length - 1 ? 'border-bottom:1px solid var(--soft-bg);' : '') + 'font-size:12px">' + _hrAv(e2) + '<div style="flex:1"><div style="font-weight:600">' + nm + '</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:' + Math.round(byUser[nm] / maxU * 100) + '%"></div></div></div><span style="font-weight:700;color:var(--navy)">' + byUser[nm] + 'd used</span></div>'; }).join('') : '<div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>';
 }
 
+/* Minutes between a punch in and a punch out, overnight-safe. The In/Out Log has always had this
+   arithmetic and the Attendance tab had its own copy WITHOUT the wrap, so a shift that clocked in at
+   21:00 and out at 05:00 scored −960 minutes, was discarded by an `if (d > 0)` guard, and contributed
+   ZERO hours — while the same row, one tab away, showed 8h. Kept as one function for that reason.
+   app.py's _checkout supports overnight explicitly: it closes yesterday's open row and wraps the clock. */
+function _attMinutes(r) {
+  if (!r || !r.in || !r.out) return null;
+  const [ih, im] = String(r.in).split(':').map(Number);
+  const [oh, om] = String(r.out).split(':').map(Number);
+  if ([ih, im, oh, om].some(n => !isFinite(n))) return null;
+  let m = (oh * 60 + om) - (ih * 60 + im);
+  if (m < 0) m += 1440;
+  return m;
+}
+/* Is this punch away from its site? The label the check-in path really writes is
+   '<zone> (away from site)' or '<zone> (GPS unverified)' — never the literal 'Out of Zone', which is
+   produced by exactly one line in the repo and that line is seed data. So the KPI counting
+   `r.loc === 'Out of Zone'` read 0 forever, on live data, in a card headed GPS Anomalies.
+   The geometric test is preferred where the row carries a fix; the label is the fallback. */
+function _attIsAnomaly(r) {
+  try {
+    if (typeof _mgrIsAnomaly === 'function' && r && r.lat != null && r.lon != null) {
+      return !!_mgrIsAnomaly(r).bad;
+    }
+  } catch (e) { /* fall through to the label */ }
+  return /away from site|out of zone/i.test(String((r && r.loc) || ''));
+}
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
   // Was every attendance row ever recorded, under a heading naming a month.
@@ -36150,10 +36258,10 @@ function _renderRptAttendance() {
   const late = att.filter(r => r.status === 'late').length;
   const rate = total ? Math.round(ontime / total * 100) : 0;
   let mins = 0;
-  att.forEach(r => { if (r.in && r.out) { const [ih, im] = r.in.split(':').map(Number); const [oh, om] = r.out.split(':').map(Number); const d = (oh * 60 + om) - (ih * 60 + im); if (d > 0) mins += d; } });
+  att.forEach(r => { const d = _attMinutes(r); if (d != null && d > 0) mins += d; });
   const hours = Math.round(mins / 60);
   const leaveDays = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved').reduce((s, l) => s + (+l.days || 0), 0);
-  const anom = att.filter(r => (r.loc || '') === 'Out of Zone').length;
+  const anom = att.filter(_attIsAnomaly).length;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('rpt-att-ontime', total ? rate + '%' : '—');
   set('rpt-att-hours', hours.toLocaleString() + 'h');
@@ -36324,7 +36432,7 @@ function renderInOutReport() {
   const capped = window._ioShowAll ? rows : rows.slice(0, IO_CAP);
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
-  const _mins = r => { if (!r.in || !r.out) return null; const [ih,im]=r.in.split(':').map(Number); const [oh,om]=r.out.split(':').map(Number); let m=(oh*60+om)-(ih*60+im); if (m<0) m+=1440; return m; };  // overnight-safe
+  const _mins = _attMinutes;   // one definition, shared with the Attendance tab — see _attMinutes
   tbody.innerHTML = capped.map(r => {
     const emp = empMap[r.name];
     const clr = emp?.clr || tkAvatarColor(r.name);
@@ -39554,8 +39662,30 @@ function _initDeptChart() {
   if (_deptChart) _deptChart.destroy();
   // Real: late count by department.
   const lateByDept = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (r.status === 'late') { const d = r.dept || '—'; lateByDept[d] = (lateByDept[d] || 0) + 1; } });
-  const dKeys = Object.keys(lateByDept).length ? Object.keys(lateByDept).sort((a, b) => lateByDept[b] - lateByDept[a]) : ['Engineering', 'Project Mgmt', 'HRBP', 'Finance', 'Field Svcs', 'Proposal'];
-  const dVals = Object.keys(lateByDept).length ? dKeys.map(d => lateByDept[d]) : [2.1, 3.4, 1.2, 1.8, 4.2, 2.6];
+  // No fallback data. With no late arrivals this drew six bars for departments this company does
+  // not have — 'Project Mgmt', 'HRBP', 'Field Svcs', 'Proposal' — at heights like 3.4, which is not
+  // a possible count of anything. An empty chart reads as "nothing to report"; an invented one reads
+  // as a finding. Departments here are dynamic (see tkAllDepts); there is no canonical list to fall
+  // back to even if inventing one were acceptable.
+  const dKeys = Object.keys(lateByDept).sort((a, b) => lateByDept[b] - lateByDept[a]);
+  const dVals = dKeys.map(d => lateByDept[d]);
+  // …and say so, rather than leaving an empty grid that looks like a chart which failed to load.
+  // The empty state is a SIBLING, not a replacement for the host's contents: overwriting innerHTML
+  // would delete the <canvas> this function looks up on every later render, so the chart would never
+  // come back once the first late arrival was recorded.
+  const _host = ctx.parentElement;
+  const _prevEmpty = _host && _host.querySelector('[data-dept-empty]');
+  if (!dKeys.length) {
+    _deptChart = null;
+    ctx.style.display = 'none';
+    if (_host && !_prevEmpty) _host.insertAdjacentHTML('beforeend',
+      '<div data-dept-empty style="position:absolute;inset:0;display:flex;align-items:center;' +
+      'justify-content:center;font-size:12.5px;color:var(--text-light);text-align:center;padding:8px">' +
+      _t2('No late arrivals in this period.', 'Không có lượt đi muộn nào trong kỳ này.') + '</div>');
+    return;
+  }
+  ctx.style.display = '';
+  if (_prevEmpty) _prevEmpty.remove();
   _deptChart = new Chart(ctx, {
     type: 'bar',
     data: {
