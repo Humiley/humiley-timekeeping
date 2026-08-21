@@ -28176,8 +28176,13 @@ function tndQuotePDF() {
     if (pctVal != null) doc.text(_pmPdfTxt(_tndNum(pctVal, 0) + '%'), x0 + labelW + W[5] / 2, y + 4.8, { align: 'center' });
     y += h;
   };
-  totRow('SUBTOTAL', null, tot.net, false);
-  totRow('Project Discount', +d.discountPct || 0, Math.round((tot.net || 0) * (+d.discountPct || 0) / 100), false);
+  /* Every figure here comes from the server's quotation(), which is the single place the discount
+     is applied. This block used to recompute the cut itself and then print tot.gross as the grand
+     total — a total that did not include it. A 20% discount on a 938bn tender moved the printed
+     grand total by nothing, and the customer received a letter whose own arithmetic did not add
+     up: subtotal, minus a discount, then a total equal to subtotal plus VAT. */
+  totRow('SUBTOTAL', null, tot.subtotal, false);
+  totRow('Project Discount', tot.discountPct, tot.discount, false);
   totRow('Tax / VAT (if applicable)', +d.vatPct || 0, tot.vat, false);
   totRow('GRAND TOTAL', null, tot.gross, true);
   y += 6;
