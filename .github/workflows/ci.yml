@@ -135,6 +135,14 @@ jobs:
       - name: One payslip, one month
         run: node tests/payslip_one_month.js
 
+      # CPM seeded every early start at project day 0, so an activity connected to nothing still got
+      # a Float figure and could wear the red CP badge; an undated detail line scored variance 0 and
+      # flagged green "On plan" forever; every timeline bar was drawn one day short, which made a
+      # milestone 0% wide and invisible; and the completion date read a reading's frozen raw pct
+      # while everything else resolves it through _pdReadPct.
+      - name: A schedule that says what it knows
+        run: node tests/schedule_says_what_it_knows.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a

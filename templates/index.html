@@ -21535,6 +21535,10 @@ function _pmCPM(tasks) {
   return out;
 }
 function _pmCPMCompute(tasks) {
+  // Day zero for the whole network: the earliest start anybody entered. Without a calendar origin
+  // there is nothing for a start date to be an offset FROM.
+  const _starts = tasks.map(t => t.start).filter(Boolean).sort();
+  const dayZero = _starts.length ? _starts[0] : '';
   const byKey = {}, nodes = tasks.map(t => {
     let dur;
     if (+t.duration) dur = +t.duration;                       // explicit duration wins
@@ -21542,18 +21546,28 @@ function _pmCPMCompute(tasks) {
     else if (t.start && t.finish) dur = (_pmDateDiff(t.start, t.finish) || 0) + 1;
     else dur = 1;
     const key = String(t.wbs || t.id || '').trim() || t.id;
-    const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), es: 0, ef: dur, ls: 0, lf: 0, float: 0, critical: false };
+    // A task's own start date is a CONSTRAINT (start-no-earlier-than), not decoration. The forward
+    // pass used to seed every early start at 0 and raise it only from a predecessor's early finish,
+    // so an activity connected to nothing was assumed to begin on project day 0 — and the Float
+    // column and the red CP badge then reported a confident day-count and critical-path membership
+    // for it. `snet` anchors each node on the earliest dated task in the network.
+    const snet = (t.start && dayZero) ? Math.max(0, _pmDateDiff(dayZero, t.start) || 0) : 0;
+    const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), snet: snet, es: snet, ef: snet + dur, ls: 0, lf: 0, float: 0, critical: false, inNet: false };
     byKey[key] = n; return n;
   });
   nodes.forEach(n => { n.preds = n.preds.filter(k => byKey[k] && byKey[k] !== n); });
   let changed = true, guard = 0;
-  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { let es = 0; n.preds.forEach(k => { es = Math.max(es, byKey[k].ef); }); if (es !== n.es) { n.es = es; n.ef = es + n.dur; changed = true; } }); }
+  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { let es = n.snet; n.preds.forEach(k => { es = Math.max(es, byKey[k].ef); }); if (es !== n.es) { n.es = es; n.ef = es + n.dur; changed = true; } }); }
   const projEnd = nodes.reduce((m, n) => Math.max(m, n.ef), 0);
   const succ = {}; nodes.forEach(n => n.preds.forEach(k => { (succ[k] = succ[k] || []).push(n.key); }));
   nodes.forEach(n => { n.lf = projEnd; n.ls = projEnd - n.dur; });
   changed = true; guard = 0;
   while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { const ss = succ[n.key] || []; let lf = projEnd; if (ss.length) { lf = Infinity; ss.forEach(k => { lf = Math.min(lf, byKey[k].ls); }); } if (lf !== n.lf) { n.lf = lf; n.ls = lf - n.dur; changed = true; } }); }
-  nodes.forEach(n => { n.float = n.ls - n.es; n.critical = n.float <= 0; });
+  // Being unconnected is not the same as being critical. A task with no predecessor and no
+  // successor sits on no path at all, so "0d float, on the critical path" is a claim about a
+  // network it is not in. It is reported as having no network position instead.
+  nodes.forEach(n => { n.inNet = !!(n.preds.length || (succ[n.key] || []).length); });
+  nodes.forEach(n => { n.float = n.ls - n.es; n.critical = n.inNet && n.float <= 0; });
   const map = {}; nodes.forEach(n => { map[n.id] = n; });
   return { map: map, projEnd: projEnd, critical: nodes.filter(n => n.critical).length, hasDeps: nodes.some(n => n.preds.length) };
 }
@@ -21713,11 +21727,17 @@ function _pdBoard(pid, rows, day) {
     { k: 'behind',  label: 'Behind',      hex: '#EF4444', hit: (a, p) => a < 100 && a - p < -10 },
     { k: 'slip',    label: 'Slipping',    hex: '#F59E0B', hit: (a, p) => a < 100 && a - p < -0.5 && a - p >= -10 },
     { k: 'onplan',  label: 'On plan',     hex: '#00B060', hit: (a, p) => a < 100 && a - p >= -0.5 },
+    { k: 'undated', label: 'No dates',    hex: '#F59E0B', hit: () => true },
     { k: 'done',    label: 'Complete',    hex: '#5C6470', hit: a => a >= 100 },
   ];
   const bucket = r => {
     const a = _pdAcc(r, day), p = _pdPlanned(r, day);
-    return (COLS.find(c => c.hit(a, p)) || COLS[2]).k;
+    // Complete is decided first: a finished line does not need dates to be finished. Everything
+    // else with no plan lands in its own column rather than defaulting into "On plan" — which is
+    // what COLS[2] used to do, and what made an unscheduled line look healthy.
+    if (a >= 100) return 'done';
+    if (!_pdHasPlan(r)) return 'undated';
+    return (COLS.find(c => c.hit(a, p)) || COLS[4]).k;
   };
   const cols = COLS.map(c => {
     const mine = rows.filter(r => bucket(r) === c.k)
@@ -21816,6 +21836,12 @@ function _pdDaily(r, day) {
   return Math.max(0, _pdReadPct(r, todays) - prev);
 }
 /* Planned % at `day`, linear between start and finish (inclusive of both). */
+/* Does this row have a plan to be measured against at all? A detail line with no start and no
+   finish has none — and _pdPlanned returns 0 for it, which the status band then read as "0% planned,
+   0% done, variance 0" and flagged green "On plan", forever, on a row nobody had scheduled. A status
+   that reports success while examining nothing is the failure this codebase keeps producing.
+   Undated rows are routine: the importer writes `start: r.start || ''`. */
+function _pdHasPlan(r) { return !!(r && r.start && r.finish); }
 function _pdPlanned(r, day) {
   day = day || _pmToday();
   const s = r && r.start, f = r && r.finish;
@@ -21835,11 +21861,20 @@ function _pdWeight(r) {
 }
 /* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
 function _pdRollup(rows, day) {
-  let wsum = 0, a = 0, p = 0;
-  (rows || []).forEach(r => { const w = _pdWeight(r); wsum += w; a += w * _pdAcc(r, day); p += w * _pdPlanned(r, day); });
-  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0 };
-  const acc = a / wsum, planned = p / wsum;
-  return { acc: acc, planned: planned, variance: acc - planned, weight: wsum };
+  // Two weight sums, not one. Work done on an undated line is still work, so it counts towards
+  // ACTUAL; but it has no planned position, and folding a 0 into the planned average made the whole
+  // package look ahead of a plan that did not exist for part of it. `undated` is returned so a
+  // caller can say how much of the roll-up is unscheduled rather than presenting a clean variance.
+  let wsum = 0, a = 0, pw = 0, p = 0, undated = 0;
+  (rows || []).forEach(r => {
+    const w = _pdWeight(r);
+    wsum += w; a += w * _pdAcc(r, day);
+    if (_pdHasPlan(r)) { pw += w; p += w * _pdPlanned(r, day); } else { undated += w; }
+  });
+  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0, undatedWeight: 0, plannedWeight: 0 };
+  const acc = a / wsum, planned = pw ? p / pw : 0;
+  return { acc: acc, planned: planned, variance: pw ? acc - planned : 0, weight: wsum,
+           plannedWeight: pw, undatedWeight: undated };
 }
 /* The master activity's % when detail lines exist beneath it — derived, never typed. */
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
@@ -22351,6 +22386,8 @@ function _schFlag(r, day) {
   if (r.finish && r.finish < day) {
     return { k: 'overdue', label: _pmDateDiff(r.finish, day) + 'd ' + _t('overdue'), hex: '#EF4444' };
   }
+  // Before any variance verdict: an undated row has nothing to be ahead of or behind.
+  if (!_pdHasPlan(r)) return { k: 'undated', label: _t('No dates'), hex: '#F59E0B' };
   const v = acc - pl;
   if (v >= 5) return { k: 'ahead', label: '+' + v.toFixed(0) + '%', hex: '#00B060' };
   if (v >= -0.5) return { k: 'onplan', label: _t('On plan'), hex: '#5C6470' };
@@ -22425,17 +22462,24 @@ function _schTimeline(rows, o) {
   if (!ds.length) return '';
   ds.push(day);
   const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
-  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  // `pct` maps a date to the START of that day. The axis therefore has to run to the start of the
+  // day AFTER the last one, or every bar is drawn one day short and a same-day item — which is what
+  // a milestone is — comes out 0% wide and renders as nothing at all. The Dur column three lines
+  // below has always counted inclusively ("+1"); the bar did not, and the two disagreed on screen.
+  const axEnd = _pmDateAdd(max, 1);
+  const span = Math.max(1, _pmDateDiff(min, axEnd) || 1);
   const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
+  // The end of the day `d` covers, for anything drawn as a span rather than a point.
+  const pctEnd = d => pct(_pmDateAdd(d, 1));
 
   const months = [];
   let cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
-  const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
+  const end = new Date(+axEnd.slice(0, 4), +axEnd.slice(5, 7) - 1, 1);
   while (cur <= end) {
     const first = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
     const nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     const last = nxt.getFullYear() + '-' + String(nxt.getMonth() + 1).padStart(2, '0') + '-01';
-    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > max ? max : last)),
+    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > axEnd ? axEnd : last)),
                   m: cur.getMonth(), y: cur.getFullYear() });
     cur = nxt;
   }
@@ -22491,8 +22535,22 @@ function _schTimeline(rows, o) {
     '<div style="position:absolute;left:' + mo.from + '%;top:0;bottom:0;border-left:1px solid var(--line);opacity:.7"></div>').join('');
 
   const bar = (r, color, label, big) => {
-    if (!r.start || !r.finish) return '';
-    const a = pct(r.start), b = pct(r.finish), acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
+    const one = r.start || r.finish;
+    if (!one) return '';
+    const acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
+    // A milestone, and any row carrying only one of the two dates, is a POINT. It used to be drawn
+    // as a bar of zero width and disappeared from the chart entirely — the item existed in the
+    // table, was counted in the KPI row, and simply was not on the timeline.
+    if (!r.start || !r.finish || r.start === r.finish) {
+      const x = pct(one), fill = acc >= 100 ? color : 'var(--card,#fff)';
+      return '<div title="' + _tkEscA((r.name || '') + '  ·  ' + tkFmtDate(one) + '  ·  ' + Math.round(acc) + '%') +
+        '" style="position:absolute;left:' + x + '%;top:' + top + 'px;width:' + h + 'px;height:' + h + 'px;' +
+        'margin-left:-' + (h / 2) + 'px;transform:rotate(45deg);background:' + fill + ';border:2px solid ' + color + '"></div>' +
+        '<div style="position:absolute;left:' + x + '%;top:' + (top - 2) + 'px;margin-left:' + (h / 2 + 7) + 'px;' +
+          'font-size:10.5px;font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);' +
+          'font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
+    }
+    const a = pct(r.start), b = pctEnd(r.finish);
     return seg(a, b, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color + '2e', '',
                (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + Math.round(acc) + '%') +
            seg(a, a + (b - a) * acc / 100, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color, '') +
@@ -22648,7 +22706,13 @@ function _pdNorm(pid, rows, day) {
     const log = _pdLog(r);
     // The day it actually finished is the FIRST reading that reached 100 — not the last reading, and
     // not the planned finish. That is what makes "3d early" a fact rather than a guess.
-    const doneRow = log.find(e => _pmPct(e.pct) >= 100);
+    //
+    // Resolved through _pdReadPct, like every other consumer of a reading. The stored `pct` is
+    // frozen at whatever qtyPlan was in force the day it was filed, and pdCellSave deliberately
+    // supports revising qtyPlan afterwards (it prompts for a reason). After such a revision the
+    // raw `pct` and the quantity disagreed, and this line — reading only the raw one — decided the
+    // line had never finished, so the early/late verdict silently disappeared from a completed row.
+    const doneRow = log.find(e => _pdReadPct(r, e) >= 100);
     const last = log[log.length - 1];
     return { id: r.id, group: _pdGroupOf(pid, r),
       name: (r.name || '') + (r.category ? '  ·  ' + r.category : ''),
@@ -22908,7 +22972,8 @@ function pmRenderSchedule(pid) {
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
-    { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
+    { label: 'Float', align: 'right', tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
+      render: r => (cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].inNet) ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
     { label: '%', sk: 'pctComplete', align: 'right', render: r => {
         // One source of truth: when detail lines report against this activity, its percentage is
         // their weighted roll-up. A typed number that disagrees with the site's own daily report is
