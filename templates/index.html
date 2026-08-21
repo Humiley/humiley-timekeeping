@@ -3135,11 +3135,30 @@ window.addEventListener('orientationchange', _setLoginBg);
   const HEAVY = [
     // The brand PDF font, Carlito (~48 KB gzipped, both weights). It rides the lazy path with the
     // export engines because it is useless without jsPDF and unwanted by a check-in-and-leave session.
-    '/static/vendor/tk-font-brand.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js'
+    // Every third-party script here carries its SRI hash, as the Leaflet, Chart and MSAL tags do.
+    // Without it a compromised or mis-served CDN response executes with full page privileges on a
+    // portal holding payroll, e-signatures and HR records — and these four were the only scripts in
+    // the app being injected bare. Hashes verified against the sha512 cdnjs publishes for the same
+    // files before being converted; a hash of a download only proves you hashed what you received.
+    // If a hash ever fails to match, the browser refuses the script and onerror fires, which lands
+    // in the same degrade-honestly path as a blocked CDN below.
+    //
+    // THE ?sri=1 IS LOAD-BEARING, do not tidy it away. SRI requires a CORS fetch, and a response
+    // cached from the earlier no-cors request cannot satisfy one — measured in a browser: the bare
+    // URL loads without crossorigin and FAILS with it. Every existing user holds these four in the
+    // service-worker cache as opaque responses (sw.js caches r.type === 'opaque' deliberately), and
+    // caches.match() is keyed on URL, so the old copy would answer the new request and the browser
+    // would refuse the script — turning a security fix into silently broken PDF and Excel export.
+    // A distinct query makes it a new cache key, so the first fetch after this deploy is clean.
+    { src: '/static/vendor/tk-font-brand.js' },
+    { src: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js?sri=1',
+      integrity: 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk' },
+    { src: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js?sri=1',
+      integrity: 'sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H' },
+    { src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js?sri=1',
+      integrity: 'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw' },
+    { src: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js?sri=1',
+      integrity: 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e' }
   ];
   let _started = null;
   // Returns a PROMISE that settles when the engines have actually arrived.
@@ -3161,8 +3180,11 @@ window.addEventListener('orientationchange', _setLoginBg);
   const LOAD_MS = 12000;
   function loadHeavy() {
     if (_started) return _started;
-    const all = Promise.all(HEAVY.map(src => new Promise(res => {
-      const el = document.createElement('script'); el.src = src; el.async = true;
+    const all = Promise.all(HEAVY.map(item => new Promise(res => {
+      const el = document.createElement('script'); el.src = item.src; el.async = true;
+      // crossorigin is REQUIRED for SRI on a cross-origin script: without it the response is
+      // opaque, the browser cannot hash it, and it blocks the script instead of checking it.
+      if (item.integrity) { el.integrity = item.integrity; el.crossOrigin = 'anonymous'; }
       const done = () => {
         try { if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch (e) {}
         res();
