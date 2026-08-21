@@ -36,16 +36,26 @@ const PRELUDE = `
   function _pmPct(v) { return Math.max(0, Math.min(100, Math.round(+v || 0))); }
   function _pmDateDiff(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); }
   function _pmToday() { return '2026-08-21'; }
+  function _pdTaskPct(t, pid) { return global._pdTaskPct ? global._pdTaskPct(t, pid) : null; }
 `;
 const api = {};
 new Function(PRELUDE +
+  take('function _pmActivityPct(', '_pmActivityPct') +
+  take('function _pmTaskWeight(', '_pmTaskWeight') +
+  take('function pmWbsRollup(', 'pmWbsRollup') +
   take('function pmScopeRollup(', 'pmScopeRollup') +
-  '\nObject.assign(this, { pmScopeRollup, _HR });').call(api);
-const { pmScopeRollup } = api;
+  '\nObject.assign(this, { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight, _HR });').call(api);
+const { pmScopeRollup, pmWbsRollup, _pmActivityPct, _pmTaskWeight } = api;
 const HR = api._HR;
 
 const PID = 'p1';
 const setDeliverables = rows => { HR.pm_deliverables = rows.map(r => Object.assign({ projectId: PID }, r)); };
+const setTasks = rows => { HR.pm_tasks = rows.map(r => Object.assign({ projectId: PID }, r)); };
+// _pdTaskPct is the detail roll-up; stub it so this file tests the LEVELS ABOVE it. Its own maths
+// is covered by detail_schedule_math.js against the real code.
+let DETAIL = {};                       // taskRef/wbs -> { pct, n }
+api._pdTaskPct = undefined;
+global._pdTaskPct = t => DETAIL[(t && (t.wbs || t.name)) || ''] || null;
 
 console.log('\nWBS roll-up chain\n');
 
@@ -76,23 +86,105 @@ ok('out-of-range percentages are clamped, not trusted', clamped >= 0 && clamped 
 setDeliverables([{ percentComplete: 100, status: 'Accepted' }, { percentComplete: 40 }]);
 ok('accepted deliverables are counted separately', pmScopeRollup(PID).accepted === 1);
 
-/* ── the register it reads is the whole point of this test ──────────────────── */
-const rollupSrc = take('function pmScopeRollup(', 'pmScopeRollup');
-ok('the project percentage is computed from a register',
-   /_pmScopeFor\('pm_(deliverables|tasks)'/.test(rollupSrc), rollupSrc.slice(0, 120));
+/* ── the registers it reads are the whole point of this test ────────────────── */
+const rollupSrc = take('function pmWbsRollup(', 'pmWbsRollup');
+ok('the roll-up reads the WBS spine', /_pmScopeFor\('pm_deliverables', pid\)/.test(rollupSrc));
+ok('the roll-up also reads the master schedule', /_pmScopeFor\('pm_tasks', pid\)/.test(rollupSrc),
+   'this is the link the owner asked for: activities must reach the project total');
+// pmScopeRollup keeps its name and shape so all eight existing call sites inherit the chain
+// without being edited. Assert the delegation, or a future edit could quietly fork the two.
+ok('pmScopeRollup delegates to pmWbsRollup rather than duplicating it',
+   /function pmScopeRollup\(pid\) \{ return pmWbsRollup\(pid\); \}/.test(src));
+{
+  const callers = (src.match(/pmScopeRollup\(/g) || []).length;
+  ok('the existing call sites still use pmScopeRollup', callers >= 8,
+     'found ' + callers + ' — if this drops, some caller was rewired and may have missed the chain');
+}
 
 /* ── LEVEL 2 -> 1: does a master activity reach the project total? ──────────── */
 // This is the owner's requirement: "each WBS will contribute all and impact total timeline".
 // Recorded here as the CURRENT state so the change is visible in the diff, not asserted as correct.
-HR.pm_tasks = [
-  { projectId: PID, wbs: '1', name: 'Enabling works', pctComplete: 100, start: '2026-07-01', finish: '2026-07-31' },
-  { projectId: PID, wbs: '2', name: 'MEP first fix', pctComplete: 0, start: '2026-08-01', finish: '2026-08-31' },
-];
+// An UNLINKED activity must still contribute nothing — the link is what grants it scope weight.
+setTasks([
+  { wbs: '1', name: 'Enabling works', pctComplete: 100, start: '2026-07-01', finish: '2026-07-31' },
+  { wbs: '2', name: 'MEP first fix', pctComplete: 0, start: '2026-08-01', finish: '2026-08-31' },
+]);
 setDeliverables([]);
-const withTasksOnly = pmScopeRollup(PID);
-ok('CURRENT: master activities alone produce total 0 — they do not reach the project percentage',
-   withTasksOnly.total === 0,
-   'if this now fails, the roll-up was wired up and this characterization needs rewriting to match');
+ok('activities with no deliverable to deliver into contribute nothing', pmScopeRollup(PID).total === 0);
+ok('and they are counted in the open, not hidden', pmWbsRollup(PID).unlinkedActivities === 2);
+
+// A deliverable with NO linked activity keeps its typed percentage, bit-for-bit as before.
+setDeliverables([{ id: 'D1', percentComplete: 40, weight: 1 }]);
+setTasks([]);
+near('an unlinked deliverable still reports its typed figure', pmScopeRollup(PID).pctRaw, 40);
+ok('and is reported as typed, not derived', pmWbsRollup(PID).derived === 0 && pmWbsRollup(PID).typed === 1);
+
+// THE OWNER'S REQUIREMENT: a linked activity moves its work package, which moves the project.
+setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }]);
+setTasks([{ wbs: '1', name: 'Enabling', delivId: 'D1', pctComplete: 80, start: '2026-07-01', finish: '2026-07-10' }]);
+near('a linked activity at 80% drives its deliverable to 80', pmScopeRollup(PID).pctRaw, 80);
+ok('the deliverable is reported as derived', pmWbsRollup(PID).derived === 1);
+ok('the typed 0 on the deliverable is overridden by the schedule', pmScopeRollup(PID).pctRaw !== 0);
+
+// Two activities under one package, weighted by their span — not averaged.
+setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }]);
+setTasks([
+  { wbs: '1', delivId: 'D1', pctComplete: 100, start: '2026-07-01', finish: '2026-07-30' },  // 30d
+  { wbs: '2', delivId: 'D1', pctComplete: 0, start: '2026-08-01', finish: '2026-08-10' },    // 10d
+]);
+near('two activities roll up by span, not by count', pmScopeRollup(PID).pctRaw, 75, 0.6);
+
+// Mixed project: one derived package, one typed. Both count, at their own weights.
+setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }, { id: 'D2', percentComplete: 50, weight: 1 }]);
+setTasks([{ wbs: '1', delivId: 'D1', pctComplete: 100, start: '2026-07-01', finish: '2026-07-10' }]);
+near('a mixed project blends derived and typed packages', pmScopeRollup(PID).pctRaw, 75);
+ok('and says how many of each', pmWbsRollup(PID).derived === 1 && pmWbsRollup(PID).typed === 1);
+
+// A measured sub-item beats a typed activity percentage — the site's own report wins.
+DETAIL = { '1': { pct: 25, n: 3 } };
+setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }]);
+setTasks([{ wbs: '1', delivId: 'D1', pctComplete: 90, start: '2026-07-01', finish: '2026-07-10' }]);
+near('measured sub-items override the typed activity figure', pmScopeRollup(PID).pctRaw, 25);
+ok('and the basis says so', _pmActivityPct({ wbs: '1', pctComplete: 90 }, PID).basis === 'measured');
+DETAIL = {};
+
+// An actual finish date is stronger evidence than a stale typed number.
+ok('an actual finish reads 100 regardless of a stale typed value',
+   _pmActivityPct({ wbs: 'x', pctComplete: 20, actualFinish: '2026-07-09' }, PID).pct === 100);
+ok('and is labelled complete', _pmActivityPct({ wbs: 'x', actualFinish: '2026-07-09' }, PID).basis === 'complete');
+ok('a plain estimate is labelled typed', _pmActivityPct({ wbs: 'x', pctComplete: 30 }, PID).basis === 'typed');
+
+// Weight must not be _pmCPMCompute's network duration — tuning the CPM would re-price progress.
+ok('an explicit weight wins', _pmTaskWeight({ weight: 7, start: '2026-07-01', finish: '2026-07-30' }) === 7);
+ok('otherwise the inclusive span is used', _pmTaskWeight({ start: '2026-07-01', finish: '2026-07-10' }) === 10);
+ok('a dateless activity still counts as 1, never 0', _pmTaskWeight({}) === 1);
+ok('the roll-up never reads t.duration',
+   !/_pmTaskWeight[\s\S]{0,400}\bt\.duration\b/.test(src),
+   'duration is CPM network duration; conflating them makes CPM tuning silently re-price progress');
+
+// zero-weight activities must not divide by zero
+setDeliverables([{ id: 'D1', percentComplete: 0, weight: 1 }]);
+setTasks([{ wbs: '1', delivId: 'D1', pctComplete: 50 }, { wbs: '2', delivId: 'D1', pctComplete: 100 }]);
+ok('dateless linked activities produce a finite figure', isFinite(pmScopeRollup(PID).pctRaw));
+
+// a dangling delivId points at nothing and must not silently become scope
+setDeliverables([{ id: 'D1', percentComplete: 60, weight: 1 }]);
+setTasks([{ wbs: '9', delivId: 'GONE', pctComplete: 100, start: '2026-07-01', finish: '2026-07-10' }]);
+near('an activity pointing at a deleted deliverable changes nothing', pmScopeRollup(PID).pctRaw, 60);
+
+// Unlinked activities are collected under the key '', so a deliverable whose own id is falsy would
+// absorb all of them and have its typed figure overridden by work nobody assigned to it. Found by
+// a mutation that SURVIVED: with real ids the two readings agree exactly (20 vs 20), and only a
+// blank deliverable id makes them diverge (60 vs 100). The surviving mutation was not a defect —
+// it pointed at one.
+setDeliverables([{ id: '', percentComplete: 60, weight: 1 }]);
+setTasks([{ wbs: '9', pctComplete: 100, start: '2026-07-01', finish: '2026-07-10' }]);   // no delivId
+near('a deliverable with a blank id does not absorb unlinked activities', pmScopeRollup(PID).pctRaw, 60);
+setDeliverables([{ percentComplete: 60, weight: 1 }]);                                   // id undefined
+setTasks([{ wbs: '9', pctComplete: 100, start: '2026-07-01', finish: '2026-07-10' }]);
+near('nor does one with no id at all', pmScopeRollup(PID).pctRaw, 60);
+
+setDeliverables([]); setTasks([]);
 
 /* ── LEVEL 3 -> 2: ALL sub-items must reach their master activity ───────────── */
 ok('the detail -> master roll-up helper exists', /function _pdTaskPct\(task, pid\)/.test(src));
@@ -123,11 +215,17 @@ ok('it weights them rather than averaging', /_pdRollup\(rows\)\.acc/.test(src));
 /* ── the EV fallback, which is where a typed number can become money ────────── */
 const evm = take('function _pmEvm(', '_pmEvm');
 ok('EV takes its ratio from the scope roll-up', /const sr = pmScopeRollup\(p\.id\)/.test(evm));
-ok('CURRENT: with no deliverables, EV falls back to a TYPED project percentage',
-   /sr\.total \? sr\.pctRaw : Math\.max\(0, Math\.min\(100, \+p\.percentComplete \|\| 0\)\)/.test(evm),
-   'a project with real site production but no deliverables earns whatever someone typed');
 ok('EV multiplies that ratio by BAC', /const ev = bac \* ratio/.test(evm));
-ok('CPI and SPI are derived from EV', /cpi = \(ac > 0 && bac > 0\) \? ev \/ ac/.test(evm) && /spi = \(pv > 0 && bac > 0\) \? ev \/ pv/.test(evm));
+ok('CPI is derived from EV', /cpi = \(ac > 0 && bac > 0\) \? ev \/ ac/.test(evm));
+
+// SPI returned a confident 1.00 — "perfectly on schedule" — with nothing to measure: no baseline
+// and no phased cost register means pv === ev, so the ratio is 1 by construction. The number is
+// unchanged for callers that only render it; the flag lets a screen decline to assert instead.
+ok('SPI carries whether it could be measured at all', /spiMeasurable/.test(evm),
+   'a 1.00 nobody can distinguish from a real on-schedule reading is the silent-zero shape');
+ok('spiMeasurable requires a real PV and a real EV', /const spiMeasurable = pv > 0 && bac > 0 && ev > 0/.test(evm));
+ok('EV reports which basis produced it', /evBasis:/.test(evm),
+   'schedule-derived, deliverable-typed and project-typed are three different claims');
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

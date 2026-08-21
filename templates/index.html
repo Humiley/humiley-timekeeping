@@ -15797,6 +15797,13 @@ const _QA_SPECS = {
     { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
   pm_tasks: { title: 'Task / Milestone', coll: 'pm_tasks', reload: 'pm_tasks', fields: [
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
+    // Which work package this activity delivers. Optional, and stored as the deliverable's ID:
+    // re-coding a deliverable's WBS number must not orphan the link, which is the lesson taskRef
+    // teaches — it matches on `wbs || name` by exact string and therefore can never be renumbered.
+    // While this is blank the deliverable keeps its typed percentage, exactly as before.
+    { k: 'delivId', label: 'Delivers WBS package (optional — links progress to the project total)',
+      type: 'ref', src: 'pm_deliverables', blank: '— not linked to a WBS package —' },
+    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee (type any name — staff or others)', type: 'combo', dyn: 'pm_assignees' },
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
@@ -19756,6 +19763,12 @@ function _qaRefOptions(src, ex) {
   if (src === 'pm_projects') {
     return (_HR.pm_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
   }
+  if (src === 'pm_deliverables') {
+    const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+    return (_HR.pm_deliverables || []).filter(d => d && d.projectId === pid)
+      .sort((a, b) => _wbsCmp(a.wbsCode || '', b.wbsCode || ''))
+      .map(d => ({ v: d.id, l: (d.wbsCode ? d.wbsCode + ' — ' : '') + (d.name || '(untitled)') }));
+  }
   if (src === 'eng_projects') {
     return (_HR.eng_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
   }
@@ -20246,15 +20259,91 @@ function _pmEvm(p) {
   const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
   const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
-  const spi = (pv > 0 && bac > 0) ? ev / pv : 1;
+  // A confident 1.00 — "perfectly on schedule" — is what this returned with NOTHING to
+  // measure: no baseline, no phased cost register, so pv === ev and the ratio is 1 by
+  // construction. The number is still 1 for callers that only render it, but the flag lets a
+  // screen say — instead of asserting a performance it never computed.
+  const spiMeasurable = pv > 0 && bac > 0 && ev > 0;
+  const spi = spiMeasurable ? ev / pv : 1;
   const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null };
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, spiMeasurable, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null,
+           evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
 function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
 
 /* ---- rollups consumed by Overview + Portfolio ---- */
-function pmScopeRollup(pid) { const ds = _pmScopeFor('pm_deliverables', pid); let wsum = 0, wpct = 0, acc = 0; ds.forEach(d => { const w = Math.max(0, +d.weight || 0) || 1; wsum += w; wpct += w * _pmPct(d.percentComplete); if ((d.status || '') === 'Accepted') acc++; }); const ratio = wsum ? wpct / wsum : 0; return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc }; }
+/* How much of THIS activity is done, and on what basis — never a bare number.
+   Three grades, best evidence first:
+     measured  — detail sub-items reported against it (a quantity, not an opinion)
+     complete  — an actual finish date, or status Completed
+     typed     — somebody's estimate, which is the weakest and is labelled as such
+   The basis travels with the figure so a screen can say where a percentage came from. */
+function _pmActivityPct(t, pid) {
+  const d = (typeof _pdTaskPct === 'function') ? _pdTaskPct(t, pid) : null;
+  if (d) return { pct: _pmPct(d.pct), basis: 'measured', n: d.n };
+  if (t && (t.actualFinish || (t.status || '') === 'Completed')) return { pct: 100, basis: 'complete', n: 0 };
+  return { pct: _pmPct(t && t.pctComplete), basis: 'typed', n: 0 };
+}
+/* What an activity is worth inside its work package.
+   NOT `t.duration`: _pmCPMCompute reads that as NETWORK duration, so tuning the critical path
+   would silently re-price reported progress. Explicit weight wins; otherwise the inclusive
+   calendar span, the same ladder _pdWeight uses for detail rows so there is one rule to learn. */
+function _pmTaskWeight(t) {
+  const w = +(t && t.weight) || 0;
+  if (w > 0) return w;
+  if (t && t.start && t.finish) return Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1);
+  return 1;
+}
+/* The WBS roll-up: sub-items -> activity -> work package -> project.
+
+   The basis is decided PER DELIVERABLE, not per project. A deliverable with linked activities is
+   derived from them; one with none keeps its typed percentage, bit-for-bit as before. That makes
+   adoption monotonic: linking one activity moves one deliverable, and a project that links nothing
+   reports exactly what it reports today.
+
+   Activities with no delivId contribute to NOTHING and are counted in the open, the way
+   _pdGroupOf already surfaces unlinked detail lines. Folding them into a catch-all would hand
+   them scope weight nobody assigned. */
+function pmWbsRollup(pid) {
+  const ds = _pmScopeFor('pm_deliverables', pid);
+  const ts = _pmScopeFor('pm_tasks', pid);
+  const byDeliv = {};
+  let unlinked = 0;
+  ts.forEach(t => {
+    const k = String(t.delivId || '');
+    if (!k) { unlinked++; return; }
+    (byDeliv[k] = byDeliv[k] || []).push(t);
+  });
+  let wsum = 0, wpct = 0, acc = 0, derived = 0;
+  ds.forEach(d => {
+    const w = Math.max(0, +d.weight || 0) || 1;
+    // `d.id ?` is a SECOND, independent guard, not the load-bearing one. Unlinked activities are
+    // keyed '' , so a deliverable whose own id were falsy could absorb every one of them and have
+    // its typed percentage overwritten by work nobody assigned to it. The `return` above already
+    // prevents that by never populating byDeliv['']; removing either one alone changes nothing,
+    // which a mutation test confirmed by surviving. Both must fail together to open the hole —
+    // cheap enough to keep, and stated honestly rather than claimed as the fix.
+    const mine = (d.id ? byDeliv[d.id] : null) || [];
+    let pct;
+    if (mine.length) {
+      let aw = 0, ap = 0;
+      mine.forEach(t => { const tw = _pmTaskWeight(t); aw += tw; ap += tw * _pmActivityPct(t, pid).pct; });
+      pct = aw ? (ap / aw) : 0;
+      derived++;
+    } else {
+      pct = _pmPct(d.percentComplete);
+    }
+    wsum += w; wpct += w * pct;
+    if ((d.status || '') === 'Accepted') acc++;
+  });
+  const ratio = wsum ? wpct / wsum : 0;
+  return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc,
+           derived: derived, typed: ds.length - derived,
+           activities: ts.length, unlinkedActivities: unlinked };
+}
+/* Kept as the name and shape eight call sites already use, so they all inherit the chain. */
+function pmScopeRollup(pid) { return pmWbsRollup(pid); }
 function _pmRiskRollup(pid) { const rs = _pmScopeFor('pm_risks', pid).filter(r => r.status !== 'Closed'); const scored = rs.map(r => +r.score || 0); const high = scored.filter(s => s >= 10).length; const top = scored.length ? Math.max.apply(null, scored) : 0; return { open: rs.length, high: high, top: top, band: _pmRiskBand(top).band }; }
 function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms = ts.filter(t => String(t.isMilestone) === 'Yes'); return { tasks: ts.length, milestones: ms.length, overdueMs: _pmOverdueMilestones(pid), done: ts.filter(t => t.status === 'Completed').length }; }
 
