@@ -106,6 +106,26 @@ ok('schedule still requires what it does read',
 const schedFn = src.slice(src.indexOf('function pmRenderSchedule('), src.indexOf('function pmRenderCosts('));
 ok('pmRenderSchedule really does not read pm_costs', schedFn.indexOf('pm_costs') < 0);
 
+/* ── _wbsCmp must be REACHABLE, not merely present ─────────────────────────── */
+// It was first inserted inside _qaDynOptions, which made it a nested function: the WBS picker
+// worked and the RACI matrix threw "_wbsCmp is not defined" the moment it tried to sort. Every
+// assertion above still passed, because they eval the function's TEXT in isolation and never ask
+// whether the callers can see it. Extracting a function proves it parses, not that it is in scope.
+ok('_wbsCmp is declared at module scope, not nested inside another function',
+   /^function _wbsCmp\(/m.test(src),
+   'no top-level `function _wbsCmp(` — if it is indented it is nested and its callers cannot see it');
+{
+  const q = src.slice(src.indexOf('function _qaDynOptions('), src.indexOf('\nfunction ', src.indexOf('function _qaDynOptions(') + 10));
+  ok('_wbsCmp is NOT declared inside _qaDynOptions', q.indexOf('function _wbsCmp') < 0);
+}
+// every caller lives outside _qaDynOptions, so a nested declaration breaks all but one
+['_pmRaciMatrix'].forEach(caller => {
+  const i = src.indexOf('function ' + caller + '(');
+  const body = i >= 0 ? src.slice(i, src.indexOf('\nfunction ', i + 10)) : '';
+  ok(caller + ' calls _wbsCmp from a different scope', /_wbsCmp\(/.test(body),
+     'if this caller stops using it, drop it from this list rather than deleting the check');
+});
+
 /* ── the denied collection degrades to [] rather than throwing ──────────────── */
 ok('_pmScopeFor is null-safe on a denied register',
    /const _pmScopeFor = \(coll, pid\) => \(_HR\[coll\] \|\| \[\]\)/.test(src),

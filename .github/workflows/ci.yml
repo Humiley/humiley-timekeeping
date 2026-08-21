@@ -94,6 +94,15 @@ jobs:
       - name: Project tab access + WBS picker order
         run: node tests/pm_access_and_wbs.js
 
+      # A four-person team rendered as four columns all reading "NGUYEN": the header took
+      # `name.split(' ')[0]`, which in Vietnamese name order is the FAMILY name — carried by roughly
+      # two in five people in the country. A RACI matrix exists to say who is Responsible, and four
+      # identical columns cannot say it. The register holds BOTH name orders (see _pmSamePerson), so
+      # "take the last token" breaks the other half instead. Also pins the deliverable order, which
+      # was rendering 6, E, 2, F, 1, 5, A, C.
+      - name: RACI matrix names the person, in order
+        run: node tests/raci_names_and_order.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a

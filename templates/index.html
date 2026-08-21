@@ -19650,6 +19650,25 @@ function _crmBuildDashCharts() {
 }
 
 /* dynamic option sources for the quick-add form (employees / companies / contacts) */
+/* Order WBS codes the way a schedule reads, not the way strings sort.
+   Plain string order puts "1.10" before "1.2" and "1.4.6.6.4" adjacent to "1.4.5.2"; a person
+   scanning for 1.4.4.1 then cannot find it. Compare segment by segment, numerically where both
+   segments are numeric, so 1.3.2 < 1.4.4.1 < 1.4.4.1.1 < 1.4.4.1.2 < 1.4.10. A code with a name
+   instead of a number (an activity with no WBS) sorts after the numbered ones, by name. */
+function _wbsCmp(a, b) {
+  const A = String(a || '').split('.'), B = String(b || '').split('.');
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = A[i], y = B[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x.trim()), ny = /^\d+$/.test(y.trim());
+    if (nx && ny) { const d = (+x) - (+y); if (d) return d; continue; }
+    if (nx !== ny) return nx ? -1 : 1;           // numbered WBS before a bare name
+    const c = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    if (c) return c;
+  }
+  return 0;
+}
 function _qaDynOptions(src, ex) {
   if (src === 'employees') return (_DEMO_EMPLOYEES || []).map(e => e.name).filter(Boolean);
   if (src === 'companies') return (_HR.crm_companies || []).map(c => c.name).filter(Boolean);
@@ -19671,25 +19690,6 @@ function _qaDynOptions(src, ex) {
     return [...new Set([].concat(used, ['Electrical Works', 'HVAC Works', 'Plumbing Works',
       'Fire Protection Works', 'Cleanroom / Architectural', 'Controls & BMS', 'Testing & Commissioning']).filter(Boolean))];
   }
-/* Order WBS codes the way a schedule reads, not the way strings sort.
-   Plain string order puts "1.10" before "1.2" and "1.4.6.6.4" adjacent to "1.4.5.2"; a person
-   scanning for 1.4.4.1 then cannot find it. Compare segment by segment, numerically where both
-   segments are numeric, so 1.3.2 < 1.4.4.1 < 1.4.4.1.1 < 1.4.4.1.2 < 1.4.10. A code with a name
-   instead of a number (an activity with no WBS) sorts after the numbered ones, by name. */
-function _wbsCmp(a, b) {
-  const A = String(a || '').split('.'), B = String(b || '').split('.');
-  for (let i = 0; i < Math.max(A.length, B.length); i++) {
-    const x = A[i], y = B[i];
-    if (x === undefined) return -1;
-    if (y === undefined) return 1;
-    const nx = /^\d+$/.test(x.trim()), ny = /^\d+$/.test(y.trim());
-    if (nx && ny) { const d = (+x) - (+y); if (d) return d; continue; }
-    if (nx !== ny) return nx ? -1 : 1;           // numbered WBS before a bare name
-    const c = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
-    if (c) return c;
-  }
-  return 0;
-}
   if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
     const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_tasks', _pmPid()) : [];
@@ -23004,6 +23004,43 @@ function pmRenderResources(pid) {
 }
 /* RACI matrix — deliverables (rows) × team members (cols). Managers click a cell to cycle
    R → A → C → I → blank, stored in deliverable.raciMap (a NEW additive field; nothing else touched). */
+/* Which part of a name is the PERSON.
+   "Nguyen Van Trung" is family-middle-given: the person is Trung, and taking token [0] gives
+   "Nguyen" — a name roughly two in five Vietnamese people carry. A four-person team then renders
+   as four columns all reading NGUYEN, which is not a cosmetic problem: the matrix exists to say
+   who is Responsible, and it cannot say it.
+   The register holds BOTH orders — _pmSamePerson exists precisely because rows read "Trung Nguyen"
+   while employee records read "Nguyen Van Trung" — so neither end can be trusted blindly. Decide
+   by looking for a known family name; fall back to the Vietnamese convention (last token), because
+   that is what this company's records overwhelmingly use. */
+const _VN_FAMILY = new Set(['nguyen', 'tran', 'le', 'pham', 'hoang', 'huynh', 'phan', 'vu', 'vo',
+  'dang', 'bui', 'do', 'ho', 'ngo', 'duong', 'ly', 'dinh', 'truong', 'dao', 'mai', 'lam', 'trinh',
+  'cao', 'chu', 'ta', 'ha', 'thai', 'luu', 'quach', 'ton', 'to', 'chau', 'kieu', 'ninh']);
+function _pmGivenName(full) {
+  const raw = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (!raw.length) return '';
+  if (raw.length === 1) return raw[0];
+  const t = _pmNameTokens(full);                       // ASCII-folded, lowercased
+  if (t.length !== raw.length) return raw[raw.length - 1];
+  if (_VN_FAMILY.has(t[0])) return raw[raw.length - 1];        // Nguyen Van Trung -> Trung
+  if (_VN_FAMILY.has(t[t.length - 1])) return raw[0];          // Trung Nguyen     -> Trung
+  return raw[raw.length - 1];                                  // default: Vietnamese order
+}
+/* Given names collide too — two people called Trung on one team would give two columns reading
+   "Trung", which is the same failure one step further along. Where a given name is not unique on
+   THIS team, qualify it with the family name; where it is unique, keep it short. */
+function _pmShortNames(members) {
+  const given = (members || []).map(_pmGivenName);
+  const count = {};
+  given.forEach(g => { const k = g.toLowerCase(); count[k] = (count[k] || 0) + 1; });
+  return (members || []).map((m, i) => {
+    const g = given[i];
+    if (count[g.toLowerCase()] < 2) return g;
+    const raw = String(m || '').trim().split(/\s+/).filter(Boolean);
+    const fam = raw.length > 1 ? (_VN_FAMILY.has(_pmNameTokens(m)[0] || '') ? raw[0] : raw[raw.length - 1]) : '';
+    return fam && fam !== g ? (g + ' ' + fam.charAt(0) + '.') : (m || g);
+  });
+}
 function _pmRaciMembers(pid) {
   const p = _pmProj(pid) || {}; const names = new Set();
   _pmMembers(p).forEach(n => { if (n) names.add(n); });
@@ -23011,11 +23048,17 @@ function _pmRaciMembers(pid) {
   return Array.from(names);
 }
 function _pmRaciMatrix(pid) {
-  const dels = _pmScope(_HR.pm_deliverables); const members = _pmRaciMembers(pid);
+  // Register order put these on screen as 6, E, 2, F, 1, 5, A, C, 4, D, B, 3. Same comparator
+  // as the WBS picker: numbered items in numeric order first, then the lettered ones.
+  const dels = _pmScope(_HR.pm_deliverables).slice()
+    .sort((a, b) => _wbsCmp(a.wbsCode || a.code || '', b.wbsCode || b.code || '')
+                 || String(a.name || '').localeCompare(String(b.name || '')));
+  const members = _pmRaciMembers(pid);
   if (!dels.length || !members.length) return '';
   const canEdit = _pmSeeAll() || _pmCanEditProject(_pmProj(pid));
   const legend = [['R', 'Responsible'], ['A', 'Accountable'], ['C', 'Consulted'], ['I', 'Informed']].map(x => '<span style="display:inline-flex;align-items:center;gap:4px;margin-left:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + (RACI_HEX[x[0]] || '#94a3b8') + '"></span>' + x[1] + '</span>').join('');
-  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map(m => '<th style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc((m.split(' ')[0]) || m) + '</th>').join('');
+  const shortNames = _pmShortNames(members);
+  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map((m, i) => '<th title="' + _pmEsc(m) + '" style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc(shortNames[i] || m) + '</th>').join('');
   const rows = dels.map(d => {
     const map = d.raciMap || {};
     return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-variant-numeric:tabular-nums;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
