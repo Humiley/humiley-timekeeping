@@ -112,5 +112,22 @@ ok('the SPI chart plots only projects that measured SPI',
    /_spiOk = top\.filter\(p => _pmEvm\(p\)\.spiMeasurable\)/.test(code),
    'a 1.00 column is indistinguishable from a project genuinely on schedule');
 
+/* ── and nothing invents the budget those indices are measured against ─────────────────────── */
+// pmFromDeal used to set the Approved Budget to 80% of the won deal value — a 20% margin nobody
+// agreed. That figure became BAC, and therefore drove EV, CPI, EAC, VAC, the S-curve, the RAG
+// colour and the "Approved Budget" line on the Charter and Status PDFs a CLIENT reads. Every
+// honesty check above is worthless if the denominator is fabricated at creation.
+const fromDeal = take('async function pmFromDeal(', 'pmFromDeal');
+ok('a project created from a won deal has no invented budget',
+   !/budget: Math\.round\(\(\+d\.value \|\| 0\) \* 0\.8\)/.test(fromDeal) &&
+   /contractValue: \+d\.value \|\| 0, budget: 0,/.test(fromDeal));
+ok('the contract value still carries over — it is a real fact about the deal',
+   /contractValue: \+d\.value \|\| 0/.test(fromDeal));
+ok('and the confirmation says the budget is blank, before anybody agrees to it',
+   /The Approved Budget is left BLANK/.test(fromDeal),
+   'the old dialog said "value carries over" and silently invented a margin');
+ok('the project itself records that the budget is unset',
+   /Approved Budget not set — enter it on the charter/.test(fromDeal));
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

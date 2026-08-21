@@ -151,18 +151,49 @@ def test_attendance_gps_is_scoped(api, tokens):
     assert any(row.get("emp_id") == "HML-ADM" for row in r["attendance"])
 
 
-# --------------------------------------------------------------------------- appsDenied on writes (round-3 hunt)
-def test_appsdenied_blocks_hr_writes(api, tokens):
-    """A user whose HR app is disabled by an admin must be blocked from CREATING HR records via the
-    API, not just from reading them — the appsDenied gate was read-only before."""
-    # appsDenied is stored as a comma-separated string (the admin UI joins the list), matching _apps_denied
-    db.update_employee("HML-MGR", {"appsDenied": "hr"})
+# --------------------------------------------------------------------------- the HR app gate (opt-in)
+def test_hr_app_grant_is_what_opens_hr(api, tokens):
+    """HR is an OPT-IN app: it is granted through `appsAllowed`, never un-denied through `appsDenied`.
+
+    The gate this replaces asked `"hr" in appsDenied` — and nothing in the product can put "hr"
+    there, because tkSetApp() routes hr/finance/procurement to appsAllowed. So the check passed on
+    a condition that could not occur: every manager-tier account could read the recruitment board,
+    the appraisal file and the talent grid of an app nobody had given them. The old test held it
+    upright by writing appsDenied by hand — a value production never writes.
+
+    Both directions are asserted here, because a gate that only ever refuses is as broken as one
+    that only ever allows.
+    """
+    before = (db.get_employee("HML-MGR") or {}).get("appsAllowed") or ""
     try:
-        st, r = api("POST", "/api/coll/candidates", tokens["mgr"],
+        # withdraw the grant → HR is shut, on reads AND on writes
+        db.update_employee("HML-MGR", {"appsAllowed": ""})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 403, "HR must be shut to a manager who was never granted it"
+        st, _ = api("POST", "/api/coll/candidates", tokens["mgr"],
                     {"id": "CAND-DENY", "name": "X Candidate", "stage": "Offer"})
-        assert st == 403, "a disabled HR app must block writes too, not only reads"
+        assert st == 403, "an ungranted HR app must block writes too, not only reads"
+
+        # writing the OLD column must change nothing — it is not the switch any more
+        db.update_employee("HML-MGR", {"appsDenied": "hr"})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 403, "appsDenied is not how HR is governed; it must not be the thing that decides"
+
+        # grant it → HR opens, with appsDenied still carrying the stale "hr"
+        db.update_employee("HML-MGR", {"appsAllowed": "hr"})
+        st, _ = api("GET", "/api/coll/candidates", tokens["mgr"])
+        assert st == 200, "a granted HR app must actually open — a gate that never allows is also broken"
     finally:
-        db.update_employee("HML-MGR", {"appsDenied": ""})
+        db.update_employee("HML-MGR", {"appsAllowed": before, "appsDenied": ""})
+
+
+def test_an_admin_reaches_hr_without_a_grant(api, tokens):
+    """Admins hold every app, granted or not — _appDeniedCurrent says so in the browser, and the
+    server has to agree or an administrator locks themselves out of the module they administer."""
+    assert not (db.get_employee("HML-ADM") or {}).get("appsAllowed"), \
+        "this test is only meaningful while the admin fixture has NO explicit grant"
+    st, _ = api("GET", "/api/coll/candidates", tokens["admin"])
+    assert st == 200
 
 
 # --------------------------------------------------------------------------- leave-days balance integrity

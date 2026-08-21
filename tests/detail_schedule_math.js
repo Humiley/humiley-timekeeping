@@ -26,9 +26,9 @@ const PRELUDE = `
 `;
 const api = {};
 new Function(PRELUDE + src.slice(i, j) + `
-  Object.assign(this, { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdLog, _pdQtyPlan, _pdQtyAt, _pdReadPct });
+  Object.assign(this, { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdLog, _pdQtyPlan, _pdQtyAt, _pdReadPct, _pdHasPlan });
 `).call(api);
-const { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdQtyPlan, _pdQtyAt } = api;
+const { _pdAcc, _pdDaily, _pdPlanned, _pdWeight, _pdRollup, _pdQtyPlan, _pdQtyAt, _pdHasPlan } = api;
 
 let pass = 0, fail = 0;
 const t = (name, got, want) => {
@@ -68,7 +68,30 @@ t('a finished 2-day item does not drag a 60-day item to 50%',
 t('an explicit weight overrides duration', Math.round(_pdRollup([
   { start: '2026-08-14', finish: '2026-08-15', weight: 90, log: [{ d: TODAY, pct: 100 }] },
   { start: '2026-06-17', finish: '2026-08-15', weight: 10, log: [{ d: TODAY, pct: 0 }] }], TODAY).acc), 90);
-t('an empty roll-up is zero, never NaN', _pdRollup([], TODAY), { acc: 0, planned: 0, variance: 0, weight: 0 });
+// Stated as the property, not the shape. The exact-object form failed the moment the roll-up
+// learned to report how much of its weight is unscheduled — a test that breaks on a new key is
+// testing the return type, not the arithmetic.
+t('an empty roll-up is zero, never NaN',
+  ['acc', 'planned', 'variance', 'weight'].every(k => _pdRollup([], TODAY)[k] === 0), true);
+
+// ── an undated line has no plan, and must not pass for one ───────────────────────────────────────
+const undated = { start: '', finish: '', log: [] };
+t('a row with no dates has no plan', _pdHasPlan(undated), false);
+t('a row with both dates has one', _pdHasPlan({ start: '2026-08-01', finish: '2026-08-10' }), true);
+t('a row with only a start does not', _pdHasPlan({ start: '2026-08-01', finish: '' }), false);
+
+// One dated line 50% behind, one undated line. Folding the undated line's 0 into the planned
+// average used to halve Planned-to-date and make the package read as on plan.
+const behind = { start: '2026-08-01', finish: '2026-08-30', log: [{ d: TODAY, pct: 0 }] };
+t('an undated line does not dilute Planned-to-date',
+  Math.round(_pdRollup([behind, undated], TODAY).planned),
+  Math.round(_pdRollup([behind], TODAY).planned));
+t('but its weight is still counted, and named',
+  _pdRollup([behind, undated], TODAY).undatedWeight > 0, true);
+t('and the variance is still measured against the dated part',
+  _pdRollup([behind, undated], TODAY).variance < -10, true);
+t('a roll-up with nothing dated reports no variance rather than a flattering zero',
+  _pdRollup([undated, { start: '', finish: '', log: [{ d: TODAY, pct: 100 }] }], TODAY).variance, 0);
 
 // ── this is user data; it arrives malformed ──────────────────────────────────────────────────────
 t('no log at all', _pdAcc({ start: '2026-08-01', finish: '2026-08-10' }, TODAY), 0);

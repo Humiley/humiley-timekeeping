@@ -7410,6 +7410,30 @@ class Handler(BaseHTTPRequestHandler):
             return set(str(x).strip().lower() for x in raw if str(x).strip())
         return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
 
+    # HR, Finance and Procurement are OPT-IN: an admin grants them per user through `appsAllowed`.
+    # Everything else is opt-OUT: `appsDenied` takes it away. The browser has always known this
+    # (_appDeniedCurrent), the server did not — it asked only `"hr" in appsDenied`, and nothing in
+    # the product can ever put "hr" there, so the HR gate on /api/coll was a check that could not
+    # fire. Any manager-tier account could read the recruitment board, the appraisal file and the
+    # talent grid of an app they had never been given. One helper now, so the two cannot drift.
+    OPT_IN_APPS = ("hr", "finance", "procurement")
+
+    def _apps_allowed(self, u):
+        raw = u.get("appsAllowed")
+        if isinstance(raw, (list, tuple, set)):
+            return set(str(x).strip().lower() for x in raw if str(x).strip())
+        return set(x.strip().lower() for x in str(raw or "").split(",") if x.strip())
+
+    def _app_blocked(self, u, app):
+        """True when this user may not reach `app` at all. Admins always may."""
+        if not app:
+            return False
+        if self._caller_level(u) == "admin":
+            return False
+        if app in self.OPT_IN_APPS:
+            return app not in self._apps_allowed(u)
+        return app in self._apps_denied(u)
+
     def _emp_delete(self, u, eid):
         # Deleting an employee record is destructive — require Approver (management) or above,
         # not just any manager-tier (Contributor) account.
@@ -8345,7 +8369,11 @@ class Handler(BaseHTTPRequestHandler):
                 # Project financials must not be world-readable to every staff account (the PM app is
                 # on by default). Line-item costs + vendor payments need manager+; creation is already
                 # manager-gated, so this makes read match write.
-                "pm_costs": "manager", "pm_procurement_payments": "manager",
+                # pm_procurement carries the vendor name and the committed contract value — the
+                # commercial terms of every subcontract on the job. It sat outside this list while the
+                # payments AGAINST it were manager-gated, so the certificate was protected and the
+                # contract it certifies against was served in full to every staff account.
+                "pm_costs": "manager", "pm_procurement": "manager", "pm_procurement_payments": "manager",
                 # Not compensation data: a site manager has to know whether their crew is covered
                 # before sending them out, so this is manager-and-above, not management.
                 "certificates": "manager",
@@ -8495,7 +8523,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Unknown collection.", 404)
         # per-user app access — an admin can disable CRM / Projects / HR for a user
         app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if app and app in self._apps_denied(u):
+        if app and self._app_blocked(u, app):
+            # Not being granted the HR APP still leaves your OWN records reachable — the same
+            # carve-out READ_MIN makes below, for the same reason: Art. 13(1) entitles you to a copy
+            # of your contract, and a portal that holds it and refuses to show it to you is worse
+            # than one that never held it.
+            if name in ("contracts", "decisions", "hrletters"):
+                return self._json({"ok": True, "items": [
+                    c for c in db.list_collection(name) if c.get("empId") == u.get("id")]})
             return self._err("Access restricted — the %s app is not enabled for your account." % app.upper(), 403)
         # minimum access level to read
         need = self.READ_MIN.get(name)
@@ -9257,7 +9292,7 @@ class Handler(BaseHTTPRequestHandler):
         # Per-user app access — same gate as read/update/delete, so a disabled CRM/PM/HR app blocks
         # CREATE too (POST routes here, not through _coll_update).
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # A labour contract states somebody's agreed wage and a certificate is their medical record.
         # Both were gated only on the raw `role` column, so a user who may not READ a contract could
@@ -10091,6 +10126,23 @@ class Handler(BaseHTTPRequestHandler):
         hols = _ot_holiday_set()
         scheds = db.list_collection("schedules")
         cap_y = _ot_annual_cap()
+        # How many normal working days this month holds FOR EACH PERSON — their real rest days and
+        # the public holidays taken out. It used to be computed only for people who happened to work
+        # overtime, because that is the only place it was needed; the payslip's unpaid-leave
+        # deduction was left dividing by a hardcoded Mon-Fri 22, so a Mon-Sat employee's absent day
+        # was priced at 1/22 of their month while the overtime on the SAME payslip was priced off
+        # 1/26 of it. One payslip, two different months. It is resolved for everybody in scope now,
+        # whether or not they worked a single hour of overtime.
+        wd_by_emp = {}
+        for e in emps:
+            _rest = set(_rest_weekdays_for(e, scheds))
+            _n, _c = 0, datetime.strptime(period + "-01", "%Y-%m-%d")
+            while _c.strftime("%Y-%m") == period:
+                if _c.weekday() not in _rest and _c.strftime("%Y-%m-%d") not in hols:
+                    _n += 1
+                _c += timedelta(days=1)
+            wd_by_emp[e.get("id")] = _n
+
         out = []
         for e in emps:
             recs = rows_by_emp.get(e.get("id")) or []
@@ -10104,11 +10156,7 @@ class Handler(BaseHTTPRequestHandler):
             # PERSON. The browser was dividing by a hardcoded Mon–Fri count while the server priced
             # their Saturdays as normal working days, so a Mon–Sat employee's overtime came out about
             # 24% too high — the two halves of one calculation disagreeing about their week.
-            _wd, _c = 0, datetime.strptime(period + "-01", "%Y-%m-%d")
-            while _c.strftime("%Y-%m") == period:
-                if _c.weekday() not in set(rest) and _c.strftime("%Y-%m-%d") not in hols:
-                    _wd += 1
-                _c += timedelta(days=1)
+            _wd = wd_by_emp.get(e.get("id"), 0)
             _, month_h, year_h = self._ot_totals_for(e.get("id"), period + "-01")
             # Each day against ITS OWN ceiling. `max(byDate.values())` threw away WHICH day the
             # worst one was, and cap_check then defaulted to day_kind="normal" — a 4-hour cap. So
@@ -10138,7 +10186,10 @@ class Handler(BaseHTTPRequestHandler):
                         "yearHours": round(year_h, 2), "breaches": caps["breaches"],
                         "workingDays": _wd, "restDays": sorted(rest)})
         return {"ok": True, "period": period, "annualCap": cap_y,
-                "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out}
+                "restNote": "Rates are Labour Code Art. 98 minima.", "rows": out,
+                # Keyed by employee and independent of `rows`, so the payslip has a divisor for
+                # somebody who worked no overtime at all.
+                "workingDaysByEmp": wd_by_emp}
 
     def _leave_entitlement_ep(self, u, qs):
         """What annual leave the law requires for each employee this year, beside what is on record.
@@ -12304,11 +12355,32 @@ class Handler(BaseHTTPRequestHandler):
                     if (r.get("contractId") in cids)
                     or any(aid in {a.get("id") for a in apps} for aid in (r.get("allocations") or {}))]
 
+        # A credit note reduces the CLAIM when it is applied — sales_credit.apply_to sets
+        # `netPayable = netPayable - netCredit` — and the statement also carries the credit note as
+        # its own row. Both are right on their own; together they took the same money off twice. The
+        # closing balance understated what the customer owed by the full net credit, on the one
+        # document sent out to agree the debt before a payment run, and it disagreed with the
+        # Receivables screen inside the portal, which reads the same already-reduced field.
+        #
+        # A ledger reconciles when each movement appears exactly once, so the claim is shown AS
+        # CERTIFIED and the credit note is the only place the reduction happens. The pre-credit
+        # figure is reconstructed from the applied credit notes against that claim rather than
+        # stored, so there is no second copy of it to drift.
+        app_ids = {a.get("id") for a in apps}
+        credited_net = {}
+        for c in credits:
+            aid = str(c.get("applicationId") or "")
+            if aid in app_ids:
+                credited_net[aid] = round(credited_net.get(aid, 0.0)
+                                          + float(c.get("netCredit") or 0), 2)
+
         rows = []
         for a in apps:
             rows.append({"on": (a.get("certifiedAt") or "")[:10], "kind": "claim",
                          "ref": "%s %s" % (a.get("contractNo") or "", a.get("period") or ""),
-                         "einvNo": a.get("einvNo") or "", "debit": float(a.get("netPayable") or 0),
+                         "einvNo": a.get("einvNo") or "",
+                         "debit": round(float(a.get("netPayable") or 0)
+                                        + credited_net.get(str(a.get("id")), 0.0), 2),
                          # NOT the claim's stored `statement`. It restates the same figure in a
                          # different format, and — being stored — it is whatever the formatting was
                          # on the day it was certified. A customer statement showing "277225000.00"
@@ -12316,9 +12388,20 @@ class Handler(BaseHTTPRequestHandler):
                          # document that goes outside the company.
                          "credit": 0.0, "note": ""})
         for c in credits:
+            # A credit against a claim this statement does not show has no debit here to reduce, so
+            # taking it off the balance would understate the debt in the other direction. It stays
+            # on the statement — a customer who holds a credit note must see it — as a memo that
+            # moves nothing, and says why.
+            _orphan = str(c.get("applicationId") or "") not in app_ids
+            _note = c.get("note") or ""
+            if _orphan:
+                _note = (_note + " — " if _note else "") + (
+                    "memo only: the claim this credits is not on this statement, so it is already "
+                    "reflected elsewhere and is not deducted again here")
             rows.append({"on": (c.get("appliedOn") or c.get("issuedAt") or "")[:10], "kind": "credit",
                          "ref": c.get("creditNo") or "", "einvNo": "", "debit": 0.0,
-                         "credit": float(c.get("netCredit") or 0), "note": c.get("note") or ""})
+                         "credit": 0.0 if _orphan else float(c.get("netCredit") or 0),
+                         "memo": _orphan, "note": _note})
         for r in receipts:
             rows.append({"on": r.get("receivedOn") or "",
                          "kind": "deposit" if r.get("kind") == "advance" else "receipt",
@@ -14222,6 +14305,37 @@ class Handler(BaseHTTPRequestHandler):
         res["paymentId"] = pay.get("id")
         return self._json(dict({"ok": True, "payment": pay}, **res))
 
+    @staticmethod
+    def _payrun_duplicate_people(runs):
+        """People who appear in more than one finalised run FOR THE SAME PERIOD.
+
+        A period can legitimately hold more than one finalised run — a company roll-out plus an
+        individual or correction run (tkCreatePayRun even offers "a pay run for X already exists.
+        Create another?"). Flattening them keys on nothing, so that person's month is counted twice.
+
+        Scoped per period on purpose: appearing in January's run and in February's is not a
+        duplicate, and the journal is allowed to be asked for every finalised run at once.
+
+        Returns {(period, empId): {name, period, runs:set}} — empty when there is nothing wrong.
+        """
+        seen, dupes = {}, {}
+        for r in runs:
+            per = str(r.get("period") or "").strip().lower()
+            for l in (r.get("lines") or []):
+                if not isinstance(l, dict):
+                    continue
+                eid = str(l.get("empId") or "").strip()
+                if not eid:
+                    continue
+                k = (per, eid)
+                if k in seen and seen[k] != r.get("id"):
+                    d = dupes.setdefault(k, {"name": l.get("name") or eid,
+                                             "period": r.get("period") or "", "runs": {seen[k]}})
+                    d["runs"].add(r.get("id"))
+                else:
+                    seen[k] = r.get("id")
+        return dupes
+
     def _payroll_journal_ep(self, u, qs):
         """The accounting entries a signed pay run produces.
 
@@ -14253,6 +14367,22 @@ class Handler(BaseHTTPRequestHandler):
             dept_acc = {}
         if not isinstance(dept_acc, dict):
             dept_acc = {}
+
+        # The bank-file path 40 lines below refuses when one person sits in two finalised runs for a
+        # period, because a combined file would pay them twice. The journal flattened the same runs
+        # with no such guard: expense, net payable, SI/HI/UI, union and PIT all post twice for that
+        # person — and because BOTH sides double, `balanced()` still returns True, so the one control
+        # on the screen reports success. A journal cannot be checked by the thing that is wrong.
+        _dupes = self._payrun_duplicate_people(runs)
+        if _dupes:
+            _who = ", ".join("%s — %s (%s)" % (v["name"], v["period"],
+                                               " + ".join(sorted(str(x) for x in v["runs"])))
+                             for v in list(_dupes.values())[:8])
+            return self._err(
+                "%d person(s) appear in more than one finalised pay run for the same period, so these "
+                "entries would post their salary, insurance and PIT twice: %s. The totals would still "
+                "balance, which is why this has to be refused rather than flagged. Cancel or supersede "
+                "the duplicate run first." % (len(_dupes), _who), 409)
 
         merged = {"lines": [l for r in runs for l in (r.get("lines") or [])]}
         entries = payroll_journal.entries(merged, dept_accounts=dept_acc)
@@ -14322,17 +14452,9 @@ class Handler(BaseHTTPRequestHandler):
         # This module already refuses to emit a partial file (blocked rows) and already asks before
         # regenerating. It had no guard against the opposite and worse failure. Refusing matches the
         # rest of it: paying somebody twice is not something to resolve by guessing which run wins.
-        _seen, _dupes = {}, {}
-        for r in runs:
-            for l in (r.get("lines") or []):
-                eid = str(l.get("empId") or "").strip()
-                if not eid:
-                    continue
-                if eid in _seen and _seen[eid] != r.get("id"):
-                    _dupes.setdefault(eid, {"name": l.get("name") or eid, "runs": {_seen[eid]}})
-                    _dupes[eid]["runs"].add(r.get("id"))
-                else:
-                    _seen[eid] = r.get("id")
+        # Same scan as the journal, from one place, so the two cannot drift into disagreeing about
+        # what a duplicate is.
+        _dupes = self._payrun_duplicate_people(runs)
         if _dupes:
             _who = ", ".join("%s (%s)" % (v["name"], " + ".join(sorted(str(x) for x in v["runs"])))
                              for v in list(_dupes.values())[:8])
@@ -14717,7 +14839,7 @@ class Handler(BaseHTTPRequestHandler):
         # user whose CRM/PM/HR app was disabled by an admin could still create/edit those records by
         # calling the API directly (the block was read-only before).
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Asset receipt acknowledgment (any role, incl. staff): the HOLDER of a device may e-sign to
         # acknowledge receipt from their own My Devices. Owner-scoped + APPEND-ONLY — exactly one ack
@@ -14919,6 +15041,16 @@ class Handler(BaseHTTPRequestHandler):
         if name == "hrdocs" and not self._is_hr_admin(u):
             return self._err("Publishing or changing a company document is for HR, Editors and "
                              "Administrators. An administrator can add you under Access & Permissions.", 403)
+        # DELETE already refuses here, on the reasoning that a signed acknowledgement is the artefact
+        # this whole feature exists to produce. PATCH did not — and PATCH on this route REPLACES the
+        # whole document, so any account whose employee role is "manager" (Contributor and above)
+        # could rewrite somebody else's signature: the time it was signed, the version acknowledged,
+        # the signer's name, the e-signature block. No owner check, no audit row, nothing left to
+        # show it had been altered. An acknowledgement is written once, by the person signing,
+        # through /api/esign; after that it is evidence. Nothing in the browser PATCHes it.
+        if name == "hrdoc_acks":
+            return self._err("A signed acknowledgement is a permanent record and cannot be edited. "
+                             "Re-issue the document at a new version if it has to be signed again.", 403)
         if name == "invtrack":
             _dup = self._invtrack_dup_error(body)
             if _dup:
@@ -15440,7 +15572,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err("Audit-trail entries cannot be deleted.", 403)
         # Per-user app access — same gate as read/update, so a disabled CRM/PM/HR app also blocks delete.
         _app = "crm" if name.startswith("crm_") else ("pm" if name.startswith("pm_") else ("eng" if name.startswith("eng_") else ("est" if name.startswith("est_") else ("ahu" if name.startswith("ahu_") else ("hr" if name in self.HR_APP_COLLS else None)))))
-        if _app and _app in self._apps_denied(u):
+        if _app and self._app_blocked(u, _app):
             return self._err("Access restricted — the %s app is not enabled for your account." % _app.upper(), 403)
         # Deleting must need at least what READING needs. Without this a line manager — who cannot
         # read a labour contract, a health certificate or a decision — could destroy any of them,
