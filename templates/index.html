@@ -3637,7 +3637,7 @@ function tkSelectZone() {
 }
 
 function tkVerifySelectedZone(force) {
-  if (!_tkSelectedZone) { if (typeof toast === 'function') toast('Select a location first', 'warn'); return; }
+  if (!_tkSelectedZone) { if (typeof toast === 'function') toast(_t2('Select a location first', 'Hãy chọn địa điểm trước'), 'warn'); return; }
   const z = _tkSelectedZone;
   const status = document.getElementById('ci-verify-status');
   const evaluate = (lat, lon, acc, silent) => {
@@ -3653,22 +3653,22 @@ function tkVerifySelectedZone(force) {
     const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
     const accNote = acc ? ', ±' + acc + 'm' : ' (recent)';
     if (inside) {
-      if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">You are at ' + z.name + '</span> (' + distStr + ' from centre' + accNote + '). You can check in now.';
+      if (status) status.innerHTML = '<span style="color:var(--emerald);font-weight:700">' + _t2('You are at', 'Bạn đang ở') + ' ' + z.name + '</span> (' + distStr + ' ' + _t2('from centre', 'từ tâm') + accNote + '). ' + _t2('You can check in now.', 'Bạn có thể chấm công vào ngay.');
       _tkSetCheckinAllowed('in');
     } else if (confidentlyOut) {
-      if (status) status.innerHTML = '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>You are not at ' + z.name + '</span> — ' + distStr + ' away (must be within ' + radius + 'm). Check-in is not allowed here.';
+      if (status) status.innerHTML = '<span style="color:var(--danger);font-weight:700"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>' + _t2('You are not at', 'Bạn không ở') + ' ' + z.name + '</span> — ' + _t2('you are', 'bạn cách') + ' ' + distStr + ' ' + _t2('away (the site radius is', '(bán kính công trường là') + ' ' + radius + 'm). ' + _t2('You can still check in — it will be recorded as away from site.', 'Bạn vẫn có thể chấm công vào — hệ thống sẽ ghi nhận là ở ngoài công trường.');
       _tkSetCheckinAllowed('out');
     } else {
       /* fix too coarse to decide — allow, record as GPS-unverified, and try to sharpen it */
-      if (status) status.innerHTML = '<span style="color:#F59E0B;font-weight:700">Location not precise enough to confirm ' + z.name + '</span> (' + distStr + accNote + '). You can still check in — it will be recorded as GPS-unverified.';
+      if (status) status.innerHTML = '<span style="color:#F59E0B;font-weight:700">' + _t2('Location not precise enough to confirm', 'Vị trí chưa đủ chính xác để xác nhận') + ' ' + z.name + '</span> (' + distStr + accNote + '). ' + _t2('You can still check in — it will be recorded as GPS-unverified.', 'Bạn vẫn có thể chấm công vào — hệ thống sẽ ghi nhận là chưa xác minh GPS.');
       _tkSetCheckinAllowed('unverified');
       if (typeof _sharpen === 'function') _sharpen();
     }
     return _tkGpsState;
   };
   let _sharpen = null;   // set below once the high-accuracy path exists (evaluate may run earlier from cache)
-  if (status) status.textContent = 'Checking your location…';
-  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.'; _tkSetCheckinAllowed('unverified'); return; }
+  if (status) { status.textContent = _t2('Checking your location…', 'Đang kiểm tra vị trí của bạn…'); status.dataset.phase = 'locating'; }
+  if (!navigator.geolocation) { if (status) status.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> ' + _t2('GPS is not available on this device — you can still check in; it will be recorded as GPS-unverified.', 'Thiết bị này không có GPS — bạn vẫn có thể chấm công vào; hệ thống sẽ ghi nhận là chưa xác minh GPS.'); _tkSetCheckinAllowed('unverified'); return; }
   // Instant: reuse a recent fix from the app-wide GPS watch (the common case -> no wait)
   const _cacheFresh = (typeof _lastGpsLat !== 'undefined' && _lastGpsLat !== null && _lastGpsLon !== null && _gpsTimestamp && (Date.now() - _gpsTimestamp) < 120000);
   if (!force && _cacheFresh) { if (evaluate(_lastGpsLat, _lastGpsLon, 0, true) === 'in') { evaluate(_lastGpsLat, _lastGpsLon, 0); return; } }   // only a CONFIRMED in-zone cache shows instantly; a far/coarse cached fix is NOT displayed — keep "Checking…" and take a fresh fix
@@ -3688,12 +3688,12 @@ function tkVerifySelectedZone(force) {
     evaluate(lat, lon, acc);
   };
   /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
-  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>Location is blocked</strong> — you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.'; _tkSetCheckinAllowed('unverified'); };
+  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>' + _t2('Location is blocked', 'Quyền vị trí đang bị chặn') + '</strong> — ' + _t2('you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.', 'bạn vẫn có thể chấm công vào (ghi nhận là chưa xác minh GPS). Để xác minh lần sau: biểu tượng ổ khoá trên trình duyệt → Vị trí → Cho phép.'); _tkSetCheckinAllowed('unverified'); };
   const _giveup = (e) => { if (_geoDone) return; _geoDone = true;
     var unavailable = e && e.code === 2;   // POSITION_UNAVAILABLE: the OS/device can\u2019t determine a location at all (usually the OS location setting is OFF, e.g. a desktop with no GPS)
     if (status) status.innerHTML = _alert + (unavailable
-      ? '<strong>Your device can\u2019t determine its location.</strong> Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).'
-      : 'Could not get a GPS fix in time \u2014 move near a window and press \u201CRe-check\u201D, or check in now (recorded as GPS-unverified).');
+      ? '<strong>' + _t2('Your device can\u2019t determine its location.', 'Thiết bị của bạn không xác định được vị trí.') + '</strong> ' + _t2('Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).', 'Hãy BẬT dịch vụ vị trí \u2014 trên máy Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (bật lên và tích chọn trình duyệt của bạn); trên điện thoại: bật Vị trí/GPS cho trình duyệt \u2014 rồi bấm \u201CKiểm tra lại\u201D. Bạn vẫn có thể chấm công vào ngay (ghi nhận là chưa xác minh GPS).')
+      : _t2('Could not get a GPS fix in time \u2014 move near a window and press \u201CRe-check\u201D, or check in now (recorded as GPS-unverified).', 'Không lấy được tín hiệu GPS kịp thời \u2014 hãy ra gần cửa sổ và bấm \u201CKiểm tra lại\u201D, hoặc chấm công vào ngay (ghi nhận là chưa xác minh GPS).'));
     _tkSetCheckinAllowed('unverified'); };
   // Escalate to GPS-grade accuracy when the quick fix fails or is too coarse (not when permission is denied).
   // Give the high-accuracy pass a real 15s (Wi-Fi/GPS triangulation is slow on first fix) before giving up.
@@ -3739,7 +3739,7 @@ function tkVerifySelectedZone(force) {
   if (_tkGpsState !== 'in' && _tkGpsState !== 'out') _tkSetCheckinAllowed('unverified');
   // Fast network / Wi-Fi fix first \u2014 usually ~1s, and well within an office geofence radius
   navigator.geolocation.getCurrentPosition(p => _ok(p.coords.latitude, p.coords.longitude, p.coords.accuracy), e => { if (e && e.code === 1) _denied(); else _slow(); }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
-  setTimeout(() => { if (!_geoDone && status && /Checking|locating/i.test(status.textContent)) status.textContent = 'Still locating\u2026 you can check in now \u2014 it\u2019ll be recorded as GPS-unverified.'; }, 3000);
+  setTimeout(() => { if (!_geoDone && status && status.dataset.phase === 'locating') status.textContent = _t2('Still locating\u2026 you can check in now \u2014 it\u2019ll be recorded as GPS-unverified.', 'Vẫn đang định vị… bạn có thể chấm công vào ngay — hệ thống sẽ ghi nhận là chưa xác minh GPS.'); }, 3000);
   setTimeout(() => _giveup({ code: 3 }), 24000);   // global backstop \u2014 treat as a timeout (fast 8s + slow 15s + margin)
 }
 
@@ -4044,7 +4044,7 @@ async function _tkDoCheckout(t, otHours, otReason) {
   const status = document.getElementById('ci-verify-status');
   if (status) status.innerHTML = 'Checked out at ' + t + '. Select your location to check in again.';
   if (typeof toast === 'function') {
-    if (otHours && otHours > 0) toast('Checked out at ' + t + ' · overtime ' + otHours + 'h requested (pending approval)', undefined, 5500);
+    if (otHours && otHours > 0) toast(_t2('Checked out at ', 'Đã chấm công ra lúc ') + t + _t2(' · overtime ', ' · tăng ca ') + otHours + _t2('h requested (pending approval)', ' giờ đã gửi duyệt (chờ phê duyệt)'), undefined, 5500);
     else toast(_t2('Checked out at ' + t, 'Đã chấm công ra lúc ' + t));
   }
   const zsel = document.getElementById('ci-zone-select'); if (zsel) zsel.disabled = false;
@@ -9499,7 +9499,20 @@ function _payComputed(e, rating, opts) {
   ee.total = ee.bhxh + ee.bhyt + ee.bhtn;
   const er = { bhxh: siBase * 0.175, bhyt: siBase * 0.03, bhtn: siBase * 0.01, tu: siBase * 0.02 };
   er.total = er.bhxh + er.bhyt + er.bhtn + er.tu;
-  const workingDays = opts.workingDays || 22;
+  // ONE day count for this payslip. Decree 145/2020 Art. 55(1)(a) divides by the normal working
+  // days in the month FOR THIS PERSON, and that same month is what an absent day is priced against.
+  // They used to be two numbers: the unpaid-leave deduction divided by a hardcoded Mon-Fri 22 while
+  // overtime, sixteen lines below, divided by the employee's real schedule from the server. A
+  // Mon-Sat employee's unpaid day was therefore deducted at 1/22 of P1+P2 instead of 1/26 — about
+  // 18% too much — on a document a Director e-signs and the employee receives as their Art. 95 wage
+  // statement, and the same document priced their overtime hour off a 26-day month.
+  //
+  // The resolved count is preferred from wherever it is available: `ot.workingDays` and
+  // `opts.workingDays` are now the same server figure (see _payWDFor), and the OT payload is tried
+  // first so a caller that has not been updated still gets the right divisor rather than the
+  // Mon-Fri fallback.
+  const _wdOt = (opts.ot && +opts.ot.workingDays > 0) ? +opts.ot.workingDays : 0;
+  const workingDays = _wdOt || +opts.workingDays || 22;
   const unpaidDays = opts.unpaidDays || 0;
   const unpaidDeduction = (P1 + P2) / workingDays * unpaidDays;
   // ── Overtime (Labour Code Art. 98, Decree 145/2020 Art. 55) ───────────────────────────────────
@@ -9517,8 +9530,9 @@ function _payComputed(e, rating, opts) {
   // Using their own working days (sent back with the overtime) keeps the two halves of the same
   // calculation agreeing about how many days a week they work; falling back to the Mon–Fri count
   // only when no schedule is known.
-  const otDays = (ot && +ot.workingDays > 0) ? +ot.workingDays : workingDays;
-  const otHourly = (P1 + P2) / Math.max(1, otDays * 8);
+  // `workingDays` above IS that resolved count now — the two halves of this calculation can no
+  // longer disagree about how long the month is, because there is only one of it.
+  const otHourly = (P1 + P2) / Math.max(1, workingDays * 8);
   const otHours = ot ? (+ot.hours || 0) : 0;
   const otNightHours = ot ? (+ot.nightHours || 0) : 0;
   const otPay = ot ? Math.round(otHourly * (+ot.units || 0)) : 0;
@@ -9537,7 +9551,10 @@ function _payComputed(e, rating, opts) {
     basic: R(basic), posAllow: R(posAllow), responsibility: R(responsibility), skillSen: R(skillSen),
     P1: R(P1), P2: R(P2), kpiTarget: R(kpiTarget), P3: R(P3), lunch, phone, transport, welfare,
     otHours, otNightHours, otPay, otTaxable, otExempt, otHourly: R(otHourly),
-    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [], otDays,
+    // `otDays` used to be a second, separately-derived day count. It is the same number as
+    // `workingDays` now — there is only one month on a payslip — and is still returned under
+    // its old name because the frozen `calc` of every signed pay run carries that key.
+    otByKind: (ot && ot.byKind) || null, otBreaches: (ot && ot.breaches) || [], otDays: workingDays,
     siBase: R(siBase), eeBhxh: R(ee.bhxh), eeBhyt: R(ee.bhyt), eeBhtn: R(ee.bhtn), si: R(ee.total),
     erBhxh: R(er.bhxh), erBhyt: R(er.bhyt), erBhtn: R(er.bhtn), erTu: R(er.tu), erTotal: R(er.total),
     pit: R(pit), grossPay: R(grossPay), workingDays, unpaidDays, unpaidDeduction: R(unpaidDeduction),
@@ -9575,6 +9592,12 @@ let _payYM = null, _payCache = {}, _payTotals = {};
    Kept out of _payComputed's signature so the calculation stays synchronous and pure: the fetch
    happens once per period before a render, and every computation after it reads this. */
 let _payOT = {}, _payOTCap = 200, _payOTFailed = {};
+/* 'YYYY-MM' -> { empId: normal working days in that month FOR THAT PERSON }, resolved by the
+   server from their schedule and the public holidays. Kept beside _payOT rather than inside
+   it because it must exist for somebody who worked no overtime: the unpaid-leave deduction
+   needs the same divisor overtime uses, and an absent day priced off a Mon-Fri 22 while the
+   overtime beside it is priced off 26 is one payslip disagreeing with itself. */
+let _payWDMap = {};
 /* A failed fetch is NOT a result. Caching `{}` made it one: an empty object is truthy, so the retry
    was skipped for the rest of the session, every payslip showed zero overtime with no warning, and
    the preparer could roll out a run that froze those zeros into a Director-signed record — which a
@@ -9588,6 +9611,7 @@ async function _payLoadOT(y, months) {
       const r = await tkApi('/api/hr/overtime?period=' + key);
       const by = {}; ((r && r.rows) || []).forEach(x => { by[x.empId] = x; });
       _payOT[key] = by;
+      if (r && r.workingDaysByEmp) _payWDMap[key] = r.workingDaysByEmp;
       delete _payOTFailed[key];
       if (r && r.annualCap) _payOTCap = +r.annualCap;   // 200, or 300 where the company has elected it
     } catch (e) { _payOTFailed[key] = _errMsg(e); }
@@ -9598,9 +9622,16 @@ function _payOTUnread(y, months) {
   return months.map(m => y + '-' + String(m + 1).padStart(2, '0')).filter(k => _payOTFailed[k]);
 }
 /* Newly approved overtime must not be invisible until a page reload. */
-function _payOTInvalidate(key) { if (key) { delete _payOT[key]; delete _payOTFailed[key]; } else { _payOT = {}; _payOTFailed = {}; } }
+function _payOTInvalidate(key) { if (key) { delete _payOT[key]; delete _payOTFailed[key]; delete _payWDMap[key]; } else { _payOT = {}; _payOTFailed = {}; _payWDMap = {}; } }
 function _payOTFor(empId, y, m) {
   return (_payOT[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || null;
+}
+/* The working days in a month for ONE person: their schedule and the public holidays, from the
+   server. Falls back to the Mon-Fri count only when the map could not be read — a wrong divisor is
+   still better than a blank payslip, and _payOTUnread already warns that the month is unreliable. */
+function _payWDFor(empId, y, m) {
+  const n = +((_payWDMap[y + '-' + String(m + 1).padStart(2, '0')] || {})[empId] || 0);
+  return n > 0 ? n : _payWD(y, m);
 }
 function _payMonthsOf(ym) { return ym.m === -1 ? [0,1,2,3,4,5,6,7,8,9,10,11] : [ym.m]; }
 function _payPeriod() { return _payYM.m === -1 ? ('Year ' + _payYM.y) : (_PAY_MONTHS[_payYM.m] + ' ' + _payYM.y); }
@@ -9619,7 +9650,7 @@ async function _payBuild() {
   emps.forEach(e => {
     let agg = null;
     monthsArr.forEach(m => {
-      const wd = _payWD(_payYM.y, m);
+      const wd = _payWDFor(e.id, _payYM.y, m);
       let c = _payComputed(e, _payRatingFor(e.id), { workingDays: wd, unpaidDays: _payUnpaidDays(e.id, _payYM.y, m),
                                                 ot: _payOTFor(e.id, _payYM.y, m) });
       c = _payApplyAdj(c, _payAdjFor(e.id, _PAY_MONTHS[m] + ' ' + _payYM.y));
@@ -9883,7 +9914,7 @@ async function tkIndivPayRunGo() {
   const e = _hrEmp(empId); if (!e) return;
   await _payLoadOT(y, [m]);
   await _payLoadRatings(y, m);
-  let c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(y, m), unpaidDays: _payUnpaidDays(empId, y, m),
+  let c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWDFor(empId, y, m), unpaidDays: _payUnpaidDays(empId, y, m),
                                               ot: _payOTFor(empId, y, m) });
   // Apply the month's manual adjustment, exactly as the company roll-out does. Without this an
   // individual run reprinted a month at its UNADJUSTED figures — and because `_payslipFrozen` then
@@ -10485,7 +10516,7 @@ function _payslipComputed(empId) {
   // are badged, because a reconstructed breakdown would be a guess wearing the authority of a record.
   if (f && f.line.calc) return Object.assign({}, f.line.calc, { frozen: true, runStatus: f.run.status || '' });
   const e = _hrEmp(empId); let c = _payCache[empId];
-  if (!c) { const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWD(ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
+  if (!c) { const ym = _payYM || { y: new Date().getFullYear(), m: new Date().getMonth() }; c = _payComputed(e, _payRatingFor(empId), { workingDays: _payWDFor(empId, ym.y, ym.m), unpaidDays: _payUnpaidDays(empId, ym.y, ym.m), ot: _payOTFor(empId, ym.y, ym.m) }); c = _payApplyAdj(c, _payAdjFor(empId, (_PAY_MONTHS[ym.m] + ' ' + ym.y))); }
   return c;
 }
 function _payslipPeriod() { return _payYM ? _PAY_MONTHS[_payYM.m] + ' ' + _payYM.y : new Date().toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }); }
@@ -21235,11 +21266,21 @@ async function pmFromDeal(dealId) {
   const d = (_HR.crm_deals || []).find(x => x.id === dealId); if (!d) { toast('Deal not found', 'warn'); return; }
   await tkLoadColl('pm_projects');
   if ((_HR.pm_projects || []).some(p => p.dealId === dealId)) { toast('A project already exists for this deal.', 'warn'); const ex = (_HR.pm_projects || []).find(p => p.dealId === dealId); if (ex) pmOpenProject(ex.id); return; }
-  if (!(await tkConfirm('Create a PMC project from won deal "' + (d.title || '') + '"?\n\nClient, value and owner carry over — complete the charter afterwards.'))) return;
+  // The Approved Budget is NOT carried over, and is not guessed. This used to set it to 80% of the
+  // deal value — a 20% margin nobody agreed, on a figure that then became BAC and drove EV, CPI,
+  // EAC, VAC, the S-curve, the RAG colour and the "Approved Budget" line on the Charter and Status
+  // PDFs a client reads. The dialog did not mention it. A project with no budget now reports "—"
+  // for its cost indices, which is true, until somebody enters the real one on the charter (or the
+  // Estimating module hands over its cost base).
+  if (!(await tkConfirm('Create a PMC project from won deal "' + (d.title || '') + '"?\n\n' +
+      'Client, contract value and owner carry over.\n\n' +
+      'The Approved Budget is left BLANK — the contract value is what the client pays, not what the ' +
+      'job is budgeted to cost. Enter it on the charter; until then the project reports no CPI, no ' +
+      'EAC and no cost variance.'))) return;
   _pmFromDealBusy = true;
   const me = (TK.user && TK.user.name) || '';
   const ownerDept = _crmDeptOf ? _crmDeptOf(d.owner) : '';
-  const body = { name: d.title || (d.company + ' project'), account: d.company || '', accountId: '', contractValue: +d.value || 0, budget: Math.round((+d.value || 0) * 0.8), manager: d.owner || me, dept: (ownerDept && PM_DEPT.indexOf(ownerDept) >= 0) ? ownerDept : 'PMC', status: 'Initiating', phase: 'Concept / Feasibility', rag: 'Green', percentComplete: 0, dealId: dealId, ptype: d.ptype || '', note: 'Created from CRM Won deal' };
+  const body = { name: d.title || (d.company + ' project'), account: d.company || '', accountId: '', contractValue: +d.value || 0, budget: 0, manager: d.owner || me, dept: (ownerDept && PM_DEPT.indexOf(ownerDept) >= 0) ? ownerDept : 'PMC', status: 'Initiating', phase: 'Concept / Feasibility', rag: 'Green', percentComplete: 0, dealId: dealId, ptype: d.ptype || '', note: 'Created from CRM Won deal. Approved Budget not set — enter it on the charter.' };
   try {
     const r = await tkApi('/api/coll/pm_projects', { method: 'POST', body: body });
     (_HR.pm_projects = _HR.pm_projects || []).push(r.item);
@@ -21504,6 +21545,10 @@ function _pmCPM(tasks) {
   return out;
 }
 function _pmCPMCompute(tasks) {
+  // Day zero for the whole network: the earliest start anybody entered. Without a calendar origin
+  // there is nothing for a start date to be an offset FROM.
+  const _starts = tasks.map(t => t.start).filter(Boolean).sort();
+  const dayZero = _starts.length ? _starts[0] : '';
   const byKey = {}, nodes = tasks.map(t => {
     let dur;
     if (+t.duration) dur = +t.duration;                       // explicit duration wins
@@ -21511,18 +21556,28 @@ function _pmCPMCompute(tasks) {
     else if (t.start && t.finish) dur = (_pmDateDiff(t.start, t.finish) || 0) + 1;
     else dur = 1;
     const key = String(t.wbs || t.id || '').trim() || t.id;
-    const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), es: 0, ef: dur, ls: 0, lf: 0, float: 0, critical: false };
+    // A task's own start date is a CONSTRAINT (start-no-earlier-than), not decoration. The forward
+    // pass used to seed every early start at 0 and raise it only from a predecessor's early finish,
+    // so an activity connected to nothing was assumed to begin on project day 0 — and the Float
+    // column and the red CP badge then reported a confident day-count and critical-path membership
+    // for it. `snet` anchors each node on the earliest dated task in the network.
+    const snet = (t.start && dayZero) ? Math.max(0, _pmDateDiff(dayZero, t.start) || 0) : 0;
+    const n = { id: t.id, key: key, dur: dur, preds: String(t.predecessors || '').split(/[,;]/).map(s => s.trim()).filter(Boolean), snet: snet, es: snet, ef: snet + dur, ls: 0, lf: 0, float: 0, critical: false, inNet: false };
     byKey[key] = n; return n;
   });
   nodes.forEach(n => { n.preds = n.preds.filter(k => byKey[k] && byKey[k] !== n); });
   let changed = true, guard = 0;
-  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { let es = 0; n.preds.forEach(k => { es = Math.max(es, byKey[k].ef); }); if (es !== n.es) { n.es = es; n.ef = es + n.dur; changed = true; } }); }
+  while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { let es = n.snet; n.preds.forEach(k => { es = Math.max(es, byKey[k].ef); }); if (es !== n.es) { n.es = es; n.ef = es + n.dur; changed = true; } }); }
   const projEnd = nodes.reduce((m, n) => Math.max(m, n.ef), 0);
   const succ = {}; nodes.forEach(n => n.preds.forEach(k => { (succ[k] = succ[k] || []).push(n.key); }));
   nodes.forEach(n => { n.lf = projEnd; n.ls = projEnd - n.dur; });
   changed = true; guard = 0;
   while (changed && guard++ < nodes.length + 3) { changed = false; nodes.forEach(n => { const ss = succ[n.key] || []; let lf = projEnd; if (ss.length) { lf = Infinity; ss.forEach(k => { lf = Math.min(lf, byKey[k].ls); }); } if (lf !== n.lf) { n.lf = lf; n.ls = lf - n.dur; changed = true; } }); }
-  nodes.forEach(n => { n.float = n.ls - n.es; n.critical = n.float <= 0; });
+  // Being unconnected is not the same as being critical. A task with no predecessor and no
+  // successor sits on no path at all, so "0d float, on the critical path" is a claim about a
+  // network it is not in. It is reported as having no network position instead.
+  nodes.forEach(n => { n.inNet = !!(n.preds.length || (succ[n.key] || []).length); });
+  nodes.forEach(n => { n.float = n.ls - n.es; n.critical = n.inNet && n.float <= 0; });
   const map = {}; nodes.forEach(n => { map[n.id] = n; });
   return { map: map, projEnd: projEnd, critical: nodes.filter(n => n.critical).length, hasDeps: nodes.some(n => n.preds.length) };
 }
@@ -21682,11 +21737,17 @@ function _pdBoard(pid, rows, day) {
     { k: 'behind',  label: 'Behind',      hex: '#EF4444', hit: (a, p) => a < 100 && a - p < -10 },
     { k: 'slip',    label: 'Slipping',    hex: '#F59E0B', hit: (a, p) => a < 100 && a - p < -0.5 && a - p >= -10 },
     { k: 'onplan',  label: 'On plan',     hex: '#00B060', hit: (a, p) => a < 100 && a - p >= -0.5 },
+    { k: 'undated', label: 'No dates',    hex: '#F59E0B', hit: () => true },
     { k: 'done',    label: 'Complete',    hex: '#5C6470', hit: a => a >= 100 },
   ];
   const bucket = r => {
     const a = _pdAcc(r, day), p = _pdPlanned(r, day);
-    return (COLS.find(c => c.hit(a, p)) || COLS[2]).k;
+    // Complete is decided first: a finished line does not need dates to be finished. Everything
+    // else with no plan lands in its own column rather than defaulting into "On plan" — which is
+    // what COLS[2] used to do, and what made an unscheduled line look healthy.
+    if (a >= 100) return 'done';
+    if (!_pdHasPlan(r)) return 'undated';
+    return (COLS.find(c => c.hit(a, p)) || COLS[4]).k;
   };
   const cols = COLS.map(c => {
     const mine = rows.filter(r => bucket(r) === c.k)
@@ -21785,6 +21846,12 @@ function _pdDaily(r, day) {
   return Math.max(0, _pdReadPct(r, todays) - prev);
 }
 /* Planned % at `day`, linear between start and finish (inclusive of both). */
+/* Does this row have a plan to be measured against at all? A detail line with no start and no
+   finish has none — and _pdPlanned returns 0 for it, which the status band then read as "0% planned,
+   0% done, variance 0" and flagged green "On plan", forever, on a row nobody had scheduled. A status
+   that reports success while examining nothing is the failure this codebase keeps producing.
+   Undated rows are routine: the importer writes `start: r.start || ''`. */
+function _pdHasPlan(r) { return !!(r && r.start && r.finish); }
 function _pdPlanned(r, day) {
   day = day || _pmToday();
   const s = r && r.start, f = r && r.finish;
@@ -21804,11 +21871,20 @@ function _pdWeight(r) {
 }
 /* Weighted roll-up over a set of rows → {acc, planned, variance, weight}. */
 function _pdRollup(rows, day) {
-  let wsum = 0, a = 0, p = 0;
-  (rows || []).forEach(r => { const w = _pdWeight(r); wsum += w; a += w * _pdAcc(r, day); p += w * _pdPlanned(r, day); });
-  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0 };
-  const acc = a / wsum, planned = p / wsum;
-  return { acc: acc, planned: planned, variance: acc - planned, weight: wsum };
+  // Two weight sums, not one. Work done on an undated line is still work, so it counts towards
+  // ACTUAL; but it has no planned position, and folding a 0 into the planned average made the whole
+  // package look ahead of a plan that did not exist for part of it. `undated` is returned so a
+  // caller can say how much of the roll-up is unscheduled rather than presenting a clean variance.
+  let wsum = 0, a = 0, pw = 0, p = 0, undated = 0;
+  (rows || []).forEach(r => {
+    const w = _pdWeight(r);
+    wsum += w; a += w * _pdAcc(r, day);
+    if (_pdHasPlan(r)) { pw += w; p += w * _pdPlanned(r, day); } else { undated += w; }
+  });
+  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0, undatedWeight: 0, plannedWeight: 0 };
+  const acc = a / wsum, planned = pw ? p / pw : 0;
+  return { acc: acc, planned: planned, variance: pw ? acc - planned : 0, weight: wsum,
+           plannedWeight: pw, undatedWeight: undated };
 }
 /* The master activity's % when detail lines exist beneath it — derived, never typed. */
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
@@ -22320,6 +22396,8 @@ function _schFlag(r, day) {
   if (r.finish && r.finish < day) {
     return { k: 'overdue', label: _pmDateDiff(r.finish, day) + 'd ' + _t('overdue'), hex: '#EF4444' };
   }
+  // Before any variance verdict: an undated row has nothing to be ahead of or behind.
+  if (!_pdHasPlan(r)) return { k: 'undated', label: _t('No dates'), hex: '#F59E0B' };
   const v = acc - pl;
   if (v >= 5) return { k: 'ahead', label: '+' + v.toFixed(0) + '%', hex: '#00B060' };
   if (v >= -0.5) return { k: 'onplan', label: _t('On plan'), hex: '#5C6470' };
@@ -22394,17 +22472,24 @@ function _schTimeline(rows, o) {
   if (!ds.length) return '';
   ds.push(day);
   const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
-  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  // `pct` maps a date to the START of that day. The axis therefore has to run to the start of the
+  // day AFTER the last one, or every bar is drawn one day short and a same-day item — which is what
+  // a milestone is — comes out 0% wide and renders as nothing at all. The Dur column three lines
+  // below has always counted inclusively ("+1"); the bar did not, and the two disagreed on screen.
+  const axEnd = _pmDateAdd(max, 1);
+  const span = Math.max(1, _pmDateDiff(min, axEnd) || 1);
   const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
+  // The end of the day `d` covers, for anything drawn as a span rather than a point.
+  const pctEnd = d => pct(_pmDateAdd(d, 1));
 
   const months = [];
   let cur = new Date(+min.slice(0, 4), +min.slice(5, 7) - 1, 1);
-  const end = new Date(+max.slice(0, 4), +max.slice(5, 7) - 1, 1);
+  const end = new Date(+axEnd.slice(0, 4), +axEnd.slice(5, 7) - 1, 1);
   while (cur <= end) {
     const first = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-01';
     const nxt = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
     const last = nxt.getFullYear() + '-' + String(nxt.getMonth() + 1).padStart(2, '0') + '-01';
-    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > max ? max : last)),
+    months.push({ from: Math.max(0, pct(first < min ? min : first)), to: Math.min(100, pct(last > axEnd ? axEnd : last)),
                   m: cur.getMonth(), y: cur.getFullYear() });
     cur = nxt;
   }
@@ -22460,8 +22545,22 @@ function _schTimeline(rows, o) {
     '<div style="position:absolute;left:' + mo.from + '%;top:0;bottom:0;border-left:1px solid var(--line);opacity:.7"></div>').join('');
 
   const bar = (r, color, label, big) => {
-    if (!r.start || !r.finish) return '';
-    const a = pct(r.start), b = pct(r.finish), acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
+    const one = r.start || r.finish;
+    if (!one) return '';
+    const acc = Math.max(0, Math.min(100, +r.acc || 0)), h = big ? 13 : 10, top = big ? 6 : 8;
+    // A milestone, and any row carrying only one of the two dates, is a POINT. It used to be drawn
+    // as a bar of zero width and disappeared from the chart entirely — the item existed in the
+    // table, was counted in the KPI row, and simply was not on the timeline.
+    if (!r.start || !r.finish || r.start === r.finish) {
+      const x = pct(one), fill = acc >= 100 ? color : 'var(--card,#fff)';
+      return '<div title="' + _tkEscA((r.name || '') + '  ·  ' + tkFmtDate(one) + '  ·  ' + Math.round(acc) + '%') +
+        '" style="position:absolute;left:' + x + '%;top:' + top + 'px;width:' + h + 'px;height:' + h + 'px;' +
+        'margin-left:-' + (h / 2) + 'px;transform:rotate(45deg);background:' + fill + ';border:2px solid ' + color + '"></div>' +
+        '<div style="position:absolute;left:' + x + '%;top:' + (top - 2) + 'px;margin-left:' + (h / 2 + 7) + 'px;' +
+          'font-size:10.5px;font-weight:' + (big ? 700 : 600) + ';color:var(--text-light);' +
+          'font-variant-numeric:tabular-nums;white-space:nowrap">' + label + '</div>';
+    }
+    const a = pct(r.start), b = pctEnd(r.finish);
     return seg(a, b, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color + '2e', '',
                (r.name || '') + '  ·  ' + tkFmtDate(r.start) + ' → ' + tkFmtDate(r.finish) + '  ·  ' + Math.round(acc) + '%') +
            seg(a, a + (b - a) * acc / 100, 'top:' + top + 'px;height:' + h + 'px;border-radius:' + (h / 2) + 'px;background:' + color, '') +
@@ -22617,7 +22716,13 @@ function _pdNorm(pid, rows, day) {
     const log = _pdLog(r);
     // The day it actually finished is the FIRST reading that reached 100 — not the last reading, and
     // not the planned finish. That is what makes "3d early" a fact rather than a guess.
-    const doneRow = log.find(e => _pmPct(e.pct) >= 100);
+    //
+    // Resolved through _pdReadPct, like every other consumer of a reading. The stored `pct` is
+    // frozen at whatever qtyPlan was in force the day it was filed, and pdCellSave deliberately
+    // supports revising qtyPlan afterwards (it prompts for a reason). After such a revision the
+    // raw `pct` and the quantity disagreed, and this line — reading only the raw one — decided the
+    // line had never finished, so the early/late verdict silently disappeared from a completed row.
+    const doneRow = log.find(e => _pdReadPct(r, e) >= 100);
     const last = log[log.length - 1];
     return { id: r.id, group: _pdGroupOf(pid, r),
       name: (r.name || '') + (r.category ? '  ·  ' + r.category : ''),
@@ -22877,7 +22982,8 @@ function pmRenderSchedule(pid) {
     { label: 'WBS', sk: 'wbs', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px">' + _pmEsc(r.wbs || '—') + '</span>' },
     { label: 'Task', sk: 'name', render: r => '<span style="font-weight:600">' + _pmEsc(r.name || '') + '</span>' + (String(r.isMilestone) === 'Yes' ? ' ' + _pmBadge('Milestone', '#8B5CF6') : '') + ((cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].critical) || (!cpm.hasDeps && String(r.critical) === 'Yes') ? ' ' + _pmBadge('CP', '#EF4444') : '') },
     { label: 'Assignee', sk: 'assignee', render: r => r.assignee ? ('<span style="display:inline-flex;align-items:center;gap:6px">' + _pmMiniAvatar(r.assignee) + '<span>' + _pmEsc(r.assignee) + '</span></span>') : '<span style="color:var(--text-light)">— unassigned</span>' }, { label: 'Start', sk: 'start', render: r => _pmFmt(r.start) }, { label: 'Finish', sk: 'finish', render: r => _pmFmt(r.finish) },
-    { label: 'Float', align: 'right', render: r => cpm.hasDeps && cpm.map[r.id] ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
+    { label: 'Float', align: 'right', tip: 'Days this activity can slip without moving the project finish. Blank where the activity has no predecessor and no successor — it is in no network, so it has no float to report.',
+      render: r => (cpm.hasDeps && cpm.map[r.id] && cpm.map[r.id].inNet) ? (cpm.map[r.id].critical ? '<span style="color:#EF4444;font-weight:700">0d</span>' : cpm.map[r.id].float + 'd') : '<span style="color:var(--text-light)">—</span>' },
     { label: '%', sk: 'pctComplete', align: 'right', render: r => {
         // One source of truth: when detail lines report against this activity, its percentage is
         // their weighted roll-up. A typed number that disagrees with the site's own daily report is
@@ -35975,25 +36081,106 @@ async function tkRenderRecruitReport() {
 /* Report chart card (PowerBI-style canvas tile). */
 function _rptChartCard(title, id, h) { return '<div class="card" style="padding:14px 16px"><div style="font-size:14px;font-weight:700;color:var(--navy);margin-bottom:8px">' + title + '</div><div style="position:relative;height:' + (h || 210) + 'px"><canvas id="' + id + '"></canvas></div></div>'; }
 /* Payroll report — company cost summary + by-department breakdown (no individual figures). */
+/* The first day of the month a pay run's period names, so a run can be tested against the page's
+   period control. Pay runs are stored as 'August 2026' (or 'Year 2026'); this returns '' for
+   anything it cannot read rather than guessing a date. */
+function _payRunMonthISO(period) {
+  const m = /^([A-Za-z]+)\s+(\d{4})$/.exec(String(period || '').trim());
+  if (!m) return '';
+  const i = _PAY_MONTHS.indexOf(m[1]);
+  return i < 0 ? '' : (m[2] + '-' + String(i + 1).padStart(2, '0') + '-01');
+}
 async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
   await tkLoadColl('reviews');
+  try { await tkLoadColl('payruns'); } catch (e) { /* level-gated; the model path below still works */ }
   const emps = (_DEMO_EMPLOYEES || []).filter(e => (e.status || 'Active').toLowerCase() !== 'inactive');
   const byDept = {}; let gross = 0, net = 0, erCost = 0, pit = 0, si = 0, erStat = 0, P1 = 0, P2 = 0, P3 = 0, welfare = 0;
-  emps.forEach(e => { try { const c = _payComputed(e, _payRatingFor(e.id)); gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si; erStat += (c.erTotal || 0); P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0); P3 += (c.P3 || 0); welfare += (c.welfare || 0); (byDept[e.dept || '—'] = byDept[e.dept || '—'] || { n: 0, gross: 0, er: 0 }); byDept[e.dept || '—'].n++; byDept[e.dept || '—'].gross += c.grossPay; byDept[e.dept || '—'].er += c.employerCost; } catch (x) {} });
+
+  // What was actually PAID, where a Director has signed for it. This tab used to recompute every
+  // employee's pay from today's record, ignore the period control above it, and label the result
+  // "Net paid" — a number nobody was paid, for a month it was not describing. A finalised run is
+  // the frozen payslip; when one exists for the chosen period, it is the answer.
+  const runs = ((_HR && _HR.payruns) || []).filter(r =>
+    (r.lines || []).length && /final/i.test(String(r.status || '')) &&
+    _rptInPeriod(_payRunMonthISO(r.period) || ''));
+  const fromRuns = runs.length > 0;
+  let headcount = 0, noSalary = [], failed = 0;
+
+  if (fromRuns) {
+    const seen = new Set();
+    runs.forEach(r => (r.lines || []).forEach(l => {
+      const c = (l && typeof l.calc === 'object' && l.calc) ? l.calc : (l || {});
+      const key = String(r.period || '') + '|' + String(l.empId || l.name || '');
+      if (seen.has(key)) return;          // the same person in a roll-out AND a correction run
+      seen.add(key);
+      headcount++;
+      gross += +c.grossPay || 0; net += +c.net || 0; pit += +c.pit || 0;
+      si += (+c.eeBhxh || 0) + (+c.eeBhyt || 0) + (+c.eeBhtn || 0);
+      erStat += +c.erTotal || 0;
+      erCost += (+c.employerCost || ((+c.grossPay || 0) + (+c.erTotal || 0)));
+      P1 += (+c.basic || 0) + (+c.posAllow || 0);
+      P2 += (+c.responsibility || 0) + (+c.skillSen || 0);
+      P3 += +c.P3 || 0; welfare += +c.welfare || 0;
+      const d = l.dept || '—';
+      (byDept[d] = byDept[d] || { n: 0, gross: 0, er: 0 });
+      byDept[d].n++; byDept[d].gross += +c.grossPay || 0;
+      byDept[d].er += (+c.employerCost || ((+c.grossPay || 0) + (+c.erTotal || 0)));
+    }));
+  } else {
+    emps.forEach(e => {
+      let c;
+      // `catch (x) {}` dropped anybody whose computation threw, silently, out of a company total.
+      // A person who cannot be costed is a fact about the data, not a row to delete.
+      try { c = _payComputed(e, _payRatingFor(e.id)); } catch (x) { failed++; return; }
+      // A missing salary is NOT a grade mid-point — _payComputed says so in its own comment, the
+      // payslip screen refuses to present one as pay, and all three pay-run buttons exclude the
+      // person by name. This total used to include the invented figure with no warning at all.
+      if (c.salaryMissing) { noSalary.push(e.name || e.id); return; }
+      headcount++;
+      gross += c.grossPay; net += c.net; erCost += c.employerCost; pit += c.pit; si += c.si;
+      erStat += (c.erTotal || 0);
+      P1 += (c.basic || 0) + (c.posAllow || 0); P2 += (c.responsibility || 0) + (c.skillSen || 0);
+      P3 += (c.P3 || 0); welfare += (c.welfare || 0);
+      const d = e.dept || '—';
+      (byDept[d] = byDept[d] || { n: 0, gross: 0, er: 0 });
+      byDept[d].n++; byDept[d].gross += c.grossPay; byDept[d].er += c.employerCost;
+    });
+  }
+
+  const per = _rptPeriodLabel();
+  const _note = (hex, html) => '<div style="background:' + hex + '22;border-left:3px solid ' + hex +
+    ';border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">' + html + '</div>';
+  let banner = fromRuns
+    ? _note('var(--emerald)', '<strong>' + _t('Signed pay runs') + '</strong> — ' +
+        _t('these figures come from the finalised pay run(s) for this period, exactly as signed.') +
+        ' (' + runs.length + ' ' + _t('run(s)') + ')')
+    : _note('#F59E0B', '<strong>' + _t('Cost model, not a payroll') + '</strong> — ' +
+        _t('no finalised pay run covers this period, so these figures are computed from today\u2019s employee records. They exclude overtime, unpaid leave and manual adjustments, and are not what anybody was paid.'));
+  if (noSalary.length) banner += _note('var(--danger)', '<strong>' + noSalary.length + ' ' +
+    _t('employee(s) have no salary on record and are NOT in these totals') + ':</strong> ' +
+    _crmEsc(noSalary.slice(0, 12).join(', ')) + (noSalary.length > 12 ? ' …' : ''));
+  if (failed) banner += _note('var(--danger)', '<strong>' + failed + ' ' +
+    _t('employee(s) could not be costed and are not in these totals.') + '</strong>');
+
   const kpis = _hrKpiRow([
-    _hrKpi('Headcount', emps.length, '#8B5CF6'),
+    _hrKpi(fromRuns ? 'People paid' : 'Costed headcount', headcount, '#8B5CF6'),
     _hrKpi('Gross payroll', _PAY_FMT(gross), '#F59E0B'),
-    _hrKpi('Net paid', _PAY_FMT(net), 'var(--emerald)'),
+    _hrKpi(fromRuns ? 'Net paid' : 'Net (computed)', _PAY_FMT(net), 'var(--emerald)'),
     _hrKpi('Employer cost', _PAY_FMT(erCost), '#205090')
   ]);
   const dk = Object.keys(byDept).sort((a, b) => byDept[b].er - byDept[a].er);
   const drows = dk.map(d => '<tr><td style="font-weight:600">' + d + '</td><td style="text-align:right">' + byDept[d].n + '</td><td style="text-align:right">' + _PAY_FMT(byDept[d].gross) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(byDept[d].er) + '</td></tr>').join('');
-  el.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'PAYROLL REPORT\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + kpis +
+  // The period goes in the HEADING and in the PDF title. A confidential document headed PAYROLL
+  // REPORT with no period on it cannot be filed, disputed or reconciled against anything.
+  const _pdfTitle = ('PAYROLL REPORT' + (per ? per.replace(/^ — /, ' — ') : '')).replace(/'/g, '');
+  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + _t('Payroll') + (per ? _crmEsc(per) : ' — ' + _t('All time')) + '</div>' +
+    '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'' + _tkEscA(_pdfTitle) + '\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + banner + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' +
       _rptChartCard('Employer Cost by Department', 'pr-dept') + _rptChartCard('Gross Cost Composition (3P)', 'pr-3p') + _rptChartCard('Statutory — Employee vs Employer', 'pr-stat') +
     '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + emps.length + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + headcount + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
   if (typeof Chart !== 'undefined') {
     _mkChart('pr-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => byDept[d].er), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
     _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
@@ -36045,6 +36232,33 @@ function renderLeaveReport() {
   if (topEl) topEl.innerHTML = uk.length ? uk.map((nm, i) => { const e2 = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() }; return '<div style="display:flex;align-items:center;gap:10px;padding:7px 0;' + (i < uk.length - 1 ? 'border-bottom:1px solid var(--soft-bg);' : '') + 'font-size:12px">' + _hrAv(e2) + '<div style="flex:1"><div style="font-weight:600">' + nm + '</div><div class="prog-wrap" style="width:120px;margin-top:2px"><div class="prog-fill prog-navy" style="width:' + Math.round(byUser[nm] / maxU * 100) + '%"></div></div></div><span style="font-weight:700;color:var(--navy)">' + byUser[nm] + 'd used</span></div>'; }).join('') : '<div style="color:var(--text-light);font-size:12px;padding:7px 0">No leave records yet.</div>';
 }
 
+/* Minutes between a punch in and a punch out, overnight-safe. The In/Out Log has always had this
+   arithmetic and the Attendance tab had its own copy WITHOUT the wrap, so a shift that clocked in at
+   21:00 and out at 05:00 scored −960 minutes, was discarded by an `if (d > 0)` guard, and contributed
+   ZERO hours — while the same row, one tab away, showed 8h. Kept as one function for that reason.
+   app.py's _checkout supports overnight explicitly: it closes yesterday's open row and wraps the clock. */
+function _attMinutes(r) {
+  if (!r || !r.in || !r.out) return null;
+  const [ih, im] = String(r.in).split(':').map(Number);
+  const [oh, om] = String(r.out).split(':').map(Number);
+  if ([ih, im, oh, om].some(n => !isFinite(n))) return null;
+  let m = (oh * 60 + om) - (ih * 60 + im);
+  if (m < 0) m += 1440;
+  return m;
+}
+/* Is this punch away from its site? The label the check-in path really writes is
+   '<zone> (away from site)' or '<zone> (GPS unverified)' — never the literal 'Out of Zone', which is
+   produced by exactly one line in the repo and that line is seed data. So the KPI counting
+   `r.loc === 'Out of Zone'` read 0 forever, on live data, in a card headed GPS Anomalies.
+   The geometric test is preferred where the row carries a fix; the label is the fallback. */
+function _attIsAnomaly(r) {
+  try {
+    if (typeof _mgrIsAnomaly === 'function' && r && r.lat != null && r.lon != null) {
+      return !!_mgrIsAnomaly(r).bad;
+    }
+  } catch (e) { /* fall through to the label */ }
+  return /away from site|out of zone/i.test(String((r && r.loc) || ''));
+}
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
   // Was every attendance row ever recorded, under a heading naming a month.
@@ -36054,10 +36268,10 @@ function _renderRptAttendance() {
   const late = att.filter(r => r.status === 'late').length;
   const rate = total ? Math.round(ontime / total * 100) : 0;
   let mins = 0;
-  att.forEach(r => { if (r.in && r.out) { const [ih, im] = r.in.split(':').map(Number); const [oh, om] = r.out.split(':').map(Number); const d = (oh * 60 + om) - (ih * 60 + im); if (d > 0) mins += d; } });
+  att.forEach(r => { const d = _attMinutes(r); if (d != null && d > 0) mins += d; });
   const hours = Math.round(mins / 60);
   const leaveDays = (_DEMO_LEAVE || []).filter(l => (l.status || '').toLowerCase() === 'approved').reduce((s, l) => s + (+l.days || 0), 0);
-  const anom = att.filter(r => (r.loc || '') === 'Out of Zone').length;
+  const anom = att.filter(_attIsAnomaly).length;
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('rpt-att-ontime', total ? rate + '%' : '—');
   set('rpt-att-hours', hours.toLocaleString() + 'h');
@@ -36228,7 +36442,7 @@ function renderInOutReport() {
   const capped = window._ioShowAll ? rows : rows.slice(0, IO_CAP);
   const empMap = {};
   _DEMO_EMPLOYEES.forEach(e => { empMap[e.name] = e; });
-  const _mins = r => { if (!r.in || !r.out) return null; const [ih,im]=r.in.split(':').map(Number); const [oh,om]=r.out.split(':').map(Number); let m=(oh*60+om)-(ih*60+im); if (m<0) m+=1440; return m; };  // overnight-safe
+  const _mins = _attMinutes;   // one definition, shared with the Attendance tab — see _attMinutes
   tbody.innerHTML = capped.map(r => {
     const emp = empMap[r.name];
     const clr = emp?.clr || tkAvatarColor(r.name);
@@ -39458,8 +39672,30 @@ function _initDeptChart() {
   if (_deptChart) _deptChart.destroy();
   // Real: late count by department.
   const lateByDept = {}; (_DEMO_ATTENDANCE || []).forEach(r => { if (r.status === 'late') { const d = r.dept || '—'; lateByDept[d] = (lateByDept[d] || 0) + 1; } });
-  const dKeys = Object.keys(lateByDept).length ? Object.keys(lateByDept).sort((a, b) => lateByDept[b] - lateByDept[a]) : ['Engineering', 'Project Mgmt', 'HRBP', 'Finance', 'Field Svcs', 'Proposal'];
-  const dVals = Object.keys(lateByDept).length ? dKeys.map(d => lateByDept[d]) : [2.1, 3.4, 1.2, 1.8, 4.2, 2.6];
+  // No fallback data. With no late arrivals this drew six bars for departments this company does
+  // not have — 'Project Mgmt', 'HRBP', 'Field Svcs', 'Proposal' — at heights like 3.4, which is not
+  // a possible count of anything. An empty chart reads as "nothing to report"; an invented one reads
+  // as a finding. Departments here are dynamic (see tkAllDepts); there is no canonical list to fall
+  // back to even if inventing one were acceptable.
+  const dKeys = Object.keys(lateByDept).sort((a, b) => lateByDept[b] - lateByDept[a]);
+  const dVals = dKeys.map(d => lateByDept[d]);
+  // …and say so, rather than leaving an empty grid that looks like a chart which failed to load.
+  // The empty state is a SIBLING, not a replacement for the host's contents: overwriting innerHTML
+  // would delete the <canvas> this function looks up on every later render, so the chart would never
+  // come back once the first late arrival was recorded.
+  const _host = ctx.parentElement;
+  const _prevEmpty = _host && _host.querySelector('[data-dept-empty]');
+  if (!dKeys.length) {
+    _deptChart = null;
+    ctx.style.display = 'none';
+    if (_host && !_prevEmpty) _host.insertAdjacentHTML('beforeend',
+      '<div data-dept-empty style="position:absolute;inset:0;display:flex;align-items:center;' +
+      'justify-content:center;font-size:12.5px;color:var(--text-light);text-align:center;padding:8px">' +
+      _t2('No late arrivals in this period.', 'Không có lượt đi muộn nào trong kỳ này.') + '</div>');
+    return;
+  }
+  ctx.style.display = '';
+  if (_prevEmpty) _prevEmpty.remove();
   _deptChart = new Chart(ctx, {
     type: 'bar',
     data: {
