@@ -25286,7 +25286,8 @@ function _engAutoDocNo(data, pid) {
 const _ENG_NUMSPEC = {
   eng_inputs: { f: 'reqNo', tag: 'DI' }, eng_reviews: { f: 'reviewNo', tag: 'DR' },
   eng_comments: { f: 'commentNo', tag: 'CMT' }, eng_changes: { f: 'ecnNo', tag: 'ECN' },
-  eng_tq: { f: 'tqNo', tag: 'TQ' }, eng_transmittals: { f: 'trnNo', tag: 'TRN' }
+  eng_tq: { f: 'tqNo', tag: 'TQ' }, eng_transmittals: { f: 'trnNo', tag: 'TRN' },
+  eng_holds: { f: 'ref', tag: 'HLD' }
 };
 function _engAutoNumber(coll, data) {
   const sp = _ENG_NUMSPEC[coll]; if (!sp) return;
@@ -25611,6 +25612,35 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Supporting file (PDF / image)', type: 'file' }
     ]
   },
+  eng_holds: {
+    title: 'Hold / Assumption', coll: 'eng_holds', reload: 'eng_holds', fields: [
+      { k: 'kind', label: 'Kind — a HOLD stops an external issue, an ASSUMPTION is carried on the document', type: 'select', options: ['Hold', 'Assumption'] },
+      { k: 'ref', label: 'Ref' },
+      { k: 'title', label: 'What is unresolved' },
+      { k: 'description', label: 'Detail — what was assumed, or what the design is waiting on', type: 'textarea' },
+      { k: 'basis', label: 'Basis / source of the assumption', type: 'textarea' },
+      { k: 'discipline', label: 'Discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'deliverableId', label: 'Deliverable it sits on', type: 'ref', src: 'eng_deliverables', blank: '— commission-wide —' },
+      { k: 'raisedBy', label: 'Raised by', type: 'combo', dyn: 'eng_people' },
+      { k: 'raisedDate', label: 'Date raised', type: 'date' },
+      { k: 'owner', label: 'Who owes the answer', type: 'combo', dyn: 'eng_people' },
+      { k: 'confirmBy', label: 'Answer needed by', type: 'date' },
+      { k: 'consequence', label: 'What happens if it turns out otherwise', type: 'textarea' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Confirmed', 'Closed', 'Superseded', 'Void'] },
+      { k: 'closureNote', label: 'How it was resolved', type: 'textarea' },
+      { k: 'attachment', label: 'Evidence (PDF / image)', type: 'file' }
+    ]
+  },
+  eng_idc: {
+    title: 'Interdisciplinary check', coll: 'eng_idc', reload: 'eng_idc', fields: [
+      { k: 'deliverableId', label: 'Deliverable checked', type: 'ref', src: 'eng_deliverables' },
+      { k: 'rev', label: 'Revision checked' },
+      { k: 'discipline', label: 'Checking discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'scope', label: 'What this discipline looked at (interfaces, clashes, loads imposed)', type: 'textarea' },
+      { k: 'findings', label: 'Findings', type: 'textarea' },
+      { k: 'status', label: 'Result', type: 'select', options: ['Draft', 'Clear', 'Commented', 'Rejected'] }
+    ]
+  },
   eng_tq: {
     title: 'Technical Query', coll: 'eng_tq', reload: 'eng_tq', fields: [
       { k: 'subject', label: 'Subject' }, { k: 'tqNo', label: 'TQ No.' },
@@ -25748,6 +25778,8 @@ const _ENG_TABS = [
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
+  { k: 'idc', label: 'IDC Matrix', fn: 'engRenderIdc', need: ['eng_projects', 'eng_idc', 'eng_deliverables'] },
+  { k: 'holds', label: 'Holds & Assumptions', fn: 'engRenderHolds', need: ['eng_projects', 'eng_holds', 'eng_deliverables'] },
   { k: 'comments', label: 'Comments (CRS)', fn: 'engRenderComments', need: ['eng_projects', 'eng_comments', 'eng_deliverables'] },
   { k: 'changes', label: 'Change Control', fn: 'engRenderChanges', need: ['eng_projects', 'eng_changes', 'eng_deliverables'] },
   { k: 'queries', label: 'Technical Queries', fn: 'engRenderTq', need: ['eng_projects', 'eng_tq'] },
@@ -26734,6 +26766,89 @@ function engChangeDecideSave(id) {
 }
 
 /* ============================ 9. Technical queries ============================ */
+function engRenderHolds(pid) {
+  const all = _engScopeFor('eng_holds', pid), delivs = _engScopeFor('eng_deliverables', pid);
+  const guide = _engGuide('holds', 'Holds and assumptions — the two things a design carries that nobody agreed to',
+    '<p>An <b>assumption</b> is a number the design proceeded on because nobody had the real one yet: an ambient condition, a soil bearing capacity, an incoming supply rating. It is legitimate, it is declared, and it is carried on the face of the document so the reader knows what the design rests on.</p>' +
+    '<p>A <b>hold</b> is stronger. It is an open question the design cannot answer, and this register will refuse to let a deliverable carrying one leave the office — IFA, IFC, IFT, as-built. It may sit on the drawing through every internal circulation; it must not reach somebody who will build from it.</p>' +
+    '<p>That is why they are separated. An assumption that shipped and was never revisited is how a consultancy inherits a liability it never priced, and the only defence is that both were written down, given an owner and a date, and closed by somebody other than the person who raised them.</p>');
+  const holds = all.filter(h => String(h.kind || 'Hold').toLowerCase() === 'hold');
+  const asmp = all.filter(h => String(h.kind || 'Hold').toLowerCase() !== 'hold');
+  const isOpen = h => ['open', 'raised', ''].indexOf(String(h.status || 'Open').toLowerCase()) >= 0;
+  const openH = holds.filter(isOpen), openA = asmp.filter(isOpen);
+  const overdue = all.filter(h => isOpen(h) && h.confirmBy && String(h.confirmBy).slice(0, 10) < _engToday());
+  const blocking = {};
+  openH.forEach(h => { if (h.deliverableId) blocking[h.deliverableId] = (blocking[h.deliverableId] || 0) + 1; });
+  const kpis = _hrKpiRow([
+    _hrKpi('Open holds', openH.length, openH.length ? '#EF4444' : '#00B060'),
+    _hrKpi('Documents blocked', Object.keys(blocking).length, Object.keys(blocking).length ? '#EF4444' : '#00B060'),
+    _hrKpi('Open assumptions', openA.length, openA.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Past their answer date', overdue.length, overdue.length ? '#EF4444' : '#00B060')
+  ]);
+  const specs = [{ k: 'kind', label: 'Kind' }, { k: 'discipline', label: 'Discipline' }, { k: 'status', label: 'Status' }, { k: 'owner', label: 'Owner' }];
+  const bar = _engFiltBar('eng_holds', all, specs), rows = _engFiltApply('eng_holds', all, specs);
+  const dname = id => { const d = delivs.filter(x => x.id === id)[0]; return d ? (d.docNo || d.title || '') : ''; };
+  const tbl = _engCard('Holds & Assumptions Register', 'eng_holds', 'Raise a hold or assumption', bar + _engTable('eng_holds', [
+    { label: 'Ref', k: 'ref', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.ref || '—') + '</span>' },
+    { label: 'Kind', render: r => { const h = String(r.kind || 'Hold').toLowerCase() === 'hold';
+        return '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap;background:' + (h ? '#FEE2E2' : '#FEF3C7') + ';color:' + (h ? '#B91C1C' : '#92400E') + '">' + (h ? 'HOLD' : 'ASSUMPTION') + '</span>'; } },
+    { label: 'What is unresolved', render: r => '<div style="font-weight:600;max-width:260px">' + _engEsc(r.title || '') + '</div>' + (r.description ? '<div style="font-size:10.5px;color:var(--text-light);max-width:260px">' + _engEsc(String(r.description).slice(0, 110)) + '</div>' : '') },
+    { label: 'On document', render: r => r.deliverableId ? '<span style="font-size:11px;font-variant-numeric:tabular-nums">' + _engEsc(dname(r.deliverableId)) + '</span>' : '<span style="color:var(--text-light);font-size:11px">commission-wide</span>' },
+    { label: 'Disc', k: 'discipline' },
+    { label: 'Owner', k: 'owner' },
+    { label: 'Answer by', sk: 'confirmBy', render: r => r.confirmBy ? '<span style="white-space:nowrap;font-size:11.5px">' + _engFmt(r.confirmBy) + (isOpen(r) && String(r.confirmBy).slice(0, 10) < _engToday() ? ' <span style="color:#EF4444;font-weight:700">late</span>' : '') + '</span>' : '—' },
+    { label: 'Status', render: r => _engStatusChip(r.status || 'Open') },
+    { label: 'Closed by', render: r => r.closedBy ? '<div style="font-size:11px">' + _engEsc(r.closedBy) + '</div><div style="font-size:10px;color:var(--text-light)">' + _engFmt(r.closedOn) + '</div>' : '—' }
+  ], rows, { empty: 'No holds or assumptions recorded. A design with none is unusual — more often it means they are living in an inbox.' }));
+  const blocked = Object.keys(blocking).length ? '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+    '<b>' + Object.keys(blocking).length + ' deliverable(s) cannot be issued externally</b> while their holds are open: ' +
+    Object.keys(blocking).map(id => _engEsc(dname(id))).join(', ') + '. The register refuses the issue; it does not merely warn.</div>' : '';
+  return guide + kpis + blocked + tbl;
+}
+
+function engRenderIdc(pid) {
+  const idc = _engScopeFor('eng_idc', pid), delivs = _engScopeFor('eng_deliverables', pid);
+  const guide = _engGuide('idc', 'Interdisciplinary check — the signature behind the gate criterion',
+    '<p>"IDC complete on every discipline" is a line on the Detail gate checklist. Without records behind it, it is a sentence somebody ticked: the gate passes and nobody can say afterwards which discipline looked at which drawing, or what they found.</p>' +
+    '<p>Each row here is one discipline signing that it has checked its own interfaces on one deliverable — the loads it imposes, the penetrations it needs, the clashes it can see. The engineer who prepared the deliverable cannot sign its IDC, for the same reason they cannot approve their own issue.</p>' +
+    '<p>The matrix is what the gate reads. A blank cell is not an omission in the paperwork; it is a check nobody has done.</p>');
+  const dwg = delivs.filter(d => (d.stage || '') === 'Detail' || idc.some(i => i.deliverableId === d.id));
+  const discs = (typeof _ENG_DISC_KEYS !== 'undefined' ? _ENG_DISC_KEYS : []).slice(0, 8);
+  const cell = (dId, disc) => idc.filter(i => i.deliverableId === dId && i.discipline === disc)
+    .sort((a, b) => String(b.checkedOn || '').localeCompare(String(a.checkedOn || '')))[0];
+  const clear = idc.filter(i => String(i.status || '').toLowerCase() === 'clear');
+  const need = dwg.length * (discs.length || 1);
+  const kpis = _hrKpiRow([
+    _hrKpi('Deliverables in scope', dwg.length),
+    _hrKpi('Checks signed', idc.filter(i => i.checkedBy).length),
+    _hrKpi('Cleared', clear.length, clear.length ? '#00B060' : 'var(--navy)'),
+    _hrKpi('Coverage', need ? Math.round(100 * clear.length / need) + '%' : '—', (need && clear.length >= need) ? '#00B060' : '#F59E0B')
+  ]);
+  let m = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>' +
+    '<th style="text-align:left;padding:7px 9px;border-bottom:2px solid var(--border);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-light)">Deliverable</th>' +
+    discs.map(d => '<th style="padding:7px 6px;border-bottom:2px solid var(--border);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-light);white-space:nowrap">' + _engEsc(d) + '</th>').join('') + '</tr></thead><tbody>';
+  if (!dwg.length) {
+    m += '<tr><td colspan="' + (discs.length + 1) + '" style="padding:16px;text-align:center;color:var(--text-light)">No Detail-stage deliverables yet — the matrix fills itself as the MDR does.</td></tr>';
+  }
+  dwg.forEach(d => {
+    m += '<tr><td style="padding:7px 9px;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-variant-numeric:tabular-nums;font-size:11.5px">' + _engEsc(d.docNo || '') + '</div><div style="font-size:10.5px;color:var(--text-light);max-width:220px">' + _engEsc(d.title || '') + '</div></td>';
+    discs.forEach(disc => {
+      const c = cell(d.id, disc), st = c ? String(c.status || '').toLowerCase() : '';
+      const own = (d.discipline === disc);
+      let box = '<span style="color:var(--border)">·</span>';
+      if (own) box = '<span title="the originating discipline" style="font-size:10px;color:var(--text-light)">own</span>';
+      else if (st === 'clear') box = '<span title="' + _engEsc((c.checkedBy || '') + ' ' + _engFmt(c.checkedOn)) + '" style="color:#00B060;font-weight:700">&#10003;</span>';
+      else if (st === 'commented') box = '<span title="' + _engEsc(c.findings || '') + '" style="color:#F59E0B;font-weight:700">!</span>';
+      else if (st === 'rejected') box = '<span title="' + _engEsc(c.findings || '') + '" style="color:#EF4444;font-weight:700">&#10007;</span>';
+      else if (c) box = '<span style="color:var(--text-light);font-size:10px">draft</span>';
+      m += '<td style="padding:7px 6px;border-bottom:1px solid var(--border);text-align:center">' + box + '</td>';
+    });
+    m += '</tr>';
+  });
+  m += '</tbody></table></div>';
+  return guide + kpis + _engCard('IDC Matrix', 'eng_idc', 'Record a check', m);
+}
+
 function engRenderTq(pid) {
   const tqs = _engScopeFor('eng_tq', pid);
   const guide = _engGuide('queries', 'Technical queries — the questions the design cannot proceed without',
@@ -31676,6 +31791,31 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'IDC Matrix': 'Ma trận kiểm tra liên bộ môn',
+  'Holds & Assumptions': 'Điểm chờ & Giả định',
+  'Holds & Assumptions Register': 'Sổ đăng ký điểm chờ & giả định',
+  'Hold / Assumption': 'Điểm chờ / Giả định',
+  'Raise a hold or assumption': 'Ghi nhận điểm chờ hoặc giả định',
+  'Interdisciplinary check': 'Kiểm tra liên bộ môn',
+  'Record a check': 'Ghi nhận một lần kiểm tra',
+  'Open holds': 'Điểm chờ đang mở',
+  'Documents blocked': 'Tài liệu bị chặn phát hành',
+  'Open assumptions': 'Giả định đang mở',
+  'Past their answer date': 'Quá hạn trả lời',
+  'What is unresolved': 'Vấn đề chưa được giải quyết',
+  'On document': 'Trên tài liệu',
+  'Answer by': 'Trả lời trước',
+  'Who owes the answer': 'Người phải trả lời',
+  'Answer needed by': 'Cần trả lời trước ngày',
+  'How it was resolved': 'Đã giải quyết như thế nào',
+  'Deliverable it sits on': 'Thuộc tài liệu',
+  'Deliverable checked': 'Tài liệu được kiểm tra',
+  'Checking discipline': 'Bộ môn kiểm tra',
+  'Revision checked': 'Bản sửa đổi được kiểm tra',
+  'Deliverables in scope': 'Tài liệu trong phạm vi',
+  'Checks signed': 'Lượt kiểm tra đã ký',
+  'Cleared': 'Đã thông qua',
+  'Evidence (PDF / image)': 'Bằng chứng (PDF / hình ảnh)',
   /* Cash flow & risk register (2026-08-21) */
   "% of contract": "% hợp đồng",
   "Add milestone": "Thêm mốc",
