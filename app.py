@@ -49,6 +49,7 @@ import ahu_selection    # the AeroSelect selection handoff: read a selection in 
 import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
 import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
 import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
+import ahu_eurovent     # Eurovent 6/18-2022: what the industry recommends, as reference (pure)
 import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
@@ -5371,6 +5372,10 @@ class Handler(BaseHTTPRequestHandler):
                        "thermalU": ahu_route.EN1886_THERMAL_U,
                        "bridging": ahu_route.EN1886_BRIDGING,
                        "bypass": ahu_route.EN1886_BYPASS},
+            # What the European AHU industry recommends, alongside what this factory's SOP says.
+            # Reference only — nothing here refuses a gate. Where the two differ that is a decision
+            # for the QA/QC Manager, in the same way SOP_DISCREPANCIES already handles one.
+            "eurovent": ahu_eurovent.summary(None, ahu_route.DOSSIER),
             # Published so the difference between the SOP and the standard is visible in the app
             # rather than buried in a module nobody opens.
             "discrepancies": ahu_route.SOP_DISCREPANCIES,
@@ -5668,6 +5673,10 @@ class Handler(BaseHTTPRequestHandler):
                               spec=spec))
         return self._json(self._ahu_json_safe({
             "unit": ctx["unit"], "order": ctx["order"], "declaration": decl,
+            # How this unit's declared casing classes stand against Eurovent 6/18. Advisory: it
+            # never refuses a step, and it reports "not stated" rather than guessing whether a class
+            # was established on a real unit or a model box — those are different claims.
+            "eurovent": ahu_eurovent.assess_casing(decl),
             "state": ahu.unit_state(ctx), "steps": steps,
             "bom": ctx["bom"], "docs": ctx["docs"], "trace": ctx["trace"],
             "ncr": ctx["ncr"], "dispatch": ctx["dispatch"],

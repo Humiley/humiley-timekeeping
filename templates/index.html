@@ -29741,6 +29741,52 @@ function ahuFailStep(code) {
    retyping them. This panel says which figures came from where, whether the document was
    signature-verified, and — the part that matters — which declared classes are still only targets
    that a test has to prove. */
+/* ── How this unit stands against what the industry recommends ─────────────────────────────────
+   Eurovent 6/18-2022 is the European AHU industry's own statement of what a good unit is, written
+   by the product group that represents most manufacturers on the market. It is a RECOMMENDATION,
+   not this factory's acceptance criterion — AHU-SOP-MASTER-001 is that — so nothing here refuses a
+   step. It is shown next to the declaration because that is where the difference is actionable.
+
+   The distinction the panel exists for: Eurovent states its strength and leakage minimums as
+   D2 (R) and L2 (R), on a REAL unit. A class established on a model box — a two-section assembly
+   of frame, doors and panels, no dampers or piping — is a different claim, and "D2" on its own does
+   not say which. That is reported as not stated rather than resolved either way. */
+const _AHU_EV_TONE = { MEETS: '#00B060', BELOW: '#DC2626', NOT_DECLARED: '#94A3B8',
+                       UNDETERMINED: '#A16207' };
+const _AHU_EV_LABEL = { MEETS: 'Meets', BELOW: 'Below', NOT_DECLARED: 'Not declared',
+                        UNDETERMINED: 'Basis not stated' };
+
+function _ahuEuroventPanel(d) {
+  const rows = d.eurovent || [];
+  if (!rows.length) return '';
+  const worst = rows.some(r => r.status === 'BELOW') ? '#DC2626'
+    : rows.some(r => r.status === 'UNDETERMINED' || r.status === 'NOT_DECLARED') ? '#A16207'
+    : '#00B060';
+  const body = rows.map(r =>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--line)">' +
+    '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">' +
+    '<span style="font-weight:600;font-size:12.5px">' + _ahuEsc(r.label) + '</span>' +
+    '<span style="display:flex;gap:6px;align-items:center">' +
+    (r.declared ? '<span style="font-size:12px;font-weight:700;color:var(--navy);' +
+      'font-variant-numeric:tabular-nums">' + _ahuEsc(r.declared) + '</span>' : '') +
+    _ahuBadge(_AHU_EV_LABEL[r.status] || r.status, _AHU_EV_TONE[r.status] || '#94A3B8') +
+    '</span></div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' +
+    _ahuEsc(r.says) + '</div>' +
+    '<div style="font-size:11px;color:' + (_AHU_EV_TONE[r.status] || '#64748B') + ';margin-top:2px">' +
+    _ahuEsc(r.why) + '</div>' +
+    (r.note ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px;font-style:italic">' +
+      _ahuEsc(r.note) + '</div>' : '') +
+    '</div>').join('');
+  return _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Against the industry recommendation</span>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">Eurovent 6/18-2022, the European AHU ' +
+    'industry\'s own quality criteria. Advisory — the SOP is what a gate refuses on.</div></div>' +
+    '<span style="width:11px;height:11px;border-radius:50%;background:' + worst + '"></span>' +
+    '</div><div style="margin-top:8px">' + body + '</div>');
+}
+
 function _ahuSelectionPanel(d) {
   const u = d.unit || {};
   const has = !!u.selectionRef;
@@ -29903,6 +29949,7 @@ function _ahuTabDocs(d) {
     : '<tr><td colspan="7" style="color:var(--text-light);padding:14px">Nothing filed against this unit yet.</td></tr>';
 
   return _ahuSelectionPanel(d) + '<div style="height:12px"></div>' +
+    _ahuEuroventPanel(d) + (d.eurovent && d.eurovent.length ? '<div style="height:12px"></div>' : '') +
     _ahuCard('<div style="font-weight:800;color:var(--navy);margin-bottom:8px">Travels with the unit</div>' +
     '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
     'SOP section 12.5. Gate G6 refuses dispatch until every one of these is attached.</div>' + check) +
@@ -31149,6 +31196,12 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Against the industry recommendation': 'So với khuyến nghị của ngành',
+  "Eurovent 6/18-2022, the European AHU industry's own quality criteria. Advisory — the SOP is what a gate refuses on.": 'Eurovent 6/18-2022, tiêu chí chất lượng do chính ngành AHU châu Âu đặt ra. Mang tính tham khảo — cổng công đoạn vẫn chỉ từ chối theo SOP.',
+  'Basis not stated': 'Chưa nêu cơ sở đo',
+  'Not declared': 'Chưa khai báo',
+  'Meets': 'Đạt',
+  'Below': 'Chưa đạt',
   'Purchase order / receipt': 'Đơn mua hàng / phiếu nhập',
   'PO / receipt': 'ĐMH / phiếu nhập',
   'not recorded': 'chưa ghi nhận',
