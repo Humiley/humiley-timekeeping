@@ -3,7 +3,13 @@
 # encryption). It ships manylinux wheels (pulls in cryptography, http-ece, py-vapid),
 # so no compiler is needed. If it is ever unavailable the app still runs — push just
 # turns off and email notifications continue as before.
-pywebpush>=2.4.0
+# Split by Python version: pywebpush 2.2+ requires Python >= 3.10, so a bare `>=2.4.0` makes this
+# ENTIRE FILE uninstallable on 3.9 — and pip failing the file takes pypdf and cryptography with it,
+# so a 3.9 host loses push, e-invoice text extraction AND e-signature token verification at once,
+# from one line about push. CI's matrix still tests 3.9 but installs only requirements-dev.txt, so
+# nothing here was ever exercised; the ci.yml step added alongside this closes that.
+pywebpush>=2.4.0; python_version >= "3.10"
+pywebpush>=1.14.0,<2.2.0; python_version < "3.10"
 
 # Server-side PDF e-invoice text extraction (pure-Python wheel, no compiler). VN e-invoice
 # PDFs carry a text layer, so amounts/tax-code are read without any OCR service.

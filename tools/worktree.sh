@@ -116,8 +116,25 @@ cmd_rm() {
   [ -d "$wt" ] || { echo "no such worktree: $wt" >&2; exit 1; }
   # `git worktree remove` already refuses on uncommitted changes; commits that exist only on this
   # branch are the other way to lose work, so check that too before deleting the branch.
-  local unmerged
-  unmerged=$(git -C "$MAIN_REPO" log --oneline "origin/main..$branch" 2>/dev/null | wc -l | tr -d ' ')
+  #
+  # Count against local AND its remote, taking the larger. Counting only the local ref would let a
+  # stale local (behind a remote that still carries unlanded commits) read as 0 and auto-delete the
+  # branch — the same staleness that made the verdict below wrong, but here it deletes rather than
+  # merely misreports.
+  # `set -o pipefail` is on: a git that fails inside $( ... | wc -l ) fails the whole substitution
+  # and `set -e` then kills the script mid-run, printing nothing. An unpushed branch has no
+  # origin/<branch> to ask about, so that is the ordinary case, not an edge one. Check the ref
+  # exists first, and use `if` rather than `test && assign` — a false test is the last command in
+  # the chain, so `&&` would exit the script too.
+  local unmerged=0 unmerged_remote=0
+  git -C "$MAIN_REPO" fetch -q origin 2>/dev/null || true
+  if git -C "$MAIN_REPO" rev-parse --verify --quiet "$branch" >/dev/null 2>&1; then
+    unmerged=$(git -C "$MAIN_REPO" log --oneline "origin/main..$branch" 2>/dev/null | wc -l | tr -d ' ' || true)
+  fi
+  if git -C "$MAIN_REPO" rev-parse --verify --quiet "origin/$branch" >/dev/null 2>&1; then
+    unmerged_remote=$(git -C "$MAIN_REPO" log --oneline "origin/main..origin/$branch" 2>/dev/null | wc -l | tr -d ' ' || true)
+  fi
+  if [ "${unmerged_remote:-0}" -gt "${unmerged:-0}" ]; then unmerged=$unmerged_remote; fi
   # `git worktree remove` refuses when the tree still holds work, which is right. But under `set -e`
   # this script would then die on git's bare "fatal: ... use --force to delete it", which says what
   # happened and nothing about what to do — and the move people reach for next is `rm -rf` on the
@@ -140,32 +157,63 @@ cmd_rm() {
     # `origin/main..$branch` asks whether these COMMITS are ancestors of main. This repo squash-
     # merges, so a fully merged branch never satisfies that and its work is reported as unmerged —
     # the same "does it exist" / "did it ship" confusion that costs people an afternoon elsewhere.
-    # Ask the question that actually matters instead: is every file this branch touched already
-    # byte-identical on origin/main? If so the work landed, whatever the commit graph says. The
-    # branch is still not auto-deleted — being wrong here loses work — but say which case it is.
-    git -C "$MAIN_REPO" fetch -q origin main 2>/dev/null || true
-    local base landed=no f
-    base=$(git -C "$MAIN_REPO" merge-base origin/main "$branch" 2>/dev/null || true)
-    if [ -n "$base" ]; then
-      landed=yes
-      # `</dev/null` on the inner git: without it, git reads the loop's remaining input and the
-      # loop silently skips files — the classic way a check like this passes without looking.
-      while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        git -C "$MAIN_REPO" diff --quiet origin/main "$branch" -- "$f" </dev/null || { landed=no; break; }
-      done <<EOF
-$(git -C "$MAIN_REPO" diff --name-only "$base" "$branch")
-EOF
+    #
+    # Answering it by comparing FILES against main was wrong twice over, and said "this work has
+    # NOT landed" about work that had:
+    #   1. it judged the LOCAL ref, which goes stale the moment the branch moves anywhere else —
+    #      `gh pr update-branch`, or a push from another machine, updates the remote and never
+    #      touches your local ref;
+    #   2. even on the right ref, "is this file byte-identical to main?" is not the question. If
+    #      another PR also touched that file, it never will be, however completely this branch's
+    #      own change landed.
+    #
+    # The question that survives both: would merging this branch into main change main at all? If
+    # the merge is a no-op, everything the branch carries is already there — whatever the commit
+    # graph looks like and whoever else edited the same files. The branch is still never
+    # auto-deleted here; being wrong loses work. Say which case it is and let a human act.
+    git -C "$MAIN_REPO" fetch -q origin 2>/dev/null || true
+
+    # Pick the ref that actually holds the work. Behind its remote -> the remote is the truth.
+    # Diverged -> do not guess; each side has commits the other lacks.
+    local tip="$branch" remote="origin/$branch" stale=""
+    if git -C "$MAIN_REPO" rev-parse --verify --quiet "$remote" >/dev/null 2>&1; then
+      if git -C "$MAIN_REPO" merge-base --is-ancestor "$branch" "$remote" 2>/dev/null; then
+        [ "$(git -C "$MAIN_REPO" rev-parse "$branch")" = "$(git -C "$MAIN_REPO" rev-parse "$remote")" ] \
+          || stale=yes
+        tip="$remote"
+      elif ! git -C "$MAIN_REPO" merge-base --is-ancestor "$remote" "$branch" 2>/dev/null; then
+        tip=""
+      fi
     fi
-    if [ "$landed" = yes ]; then
-      echo "kept branch $branch — its $unmerged commit(s) are not ancestors of origin/main, but every"
-      echo "  file it touched is already identical there. That is what a squash merge looks like."
-      echo "  confirm:  git diff origin/main $branch   (expect no output)"
-      echo "  delete:   git branch -D $branch"
+
+    local landed=no merged_tree main_tree
+    if [ -z "$tip" ]; then
+      landed=diverged
+    elif git -C "$MAIN_REPO" merge-base --is-ancestor "$tip" origin/main 2>/dev/null; then
+      landed=yes
     else
-      echo "kept branch $branch — it has $unmerged commit(s) not on origin/main, and its files still"
-      echo "  differ there, so this work has NOT landed. Push it before deleting anything."
-      echo "  see it:   git log --oneline origin/main..$branch"
+      # git >= 2.38. On anything older this yields nothing and we fall through to "not landed",
+      # which is the safe direction to be wrong in.
+      merged_tree=$(git -C "$MAIN_REPO" merge-tree --write-tree origin/main "$tip" 2>/dev/null || true)
+      main_tree=$(git -C "$MAIN_REPO" rev-parse 'origin/main^{tree}' 2>/dev/null || true)
+      [ -n "$merged_tree" ] && [ "$merged_tree" = "$main_tree" ] && landed=yes
+    fi
+
+    if [ "$landed" = yes ]; then
+      echo "kept branch $branch — its $unmerged commit(s) are not ancestors of origin/main, but"
+      echo "  merging it into main would change nothing, so the work is already there."
+      [ -n "$stale" ] && echo "  (judged $remote — your local $branch is behind it)"
+      echo "  confirm:  git merge-tree --write-tree origin/main $tip   == $(git -C "$MAIN_REPO" rev-parse --short 'origin/main^{tree}' 2>/dev/null)"
+      echo "  delete:   git branch -D $branch"
+    elif [ "$landed" = diverged ]; then
+      echo "kept branch $branch — it and $remote have DIVERGED: each has commits the other does not."
+      echo "  Nothing here can tell which side you meant to keep, so nothing was deleted."
+      echo "  yours only:  git log --oneline $remote..$branch"
+      echo "  theirs only: git log --oneline $branch..$remote"
+    else
+      echo "kept branch $branch — merging it into main WOULD change main, so this work has not"
+      echo "  landed. Push it and get it merged before deleting anything."
+      echo "  see it:   git log --oneline origin/main..$tip"
       echo "  delete when merged:  git branch -D $branch"
     fi
   else

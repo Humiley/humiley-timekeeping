@@ -32,6 +32,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # requirements.txt was never installed here, so nothing checked that it COULD be. A dependabot
+      # bump to pywebpush>=2.4.0 merged green while being uninstallable on this job's Python: 2.2+
+      # needs >= 3.10, and pip failing the file takes pypdf and cryptography down with it — push,
+      # e-invoice extraction and e-signature verification, from one line about push. The tests passed
+      # throughout because they never touched these libraries.
+      #
+      # --dry-run resolves the file without spending time on wheels the tests do not use. Resolution
+      # is the thing that was broken, and the thing a version bump breaks.
+      - name: Runtime dependencies must resolve on this Python
+        run: pip install --dry-run -r requirements.txt
+
       - name: Syntax gate (compile every module)
         run: python -m py_compile app.py db.py
 
@@ -142,7 +153,15 @@ jobs:
           changed=$(gh api --paginate \
             "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --jq '.[].filename')
-          deployed=$(printf '%s\n' "$changed" | grep -vE '^(docs/|tests/|tools/|\.github/|README|.*\.md$)' || true)
+          # mobile/ is the Capacitor native shell. `COPY . /app` does put it in the image, so it is
+          # tempting to call it deployed — but nothing there is ever served to a browser (app.py
+          # never references it) and mobile/ios, mobile/android and node_modules are generated, not
+          # committed. This guard exists so a PWA client can tell one BUILD OF THE SERVED APP from
+          # the next; bumping hml-pwa-vNNN for a mobile/package.json change busts every user's
+          # service-worker cache for something none of them can observe. The alternative — bumping
+          # the version anyway to get a green tick — is exactly the routing-around this guard was
+          # written to stop, so exclude the path instead of teaching people to fake the version.
+          deployed=$(printf '%s\n' "$changed" | grep -vE '^(docs/|tests/|tools/|mobile/|\.github/|README|.*\.md$)' || true)
           if [ -z "$changed" ]; then
             echo "::error::The API returned no changed files for this PR — refusing to pass on a"
             echo "::error::list nobody could read, since an empty list would silently exempt anything."

@@ -28034,7 +28034,8 @@ function _tndQuoteSheet(doc, q) {
   const line = (l, i) => '<tr>' +
     '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums;border:1px solid #CFD6E2;padding:6px 4px">' + (i + 1) + '</td>' +
     '<td style="font-weight:700;color:var(--navy);border:1px solid #CFD6E2;padding:6px 8px">' + _estEsc(l.itemCode || '') + '</td>' +
-    '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') + '</td>' +
+    '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') +
+      (l.descNote ? '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _estEsc(l.descNote) + '</div>' : '') + '</td>' +
     '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 2) + '</td>' +
     '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px">' + _estEsc(l.unit || '') + '</td>' +
     '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.unitSell) + '</td>' +
@@ -28102,8 +28103,12 @@ function _tndQuoteSheet(doc, q) {
     '</tr></thead><tbody>' +
     (doc.lines || []).map(line).join('') +
     Array(blankRows).fill(spacer).join('') +
-    totRow('SUBTOTAL', null, tot.net, {}) +
-    totRow('Project Discount', doc.discountPct, Math.round((tot.net || 0) * (+doc.discountPct || 0) / 100), { showPct: true }) +
+    /* Server figures, not recomputed here. `net` is what the customer owes AFTER the discount,
+       so showing it as the SUBTOTAL and then deducting the discount again would present a
+       doubly-discounted letter. `subtotal` is what the lines add up to; the two are different
+       numbers and the distinction is the whole point of carrying both. */
+    totRow('SUBTOTAL', null, tot.subtotal, {}) +
+    totRow('Project Discount', tot.discountPct, tot.discount, { showPct: true }) +
     totRow('Tax / VAT (if applicable)', doc.vatPct, tot.vat, { showPct: true }) +
     totRow('GRAND TOTAL', null, tot.gross, { grand: true }) +
     '</tbody></table></div>' +
@@ -28313,7 +28318,13 @@ function tndQuotePDF() {
   (d.lines || []).forEach((l, i) => {
     _pdfFont(doc, 'normal'); doc.setFontSize(9);
     const desc = doc.splitTextToSize(_pmPdfTxt(l.desc || ''), W[2] - 4);
-    const h = Math.max(7, desc.length * 4 + 3);
+    /* A services line carries what makes up its price — professional fee, travel & expenses and
+       the consultant days behind them. The client's tender form asks for those separately, and
+       the letterhead table has seven fixed columns from the template, so the split is set beneath
+       the description rather than in columns of its own. It reads the same in the PDF, the
+       preview and the Excel export, which columns added to only one of them would not. */
+    const note = l.descNote ? doc.splitTextToSize(_pmPdfTxt(l.descNote), W[2] - 4) : [];
+    const h = Math.max(7, (desc.length + note.length) * 4 + 3);
     if (y + h > 258) { y = newPage(); drawHead(); }
     cellBorders(h);
     doc.setTextColor(92, 100, 112);
@@ -28322,6 +28333,11 @@ function tndQuotePDF() {
     doc.text(_pmPdfTxt(l.itemCode || ''), _QT_ML + W[0] + 2, y + 5);
     _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
     doc.text(desc, _QT_ML + W[0] + W[1] + 2, y + 5);
+    if (note.length) {
+      _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
+      doc.text(note, _QT_ML + W[0] + W[1] + 2, y + 5 + desc.length * 4);
+      doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+    }
     const x3 = _QT_ML + W[0] + W[1] + W[2];
     doc.text(_pmPdfTxt(_tndNum(l.qty, 2)), x3 + W[3] / 2, y + 5, { align: 'center' });
     doc.text(_pmPdfTxt(l.unit || ''), x3 + W[3] + W[4] / 2, y + 5, { align: 'center' });

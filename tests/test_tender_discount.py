@@ -156,6 +156,20 @@ def test_the_discount_cap_is_enforced_not_merely_declared():
         "a discount above the cap produced no warning — the control does nothing"
 
 
+def test_no_renderer_still_recomputes_the_discount_for_itself():
+    """`net` became the AFTER-discount figure when the discount moved into quotation(). Any
+    renderer still showing `net` as the SUBTOTAL and then deducting the discount underneath would
+    present a doubly-discounted letter — the original defect, inverted. The on-screen preview did
+    exactly that until this was caught; the expression below is the shape to keep out."""
+    import io
+    import os
+    html = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "templates", "index.html")
+    src = io.open(html, encoding="utf-8").read()
+    assert "discountPct || 0) / 100" not in src, \
+        "a renderer is computing the discount itself instead of reading it from the server"
+
+
 def test_the_document_carries_the_figures_so_no_renderer_recomputes_them():
     """Each renderer that computed the cut for itself got it wrong in a different way."""
     t, q = _quote(20)
