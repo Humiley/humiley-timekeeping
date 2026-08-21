@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Build the PDF font that jsPDF embeds: Carlito, the brand typeface.
+
+Run:  python3 tools/make_pdf_font.py
+
+WHY CARLITO. The Humiley brand documents set their Normal style to Calibri — see the official
+template at humiley-brand/assets/document/HML_Document_EN.docx — so a quotation or a payslip that
+goes out in a different typeface is off-brand no matter how good it looks. Calibri is proprietary
+and cannot be redistributed in a public repository. Carlito is the metric-compatible open substitute
+published for exactly this purpose: same 2048 units/em, same advance widths, so a line occupies the
+same space it would in Calibri. It is licensed under the SIL Open Font License, which permits
+redistribution (including a subset — a subset is still a copy) provided the licence travels with it.
+
+WHY IT ALSO SOLVES VIETNAMESE. This slot previously held Be Vietnam Pro, chosen only because jsPDF's
+standard-14 fonts are WinAnsi and render Vietnamese as mojibake. Carlito covers the Vietnamese
+blocks completely — all of U+1EA0–U+1EF9 plus Ơ/Ư/Đ/Ă — which is asserted in
+tests/test_pdf_font.py rather than assumed, because a font that silently lacks a codepoint produces
+a blank rather than an error and nobody notices until a customer does.
+
+Why a .js file and not a .ttf: app.py's CONTENT_TYPES has no .ttf entry, so a raw font is served as
+application/octet-stream; and jsPDF's addFileToVFS wants base64 in the first place. Shipping it as
+JavaScript also lets the service worker treat it like any other vendored script.
+"""
+import base64
+import io
+import os
+
+from fontTools.subset import Options, Subsetter
+from fontTools.ttLib import TTFont
+
+# Vendored rather than read from a system font directory: the build has to be reproducible on a
+# machine that does not happen to have LibreOffice installed.
+SRC = "tools/fonts"
+OUT = "static/vendor/tk-font-brand.js"
+# The OFL requires the licence to travel with any redistributed copy of the font, and a subset is
+# still a copy. It sits beside the generated asset; keep it there.
+LICENCE = "static/vendor/tk-font-brand.OFL.txt"
+
+# ASCII, Latin-1 supplement, Latin Extended-A, the two Vietnamese blocks, and the handful of
+# typographic marks the documents actually use — including ₫, which _pdfSafe used to rewrite as
+# "VND " precisely because it could not be drawn.
+CODEPOINTS = set(range(0x20, 0x7F)) | set(range(0xA0, 0x180)) \
+    | set(range(0x1A0, 0x1B1)) | set(range(0x1EA0, 0x1EFA)) \
+    | {ord(c) for c in "₫€–—‘’“”•…°×"}
+
+
+def build(style, filename):
+    # recalcTimestamp=False: otherwise fontTools stamps head.modified with the build time and two
+    # runs of this script produce two different files, so "rebuild it rather than guess" would mean
+    # a spurious diff every time.
+    f = TTFont(os.path.join(SRC, filename), recalcTimestamp=False)
+    have = set()
+    for t in f["cmap"].tables:
+        have |= set(t.cmap.keys())
+    want = sorted(CODEPOINTS & have)
+    missing = sorted(CODEPOINTS - have)
+    if missing:
+        # Loud, because the failure mode downstream is silent: jsPDF draws nothing for a codepoint
+        # the font lacks, so a missing glyph reaches the customer as a gap in a sentence.
+        raise SystemExit(
+            "%s lacks %d requested codepoint(s): %s" %
+            (filename, len(missing), " ".join("U+%04X" % c for c in missing[:20])))
+    o = Options()
+    o.layout_features = []          # jsPDF ignores OpenType layout entirely...
+    o.hinting = False               # ...and does not use hinting either
+    o.notdef_outline = True
+    # layout_features=[] empties the feature lists but still ships the tables. jsPDF's TTF parser
+    # only ever reads cmap/glyf/loca/hmtx/head/hhea/maxp/post, so these are pure payload.
+    o.drop_tables += ["DSIG", "GDEF", "GPOS", "GSUB"]
+    s = Subsetter(options=o)
+    s.populate(unicodes=want)
+    s.subset(f)
+    buf = io.BytesIO()
+    f.save(buf)
+    raw = buf.getvalue()
+    print("  %-8s %6d glyphs  %7d bytes ttf  %7d bytes base64"
+          % (style, len(want), len(raw), len(base64.b64encode(raw))))
+    return base64.b64encode(raw).decode("ascii")
+
+
+def main():
+    print("Subsetting Carlito (SIL Open Font License 1.1) — metric-compatible with Calibri:")
+    reg = build("regular", "Carlito-Regular.ttf")
+    bold = build("bold", "Carlito-Bold.ttf")
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    with open(OUT, "w") as fh:
+        fh.write(
+            "/* Carlito, subset for PDF generation — the brand typeface.\n"
+            " * Copyright (c) 2010-2013 by tyPoland Lukasz Dziedzic, with Reserved Font Name Carlito.\n"
+            " * Licensed under the SIL Open Font License 1.1 — https://scripts.sil.org/OFL\n"
+            " *\n"
+            " * Metric-compatible with Calibri, which is what the Humiley brand documents specify;\n"
+            " * Calibri itself is proprietary and cannot ship here.\n"
+            " *\n"
+            " * GENERATED by tools/make_pdf_font.py — do not edit by hand; rebuild instead.\n"
+            " * Without this, jsPDF draws with the standard-14 WinAnsi fonts: off-brand, and\n"
+            " * mojibake for Vietnamese. */\n"
+            "window.TK_BRAND_FONT = {\n  regular: \"%s\",\n  bold: \"%s\"\n};\n" % (reg, bold))
+    print("wrote %s (%d bytes)" % (OUT, os.path.getsize(OUT)))
+    if not os.path.exists(LICENCE):
+        raise SystemExit("%s is missing — the OFL must ship with the font." % LICENCE)
+
+
+if __name__ == "__main__":
+    main()
