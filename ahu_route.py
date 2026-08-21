@@ -46,9 +46,19 @@ EN1886_BYPASS = {"F8": 1.0, "F9": 0.5}                                 # % bypas
 
 SOP_DISCREPANCIES = [
     {"where": "SOP AHU-SOP-MASTER-001 section 11.2, test T2",
-     "sop_says": "D2: <= 4 mm/m",
+     "sop_says": "D2: <= 4 mm/m  (corrected in the source on 21 Aug 2026)",
      "standard_says": "EN 1886 places 4 mm/m at D1; D2 is <= 10 mm/m",
-     "resolution": "The published EN 1886 threshold is applied. Correct the SOP at next revision."},
+     "status": "Source corrected — approval and PDF re-issue outstanding",
+     "resolution": (
+         "The published EN 1886 threshold is applied here and always has been. The .docx and .pptx "
+         "sources have since been corrected to match (13 replacements across 7 files, including "
+         "HML-AHU-DS-COMP-001 which also had D1 = 2.5 mm/m). Two things are still outstanding, so "
+         "this entry stays: the change is NOT yet approved by the QA/QC Manager, and the PDFs — "
+         "which are what people actually read — still state the old figure. See "
+         "DOCUMENT-CHANGE-RECORD_EN1886-D-class.md in the AHU Production folder. It also raises a "
+         "question only QA/QC can answer: the KPI target reads 'D2 or better', which now means "
+         "<= 10 mm/m, where the document previously implied <= 4 mm/m. If a 4 mm/m casing was "
+         "intended, the target should say D1.")},
 ]
 
 # ── Panel construction, from the Design Standards ────────────────────────────────────────────────
