@@ -28832,7 +28832,7 @@ async function ahuRenderBoard() {
       ((u.running || []).length ? ' ' + _ahuBadge('Running: ' + u.running.join(', '), '#F59E0B') : '') + '</td></tr>';
   }).join('');
 
-  root.innerHTML = kpiHtml + _ahuCard(
+  root.innerHTML = kpiHtml + '<div id="ahu-sop-kpi"></div>' + _ahuCard(
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div style="font-weight:800;color:var(--navy)">Units on the floor</div>' +
     '<div style="font-size:11.5px;color:var(--text-light)" id="ahu-board-stamp"></div></div>' +
@@ -28840,7 +28840,64 @@ async function ahuRenderBoard() {
     '<th>PIN</th><th>Tag</th><th>Family</th><th>Production stage</th><th>Completion</th><th>State</th>' +
     '</tr></thead><tbody>' + rows + '</tbody></table></div>');
   _ahuBoardTick();
+  ahuRenderSopKpi();
 }
+
+/* ── The SOP's own KPI table (AHU-SOP-MASTER-001 section 1.4) ──
+   Eight KPIs with a target and an owning function, defined since the procedure was written and
+   never computed. These are arithmetic over records that were e-signed when the work happened,
+   which is the difference between a KPI and a number typed into a monthly slide.
+
+   Three of the eight cannot be computed at all, and say so. A dashboard quietly showing 100% for a
+   class nobody tests would be worse than no dashboard. */
+async function ahuRenderSopKpi() {
+  const root = document.getElementById('ahu-sop-kpi'); if (!root) return;
+  let d;
+  try { d = await tkApi('/api/ahu/kpi'); }
+  catch (e) {
+    root.innerHTML = _ahuCard('<div style="color:#C00000;font-size:12.5px">Could not compute the ' +
+      'SOP KPIs: ' + _ahuEsc(e.message) + '</div>') + '<div style="height:12px"></div>';
+    return;
+  }
+  const cell = k => {
+    if (k.status === 'NOT_MEASURED') {
+      return '<div style="border:1px dashed var(--line);border-radius:9px;padding:10px 12px;background:var(--soft-bg)">' +
+        '<div style="font-size:11.5px;font-weight:700;color:var(--text-light)">' + _ahuEsc(k.kpi) + '</div>' +
+        '<div style="font-size:15px;font-weight:800;color:#A16207;margin:3px 0">Not measured</div>' +
+        '<div style="font-size:10.5px;color:var(--text-light);line-height:1.45">' + _ahuEsc(k.why) + '</div></div>';
+    }
+    const has = k.pct != null || k.value != null;
+    const val = k.value != null ? k.value : (k.pct != null ? k.pct + '%' : '—');
+    const tone = !has ? '#94A3B8' : (k.met ? '#00B060' : '#DC2626');
+    const dist = k.distribution && Object.keys(k.distribution).length
+      ? Object.keys(k.distribution).map(c => c + ' x' + k.distribution[c]).join(' · ') : '';
+    return '<div style="border:1px solid ' + tone + '35;border-radius:9px;padding:10px 12px">' +
+      '<div style="font-size:11.5px;font-weight:700;color:var(--navy)">' + _ahuEsc(k.kpi) + '</div>' +
+      '<div style="font-size:21px;font-weight:800;color:' + tone + ';line-height:1.3;font-variant-numeric:tabular-nums">' +
+      _ahuEsc(val) + '</div>' +
+      '<div style="font-size:10.5px;color:var(--text-light)">Target ' + _ahuEsc(k.target) +
+      ' · ' + _ahuEsc(k.owner) + (k.n != null ? ' · n=' + k.n : '') + '</div>' +
+      (dist ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">Achieved: ' +
+        _ahuEsc(dist) + '</div>' : '') +
+      (!has ? '<div style="font-size:10.5px;color:var(--text-light);margin-top:2px">No data yet</div>' : '') +
+      ((k.late || []).length ? '<div style="font-size:10.5px;color:#DC2626;margin-top:2px">Late: ' +
+        _ahuEsc(k.late.slice(0, 3).map(l => l.pin).join(', ')) + '</div>' : '') + '</div>';
+  };
+  root.innerHTML = _ahuCard(
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:9px">' +
+    '<div><span style="font-weight:800;color:var(--navy)">Objectives &amp; KPIs</span>' +
+    '<span style="font-size:11.5px;color:var(--text-light)"> — AHU-SOP-MASTER-001 §1.4, over ' +
+    _ahuEsc(d.units) + ' unit(s)</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' + _ahuEsc(d.meeting) + ' of ' +
+    _ahuEsc(d.ofTargets) + ' targets met · ' + _ahuEsc(d.notMeasured) + ' not measured</div></div>' +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:9px">' +
+    (d.kpis || []).map(cell).join('') + '</div>' +
+    '<div style="font-size:10.5px;color:var(--text-light);margin-top:9px;line-height:1.5">' +
+    'Computed from signed records, not entered. A casing class is the class ACHIEVED at test — a ' +
+    'unit sold as L1 and measured at 0.30 fails its contract and achieves L2, and both facts matter.' +
+    '</div>') + '<div style="height:12px"></div>';
+}
+
 function _ahuBoardTick() {
   const el = document.getElementById('ahu-board-stamp');
   if (el) el.textContent = 'Updated ' + new Date().toLocaleTimeString();

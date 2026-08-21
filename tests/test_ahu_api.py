@@ -74,6 +74,31 @@ def _readings(api, token, step, values):
 
 # ── the process, served rather than duplicated in the browser ────────────────────────────────────
 
+def test_the_kpi_endpoint_serves_every_sop_kpi_with_its_target_and_owner(api, tokens, unit):
+    """SOP section 1.4 defines eight KPIs with targets and owning functions. All eight are
+    reported, and the ones nothing measures say so rather than showing a flattering figure."""
+    st, r = api("GET", "/api/ahu/kpi", tokens["admin"])
+    assert st == 200, r
+    assert len(r["kpis"]) == 8
+    for k in r["kpis"]:
+        assert k["kpi"] and k["target"] and k["owner"]
+    unmeasured = [k for k in r["kpis"] if k.get("status") == "NOT_MEASURED"]
+    assert len(unmeasured) >= 3
+    for k in unmeasured:
+        assert k["why"] and "pct" not in k
+
+
+def test_the_kpi_endpoint_is_closed_when_the_app_is_denied(api, tokens):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/kpi", tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
+
+
 def test_the_process_endpoint_serves_the_standard(api, tokens):
     st, r = api("GET", "/api/ahu/process", tokens["staff"])
     assert st == 200

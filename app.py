@@ -46,6 +46,7 @@ import doc_number       # controlled-document numbering: the format and the seri
 import ahu_route        # AHU-SOP-MASTER-001: the seven stages, the workstations, the test matrix (pure)
 import ahu              # AHU production control: gate exit criteria, route instantiation, the dossier
 import ahu_selection    # the AeroSelect selection handoff: read a selection in without retyping it (pure)
+import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4035,6 +4036,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._invtrack_file(u, fid, ext.lower()))
         if path == "/api/ahu/process":
             return self._guard(lambda u: self._ahu_process_ep(u, qs))
+        if path == "/api/ahu/kpi":
+            return self._guard(lambda u: self._ahu_kpi_ep(u, qs))
         if path == "/api/ahu/board":
             return self._guard(lambda u: self._ahu_board_ep(u))
         if path.startswith("/api/ahu/unit/") and path.endswith("/dossier"):
@@ -5123,6 +5126,39 @@ class Handler(BaseHTTPRequestHandler):
             if fam not in ahu_route.FAMILIES:
                 return self._err("Unknown AHU family: %s" % fam, 400)
             out["route"] = ahu_route.build_route(fam, {"fat": True, "sound_test": True})
+        return self._json(self._ahu_json_safe(out))
+
+    def _ahu_kpi_ep(self, u, qs):
+        """SOP section 1.4's KPI table, computed from signed production data.
+
+        Deliberately over EVERY unit rather than only the live ones the board shows: first-pass
+        yield and on-time delivery are about units that have finished, and a dashboard that quietly
+        excluded them would report on work in progress and call it performance.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        since = (qs.get("since") or [""])[0].strip()
+        rows = []
+        for unit in db.list_collection("ahu_units"):
+            ctx = ahu.load_ctx(unit.get("id"))
+            if since:
+                # Filter on the DISPATCH date, not on when the record was created: the question a
+                # period KPI answers is "what did we ship in this window".
+                d = (ctx["dispatch"] or [{}])[0] if ctx["dispatch"] else {}
+                when = str(d.get("dispatchedOn") or "")
+                if when and when < since:
+                    continue
+            rows.append({"unit": ctx["unit"], "steps": ctx["steps"], "ncr": ctx["ncr"],
+                         "dispatch": ctx["dispatch"], "order": ctx["order"]})
+        incidents = db.list_collection("incidents")
+        try:
+            hours = float(db.get_setting("ahu_worked_hours") or 0) or None
+        except (TypeError, ValueError):
+            hours = None
+        out = ahu_kpi.summary(rows, incidents=incidents, worked_hours=hours)
+        out["units"] = len(rows)
+        out["since"] = since or None
         return self._json(self._ahu_json_safe(out))
 
     def _ahu_board_ep(self, u):
