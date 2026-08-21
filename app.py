@@ -49,6 +49,7 @@ import ahu_selection    # the AeroSelect selection handoff: read a selection in 
 import ahu_kpi          # SOP section 1.4's KPI table, computed from signed production data (pure)
 import ahu_capacity     # SOP section 6.7's rolling load chart + elapsed-vs-tact (pure)
 import ahu_notify       # who to tell when a step fails, a gate is held or an NCR ages (pure)
+import qr               # ISO/IEC 18004 byte-mode QR symbols, for the traveller card (pure)
 import account          # the customer as one identity: MST, terms, duplicates, merge (pure)
 import sales_doc        # the shared sell-side spine: lines, status machine, open balance (pure)
 import sales_contract   # advance recovery, retention, the final account (pure)
@@ -4133,6 +4134,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._ahu_capacity_ep(u, qs))
         if path == "/api/ahu/settings":
             return self._guard(lambda u: self._ahu_settings_get(u))
+        if path.startswith("/api/ahu/unit/") and path.endswith("/card"):
+            _uid = path[len("/api/ahu/unit/"):-len("/card")]
+            return self._guard(lambda u: self._ahu_card_ep(u, urllib.parse.unquote(_uid), qs))
         if path == "/api/ahu/kpi":
             return self._guard(lambda u: self._ahu_kpi_ep(u, qs))
         if path == "/api/ahu/board":
@@ -5459,6 +5463,74 @@ class Handler(BaseHTTPRequestHandler):
             "action": "AHU production settings changed", "target": "ahu_settings",
             "detail": json.dumps(out), "ts": self._utc_now()})
         return self._json({"ok": True, **out})
+
+    def _ahu_card_ep(self, u, unit_id, qs):
+        """The traveller card as data: the unit, its remaining route, and a QR per step.
+
+        The code encodes a link back into this portal at that exact step, so scanning it on the
+        floor opens the readings form for the work in front of you instead of a menu. The symbol is
+        built HERE rather than in the browser because the encoder is a hundred lines of Galois-field
+        arithmetic that has to be right, and there is one of it, tested, on the server.
+
+        The origin is taken from the request, not from a setting: a card printed from the office
+        network has to keep working on the tablet that scans it, and a hard-coded hostname is how a
+        card silently points somewhere the shop floor cannot reach.
+        """
+        blocked = self._ahu_gate(u)
+        if blocked:
+            return blocked
+        unit = db.get_collection_item("ahu_units", unit_id)
+        if not unit:
+            return self._err("Unknown AHU.", 404)
+        ctx = ahu.load_ctx(unit_id)
+        steps, err = ahu.safe_build_for(unit, ctx.get("order"))
+        if err:
+            return self._err(err, 400)
+        origin = (qs.get("origin") or [""])[0].strip() or self._request_origin()
+        signed = ahu.signed_codes(ctx["steps"])
+        by_code = {s.get("code"): s for s in ctx["steps"]}
+        rows, oversized = [], []
+        for spec in steps:
+            code = spec["code"]
+            if code in signed:
+                continue                      # a card is for the work still to do
+            link = "%s/?ahu=%s&step=%s" % (origin, urllib.parse.quote(unit_id),
+                                           urllib.parse.quote(code))
+            try:
+                svg = qr.svg(link, module=3, quiet=3)
+            except ValueError as exc:
+                # Never a blank square where a code should be. A card that silently omits one step's
+                # symbol looks complete, and the operator at that station finds nothing to scan.
+                oversized.append({"code": code, "why": str(exc)})
+                svg = ""
+            rows.append({"code": code, "title": spec.get("title"), "kind": spec.get("kind"),
+                         "tact": spec.get("tact"), "station": spec.get("station"),
+                         "status": (by_code.get(code) or {}).get("status") or "",
+                         "link": link, "qr": svg})
+        return self._json(self._ahu_json_safe({
+            "unit": {k: unit.get(k) for k in ("id", "pin", "tag", "family", "sectionCount")},
+            "order": {k: (ctx.get("order") or {}).get(k)
+                      for k in ("poNumber", "customer", "deliveryDate")},
+            "origin": origin,
+            "steps": rows,
+            "unprintable": oversized,
+            "unitQr": qr.svg("%s/?ahu=%s" % (origin, urllib.parse.quote(unit_id)),
+                             module=4, quiet=3)}))
+
+    def _request_origin(self):
+        """The scheme and host this request actually arrived on.
+
+        Behind Caddy the socket is plain HTTP on localhost, so the scheme has to come from
+        X-Forwarded-Proto where the proxy set it. Getting this wrong prints a card whose codes open
+        an address the phone cannot reach — and the card looks perfect.
+        """
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").strip()
+        host = host.split(",")[0].strip()
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        if proto not in ("http", "https"):
+            proto = "http" if (not host or "localhost" in host or host.startswith("127.")
+                               or ":" in host) else "https"
+        return ("%s://%s" % (proto, host)) if host else ""
 
     def _ahu_kpi_ep(self, u, qs):
         """SOP section 1.4's KPI table, computed from signed production data.

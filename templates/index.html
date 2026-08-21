@@ -947,6 +947,13 @@ th{background:transparent !important;border-bottom:1px solid var(--line) !import
   #payslipOverlay { position: absolute !important; inset: 0 !important; background:var(--card) !important; display: block !important; padding: 0 !important; }
   #payslipOverlay .modal { box-shadow: none !important; max-width: 100% !important; }
   #payslipOverlay .modal-footer, #payslipOverlay .modal-close { display: none !important; }
+  /* The AHU shop-floor card. Same visibility trick as the payslip: everything is hidden and only
+     this overlay is shown, so one Print prints a card and not the whole portal around it. */
+  #ahuCardOverlay, #ahuCardOverlay * { visibility: visible !important; }
+  #ahuCardOverlay { position: absolute !important; inset: 0 !important; background: #fff !important;
+    display: block !important; padding: 0 !important; overflow: visible !important; }
+  #ahuCardOverlay .ahu-card-noprint { display: none !important; }
+  #ahuCardOverlay .ahu-card-step { break-inside: avoid; page-break-inside: avoid; }
 }
 </style>
 </head>
@@ -5761,6 +5768,18 @@ function _applyRole(role) {
       return;
     }
   } catch (e) {}
+  /* Deep-link: a code on the shop-floor card opens /?ahu=<unitId>&step=<code>. The whole value of
+     scanning at the machine is that the very next thing on screen is the readings form for THAT
+     step — landing on a dashboard and making somebody find the unit, the tab and the row is most of
+     the work the scan was meant to remove. */
+  try {
+    const _q = new URLSearchParams(location.search), _au = _q.get('ahu');
+    if (_au && !_appDeniedCurrent('ahu')) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      ahuOpenUnit(_au, 'route', _q.get('step') || '');
+      return;
+    }
+  } catch (e) {}
   /* Home is the dashboard again. #40 made the apps board the landing view for EVERYONE; that is a
      change every person in the company meets on their next sign-in, and it went out between two
      unrelated deploys rather than at a moment anyone chose. Reverted to the previous behaviour while
@@ -7039,6 +7058,7 @@ const _PENCIL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" str
    Use tkIcon('name') in JS-rendered markup; stroke=currentColor inherits the button colour. */
 const TK_ICON = {
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
+  qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><line x1="14" y1="14" x2="14" y2="14.01"/><line x1="17" y1="17" x2="21" y2="17"/><line x1="17" y1="21" x2="17" y2="21.01"/><line x1="21" y1="21" x2="21" y2="21.01"/>',
   check: '<polyline points="20 6 9 17 4 12"/>',
   x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
@@ -29000,10 +29020,15 @@ function ahuSignOrder(id) {
   });
 }
 
-function ahuOpenUnit(id, tab) {
+function ahuOpenUnit(id, tab, step) {
   _AHU.unitId = id;
   try { sessionStorage.setItem('ahu_unit', id); } catch (e) { }
   _AHU.tab = tab || 'route';
+  // A scanned code names a STEP, and the reason to scan at the machine is that the readings form
+  // for that step is the next thing on screen. Expanding it here rather than leaving somebody to
+  // find the row is the whole feature.
+  _AHU.openStep = step || null;
+  if (step) _AHU.tab = 'route';
   showView('ahu-unit', null, 'AHU Traveller');
 }
 
@@ -29061,6 +29086,9 @@ async function ahuRenderTraveller() {
     tkIcon('download', 12) + ' As-built dossier</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuTravellerPDF()">' +
     tkIcon('download', 12) + ' Traveller card</button>' +
+    '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuShopCard()" ' +
+    'title="A printable card with a scannable code beside every remaining step, so sign-offs happen at the machine.">' +
+    tkIcon('qr', 12) + ' Shop-floor card</button>' +
     '<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="ahuRebuildRoute()" ' +
     'title="Re-read the route from the standard after a specification change. Signatures and readings are carried forward.">' +
     tkIcon('refresh', 12) + ' Rebuild route</button>' +
@@ -29091,6 +29119,17 @@ function ahuTab(k) {
                ncr: _ahuTabNcr, dispatch: _ahuTabDispatch, dossier: _ahuTabDossier }[k];
   try { body.innerHTML = fn ? fn(_AHU.unit) : ''; }
   catch (e) { body.innerHTML = _ahuCard('<div style="color:#C00000">Could not draw this tab: ' + _ahuEsc(e.message) + '</div>'); }
+  // A scan opens a step that may be forty rows down a route. Bringing it into view is the
+  // difference between landing on the right step and landing on a long list that contains it.
+  if (k === 'route' && _AHU.openStep) {
+    const el = document.getElementById('ahu-step-' + _AHU.openStep);
+    if (el) {
+      try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { el.scrollIntoView(); }
+      el.style.outline = '2px solid var(--emerald)';
+      el.style.outlineOffset = '2px';
+      setTimeout(() => { el.style.outline = ''; }, 2400);
+    }
+  }
 }
 
 /* ── Route & sign-off ── */
@@ -29153,7 +29192,8 @@ function _ahuStepRow(s, gateBlk) {
       gb.map(b => '<li>' + _ahuEsc(b) + '</li>').join('') + '</ul></div>';
   }
 
-  return '<div style="border:1px solid ' + (blocked ? 'var(--line)' : tone + '40') +
+  return '<div id="ahu-step-' + _ahuA(s.code) + '" style="border:1px solid ' +
+    (blocked ? 'var(--line)' : tone + '40') +
     ';border-radius:9px;padding:10px 12px;background:' + (signed ? '#00B0600A' : 'transparent') + '">' +
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">' +
     '<div style="min-width:220px;flex:1">' +
@@ -29973,6 +30013,97 @@ async function ahuDossierPDF() {
 }
 
 /* A single-page card for the unit itself — what the shop floor pins to the frame. */
+/* ── Scan-to-step ──────────────────────────────────────────────────────────────────────────────
+   A sign-off that has to be walked back to a desk is a sign-off that happens at the end of the
+   shift, from memory, in a batch. The point of this card is that the record is made AT the machine:
+   a phone camera on the code beside the workstation opens that step's readings form and nothing
+   else.
+
+   Printed from the browser rather than drawn into a PDF. The codes are SVG, so they print at the
+   printer's own resolution instead of at whatever raster size a PDF library was handed — and a QR
+   is exactly the kind of image where that difference decides whether it scans. */
+async function ahuShopCard() {
+  const d = _AHU.unit; if (!d) return;
+  const id = ((d.unit || {}).id) || _AHU.unitId;
+  let c;
+  try { c = await tkApi('/api/ahu/unit/' + encodeURIComponent(id) + '/card'); }
+  catch (e) { toast('Could not build the card: ' + e.message, 'warn'); return; }
+  const u = c.unit || {}, o = c.order || {};
+
+  const head =
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;' +
+    'border-bottom:2px solid #0B1F3A;padding-bottom:10px;margin-bottom:14px">' +
+    '<div><div style="font-size:22px;font-weight:800;color:#0B1F3A;font-variant-numeric:tabular-nums">' +
+    _ahuEsc(u.pin || u.id) + '</div>' +
+    '<div style="font-size:12px;color:#444;margin-top:2px">' +
+    _ahuEsc([u.tag, u.family, o.poNumber, o.customer].filter(Boolean).join(' · ')) + '</div>' +
+    '<div style="font-size:12px;color:#444">' +
+    (o.deliveryDate ? 'Delivery ' + _ahuEsc(o.deliveryDate) : '') +
+    (u.sectionCount ? ' · ' + _ahuEsc(u.sectionCount) + ' sections' : '') + '</div></div>' +
+    '<div style="text-align:center">' + (c.unitQr || '') +
+    '<div style="font-size:10px;color:#666">Whole unit</div></div></div>';
+
+  const cards = (c.steps || []).map(st =>
+    '<div class="ahu-card-step" style="display:flex;gap:12px;align-items:center;' +
+    'border:1px solid #CBD5E1;border-radius:8px;padding:10px;margin-bottom:8px">' +
+    '<div style="flex:0 0 auto">' + (st.qr ||
+      '<div style="width:96px;height:96px;border:1px dashed #DC2626;color:#DC2626;font-size:10px;' +
+      'display:flex;align-items:center;justify-content:center;text-align:center;padding:4px">' +
+      'no code — see the note below</div>') + '</div>' +
+    '<div style="flex:1 1 auto;min-width:0">' +
+    '<div style="font-size:16px;font-weight:800;color:#0B1F3A;font-variant-numeric:tabular-nums">' +
+    _ahuEsc(st.code) + '</div>' +
+    '<div style="font-size:13px;color:#111">' + _ahuEsc(st.title || '') + '</div>' +
+    '<div style="font-size:11px;color:#555;margin-top:3px">' +
+    _ahuEsc([st.station, st.tact, _AHU_KIND_LABEL[st.kind] || st.kind].filter(Boolean).join(' · ')) +
+    '</div></div>' +
+    '<div style="flex:0 0 150px;border-left:1px solid #E2E8F0;padding-left:10px;font-size:10px;color:#666">' +
+    'Signed by<div style="height:22px;border-bottom:1px solid #94A3B8;margin:2px 0 8px"></div>' +
+    'Date<div style="height:22px;border-bottom:1px solid #94A3B8;margin-top:2px"></div></div>' +
+    '</div>').join('');
+
+  // A step whose link is too long for a symbol is NAMED. A card with a silent gap where a code
+  // should be looks complete, and the person at that station simply finds nothing to scan.
+  const gaps = (c.unprintable || []).length
+    ? '<div style="margin-top:10px;font-size:11px;color:#DC2626">' +
+      'These steps have no code on this card: ' +
+      _ahuEsc((c.unprintable || []).map(x => x.code).join(', ')) +
+      '. The link was too long to encode. Sign them from the traveller screen.</div>'
+    : '';
+
+  const empty = (c.steps || []).length ? '' :
+    '<div style="font-size:13px;color:#444">Every step on this route is signed. There is nothing ' +
+    'left to scan.</div>';
+
+  let ov = document.getElementById('ahuCardOverlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'ahuCardOverlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:9999;' +
+      'overflow:auto;padding:24px';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML =
+    '<div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;padding:22px">' +
+    '<div class="ahu-card-noprint" style="display:flex;justify-content:space-between;' +
+    'align-items:center;gap:10px;margin-bottom:14px">' +
+    '<div style="font-size:12px;color:#555">Print this and hang it with the unit. Scanning a code ' +
+    'opens that step on a phone or tablet, already signed in.</div>' +
+    '<div style="display:flex;gap:8px">' +
+    '<button class="btn btn-primary btn-sm" onclick="window.print()">Print</button>' +
+    '<button class="btn btn-ghost btn-sm" onclick="ahuCloseCard()">Close</button></div></div>' +
+    head + cards + empty + gaps +
+    '<div style="margin-top:12px;font-size:10px;color:#777">' +
+    _ahuEsc(c.origin || '') + ' · a code opens the portal at this step; signing still needs the ' +
+    'usual e-signature.</div></div>';
+  ov.style.display = 'block';
+}
+
+function ahuCloseCard() {
+  const ov = document.getElementById('ahuCardOverlay');
+  if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+
 async function ahuTravellerPDF() {
   const d = _AHU.unit; if (!d) return;
   const u = d.unit || {}, s = d.state || {};
@@ -30563,6 +30694,11 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Shop-floor card': 'Thẻ xưởng',
+  'Print this and hang it with the unit. Scanning a code opens that step on a phone or tablet, already signed in.': 'In thẻ này và treo cùng sản phẩm. Quét mã sẽ mở đúng bước đó trên điện thoại hoặc máy tính bảng, đã đăng nhập sẵn.',
+  'Whole unit': 'Toàn bộ sản phẩm',
+  'Signed by': 'Người ký',
+  'Every step on this route is signed. There is nothing left to scan.': 'Mọi bước trên lộ trình đã được ký. Không còn gì để quét.',
   'Weekly capacity (productive hours)': 'Năng lực theo tuần (giờ công hữu ích)',
   'Chase an NCR after (days)': 'Nhắc xử lý NCR sau (ngày)',
   'Leave the capacity blank and the chart reports hours with no verdict. That is deliberate — a chart drawn against a guessed capacity looks exactly like one drawn against a real one, and this is the number a delivery promise rests on.': 'Để trống năng lực thì biểu đồ chỉ báo số giờ mà không kết luận. Đây là chủ ý — biểu đồ vẽ theo một năng lực phỏng đoán trông y hệt biểu đồ vẽ theo năng lực thật, mà đây là con số mà cam kết giao hàng dựa vào.',

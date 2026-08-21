@@ -559,3 +559,78 @@ def test_changing_a_capacity_is_audited(api, tokens):
     rows = _rows()
     assert len(rows) == before + 1
     assert any("321" in str(x.get("detail") or "") for x in rows)
+
+
+# ── the shop-floor card ──────────────────────────────────────────────────────────────────────────
+# The value of a printed code is entirely in whether it opens the right thing. So these check the
+# LINK the symbol carries, not that a symbol was produced: tests/test_qr.py already proves a symbol
+# decodes to the text it was given, and the two together are the round trip.
+
+def test_the_card_carries_a_code_for_every_unsigned_step(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200, r
+    codes = {s["code"] for s in r["steps"]}
+    live = {s["code"] for s in _steps(api, tokens["admin"], unit).values() if not s.get("signedBy")}
+    assert codes == live
+    assert all(s["qr"].startswith("<svg") for s in r["steps"])
+
+
+def test_each_code_links_to_that_step_on_that_unit(api, tokens, unit):
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    for s in r["steps"]:
+        assert ("ahu=" + unit) in s["link"]
+        assert ("step=" + s["code"]) in s["link"]
+
+
+def test_a_signed_step_drops_off_the_card(api, tokens, unit):
+    """A card is for the work still to do. Codes for finished steps are noise beside the machine."""
+    steps = _steps(api, tokens["admin"], unit)
+    st, r = _sign(api, tokens["admin"], steps["G1"]["id"], "Passed")
+    assert st == 200, r
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert "G1" not in {s["code"] for s in r["steps"]}
+
+
+def test_the_card_says_which_steps_it_could_not_encode(api, tokens, unit):
+    """A silent gap where a code should be looks like a complete card, and the operator at that
+    station finds nothing to scan. Nothing is expected to overflow at realistic id lengths — this
+    pins that the field is reported rather than absent."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    assert r["unprintable"] == []
+    assert all(s["qr"] for s in r["steps"])
+
+
+def test_the_origin_comes_from_the_request_not_from_a_constant(api, tokens, unit, base_url):
+    """A card printed in the office has to keep working on the tablet that scans it."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"])
+    assert st == 200
+    assert r["origin"] and r["origin"] in r["steps"][0]["link"]
+    assert r["origin"].startswith("http://127.0.0.1:")
+
+
+def test_a_forwarded_request_is_told_it_arrived_over_https(api, tokens, unit):
+    """Behind Caddy the socket is plain HTTP on localhost. Without reading the forwarded headers
+    every printed code would point at http:// on an internal hostname."""
+    st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["admin"],
+                headers={"X-Forwarded-Proto": "https", "X-Forwarded-Host": "portal.humiley.com"})
+    assert st == 200
+    assert r["origin"] == "https://portal.humiley.com"
+    assert r["steps"][0]["link"].startswith("https://portal.humiley.com/?ahu=")
+
+
+def test_an_unknown_unit_has_no_card(api, tokens):
+    st, r = api("GET", "/api/ahu/unit/no-such-unit/card", tokens["admin"])
+    assert st == 404
+
+
+def test_the_card_is_closed_when_the_app_is_denied(api, tokens, unit):
+    import db
+    before = (db.get_employee("HML-STF") or {}).get("appsDenied")
+    db.update_employee("HML-STF", {"appsDenied": "ahu"})
+    try:
+        st, r = api("GET", "/api/ahu/unit/%s/card" % unit, tokens["staff"])
+        assert st == 403 and "not enabled" in r["error"]
+    finally:
+        db.update_employee("HML-STF", {"appsDenied": before or ""})
