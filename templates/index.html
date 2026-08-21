@@ -10306,7 +10306,8 @@ function _brandFooter(doc, pageNo, total, docCode, footLabel) {
   const label = _pdfSafe(String(footLabel || _lhCur.title || 'DOCUMENT')).toUpperCase();
   const code = docCode || _lhCur.code || 'HML-DOC';
   doc.setDrawColor.apply(doc, _LH_HAIR); doc.setLineWidth(0.3); doc.line(M, fy, W - M, fy);
-  try { doc.addImage(_lhLogo(), 'PNG', M, fy + 1.7, 17, 5.95, 'HMLLOGO', 'FAST'); } catch (e) {}
+  // 25.5 x 8.925mm, up from 17 x 5.95 — the same 1.5x as the quotation footer, same aspect.
+  try { doc.addImage(_lhLogo(), 'PNG', M, fy + 1.2, 25.5, 8.925, 'HMLLOGO', 'FAST'); } catch (e) {}
   _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor.apply(doc, _LH_NAVY);
   doc.text(label, W / 2, fy + 5, { align: 'center' });
   doc.text('Page ' + pageNo + ' / ' + total, W - M, fy + 3.6, { align: 'right' });
@@ -28527,12 +28528,22 @@ function _qtBar(doc) {
   doc.setFillColor(0, 176, 96); doc.rect(0, 0, 40, 4, 'F');
   doc.setFillColor(32, 80, 144); doc.rect(40, 0, 28, 4, 'F');
 }
-function _qtFoot(doc, page, total, ref) {
+function _qtFoot(doc, page, total, ref, kind) {
   const y = 281;
   doc.setDrawColor(207, 214, 226); doc.setLineWidth(0.2); doc.line(_QT_ML, y - 4, 210 - _QT_MR, y - 4);
-  try { doc.addImage(_lhLogo(), 'PNG', _QT_ML, y - 2.5, 16, 5.6, 'HMLLOGO', 'FAST'); } catch (e) { }
+  // 24 x 8.4mm, up from 16 x 5.6 — same 1:2.857 aspect as the source PNG, so it scales rather
+  // than stretches. The mark was small enough at the old size that the wordmark under the H was
+  // not legible in print.
+  try { doc.addImage(_lhLogo(), 'PNG', _QT_ML, y - 3.4, 24, 8.4, 'HMLLOGO', 'FAST'); } catch (e) { }
   _pdfFont(doc, 'bold'); doc.setFontSize(7); doc.setTextColor(32, 80, 144);
-  doc.text('L E T T E R H E A D', 105, y + 1, { align: 'center' });
+  /* The band said "LETTERHEAD" on every document Humiley sends — the name of the stationery, not
+     of the document. A customer holding two of them could not tell a budgetary estimate from a
+     firm offer by looking. It now carries the document's own kind, derived server-side from the
+     SUBJECT line (tender.doc_kind), so the footer cannot drift from the letter's own heading. */
+  const band = String(kind || (typeof _tndSum !== 'undefined' && _tndSum && _tndSum.document
+                               && _tndSum.document.docKind) || 'Quotation')
+    .toUpperCase().split('').join(' ');
+  doc.text(_pmPdfTxt(band), 105, y + 1, { align: 'center' });
   doc.setFontSize(7);
   doc.text(_pmPdfTxt('Page ' + page + ' / ' + total), 210 - _QT_MR, y - 0.5, { align: 'right' });
   _pdfFont(doc, 'italic'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
@@ -28719,7 +28730,7 @@ function tndQuotePDF() {
   }
 
   const total = doc.getNumberOfPages();
-  for (let i = 1; i <= total; i++) { doc.setPage(i); _qtFoot(doc, i, total, d.quoteNo); }
+  for (let i = 1; i <= total; i++) { doc.setPage(i); _qtFoot(doc, i, total, d.quoteNo, d.docKind); }
   doc.save('Quotation_' + String(d.quoteNo || 'HML').replace(/[^A-Za-z0-9]+/g, '_') + '.pdf');
   try { tkAudit('Quotation exported', d.quoteNo || '', (client.name || '') + ' · ' + _PAY_FMT(tot.gross)); } catch (x) { }
 }
