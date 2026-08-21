@@ -137,8 +137,37 @@ cmd_rm() {
     exit 1
   fi
   if [ "$unmerged" != "0" ]; then
-    echo "kept branch $branch — it has $unmerged commit(s) not on origin/main"
-    echo "  delete when merged:  git branch -D $branch"
+    # `origin/main..$branch` asks whether these COMMITS are ancestors of main. This repo squash-
+    # merges, so a fully merged branch never satisfies that and its work is reported as unmerged —
+    # the same "does it exist" / "did it ship" confusion that costs people an afternoon elsewhere.
+    # Ask the question that actually matters instead: is every file this branch touched already
+    # byte-identical on origin/main? If so the work landed, whatever the commit graph says. The
+    # branch is still not auto-deleted — being wrong here loses work — but say which case it is.
+    git -C "$MAIN_REPO" fetch -q origin main 2>/dev/null || true
+    local base landed=no f
+    base=$(git -C "$MAIN_REPO" merge-base origin/main "$branch" 2>/dev/null || true)
+    if [ -n "$base" ]; then
+      landed=yes
+      # `</dev/null` on the inner git: without it, git reads the loop's remaining input and the
+      # loop silently skips files — the classic way a check like this passes without looking.
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        git -C "$MAIN_REPO" diff --quiet origin/main "$branch" -- "$f" </dev/null || { landed=no; break; }
+      done <<EOF
+$(git -C "$MAIN_REPO" diff --name-only "$base" "$branch")
+EOF
+    fi
+    if [ "$landed" = yes ]; then
+      echo "kept branch $branch — its $unmerged commit(s) are not ancestors of origin/main, but every"
+      echo "  file it touched is already identical there. That is what a squash merge looks like."
+      echo "  confirm:  git diff origin/main $branch   (expect no output)"
+      echo "  delete:   git branch -D $branch"
+    else
+      echo "kept branch $branch — it has $unmerged commit(s) not on origin/main, and its files still"
+      echo "  differ there, so this work has NOT landed. Push it before deleting anything."
+      echo "  see it:   git log --oneline origin/main..$branch"
+      echo "  delete when merged:  git branch -D $branch"
+    fi
   else
     git -C "$MAIN_REPO" branch -D "$branch" >/dev/null 2>&1 || true
     echo "removed $wt and branch $branch"
