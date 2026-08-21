@@ -3821,8 +3821,17 @@ class Handler(BaseHTTPRequestHandler):
         # string: it is already bumped on every deploy and it is what actually decides which cached
         # shell a device keeps serving, so comparing anything else could report "up to date" while
         # the old shell was still on screen.
+        # `appVersion` is the mtime of the served index.html, and it is deliberately the SAME number
+        # the browser reports as `document.lastModified` for the page it is actually displaying.
+        # That pairing is what makes staleness detectable without a session: comparing the server's
+        # current value against the loaded page's own Last-Modified asks "is the HTML in front of
+        # this person older than the HTML I am serving now" — the question that actually matters.
+        # Comparing the WORKER's cache name instead (as the client used to) cannot answer it: the
+        # worker updates independently, so a device whose worker had moved to the new build while
+        # its page never reloaded looked current to every check and stayed stale indefinitely.
         if path == "/api/build":
-            return self._json({"ok": True, "build": _sw_build_id()})
+            return self._json({"ok": True, "build": _sw_build_id(),
+                               "appVersion": _app_version()})
 
         # Public health probe for uptime monitors (UptimeRobot/Pingdom/etc.) — no auth, cheap DB ping.
         if path == "/api/health":
