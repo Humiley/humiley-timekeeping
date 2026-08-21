@@ -62,12 +62,17 @@ and the answer to *"can we take this order for September?"* becomes a screen rat
 
 ### 2. Actual versus tact — the data is already there and unused
 
-Every step row records `startedOn` and `signedOn`, and `ahu_route` carries the SOP's typical cycle
-for each workstation. Nothing compares them.
+`ahu_route` carries the SOP's typical cycle for each workstation. Nothing compares it with reality.
 
-Comparing them gives, for free: which station is the bottleneck, which unit is running long *right
-now* rather than at the end, and whether the SOP's tact times are actually true — they were written
-before the line ran.
+**Correction, from building it:** this section originally said each step records `startedOn` and
+`signedOn`. It does not. A step records the instant it was **signed** and never the instant it was
+**started**, so what is measurable is the elapsed time between consecutive sign-offs — queueing,
+breaks and overnight included. That is what shipped, under that name. Real touch time needs the shop
+floor to record a start, which is a change to how people work rather than to the schema.
+
+Even so it gives, for free: which station is the bottleneck, which unit is sitting *right now*
+rather than at the end, and whether the SOP's tact times are true — they were written before the
+line ran.
 
 Wire it into the board as an on-track / running-long flag per unit, and into the KPI band as average
 cycle by station.
@@ -144,14 +149,33 @@ one. Worth doing after the internal items, deliberately.
 
 ---
 
-## Suggested order
+## Status
 
-| | Item | Why first |
+| | Item | State |
 |---|---|---|
-| 1 | Capacity and load chart | The SOP names it as a control; it prevents the most expensive mistake |
-| 2 | Actual vs tact | Data already captured, nothing reads it — cheapest real insight available |
-| 3 | Push notifications | Turns a dashboard into something that runs a factory |
-| 4 | Scan-to-step shop-floor mode | Determines whether sign-offs happen at the point of work |
-| 5 | Procurement ↔ BOM link | Removes a double entry and makes G3 truthful |
-| 6 | Live push for the board | Genuine real time, but 30s was never the problem |
-| 7 | Document reconciliation | Not code — but a wrong figure in a controlled document outlives any of this |
+| 1 | Capacity and load chart | **Built.** `ahu_capacity.py`, `/api/ahu/capacity`, Capacity & Load view |
+| 2 | Actual vs tact | **Built.** `elapsed_between_signoffs`, shown on the same screen |
+| 3 | Push notifications | **Built.** `ahu_notify.py` — failed step, held gate, aging NCR |
+| 4 | Scan-to-step shop-floor mode | **Built.** `qr.py`, `/api/ahu/unit/<id>/card`, printable card, deep link |
+| 5 | Procurement ↔ BOM link | **Blocked — specified.** See below and `docs/PROCUREMENT-BOM-LINK.md` |
+| 6 | Live push for the board | **Built.** `/api/ahu/changes`, long poll; ~0.5 s to redraw |
+| 7 | Document reconciliation | **Open — not code.** Needs the SOP owner, see item 7 above |
+
+### Why item 5 stopped where it did
+
+The Procurement application is a separate git repository, `.gitignore`d from this one, with its own
+database and deployment. It is not in this checkout, so the endpoint the link needs cannot be
+written here and its schema cannot even be read.
+
+Two things were done instead. The portal side now has somewhere to put the answer — `ahu_bom` lines
+carry a `poRef`, and the Materials tab counts kitted lines that do not record where their material
+came from. And `docs/PROCUREMENT-BOM-LINK.md` states the contract being asked for, including the
+rules the portal will apply to the response, so whoever builds the Procurement half is not guessing.
+
+The count is a statement, not a gate criterion, and that should stay true. Kitting from stock is
+normal and its incoming inspection happened on a different record; refusing G3 for a missing receipt
+reference would block legitimate work on a rule nobody has written down.
+
+There is also a question only the company can answer: whether a BOM line's authoritative source is a
+purchase-order line, a goods receipt, or a stock issue. Those are three different records, and the
+answer decides what "linked" means.

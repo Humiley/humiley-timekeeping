@@ -15988,7 +15988,14 @@ const _QA_SPECS = {
     { k: 'receivedQty', label: 'Received quantity', type: 'number' },
     { k: 'shortageQty', label: 'Shortage', type: 'number' },
     { k: 'iqcStatus', label: 'Incoming inspection', type: 'select', options: ['', 'Pending', 'Passed', 'Rejected', 'N/A'] },
-    { k: 'supplier', label: 'Supplier' }, { k: 'notes', label: 'Notes', type: 'textarea' }] },
+    { k: 'supplier', label: 'Supplier' },
+    // Where the material came from. Today this is typed, and the same fact already exists as a
+    // purchase-order line in Procurement — see docs/PROCUREMENT-BOM-LINK.md for the contract that
+    // would fill it automatically. Recording it by hand in the meantime is not busywork: without
+    // it the portal cannot answer "where did this material come from" at all, and a kitted line
+    // with no source is exactly what a link would have to reconcile.
+    { k: 'poRef', label: 'Purchase order / receipt' },
+    { k: 'notes', label: 'Notes', type: 'textarea' }] },
   ahu_trace: { title: 'Component Serial', coll: 'ahu_trace', reload: 'ahu_trace', fields: [
     { k: 'component', label: 'Component', type: 'select', options: ['Fan', 'Motor', 'Coil', 'Filter', 'Controller', 'Damper', 'Heat recovery', 'Other'] },
     { k: 'maker', label: 'Make' }, { k: 'serial', label: 'Serial number' }, { k: 'batch', label: 'Batch / lot' },
@@ -29535,6 +29542,26 @@ function _ahuTabDocs(d) {
       '</tr></thead><tbody>' + rows + '</tbody></table></div>');
 }
 
+/* How many kitted lines can say where their material came from.
+
+   Deliberately a STATEMENT, not a gate criterion. Kitting from existing stock is normal and its
+   incoming inspection happened on a different record months earlier, so demanding a receipt per
+   line would refuse legitimate work — and inventing an acceptance rule the company has not written
+   is exactly what this module tries not to do. What the count does is make the gap visible, which
+   is the honest position until the Procurement link fills the field automatically. See
+   docs/PROCUREMENT-BOM-LINK.md. */
+function _ahuSourceNote(bom) {
+  const kitted = (bom || []).filter(b => Number(b.kittedQty || 0) > 0);
+  if (!kitted.length) return '';
+  const sourced = kitted.filter(b => String(b.poRef || '').trim()).length;
+  if (sourced === kitted.length) return '';
+  return '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:#A1620710;' +
+    'border:1px solid #A1620730;font-size:11.5px;color:#7A4E05">' +
+    (kitted.length - sourced) + ' of ' + kitted.length + ' kitted line(s) do not record a purchase ' +
+    'order or receipt. G3 does not refuse on this — kitting from stock is normal — but until it is ' +
+    'filled in, the portal cannot say where that material came from.</div>';
+}
+
 /* ── Materials ── */
 function _ahuTabBom(d) {
   const bom = d.bom || [];
@@ -29550,17 +29577,21 @@ function _ahuTabBom(d) {
       '<td>' + (b.iqcStatus ? _ahuBadge(b.iqcStatus, _ahuTone(b.iqcStatus === 'Passed' ? 'passed' : 'pending')) : '—') + '</td>' +
       '<td style="font-variant-numeric:tabular-nums;color:' + (n(b.shortageQty) > 0 ? '#DC2626' : 'inherit') + '">' +
       _ahuEsc(b.shortageQty || 0) + '</td>' +
+      '<td style="font-size:11.5px;font-variant-numeric:tabular-nums">' +
+      (b.poRef ? _ahuEsc(b.poRef)
+               : '<span style="color:#A16207" title="This line does not say where the material came from">not recorded</span>') +
+      '</td>' +
       '<td><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="tkQuickAdd(\'ahu_bom\',\'' +
       _ahuA(b.id) + '\')">Edit</button></td></tr>';
-  }).join('') : '<tr><td colspan="8" style="color:var(--text-light);padding:14px">No bill of materials raised.</td></tr>';
+  }).join('') : '<tr><td colspan="9" style="color:var(--text-light);padding:14px">No bill of materials raised.</td></tr>';
   return _ahuCard('<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">' +
     '<div><span style="font-weight:800;color:var(--navy)">Bill of materials</span>' +
     '<div style="font-size:11.5px;color:var(--text-light)">Gate G3 needs every line kitted, incoming inspection closed and no shortage.</div></div>' +
     '<button class="btn btn-primary btn-sm" style="font-size:11.5px" onclick="ahuAddChild(\'ahu_bom\')">' +
     tkIcon('plus', 12) + ' Add a line</button></div>' +
-    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:760px"><thead><tr>' +
-    '<th>Part no.</th><th>Description</th><th>Required</th><th>Kitted</th><th>Received</th><th>IQC</th><th>Short</th><th></th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div>');
+    '<div style="overflow-x:auto"><table class="table" style="width:100%;min-width:860px"><thead><tr>' +
+    '<th>Part no.</th><th>Description</th><th>Required</th><th>Kitted</th><th>Received</th><th>IQC</th><th>Short</th><th>PO / receipt</th><th></th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div>' + _ahuSourceNote(bom));
 }
 
 /* ── Traceability ── */
@@ -30739,6 +30770,9 @@ const _VI = {
   'Capacity & Load': 'Năng lực & Tải sản xuất',
   'The rolling load chart AHU-SOP-MASTER-001 §6.7 calls for — hours of committed work against the weeks they fall in': 'Biểu đồ tải cuốn chiếu theo yêu cầu của AHU-SOP-MASTER-001 §6.7 — số giờ công đã cam kết theo từng tuần',
   'Remaining work by week': 'Khối lượng công việc còn lại theo tuần',
+  'Purchase order / receipt': 'Đơn mua hàng / phiếu nhập',
+  'PO / receipt': 'ĐMH / phiếu nhập',
+  'not recorded': 'chưa ghi nhận',
   'Shop-floor card': 'Thẻ xưởng',
   'Print this and hang it with the unit. Scanning a code opens that step on a phone or tablet, already signed in.': 'In thẻ này và treo cùng sản phẩm. Quét mã sẽ mở đúng bước đó trên điện thoại hoặc máy tính bảng, đã đăng nhập sẵn.',
   'Whole unit': 'Toàn bộ sản phẩm',
