@@ -223,9 +223,44 @@ ok('CPI is derived from EV', /cpi = \(ac > 0 && bac > 0\) \? ev \/ ac/.test(evm)
 // unchanged for callers that only render it; the flag lets a screen decline to assert instead.
 ok('SPI carries whether it could be measured at all', /spiMeasurable/.test(evm),
    'a 1.00 nobody can distinguish from a real on-schedule reading is the silent-zero shape');
-ok('spiMeasurable requires a real PV and a real EV', /const spiMeasurable = pv > 0 && bac > 0 && ev > 0/.test(evm));
+// (the stronger form of this assertion lives below, after the EAC block — the original tested
+//  `pv > 0`, which turned out to be the symptom rather than the cause)
 ok('EV reports which basis produced it', /evBasis:/.test(evm),
    'schedule-derived, deliverable-typed and project-typed are three different claims');
+
+/* ── a forecast needs earned value, or it is not a forecast ─────────────────── */
+// `const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;` fell through to AC when ev === 0, because a
+// zero EV makes CPI zero. A ₫1B project that had spent ₫200M and recorded no progress reported
+// "Forecast ₫200M · Variance +₫800M · To Complete ₫0" — it will finish for what has been spent,
+// with nothing left to spend, and the positive VAC reads as an underspend. Type 10% and the same
+// project reads EAC ₫2B / VAC −₫1B. These print on the Status, Progress and Closeout PDFs.
+ok('EAC is not computed without earned value', /const eacMeasurable = ev > 0 && ac > 0 && bac > 0/.test(evm));
+ok('EAC never falls back to AC', !/\? bac \/ cpi : ac;/.test(evm),
+   'falling back to AC asserts the job finishes for what has already been spent');
+ok('EAC is null when it cannot be computed', /const eac = eacMeasurable \? bac \/ cpi : null/.test(evm));
+ok('VAC follows EAC into null', /vac: eacMeasurable \? bac - eac : null/.test(evm));
+ok('ETC follows EAC into null', /etc: eacMeasurable \? eac - ac : null/.test(evm));
+// every place that prints it must handle the null rather than rendering "₫0" or "NaN"
+{
+  const cost = take('function pmRenderCosts(', 'pmRenderCosts');
+  ok('the Cost/EVM tiles print an em dash for a null forecast', /r\[1\] == null \? '—'/.test(cost));
+  ok('and say why there is no forecast', /eacMeasurable \? '' :/.test(cost));
+}
+ok('the Status PDF declines instead of asserting',
+   /eacMeasurable \? _pmMoney\(ev\.eac\) : 'not computable/.test(src));
+ok('the client-headed progress report declines too',
+   /eacMeasurable\n?\s*\? \(_pmMoney\(ev\.eac\)/.test(src) || /eacMeasurable$/m.test(src));
+ok('the Closeout PDF declines too', /\['Final CPI', ev\.eacMeasurable \?/.test(src));
+
+/* ── and the SPI guard must test the CAUSE, not the symptom ─────────────────── */
+// The first version tested `pv > 0`. PV falls back to EV when there is no baseline and no phased
+// plan, so that was GUARANTEED true whenever ev > 0 — the flag was true in exactly the case it was
+// written to catch, and could only be false when the ratio was 0/0 anyway.
+ok('spiMeasurable requires PV to be derived independently of EV',
+   /const pvIndependent = \(phased != null\) \|\| \(tp != null\)/.test(evm),
+   'testing pv > 0 tests the symptom; the question is whether PV came from anywhere but EV');
+ok('and spiMeasurable is built on that', /const spiMeasurable = pvIndependent &&/.test(evm));
+ok('the old symptom-only test is gone', !/const spiMeasurable = pv > 0 && bac > 0 && ev > 0/.test(evm));
 
 console.log('\n' + pass + ' passed, ' + fail + ' failed\n');
 process.exit(fail ? 1 : 0);

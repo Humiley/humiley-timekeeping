@@ -20259,14 +20259,25 @@ function _pmEvm(p) {
   const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
   const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
-  // A confident 1.00 — "perfectly on schedule" — is what this returned with NOTHING to
-  // measure: no baseline, no phased cost register, so pv === ev and the ratio is 1 by
-  // construction. The number is still 1 for callers that only render it, but the flag lets a
-  // screen say — instead of asserting a performance it never computed.
-  const spiMeasurable = pv > 0 && bac > 0 && ev > 0;
+  // A confident 1.00 — "perfectly on schedule" — with NOTHING to measure: no baseline and no
+  // phased cost register means pv falls back to ev on the line above, so the ratio is 1 by
+  // construction whatever the project is doing.
+  // The first version of this guard tested `pv > 0`, which is GUARANTEED whenever ev > 0 on that
+  // fallback branch — so it was true in exactly the case it was written to catch, and could only
+  // be false when the ratio was 0/0 anyway. It tested the symptom. The cause is whether PV was
+  // derived INDEPENDENTLY of EV at all: a time-phased plan, or elapsed time against a baseline.
+  const pvIndependent = (phased != null) || (tp != null);
+  const spiMeasurable = pvIndependent && pv > 0 && bac > 0 && ev > 0;
   const spi = spiMeasurable ? ev / pv : 1;
-  const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, spiMeasurable, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null,
+  // A forecast needs earned value. With ev === 0 the old `cpi > 0` test failed and EAC fell
+  // through to `ac` — asserting the project will finish for what has been spent, with ETC ₫0
+  // and a large POSITIVE VAC that reads as an underspend. That is not a cautious estimate, it
+  // is the opposite of the truth on a job that has consumed budget and delivered nothing yet.
+  const eacMeasurable = ev > 0 && ac > 0 && bac > 0;
+  const eac = eacMeasurable ? bac / cpi : null;
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, spiMeasurable, eacMeasurable,
+           eac, vac: eacMeasurable ? bac - eac : null, etc: eacMeasurable ? eac - ac : null,
+           pct: ratio * 100, measurable, phasedPv: phased != null,
            evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
@@ -20441,7 +20452,7 @@ function pmStatusPDF(pid) {
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
   const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
   const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
-  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', _pmMoney(ev.eac)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', ev.eacMeasurable ? _pmMoney(ev.eac) : 'not computable — no earned value recorded'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—'], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
   const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
@@ -20477,7 +20488,7 @@ async function pmCloseoutPDF(pid) {
   const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
-  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.eacMeasurable ? ev.cpi.toFixed(2) : '—'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
   const procs = _pmScopeFor('pm_procurement', p.id), procClosed = procs.filter(x => x.status === 'Closed' || x.status === 'Completed').length;
   const ret = procs.reduce((s, x) => s + (+x.value || 0) * (+x.retentionPct || 0) / 100, 0);
@@ -20678,7 +20689,9 @@ function pmReport(pid, mode) {
   line('Budget (BAC) / Actual (AC)', _pmMoney(ev.bac) + '    /    ' + _pmMoney(ev.ac));
   line('Earned Value (EV)', _pmMoney(ev.ev));
   line('CPI / SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2));
-  line('Forecast (EAC) / Variance (VAC)', _pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac));
+  line('Forecast (EAC) / Variance (VAC)', ev.eacMeasurable
+    ? (_pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac))
+    : 'not computable — no earned value recorded');
 
   const tasks = _pmScopeFor('pm_tasks', p.id);
   sect('3. Progress this ' + R.word);
@@ -22967,7 +22980,8 @@ function pmRenderCosts(pid) {
     (_splan.phased ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _t('Planned is spread evenly — put a Period on each cost line to draw the real plan curve.') + '</div>') +
     '<div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
   const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
-    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
+    // A null forecast prints an em dash and says why, rather than a figure with no basis.
+    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] == null ? 'var(--text-light)' : (r[1] < 0 ? '#EF4444' : 'var(--navy)')) + '">' + (r[1] == null ? '—' : _pmMoney(r[1])) + '</div></div>').join('') + '</div>' + (ev.eacMeasurable ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:9px">' + _pmEsc(_t('No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.')) + '</div>') + '</div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
   const tbl = _pmCard('Cost Register', 'pm_costs', 'Add cost line', _pmTable('pm_costs', [
     { label: 'Item', render: r => '<span style="font-weight:600">' + _pmEsc(r.item || '') + '</span>' },
