@@ -7416,6 +7416,12 @@ class Handler(BaseHTTPRequestHandler):
     # the product can ever put "hr" there, so the HR gate on /api/coll was a check that could not
     # fire. Any manager-tier account could read the recruitment board, the appraisal file and the
     # talent grid of an app they had never been given. One helper now, so the two cannot drift.
+    # Every app that is granted rather than un-denied. `_app_blocked` is currently only ever called
+    # with an app derived from a COLLECTION name, and that derivation yields crm/pm/eng/est/ahu/hr or
+    # None — so only "hr" is reachable through /api/coll today. finance and procurement are listed
+    # because they are opt-in everywhere else in the product (tkSetApp, _appDeniedCurrent,
+    # _procurement_sso_token) and this must not disagree with them if a caller is ever added; they
+    # are NOT a claim that /api/coll gates them now.
     OPT_IN_APPS = ("hr", "finance", "procurement")
 
     def _apps_allowed(self, u):
@@ -8399,7 +8405,19 @@ class Handler(BaseHTTPRequestHandler):
     # company. Scoped below in _coll_list.
     TEAM_SCOPED = {"claims", "travel", "payments"}
     # Manager-only HR collections gated by the per-user "hr" app toggle (crm_*/pm_* inferred by prefix).
-    HR_APP_COLLS = {"jobs", "candidates", "reviews", "talent", "competency", "pip", "exits", "contracts", "certificates", "review_cycles", "decisions", "hrletters"}
+    # Collections the HR APP owns. The app switch governs the HR MODULE, so a collection another
+    # module legitimately needs is NOT in here, however HR-shaped it looks:
+    #   `jobs`    — the Approval Inbox lists requisitions awaiting the caller's approval, and that
+    #               inbox belongs to no app. Gating it emptied the Requisitions section, undercounted
+    #               the pending KPI and fired an unrelated red HR error toast at sign-in.
+    #   `reviews` — the governing appraisal rating is what drives P3 on a payslip, so the Payroll page
+    #               and the Payroll report both load it. Gating it broke Finance for anyone without HR
+    #               — including the report added in the same commit.
+    # Both remain protected by READ_MIN (manager), which is their real gate and always was. Drawing
+    # this boundary by "sounds like HR" rather than by "which module owns it" is what broke two
+    # working screens.
+    HR_APP_COLLS = {"candidates", "talent", "competency", "pip", "exits", "contracts",
+                    "certificates", "review_cycles", "decisions", "hrletters"}
     # ⚠️ "bank" is the LEGACY free-text column. The salary transfer actually runs on the structured
     # four below (db.py migration + EMP_FIELDS), and because db.list_employees() is a SELECT *, any
     # field missing from these sets is returned to everyone. They were missing: every authenticated
