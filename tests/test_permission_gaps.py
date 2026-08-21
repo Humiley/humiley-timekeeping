@@ -111,3 +111,44 @@ def test_your_own_contract_survives_the_hr_gate(api, tokens):
     finally:
         db.delete_collection_item("contracts", "CT-PERM-1")
         db.delete_collection_item("contracts", "CT-PERM-2")
+
+
+# ─── the HR app switch governs the MODULE, not every HR-shaped table ────────────────────────────
+def test_the_approval_inbox_still_sees_requisitions_without_the_hr_app(api, tokens):
+    """`jobs` was put behind the HR app gate and the Approval Inbox broke: it lists requisitions
+    awaiting the caller's approval, and that inbox belongs to no app. A manager-tier account with no
+    HR grant got an empty Requisitions section, an undercounted pending KPI and a red HR error toast
+    at sign-in — on a screen with nothing to do with HR."""
+    before = (db.get_employee("HML-MGR") or {}).get("appsAllowed") or ""
+    try:
+        db.update_employee("HML-MGR", {"appsAllowed": ""})
+        st, _ = api("GET", "/api/coll/jobs", tokens["mgr"])
+        assert st == 200, "the approval inbox needs requisitions, and it is not part of the HR app"
+    finally:
+        db.update_employee("HML-MGR", {"appsAllowed": before})
+
+
+def test_payroll_still_sees_the_ratings_that_drive_P3_without_the_hr_app(api, tokens):
+    """`reviews` carries the governing appraisal rating, which is what P3 on a payslip is computed
+    from — so the Payroll page and the Payroll report both load it. Gating it on the HR app broke
+    Finance for anyone without HR, including the payroll report added in the same commit."""
+    before = (db.get_employee("HML-MGT") or {}).get("appsAllowed") or ""
+    try:
+        db.update_employee("HML-MGT", {"appsAllowed": "finance"})
+        st, _ = api("GET", "/api/coll/reviews", tokens["management"])
+        assert st == 200, "a Finance approver prices P3 from the rating; that is not an HR-app read"
+    finally:
+        db.update_employee("HML-MGT", {"appsAllowed": before})
+
+
+def test_the_genuinely_hr_only_collections_are_still_gated(api, tokens):
+    """Narrowing the list only helps if what is left still BITES. If this passes with everything
+    stripped out of HR_APP_COLLS then the gate is decorative again, which is where this started."""
+    before = (db.get_employee("HML-MGR") or {}).get("appsAllowed") or ""
+    try:
+        db.update_employee("HML-MGR", {"appsAllowed": ""})
+        for coll in ("candidates", "talent", "competency", "review_cycles"):
+            st, _ = api("GET", "/api/coll/" + coll, tokens["mgr"])
+            assert st == 403, "%s is HR-app-only and must stay behind the grant" % coll
+    finally:
+        db.update_employee("HML-MGR", {"appsAllowed": before})

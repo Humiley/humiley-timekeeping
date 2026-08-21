@@ -3662,6 +3662,10 @@ function tkVerifySelectedZone(force) {
     const confidentlyOut = acc > 0 && acc <= radius && dist - acc > radius;
     if (silent) return inside ? 'in' : (confidentlyOut ? 'out' : 'unverified');   // dry-run for the cache short-circuit: NO stale display / button / sharpen
     _tkInsideSelected = inside;
+    // A RESULT is on screen now, so the "still locating" timer must not overwrite it. The flag was
+    // set when locating began and never cleared anywhere, which made the 3-second message fire over
+    // messages the text-matching predicate it replaced had deliberately left alone.
+    if (status) status.dataset.phase = 'done';
     const distStr = dist >= 1000 ? (dist / 1000).toFixed(1) + ' km' : dist + ' m';
     const accNote = acc ? ', ±' + acc + 'm' : ' (recent)';
     if (inside) {
@@ -3700,8 +3704,8 @@ function tkVerifySelectedZone(force) {
     evaluate(lat, lon, acc);
   };
   /* Permission denied / no fix ≠ blocked from working: allow check-in, recorded as GPS-unverified. */
-  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.innerHTML = _alert + '<strong>' + _t2('Location is blocked', 'Quyền vị trí đang bị chặn') + '</strong> — ' + _t2('you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.', 'bạn vẫn có thể chấm công vào (ghi nhận là chưa xác minh GPS). Để xác minh lần sau: biểu tượng ổ khoá trên trình duyệt → Vị trí → Cho phép.'); _tkSetCheckinAllowed('unverified'); };
-  const _giveup = (e) => { if (_geoDone) return; _geoDone = true;
+  const _denied = () => { if (_geoDone) return; _geoDone = true; if (status) status.dataset.phase = 'done'; if (status) status.innerHTML = _alert + '<strong>' + _t2('Location is blocked', 'Quyền vị trí đang bị chặn') + '</strong> — ' + _t2('you can still check in (recorded as GPS-unverified). To verify next time: browser lock icon → Location → Allow.', 'bạn vẫn có thể chấm công vào (ghi nhận là chưa xác minh GPS). Để xác minh lần sau: biểu tượng ổ khoá trên trình duyệt → Vị trí → Cho phép.'); _tkSetCheckinAllowed('unverified'); };
+  const _giveup = (e) => { if (_geoDone) return; _geoDone = true; if (status) status.dataset.phase = 'done';
     var unavailable = e && e.code === 2;   // POSITION_UNAVAILABLE: the OS/device can\u2019t determine a location at all (usually the OS location setting is OFF, e.g. a desktop with no GPS)
     if (status) status.innerHTML = _alert + (unavailable
       ? '<strong>' + _t2('Your device can\u2019t determine its location.', 'Thiết bị của bạn không xác định được vị trí.') + '</strong> ' + _t2('Turn the location setting ON \u2014 on a Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (switch it on, and tick your browser); on a phone: enable Location/GPS for the browser \u2014 then press \u201CRe-check\u201D. You can still check in now (recorded as GPS-unverified).', 'Hãy BẬT dịch vụ vị trí \u2014 trên máy Mac: System Settings \u2192 Privacy &amp; Security \u2192 Location Services (bật lên và tích chọn trình duyệt của bạn); trên điện thoại: bật Vị trí/GPS cho trình duyệt \u2014 rồi bấm \u201CKiểm tra lại\u201D. Bạn vẫn có thể chấm công vào ngay (ghi nhận là chưa xác minh GPS).')
@@ -7021,7 +7025,21 @@ function _gsPaintSel() {
 function _hrEmp(id) { return (_DEMO_EMPLOYEES || []).find(e => e.id === id); }
 function _hrAv(e, sz) { return (typeof tkAvatar === 'function' && e && e.id) ? tkAvatar(e, sz || 'ava-sm') : '<div class="' + (sz || 'ava-sm') + '" style="background:#205090">' + ((e && e.ini) || '?') + '</div>'; }
 /* Pick a sensible icon from the KPI label so every page gets a consistent icon+text KPI. */
-const _KPI_HEX = { 'var(--emerald)': '#00B060', 'var(--navy)': '#205090', 'var(--warning)': '#F59E0B' };
+/* A CSS custom property CANNOT carry a concatenated alpha suffix. `background:var(--emerald)22`
+   substitutes at token level and yields two tokens, so the declaration is dropped and the element
+   renders TRANSPARENT — verified in the browser: var(--emerald)22 computes to rgba(0,0,0,0) while
+   #00B06022 computes to rgba(0,176,96,.13). This table exists for that reason, and every colour a
+   caller may pass to a tinted surface has to be in it. It was missing var(--text-light) and
+   var(--danger), so the "not measured" CPI/SPI tiles have been rendering with no icon tint. */
+const _KPI_HEX = { 'var(--emerald)': '#00B060', 'var(--navy)': '#205090', 'var(--warning)': '#F59E0B',
+                   'var(--danger)': '#EF4444', 'var(--text-light)': '#5C6470', 'var(--info)': '#0EA5E9' };
+/* The one safe way to tint a colour. Returns a hex the caller may suffix, and NEVER a var(). */
+function _tintHex(color) {
+  const c = String(color || '');
+  if (_KPI_HEX[c]) return _KPI_HEX[c];
+  if (/^#[0-9a-f]{6}$/i.test(c)) return c;
+  return '#205090';            // an unknown token would be transparent; navy is visible and wrong-looking
+}
 function _kpiIcon(label) {
   const l = (label || '').toLowerCase();
   if (l === 'cpi' || l === 'spi' || /portfolio cpi|portfolio spi/.test(l)) return '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>';
@@ -7048,7 +7066,7 @@ function _kpiIcon(label) {
   if (/late|time|hours/.test(l)) return TK_ICON.clock;
   return '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>';
 }
-const _hrKpi = (label, val, color) => _kpiTile(label, val, _KPI_HEX[color] || color || '#205090', _kpiIcon(label));
+const _hrKpi = (label, val, color) => _kpiTile(label, val, _tintHex(color), _kpiIcon(label));
 /* Icon KPI tile (icon-left + value + label) — the consistent professional KPI used across pages. */
 const _kpiTile = (label, val, color, icon) => '<div class="card kpi-tile" style="flex:1;min-width:160px;padding:15px 18px;display:flex;align-items:center;gap:13px">' +
   '<div style="width:42px;height:42px;border-radius:11px;background:' + color + '1f;display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div>' +
@@ -9686,8 +9704,20 @@ async function _payBuild() {
     t.P1 += agg.P1; t.P2 += agg.P2; t.P3 += agg.P3; t.welfare += agg.welfare; t.erCost += agg.employerCost;
     t.byDept[e.dept || '—'] = (t.byDept[e.dept || '—'] || 0) + agg.employerCost;
   });
-  let wdTotal = 0; monthsArr.forEach(m => wdTotal += _payWD(_payYM.y, m));
-  t.count = emps.length; t.wd = wdTotal; t.yearly = yearly; _payTotals = t; return emps;
+  // Working days are PER PERSON now — a Mon–Sat fitter and a Mon–Fri engineer do not share a month.
+  // A single company-wide figure in the header therefore contradicted the rows beneath it, and was
+  // frozen into the run as `wd`. Collect what the payslips actually used: one number when everybody
+  // agrees, a range when they do not. The authoritative per-person figure stays where it belongs —
+  // in each line's frozen calc (`otDays`), which is the divisor that priced that payslip.
+  const wdSeen = [];
+  emps.forEach(e => { let n = 0; monthsArr.forEach(m => n += _payWDFor(e.id, _payYM.y, m)); if (n > 0) wdSeen.push(n); });
+  let wdFallback = 0; monthsArr.forEach(m => wdFallback += _payWD(_payYM.y, m));
+  const wdMin = wdSeen.length ? Math.min.apply(null, wdSeen) : wdFallback;
+  const wdMax = wdSeen.length ? Math.max.apply(null, wdSeen) : wdFallback;
+  t.count = emps.length;
+  t.wd = wdMin === wdMax ? wdMin : (wdMin + '–' + wdMax);   // a STRING when schedules differ, on purpose
+  t.wdMin = wdMin; t.wdMax = wdMax; t.wdVaries = wdMin !== wdMax;
+  t.yearly = yearly; _payTotals = t; return emps;
 }
 // Payroll dual-control: a Director (Management/Admin) finalises a prepared run with an e-signature.
 // The backend enforces Director level + preparer!=approver; this just opens the reusable sign modal.
@@ -9898,7 +9928,7 @@ function _payRenderReg() {
   const rolled = (_HR.payruns || []).some(r => r.period === period && r.scope !== 'individual');
   const rollBar = '<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px"><div><div style="font-weight:700;color:var(--navy)">' + (_yrly ? 'Annual calculation — ' : 'Monthly calculation — ') + period + '</div><div style="font-size:12px;color:var(--text-light)">Per-employee Salary 3P (HML-CB-001). Review the figures below, then roll out to finalise this month\'s pay run.</div></div>' + (rolled ? '<span class="badge b-ok" style="font-size:11px">' + tkIcon('check', 12) + ' Rolled out</span>' : (_lvlRank(_userLevel) >= _lvlRank('editor') ? ('<button class="btn btn-emerald btn-sm" onclick="tkRollOutPayroll()">' + tkIcon('check') + 'Roll out ' + period + '</button>') : '<span style="font-size:11px;color:var(--text-light)">View only \u00b7 payroll is run by Admin</span>')) + '</div>';
   const grades = '<div class="card" style="padding:16px 18px;margin-bottom:18px"><div class="card-title" style="margin-bottom:6px">Salary Structure &amp; Grading (G1–G10) — 3P Model</div><div style="font-size:12px;color:var(--text-light);margin-bottom:12px">Gross = <b style="color:var(--text-dark)">P1</b> (Basic 65% + Position 5%) + <b style="color:#205090">P2</b> (Responsibility 10% + Skill 0–5%) + <b style="color:var(--emerald)">P3</b> (KPI 10% × rating) + welfare · SI base = P1+P2 · HML-CB-001.</div><div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Grade</th><th>Typical title</th><th style="text-align:right">Min</th><th style="text-align:right">Mid</th><th style="text-align:right">Max</th></tr></thead><tbody>' + _PAY_GRADES.map(g => '<tr><td><span class="badge b-navy" style="font-size:10px">' + g.g + '</span></td><td>' + g.label + '</td><td style="text-align:right">' + _PAY_FMT(g.min) + '</td><td style="text-align:right">' + _PAY_FMT(g.mid) + '</td><td style="text-align:right">' + _PAY_FMT(g.max) + '</td></tr>').join('') + '</tbody></table></div></div>';
-  el.innerHTML = rollBar + grades + _payOTPanel() + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _payPeriod() + (_yrly ? ' <span class="badge b-info" style="font-size:10px">12 months consolidated</span>' : '') + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' working days · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right" title="Approved overtime — Labour Code Art. 98">Overtime</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+  el.innerHTML = rollBar + grades + _payOTPanel() + '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Pay Register — ' + _payPeriod() + (_yrly ? ' <span class="badge b-info" style="font-size:10px">12 months consolidated</span>' : '') + '</div><span style="font-size:11px;color:var(--text-light)">' + _payTotals.wd + ' ' + _t(_payTotals.wdVaries ? 'working days (varies by schedule)' : 'working days') + ' · SI/HI/UI 10.5% (cap ₫46.8M) · PIT after ₫11M</span></div><div class="table-wrap"><table style="min-width:940px"><thead><tr><th>Employee</th><th>Grade</th><th style="text-align:right">P1</th><th style="text-align:right">P2</th><th style="text-align:right">P3</th><th style="text-align:right" title="Approved overtime — Labour Code Art. 98">Overtime</th><th style="text-align:right">Gross</th><th style="text-align:right">Deductions</th><th style="text-align:right">Net</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
 }
 async function _payRenderRuns() {
   const el = document.getElementById('pay-runs'); if (!el) return;
@@ -21000,8 +21030,12 @@ function _pmMyActionsHtml() {
    the tab renders empty, so this list is the contract; there is a test that walks it. */
 /* Registers a non-manager can be refused, in words a person recognises — so the tab can say
    WHICH figures are missing instead of presenting an unexplained zero. */
+/* Human names for the collections a staff account may be refused. Anything missing here falls back
+   to the raw collection id, so a new READ_MIN entry without a label shows somebody "pm_procurement"
+   in a banner — which is what happened when pm_procurement was raised to manager. */
 const _PM_COLL_LABEL = {
   pm_costs: 'Project costs and budget',
+  pm_procurement: 'Subcontracts and packages',
   pm_procurement_payments: 'Payment certificates'
 };
 const _PM_TABS = [
@@ -21908,16 +21942,31 @@ function _pdRollup(rows, day) {
   // ACTUAL; but it has no planned position, and folding a 0 into the planned average made the whole
   // package look ahead of a plan that did not exist for part of it. `undated` is returned so a
   // caller can say how much of the roll-up is unscheduled rather than presenting a clean variance.
-  let wsum = 0, a = 0, pw = 0, p = 0, undated = 0;
+  // THREE accumulations, because two of them answer different questions and must never be
+  // subtracted from each other.
+  //   a  — accumulated over the WHOLE package: what the "Accumulated" tile means, undated work in.
+  //   ad — accumulated over the DATED rows only: the other half of the variance.
+  //   p  — planned over the DATED rows only.
+  // The first attempt at this fix divided `a` by wsum and `p` by pw and subtracted them. Those are
+  // averages over different populations: a package whose every scheduled line was exactly on plan
+  // reported variance −25% purely because half its weight was unscheduled. That traded "falsely
+  // green" for "falsely red", and red is the one a project manager acts on.
+  let wsum = 0, a = 0, ad = 0, pw = 0, p = 0, undated = 0;
   (rows || []).forEach(r => {
-    const w = _pdWeight(r);
-    wsum += w; a += w * _pdAcc(r, day);
-    if (_pdHasPlan(r)) { pw += w; p += w * _pdPlanned(r, day); } else { undated += w; }
+    const w = _pdWeight(r), acc = _pdAcc(r, day);
+    wsum += w; a += w * acc;
+    if (_pdHasPlan(r)) { pw += w; ad += w * acc; p += w * _pdPlanned(r, day); } else { undated += w; }
   });
-  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0, undatedWeight: 0, plannedWeight: 0 };
-  const acc = a / wsum, planned = pw ? p / pw : 0;
-  return { acc: acc, planned: planned, variance: pw ? acc - planned : 0, weight: wsum,
-           plannedWeight: pw, undatedWeight: undated };
+  if (!wsum) return { acc: 0, planned: 0, variance: 0, weight: 0, undatedWeight: 0, plannedWeight: 0,
+                      undatedPct: 0, measured: false };
+  const acc = a / wsum, planned = pw ? p / pw : 0, accDated = pw ? ad / pw : 0;
+  return {
+    acc: acc, planned: planned,
+    variance: pw ? accDated - planned : 0,   // same population on both sides
+    measured: pw > 0,                        // nothing dated = no plan to vary from; not "on plan"
+    weight: wsum, plannedWeight: pw, undatedWeight: undated,
+    undatedPct: wsum ? undated / wsum * 100 : 0,
+  };
 }
 /* The master activity's % when detail lines exist beneath it — derived, never typed. */
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
@@ -22183,13 +22232,23 @@ function _pdEmpty(pid) {
 /* The five numbers, shown above every detail view so switching view never changes the headline. */
 function _pdKpis(pid, rows, day) {
   const all = _pdRollup(rows, day);
+  // Variance is measured on the SCHEDULED part of the package. When part of it has no dates, say so
+  // under the row — a variance over 40% of the weight, presented as the package's variance with
+  // nothing qualifying it, is the same confident-about-nothing number this pass exists to remove.
+  const note = !all.measured
+    ? _t('No item in this package has both a start and a finish, so there is nothing to measure progress against yet.')
+    : (all.undatedPct >= 0.5
+        ? _t('Planned and Variance are measured on') + ' ' + Math.round(100 - all.undatedPct) + '% ' +
+          _t('of the package by weight — the rest has no dates.')
+        : '');
   return _hrKpiRow([
     _hrKpi('Report items', rows.length),
     _hrKpi('Accumulated', Math.round(all.acc) + '%', 'var(--emerald)'),
-    _hrKpi('Planned to date', Math.round(all.planned) + '%', '#8B5CF6'),
-    _hrKpi('Variance', (all.variance >= 0 ? '+' : '') + all.variance.toFixed(1) + '%', _pdVarColor(all.variance)),
+    _hrKpi('Planned to date', all.measured ? Math.round(all.planned) + '%' : '—', '#8B5CF6'),
+    _hrKpi('Variance', all.measured ? (all.variance >= 0 ? '+' : '') + all.variance.toFixed(1) + '%' : '—',
+           all.measured ? _pdVarColor(all.variance) : 'var(--text-light)'),
     _hrKpi('Reported today', rows.filter(r => _pdDaily(r, day) > 0).length)
-  ]);
+  ]) + (note ? '<div style="font-size:12px;color:var(--text-light);margin:-12px 0 16px 2px">' + note + '</div>' : '');
 }
 /* The register — the daily-report table itself. */
 function _pdRegister(pid, rows, cats, day) {
@@ -22215,9 +22274,11 @@ function _pdRegister(pid, rows, cats, day) {
         cr.length + ' ' + _t('item(s)') + '</td>' +
       '<td></td>' +
       '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums">' + Math.round(roll.acc) + '%</td>' +
-      '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + Math.round(roll.planned) + '%</td>' +
-      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(roll.variance) + '">' +
-        (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%</td>' +
+      '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + (roll.measured ? Math.round(roll.planned) + '%' : '—') + '</td>' +
+      // A category whose rows have no dates has nothing to vary from. Printing a green +0.0% here
+      // was the same claim the status band stopped making two functions away.
+      '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (roll.measured ? _pdVarColor(roll.variance) : 'var(--text-light)') + '">' +
+        (roll.measured ? (roll.variance >= 0 ? '+' : '') + roll.variance.toFixed(1) + '%' : '—') + '</td>' +
       '<td colspan="2"></td>' +
       '<td colspan="3" style="' + EDGE + '"></td><td></td></tr>';
     if (!open) return;
@@ -22244,9 +22305,11 @@ function _pdRegister(pid, rows, cats, day) {
         '<td style="text-align:right;font-variant-numeric:tabular-nums' + (dly > 0 ? ';font-weight:700;color:var(--emerald)' : ';color:var(--text-light)') + '">' + dly + '%</td>' +
         '<td style="text-align:right;font-variant-numeric:tabular-nums">' + bar(acc, acc >= 100 ? 'var(--emerald)' : 'var(--navy)') + '<b>' + acc + '%</b>' +
           (qp ? '<div style="font-size:9.5px;color:var(--text-light);line-height:1.2">' + _t('measured') + '</div>' : '') + '</td>' +
-        '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + pl + '%</td>' +
-        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '" title="' + _tkEscA(_pdVarLabel(v)) + '">' +
-          (v >= 0 ? '+' : '') + v.toFixed(1) + '%</td>' +
+        '<td style="text-align:right;color:var(--text-light);font-variant-numeric:tabular-nums">' + (_pdHasPlan(r) ? pl + '%' : '—') + '</td>' +
+        // The register is the table exported to the client. An undated line reported +0.0% in green
+        // here even after the status band beside it started saying "No dates".
+        '<td style="text-align:right;font-weight:700;font-variant-numeric:tabular-nums;color:' + (_pdHasPlan(r) ? _pdVarColor(v) : 'var(--text-light)') + '" title="' + _tkEscA(_pdHasPlan(r) ? _pdVarLabel(v) : _t('No dates')) + '">' +
+          (_pdHasPlan(r) ? (v >= 0 ? '+' : '') + v.toFixed(1) + '%' : '—') + '</td>' +
         '<td style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">' + (r.start ? tkFmtDate(r.start) : '—') + '</td>' +
         '<td style="font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap">' + (r.finish ? tkFmtDate(r.finish) : '—') + '</td>' +
         // ── measured trio: ACTUAL · PLAN · UNIT ──
@@ -22429,8 +22492,15 @@ function _schFlag(r, day) {
   if (r.finish && r.finish < day) {
     return { k: 'overdue', label: _pmDateDiff(r.finish, day) + 'd ' + _t('overdue'), hex: '#EF4444' };
   }
-  // Before any variance verdict: an undated row has nothing to be ahead of or behind.
-  if (!_pdHasPlan(r)) return { k: 'undated', label: _t('No dates'), hex: '#F59E0B' };
+  // Before any variance verdict: a row without BOTH dates has nothing to be ahead of or behind.
+  // The two cases are told apart because the timeline draws them differently — a row with one date
+  // is placed at that date as a diamond, so labelling it "No dates" beside a mark on the chart was a
+  // contradiction a reader had to resolve themselves.
+  if (!_pdHasPlan(r)) {
+    return (r.start || r.finish)
+      ? { k: 'undated', label: _t('One date only'), hex: '#F59E0B' }
+      : { k: 'undated', label: _t('No dates'), hex: '#F59E0B' };
+  }
   const v = acc - pl;
   if (v >= 5) return { k: 'ahead', label: '+' + v.toFixed(0) + '%', hex: '#00B060' };
   if (v >= -0.5) return { k: 'onplan', label: _t('On plan'), hex: '#5C6470' };
@@ -36587,6 +36657,24 @@ function _payRunMonthISO(period) {
   const i = _PAY_MONTHS.indexOf(m[1]);
   return i < 0 ? '' : (m[2] + '-' + String(i + 1).padStart(2, '0') + '-01');
 }
+/* One pay-run line, in the shape the report reads, whichever shape it was stored in.
+   `calc` is the frozen payslip (2026-08-06 onward). Before that, _paySnapshotLine stored fourteen
+   summary numbers under different names; those are mapped here rather than read as zeros. Anything
+   the summary shape never carried (the SI/HI/UI split, posAllow, skillSen) stays absent, and the
+   caller discloses that rather than printing a confident 0. */
+function _payRunLineCalc(l) {
+  if (l && typeof l.calc === 'object' && l.calc) return Object.assign({ _detail: true }, l.calc);
+  const x = l || {};
+  return {
+    _detail: false,
+    grossPay: +x.gross || 0, net: +x.net || 0, pit: +x.pit || 0,
+    eeTotal: +x.ee || 0,                       // the summary shape has no bhxh/bhyt/bhtn split
+    employerCost: +x.erCost || 0,
+    erTotal: Math.max(0, (+x.erCost || 0) - (+x.gross || 0)),
+    basic: +x.P1 || 0, posAllow: 0, responsibility: +x.P2 || 0, skillSen: 0,
+    P3: +x.P3 || 0, welfare: +x.welfare || 0,
+  };
+}
 async function tkRenderPayrollReport() {
   const el = document.getElementById('rpt-payroll'); if (!el) return;
   await tkLoadColl('reviews');
@@ -36602,23 +36690,34 @@ async function tkRenderPayrollReport() {
     (r.lines || []).length && /final/i.test(String(r.status || '')) &&
     _rptInPeriod(_payRunMonthISO(r.period) || ''));
   const fromRuns = runs.length > 0;
-  let headcount = 0, noSalary = [], failed = 0;
+  let headcount = 0, noSalary = [], failed = 0, summaryOnly = 0;
+  const dupes = [], people = new Set();
 
   if (fromRuns) {
     const seen = new Set();
     runs.forEach(r => (r.lines || []).forEach(l => {
-      const c = (l && typeof l.calc === 'object' && l.calc) ? l.calc : (l || {});
+      // A finalised line has one of TWO shapes. Runs finalised from 2026-08-06 carry the whole
+      // frozen payslip under `calc`; the three days before that carry only _paySnapshotLine's
+      // fourteen summary numbers, under DIFFERENT names — gross/erCost/ee, not
+      // grossPay/employerCost/eeBhxh. Reading calc names off a summary line found nothing, so Gross
+      // payroll, Employer cost, statutory and the 3P split all came out ₫0 while Net came out right
+      // — under a green banner asserting the figures were "exactly as signed". _payslipComputed
+      // (line 10536) already knew about the two shapes; this path did not.
+      const c = _payRunLineCalc(l);
       const key = String(r.period || '') + '|' + String(l.empId || l.name || '');
-      if (seen.has(key)) return;          // the same person in a roll-out AND a correction run
+      if (seen.has(key)) { dupes.push((l && l.name) || key); return; }
       seen.add(key);
       headcount++;
       gross += +c.grossPay || 0; net += +c.net || 0; pit += +c.pit || 0;
-      si += (+c.eeBhxh || 0) + (+c.eeBhyt || 0) + (+c.eeBhtn || 0);
+      si += (c.eeTotal != null) ? (+c.eeTotal || 0)
+                                : ((+c.eeBhxh || 0) + (+c.eeBhyt || 0) + (+c.eeBhtn || 0));
       erStat += +c.erTotal || 0;
       erCost += (+c.employerCost || ((+c.grossPay || 0) + (+c.erTotal || 0)));
       P1 += (+c.basic || 0) + (+c.posAllow || 0);
       P2 += (+c.responsibility || 0) + (+c.skillSen || 0);
       P3 += +c.P3 || 0; welfare += +c.welfare || 0;
+      if (!c._detail) summaryOnly++;
+      people.add(String(l.empId || l.name || ''));
       const d = l.dept || '—';
       (byDept[d] = byDept[d] || { n: 0, gross: 0, er: 0 });
       byDept[d].n++; byDept[d].gross += +c.grossPay || 0;
@@ -36646,14 +36745,30 @@ async function tkRenderPayrollReport() {
   }
 
   const per = _rptPeriodLabel();
-  const _note = (hex, html) => '<div style="background:' + hex + '22;border-left:3px solid ' + hex +
-    ';border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">' + html + '</div>';
+  // _tintHex, not raw concatenation: `background:var(--emerald)22` substitutes at TOKEN level, so
+  // the declaration is dropped and the banner renders with no background at all. Verified in the
+  // browser: var(--emerald)22 computes to rgba(0,0,0,0); #00B06022 to rgba(0,176,96,.13).
+  const _note = (color, html) => { const hex = _tintHex(color); return '<div style="background:' + hex + '22;border-left:3px solid ' + hex +
+    ';border-radius:6px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;line-height:1.5">' + html + '</div>'; };
   let banner = fromRuns
     ? _note('var(--emerald)', '<strong>' + _t('Signed pay runs') + '</strong> — ' +
-        _t('these figures come from the finalised pay run(s) for this period, exactly as signed.') +
-        ' (' + runs.length + ' ' + _t('run(s)') + ')')
-    : _note('#F59E0B', '<strong>' + _t('Cost model, not a payroll') + '</strong> — ' +
+        _t('from the finalised pay run(s) for this period, as signed.') +
+        ' (' + runs.length + ' ' + _t('run(s)') + ', ' + people.size + ' ' + _t('people') + ')')
+    : _note('var(--warning)', '<strong>' + _t('Cost model, not a payroll') + '</strong> — ' +
         _t('no finalised pay run covers this period, so these figures are computed from today\u2019s employee records. They exclude overtime, unpaid leave and manual adjustments, and are not what anybody was paid.'));
+  // A period may hold a company roll-out AND a one-person correction run — or ONLY the one-person
+  // run, in which case these "company totals" are one person's pay. The journal and the bank file
+  // both refuse a period whose runs overlap; a report cannot refuse, so it has to say what it covers.
+  if (fromRuns && people.size < emps.length) banner += _note('var(--warning)',
+    '<strong>' + _t('Not the whole company') + '</strong> — ' + people.size + ' ' + _t('of') + ' ' +
+    emps.length + ' ' + _t('active employees appear in the signed run(s) for this period. The totals below are for those people only.'));
+  if (dupes.length) banner += _note('var(--danger)', '<strong>' + _t('Overlapping pay runs') + '</strong> — ' +
+    _t('the same person appears in more than one finalised run for this period, so only their first line is counted here') + ': ' +
+    _crmEsc(dupes.slice(0, 8).join(', ')) + '. ' +
+    _t('The payroll journal refuses this rather than choosing which run wins. Cancel or supersede the duplicate.'));
+  if (summaryOnly) banner += _note('var(--warning)', '<strong>' + summaryOnly + ' ' +
+    _t('line(s) predate the frozen-payslip snapshot') + '</strong> — ' +
+    _t('their gross, net and employer cost are exact, but the statutory split and the P1/P2 breakdown were never stored for them, so the doughnuts below understate those.'));
   if (noSalary.length) banner += _note('var(--danger)', '<strong>' + noSalary.length + ' ' +
     _t('employee(s) have no salary on record and are NOT in these totals') + ':</strong> ' +
     _crmEsc(noSalary.slice(0, 12).join(', ')) + (noSalary.length > 12 ? ' …' : ''));
@@ -36661,23 +36776,29 @@ async function tkRenderPayrollReport() {
     _t('employee(s) could not be costed and are not in these totals.') + '</strong>');
 
   const kpis = _hrKpiRow([
-    _hrKpi(fromRuns ? 'People paid' : 'Costed headcount', headcount, '#8B5CF6'),
+    // 'Headcount' and 'Net paid' both HAVE _VI entries; 'Costed headcount' / 'People paid' /
+    // 'Net (computed)' did not, so replacing the labels quietly un-translated two tiles for a
+    // Vietnamese reader. The label stays; the qualification moved to the banner, where it can be a
+    // sentence instead of a parenthesis.
+    _hrKpi('Headcount', fromRuns ? people.size : headcount, '#8B5CF6'),
     _hrKpi('Gross payroll', _PAY_FMT(gross), '#F59E0B'),
-    _hrKpi(fromRuns ? 'Net paid' : 'Net (computed)', _PAY_FMT(net), 'var(--emerald)'),
+    _hrKpi('Net paid', _PAY_FMT(net), 'var(--emerald)'),
     _hrKpi('Employer cost', _PAY_FMT(erCost), '#205090')
   ]);
   const dk = Object.keys(byDept).sort((a, b) => byDept[b].er - byDept[a].er);
   const drows = dk.map(d => '<tr><td style="font-weight:600">' + d + '</td><td style="text-align:right">' + byDept[d].n + '</td><td style="text-align:right">' + _PAY_FMT(byDept[d].gross) + '</td><td style="text-align:right;font-weight:700;color:var(--navy)">' + _PAY_FMT(byDept[d].er) + '</td></tr>').join('');
   // The period goes in the HEADING and in the PDF title. A confidential document headed PAYROLL
   // REPORT with no period on it cannot be filed, disputed or reconciled against anything.
-  const _pdfTitle = ('PAYROLL REPORT' + (per ? per.replace(/^ — /, ' — ') : '')).replace(/'/g, '');
+  // `per` already begins with " — " (see _rptPeriodLabel); the previous line ran a replace of that
+  // prefix with itself, which did nothing.
+  const _pdfTitle = ('PAYROLL REPORT' + (per || '')).replace(/'/g, '');
   el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px">' +
     '<div style="font-size:13px;font-weight:700;color:var(--navy)">' + _t('Payroll') + (per ? _crmEsc(per) : ' — ' + _t('All time')) + '</div>' +
     '<button class="btn btn-outline btn-sm" onclick="tkExportElementPDF(\'rpt-payroll\',\'Humiley_Payroll_Report.pdf\',{title:\'' + _tkEscA(_pdfTitle) + '\',docCode:\'HML-CB-PAY\',confidential:true})">' + tkIcon('download') + 'Export PDF</button></div>' + banner + kpis +
     '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:18px">' +
       _rptChartCard('Employer Cost by Department', 'pr-dept') + _rptChartCard('Gross Cost Composition (3P)', 'pr-3p') + _rptChartCard('Statutory — Employee vs Employer', 'pr-stat') +
     '</div>' +
-    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + headcount + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
+    '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:16px 18px"><div class="card-title">Cost by Department</div></div><div class="table-wrap"><table><thead><tr><th>Department</th><th style="text-align:right">Headcount</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer cost</th></tr></thead><tbody>' + (drows || '') + '</tbody><tfoot><tr style="border-top:2px solid var(--line)"><td style="font-weight:800;color:var(--navy)">COMPANY TOTAL</td><td style="text-align:right;font-weight:700">' + (fromRuns ? people.size : headcount) + '</td><td style="text-align:right;font-weight:700">' + _PAY_FMT(gross) + '</td><td style="text-align:right;font-weight:800;color:var(--navy)">' + _PAY_FMT(erCost) + '</td></tr></tfoot></table></div></div>';
   if (typeof Chart !== 'undefined') {
     _mkChart('pr-dept', { type: 'bar', data: { labels: dk, datasets: [{ data: dk.map(d => byDept[d].er), backgroundColor: _gradH('#3a78c6', '#205090'), borderRadius: 6, maxBarThickness: 24 }] }, options: Object.assign(_axisOpts(true, _money), { indexAxis: 'y' }) }, { fmt: _money });
     _mkChart('pr-3p', { type: 'doughnut', data: { labels: ['P1 Position', 'P2 Person', 'P3 Performance', 'Welfare'], datasets: [{ data: [P1, P2, P3, welfare], backgroundColor: ['#205090', '#3168A8', '#00B060', '#f59e0b'], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: 'Gross', fmt: _money } });
@@ -36749,11 +36870,24 @@ function _attMinutes(r) {
    `r.loc === 'Out of Zone'` read 0 forever, on live data, in a card headed GPS Anomalies.
    The geometric test is preferred where the row carries a fix; the label is the fallback. */
 function _attIsAnomaly(r) {
-  try {
-    if (typeof _mgrIsAnomaly === 'function' && r && r.lat != null && r.lon != null) {
-      return !!_mgrIsAnomaly(r).bad;
-    }
-  } catch (e) { /* fall through to the label */ }
+  // The LABEL, and only the label. It is not a fallback — it is the record.
+  //
+  // The first version of this preferred a geometric re-test (_mgrIsAnomaly) whenever the row carried
+  // lat/lon, which every real punch does. That test asks a DIFFERENT question from the one the punch
+  // was judged by: it measures to the NEAREST zone and ignores GPS accuracy, while the check-in
+  // screen measured to the zone the worker SELECTED and was accuracy-aware on purpose (a ±300 m fix
+  // from inside the office must not read as "outside"). So on live data it inverted both rules this
+  // helper documents — a punch the app told the worker was fine could be counted as an anomaly, and
+  // a punch stamped "away from site" could be counted as fine.
+  //
+  // Worse, the tests passed only because their fixtures carried no lat/lon, so they never entered
+  // that branch. A check examining a path production never takes is the exact defect this pass was
+  // meant to remove, committed inside the commit that claimed to remove it.
+  //
+  // tkCheckIn stamps '<zone> (away from site)' / '(GPS unverified)' from the decision it actually
+  // made and showed the worker. That stamp is what an anomaly report is about. "GPS unverified" is
+  // deliberately NOT an anomaly: "we could not tell" and "they were somewhere else" are different
+  // findings, and only one of them is a finding.
   return /away from site|out of zone/i.test(String((r && r.loc) || ''));
 }
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */

@@ -77,8 +77,26 @@ ok('the chain IS in the network', chain.map.A.inNet && chain.map.B.inNet && chai
 ok('the chain is critical and the loose task beside it is not',
    chain.map.C.critical === true && chain.map.D.critical === false,
    'if D is critical here the fix has not taken');
-ok('a predecessor cannot pull a task EARLIER than its own start date',
-   chain.map.D.es === (chain.map.D.snet || 0));
+// The whole point of `snet` is the MAX of a predecessor's early finish and the task's own start.
+// The first version of this asserted `es === snet` on task D — which has no predecessors, so both
+// sides collapse to the same value by construction and the assertion passed on the buggy code too.
+// It has to be a task that HAS a predecessor and a start date LATER than that predecessor's finish.
+const constrained = _pmCPMCompute([
+  { id: 'A', wbs: '1', start: '2026-01-01', finish: '2026-01-10' },
+  // E follows A (which finishes on day 9) but is not allowed to start until 1 March — day 59.
+  { id: 'E', wbs: '2', start: '2026-03-01', finish: '2026-03-05', predecessors: '1' },
+  // F follows A and starts the day after it: here the PREDECESSOR is the binding constraint.
+  { id: 'F', wbs: '3', start: '2026-01-02', finish: '2026-01-20', predecessors: '1' },
+]);
+ok('a start date LATER than the predecessor wins',
+   constrained.map.E.es === constrained.map.E.snet && constrained.map.E.es === 59,
+   'es was ' + constrained.map.E.es + ', snet ' + constrained.map.E.snet + ' — expected both 59');
+ok('and a predecessor LATER than the start date wins',
+   constrained.map.F.es === constrained.map.A.ef && constrained.map.F.es > constrained.map.F.snet,
+   'es ' + constrained.map.F.es + ', snet ' + constrained.map.F.snet + ', A.ef ' + constrained.map.A.ef);
+ok('so the early start is the later of the two, never just one of them',
+   constrained.map.E.es === Math.max(constrained.map.E.snet, constrained.map.A.ef) &&
+   constrained.map.F.es === Math.max(constrained.map.F.snet, constrained.map.A.ef));
 
 // the Float column reads the flag rather than printing a number for everything
 ok('the Float column shows nothing where there is no network position',
@@ -105,12 +123,27 @@ ok('a row with no dates has no plan', pd._pdHasPlan({ start: '', finish: '' }) =
 ok('a row with one date has no plan either', pd._pdHasPlan({ start: '2026-08-01', finish: '' }) === false);
 ok('a fully dated row does', pd._pdHasPlan({ start: '2026-08-01', finish: '2026-08-30' }) === true);
 
-ok('the status band gives "no dates" its own verdict',
-   /if \(!_pdHasPlan\(r\)\) return \{ k: 'undated'/.test(code));
+ok('the status band gives an unplannable row its own verdict',
+   /if \(!_pdHasPlan\(r\)\) \{/.test(code) && /k: 'undated'/.test(code));
 ok('and it is reached BEFORE the variance verdict',
-   code.indexOf("k: 'undated', label: _t('No dates')") <
-   code.indexOf("if (v >= 5) return { k: 'ahead'"),
+   code.indexOf("k: 'undated'") < code.indexOf("if (v >= 5) return { k: 'ahead'"),
    'placed after, an undated row falls through to "On plan" exactly as before');
+// A row with ONE date is drawn on the timeline as a diamond at that date, so labelling it
+// "No dates" beside a mark on the chart was a contradiction the reader had to resolve.
+ok('a row with one date is told apart from a row with none',
+   /_t\('One date only'\)/.test(code) && /_t\('No dates'\)/.test(code));
+ok('and the timeline draws exactly the rows the band calls one-date',
+   /const one = r\.start \|\| r\.finish;/.test(code),
+   'the band and the chart have to agree about which rows have a position');
+
+// ── the variance columns the undated fix originally stopped short of ─────────────────────────────
+ok('the register line variance is gated on the row having a plan',
+   /_pdHasPlan\(r\) \? _pdVarColor\(v\) : 'var\(--text-light\)'/.test(code),
+   'the register is the table exported to the client');
+ok('the register group variance is gated on the roll-up having measured anything',
+   /roll\.measured \? _pdVarColor\(roll\.variance\)/.test(code));
+ok('and the KPI row is too',
+   /all\.measured \? _pdVarColor\(all\.variance\)/.test(code));
 ok('the board no longer defaults an unmatched row into the On plan column',
    !/\(COLS\.find\(c => c\.hit\(a, p\)\) \|\| COLS\[2\]\)\.k/.test(code),
    'COLS[2] was On plan — the default WAS the bug');
@@ -141,10 +174,15 @@ ok('the completion date resolves the reading the same way everything else does',
 ok('it no longer reads the frozen raw percentage',
    !/const doneRow = log\.find\(e => _pmPct\(e\.pct\) >= 100\)/.test(code));
 
-// and prove the two actually differ, so the fix is not cosmetic
-const revised = { qtyPlan: 50, log: [{ d: '2026-08-01', qty: 100, pct: 100 }] };   // pct frozen at qtyPlan 100
+// and prove the two actually differ, so the fix is not cosmetic.
+// The first version of this asserted BOTH were 100 — i.e. that they AGREE — under a name saying they
+// disagree, and it could not fail because _pmPct clamps at 100. The case that matters is a revision
+// that RAISES the scheduled quantity: the frozen pct still says 100 while the resolved reading does
+// not, which is precisely when _pdNorm used to declare a line finished that was not.
+const raised = { qtyPlan: 200, log: [{ d: '2026-08-01', qty: 100, pct: 100 }] };
 ok('after a quantity revision the raw pct and the resolved one disagree',
-   pd._pdReadPct(revised, revised.log[0]) === 100 && revised.log[0].pct === 100);
+   raised.log[0].pct === 100 && pd._pdReadPct(raised, raised.log[0]) === 50,
+   'raw ' + raised.log[0].pct + ' vs resolved ' + pd._pdReadPct(raised, raised.log[0]));
 const halved = { qtyPlan: 200, log: [{ d: '2026-08-01', qty: 100, pct: 100 }] };
 ok('and a revision that DOUBLES the scope makes the resolved reading fall below 100',
    pd._pdReadPct(halved, halved.log[0]) === 50,

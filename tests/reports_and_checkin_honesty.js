@@ -59,6 +59,13 @@ new Function(
 ).call(api);
 const { _attMinutes, _attIsAnomaly } = api;
 
+// The first version of this file ran _attIsAnomaly in a sandbox where _mgrIsAnomaly did not exist,
+// while the helper preferred a geometric re-test whenever the row carried lat/lon — which EVERY
+// production row does. So the five assertions below all took a branch live data never takes, and
+// certified rules that were false in production. The helper no longer has that branch; these rows
+// carry a fix to prove it, because a fixture without one could not tell the difference.
+const WITH_FIX = { lat: 10.8231, lon: 106.6297 };
+
 ok('a normal day is counted', _attMinutes({ in: '08:00', out: '17:30' }) === 570);
 ok('an overnight shift is 8 hours, not zero',
    _attMinutes({ in: '21:00', out: '05:00' }) === 480,
@@ -75,13 +82,28 @@ ok('no unshared span arithmetic is left on the Attendance tab',
    !/const d = \(oh \* 60 \+ om\) - \(ih \* 60 \+ im\); if \(d > 0\) mins \+= d;/.test(code));
 
 /* ── the anomaly test matches what the product actually writes ─────────────────────────────── */
-ok('a punch away from site counts', _attIsAnomaly({ loc: 'HQ Tower (away from site)' }) === true);
-ok('the seed label still counts, case-insensitively', _attIsAnomaly({ loc: 'out of zone' }) === true);
-ok('a punch inside the zone does not', _attIsAnomaly({ loc: 'HQ Tower' }) === false);
+// Every one of these carries a GPS fix, so they exercise the path a real punch takes.
+ok('a punch away from site counts',
+   _attIsAnomaly(Object.assign({ loc: 'HQ Tower (away from site)' }, WITH_FIX)) === true);
+ok('the seed label still counts, case-insensitively',
+   _attIsAnomaly(Object.assign({ loc: 'out of zone' }, WITH_FIX)) === true);
+ok('a punch inside the zone does not',
+   _attIsAnomaly(Object.assign({ loc: 'HQ Tower' }, WITH_FIX)) === false);
 ok('a GPS-unverified punch is not an anomaly',
-   _attIsAnomaly({ loc: 'HQ Tower (GPS unverified)' }) === false,
+   _attIsAnomaly(Object.assign({ loc: 'HQ Tower (GPS unverified)' }, WITH_FIX)) === false,
    '"we could not tell" and "they were somewhere else" are different findings');
-ok('a row with no location is not an anomaly', _attIsAnomaly({}) === false);
+ok('a row with no location is not an anomaly', _attIsAnomaly(Object.assign({}, WITH_FIX)) === false);
+ok('the verdict does not change when a fix is present',
+   _attIsAnomaly({ loc: 'HQ Tower (GPS unverified)' }) ===
+   _attIsAnomaly(Object.assign({ loc: 'HQ Tower (GPS unverified)' }, WITH_FIX)),
+   'a helper that answers differently with and without lat/lon is answering two questions');
+// Comment-stripped: the comment explaining WHY _mgrIsAnomaly was removed names it, and the first
+// version of this assertion convicted that comment. Third time this trap has appeared in this pass.
+ok('and the helper no longer re-decides the geofence itself',
+   !/_mgrIsAnomaly/.test(take('function _attIsAnomaly(', '_attIsAnomaly')
+     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')),
+   '_mgrIsAnomaly measures to the NEAREST zone and ignores accuracy — a different question from ' +
+   'the one the check-in screen answered and stamped into the row');
 ok('the KPI calls it', /const anom = att\.filter\(_attIsAnomaly\)\.length;/.test(code));
 ok('and no longer compares against the seed literal',
    !/\(r\.loc \|\| ''\) === 'Out of Zone'/.test(code));
@@ -125,19 +147,56 @@ ok('an employee who cannot be costed is counted rather than swallowed',
 ok('there is no bare catch left on this path', !/catch \(x\) \{\}/.test(pr));
 ok('the report prefers the FINALISED pay run for the period',
    /const fromRuns = runs\.length > 0;/.test(pr) && /\/final\/i\.test\(String\(r\.status/.test(pr));
-ok('and de-duplicates a person appearing in two runs for one period',
-   /if \(seen\.has\(key\)\) return;/.test(pr));
+ok('a person in two runs for one period is counted once AND named',
+   /if \(seen\.has\(key\)\) \{ dupes\.push\(/.test(pr),
+   'the first version dropped the second line silently — the journal refuses this outright, so a ' +
+   'report that cannot refuse has to say it happened');
+ok('and the banner points at the journal that does refuse it',
+   /The payroll journal refuses this rather than choosing which run wins/.test(src));
 ok('it reads the period control it sits under',
    /_rptInPeriod\(_payRunMonthISO\(r\.period\)/.test(pr));
-ok('"Net paid" is only claimed when a run was actually signed',
-   /_hrKpi\(fromRuns \? 'Net paid' : 'Net \(computed\)'/.test(pr),
-   'a recomputation of today’s records is not what anybody was paid');
+// The qualification lives in the BANNER, not in the tile label: 'Net paid' and 'Headcount' both
+// have _VI entries, and replacing them with 'Net (computed)' / 'People paid' quietly un-translated
+// two tiles for a Vietnamese reader. A banner can carry a sentence; a tile label cannot.
+ok('the tile labels keep the ones that already had translations',
+   /_hrKpi\('Headcount', fromRuns \? people\.size : headcount/.test(pr) &&
+   /_hrKpi\('Net paid', _PAY_FMT\(net\)/.test(pr));
+ok('and the banner is what distinguishes a signed run from a recomputation',
+   /_t\('Signed pay runs'\)/.test(pr) && /_t\('Cost model, not a payroll'\)/.test(pr));
+ok('a period covered by runs that do not cover the company says so',
+   /_t\('Not the whole company'\)/.test(pr),
+   'one individual pay run used to flip the whole company report onto its figures');
 ok('the model path says so in a banner', /Cost model, not a payroll/.test(src));
 ok('the heading carries the period', /_t\('Payroll'\) \+ \(per \? _crmEsc\(per\)/.test(pr));
 ok('and so does the exported PDF title', /const _pdfTitle = \('PAYROLL REPORT'/.test(pr));
 ok('the company-total row counts who is actually in the totals',
-   /COMPANY TOTAL<\/td><td style="text-align:right;font-weight:700">' \+ headcount \+ '/.test(pr),
+   /COMPANY TOTAL<\/td><td style="text-align:right;font-weight:700">' \+ \(fromRuns \? people\.size : headcount\)/.test(pr),
    'it used to print emps.length beside a total that excluded some of them');
+ok('and a person paid in three months counts once, not three times',
+   /people\.add\(String\(l\.empId \|\| l\.name \|\| ''\)\)/.test(pr),
+   'the de-dup key is period|empId, so with the default All-time period a payslip count is ' +
+   'multiplied by the number of finalised months');
+
+// ── the legacy line shape ────────────────────────────────────────────────────────────────────────
+ok('a pay-run line is normalised before it is read',
+   /const c = _payRunLineCalc\(l\);/.test(pr));
+ok('and the normaliser knows the pre-snapshot shape',
+   /function _payRunLineCalc\(l\)/.test(code) && /grossPay: \+x\.gross \|\| 0/.test(code),
+   'runs finalised before 2026-08-06 store gross/erCost/ee, not grossPay/employerCost/eeBhxh — ' +
+   'reading calc names off one produced ₫0 under a banner saying "exactly as signed"');
+ok('a line whose breakdown was never stored is disclosed, not silently zeroed',
+   /line\(s\) predate the frozen-payslip snapshot/.test(src));
+
+// ── the banner tints have to be real colours ─────────────────────────────────────────────────────
+ok('the banner resolves its colour through _tintHex',
+   /const _note = \(color, html\) => \{ const hex = _tintHex\(color\);/.test(code),
+   'background:var(--emerald)22 substitutes at token level and the declaration is DROPPED — ' +
+   'verified in the browser: it computes to rgba(0,0,0,0)');
+ok('and _tintHex never returns a var()',
+   /function _tintHex\(color\)/.test(code) && !/return c;\s*\/\/ var/.test(code));
+ok('the KPI colour table covers the tokens callers actually pass',
+   /'var\(--danger\)': '#EF4444'/.test(code) && /'var\(--text-light\)': '#5C6470'/.test(code),
+   'the unmeasured CPI/SPI tiles pass var(--text-light) and rendered with no tint at all');
 
 /* ══ Check In: the language, and the claim ══════════════════════════════════════════════════ */
 const gps = take('function tkVerifySelectedZone(', 'tkVerifySelectedZone');

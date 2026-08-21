@@ -190,7 +190,8 @@ const regStubs = `
   function _pmPct(v){ return Math.max(0, Math.min(100, Math.round(+v || 0))); }
   function tkFmtDate(d){ return String(d || ''); }
   function _pdGroupOf(pid, r){ return r.group; }
-  function _pdRollup(rows, day){ return { acc: 50, planned: 40, variance: 10 }; }
+  function _pdRollup(rows, day){ return { acc: 50, planned: 40, variance: 10, measured: true }; }
+  function _pdHasPlan(r){ return !!(r && r.start && r.finish); }   // the real one, not a constant
   function _pdAcc(){ return 50; } function _pdDaily(){ return 5; } function _pdPlanned(){ return 40; }
   function _pdLog(r){ return r.log || []; }
   function _pdQtyPlan(r){ return +r.qtyPlan || 0; }
@@ -207,6 +208,17 @@ const ROWS = [
   { id: 'B', group: 'G1', name: 'No quantity here', log: [] },
 ];
 const html = reg._pdRegister('P1', ROWS, ['G1'], '2026-08-15');
+
+/* The register is the table exported to the client, and it kept printing a green +0.0% variance for
+   a row with no dates long after the status band beside it started saying "No dates". */
+const UNDATED_ROWS = ROWS.concat([{ id: 'Z', group: 'G1', name: 'Unscheduled snagging',
+                                    start: '', finish: '', log: [] }]);
+const html2 = reg._pdRegister('P1', UNDATED_ROWS, ['G1'], '2026-08-15');
+const zRow = html2.split('<tr>').find(x => x.indexOf('Unscheduled snagging') >= 0) || '';
+t('an undated line gets no variance figure in the register',
+  /Unscheduled snagging/.test(zRow) && !/\+0\.0%/.test(zRow), true);
+t('it shows an em dash instead', zRow.indexOf('\u2014') >= 0, true);
+t('and a DATED line still shows its number', /[+-]\d+\.\d%/.test(html2), true);
 
 const spans = (tr) => (tr.match(/<t[hd][^>]*>/g) || [])
   .reduce((n, tag) => n + (+(tag.match(/colspan="(\d+)"/) || [0, 1])[1] || 1), 0);
