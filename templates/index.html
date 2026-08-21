@@ -21266,11 +21266,21 @@ async function pmFromDeal(dealId) {
   const d = (_HR.crm_deals || []).find(x => x.id === dealId); if (!d) { toast('Deal not found', 'warn'); return; }
   await tkLoadColl('pm_projects');
   if ((_HR.pm_projects || []).some(p => p.dealId === dealId)) { toast('A project already exists for this deal.', 'warn'); const ex = (_HR.pm_projects || []).find(p => p.dealId === dealId); if (ex) pmOpenProject(ex.id); return; }
-  if (!(await tkConfirm('Create a PMC project from won deal "' + (d.title || '') + '"?\n\nClient, value and owner carry over — complete the charter afterwards.'))) return;
+  // The Approved Budget is NOT carried over, and is not guessed. This used to set it to 80% of the
+  // deal value — a 20% margin nobody agreed, on a figure that then became BAC and drove EV, CPI,
+  // EAC, VAC, the S-curve, the RAG colour and the "Approved Budget" line on the Charter and Status
+  // PDFs a client reads. The dialog did not mention it. A project with no budget now reports "—"
+  // for its cost indices, which is true, until somebody enters the real one on the charter (or the
+  // Estimating module hands over its cost base).
+  if (!(await tkConfirm('Create a PMC project from won deal "' + (d.title || '') + '"?\n\n' +
+      'Client, contract value and owner carry over.\n\n' +
+      'The Approved Budget is left BLANK — the contract value is what the client pays, not what the ' +
+      'job is budgeted to cost. Enter it on the charter; until then the project reports no CPI, no ' +
+      'EAC and no cost variance.'))) return;
   _pmFromDealBusy = true;
   const me = (TK.user && TK.user.name) || '';
   const ownerDept = _crmDeptOf ? _crmDeptOf(d.owner) : '';
-  const body = { name: d.title || (d.company + ' project'), account: d.company || '', accountId: '', contractValue: +d.value || 0, budget: Math.round((+d.value || 0) * 0.8), manager: d.owner || me, dept: (ownerDept && PM_DEPT.indexOf(ownerDept) >= 0) ? ownerDept : 'PMC', status: 'Initiating', phase: 'Concept / Feasibility', rag: 'Green', percentComplete: 0, dealId: dealId, ptype: d.ptype || '', note: 'Created from CRM Won deal' };
+  const body = { name: d.title || (d.company + ' project'), account: d.company || '', accountId: '', contractValue: +d.value || 0, budget: 0, manager: d.owner || me, dept: (ownerDept && PM_DEPT.indexOf(ownerDept) >= 0) ? ownerDept : 'PMC', status: 'Initiating', phase: 'Concept / Feasibility', rag: 'Green', percentComplete: 0, dealId: dealId, ptype: d.ptype || '', note: 'Created from CRM Won deal. Approved Budget not set — enter it on the charter.' };
   try {
     const r = await tkApi('/api/coll/pm_projects', { method: 'POST', body: body });
     (_HR.pm_projects = _HR.pm_projects || []).push(r.item);
