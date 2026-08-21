@@ -5,13 +5,43 @@
  * accumulated across 32 keys; seven of them disagreed, so one screen's wording was quietly
  * overwriting another's ('Retention' meant both a records retention period and retention money).
  *
- * WHY THIS FILE DOES NOT USE A REGEX. The check that was supposed to catch this used
- * /'key'\s*:\s*'value'/ and saw 3,246 pairs where the engine builds 3,764 — blind to 516 of them,
- * because values contain apostrophes and quotes and nested braces that a flat pattern cannot track.
- * It reported "0 duplicates" for months. So this scans character by character, honouring JS string
- * rules, and then CHECKS ITSELF against the engine: if the number of distinct keys it finds does not
- * equal Object.keys() of the same literal evaluated, the scanner is wrong and says so rather than
- * reporting a clean bill.
+ * WHY THIS FILE DOES NOT USE A REGEX, and what four attempts to count the dictionary proved.
+ *
+ * Four measurements of "how many keys does a single-quote regex miss" have produced four different
+ * answers, and not one disagreement was arithmetic. Every one was the instrument. The counts below
+ * are a DATED SAMPLE at 3d71d42, not an inventory — the same scanner reports 4325 keys on main
+ * today. Never quote a total from this dictionary without the pattern that produced it:
+ *
+ *     keys quoted '                      3253
+ *     keys quoted "                       511
+ *     sum                                3764   == Object.keys(), exactly
+ *     pairs 'k' : 'v'                    3210   a pattern that ALSO constrains the value quote
+ *                                               silently drops the 43 'k' : "v" rows
+ *     line-anchored variant              2673   a gap of 1091
+ *
+ * The misses are NOT keys containing apostrophes — that was the standing explanation here and it is
+ * wrong. Only 10 of the 511 double-quoted keys contain one, and no value does. 504 of the 511 are a
+ * single contiguous run. 6942bde (the ~420-string EN/VN batch) started it: 419 double-quoted slots
+ * added against a parent holding 3, of which 418 were new keys and one, 'Retention', already existed
+ * single-quoted — which is how this file's motivating duplicate got made.
+ *
+ * But that block is an ATTRACTOR, not one author's batch. It grew 422 -> 511 across eleven later
+ * commits by different sessions (017d995 +60, 25886e2 +2, seven others +1), each matching the style
+ * beside it. Nobody chose double quotes. So the blind spot cannot be found by reading the strings,
+ * and it MOVES whenever anyone appends near the block — which is why the fix is a scanner that
+ * checks itself against the engine, not a better pattern.
+ *
+ * Two instruments that lie while dating this, both of which produced confident wrong answers here:
+ *   - `git log -S"<key>"` on a bare key dates when the English string first appeared ANYWHERE,
+ *     usually inside a _t('...') call, commits before any translation existed. Use the key WITH its
+ *     colon, in that key's own quote style:  git log -S'"<key>":'
+ *   - `grep -c` counts matching LINES, not matches. This dictionary packs several pairs onto one
+ *     line, so it reads low on exactly the dense input it is aimed at, and never errors. Use
+ *     `grep -o | wc -l`, or parse both sides and subtract.
+ *
+ * The self-check below is the whole point: if the number of distinct keys this scanner finds does
+ * not equal Object.keys() of the same literal evaluated, it says so rather than reporting a clean
+ * bill of health.
  *
  *   node tests/vi_duplicate_keys.js
  */
