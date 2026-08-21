@@ -7858,6 +7858,13 @@ class Handler(BaseHTTPRequestHandler):
                 out["costCentres"] = [{"key": k, "label": l, "markupPct": m,
                                        "optional": k in tender.OPTIONAL_CENTRES}
                                       for k, l, m in tender.COST_CENTRES]
+            elif ctype == tender.SERVICES:
+                rollup = tender.services_rollup(
+                    [r for r in db.list_collection("est_wbs") if r.get("estId") == tid],
+                    a, e.get("wbsConfig") or {})
+                out["rollup"] = rollup
+                out["grades"] = [{"key": k, "label": l, "rate": r, "note": nt}
+                                 for k, l, r, nt in tender.GRADES]
             else:
                 master = tender.cost_master(
                     [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
@@ -8220,7 +8227,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -8314,7 +8321,7 @@ class Handler(BaseHTTPRequestHandler):
     # which is where a won estimate lands.
     EST_MIN = "manager"
     READ_MIN = {"est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
-                "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_quote": EST_MIN,
+                "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_wbs": EST_MIN, "est_quote": EST_MIN,
                 "est_risks": EST_MIN,
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management

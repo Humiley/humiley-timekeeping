@@ -116,8 +116,25 @@ cmd_rm() {
   [ -d "$wt" ] || { echo "no such worktree: $wt" >&2; exit 1; }
   # `git worktree remove` already refuses on uncommitted changes; commits that exist only on this
   # branch are the other way to lose work, so check that too before deleting the branch.
-  local unmerged
-  unmerged=$(git -C "$MAIN_REPO" log --oneline "origin/main..$branch" 2>/dev/null | wc -l | tr -d ' ')
+  #
+  # Count against local AND its remote, taking the larger. Counting only the local ref would let a
+  # stale local (behind a remote that still carries unlanded commits) read as 0 and auto-delete the
+  # branch — the same staleness that made the verdict below wrong, but here it deletes rather than
+  # merely misreports.
+  # `set -o pipefail` is on: a git that fails inside $( ... | wc -l ) fails the whole substitution
+  # and `set -e` then kills the script mid-run, printing nothing. An unpushed branch has no
+  # origin/<branch> to ask about, so that is the ordinary case, not an edge one. Check the ref
+  # exists first, and use `if` rather than `test && assign` — a false test is the last command in
+  # the chain, so `&&` would exit the script too.
+  local unmerged=0 unmerged_remote=0
+  git -C "$MAIN_REPO" fetch -q origin 2>/dev/null || true
+  if git -C "$MAIN_REPO" rev-parse --verify --quiet "$branch" >/dev/null 2>&1; then
+    unmerged=$(git -C "$MAIN_REPO" log --oneline "origin/main..$branch" 2>/dev/null | wc -l | tr -d ' ' || true)
+  fi
+  if git -C "$MAIN_REPO" rev-parse --verify --quiet "origin/$branch" >/dev/null 2>&1; then
+    unmerged_remote=$(git -C "$MAIN_REPO" log --oneline "origin/main..origin/$branch" 2>/dev/null | wc -l | tr -d ' ' || true)
+  fi
+  if [ "${unmerged_remote:-0}" -gt "${unmerged:-0}" ]; then unmerged=$unmerged_remote; fi
   # `git worktree remove` refuses when the tree still holds work, which is right. But under `set -e`
   # this script would then die on git's bare "fatal: ... use --force to delete it", which says what
   # happened and nothing about what to do — and the move people reach for next is `rm -rf` on the
@@ -140,32 +157,147 @@ cmd_rm() {
     # `origin/main..$branch` asks whether these COMMITS are ancestors of main. This repo squash-
     # merges, so a fully merged branch never satisfies that and its work is reported as unmerged —
     # the same "does it exist" / "did it ship" confusion that costs people an afternoon elsewhere.
-    # Ask the question that actually matters instead: is every file this branch touched already
-    # byte-identical on origin/main? If so the work landed, whatever the commit graph says. The
-    # branch is still not auto-deleted — being wrong here loses work — but say which case it is.
-    git -C "$MAIN_REPO" fetch -q origin main 2>/dev/null || true
-    local base landed=no f
-    base=$(git -C "$MAIN_REPO" merge-base origin/main "$branch" 2>/dev/null || true)
-    if [ -n "$base" ]; then
-      landed=yes
-      # `</dev/null` on the inner git: without it, git reads the loop's remaining input and the
-      # loop silently skips files — the classic way a check like this passes without looking.
-      while IFS= read -r f; do
-        [ -n "$f" ] || continue
-        git -C "$MAIN_REPO" diff --quiet origin/main "$branch" -- "$f" </dev/null || { landed=no; break; }
-      done <<EOF
-$(git -C "$MAIN_REPO" diff --name-only "$base" "$branch")
-EOF
+    #
+    # Answering it by comparing FILES against main was wrong twice over, and said "this work has
+    # NOT landed" about work that had:
+    #   1. it judged the LOCAL ref, which goes stale the moment the branch moves anywhere else —
+    #      `gh pr update-branch`, or a push from another machine, updates the remote and never
+    #      touches your local ref;
+    #   2. even on the right ref, "is this file byte-identical to main?" is not the question. If
+    #      another PR also touched that file, it never will be, however completely this branch's
+    #      own change landed.
+    #
+    # The question that survives both: would merging this branch into main change main at all? If
+    # the merge is a no-op, everything the branch carries is already there — whatever the commit
+    # graph looks like and whoever else edited the same files. The branch is still never
+    # auto-deleted here; being wrong loses work. Say which case it is and let a human act.
+    git -C "$MAIN_REPO" fetch -q origin 2>/dev/null || true
+
+    # Pick the ref that actually holds the work. Behind its remote -> the remote is the truth.
+    # Diverged -> do not guess; each side has commits the other lacks.
+    local tip="$branch" remote="origin/$branch" stale=""
+    if git -C "$MAIN_REPO" rev-parse --verify --quiet "$remote" >/dev/null 2>&1; then
+      if git -C "$MAIN_REPO" merge-base --is-ancestor "$branch" "$remote" 2>/dev/null; then
+        [ "$(git -C "$MAIN_REPO" rev-parse "$branch")" = "$(git -C "$MAIN_REPO" rev-parse "$remote")" ] \
+          || stale=yes
+        tip="$remote"
+      elif ! git -C "$MAIN_REPO" merge-base --is-ancestor "$remote" "$branch" 2>/dev/null; then
+        tip=""
+      fi
     fi
+
+    # TWO DIFFERENT QUESTIONS, and they had been answered as one:
+    #
+    #   would merging this change main?   -> is it safe to MERGE
+    #   did this branch's work land?      -> is it safe to DELETE
+    #
+    # A branch can be unsafe to merge and safe to delete at the same time, and here that is the
+    # NORMAL case rather than an edge one. Every deployable PR bumps static/sw.js, so the moment
+    # one more PR lands, a merged branch's sw.js conflicts with main's and the merge stops being a
+    # no-op. The branch is stale, not unlanded — but the merge test cannot tell those apart and
+    # said "this work has not landed. Push it before deleting anything" about work that shipped
+    # hours earlier. Reproduced on claude/services-costing, merged as #68.
+    #
+    # No content test settles it either, and each fails differently: patch-id cannot match a squash
+    # merge, a tree comparison cannot see past staleness, and reverse-applying the branch's own
+    # diff fails as soon as somebody edits the same lines afterwards (which #71 did to #68's).
+    #
+    # So ask the forge, which simply knows. A squash merge is recorded against the branch name, and
+    # that record is not affected by anything that happens to main afterwards. `gh` is already this
+    # repo's tool of record for PRs; with no network the answer is unknown, and unknown falls back
+    # to keeping the branch, which is the safe direction to be wrong in.
+    local landed=no merged_tree main_tree merge_conflicts="" MERGED_PR="" AFTER_MERGE=0 REUSED_PR="" PR_HEAD=""
+    if [ -z "$tip" ]; then
+      landed=diverged
+    elif git -C "$MAIN_REPO" merge-base --is-ancestor "$tip" origin/main 2>/dev/null; then
+      landed=yes
+    else
+      # git >= 2.38. On anything older this yields nothing and we fall through, which is safe.
+      # NOTE: on a CONFLICT merge-tree still writes a tree — one full of conflict markers — and
+      # exits non-zero. `|| true` used to swallow that, so a conflict was reported as "would change
+      # main" with no hint that the two sides disagree rather than that work is missing.
+      if merged_tree=$(git -C "$MAIN_REPO" merge-tree --write-tree origin/main "$tip" 2>/dev/null); then
+        main_tree=$(git -C "$MAIN_REPO" rev-parse 'origin/main^{tree}' 2>/dev/null || true)
+        [ -n "$merged_tree" ] && [ "$merged_tree" = "$main_tree" ] && landed=yes
+      else
+        merge_conflicts=yes
+      fi
+      if [ "$landed" != yes ] && command -v gh >/dev/null 2>&1; then
+        local merged_pr pr_head
+        merged_pr=$(gh pr list --state merged --head "$branch" --json number,headRefOid \
+                      --jq '.[0] | "\(.number) \(.headRefOid)"' --limit 1 2>/dev/null || true)
+        pr_head=${merged_pr#* }; merged_pr=${merged_pr%% *}
+        # The lookup answers about a NAME, and the name is the one thing here that gets reused —
+        # worktree names are short and descriptive. Reuse one whose old PR merged and the forge
+        # cheerfully returns that old PR for entirely new work: "its work LANDED, delete it", for a
+        # commit that exists nowhere else. That is the losing-work direction, the one direction
+        # this tool is not allowed to be wrong in.
+        #
+        # So do not believe the number until the COMMIT agrees. The PR records the head it merged,
+        # and GitHub keeps that after the remote branch is deleted — which is exactly when the hole
+        # would otherwise open, because a live remote makes the divergence check fire first and
+        # masks it.
+        #
+        # ANCESTRY, NOT EQUALITY. A branch can sit ahead of the head its PR merged — anyone who
+        # pushes to a branch after the squash lands leaves it there, and every worktree that keeps
+        # working after its PR merges will. Equality would call those unlanded, which is the false
+        # negative this whole change exists to remove, arriving by another route. Ancestry accepts
+        # them and reports the extra commits as their own finding: they are on no PR, so they are
+        # worth reading before anything is deleted.
+        #
+        # (An earlier draft of this comment cited a specific commit as an instance. It was not one
+        # — it was the PR's own head, pushed before the merge and squashed in normally. The shape
+        # is real and worth handling; that example was not, and a false example in a comment is a
+        # trap for whoever trusts it next.)
+        if [ -n "$merged_pr" ] && [ "$merged_pr" != "null" ] && [ -n "$pr_head" ]; then
+          if ! git -C "$MAIN_REPO" cat-file -e "$pr_head^{commit}" 2>/dev/null; then
+            :   # cannot see the commit that PR merged — unverifiable, so keep the branch
+          elif git -C "$MAIN_REPO" merge-base --is-ancestor "$pr_head" "$tip" 2>/dev/null; then
+            landed=stale
+            MERGED_PR="$merged_pr"
+            AFTER_MERGE=$(git -C "$MAIN_REPO" rev-list --count "$pr_head..$tip" 2>/dev/null || echo 0)
+            PR_HEAD="$pr_head"
+          else
+            REUSED_PR="$merged_pr"   # same name, different lineage
+          fi
+        fi
+      fi
+    fi
+
     if [ "$landed" = yes ]; then
-      echo "kept branch $branch — its $unmerged commit(s) are not ancestors of origin/main, but every"
-      echo "  file it touched is already identical there. That is what a squash merge looks like."
-      echo "  confirm:  git diff origin/main $branch   (expect no output)"
+      echo "kept branch $branch — its $unmerged commit(s) are not ancestors of origin/main, but"
+      echo "  merging it into main would change nothing, so the work is already there."
+      [ -n "$stale" ] && echo "  (judged $remote — your local $branch is behind it)"
+      echo "  confirm:  git merge-tree --write-tree origin/main $tip   == $(git -C "$MAIN_REPO" rev-parse --short 'origin/main^{tree}' 2>/dev/null)"
+      echo "  delete:   git branch -D $branch"
+    elif [ "$landed" = diverged ]; then
+      echo "kept branch $branch — it and $remote have DIVERGED: each has commits the other does not."
+      echo "  Nothing here can tell which side you meant to keep, so nothing was deleted."
+      echo "  yours only:  git log --oneline $remote..$branch"
+      echo "  theirs only: git log --oneline $branch..$remote"
+    elif [ "$landed" = stale ]; then
+      echo "kept branch $branch — its work LANDED (merged as #$MERGED_PR), but the branch is stale:"
+      echo "  merging it now WOULD change main, so do not merge it — delete it."
+      if [ "${AFTER_MERGE:-0}" != "0" ]; then
+        echo "  BUT $AFTER_MERGE commit(s) sit after the merge point and are on no PR — read them first:"
+        echo "    git log --oneline $(git -C "$MAIN_REPO" rev-parse --short "$PR_HEAD" 2>/dev/null)..$tip"
+      fi
+      [ -n "$merge_conflicts" ] && echo "  (it also conflicts with main, which is what staleness looks like)"
+      [ -n "$stale" ] && echo "  (judged $remote — your local $branch is behind it)"
+      echo "  confirm:  gh pr view $MERGED_PR"
       echo "  delete:   git branch -D $branch"
     else
-      echo "kept branch $branch — it has $unmerged commit(s) not on origin/main, and its files still"
-      echo "  differ there, so this work has NOT landed. Push it before deleting anything."
-      echo "  see it:   git log --oneline origin/main..$branch"
+      if [ -n "$REUSED_PR" ]; then
+        echo "kept branch $branch — a merged PR (#$REUSED_PR) has this NAME, but it merged a"
+        echo "  different commit, so this branch is new work under a reused name. Not landed."
+      else
+        echo "kept branch $branch — no merged PR for it, and merging it into main WOULD change main,"
+        echo "  so this work has not landed. Push it and get it merged before deleting anything."
+      fi
+      [ -n "$merge_conflicts" ] && echo "  (it conflicts with main — rebase before opening a PR)"
+      command -v gh >/dev/null 2>&1 \
+        || echo "  (gh is not installed, so whether a PR merged could not be checked)"
+      echo "  see it:   git log --oneline origin/main..$tip"
       echo "  delete when merged:  git branch -D $branch"
     fi
   else

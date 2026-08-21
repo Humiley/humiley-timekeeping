@@ -2336,7 +2336,10 @@ window.addEventListener('orientationchange', _setLoginBg);
   <div class="page-header">
     <div><h1>Reports &amp; Analytics</h1><p>Attendance · Leave · Employee In/Out · Department KPIs</p></div>
     <div style="display:flex;gap:8px">
-      <select class="sel-filter" id="rpt-period"><option value="May 2026">May 2026</option><option value="April 2026">April 2026</option><option value="Q1 2026">Q1 2026</option></select>
+      <!-- Was a hardcoded three-option <select> with no onchange that nothing ever read: the
+           page offered a period control and then reported all-time figures under it. Filled
+           by _rptPeriodSlot() with the same control every other list in the portal uses. -->
+      <span id="rpt-period-slot" style="display:flex;gap:6px;align-items:center"></span>
       <button class="btn btn-primary btn-sm" onclick="exportCurrentReport()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export Excel</button>
     </div>
   </div>
@@ -2404,7 +2407,7 @@ window.addEventListener('orientationchange', _setLoginBg);
     </div>
     <div class="card" style="padding:0;overflow:hidden">
       <div style="padding:14px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center">
-        <div class="card-title">Leave Requests — May 2026</div>
+        <div class="card-title"><span data-i18n>Leave Requests</span><span id="lr-period-label" style="font-weight:600;color:var(--text-light)"></span></div>
         <button class="btn btn-outline btn-sm" onclick="toast('Exporting leave report…')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export</button>
       </div>
       <div class="table-wrap">
@@ -2462,7 +2465,7 @@ window.addEventListener('orientationchange', _setLoginBg);
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Employee</th><th>Department</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
+          <thead><tr><th>Employee</th><th>Department</th><th>Date</th><th>Check-In</th><th>Check-Out</th><th>Total Hours</th><th>GPS Zone</th><th>Status</th><th>OT</th><th></th></tr></thead>
           <tbody id="inout-report-tbody"></tbody>
         </table>
       </div>
@@ -15819,6 +15822,13 @@ const _QA_SPECS = {
     { k: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'textarea' }, { k: 'description', label: 'Description', type: 'textarea' }] },
   pm_tasks: { title: 'Task / Milestone', coll: 'pm_tasks', reload: 'pm_tasks', fields: [
     { k: 'name', label: 'Task name' }, { k: 'wbs', label: 'WBS code' },
+    // Which work package this activity delivers. Optional, and stored as the deliverable's ID:
+    // re-coding a deliverable's WBS number must not orphan the link, which is the lesson taskRef
+    // teaches — it matches on `wbs || name` by exact string and therefore can never be renumbered.
+    // While this is blank the deliverable keeps its typed percentage, exactly as before.
+    { k: 'delivId', label: 'Delivers WBS package (optional — links progress to the project total)',
+      type: 'ref', src: 'pm_deliverables', blank: '— not linked to a WBS package —' },
+    { k: 'weight', label: 'Weight (optional — ₫ or man-hours; blank = duration)', type: 'number' },
     { k: 'phase', label: 'Phase', type: 'select', options: ['Concept / Feasibility', 'FEED / Basic Design', 'Detailed Design', 'Procurement / Tender', 'Construction / Execution', 'Commissioning & Handover', 'Defects Liability / Warranty', 'Closeout'] },
     { k: 'assignee', label: 'Assignee (type any name — staff or others)', type: 'combo', dyn: 'pm_assignees' },
     { k: 'start', label: 'Start', type: 'date' }, { k: 'finish', label: 'Finish (target)', type: 'date' }, { k: 'duration', label: 'Duration (days, optional)', type: 'number' }, { k: 'predecessors', label: 'Predecessors (WBS codes, comma-sep)' }, { k: 'actualFinish', label: 'Actual finish', type: 'date' }, { k: 'pctComplete', label: '% complete', type: 'number' },
@@ -16058,7 +16068,7 @@ function tkQuickAdd(type, id, seed) {
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
     const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
-    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => '<option value="' + _crmEsc(o) + '"' + (String(val) === o ? ' selected' : '') + '>' + _crmEsc(o) + '</option>').join('') + '</select></div>'; }
+    if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
     if (f.type === 'ref') {
       /* A pointer to another record. The stored value is the id — so the link survives a document
          being renumbered — while the dropdown shows the number and title somebody actually
@@ -19682,6 +19692,25 @@ function _crmBuildDashCharts() {
 }
 
 /* dynamic option sources for the quick-add form (employees / companies / contacts) */
+/* Order WBS codes the way a schedule reads, not the way strings sort.
+   Plain string order puts "1.10" before "1.2" and "1.4.6.6.4" adjacent to "1.4.5.2"; a person
+   scanning for 1.4.4.1 then cannot find it. Compare segment by segment, numerically where both
+   segments are numeric, so 1.3.2 < 1.4.4.1 < 1.4.4.1.1 < 1.4.4.1.2 < 1.4.10. A code with a name
+   instead of a number (an activity with no WBS) sorts after the numbered ones, by name. */
+function _wbsCmp(a, b) {
+  const A = String(a || '').split('.'), B = String(b || '').split('.');
+  for (let i = 0; i < Math.max(A.length, B.length); i++) {
+    const x = A[i], y = B[i];
+    if (x === undefined) return -1;
+    if (y === undefined) return 1;
+    const nx = /^\d+$/.test(x.trim()), ny = /^\d+$/.test(y.trim());
+    if (nx && ny) { const d = (+x) - (+y); if (d) return d; continue; }
+    if (nx !== ny) return nx ? -1 : 1;           // numbered WBS before a bare name
+    const c = x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    if (c) return c;
+  }
+  return 0;
+}
 function _qaDynOptions(src, ex) {
   if (src === 'employees') return (_DEMO_EMPLOYEES || []).map(e => e.name).filter(Boolean);
   if (src === 'companies') return (_HR.crm_companies || []).map(c => c.name).filter(Boolean);
@@ -19706,7 +19735,19 @@ function _qaDynOptions(src, ex) {
   if (src === 'pm_task_opts') {   // the master activities a detail line can roll up into
     const ts = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
       ? _pmScopeFor('pm_tasks', _pmPid()) : [];
-    return [...new Set(ts.map(t => String((t.wbs || t.name) || '').trim()).filter(Boolean))];
+    // The VALUE has to stay exactly _pdTaskRef(t) — _pdMasterOf matches it by string equality, so
+    // changing it would orphan every detail line already filed against a master activity. Only the
+    // label gains the name: a picker of bare codes like "1.4.6.6.4" cannot be used by a site
+    // engineer who knows the work by what it IS, not by its number.
+    const seen = {}, out = [];
+    ts.forEach(t => {
+      const v = String((t.wbs || t.name) || '').trim();
+      if (!v || seen[v]) return;
+      seen[v] = 1;
+      const nm = String(t.name || '').trim();
+      out.push({ v: v, l: (nm && nm !== v) ? (v + ' \u2014 ' + nm) : v });
+    });
+    return out.sort((a, b) => _wbsCmp(a.v, b.v));
   }
   if (src === 'pm_assignees') {   // task owner suggestions: project people first, then anyone already assigned, then all staff — but FREE TEXT is allowed (non-users welcome)
     const p = (typeof _pmProj === 'function') ? _pmProj() : null;
@@ -19753,6 +19794,12 @@ function _qaRefOptions(src, ex) {
   }
   if (src === 'pm_projects') {
     return (_HR.pm_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
+  }
+  if (src === 'pm_deliverables') {
+    const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+    return (_HR.pm_deliverables || []).filter(d => d && d.projectId === pid)
+      .sort((a, b) => _wbsCmp(a.wbsCode || '', b.wbsCode || ''))
+      .map(d => ({ v: d.id, l: (d.wbsCode ? d.wbsCode + ' — ' : '') + (d.name || '(untitled)') }));
   }
   if (src === 'eng_projects') {
     return (_HR.eng_projects || []).map(p => ({ v: p.id, l: (p.code ? p.code + ' — ' : '') + (p.name || '') }));
@@ -20231,6 +20278,22 @@ function _pmPlannedTo(plan, asOf) {
   }
   return cum * plan.scale;
 }
+/* Print a performance index, or decline to.
+   An index is a RATIO of two things this project has actually recorded. When it has not recorded
+   them, CPI and SPI still hold a number — 1.00 from a fallback, or 0.00 from a zero numerator —
+   and both read as findings: "exactly on budget", "perfectly on schedule", "catastrophically
+   behind". None of those is true; there is simply nothing to measure yet.
+   One helper so the rule cannot drift between the six screens that print these. */
+function _pmIndexTxt(v, measurable) { return measurable ? (+v).toFixed(2) : '—'; }
+function _pmIndexHex(v, measurable) { return measurable ? _ragHex(_pmIndexRag(v)) : 'var(--text-light)'; }
+/* Why an index cannot be shown, in words a PM can act on. */
+function _pmIndexWhy(ev) {
+  if (!ev) return '';
+  const out = [];
+  if (!ev.cpiMeasurable) out.push(_t('CPI needs both actual cost and earned value'));
+  if (!ev.spiMeasurable) out.push(_t('SPI needs a baseline or a time-phased cost plan'));
+  return out.join(' · ');
+}
 function _pmEvm(p) {
   if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0, measurable: false, phasedPv: false };
   const costs = _pmScopeFor('pm_costs', p.id);
@@ -20243,16 +20306,106 @@ function _pmEvm(p) {
   const phased = _pmPlannedTo(_pmPhasedPlan(costs, bac), _pmToday());
   const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
   const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
+  // Cost performance needs BOTH money spent and value earned. With ev === 0 this reads 0.00 in
+  // red; with ac === 0 it falls back to 1.00 — 'exactly on budget'. Neither measures anything.
+  const cpiMeasurable = ev > 0 && ac > 0 && bac > 0;
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
-  const spi = (pv > 0 && bac > 0) ? ev / pv : 1;
-  const eac = (bac > 0 && cpi > 0) ? bac / cpi : ac;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, eac, vac: bac - eac, etc: eac - ac, pct: ratio * 100, measurable, phasedPv: phased != null };
+  // A confident 1.00 — "perfectly on schedule" — with NOTHING to measure: no baseline and no
+  // phased cost register means pv falls back to ev on the line above, so the ratio is 1 by
+  // construction whatever the project is doing.
+  // The first version of this guard tested `pv > 0`, which is GUARANTEED whenever ev > 0 on that
+  // fallback branch — so it was true in exactly the case it was written to catch, and could only
+  // be false when the ratio was 0/0 anyway. It tested the symptom. The cause is whether PV was
+  // derived INDEPENDENTLY of EV at all: a time-phased plan, or elapsed time against a baseline.
+  const pvIndependent = (phased != null) || (tp != null);
+  const spiMeasurable = pvIndependent && pv > 0 && bac > 0 && ev > 0;
+  const spi = spiMeasurable ? ev / pv : 1;
+  // A forecast needs earned value. With ev === 0 the old `cpi > 0` test failed and EAC fell
+  // through to `ac` — asserting the project will finish for what has been spent, with ETC ₫0
+  // and a large POSITIVE VAC that reads as an underspend. That is not a cautious estimate, it
+  // is the opposite of the truth on a job that has consumed budget and delivered nothing yet.
+  const eacMeasurable = ev > 0 && ac > 0 && bac > 0;
+  const eac = eacMeasurable ? bac / cpi : null;
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, cpiMeasurable, spiMeasurable, eacMeasurable,
+           eac, vac: eacMeasurable ? bac - eac : null, etc: eacMeasurable ? eac - ac : null,
+           pct: ratio * 100, measurable, phasedPv: phased != null,
+           evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
 }
 function _pmEffectiveRag(p) { if (p.rag) return p.rag; const e = _pmEvm(p); const overdue = _pmOverdueMilestones(p.id); if (!e.measurable && overdue === 0) return 'Amber'; const idx = Math.min(e.cpi, e.spi); if (idx < 0.85 || overdue > 0) return 'Red'; if (idx < 0.95) return 'Amber'; return 'Green'; }
 function _pmOverdueMilestones(pid) { const t = _pmToday(); return _pmScopeFor('pm_tasks', pid).filter(x => String(x.isMilestone) === 'Yes' && x.status !== 'Completed' && x.finish && x.finish < t).length; }
 
 /* ---- rollups consumed by Overview + Portfolio ---- */
-function pmScopeRollup(pid) { const ds = _pmScopeFor('pm_deliverables', pid); let wsum = 0, wpct = 0, acc = 0; ds.forEach(d => { const w = Math.max(0, +d.weight || 0) || 1; wsum += w; wpct += w * _pmPct(d.percentComplete); if ((d.status || '') === 'Accepted') acc++; }); const ratio = wsum ? wpct / wsum : 0; return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc }; }
+/* How much of THIS activity is done, and on what basis — never a bare number.
+   Three grades, best evidence first:
+     measured  — detail sub-items reported against it (a quantity, not an opinion)
+     complete  — an actual finish date, or status Completed
+     typed     — somebody's estimate, which is the weakest and is labelled as such
+   The basis travels with the figure so a screen can say where a percentage came from. */
+function _pmActivityPct(t, pid) {
+  const d = (typeof _pdTaskPct === 'function') ? _pdTaskPct(t, pid) : null;
+  if (d) return { pct: _pmPct(d.pct), basis: 'measured', n: d.n };
+  if (t && (t.actualFinish || (t.status || '') === 'Completed')) return { pct: 100, basis: 'complete', n: 0 };
+  return { pct: _pmPct(t && t.pctComplete), basis: 'typed', n: 0 };
+}
+/* What an activity is worth inside its work package.
+   NOT `t.duration`: _pmCPMCompute reads that as NETWORK duration, so tuning the critical path
+   would silently re-price reported progress. Explicit weight wins; otherwise the inclusive
+   calendar span, the same ladder _pdWeight uses for detail rows so there is one rule to learn. */
+function _pmTaskWeight(t) {
+  const w = +(t && t.weight) || 0;
+  if (w > 0) return w;
+  if (t && t.start && t.finish) return Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1);
+  return 1;
+}
+/* The WBS roll-up: sub-items -> activity -> work package -> project.
+
+   The basis is decided PER DELIVERABLE, not per project. A deliverable with linked activities is
+   derived from them; one with none keeps its typed percentage, bit-for-bit as before. That makes
+   adoption monotonic: linking one activity moves one deliverable, and a project that links nothing
+   reports exactly what it reports today.
+
+   Activities with no delivId contribute to NOTHING and are counted in the open, the way
+   _pdGroupOf already surfaces unlinked detail lines. Folding them into a catch-all would hand
+   them scope weight nobody assigned. */
+function pmWbsRollup(pid) {
+  const ds = _pmScopeFor('pm_deliverables', pid);
+  const ts = _pmScopeFor('pm_tasks', pid);
+  const byDeliv = {};
+  let unlinked = 0;
+  ts.forEach(t => {
+    const k = String(t.delivId || '');
+    if (!k) { unlinked++; return; }
+    (byDeliv[k] = byDeliv[k] || []).push(t);
+  });
+  let wsum = 0, wpct = 0, acc = 0, derived = 0;
+  ds.forEach(d => {
+    const w = Math.max(0, +d.weight || 0) || 1;
+    // `d.id ?` is a SECOND, independent guard, not the load-bearing one. Unlinked activities are
+    // keyed '' , so a deliverable whose own id were falsy could absorb every one of them and have
+    // its typed percentage overwritten by work nobody assigned to it. The `return` above already
+    // prevents that by never populating byDeliv['']; removing either one alone changes nothing,
+    // which a mutation test confirmed by surviving. Both must fail together to open the hole —
+    // cheap enough to keep, and stated honestly rather than claimed as the fix.
+    const mine = (d.id ? byDeliv[d.id] : null) || [];
+    let pct;
+    if (mine.length) {
+      let aw = 0, ap = 0;
+      mine.forEach(t => { const tw = _pmTaskWeight(t); aw += tw; ap += tw * _pmActivityPct(t, pid).pct; });
+      pct = aw ? (ap / aw) : 0;
+      derived++;
+    } else {
+      pct = _pmPct(d.percentComplete);
+    }
+    wsum += w; wpct += w * pct;
+    if ((d.status || '') === 'Accepted') acc++;
+  });
+  const ratio = wsum ? wpct / wsum : 0;
+  return { pct: Math.round(ratio), pctRaw: ratio, total: ds.length, accepted: acc,
+           derived: derived, typed: ds.length - derived,
+           activities: ts.length, unlinkedActivities: unlinked };
+}
+/* Kept as the name and shape eight call sites already use, so they all inherit the chain. */
+function pmScopeRollup(pid) { return pmWbsRollup(pid); }
 function _pmRiskRollup(pid) { const rs = _pmScopeFor('pm_risks', pid).filter(r => r.status !== 'Closed'); const scored = rs.map(r => +r.score || 0); const high = scored.filter(s => s >= 10).length; const top = scored.length ? Math.max.apply(null, scored) : 0; return { open: rs.length, high: high, top: top, band: _pmRiskBand(top).band }; }
 function _pmTaskRollup(pid) { const ts = _pmScopeFor('pm_tasks', pid); const ms = ts.filter(t => String(t.isMilestone) === 'Yes'); return { tasks: ts.length, milestones: ms.length, overdueMs: _pmOverdueMilestones(pid), done: ts.filter(t => t.status === 'Completed').length }; }
 
@@ -20350,7 +20503,7 @@ function pmStatusPDF(pid) {
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
   const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
   const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
-  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', _pmMoney(ev.eac)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable) + '   /   ' + _pmIndexTxt(ev.spi, ev.spiMeasurable)], ['Forecast at Completion (EAC)', ev.eacMeasurable ? _pmMoney(ev.eac) : 'not computable — no earned value recorded'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—'], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
   const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
@@ -20386,7 +20539,7 @@ async function pmCloseoutPDF(pid) {
   const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
-  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.cpi.toFixed(2)], ['Variance at Completion (VAC)', _pmMoney(ev.vac)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable)], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
   const procs = _pmScopeFor('pm_procurement', p.id), procClosed = procs.filter(x => x.status === 'Closed' || x.status === 'Completed').length;
   const ret = procs.reduce((s, x) => s + (+x.value || 0) * (+x.retentionPct || 0) / 100, 0);
@@ -20586,8 +20739,10 @@ function pmReport(pid, mode) {
   sect('2. Cost & Schedule Performance (EVM)');
   line('Budget (BAC) / Actual (AC)', _pmMoney(ev.bac) + '    /    ' + _pmMoney(ev.ac));
   line('Earned Value (EV)', _pmMoney(ev.ev));
-  line('CPI / SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2));
-  line('Forecast (EAC) / Variance (VAC)', _pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac));
+  line('CPI / SPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable) + '   /   ' + _pmIndexTxt(ev.spi, ev.spiMeasurable));
+  line('Forecast (EAC) / Variance (VAC)', ev.eacMeasurable
+    ? (_pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac))
+    : 'not computable — no earned value recorded');
 
   const tasks = _pmScopeFor('pm_tasks', p.id);
   sect('3. Progress this ' + R.word);
@@ -20669,16 +20824,30 @@ function _pmReload() { const A = id => { const v = document.getElementById('view
 function _pmPortfolioCard(projects) {
   if (!_pmSeeAll() || (projects || []).length < 2) return '';
   let g = 0, a = 0, r = 0, budget = 0, actual = 0, cpiSum = 0, spiSum = 0, meas = 0, overdueProj = 0;
+  let cpiN = 0, spiN = 0;      // how many projects actually MEASURED each index
   projects.forEach(p => {
     const rag = _pmEffectiveRag(p); if (rag === 'Green') g++; else if (rag === 'Amber') a++; else r++;
-    const ev = _pmEvm(p); budget += ev.bac; actual += ev.ac; if (ev.measurable) { cpiSum += ev.cpi; spiSum += ev.spi; meas++; }
+    // `measurable` is a different question (does this project have a budget and any signal at
+    // all). Averaging an unmeasurable 1.00 into a portfolio CPI drags the whole company's
+    // number towards 'on budget' with projects that have measured nothing.
+    const ev = _pmEvm(p); budget += ev.bac; actual += ev.ac;
+    if (ev.cpiMeasurable) { cpiSum += ev.cpi; cpiN++; }
+    if (ev.spiMeasurable) { spiSum += ev.spi; spiN++; }
+    if (ev.measurable) { meas++; }
     if (_pmOverdueMilestones(p.id) > 0) overdueProj++;
   });
-  const avgCpi = meas ? cpiSum / meas : 1, avgSpi = meas ? spiSum / meas : 1, burn = budget ? Math.round(actual / budget * 100) : 0;
+  // Average over the projects that measured the index, not over every project with a budget.
+  // Dividing by `meas` mixed in unmeasurable 1.00s and pulled the company average towards
+  // 'on budget' using projects that have measured nothing at all.
+  const avgCpi = cpiN ? cpiSum / cpiN : null, avgSpi = spiN ? spiSum / spiN : null;
+  const burn = budget ? Math.round(actual / budget * 100) : 0;
   const seg = (n, label, hex) => n ? '<div style="flex:' + n + ';background:' + hex + ';height:100%" title="' + label + ': ' + n + '"></div>' : '';
   const tile = (l, v, c) => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px;flex:1;min-width:112px"><div style="font-size:11px;color:var(--text-light)">' + l + '</div><div style="font-size:16px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div></div>';
   return '<div class="card" style="padding:16px 18px;margin-bottom:16px"><div class="card-title" style="margin-bottom:10px">Portfolio Health</div>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' + tile('Projects', projects.length) + tile('Avg CPI', avgCpi.toFixed(2), _ragHex(_pmIndexRag(avgCpi))) + tile('Avg SPI', avgSpi.toFixed(2), _ragHex(_pmIndexRag(avgSpi))) + tile('Budget burn', burn + '%', burn > 100 ? '#EF4444' : 'var(--navy)') + tile('With overdue MS', overdueProj, overdueProj ? '#EF4444' : '#00B060') + '</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' + tile('Projects', projects.length) + tile('Avg CPI', _pmIndexTxt(avgCpi, avgCpi != null), _pmIndexHex(avgCpi, avgCpi != null)) + tile('Avg SPI', _pmIndexTxt(avgSpi, avgSpi != null), _pmIndexHex(avgSpi, avgSpi != null)) + tile('Budget burn', burn + '%', burn > 100 ? '#EF4444' : 'var(--navy)') + tile('With overdue MS', overdueProj, overdueProj ? '#EF4444' : '#00B060') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:9px">' + (cpiN || spiN
+        ? (_t('Averages cover') + ' ' + cpiN + '/' + projects.length + ' ' + _t('projects for CPI') + ', ' + spiN + '/' + projects.length + ' ' + _t('for SPI'))
+        : _t('No project has recorded enough to measure CPI or SPI yet.')) + '</div>' +
     '<div style="font-size:11px;color:var(--text-light);margin-bottom:5px">Health mix (RAG)</div><div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--soft-bg)">' + seg(g, 'Green', '#16A34A') + seg(a, 'Amber', '#F59E0B') + seg(r, 'Red', '#EF4444') + '</div>' +
     '<div style="display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--text-light)"><span><b style="color:#16A34A">' + g + '</b> Green</span><span><b style="color:#F59E0B">' + a + '</b> Amber</span><span><b style="color:#EF4444">' + r + '</b> Red</span></div></div>';
 }
@@ -20797,10 +20966,18 @@ function _pmMyActionsHtml() {
    paints on one collection, and a tab fetches its own on the way in.
    `need` is what the tab CANNOT render without — including what its helpers reach for. Miss one and
    the tab renders empty, so this list is the contract; there is a test that walks it. */
+/* Registers a non-manager can be refused, in words a person recognises — so the tab can say
+   WHICH figures are missing instead of presenting an unexplained zero. */
+const _PM_COLL_LABEL = {
+  pm_costs: 'Project costs and budget',
+  pm_procurement_payments: 'Payment certificates'
+};
 const _PM_TABS = [
   { k: 'overview', label: 'Overview', fn: 'pmRenderOverview', need: ['pm_projects', 'pm_costs', 'pm_deliverables', 'pm_tasks', 'pm_risks', 'pm_changes', 'pm_lessons', 'pm_resources', 'pm_stakeholders', 'pm_quality', 'pm_quality_itp'] },
   { k: 'scope', label: 'Scope / WBS', fn: 'pmRenderScope', need: ['pm_projects', 'pm_deliverables'] },
-  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_costs', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
+  // pm_costs was listed here and is never read by pmRenderSchedule — grep it. All it ever did
+  // was 403 for staff and take the whole tab down with it.
+  { k: 'schedule', label: 'Schedule', fn: 'pmRenderSchedule', need: ['pm_projects', 'pm_tasks', 'pm_deliverables', 'pm_detail', 'pm_schedules'] },
   { k: 'cost', label: 'Cost / EVM', fn: 'pmRenderCosts', need: ['pm_projects', 'pm_costs', 'pm_deliverables'] },
   { k: 'quality', label: 'Quality', fn: 'pmRenderQuality', need: ['pm_projects', 'pm_quality', 'pm_quality_itp'] },
   { k: 'resources', label: 'Resources', fn: 'pmRenderResources', need: ['pm_projects', 'pm_resources', 'pm_deliverables'] },
@@ -20871,7 +21048,16 @@ async function pmTab(k) {
   if (_missing.length && _body) _body.innerHTML = tkSkeleton();
   const _failed = await _pmNeed(t.need);
   if (_pmTabK !== k) return;                   // the user moved on while we waited — don't clobber
-  if (_failed.length) {
+  // A 403 is not a failure, it is an ANSWER: this account may not read that register. Treating the
+  // two alike put "Could not load this tab — check your connection and try again" in front of every
+  // staff user who opened a project — on the Overview they land on by default, and on Schedule —
+  // because both listed the manager-only pm_costs. Retrying a permission decision never succeeds,
+  // so the Retry button invited a loop that could not end.
+  // Every register here is read through _pmScopeFor, which is `(_HR[coll] || [])`: a denied
+  // collection is an empty array, not a crash. So the tab can render; the money simply is not there.
+  const _denied = _failed.filter(c => (_COLL_ERR[c] || {}).status === 403);
+  const _broken = _failed.filter(c => (_COLL_ERR[c] || {}).status !== 403);
+  if (_broken.length) {
     // An empty register and a failed fetch look identical once rendered, so say which this was.
     if (_body) _body.innerHTML = '<div class="card" style="padding:18px;color:var(--text-light)">' +
       '<div style="font-weight:700;color:var(--navy);margin-bottom:4px">' + _t('Could not load this tab') + '</div>' +
@@ -20880,6 +21066,18 @@ async function pmTab(k) {
     return;
   }
   try { (window[t.fn] || function () { })(_pmPid()); } catch (e) { const b = document.getElementById('pm-tab-body'); if (b) b.innerHTML = '<div class="card" style="padding:16px;color:#C00000">Error loading ' + t.label + ': ' + _pmEsc(e.message) + '</div>'; }
+  // Rendering without the denied register would show a confident 0 against a real budget,
+  // which reads as "this project has no money" rather than "you may not see the money".
+  // A zero nobody can tell from a fact is worse than an absence somebody explains.
+  if (_denied.length) {
+    const _b2 = document.getElementById('pm-tab-body');
+    if (_b2) _b2.insertAdjacentHTML('afterbegin',
+      '<div class="card" style="padding:11px 14px;margin-bottom:12px;border-left:3px solid var(--warning)">' +
+      '<div style="font-size:12.5px;color:var(--text)">' +
+      _pmEsc(_t('Some figures here are hidden by your access level, so any total that depends on them is incomplete.')) +
+      '</div><div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _pmEsc(_t('Hidden')) + ': ' +
+      _denied.map(c => _pmEsc(_t(_PM_COLL_LABEL[c] || c))).join(', ') + '</div></div>');
+  }
 }
 
 /* ---------- Overview tab (Integration: charter summary, EVM headline, changes, lessons) ---------- */
@@ -21008,8 +21206,8 @@ function pmRenderOverview() {
   const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
   const kpis = _hrKpiRow([
     _hrKpi('Progress', sr.pct + '%', 'var(--navy)'),
-    _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))),
-    _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi))),
+    _hrKpi('CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable), _pmIndexHex(ev.cpi, ev.cpiMeasurable)),
+    _hrKpi('SPI', _pmIndexTxt(ev.spi, ev.spiMeasurable), _pmIndexHex(ev.spi, ev.spiMeasurable)),
     _hrKpi('Open risks (High+)', rr.open + ' / ' + rr.high, '#EF4444'),
     _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
   ]);
@@ -21648,7 +21846,12 @@ function _pdRollup(rows, day) {
 function _pdTaskRef(t) { return String((t && (t.wbs || t.name)) || '').trim(); }
 function _pdTaskPct(task, pid) {
   const ref = _pdTaskRef(task); if (!ref) return null;
-  const rows = _pdRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
+  // _pdAllRows, NOT _pdRows. _pdRows narrows to the detail schedule the user last clicked, so an
+  // activity fed by sub-items in two schedules — "Zone 3 — Cleanroom" and "Block E — MEP" on the
+  // same ductwork run — reported only the half you happened to be looking at, and its percentage
+  // CHANGED when you clicked the other chip. A master activity's progress is everything reported
+  // against it; which chip is selected is a view, not a fact about the work.
+  const rows = _pdAllRows(pid).filter(r => String(r.taskRef || '').trim() === ref);
   return rows.length ? { pct: Math.round(_pdRollup(rows).acc), n: rows.length } : null;
 }
 function _pdVarColor(v) { return v >= -0.5 ? 'var(--emerald)' : (v >= -10 ? '#F59E0B' : '#EF4444'); }
@@ -22828,7 +23031,7 @@ function pmRenderCosts(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const ev = _pmEvm(p);
   const costs = _pmScope(_HR.pm_costs);
-  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
+  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable), _pmIndexHex(ev.cpi, ev.cpiMeasurable)), _hrKpi('SPI', _pmIndexTxt(ev.spi, ev.spiMeasurable), _pmIndexHex(ev.spi, ev.spiMeasurable))]);
   const budget = +p.budget || 0, mgmtR = +p.managementReserve || 0, contR = +p.contingencyReserve || 0;
   const costBaseline = Math.max(0, budget - mgmtR), bl = _pmBaseline(p);
   const _bt = (l, v, c) => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + l + '</div><div style="font-size:15px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div></div>';
@@ -22842,7 +23045,8 @@ function pmRenderCosts(pid) {
     (_splan.phased ? '' : '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:10px">' + _t('Planned is spread evenly — put a Period on each cost line to draw the real plan curve.') + '</div>') +
     '<div style="height:240px"><canvas id="pm-scurve"></canvas></div></div>';
   const evmCard = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Earned Value Analysis</div><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px">' +
-    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] < 0 ? '#EF4444' : 'var(--navy)') + '">' + _pmMoney(r[1]) + '</div></div>').join('') + '</div></div>';
+    // A null forecast prints an em dash and says why, rather than a figure with no basis.
+    [['Cost Variance (CV)', ev.cv], ['Schedule Variance (SV)', ev.sv], ['Forecast (EAC)', ev.eac], ['Var. at Completion (VAC)', ev.vac], ['To Complete (ETC)', ev.etc]].map(r => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + r[0] + '</div><div style="font-size:15px;font-weight:800;color:' + (r[1] == null ? 'var(--text-light)' : (r[1] < 0 ? '#EF4444' : 'var(--navy)')) + '">' + (r[1] == null ? '—' : _pmMoney(r[1])) + '</div></div>').join('') + '</div>' + (ev.eacMeasurable ? '' : '<div style="font-size:11px;color:var(--text-light);margin-top:9px">' + _pmEsc(_t('No forecast yet: a forecast at completion needs earned value, and none has been recorded against this project.')) + '</div>') + '</div>';
   const chart = '<div class="card" style="padding:16px 18px;margin-bottom:14px"><div class="card-title" style="margin-bottom:10px">Budget vs Actual by category</div><div style="height:240px"><canvas id="pm-cost-chart"></canvas></div></div>';
   const tbl = _pmCard('Cost Register', 'pm_costs', 'Add cost line', _pmTable('pm_costs', [
     { label: 'Item', render: r => '<span style="font-weight:600">' + _pmEsc(r.item || '') + '</span>' },
@@ -22976,6 +23180,43 @@ function pmRenderResources(pid) {
 }
 /* RACI matrix — deliverables (rows) × team members (cols). Managers click a cell to cycle
    R → A → C → I → blank, stored in deliverable.raciMap (a NEW additive field; nothing else touched). */
+/* Which part of a name is the PERSON.
+   "Nguyen Van Trung" is family-middle-given: the person is Trung, and taking token [0] gives
+   "Nguyen" — a name roughly two in five Vietnamese people carry. A four-person team then renders
+   as four columns all reading NGUYEN, which is not a cosmetic problem: the matrix exists to say
+   who is Responsible, and it cannot say it.
+   The register holds BOTH orders — _pmSamePerson exists precisely because rows read "Trung Nguyen"
+   while employee records read "Nguyen Van Trung" — so neither end can be trusted blindly. Decide
+   by looking for a known family name; fall back to the Vietnamese convention (last token), because
+   that is what this company's records overwhelmingly use. */
+const _VN_FAMILY = new Set(['nguyen', 'tran', 'le', 'pham', 'hoang', 'huynh', 'phan', 'vu', 'vo',
+  'dang', 'bui', 'do', 'ho', 'ngo', 'duong', 'ly', 'dinh', 'truong', 'dao', 'mai', 'lam', 'trinh',
+  'cao', 'chu', 'ta', 'ha', 'thai', 'luu', 'quach', 'ton', 'to', 'chau', 'kieu', 'ninh']);
+function _pmGivenName(full) {
+  const raw = String(full || '').trim().split(/\s+/).filter(Boolean);
+  if (!raw.length) return '';
+  if (raw.length === 1) return raw[0];
+  const t = _pmNameTokens(full);                       // ASCII-folded, lowercased
+  if (t.length !== raw.length) return raw[raw.length - 1];
+  if (_VN_FAMILY.has(t[0])) return raw[raw.length - 1];        // Nguyen Van Trung -> Trung
+  if (_VN_FAMILY.has(t[t.length - 1])) return raw[0];          // Trung Nguyen     -> Trung
+  return raw[raw.length - 1];                                  // default: Vietnamese order
+}
+/* Given names collide too — two people called Trung on one team would give two columns reading
+   "Trung", which is the same failure one step further along. Where a given name is not unique on
+   THIS team, qualify it with the family name; where it is unique, keep it short. */
+function _pmShortNames(members) {
+  const given = (members || []).map(_pmGivenName);
+  const count = {};
+  given.forEach(g => { const k = g.toLowerCase(); count[k] = (count[k] || 0) + 1; });
+  return (members || []).map((m, i) => {
+    const g = given[i];
+    if (count[g.toLowerCase()] < 2) return g;
+    const raw = String(m || '').trim().split(/\s+/).filter(Boolean);
+    const fam = raw.length > 1 ? (_VN_FAMILY.has(_pmNameTokens(m)[0] || '') ? raw[0] : raw[raw.length - 1]) : '';
+    return fam && fam !== g ? (g + ' ' + fam.charAt(0) + '.') : (m || g);
+  });
+}
 function _pmRaciMembers(pid) {
   const p = _pmProj(pid) || {}; const names = new Set();
   _pmMembers(p).forEach(n => { if (n) names.add(n); });
@@ -22983,11 +23224,17 @@ function _pmRaciMembers(pid) {
   return Array.from(names);
 }
 function _pmRaciMatrix(pid) {
-  const dels = _pmScope(_HR.pm_deliverables); const members = _pmRaciMembers(pid);
+  // Register order put these on screen as 6, E, 2, F, 1, 5, A, C, 4, D, B, 3. Same comparator
+  // as the WBS picker: numbered items in numeric order first, then the lettered ones.
+  const dels = _pmScope(_HR.pm_deliverables).slice()
+    .sort((a, b) => _wbsCmp(a.wbsCode || a.code || '', b.wbsCode || b.code || '')
+                 || String(a.name || '').localeCompare(String(b.name || '')));
+  const members = _pmRaciMembers(pid);
   if (!dels.length || !members.length) return '';
   const canEdit = _pmSeeAll() || _pmCanEditProject(_pmProj(pid));
   const legend = [['R', 'Responsible'], ['A', 'Accountable'], ['C', 'Consulted'], ['I', 'Informed']].map(x => '<span style="display:inline-flex;align-items:center;gap:4px;margin-left:10px"><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:' + (RACI_HEX[x[0]] || '#94a3b8') + '"></span>' + x[1] + '</span>').join('');
-  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map(m => '<th style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc((m.split(' ')[0]) || m) + '</th>').join('');
+  const shortNames = _pmShortNames(members);
+  const head = '<th style="position:sticky;left:0;background:var(--card);text-align:left;min-width:150px;padding:7px 10px">Deliverable</th>' + members.map((m, i) => '<th title="' + _pmEsc(m) + '" style="font-size:10.5px;white-space:nowrap;padding:6px 8px;text-align:center">' + _pmEsc(shortNames[i] || m) + '</th>').join('');
   const rows = dels.map(d => {
     const map = d.raciMap || {};
     return '<tr><td style="position:sticky;left:0;background:var(--card);font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;padding:7px 10px;border-top:1px solid var(--line-soft,#eef2f8)">' + (d.wbsCode ? '<span style="font-variant-numeric:tabular-nums;font-size:10px;color:var(--text-light)">' + _pmEsc(d.wbsCode) + '</span> ' : '') + _pmEsc(d.name || '') + '</td>' + members.map((m, mi) => {
@@ -24226,7 +24473,7 @@ async function pmRenderPortfolio() {
     return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:6px">' + _pmBar(pct) + '<span style="font-size:11px">' + pct + '%</span></div></td>' +
-      '<td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.cpi)) + ';font-weight:700">' + e.cpi.toFixed(2) + '</td><td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.spi)) + ';font-weight:700">' + e.spi.toFixed(2) + '</td>' +
+      '<td style="text-align:center;color:' + _pmIndexHex(e.cpi, e.cpiMeasurable) + ';font-weight:700">' + _pmIndexTxt(e.cpi, e.cpiMeasurable) + '</td><td style="text-align:center;color:' + _pmIndexHex(e.spi, e.spiMeasurable) + ';font-weight:700">' + _pmIndexTxt(e.spi, e.spiMeasurable) + '</td>' +
       '<td style="text-align:right;font-weight:600">' + _pmMoneyShort(p.contractValue || p.budget) + '</td><td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td></tr>';
   }).join('') || tkEmptyRow(9, 'No projects yet.', { icon: 'inbox' });
   const table = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Portfolio</div>' + _pmHealthLegend() + '</div><div class="table-wrap"><table style="min-width:860px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:center">CPI</th><th style="text-align:center">SPI</th><th style="text-align:right">Value</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
@@ -24239,7 +24486,10 @@ async function pmRenderPortfolio() {
     _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'].map(_pmT), datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Health') } });
     const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
     _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
-    _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
+    // Only projects whose SPI was actually measured get a bar. A 1.00 column for a project that
+    // has measured nothing is indistinguishable from one that is genuinely on schedule.
+    { const _spiOk = top.filter(p => _pmEvm(p).spiMeasurable);
+      _mkChart('pm-ch-spi', { type: 'bar', data: { labels: _spiOk.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: _spiOk.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: _spiOk.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) }); }
   } catch (e) { }
 }
 
@@ -26799,7 +27049,8 @@ function engStatusPDF(pid) {
 const TND_TYPES = [
   { k: 'boq', label: 'Build-up (BoQ)', desc: 'Installation work priced from material, labour, plant and subcontract' },
   { k: 'trading', label: 'Trading (import / local)', desc: 'Products bought abroad or in Vietnam and resold — landed cost' },
-  { k: 'epc', label: 'EPC / turnkey', desc: 'A plant priced as a bill of materials per cost centre' }
+  { k: 'epc', label: 'EPC / turnkey', desc: 'A plant priced as a bill of materials per cost centre' },
+  { k: 'services', label: 'Services / consultancy', desc: 'An engagement priced by work package from days x grade rate' }
 ];
 const TND_CO_FORMS = ['', 'None', 'Form D (ATIGA)', 'Form E (ACFTA)', 'Form AK (AKFTA)', 'Form AJ (AJCEP)',
   'Form AI (AIFTA)', 'Form AANZ (AANZFTA)', 'Form VK (VKFTA)', 'Form EUR.1 (EVFTA)',
@@ -26920,7 +27171,7 @@ async function estRenderWorkspace() {
   const root = document.getElementById('est-estimate-root'); if (!root) return;
   root.innerHTML = tkSkeleton();
   await _estNeed(['est_projects', 'est_items', 'est_resources', 'est_rates',
-                  'est_landed', 'est_local', 'est_bom', 'est_quote']);
+                  'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
   const e = _estById(_estCur);
   if (!e) { root.innerHTML = '<div class="card" style="padding:20px">' + _t('Estimate not found.') + ' <a href="#" onclick="showView(\'est-projects\',null,\'Estimates\');return false">' + _t('Back to Estimates') + '</a></div>'; return; }
   // Which engine priced this tender decides which summary it reads. A build-up reads
@@ -27412,6 +27663,31 @@ Object.assign(_QA_SPECS, {
       { k: 'origin', label: 'Origin' },
       { k: 'note', label: 'Notes', type: 'textarea' }]
   },
+  est_wbs: {
+    title: 'Work package', coll: 'est_wbs', reload: 'est_wbs', fields: [
+      { k: 'code', label: 'Work package (WP-01)' },
+      { k: 'ursRef', label: 'URS reference — what the client asked for' },
+      { k: 'name', label: 'Title' },
+      { k: 'scope', label: 'Scope of services', type: 'textarea' },
+      { k: 'deliverables', label: 'Key deliverables — what the client receives', type: 'textarea' },
+      { k: 'durationMonths', label: 'Duration (months)', type: 'number' },
+      /* Effort is entered a grade at a time. The form renderer has no repeating-row control, and
+         inventing one for this would be a bigger change than the module — six numbered fields say
+         the same thing and every one of them is a question somebody can answer. */
+      { k: 'daysDIR', label: 'Days — Director / Principal', type: 'number' },
+      { k: 'daysSME', label: 'Days — Senior consultant / SME', type: 'number' },
+      { k: 'daysCON', label: 'Days — Consultant', type: 'number' },
+      { k: 'daysENG', label: 'Days — Validation engineer', type: 'number' },
+      { k: 'daysQAS', label: 'Days — QA / documentation specialist', type: 'number' },
+      { k: 'daysADM', label: 'Days — Project administrator', type: 'number' },
+      { k: 'travelPeople', label: 'Travel — people per trip', type: 'number' },
+      { k: 'travelTrips', label: 'Travel — number of trips', type: 'number' },
+      { k: 'travelNights', label: 'Travel — nights per trip', type: 'number' },
+      { k: 'otherExpenses', label: 'Other expenses (₫)', type: 'money' },
+      { k: 'markupPct', label: 'Mark-up % — blank uses the default', type: 'number' },
+      { k: 'optional', label: 'Optional — the client may decline this package', type: 'select', options: ['No', 'Yes'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }]
+  },
   est_risks: {
     title: 'Risk', coll: 'est_risks', reload: 'est_risks', fields: [
       { k: 'code', label: 'Code' },
@@ -27444,6 +27720,7 @@ Object.assign(_HR_RELOAD, {
   est_landed: () => tndReload(),
   est_local: () => tndReload(),
   est_bom: () => tndReload(),
+  est_wbs: () => tndReload(),
   est_quote: () => tndReload(),
   est_risks: () => tndReload()
 });
@@ -27489,6 +27766,14 @@ function _tndTabs() {
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk', fn: 'tndTabRisk' }
   ];
+  if (t === 'services') return [
+    { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
+    { k: 'wbs', label: 'Work Packages', fn: 'tndTabWbs' },
+    { k: 'quote', label: 'Quotation', fn: 'tndTabQuote' },
+    { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
+    { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
+    { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' }
+  ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -27510,11 +27795,21 @@ function _tndHeadline() {
   const tile = (lbl, val, sub, hex) => '<div style="flex:1 1 150px;min-width:140px"><div style="font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text-light);font-weight:700">' + _t(lbl) + '</div>' +
     '<div style="font-size:19px;font-weight:800;color:' + (hex || 'var(--navy)') + ';line-height:1.2;font-variant-numeric:tabular-nums">' + val + '</div>' +
     '<div style="font-size:11px;color:var(--text-light)">' + sub + '</div></div>';
-  const costLbl = ty === 'epc' ? 'Cost of works' : 'Landed cost';
-  const cost = ty === 'epc' ? (_tndSum.rollup || {}).costVnd : (_tndSum.master || {}).landedTotal;
+  /* A services tender has no landed cost, and a headline reading "LANDED COST ₫0" is worse than
+     no headline: a zero in that position looks like a measured figure rather than a category that
+     does not apply. What a consultancy spends is people, so it says so — and it says the days,
+     because that is the number the engagement is actually sized in. */
+  const svc = ty === 'services';
+  const costLbl = svc ? 'Cost of delivery' : (ty === 'epc' ? 'Cost of works' : 'Landed cost');
+  const costSub = svc ? _t('consultant time and expenses')
+                      : _t('what the goods cost us, VAT excluded');
+  const cost = svc ? (_tndSum.rollup || {}).cost
+                   : (ty === 'epc' ? (_tndSum.rollup || {}).costVnd : (_tndSum.master || {}).landedTotal);
   const vatRec = (_tndSum.master || {}).vatRecoverable;
   return '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">' +
-    tile(costLbl, _tndMoney(cost), _t('what the goods cost us, VAT excluded')) +
+    tile(costLbl, _tndMoney(cost), costSub) +
+    (svc ? tile('Consultant days', _tndNum((_tndSum.rollup || {}).days, 1),
+                _tndMoney((_tndSum.rollup || {}).effectiveDayRate) + ' ' + _t('effective day rate')) : '') +
     tile('Quotation (excl VAT)', _tndMoney(q.net), q.lineCount + ' ' + _t('lines') + ' · ' + _t('VAT') + ' ' + _tndMoney(q.vat), 'var(--emerald-deep)') +
     tile('Gross margin', _tndPct(q.grossMarginPct), _tndPct(q.effectiveMarkupPct) + ' ' + _t('effective mark-up'), q.grossMarginPct < 10 ? 'var(--warning)' : 'var(--navy)') +
     (vatRec ? tile('Import VAT recoverable', _tndMoney(vatRec), _t('a receivable, deliberately not in the cost')) : '') +
@@ -27555,7 +27850,7 @@ async function tndSetAssump(key, v) {
 }
 
 async function tndReload() {
-  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_quote']);
+  await _estNeed(['est_projects', 'est_landed', 'est_local', 'est_bom', 'est_wbs', 'est_quote']);
   await estRenderWorkspace();
 }
 
@@ -27694,6 +27989,68 @@ async function tndSetConfig(centre, field, v) {
 }
 
 /* ── EPC: the bill of materials ── */
+/* Work packages — the services engine's costing sheet.
+   Shows the effort BEHIND each fee, not only the fee. A professional fee that cannot be traced to
+   days x grade cannot be defended when the client asks how it was arrived at, and cannot be
+   compared afterwards with what the engagement actually cost. */
+function tndTabWbs() {
+  const e = _estById(_estCur); if (!e || !_tndSum) return;
+  const roll = _tndSum.rollup || { packages: [] };
+  const can = _estCanPrice() && !_estFrozen(e);
+  const pkgs = roll.packages || [];
+
+  const head = '<div class="card" style="margin-bottom:14px"><div style="display:flex;gap:26px;flex-wrap:wrap">' +
+    [[_t('Packages'), String(pkgs.length)],
+     [_t('Consultant days'), _tndNum(roll.days, 1)],
+     [_t('Cost'), _tndMoney(roll.cost)],
+     [_t('Fee'), _tndMoney(roll.fee)],
+     [_t('Margin'), _tndPct(roll.marginPct)],
+     [_t('Effective day rate'), _tndMoney(roll.effectiveDayRate)],
+     [_t('Duration'), _tndNum(roll.durationMonths, 0) + ' ' + _t('months')]]
+      .map(function (kv) {
+        return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' + kv[0] +
+          '</div><div style="font-size:15px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' + kv[1] + '</div></div>';
+      }).join('') + '</div></div>';
+
+  const excl = (roll.excludedPackages || []).length
+    ? '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--warning)"><div style="font-size:12px;color:var(--text-light)">' +
+      _t('Declined by the client and excluded from the quotation') + ': <b>' +
+      roll.excludedPackages.map(_estEsc).join(', ') + '</b></div></div>'
+    : '';
+
+  const rows = pkgs.length ? pkgs.map(function (p) {
+    const eff = (p.effort || []).map(function (x) { return _estEsc(x.label) + ' ' + _tndNum(x.days, 1) + 'd'; }).join(' · ')
+      || '<i>' + _t('no effort priced') + '</i>';
+    const ed = p.expenseDetail || {};
+    return '<tr>' +
+      '<td style="font-weight:700;color:var(--navy);white-space:nowrap">' + _estEsc(p.code || '') +
+        (p.optional ? ' <span style="font-size:10px;color:var(--warning);font-weight:700">' + _t('optional') + '</span>' : '') + '</td>' +
+      '<td style="white-space:nowrap">' + _estEsc(p.ursRef || '—') + '</td>' +
+      '<td><div style="font-weight:600">' + _estEsc(p.name || '') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light);margin-top:2px">' + eff + '</div></td>' +
+      '<td style="text-align:right">' + _tndNum(p.durationMonths, 0) + '</td>' +
+      '<td style="text-align:right">' + _tndNum(p.days, 1) + '</td>' +
+      '<td style="text-align:right">' + _tndMoney(p.labour) + '</td>' +
+      '<td style="text-align:right" title="' + _t('travel') + ' ' + _tndMoney(ed.travel) + ' · ' +
+        _t('hotel') + ' ' + _tndMoney(ed.hotel) + ' · ' + _t('per diem') + ' ' + _tndMoney(ed.perDiem) + '">' +
+        _tndMoney(p.expenses) + '</td>' +
+      '<td style="text-align:right">' + _tndMoney(p.cost) + '</td>' +
+      '<td style="text-align:right">' + _tndPct(p.markupPct) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:var(--navy)">' + _tndMoney(p.fee) + '</td>' +
+      '<td style="text-align:right;color:var(--emerald-deep)">' + _tndPct(p.marginPct) + '</td>' +
+      '<td style="text-align:right;white-space:nowrap">' + (can ? _hrEditDel('est_wbs', p.id, 'est_wbs') : '') + '</td></tr>';
+  }).join('') : '<tr><td colspan="12" style="text-align:center;color:var(--text-light);padding:22px">' +
+      _t('No work packages yet. A services tender is priced one package at a time — scope, deliverables, and the days behind them.') + '</td></tr>';
+
+  _estSet(head + excl +
+    (can ? '<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button class="btn btn-primary btn-sm" onclick="tndAdd(\'est_wbs\')">' +
+      tkIcon('plus') + _t('Add work package') + '</button></div>' : '') +
+    '<div class="card" style="padding:0;overflow:hidden"><div class="table-wrap"><table style="min-width:1040px"><thead><tr>' +
+    ['WP', 'URS ref', 'Package / effort', 'Months', 'Days', 'Labour', 'Expenses', 'Cost', 'Mark-up', 'Fee', 'Margin', '']
+      .map(function (h, i) { return '<th style="font-size:10.5px' + (i >= 3 && i <= 10 ? ';text-align:right' : '') + '">' + (h ? _t(h) : '') + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>');
+}
+
 function tndTabBom() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const roll = _tndSum.rollup || { lines: [], centres: [] };
@@ -27899,7 +28256,8 @@ function _tndQuoteSheet(doc, q) {
   const line = (l, i) => '<tr>' +
     '<td style="text-align:center;color:var(--text-light);font-variant-numeric:tabular-nums;border:1px solid #CFD6E2;padding:6px 4px">' + (i + 1) + '</td>' +
     '<td style="font-weight:700;color:var(--navy);border:1px solid #CFD6E2;padding:6px 8px">' + _estEsc(l.itemCode || '') + '</td>' +
-    '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') + '</td>' +
+    '<td style="border:1px solid #CFD6E2;padding:6px 8px;white-space:pre-line;line-height:1.45">' + _estEsc(l.desc || '') +
+      (l.descNote ? '<div style="font-size:11px;color:var(--text-light);margin-top:3px">' + _estEsc(l.descNote) + '</div>' : '') + '</td>' +
     '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px;font-variant-numeric:tabular-nums">' + _tndNum(l.qty, 2) + '</td>' +
     '<td style="text-align:center;border:1px solid #CFD6E2;padding:6px 4px">' + _estEsc(l.unit || '') + '</td>' +
     '<td style="text-align:right;border:1px solid #CFD6E2;padding:6px 8px;font-variant-numeric:tabular-nums">' + money(l.unitSell) + '</td>' +
@@ -27967,8 +28325,12 @@ function _tndQuoteSheet(doc, q) {
     '</tr></thead><tbody>' +
     (doc.lines || []).map(line).join('') +
     Array(blankRows).fill(spacer).join('') +
-    totRow('SUBTOTAL', null, tot.net, {}) +
-    totRow('Project Discount', doc.discountPct, Math.round((tot.net || 0) * (+doc.discountPct || 0) / 100), { showPct: true }) +
+    /* Server figures, not recomputed here. `net` is what the customer owes AFTER the discount,
+       so showing it as the SUBTOTAL and then deducting the discount again would present a
+       doubly-discounted letter. `subtotal` is what the lines add up to; the two are different
+       numbers and the distinction is the whole point of carrying both. */
+    totRow('SUBTOTAL', null, tot.subtotal, {}) +
+    totRow('Project Discount', tot.discountPct, tot.discount, { showPct: true }) +
     totRow('Tax / VAT (if applicable)', doc.vatPct, tot.vat, { showPct: true }) +
     totRow('GRAND TOTAL', null, tot.gross, { grand: true }) +
     '</tbody></table></div>' +
@@ -28178,7 +28540,13 @@ function tndQuotePDF() {
   (d.lines || []).forEach((l, i) => {
     _pdfFont(doc, 'normal'); doc.setFontSize(9);
     const desc = doc.splitTextToSize(_pmPdfTxt(l.desc || ''), W[2] - 4);
-    const h = Math.max(7, desc.length * 4 + 3);
+    /* A services line carries what makes up its price — professional fee, travel & expenses and
+       the consultant days behind them. The client's tender form asks for those separately, and
+       the letterhead table has seven fixed columns from the template, so the split is set beneath
+       the description rather than in columns of its own. It reads the same in the PDF, the
+       preview and the Excel export, which columns added to only one of them would not. */
+    const note = l.descNote ? doc.splitTextToSize(_pmPdfTxt(l.descNote), W[2] - 4) : [];
+    const h = Math.max(7, (desc.length + note.length) * 4 + 3);
     if (y + h > 258) { y = newPage(); drawHead(); }
     cellBorders(h);
     doc.setTextColor(92, 100, 112);
@@ -28187,6 +28555,11 @@ function tndQuotePDF() {
     doc.text(_pmPdfTxt(l.itemCode || ''), _QT_ML + W[0] + 2, y + 5);
     _pdfFont(doc, 'normal'); doc.setTextColor(31, 41, 55);
     doc.text(desc, _QT_ML + W[0] + W[1] + 2, y + 5);
+    if (note.length) {
+      _pdfFont(doc, 'normal'); doc.setFontSize(7); doc.setTextColor(92, 100, 112);
+      doc.text(note, _QT_ML + W[0] + W[1] + 2, y + 5 + desc.length * 4);
+      doc.setFontSize(9); doc.setTextColor(31, 41, 55);
+    }
     const x3 = _QT_ML + W[0] + W[1] + W[2];
     doc.text(_pmPdfTxt(_tndNum(l.qty, 2)), x3 + W[3] / 2, y + 5, { align: 'center' });
     doc.text(_pmPdfTxt(l.unit || ''), x3 + W[3] + W[4] / 2, y + 5, { align: 'center' });
@@ -28286,6 +28659,7 @@ function tndAdd(coll) {
   if (coll === 'est_landed') { seed.currency = 'USD'; seed.qty = 1; seed.coForm = 'None'; }
   if (coll === 'est_local') { seed.qty = 1; }
   if (coll === 'est_bom') { seed.costCentre = 'CIV'; seed.qty = 1; }
+  if (coll === 'est_wbs') { seed.optional = 'No'; seed.durationMonths = 1; seed.travelPeople = 1; }
   if (coll === 'est_risks') { seed.status = 'Open'; seed.probability = 20; }
   tkQuickAdd(coll, null, seed);
 }
@@ -30256,6 +30630,11 @@ function showView(id, navEl, title) {
   if (id === 'invtrack') { try { tkRenderInvTrack(); } catch (e) { console.warn('invtrack:', e.message); } }
   // Report sub-panels live in #content (not inside the view) — hide them off the Reports page, show the default tab on it.
   ['attendance', 'leave', 'inout', 'recruit', 'payroll'].forEach(t => { const p = document.getElementById('rpt-' + t); if (p) p.style.display = (id === 'reports' && t === 'attendance') ? 'block' : 'none'; });
+  // The period control has to exist the moment the page opens, not from the first tab CLICK.
+  // switchReportTab fills the slot, and opening Reports does not call it — the default tab is
+  // active in the markup and rendered directly — so the page appeared with no period control at
+  // all until you happened to click a tab. Found by opening the page, not by any assertion.
+  if (id === 'reports') { _rptTabK = 'attendance'; _rptPeriodSlot(); }
   if (id === 'reports') { document.querySelectorAll('#rpt-tabs .tab').forEach((b, i) => b.classList.toggle('active', i === 0)); setTimeout(initReportCharts, 100); }
   if (id === 'manager') { loadManagerView(); }
   if (id === 'procurement') { try { tkRenderProcurementEmbed(); } catch (e) { console.warn('procurement:', e.message); } }
@@ -34010,7 +34389,6 @@ const _VI = {
   "Enrolments & Progress": "Ghi danh & Tiến độ",
   "Expense & Benefit Claims": "Đề nghị chi phí & Phúc lợi",
   "SP_CONFIG — Live Values": "SP_CONFIG — Giá trị hiện hành",
-  "Leave Requests — May 2026": "Đơn nghỉ phép — Tháng 5, 2026",
   "Time-to-Offer SLA (QĐ.HR-01)": "SLA thời gian gửi đề nghị tuyển (QĐ.HR-01)",
   "Rating Scale & Merit Outcomes (HML-CB-001 §15)": "Thang đánh giá & Kết quả xét thưởng (HML-CB-001 §15)",
   "Salary Structure & Grading (G1–G10) — 3P Model": "Cơ cấu lương & Phân bậc (G1–G10) — Mô hình 3P",
@@ -35935,7 +36313,50 @@ function tkTimesheetCsv() {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 0);
 }
 
+/* The Reports period, and the tab it applies to.
+
+   The control on this page was decorative: a <select id="rpt-period"> with three hardcoded months,
+   no onchange, and no reader anywhere in the file. Every tab therefore reported all-time figures
+   under a heading that named a month — the Leave card said "May 2026" over rows dated July.
+
+   A period control that does nothing is worse than none: it does not merely fail to filter, it
+   states a scope the numbers do not have, and somebody reports those numbers to a client. */
+let _rptTabK = 'attendance';
+const _RPT_PERIOD_F = 'rpt-period-f';
+function _rptPeriodSlot() {
+  const slot = document.getElementById('rpt-period-slot');
+  if (slot && !slot.hasChildNodes()) slot.innerHTML = _crmFiltPeriod(_RPT_PERIOD_F, '_rptPeriodChanged');
+}
+/* What the chosen period is called, for a heading. Empty when it is "All time", because appending
+   nothing is honest and "— All time" is noise. */
+function _rptPeriodLabel() {
+  const cur = _crmLF[_RPT_PERIOD_F] || '';
+  if (!cur) return '';
+  if (cur === 'Custom range…') {
+    const a = _crmLF[_RPT_PERIOD_F + '-from'] || '', b = _crmLF[_RPT_PERIOD_F + '-to'] || '';
+    return (a || b) ? (' — ' + (a ? tkFmtDate(a) : '…') + ' → ' + (b ? tkFmtDate(b) : '…')) : '';
+  }
+  return ' — ' + _t(cur);
+}
+/* Is this row inside the chosen period? A row with no usable date is KEPT: dropping it would
+   silently shrink a total on a technicality, and an undated record is a data problem to fix, not a
+   row to hide. */
+function _rptInPeriod(dateStr) {
+  if (!_crmLF[_RPT_PERIOD_F]) return true;              // All time
+  if (!dateStr) return true;
+  // An UNPARSEABLE date counts as no date. Without this, `_isoDay` returns '' inside _inPeriod, the
+  // row is dropped, and a total quietly shrinks because one record was typed badly.
+  if (!/^\d{4}-\d{2}-\d{2}/.test(String(dateStr).trim())) return true;
+  return _inPeriodLF(dateStr, _RPT_PERIOD_F);
+}
+/* Re-render whichever tab is showing. The period belongs to the page, not to one tab. */
+function _rptPeriodChanged() {
+  const el = document.querySelector('#rpt-tabs .tab.active');
+  switchReportTab(_rptTabK, el);
+}
 function switchReportTab(tab, el) {
+  _rptTabK = tab;
+  _rptPeriodSlot();
   document.querySelectorAll('#rpt-tabs .tab').forEach(b => b.classList.remove('active'));
   if (el) el.classList.add('active');
   ['attendance','leave','inout','timesheet','recruit','payroll','labour','workforce'].forEach(id => {
@@ -36024,8 +36445,11 @@ function renderLeaveReport() {
     const matchD = deptF === 'All Employees' || deptF === 'All Departments' || dept === deptF;
     const matchT = typeF === 'All Types' || (l.type || '') === typeF;
     const matchS = statF === 'All Status' || (l.status || '').toLowerCase() === statF.toLowerCase();
-    return matchD && matchT && matchS;
+    // A leave request belongs to the period its leave STARTS in — that is the month a manager is
+    // asking about when they pick one.
+    return matchD && matchT && matchS && _rptInPeriod(l.startDate);
   }).sort(_cmpNewest('startDate'));
+  { const lbl = document.getElementById('lr-period-label'); if (lbl) lbl.textContent = _rptPeriodLabel(); }
   // stat boxes
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   set('lr-total', rows.length);
@@ -36036,7 +36460,7 @@ function renderLeaveReport() {
   const emp = nm => (_DEMO_EMPLOYEES || []).find(e => e.name === nm);
   tbody.innerHTML = rows.length ? rows.map(l => {
     const nm = l.emp_name || l.name || 'Employee'; const e = emp(nm) || { clr: tkAvatarColor(nm), ini: nm.slice(0, 2).toUpperCase() };
-    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + (l.approvedBy || (((l.status || '').toLowerCase() === 'approved') ? 'Manager' : '—')) + '</td></tr>';
+    return '<tr><td><div class="d-flex-gap">' + _hrAv(e) + '<span style="font-weight:600">' + _crmEsc(nm) + '</span></div></td><td>' + _crmEsc(l.emp_dept || l.dept || '') + '</td><td>' + _crmEsc(l.type || '') + '</td><td>' + tkFmtDate(l.startDate) + '</td><td>' + tkFmtDate(l.endDate) + '</td><td>' + (l.days || '') + '</td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.reason || '') + '</td><td><span class="badge ' + badge(l.status) + '">' + (l.status || '') + '</span></td><td style="font-size:11px;color:var(--text-light)">' + _crmEsc(l.approvedBy || '—') + '</td></tr>';
   }).join('') : tkEmptyRow(9, 'No leave records match your filters.', { icon: 'search' });
   // Leave-by-type bars (data-driven)
   const byType = {}; rows.forEach(l => { const t = l.type || 'Other'; (byType[t] = byType[t] || { n: 0, d: 0 }); byType[t].n++; byType[t].d += (+l.days || 0); });
@@ -36056,7 +36480,8 @@ function renderLeaveReport() {
 
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
-  const att = _DEMO_ATTENDANCE || [];
+  // Was every attendance row ever recorded, under a heading naming a month.
+  const att = (_DEMO_ATTENDANCE || []).filter(r => _rptInPeriod(r.date));
   const total = att.length;
   const ontime = att.filter(r => r.status === 'on-time').length;
   const late = att.filter(r => r.status === 'late').length;
@@ -36182,6 +36607,31 @@ function _tkOtOverCapGo(attId) {
   document.getElementById('otCapOverlay')?.remove();
   tkOtDecide(attId, 'approve', reason.trim());
 }
+/* The day a punch belongs to.
+   A log of 185 records spanning many days, with only a clock time on each row, cannot be read:
+   you cannot tell which check-in is which, and the date filters appear to do nothing because
+   nothing on screen shows a date. The weekday is shown alongside because Saturday and Sunday work
+   is what Art. 98 pays differently — worth seeing at a glance, not by counting back from a number.
+   The Date is built from the Y/M/D parts LOCALLY. `new Date("2026-08-21")` parses a bare date as
+   UTC midnight, which names the previous weekday anywhere west of Greenwich — this app already
+   keeps attendance on local dates, so the weekday must be derived the same way. */
+const _IO_DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function _ioDayCell(v) {
+  const dash = '<span style="color:var(--text-light)">\u2014</span>';
+  const m = String(v || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return dash;
+  const y = +m[1], mo = +m[2], da = +m[3];
+  const dt = new Date(y, mo - 1, da);                    // built from local parts
+  // Out-of-range parts do not throw, they ROLL OVER: month 13 becomes January of the next
+  // year, Feb 30 becomes Mar 2. Either would print a confident, WRONG weekday. Reading the
+  // parts back off the Date is the only check that catches both.
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== da) return dash;
+  const dow = dt.getDay(), wknd = (dow === 0 || dow === 6);
+  return '<span style="font-weight:600;font-size:12.5px;white-space:nowrap;font-variant-numeric:tabular-nums">' +
+    _crmEsc(tkFmtDate(m[0])) + '</span>' +
+    '<div style="font-size:10.5px;font-weight:' + (wknd ? '700' : '500') +
+    ';color:' + (wknd ? 'var(--warning)' : 'var(--text-light)') + '">' + _crmEsc(_t(_IO_DOW[dow])) + '</div>';
+}
 function renderInOutReport() {
   const tbody = document.getElementById('inout-report-tbody');
   if (!tbody) return;
@@ -36233,6 +36683,7 @@ function renderInOutReport() {
     return `<tr>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="ava-sm" style="background:${clr}">${ini}</div><span style="font-weight:600;font-size:13px">${_crmEsc(r.name)}</span></div></td>
       <td><span class="badge b-navy" style="font-size:10px">${_crmEsc(r.dept)}</span></td>
+      <td>${_ioDayCell(r.date)}</td>
       <td style="font-weight:700;font-size:13px;color:var(--navy)">${_crmEsc(r.in)||'—'}</td>
       <td style="font-size:13px;color:var(--text-light)">${_crmEsc(r.out)||'<span style="color:var(--warning);font-size:11px">Not checked out</span>'}</td>
       <td style="font-weight:600;font-size:13px">${hoursStr}</td>
@@ -36243,9 +36694,9 @@ function renderInOutReport() {
     </tr>`;
   }).join('');
   if (!window._ioShowAll && rows.length > IO_CAP) {   // reveal the rest without re-filtering
-    tbody.innerHTML += '<tr><td colspan="9" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
+    tbody.innerHTML += '<tr><td colspan="10" style="text-align:center;padding:14px 12px"><button class="btn btn-outline btn-sm" onclick="window._ioShowAll=true;renderInOutReport()">' + _t('Show all') + ' ' + rows.length + '</button><span style="font-size:11.5px;color:var(--text-light);margin-left:9px">' + _t('Showing') + ' ' + IO_CAP + ' ' + _t('of') + ' ' + rows.length + '</span></td></tr>';
   }
-  if (!rows.length) tbody.innerHTML = tkEmptyRow(9, 'No records match your filters.', { icon: 'search' });
+  if (!rows.length) tbody.innerHTML = tkEmptyRow(10, 'No records match your filters.', { icon: 'search' });
   document.getElementById('io-total').textContent = rows.length;
   document.getElementById('io-ontime').textContent = rows.filter(r=>r.status==='on-time').length;
   document.getElementById('io-late').textContent   = rows.filter(r=>r.status==='late').length;

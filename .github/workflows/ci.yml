@@ -32,6 +32,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # requirements.txt was never installed here, so nothing checked that it COULD be. A dependabot
+      # bump to pywebpush>=2.4.0 merged green while being uninstallable on this job's Python: 2.2+
+      # needs >= 3.10, and pip failing the file takes pypdf and cryptography down with it — push,
+      # e-invoice extraction and e-signature verification, from one line about push. The tests passed
+      # throughout because they never touched these libraries.
+      #
+      # --dry-run resolves the file without spending time on wheels the tests do not use. Resolution
+      # is the thing that was broken, and the thing a version bump breaks.
+      - name: Runtime dependencies must resolve on this Python
+        run: pip install --dry-run -r requirements.txt
+
       - name: Syntax gate (compile every module)
         run: python -m py_compile app.py db.py
 
@@ -63,6 +74,58 @@ jobs:
 
       - name: Detail Schedule arithmetic
         run: node tests/detail_schedule_math.js
+
+      # The In/Out Log carries one row per punch across many days. Until the Date column existed
+      # every row showed only a clock time, so nobody could tell which day a check-in belonged to —
+      # and the date filters looked broken because nothing on screen changed when you set one.
+      # Two silent ways to get it wrong: `new Date("2026-08-21")` reads a BARE date as UTC midnight
+      # and names the previous weekday west of Greenwich, and out-of-range parts do not throw but
+      # ROLL OVER, so 2026-13-45 renders as a confident, wrong day. Both are asserted, along with
+      # the column count agreeing across the header, the row and both full-width rows.
+      - name: In/Out Log Date column
+        run: node tests/inout_day_column.js
+
+      # A staff account opening ANY project met "Could not load this tab — check your connection",
+      # on the Overview it lands on by default and on Schedule, because both listed the
+      # manager-only pm_costs in `need` and pmTab treated a 403 as a fetch failure. Retrying a
+      # permission decision never succeeds, so Retry was a loop with no exit. Also pins the WBS
+      # picker's order: plain string sort puts "1.10" before "1.2", which is how a site engineer
+      # loses 1.4.4.1 in a list of twenty codes.
+      - name: Project tab access + WBS picker order
+        run: node tests/pm_access_and_wbs.js
+
+      # A four-person team rendered as four columns all reading "NGUYEN": the header took
+      # `name.split(' ')[0]`, which in Vietnamese name order is the FAMILY name — carried by roughly
+      # two in five people in the country. A RACI matrix exists to say who is Responsible, and four
+      # identical columns cannot say it. The register holds BOTH name orders (see _pmSamePerson), so
+      # "take the last token" breaks the other half instead. Also pins the deliverable order, which
+      # was rendering 6, E, 2, F, 1, 5, A, C.
+      - name: RACI matrix names the person, in order
+        run: node tests/raci_names_and_order.js
+
+      # The Reports period control was decorative: <select id="rpt-period"> had three hardcoded
+      # months, no onchange, and no reader anywhere in 40,000 lines. Every tab reported ALL-TIME
+      # figures under a control naming a month, and the Leave card's title was the literal string
+      # "Leave Requests — May 2026" over rows dated July. That is worse than no control — it states
+      # a scope the numbers do not have, and somebody reports those numbers to a client.
+      - name: Reports period filter is real
+        run: node tests/reports_period_filter.js
+
+      # The WBS chain: sub-items -> master activity -> project. _pdTaskPct read _pdRows(), which is
+      # narrowed to the detail schedule currently selected in the chip bar, so an activity fed by
+      # two schedules reported only the half on screen and its percentage CHANGED when you clicked
+      # the other chip. Also characterizes what the project percentage is computed from, because
+      # that figure multiplies into EV, and EV into CPI/SPI/EAC on client-facing reports.
+      - name: WBS roll-up chain
+        run: node tests/wbs_rollup_chain.js
+
+      # CPI and SPI hold a NUMBER even when the project has recorded nothing to measure — 1.00 from
+      # a fallback, 0.00 from a zero numerator — and each reads as a finding: "exactly on budget",
+      # "perfectly on schedule". This asserts the WIRING, not the maths: spiMeasurable existed for
+      # an hour with three occurrences, all inside _pmEvm, read by no screen, so the Cost/EVM tab
+      # kept printing SPI 1.00. A correct flag nobody consults changes nothing a user sees.
+      - name: No screen prints an EVM index it did not measure
+        run: node tests/evm_index_honesty.js
 
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
@@ -123,7 +186,15 @@ jobs:
           changed=$(gh api --paginate \
             "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --jq '.[].filename')
-          deployed=$(printf '%s\n' "$changed" | grep -vE '^(docs/|tests/|tools/|\.github/|README|.*\.md$)' || true)
+          # mobile/ is the Capacitor native shell. `COPY . /app` does put it in the image, so it is
+          # tempting to call it deployed — but nothing there is ever served to a browser (app.py
+          # never references it) and mobile/ios, mobile/android and node_modules are generated, not
+          # committed. This guard exists so a PWA client can tell one BUILD OF THE SERVED APP from
+          # the next; bumping hml-pwa-vNNN for a mobile/package.json change busts every user's
+          # service-worker cache for something none of them can observe. The alternative — bumping
+          # the version anyway to get a green tick — is exactly the routing-around this guard was
+          # written to stop, so exclude the path instead of teaching people to fake the version.
+          deployed=$(printf '%s\n' "$changed" | grep -vE '^(docs/|tests/|tools/|mobile/|\.github/|README|.*\.md$)' || true)
           if [ -z "$changed" ]; then
             echo "::error::The API returned no changed files for this PR — refusing to pass on a"
             echo "::error::list nobody could read, since an empty list would silently exempt anything."
