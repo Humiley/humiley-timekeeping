@@ -44,7 +44,8 @@ from labour_cost import apportion
 
 TRADING = "trading"
 EPC = "epc"
-COSTING_TYPES = (TRADING, EPC)
+SERVICES = "services"
+COSTING_TYPES = (TRADING, EPC, SERVICES)
 
 IMPORT = "import"
 LOCAL = "local"
@@ -109,6 +110,17 @@ ASSUMPTIONS = [
 
     ("markupPct", "Pricing", "Default mark-up on landed cost", 25.0, "%", "Override per line on the quotation."),
     ("discountCapPct", "Pricing", "Discount cap", 10.0, "%", "Maximum discount sales may offer without approval."),
+
+    # A consultancy sells time. These four turn "two consultants, three visits, four nights" into
+    # a number, so an expenses figure is derived from the trip that was actually agreed rather
+    # than typed into a box where nobody can check it.
+    ("perDiemDay", "Services", "Per diem (per travel day)", 1200000, "VND",
+     "Meals and incidentals for a consultant away from base."),
+    ("hotelNight", "Services", "Accommodation (per night)", 1800000, "VND", "Per person, per night."),
+    ("travelTripCost", "Services", "Travel per trip (return)", 3500000, "VND",
+     "Flights or long-distance ground transport, per person per trip."),
+    ("servicesMarkupPct", "Services", "Default fee mark-up on cost", 35.0, "%",
+     "Professional services carry overhead and non-billable time; the mark-up is not the margin."),
 
     ("pmFeePct", "Project fees", "Project management fee", 0.0, "% of goods value",
      "PMO, planning, progress reporting, client interface. Charge it or absorb it — but price it."),
@@ -388,6 +400,148 @@ def bom_rollup(lines, a, config=None):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#   2c. SERVICES — a consultancy tender, costed from effort
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# The third shape Humiley actually tenders, and the one that was living entirely in spreadsheets:
+# an EU-GMP readiness engagement, priced as a work-package breakdown. The real workbooks
+# (Bidiphar SVI and OSD) carry the columns this models — work package, URS reference, scope, key
+# deliverables, duration, professional fee, travel & expenses — and a separate sheet of optional
+# services the client may or may not take.
+#
+# Neither existing engine fits it. TRADING costs a customs chain and SERVICES imports nothing.
+# EPC costs a bill of materials and a consultancy has no materials: what it sells is people's
+# time, so the cost base is DAYS x DAY RATE by grade, and everything else follows from that.
+#
+# Pricing a work package by picking a fee out of the air is exactly what this replaces. A fee that
+# is not built from effort cannot be defended when the client asks why, cannot be compared with
+# what the work eventually costs, and gives the business no way to tell a good engagement from one
+# it lost money on.
+
+GRADES = [
+    # (key, label, default day rate in VND, note)
+    ("DIR", "Director / Principal", 12_000_000, "Engagement lead, regulatory strategy, QP interface."),
+    ("SME", "Senior consultant / SME", 8_500_000, "GMP subject-matter expert; audits and gap assessments."),
+    ("CON", "Consultant", 6_000_000, "Assessment, documentation, remediation support."),
+    ("ENG", "Validation engineer", 5_500_000, "DQ/IQ/OQ/PQ, CSV, qualification protocols."),
+    ("QAS", "QA / documentation specialist", 4_500_000, "SOPs, QMS documents, dossier compilation."),
+    ("ADM", "Project administrator", 2_500_000, "Planning, minutes, progress reporting, logistics."),
+]
+GRADE_LABEL = {k: l for k, l, _r, _n in GRADES}
+GRADE_RATE = {k: r for k, _l, r, _n in GRADES}
+
+
+
+def package_cost(pkg, a):
+    """One work package: the effort behind it, what that effort costs, and the fee it supports.
+
+    Expenses are computed from the trip, not typed as a lump, because the trip is the thing that
+    is actually agreed with the client — "two consultants, three visits, four nights each" is
+    checkable and a number in an expenses box is not.
+    """
+    # Effort arrives either as a list of {grade, days, rate} — the canonical form, and what the
+    # API and tests use — or as the flat `daysDIR`/`daysSME`/... fields the quick-add form
+    # produces, because the form renderer has no repeating-row control. Both are accepted here
+    # rather than normalised in the UI, so the storage shape cannot drift from what prices it.
+    rows = list(pkg.get("effort") or [])
+    if not rows:
+        rows = [{"grade": k, "days": pkg.get("days" + k)}
+                for k, _l, _r, _n in GRADES if _num(pkg.get("days" + k))]
+
+    effort = []
+    labour = 0
+    for e in rows:
+        grade = str(e.get("grade") or "").strip().upper()
+        days = _num(e.get("days"))
+        rate = _num(e.get("rate")) or _num(a.get("rate" + grade.title())) or GRADE_RATE.get(grade, 0)
+        cost = vnd(days * rate)
+        labour += cost
+        effort.append({"grade": grade, "label": GRADE_LABEL.get(grade, grade),
+                       "days": days, "rate": vnd(rate), "cost": cost})
+
+    people = _num(pkg.get("travelPeople"))
+    trips = _num(pkg.get("travelTrips"))
+    nights = _num(pkg.get("travelNights"))
+    trip_cost = vnd(people * trips * _num(a["travelTripCost"]))
+    hotel = vnd(people * trips * nights * _num(a["hotelNight"]))
+    # A travel day is a day away from base: the nights plus the day of travel itself.
+    per_diem = vnd(people * trips * (nights + 1) * _num(a["perDiemDay"]))
+    other = vnd(pkg.get("otherExpenses"))
+    expenses = trip_cost + hotel + per_diem + other
+
+    cost = labour + expenses
+    mk = pkg.get("markupPct")
+    mk = _num(a["servicesMarkupPct"]) if mk in (None, "") else _num(mk)
+    fee = apply_profit(cost, mk, MARKUP)
+    return {
+        "id": pkg.get("id"),
+        "code": str(pkg.get("code") or "").strip(),
+        "ursRef": str(pkg.get("ursRef") or "").strip(),
+        "name": str(pkg.get("name") or "").strip(),
+        "scope": str(pkg.get("scope") or "").strip(),
+        "deliverables": str(pkg.get("deliverables") or "").strip(),
+        "durationMonths": _num(pkg.get("durationMonths")),
+        # The form stores a select, so "No" arrives as a non-empty string and bool("No") is
+        # True. An optional package that cannot be switched off is the same defect as one
+        # that shows at zero.
+        "optional": str(pkg.get("optional") or "").strip().lower() in ("yes", "true", "1", "y")
+                    or pkg.get("optional") is True,
+        "effort": effort,
+        "days": round(sum(e["days"] for e in effort), 2),
+        "labour": labour,
+        "expenseDetail": {"travel": trip_cost, "hotel": hotel, "perDiem": per_diem, "other": other},
+        "expenses": expenses,
+        "cost": cost,
+        "markupPct": round(mk, 4),
+        "fee": fee,
+        "margin": fee - cost,
+        "marginPct": achieved_margin(fee, cost),
+        # What the client is quoted for this package. Professional fee and expenses are shown
+        # separately in the workbook, so the split has to survive to the document.
+        "professionalFee": apply_profit(labour, mk, MARKUP),
+        "expensesQuoted": fee - apply_profit(labour, mk, MARKUP),
+    }
+
+
+def services_rollup(packages, a, config=None):
+    """Every work package, costed and priced — with the optional ones the client declined left out.
+
+    An optional package that is not taken must vanish, not appear at zero. The same rule the EPC
+    configurator follows for a production line: a zero row in a tender reads as "we forgot to
+    price this".
+    """
+    config = config or {}
+    rows, excluded = [], []
+    for pkg in (packages or []):
+        p = package_cost(pkg, a)
+        cfg = config.get(p["code"]) or config.get(str(p["id"])) or {}
+        if p["optional"] and not cfg.get("include", True):
+            excluded.append(p["code"] or p["name"])
+            continue
+        rows.append(p)
+    cost = sum(r["cost"] for r in rows)
+    fee = sum(r["fee"] for r in rows)
+    days = round(sum(r["days"] for r in rows), 2)
+    return {
+        "packages": rows,
+        "packageCount": len(rows),
+        "days": days,
+        "labour": sum(r["labour"] for r in rows),
+        "expenses": sum(r["expenses"] for r in rows),
+        "cost": cost,
+        "fee": fee,
+        "margin": fee - cost,
+        "marginPct": achieved_margin(fee, cost),
+        # The rate the whole engagement is effectively sold at. A consultancy that cannot say this
+        # number cannot tell whether it is winning work or buying it.
+        "effectiveDayRate": vnd(fee / days) if days else 0,
+        "excludedPackages": excluded,
+        # Longest package, not the sum: work packages overlap.
+        "durationMonths": max([r["durationMonths"] for r in rows] or [0]),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #   3. The quotation — one document model, whichever engine priced it
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -449,6 +603,31 @@ def quotation(tender, master=None, rollup=None, overrides=None):
                 "unitSell": net, "net": net,
                 "vatPct": round(vat, 4), "vat": vnd(net * _frac(vat)),
                 "gross": net + vnd(net * _frac(vat)), "cogs": c["costVnd"],
+            })
+    elif ctype == SERVICES:
+        # One line per work package, which is how the client's own tender form is laid out. The
+        # URS reference travels into the itemCode column because that is the field the evaluator
+        # cross-checks against their requirement spec — a services quotation that cannot be
+        # traced back to the URS is marked down whatever the price says.
+        for p in (rollup or {}).get("packages", []):
+            o = ov.get(str(p.get("id"))) or ov.get(p.get("code")) or {}
+            vat = o.get("vatPct")
+            vat = _num(a["outputVatPct"]) if vat in (None, "") else _num(vat)
+            net = p["fee"]
+            lines.append({
+                "srcId": p.get("id") or p.get("code"),
+                "itemCode": p.get("ursRef") or p.get("code") or "",
+                "hsCode": "",
+                "desc": str(o.get("desc") or p.get("name") or "").strip(),
+                "unit": "package", "qty": 1,
+                "unitCost": p["cost"], "markupPct": p["markupPct"],
+                "unitSell": net, "net": net,
+                "vatPct": round(vat, 4), "vat": vnd(net * _frac(vat)),
+                "gross": net + vnd(net * _frac(vat)), "cogs": p["cost"],
+                # Carried so the document can show fee and expenses in separate columns, which is
+                # how the client's form asks for them.
+                "professionalFee": p["professionalFee"], "expenses": p["expensesQuoted"],
+                "durationMonths": p["durationMonths"], "days": p["days"],
             })
     else:
         for src in (master or {}).get("rows", []):
@@ -686,11 +865,11 @@ def cash_flow(tender, quote, rollup=None, master=None):
     a = assumptions(tender.get("assump"))
     rows, warnings = [], []
 
-    def add(key, label, amount):
+    def add(key, label, amount, curve=None):
         amount = vnd(amount)
         if not amount:
             return
-        curve = _curve_for(key, tender, months)
+        curve = curve or _curve_for(key, tender, months)
         total = sum(_num(x) for x in curve)
         if abs(total - 1.0) > 0.01:
             warnings.append("The spend curve for %s adds up to %.0f%%, not 100%% — its cash flow "
@@ -700,7 +879,18 @@ def cash_flow(tender, quote, rollup=None, master=None):
             label, sum(cells), amount)
         rows.append({"key": key, "label": label, "total": amount, "months": cells})
 
-    if rollup:
+    if rollup and rollup.get("packages") is not None:
+        # A consultancy's cost is people, and people are paid evenly while they are on the job —
+        # there is no procurement hump and no retention. Each package spends flat across its OWN
+        # duration from month 1, not across the whole engagement: a two-month gap analysis that
+        # was smeared over an eighteen-month programme would understate the early cash need,
+        # which is precisely when a services business is most exposed.
+        for p in rollup.get("packages", []):
+            dur = int(_num(p.get("durationMonths"))) or months
+            dur = max(1, min(dur, months))
+            add(p.get("code") or str(p.get("id")), p.get("name") or "Work package",
+                p["cost"], curve=[1.0 / dur] * dur)
+    elif rollup:
         for c in rollup.get("centres", []):
             add(c["costCentre"], c["label"], c["costVnd"])
     elif master:
