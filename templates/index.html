@@ -20246,6 +20246,22 @@ function _pmPlannedTo(plan, asOf) {
   }
   return cum * plan.scale;
 }
+/* Print a performance index, or decline to.
+   An index is a RATIO of two things this project has actually recorded. When it has not recorded
+   them, CPI and SPI still hold a number — 1.00 from a fallback, or 0.00 from a zero numerator —
+   and both read as findings: "exactly on budget", "perfectly on schedule", "catastrophically
+   behind". None of those is true; there is simply nothing to measure yet.
+   One helper so the rule cannot drift between the six screens that print these. */
+function _pmIndexTxt(v, measurable) { return measurable ? (+v).toFixed(2) : '—'; }
+function _pmIndexHex(v, measurable) { return measurable ? _ragHex(_pmIndexRag(v)) : 'var(--text-light)'; }
+/* Why an index cannot be shown, in words a PM can act on. */
+function _pmIndexWhy(ev) {
+  if (!ev) return '';
+  const out = [];
+  if (!ev.cpiMeasurable) out.push(_t('CPI needs both actual cost and earned value'));
+  if (!ev.spiMeasurable) out.push(_t('SPI needs a baseline or a time-phased cost plan'));
+  return out.join(' · ');
+}
 function _pmEvm(p) {
   if (!p) return { bac: 0, ev: 0, pv: 0, ac: 0, cv: 0, sv: 0, cpi: 1, spi: 1, eac: 0, vac: 0, etc: 0, pct: 0, measurable: false, phasedPv: false };
   const costs = _pmScopeFor('pm_costs', p.id);
@@ -20258,6 +20274,9 @@ function _pmEvm(p) {
   const phased = _pmPlannedTo(_pmPhasedPlan(costs, bac), _pmToday());
   const pv = phased != null ? phased : (tp != null ? bac * tp : ev);
   const measurable = bac > 0 && (ac > 0 || tp != null || phased != null);
+  // Cost performance needs BOTH money spent and value earned. With ev === 0 this reads 0.00 in
+  // red; with ac === 0 it falls back to 1.00 — 'exactly on budget'. Neither measures anything.
+  const cpiMeasurable = ev > 0 && ac > 0 && bac > 0;
   const cpi = (ac > 0 && bac > 0) ? ev / ac : 1;
   // A confident 1.00 — "perfectly on schedule" — with NOTHING to measure: no baseline and no
   // phased cost register means pv falls back to ev on the line above, so the ratio is 1 by
@@ -20275,7 +20294,7 @@ function _pmEvm(p) {
   // is the opposite of the truth on a job that has consumed budget and delivered nothing yet.
   const eacMeasurable = ev > 0 && ac > 0 && bac > 0;
   const eac = eacMeasurable ? bac / cpi : null;
-  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, spiMeasurable, eacMeasurable,
+  return { bac, ev, pv, ac, cv: ev - ac, sv: ev - pv, cpi, spi, cpiMeasurable, spiMeasurable, eacMeasurable,
            eac, vac: eacMeasurable ? bac - eac : null, etc: eacMeasurable ? eac - ac : null,
            pct: ratio * 100, measurable, phasedPv: phased != null,
            evBasis: sr.derived ? 'schedule' : (sr.total ? 'deliverable' : 'typed') };
@@ -20452,7 +20471,7 @@ function pmStatusPDF(pid) {
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Earned Value', M, y); y += 6;
   const openRisks = _pmScopeFor('pm_risks', p.id).filter(r => r.status !== 'Closed');
   const threatEmv = openRisks.filter(r => !_pmIsOpp(r)).reduce((s, r) => s + _pmEmv(r), 0);
-  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2)], ['Forecast at Completion (EAC)', ev.eacMeasurable ? _pmMoney(ev.eac) : 'not computable — no earned value recorded'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—'], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Budget (BAC)', _pmMoney(ev.bac)], ['Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['CPI  /  SPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable) + '   /   ' + _pmIndexTxt(ev.spi, ev.spiMeasurable)], ['Forecast at Completion (EAC)', ev.eacMeasurable ? _pmMoney(ev.eac) : 'not computable — no earned value recorded'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—'], ['Risk exposure (EMV, threats)', _pmMoney(threatEmv)]].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   y += 2; doc.line(M, y, 195, y); y += 6;
   _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text('Delivery & Controls', M, y); y += 6;
   const openIssues = _pmScopeFor('pm_issues', p.id).filter(i => i.status !== 'Closed' && i.status !== 'Resolved');
@@ -20488,7 +20507,7 @@ async function pmCloseoutPDF(pid) {
   const sect = t => { y += 3; if (y > 258) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } _pdfFont(doc, 'bold'); doc.setFontSize(11); doc.setTextColor.apply(doc, [32, 80, 144]); doc.text(t, M, y); y += 6; };
   const bullet = txt => { _pdfFont(doc, 'normal'); doc.setFontSize(9); doc.setTextColor(40, 46, 54); const L = doc.splitTextToSize(_pmPdfTxt('•  ' + txt), 178); if (y + L.length * 4.4 > 278) { doc.addPage(); y = _brandHeader(doc, { title: 'Project Closeout Report (cont.)', subtitle: _pmPdfTxt(p.code || p.name), docCode: 'HML-PMC-CLO' }) + 2; } doc.text(L, M + 2, y); y += L.length * 4.4 + 1.3; };
   sect('Financial Closeout');
-  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', ev.eacMeasurable ? ev.cpi.toFixed(2) : '—'], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
+  [['Approved Budget (BAC)', _pmMoney(ev.bac)], ['Final Actual Cost (AC)', _pmMoney(ev.ac)], ['Earned Value (EV)', _pmMoney(ev.ev)], ['Final CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable)], ['Variance at Completion (VAC)', ev.eacMeasurable ? _pmMoney(ev.vac) : '—']].forEach(r => { y = _pmRow(doc, r[0], r[1], y); });
   sect('Deliverables & Scope'); y = _pmRow(doc, 'Deliverables Accepted', sr.accepted + ' / ' + sr.total, y);
   const procs = _pmScopeFor('pm_procurement', p.id), procClosed = procs.filter(x => x.status === 'Closed' || x.status === 'Completed').length;
   const ret = procs.reduce((s, x) => s + (+x.value || 0) * (+x.retentionPct || 0) / 100, 0);
@@ -20688,7 +20707,7 @@ function pmReport(pid, mode) {
   sect('2. Cost & Schedule Performance (EVM)');
   line('Budget (BAC) / Actual (AC)', _pmMoney(ev.bac) + '    /    ' + _pmMoney(ev.ac));
   line('Earned Value (EV)', _pmMoney(ev.ev));
-  line('CPI / SPI', ev.cpi.toFixed(2) + '   /   ' + ev.spi.toFixed(2));
+  line('CPI / SPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable) + '   /   ' + _pmIndexTxt(ev.spi, ev.spiMeasurable));
   line('Forecast (EAC) / Variance (VAC)', ev.eacMeasurable
     ? (_pmMoney(ev.eac) + '    /    ' + _pmMoney(ev.vac))
     : 'not computable — no earned value recorded');
@@ -20773,16 +20792,30 @@ function _pmReload() { const A = id => { const v = document.getElementById('view
 function _pmPortfolioCard(projects) {
   if (!_pmSeeAll() || (projects || []).length < 2) return '';
   let g = 0, a = 0, r = 0, budget = 0, actual = 0, cpiSum = 0, spiSum = 0, meas = 0, overdueProj = 0;
+  let cpiN = 0, spiN = 0;      // how many projects actually MEASURED each index
   projects.forEach(p => {
     const rag = _pmEffectiveRag(p); if (rag === 'Green') g++; else if (rag === 'Amber') a++; else r++;
-    const ev = _pmEvm(p); budget += ev.bac; actual += ev.ac; if (ev.measurable) { cpiSum += ev.cpi; spiSum += ev.spi; meas++; }
+    // `measurable` is a different question (does this project have a budget and any signal at
+    // all). Averaging an unmeasurable 1.00 into a portfolio CPI drags the whole company's
+    // number towards 'on budget' with projects that have measured nothing.
+    const ev = _pmEvm(p); budget += ev.bac; actual += ev.ac;
+    if (ev.cpiMeasurable) { cpiSum += ev.cpi; cpiN++; }
+    if (ev.spiMeasurable) { spiSum += ev.spi; spiN++; }
+    if (ev.measurable) { meas++; }
     if (_pmOverdueMilestones(p.id) > 0) overdueProj++;
   });
-  const avgCpi = meas ? cpiSum / meas : 1, avgSpi = meas ? spiSum / meas : 1, burn = budget ? Math.round(actual / budget * 100) : 0;
+  // Average over the projects that measured the index, not over every project with a budget.
+  // Dividing by `meas` mixed in unmeasurable 1.00s and pulled the company average towards
+  // 'on budget' using projects that have measured nothing at all.
+  const avgCpi = cpiN ? cpiSum / cpiN : null, avgSpi = spiN ? spiSum / spiN : null;
+  const burn = budget ? Math.round(actual / budget * 100) : 0;
   const seg = (n, label, hex) => n ? '<div style="flex:' + n + ';background:' + hex + ';height:100%" title="' + label + ': ' + n + '"></div>' : '';
   const tile = (l, v, c) => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px;flex:1;min-width:112px"><div style="font-size:11px;color:var(--text-light)">' + l + '</div><div style="font-size:16px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div></div>';
   return '<div class="card" style="padding:16px 18px;margin-bottom:16px"><div class="card-title" style="margin-bottom:10px">Portfolio Health</div>' +
-    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' + tile('Projects', projects.length) + tile('Avg CPI', avgCpi.toFixed(2), _ragHex(_pmIndexRag(avgCpi))) + tile('Avg SPI', avgSpi.toFixed(2), _ragHex(_pmIndexRag(avgSpi))) + tile('Budget burn', burn + '%', burn > 100 ? '#EF4444' : 'var(--navy)') + tile('With overdue MS', overdueProj, overdueProj ? '#EF4444' : '#00B060') + '</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">' + tile('Projects', projects.length) + tile('Avg CPI', _pmIndexTxt(avgCpi, avgCpi != null), _pmIndexHex(avgCpi, avgCpi != null)) + tile('Avg SPI', _pmIndexTxt(avgSpi, avgSpi != null), _pmIndexHex(avgSpi, avgSpi != null)) + tile('Budget burn', burn + '%', burn > 100 ? '#EF4444' : 'var(--navy)') + tile('With overdue MS', overdueProj, overdueProj ? '#EF4444' : '#00B060') + '</div>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-bottom:9px">' + (cpiN || spiN
+        ? (_t('Averages cover') + ' ' + cpiN + '/' + projects.length + ' ' + _t('projects for CPI') + ', ' + spiN + '/' + projects.length + ' ' + _t('for SPI'))
+        : _t('No project has recorded enough to measure CPI or SPI yet.')) + '</div>' +
     '<div style="font-size:11px;color:var(--text-light);margin-bottom:5px">Health mix (RAG)</div><div style="display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--soft-bg)">' + seg(g, 'Green', '#16A34A') + seg(a, 'Amber', '#F59E0B') + seg(r, 'Red', '#EF4444') + '</div>' +
     '<div style="display:flex;gap:14px;margin-top:6px;font-size:11px;color:var(--text-light)"><span><b style="color:#16A34A">' + g + '</b> Green</span><span><b style="color:#F59E0B">' + a + '</b> Amber</span><span><b style="color:#EF4444">' + r + '</b> Red</span></div></div>';
 }
@@ -21141,8 +21174,8 @@ function pmRenderOverview() {
   const ev = _pmEvm(p), sr = pmScopeRollup(p.id), rr = _pmRiskRollup(p.id), tr = _pmTaskRollup(p.id);
   const kpis = _hrKpiRow([
     _hrKpi('Progress', sr.pct + '%', 'var(--navy)'),
-    _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))),
-    _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi))),
+    _hrKpi('CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable), _pmIndexHex(ev.cpi, ev.cpiMeasurable)),
+    _hrKpi('SPI', _pmIndexTxt(ev.spi, ev.spiMeasurable), _pmIndexHex(ev.spi, ev.spiMeasurable)),
     _hrKpi('Open risks (High+)', rr.open + ' / ' + rr.high, '#EF4444'),
     _hrKpi('Milestones (overdue)', tr.milestones + ' / ' + tr.overdueMs, '#F59E0B')
   ]);
@@ -22966,7 +22999,7 @@ function pmRenderCosts(pid) {
   const p = _pmProj(pid); if (!p) { _pmSet('<div class="card" style="padding:16px;color:var(--text-light)">Project not found.</div>'); return; }
   const ev = _pmEvm(p);
   const costs = _pmScope(_HR.pm_costs);
-  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', ev.cpi.toFixed(2), _ragHex(_pmIndexRag(ev.cpi))), _hrKpi('SPI', ev.spi.toFixed(2), _ragHex(_pmIndexRag(ev.spi)))]);
+  const kpis = _hrKpiRow([_hrKpi('Budget (BAC)', _pmMoneyShort(ev.bac)), _hrKpi('Actual (AC)', _pmMoneyShort(ev.ac), '#F59E0B'), _hrKpi('Earned (EV)', _pmMoneyShort(ev.ev), '#3168A8'), _hrKpi('CPI', _pmIndexTxt(ev.cpi, ev.cpiMeasurable), _pmIndexHex(ev.cpi, ev.cpiMeasurable)), _hrKpi('SPI', _pmIndexTxt(ev.spi, ev.spiMeasurable), _pmIndexHex(ev.spi, ev.spiMeasurable))]);
   const budget = +p.budget || 0, mgmtR = +p.managementReserve || 0, contR = +p.contingencyReserve || 0;
   const costBaseline = Math.max(0, budget - mgmtR), bl = _pmBaseline(p);
   const _bt = (l, v, c) => '<div style="background:var(--soft-bg);border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:var(--text-light)">' + l + '</div><div style="font-size:15px;font-weight:800;color:' + (c || 'var(--navy)') + '">' + v + '</div></div>';
@@ -24408,7 +24441,7 @@ async function pmRenderPortfolio() {
     return '<tr style="cursor:pointer" onclick="pmOpenProject(\'' + p.id + '\')"><td style="font-variant-numeric:tabular-nums;font-size:12px;font-weight:700;color:var(--navy)">' + _pmEsc(p.code || '—') + '</td><td style="font-weight:600">' + _pmEsc(p.name || '') + '</td><td>' + _pmEsc(p.manager || '—') + '</td>' +
       '<td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:' + _ragHex(rag) + '" title="' + rag + '"></span></td>' +
       '<td><div style="display:flex;align-items:center;gap:6px">' + _pmBar(pct) + '<span style="font-size:11px">' + pct + '%</span></div></td>' +
-      '<td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.cpi)) + ';font-weight:700">' + e.cpi.toFixed(2) + '</td><td style="text-align:center;color:' + _ragHex(_pmIndexRag(e.spi)) + ';font-weight:700">' + e.spi.toFixed(2) + '</td>' +
+      '<td style="text-align:center;color:' + _pmIndexHex(e.cpi, e.cpiMeasurable) + ';font-weight:700">' + _pmIndexTxt(e.cpi, e.cpiMeasurable) + '</td><td style="text-align:center;color:' + _pmIndexHex(e.spi, e.spiMeasurable) + ';font-weight:700">' + _pmIndexTxt(e.spi, e.spiMeasurable) + '</td>' +
       '<td style="text-align:right;font-weight:600">' + _pmMoneyShort(p.contractValue || p.budget) + '</td><td>' + _pmBadge(p.status || 'Planning', _pmStatusHex(p.status)) + '</td></tr>';
   }).join('') || tkEmptyRow(9, 'No projects yet.', { icon: 'inbox' });
   const table = '<div class="card" style="padding:0;overflow:hidden"><div class="card-hdr" style="padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><div class="card-title">Project Portfolio</div>' + _pmHealthLegend() + '</div><div class="table-wrap"><table style="min-width:860px;font-size:13px"><thead><tr><th>Code</th><th>Project</th><th>Manager</th><th>Health</th><th>Progress</th><th style="text-align:center">CPI</th><th style="text-align:center">SPI</th><th style="text-align:right">Value</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table></div></div>';
@@ -24421,7 +24454,10 @@ async function pmRenderPortfolio() {
     _mkChart('pm-ch-rag', { type: 'doughnut', data: { labels: ['Green', 'Amber', 'Red'].map(_pmT), datasets: [{ data: [byRag.Green, byRag.Amber, byRag.Red], backgroundColor: [RAG_HEX.Green, RAG_HEX.Amber, RAG_HEX.Red], borderWidth: 2, borderColor: _chartBorder(), hoverOffset: 6 }] }, options: _doughOpts() }, { center: { label: _pmT('Health') } });
     const top = projects.slice().sort((a, b) => (+b.contractValue || 0) - (+a.contractValue || 0)).slice(0, 8);
     _mkChart('pm-ch-cost', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'Budget', data: top.map(p => _pmEvm(p).bac), backgroundColor: '#205090', borderRadius: 4 }, { label: 'Actual', data: top.map(p => _pmEvm(p).ac), backgroundColor: '#F59E0B', borderRadius: 4 }] }, options: _axisOpts(false, v => _pmMoneyShort(v)) });
-    _mkChart('pm-ch-spi', { type: 'bar', data: { labels: top.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: top.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: top.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) });
+    // Only projects whose SPI was actually measured get a bar. A 1.00 column for a project that
+    // has measured nothing is indistinguishable from one that is genuinely on schedule.
+    { const _spiOk = top.filter(p => _pmEvm(p).spiMeasurable);
+      _mkChart('pm-ch-spi', { type: 'bar', data: { labels: _spiOk.map(p => p.code || (p.name || '').slice(0, 10)), datasets: [{ label: 'SPI', data: _spiOk.map(p => +_pmEvm(p).spi.toFixed(2)), backgroundColor: _spiOk.map(p => _ragHex(_pmIndexRag(_pmEvm(p).spi))), borderRadius: 4 }] }, options: _axisOpts(false, v => v) }); }
   } catch (e) { }
 }
 

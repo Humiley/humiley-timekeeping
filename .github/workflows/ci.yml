@@ -119,6 +119,14 @@ jobs:
       - name: WBS roll-up chain
         run: node tests/wbs_rollup_chain.js
 
+      # CPI and SPI hold a NUMBER even when the project has recorded nothing to measure — 1.00 from
+      # a fallback, 0.00 from a zero numerator — and each reads as a finding: "exactly on budget",
+      # "perfectly on schedule". This asserts the WIRING, not the maths: spiMeasurable existed for
+      # an hour with three occurrences, all inside _pmEvm, read by no screen, so the Cost/EVM tab
+      # kept printing SPI 1.00. A correct flag nobody consults changes nothing a user sees.
+      - name: No screen prints an EVM index it did not measure
+        run: node tests/evm_index_honesty.js
+
       # _VI is a plain object literal: a key defined twice keeps the LAST value and drops the first,
       # silently, at parse time. Thirty-three redundant definitions had accumulated; seven disagreed,
       # so one screen's wording was overwriting another's. The check that should have caught it was a
