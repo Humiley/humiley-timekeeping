@@ -38,6 +38,10 @@ that the achieved margin is always reported.
 
 import estimating
 from estimating import vnd, MARKUP, MARGIN, apply_profit, achieved_margin
+# The cost-element vocabulary, taken from `estimating` rather than restated. A tender priced
+# as a BoQ and one priced as a bill of materials must answer "what is our labour exposure"
+# in the same words, or the answers cannot be added up across a portfolio.
+from estimating import MATERIAL, LABOUR, PLANT, SUBCONTRACT
 # The same largest-remainder splitter the estimate distributes preliminaries with. A cash
 # flow that loses a few dong per month to rounding stops reconciling with its own cost.
 from labour_cost import apportion
@@ -109,6 +113,12 @@ ASSUMPTIONS = [
     ("citPct", "Tax", "Corporate income tax", 20.0, "%", "Vietnam standard CIT rate."),
 
     ("markupPct", "Pricing", "Default mark-up on landed cost", 25.0, "%", "Override per line on the quotation."),
+    ("accuracyClass", "Pricing", "Accuracy class (AACE 18R-97)", "", "1-5",
+     "How mature this estimate is. Class 5 is a screening number (-20%/+50%); Class 1 is a firm "
+     "bid (-3%/+10%). Left blank, nobody can tell one from the other."),
+    ("benchmarkQty", "Pricing", "Benchmark quantity", 0, "unit",
+     "What this job is measured in — floor area, airflow, number of units. Turns a total into a "
+     "rate that can be compared with the last three jobs."),
     ("discountCapPct", "Pricing", "Discount cap", 10.0, "%", "Maximum discount sales may offer without approval."),
 
     # A consultancy sells time. These four turn "two consultants, three visits, four nights" into
@@ -349,6 +359,10 @@ def bom_line(line, a, scale=1.0):
         "spec": str(line.get("spec") or "").strip(),
         "unit": str(line.get("unit") or "").strip(),
         "origin": str(line.get("origin") or "").strip(),
+        # Carried through, not dropped. cost_elements() reads the PRICED rows, so an element that
+        # only exists on the stored row is an element nobody can roll up — the line falls back to
+        # its cost centre's default and the exposure is quietly reported as something else.
+        "element": line_element(line, centre),
         "qty": round(qty, 4), "unitCostUsd": unit,
         "costUsd": round(cost, 2), "markupPct": round(_num(mk), 4),
         "sellUsd": round(sell, 2), "marginUsd": round(sell - cost, 2),
@@ -778,6 +792,249 @@ def pnl(quote, tender):
         "cit": cit, "netProfit": net_profit, "netMarginPct": share(net_profit),
         "vatRecoverable": (quote.get("vatRecoverable") or 0),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   3b. HOW GOOD IS THIS NUMBER — accuracy class and basis of estimate
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A budgetary figure worked up from three supplier emails and a firm price built from signed
+# quotations looked IDENTICAL on screen: same currency, same tabular numerals, same confidence.
+# Nothing recorded which one anybody was reading.
+#
+# That is the gap most likely to cost real money, and it does not need a bug to do it. Somebody
+# quotes an early number, the client treats it as a commitment, and the difference between minus
+# fifty per cent and minus ten arrives as a loss six months later. The estimate was never wrong —
+# it was never told how right it was.
+#
+# The five classes are AACE International's Recommended Practice 18R-97, which is what the industry
+# already reads: Class 5 at concept, Class 1 at a firm bid. The RANGES here are the practice's own
+# for a process plant, kept as a band rather than a single tolerance because an estimate is not
+# symmetrical — the ways a job costs more than expected outnumber the ways it costs less, which is
+# why every low bound is tighter than its high one.
+#
+# Deliberately NOT a computed judgement. Maturity is a fact about what the estimator had in front
+# of them — drawings, quotations, a signed scope — and inferring it from what the model can see
+# (how many lines, how much detail) would produce a confident answer about somebody else's
+# evidence. It is declared, and the definition sits beside the field so declaring it is a decision
+# rather than a guess.
+
+ACCURACY_CLASSES = [
+    # (key, label, low %, high %, maturity, what it is for)
+    ("5", "Class 5 — Concept screening", -20.0, 50.0, "0–2% defined",
+     "An order of magnitude from capacity and a factor. Never send it as a price."),
+    ("4", "Class 4 — Study / feasibility", -15.0, 30.0, "1–15% defined",
+     "Budgetary. Enough to decide whether to pursue the job, not enough to commit to it."),
+    ("3", "Class 3 — Budget authorisation", -10.0, 20.0, "10–40% defined",
+     "Semi-detailed. The first class a client can reasonably fund a project against."),
+    ("2", "Class 2 — Control estimate", -5.0, 15.0, "30–75% defined",
+     "Detailed, mostly from quotations. Suitable as a bid and as a control baseline."),
+    ("1", "Class 1 — Firm bid / check", -3.0, 10.0, "65–100% defined",
+     "Built from signed quotations and measured quantities. This is a commitment."),
+]
+ACCURACY_BY_KEY = {k: (l, lo, hi, m, n) for k, l, lo, hi, m, n in ACCURACY_CLASSES}
+# A tender that has not said is not treated as accurate. Silence about maturity is the condition
+# this whole section exists to end, so it is reported as unstated rather than defaulted to
+# something comfortable.
+UNSTATED = "unstated"
+
+
+def accuracy(tender, quote=None):
+    """The class this estimate was prepared to, and what that means in money.
+
+    The range is what makes it real. "Class 4" is a label somebody can nod at; "between 798bn and
+    1,220bn" is a sentence that changes what a person does next.
+    """
+    key = str(tender.get("accuracyClass") or "").strip()
+    net = _num((quote or {}).get("net"))
+    if key not in ACCURACY_BY_KEY:
+        return {"key": UNSTATED, "stated": False,
+                "label": "Accuracy not stated",
+                "note": "Nobody reading this can tell a screening number from a firm bid. "
+                        "State the class before it is sent.",
+                "lowPct": 0.0, "highPct": 0.0, "low": net, "high": net, "maturity": "",
+                "spread": 0}
+    label, lo, hi, maturity, note = ACCURACY_BY_KEY[key]
+    low, high = vnd(net * (1 + lo / 100.0)), vnd(net * (1 + hi / 100.0))
+    return {"key": key, "stated": True, "label": label, "note": note, "maturity": maturity,
+            "lowPct": lo, "highPct": hi, "low": low, "high": high, "spread": high - low}
+
+
+# ── Basis of estimate ─────────────────────────────────────────────────────────
+#
+# The other half of the same problem. A price is only meaningful against a scope, and the scope
+# argument is the one that actually happens six months in: "we assumed the client provided the
+# crane". An estimate that records its exclusions has that argument once, in writing, before
+# anybody signs. One that does not has it repeatedly, from memory, after.
+#
+# These are PROMPTS, not a form to complete. An empty section is reported as empty rather than
+# hidden, because "we did not say" and "there is nothing to say" are different states and only one
+# of them is safe.
+
+BASIS_SECTIONS = [
+    ("inclusions", "What the price includes",
+     "Scope actually priced. If it is not here, it is not in the number."),
+    ("exclusions", "What the price excludes",
+     "The argument you are otherwise going to have. Permits, utilities to site, client-supplied "
+     "equipment, working outside normal hours."),
+    ("assumptions", "What was assumed",
+     "Access, ground conditions, free issue, an exchange rate, a programme. Anything that would "
+     "change the price if it turned out otherwise."),
+    ("qualifications", "Commercial qualifications",
+     "Validity period, payment terms, price basis, what triggers a variation."),
+    ("sources", "What the figures came from",
+     "Supplier quotations, the rate library, a previous job, an allowance. A reader can weigh a "
+     "quotation; they cannot weigh a number with no provenance."),
+]
+
+
+def basis_of_estimate(tender):
+    """What was priced, what was not, and on what evidence."""
+    stored = tender.get("basis") or {}
+    out, filled = [], 0
+    for key, label, prompt in BASIS_SECTIONS:
+        text = str(stored.get(key) or "").strip()
+        if text:
+            filled += 1
+        out.append({"key": key, "label": label, "prompt": prompt, "text": text,
+                    "stated": bool(text)})
+    return {
+        "sections": out,
+        "stated": filled,
+        "total": len(BASIS_SECTIONS),
+        # Exclusions carry more weight than the rest: everything else describes what was done, and
+        # this one describes what a client will assume was done unless told otherwise.
+        "exclusionsStated": bool(str(stored.get("exclusions") or "").strip()),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#   4a. COST ELEMENTS — what the money is spent ON, across the whole tender
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A tender could say what each LINE costs and what each COST CENTRE costs, and could not answer the
+# question a commercial manager actually asks: how much of this job is labour? Labour is the
+# exposure that moves when a programme slips; imported material is the exposure that moves when the
+# dong does; subcontract is the exposure somebody else is carrying. Those are three different
+# risks wearing the same total, and nothing here could separate them.
+#
+# The vocabulary is `estimating`'s — material, labour, plant, subcontract — deliberately not a
+# second one. A tender priced as a BoQ and a tender priced as a bill of materials should answer
+# "what is our labour exposure" in the same words, or the answer cannot be added up across a
+# portfolio.
+#
+# DERIVED WHERE THE ENGINE ALREADY KNOWS. Only the EPC bill of materials needs a field: a services
+# engagement is days times a rate plus travel, and a trading deal is goods plus a customs chain, so
+# asking somebody to re-type what the model already contains would be a data-entry tax on a fact
+# already in the system — and a second place for it to be wrong.
+
+ELEMENTS = (MATERIAL, LABOUR, PLANT, SUBCONTRACT)
+ELEMENT_LABEL = {
+    MATERIAL: "Material & equipment",
+    LABOUR: "Labour",
+    PLANT: "Plant & tools",
+    SUBCONTRACT: "Subcontract",
+}
+# Everything a customs chain adds on top of the goods, and everything a consultancy spends that is
+# not somebody's time. Kept OUT of the four so a portfolio roll-up cannot double-count them into
+# "material" and then report an equipment exposure that is really freight.
+DUTY = "duty"
+LOGISTICS = "logistics"
+EXPENSES = "expenses"
+ELEMENT_EXTRA_LABEL = {
+    DUTY: "Duty & tax",
+    LOGISTICS: "Freight, clearance & handling",
+    EXPENSES: "Travel & expenses",
+}
+
+# What a cost centre is made of, when its lines do not say. A cleanroom is bought as a system and a
+# civil package is subcontracted, and defaulting everything to "material" would report a plant with
+# no labour and no subcontract in it — which is not a cautious guess, it is a wrong answer.
+CENTRE_ELEMENT = {
+    "CIV": SUBCONTRACT, "MEP": SUBCONTRACT, "BUT": MATERIAL, "CUT": MATERIAL,
+    "CLR": SUBCONTRACT, "OSD": MATERIAL, "PFI": MATERIAL, "LVP": MATERIAL,
+    "SVP": MATERIAL, "QCL": MATERIAL, "WHS": MATERIAL, "CON": LABOUR,
+}
+
+
+def line_element(line, centre=None):
+    """The cost element a BOM line belongs to. Explicit beats the cost centre's default."""
+    e = str(line.get("element") or "").strip().lower()
+    if e in ELEMENTS:
+        return e
+    return CENTRE_ELEMENT.get(str(centre or line.get("costCentre") or "").upper(), MATERIAL)
+
+
+def cost_elements(tender, master=None, rollup=None):
+    """What this tender spends its money ON, whichever engine priced it.
+
+    Percentages are OF THE COST BASE, not of the selling price: this answers "where does the cost
+    sit", and a percentage that moves when the mark-up moves would answer a different question
+    every time somebody edited the margin.
+    """
+    ctype = str(tender.get("costingType") or TRADING).strip().lower()
+    pot = {}
+
+    def add(key, amount):
+        if amount:
+            pot[key] = pot.get(key, 0) + amount
+
+    if ctype == EPC:
+        for ln in (rollup or {}).get("lines", []):
+            add(line_element(ln), ln.get("costVnd", 0))
+    elif ctype == SERVICES:
+        for p in (rollup or {}).get("packages", []):
+            add(LABOUR, p.get("labour", 0))
+            add(EXPENSES, p.get("expenses", 0))
+    else:
+        for r in (master or {}).get("rows", []):
+            if r.get("source") == LOCAL:
+                add(MATERIAL, r.get("landed", 0))
+                continue
+            charges = r.get("charges") or {}
+            exw = vnd(_num(r.get("exwTotal")) * _num(r.get("fx")))
+            add(MATERIAL, exw)
+            add(LOGISTICS, r.get("cif", 0) - exw + sum(charges.values()))
+            add(DUTY, r.get("duty", 0) + r.get("sct", 0))
+
+    total = sum(pot.values())
+    order = list(ELEMENTS) + [DUTY, LOGISTICS, EXPENSES]
+    rows = [{"key": k,
+             "label": ELEMENT_LABEL.get(k) or ELEMENT_EXTRA_LABEL.get(k, k),
+             "amount": pot[k],
+             "pct": round(pot[k] / total * 100, 2) if total else 0.0}
+            for k in order if pot.get(k)]
+    return {
+        "rows": rows,
+        "total": total,
+        # The two a commercial manager asks for by name, lifted out so no screen has to hunt.
+        "labourPct": round(pot.get(LABOUR, 0) / total * 100, 2) if total else 0.0,
+        "subcontractPct": round(pot.get(SUBCONTRACT, 0) / total * 100, 2) if total else 0.0,
+    }
+
+
+# ── Benchmarks ────────────────────────────────────────────────────────────────
+#
+# The check an estimator actually applies: not "does the total look right" — a billion-dong total
+# looks like any other billion-dong total — but "is this the right price PER SQUARE METRE", against
+# the last three jobs. A tender with no unit rate cannot be compared with anything, so it can only
+# be sanity-checked by whoever remembers the last one.
+
+def benchmarks(tender, quote, elements=None):
+    """Cost and price per unit of whatever this job is measured in."""
+    qty = _num(tender.get("benchmarkQty"))
+    unit = str(tender.get("benchmarkUnit") or "").strip()
+    if qty <= 0 or not unit:
+        return {"available": False, "unit": unit, "qty": qty, "rows": []}
+    cost = _num((quote or {}).get("cogs"))
+    net = _num((quote or {}).get("net"))
+    rows = [
+        {"label": "Cost per " + unit, "value": vnd(cost / qty)},
+        {"label": "Price per " + unit, "value": vnd(net / qty)},
+    ]
+    for r in (elements or {}).get("rows", []):
+        rows.append({"label": r["label"] + " per " + unit, "value": vnd(r["amount"] / qty)})
+    return {"available": True, "unit": unit, "qty": qty, "rows": rows}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1258,6 +1515,20 @@ def issue_check(tender, quote):
         warnings.append("Discount is %.1f%% — above the %.1f%% sales may give without approval. "
                         "It reduces this quotation by %s VND."
                         % (given, cap, format(quote.get("discount", 0), ",")))
+    # An estimate that will not say how good it is gets sent anyway — and is then read as though
+    # it were firm. This is advisory, not blocking: a screening number is a legitimate thing to
+    # send, and the module's job is to make sure somebody chose to send it.
+    acc = accuracy(tender, quote)
+    if not acc["stated"]:
+        warnings.append("Accuracy class not stated. A reader cannot tell a screening number from "
+                        "a firm bid, and will assume the latter.")
+    elif acc["key"] in ("5", "4"):
+        warnings.append("%s — the price could be as low as %s or as high as %s. Say so in the "
+                        "letter, or it will be read as a commitment."
+                        % (acc["label"], format(acc["low"], ","), format(acc["high"], ",")))
+    if not basis_of_estimate(tender)["exclusionsStated"]:
+        warnings.append("Nothing is excluded in writing. Whatever a client assumes was included, "
+                        "was — and that argument happens after the price is agreed.")
     zero = [l["itemCode"] or l["desc"] for l in quote["lines"] if not l["unitCost"]]
     if zero:
         warnings.append("Priced with no cost behind it: " + ", ".join(str(z) for z in zero[:4])

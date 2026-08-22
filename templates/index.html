@@ -222,6 +222,48 @@ body.exporting .table-wrap{max-height:none !important;overflow:visible !importan
 #tw-xbar::-webkit-scrollbar-thumb{background:rgba(32,80,144,.30);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
 #tw-xbar>div{height:1px}
 body.exporting #tw-xbar{display:none !important}
+
+/* ── TIMELINE SLIDE BAR ─────────────────────────────────────────────────────────────────────────
+   The Gantt's slide bar belongs under the CHART, not under the whole table. Its scroll box spans the
+   frozen label gutter AND the chart, so the native bar's track runs the full card — at 1280px that is
+   470px of 903px (52%; 57% on a phone) of travel that scrolls a column which never moves.
+
+   The box has to STAY one box. Its month header is position:sticky;top:0 and its label gutter is
+   position:sticky;left:0, and sticky resolves against the NEAREST scroll container: nest a vertical
+   box inside a horizontal one and the gutter stops freezing; nest them the other way and the header
+   stops sticking. No nesting order keeps both. So the box is untouched and only its horizontal
+   scrollbar is hidden, with .sch-xrow putting a real one back inset by the gutter width.
+
+   Desktop only, and the same 820px threshold as #tw-xbar for the same reason: on a phone a finger
+   pans the chart directly, and the bar is a zero-height overlay there anyway — measured, not assumed.
+   Gated on ::-webkit-scrollbar support because Firefox's scrollbar-width is all-or-nothing and cannot
+   hide one axis; there it would mean TWO bars, so Firefox keeps today's behaviour untouched. */
+.sch-xrow{display:none}
+/* The box is a focusable scroll region now (tabindex=0 in _schTimeline) — a 520px scroller only
+   a mouse can reach is a keyboard trap in the other direction. Give the stop a visible ring, and
+   INSET it: the card clips (overflow:hidden), so an outside ring would be cut off. */
+.sch-vp:focus-visible{outline:2px solid var(--navy);outline-offset:-2px}
+/* A flick past the end of the axis must not become the browser's back gesture. */
+.sch-vp,.sch-xbar{overscroll-behavior-x:contain}
+@media (min-width:821px) and (pointer:fine){
+  @supports selector(::-webkit-scrollbar){
+    /* Blink/WebKit only switch an element to a CUSTOM scrollbar when the BASE ::-webkit-scrollbar
+       selector carries dimensions — styling the :horizontal variant alone changes nothing (measured:
+       the native 15px bar survived it). So set both axes here: width keeps the vertical bar at the
+       house 11px, height:0 removes the horizontal one. */
+    .sch-vp::-webkit-scrollbar{width:11px;height:0}
+    .sch-vp::-webkit-scrollbar-track{background:transparent}
+    .sch-vp::-webkit-scrollbar-thumb{background:rgba(32,80,144,.30);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
+    .sch-xrow{display:flex;align-items:center;border-top:1px solid var(--line)}
+    .sch-xgut{flex:none;align-self:stretch;border-right:1px solid var(--line)}
+    .sch-xbar{flex:1;min-width:0;overflow-x:auto;overflow-y:hidden;height:14px}
+    .sch-xbar::-webkit-scrollbar{height:11px}
+    .sch-xbar::-webkit-scrollbar-track{background:transparent}
+    .sch-xbar::-webkit-scrollbar-thumb{background:rgba(32,80,144,.30);border:3px solid transparent;background-clip:padding-box;border-radius:9px}
+    .sch-xbar>div{height:1px}
+  }
+}
+body.exporting .sch-xrow{display:none !important}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:var(--text-light);text-transform:uppercase;letter-spacing:.6px;border-bottom:2px solid var(--line);background:var(--soft-bg)}
 td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -16230,6 +16272,25 @@ function tkQuickAdd(type, id, seed) {
     toast(_t('That record is still loading — please try again in a moment.'), 'warn');
     return;
   }
+  /* A summary activity's percentage and status are DERIVED — the weighted roll-up of its sub-tasks,
+     or failing that the site's own daily report — and the Activities table has printed that derived
+     number, labelled "from sub-tasks", since the roll-up landed. This form did not: it seeded from
+     the stored fields, so a line reading 100% / Completed in the table opened at 30% / In progress
+     here, and the two screens disagreed about the same activity in front of the person editing it.
+     Seed what the schedule actually reports. Display only — nothing is written unless they save, and
+     a save now stores the number they were shown instead of the one they could not see. Leaves with
+     a typed percentage are untouched: from === 'typed' means nothing is rolling up. */
+  let _qaSeed = ex;
+  if (type === 'pm_tasks' && ex && typeof _pmTaskPctRoll === 'function') {
+    try {
+      const _pid = (typeof _pmPid === 'function') ? _pmPid() : '';
+      const _all = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', _pid) : [];
+      const _ro = _pmTaskPctRoll(ex, _all, _pid);
+      if (_ro && _ro.from !== 'typed') {
+        _qaSeed = Object.assign({}, ex, { pctComplete: _ro.pct, status: _pmTaskStatus(ex, _ro.pct) });
+      }
+    } catch (e) { }
+  }
   /* seed the multi-file store for type:'files' fields — keep existing files on edit
      (accepts the legacy single attachment/attachmentName shape too) */
   _qaFilesStore = {};
@@ -16244,7 +16305,7 @@ function tkQuickAdd(type, id, seed) {
   if (id) { _titleEl.innerHTML = '<span>Edit —</span> '; _titleEl.appendChild(document.createTextNode(spec.title)); }
   else { _titleEl.textContent = spec.title; }   // split so both prefix + title translate in VN
   document.getElementById('qa-fields').innerHTML = spec.fields.map(f => {
-    const fid = 'qa-' + f.k; const val = ex ? (ex[f.k] == null ? '' : ex[f.k]) : '';
+    const fid = 'qa-' + f.k; const val = _qaSeed ? (_qaSeed[f.k] == null ? '' : _qaSeed[f.k]) : '';
     if (f.type === 'combo') { const _src = f.dyn || f.options; const _dl = 'dl-' + f.k; const _list = _qaDynOptions(_src, ex); const _oc = f.onchange ? (' oninput="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><input class="form-control" id="' + fid + '" list="' + _dl + '" autocomplete="off" value="' + _tkEscA(val) + '"' + _oc + '><datalist id="' + _dl + '">' + _list.map(o => '<option value="' + _tkEscA(o) + '"></option>').join('') + '</datalist></div>'; }
     if (f.type === 'select') { const _opts = Array.isArray(f.options) ? f.options : [''].concat(_qaDynOptions(f.options, ex)); const _oc = f.onchange ? (' onchange="' + f.onchange + '"') : ''; return '<div class="form-group"><label class="form-label">' + f.label + '</label><select class="form-control" id="' + fid + '"' + _oc + '>' + _opts.map(o => { const _v = (o && typeof o === 'object') ? o.v : o, _l = (o && typeof o === 'object') ? o.l : o; return '<option value="' + _crmEsc(_v) + '"' + (String(val) === String(_v) ? ' selected' : '') + '>' + _crmEsc(_l) + '</option>'; }).join('') + '</select></div>'; }
     if (f.type === 'ref') {
@@ -17361,7 +17422,12 @@ function _crmDealDate(d) { return (d && (d.closeDate || d.wonDate || d.activityD
    answers false for an empty one — so choosing any period made them vanish rather than saying they
    could not be placed in time. A deal or a lead nobody can see is one nobody works. Undated records
    stay visible; the screens label them so the reason is on the page rather than in this comment. */
-function _crmInPeriod(dateStr, id) { return !dateStr ? true : _inPeriodLF(dateStr, id); }
+/* Per-TOOLBAR period test — the _crmFiltPeriod / _inPeriodLF convention, keyed by the toolbar's own
+   id. It used to be called _crmInPeriod, which is also the name of the GLOBAL-state test declared
+   ~2,400 lines below; index.html is one namespace and the later declaration wins, so this one was
+   dead and every caller's toolbar id was silently dropped. Both behaviours are wanted, so they get
+   different names. See the single-file-namespace-collisions note. */
+function _crmInPeriodLF(dateStr, id) { return !dateStr ? true : _inPeriodLF(dateStr, id); }
 function _crmUndated(rows, dateOf) { return (rows || []).filter(r => !dateOf(r)).length; }
 /* A one-line note under a filtered list: how many rows are showing only because they have no date.
    Silence here is what turned a missing field into an empty screen. */
@@ -17536,7 +17602,7 @@ async function crmRenderPipeline() {
   await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products'), tkLoadColl('crm_aop')]);
   const period = _crmLF['crm-pipe-period'] || '';
   const allMine = _crmMine(_HR.crm_deals);
-  const deals = period ? allMine.filter(d => _crmInPeriod(_crmDealDate(d), 'crm-pipe-period')) : allMine;
+  const deals = period ? allMine.filter(d => _crmInPeriodLF(_crmDealDate(d), 'crm-pipe-period')) : allMine;
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
@@ -17621,7 +17687,7 @@ function crmFillPipe() {
   const ty = document.getElementById('crm-pipe-type') ? document.getElementById('crm-pipe-type').value : '';
   const period = _crmLF['crm-pipe-period'] || '';
   let deals = _crmMine(_HR.crm_deals).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
-  if (period) deals = deals.filter(d => _crmInPeriod(_crmDealDate(d), 'crm-pipe-period'));
+  if (period) deals = deals.filter(d => _crmInPeriodLF(_crmDealDate(d), 'crm-pipe-period'));
   host.innerHTML = _CRM_STAGES.map(st => {
     const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
@@ -17678,7 +17744,7 @@ async function crmRenderLeads() {
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
   const period = _crmLF['crm-leads-period'] || '';
   const allLeads = _crmMine(_HR.crm_leads);
-  const leads = period ? allLeads.filter(l => _crmInPeriod(_crmLeadDate(l), 'crm-leads-period')) : allLeads;
+  const leads = period ? allLeads.filter(l => _crmInPeriodLF(_crmLeadDate(l), 'crm-leads-period')) : allLeads;
   const kpis = _hrKpiRow([
     _hrKpi('Total leads', leads.length),
     _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
@@ -17697,7 +17763,7 @@ function crmFillLeads() {
   const ow = document.getElementById('crm-leads-owner') ? document.getElementById('crm-leads-owner').value : '';
   const period = _crmLF['crm-leads-period'] || '';
   const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
-  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _crmInPeriod(_crmLeadDate(l), 'crm-leads-period')));
+  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _crmInPeriodLF(_crmLeadDate(l), 'crm-leads-period')));
   tb.innerHTML = rows.length ? rows.map(l => {
     const done = l.converted || l.status === 'Qualified';
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
@@ -19895,9 +19961,14 @@ function _qaDynOptions(src, ex) {
   if (src === 'contacts') { const co = ex && ex.company ? String(ex.company).toLowerCase() : ''; const all = (_HR.crm_contacts || []); return (co ? all.filter(c => (c.company || '').toLowerCase() === co) : all).map(c => c.name).filter(Boolean); }
   if (src === 'pm_members') { const p = (typeof _pmProj === 'function') ? _pmProj() : null; const mm = p ? _pmMembers(p) : []; const res = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_resources', _pmPid()).map(r => r.name) : []; return [...new Set([].concat(mm, res).filter(Boolean))]; }
   if (src === 'pm_contractors') { const ven = (_HR.pm_procurement || []).map(v => v.vendor); const cos = (_HR.crm_companies || []).map(c => c.name); return [...new Set(['NTC', 'TVE', 'HML', 'COT', 'REE'].concat(ven, cos).filter(Boolean))]; }
-  if (src === 'pm_sched_opts') {   // value is the id; the label is the name, resolved at render
+  if (src === 'pm_sched_opts') {
+    // The VALUE stays the id — pm_detail rows are filed by scheduleId and changing it would
+    // unfile every existing line. Only the LABEL changes, and it has to: the picker was
+    // rendering bare ids like "pm_-d41082b6", so the one field that decides which schedule a
+    // report item belongs to was the one field nobody could read. Same {v,l} shape as
+    // pm_task_opts below, which already solved this for master activities.
     const pid = (typeof _pmPid === 'function') ? _pmPid() : '';
-    return _pdScheds(pid).map(x => x.id);
+    return _pdScheds(pid).map(x => ({ v: x.id, l: String(x.name || '').trim() || x.id }));
   }
   if (src === 'pm_units') {
     const used = (typeof _pmScopeFor === 'function' && typeof _pmPid === 'function')
@@ -22132,7 +22203,7 @@ function _pmWbsChildren(task, allTasks) {
 
    Weighted by _pdWeight, so a ₫-valued child counts for what it is worth rather than one-third of a
    three-child parent. The depth guard is belt-and-braces: WBS is a prefix tree and cannot cycle. */
-function _pmTaskRollup(task, allTasks, pid, _depth) {
+function _pmTaskPctRoll(task, allTasks, pid, _depth) {
   _depth = _depth || 0;
   const typed = { pct: _pmPct(task && task.pctComplete), from: 'typed', n: 0 };
   if (_depth > 12) return typed;
@@ -22142,7 +22213,7 @@ function _pmTaskRollup(task, allTasks, pid, _depth) {
     kids.forEach(k => {
       const kw = _pdWeight(k);
       w += kw;
-      sum += kw * _pmTaskRollup(k, allTasks, pid, _depth + 1).pct;
+      sum += kw * _pmTaskPctRoll(k, allTasks, pid, _depth + 1).pct;
     });
     return { pct: w ? _pmPct(sum / w) : 0, from: 'children', n: kids.length };
   }
@@ -22373,11 +22444,18 @@ function pdImportPreview() {
 async function pdImportRun(pid) {
   const { rows } = _pdImportParse(document.getElementById('pd-imp').value);
   if (!rows.length) return;
+  const cur = (typeof _pdCurSched === 'function') ? _pdCurSched(pid) : null;
   const btn = document.getElementById('pd-imp-go'); if (btn) { btn.disabled = true; btn.textContent = _t('Importing…'); }
   let ok = 0; const failed = [];
   for (const r of rows) {
+    // File the row into the schedule that is OPEN. Without this every imported line was written
+    // with no scheduleId, which is precisely what _pdUnfiled() collects — so importing into a
+    // named schedule silently produced a pile in "Unfiled" that had to be re-filed one row at a
+    // time. Same rule the Add-report-item form already applies (see _qaType === 'pm_detail').
+    // Importing while "Unfiled" is selected still writes nothing: that is not a schedule.
     const body = { projectId: pid, category: r.category, name: r.name, start: r.start || '', finish: r.finish || '',
                    taskRef: r.taskRef || '', unit: r.unit || '', log: [] };
+    if (cur && cur.id !== '_unfiled') body.scheduleId = cur.id;
     if (+r.weight > 0) body.weight = +r.weight;
     try { const res = await tkApi('/api/coll/' + _PD_COLL, { method: 'POST', body: body }); (_HR[_PD_COLL] = _HR[_PD_COLL] || []).push(res.item); ok++; }
     catch (e) { failed.push(r.name + ': ' + _errMsg(e)); }
@@ -22954,12 +23032,24 @@ function _schTimeline(rows, o) {
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
     _schFilterBar(ns, rows.length, total) +
-    '<div style="overflow:auto;max-height:520px"><div style="min-width:' + (LABW + plotW) + 'px">' +
+    '<div class="sch-vp" data-labw="' + LABW + '" tabindex="0" role="group"' +
+      ' aria-label="' + _tkEscA(_t('Scroll the timeline sideways')) + '"' +
+      ' style="overflow:auto;max-height:520px">' +
+      '<div style="min-width:' + (LABW + plotW) + 'px">' +
       header +
       '<div style="position:relative">' +
         '<div style="position:absolute;left:' + LABW + 'px;right:0;top:0;bottom:0;pointer-events:none;z-index:1">' +
           gridlines + todayLine + '</div>' + body +
       '</div></div></div>' +
+    /* The slide bar, inset by the gutter so its travel is the CHART's travel and nothing else.
+       Starts hidden; _schXBar() shows it only when there is something to scroll, and corrects the
+       inner width from measured geometry so a drag maps 1:1 onto the box. */
+    '<div class="sch-xrow"><div class="sch-xgut" style="width:' + LABW + 'px"></div>' +
+      /* No tabindex and no aria-label here: this is a proxy for a box that is itself now
+         keyboard-operable, and the bar is emitted AFTER every row — a stop here is one no
+         keyboard would reach in a useful order. aria-hidden keeps it out of the a11y tree. */
+      '<div class="sch-xbar" aria-hidden="true">' +
+        '<div style="width:' + plotW + 'px"></div></div></div>' +
     '<div style="padding:8px 16px;font-size:11px;color:var(--text-light);border-top:1px solid var(--line)">' +
       _t('Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind') +
     '</div></div>';
@@ -23021,7 +23111,7 @@ function _pmTaskNorm(pid, day) {
     .sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || String(a.start || '').localeCompare(String(b.start || '')))
     .map(t => {
     const d = _pdTaskPct(t, pid);
-    const roll = _pmTaskRollup(t, _all, pid);
+    const roll = _pmTaskPctRoll(t, _all, pid);
     const dur = (t.start && t.finish) ? Math.max(1, (_pmDateDiff(t.start, t.finish) || 0) + 1) : 1;
     return { id: t.id, group: t.phase || _t('Activities'),
              name: (t.wbs ? t.wbs + ' · ' : '') + (t.name || '') +
@@ -23337,7 +23427,7 @@ function pmRenderSchedule(pid) {
   const allTasks = _pmScope(_HR.pm_tasks).slice().sort((a, b) => _pmWbsCmp(a.wbs, b.wbs) || (a.start || '').localeCompare(b.start || ''));
   const tr = _pmTaskRollup(pid);
   const cpm = _pmCPM(allTasks);
-  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', allTasks.filter(t => _pmTaskStatus(t, _pmTaskRollup(t, allTasks, pid).pct) === 'Completed').length, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
+  const kpis = _hrKpiRow([_hrKpi('Activities', tr.tasks), _hrKpi('Milestones', tr.milestones, '#8B5CF6'), _hrKpi('Completed', allTasks.filter(t => _pmTaskStatus(t, _pmTaskPctRoll(t, allTasks, pid).pct) === 'Completed').length, 'var(--emerald)'), _hrKpi('Critical tasks', cpm.hasDeps ? cpm.critical : allTasks.filter(t => String(t.critical) === 'Yes').length, '#EF4444'), _hrKpi('Overdue milestones', tr.overdueMs, '#F59E0B')]);
   // Build ONLY the pane being shown. All four used to be built on every Schedule render and three
   // inserted hidden — parsed, styled and laid out for nothing. These are thunks closing over this
   // render's allTasks/cpm, so the Float and critical-path columns keep the same data they always
@@ -23369,7 +23459,7 @@ function pmRenderSchedule(pid) {
         // site's own daily report, then a typed number. A summary line whose percentage disagrees
         // with its own sub-tasks is the thing this level exists to stop, so children win — enter a
         // percentage on the sub-tasks and the parent follows.
-        const ro = _pmTaskRollup(r, allTasks, pid);
+        const ro = _pmTaskPctRoll(r, allTasks, pid);
         if (ro.from === 'typed') return _pmPct(r.pctComplete) + '%';
         const src = ro.from === 'children'
           ? { tip: 'Rolled up from ' + ro.n + ' sub-task' + (ro.n === 1 ? '' : 's'), lbl: _t('from sub-tasks') }
@@ -23382,7 +23472,7 @@ function pmRenderSchedule(pid) {
     // Derived, never written: a render does not touch the record, and the badge can never disagree
     // with the percentage printed next to it.
     { label: 'Status', sk: 'status', w: '1%', nowrap: true, render: r => {
-        const st = _pmTaskStatus(r, _pmTaskRollup(r, allTasks, pid).pct);
+        const st = _pmTaskStatus(r, _pmTaskPctRoll(r, allTasks, pid).pct);
         return _pmBadge(st, _pmStatusColor(st));
       } },
     { label: 'Delivery', sk: 'actualFinish', render: r => _pmDelivery(r) || '<span style="color:var(--text-light)">—</span>' }
@@ -28475,7 +28565,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   if (t === 'services') return [
     { k: 'assump', label: 'Assumptions', fn: 'tndTabAssump' },
@@ -28484,7 +28574,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   if (t === 'epc') return [
     { k: 'config', label: 'Configurator', fn: 'tndTabConfig' },
@@ -28495,7 +28585,7 @@ function _tndTabs() {
     { k: 'pnl', label: 'P&L', fn: 'tndTabPnl' },
     { k: 'cash', label: 'Cash Flow', fn: 'tndTabCash' },
     { k: 'risk', label: 'Risk & Sensitivity', fn: 'tndTabRisk' },
-    { k: 'budget', label: 'Budget Handover', fn: 'tndTabBudget' }
+    { k: 'budget', label: 'Cost Control', fn: 'tndTabBudget' }
   ];
   return _EST_TABS;
 }
@@ -28713,9 +28803,163 @@ async function tndSetConfig(centre, field, v) {
 /* The handover: what this tender becomes once it is won.
    Shown before anybody adopts it, so the baseline a job is measured against is a figure somebody
    read and agreed to rather than a total that appeared after a button press. */
+/* HOW GOOD IS THIS NUMBER. A budgetary figure and a firm price looked identical on screen — same
+   currency, same tabular numerals, same confidence — and nothing recorded which one a reader was
+   holding. The range is what makes it real: "Class 4" is a label somebody nods at; "between 878bn
+   and 1,342bn" is a sentence that changes what they do next. */
+function _tndAccuracyPanel() {
+  const a = (_tndSum || {}).accuracy || {};
+  const classes = (_tndSum || {}).accuracyClasses || [];
+  const e = _estById(_estCur) || {};
+  const can = _estCanPrice() && !_estFrozen(e);
+
+  const picker = can ? '<select class="form-control" style="max-width:360px;margin-top:10px" ' +
+      'onchange="tndSetAccuracy(this.value)">' +
+      '<option value=""' + (a.stated ? '' : ' selected') + '>' + _t('Not stated') + '</option>' +
+      classes.map(function (c) {
+        return '<option value="' + _tkEscA(c.key) + '"' + (a.key === c.key ? ' selected' : '') + '>' +
+          _estEsc(c.label) + '  (' + _tndNum(c.lowPct, 0) + '% / +' + _tndNum(c.highPct, 0) + '%)</option>';
+      }).join('') + '</select>' : '';
+
+  const band = a.stated
+    ? '<div style="display:flex;gap:24px;flex-wrap:wrap;margin-top:10px">' +
+      [[_t('As low as'), _tndMoney(a.low)], [_t('Quoted'), _tndMoney((_tndSum.quote || {}).net)],
+       [_t('As high as'), _tndMoney(a.high)], [_t('Maturity'), _estEsc(a.maturity)]]
+        .map(function (kv) {
+          return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' +
+            kv[0] + '</div><div style="font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+            kv[1] + '</div></div>';
+        }).join('') + '</div>'
+    : '';
+
+  return '<div class="card" style="margin-bottom:14px' +
+    (a.stated ? '' : ';border-left:3px solid var(--warning)') + '">' +
+    '<div style="font-size:12.5px;font-weight:800;color:' + (a.stated ? 'var(--navy)' : 'var(--warning)') + '">' +
+      _estEsc(a.label || _t('Accuracy not stated')) + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:3px">' + _estEsc(a.note || '') + '</div>' +
+    band + picker + '</div>';
+}
+
+async function tndSetAccuracy(key) {
+  const e = _estById(_estCur); if (!e) return;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id,
+                { method: 'PATCH', body: Object.assign({}, e, { accuracyClass: key }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) { toast(_t('Could not save the accuracy class') + ': ' + _errMsg(x), 'error', 6000); }
+}
+
+/* WHAT THE PRICE WAS FOR. The scope argument is the one that actually happens six months in — "we
+   assumed the client provided the crane". An estimate that records its exclusions has that
+   argument once, in writing, before anybody signs; one that does not has it repeatedly, from
+   memory, after.
+
+   Edited in place rather than through tkPrompt: that dialog is a single-line <input> and treats an
+   empty answer as a dismissal, so it could neither hold a list of exclusions nor let anybody clear
+   one. This is the same contenteditable the quotation letter already uses. */
+function _tndBasisPanel() {
+  const b = (_tndSum || {}).basis || { sections: [], stated: 0, total: 0 };
+  const e = _estById(_estCur) || {};
+  const can = _estCanPrice() && !_estFrozen(e);
+  const rows = (b.sections || []).map(function (sec) {
+    const body = can
+      ? '<div contenteditable="true" spellcheck="false" data-basis="' + _tkEscA(sec.key) + '"' +
+        ' data-orig="' + _tkEscA(sec.text || '') + '" onblur="tndSaveBasis(this)"' +
+        ' style="font-size:12.5px;line-height:1.55;white-space:pre-wrap;min-height:20px;outline:none;' +
+        'border-radius:4px;padding:3px 5px;margin:2px -5px 0;cursor:text;' +
+        (sec.stated ? '' : 'color:var(--text-light);font-style:italic;') + '"' +
+        ' onfocus="this.style.background=\'rgba(0,176,96,.10)\'"' +
+        ' onmouseover="if(document.activeElement!==this)this.style.background=\'rgba(32,80,144,.05)\'"' +
+        ' onmouseout="if(document.activeElement!==this)this.style.background=\'transparent\'"' +
+        ' title="' + _tkEscA(_t('Click to write')) + '">' +
+        _estEsc(sec.stated ? sec.text : sec.prompt) + '</div>'
+      : '<div style="font-size:12.5px;white-space:pre-wrap;line-height:1.55' +
+        (sec.stated ? '' : ';color:var(--text-light);font-style:italic') + '">' +
+        _estEsc(sec.stated ? sec.text : sec.prompt) + '</div>';
+    return '<div style="padding:9px 0;border-top:1px solid var(--line)">' +
+      '<div style="font-size:12px;font-weight:700;color:var(--navy)">' + _estEsc(sec.label) +
+      (sec.stated ? '' : ' <span style="font-weight:600;color:var(--warning)">' + _t('not stated') + '</span>') +
+      '</div>' + body + '</div>';
+  }).join('');
+  return '<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--navy)">' + _t('Basis of estimate') +
+      ' <span style="font-weight:600;color:var(--text-light)">' + b.stated + '/' + b.total + '</span></div>' +
+    '<div style="font-size:11.5px;color:var(--text-light);margin-top:3px">' +
+      _t('A price is only meaningful against a scope. Whatever a client assumes was included, was.') +
+      '</div>' + rows + '</div>';
+}
+
+async function tndSaveBasis(el) {
+  const key = el.getAttribute('data-basis');
+  const orig = el.getAttribute('data-orig') || '';
+  const val = (el.textContent || '').replace(/\s+$/, '');
+  el.style.background = 'transparent';
+  if (val === orig) return;
+  const e = _estById(_estCur); if (!e) return;
+  const basis = Object.assign({}, e.basis || {});
+  basis[key] = val;
+  try {
+    await tkApi('/api/coll/est_projects/' + e.id,
+                { method: 'PATCH', body: Object.assign({}, e, { basis: basis }) });
+    tkCollInvalidate('est_projects');
+    await tndReload();
+  } catch (x) {
+    toast(_t('Could not save') + ': ' + _errMsg(x), 'error', 6000);
+    el.textContent = orig;
+  }
+}
+
 function tndTabBudget() {
   const e = _estById(_estCur); if (!e || !_tndSum) return;
   const b = _tndSum.budget || { lines: [], total: 0 };
+  const el = _tndSum.elements || { rows: [], total: 0 };
+  const bm = _tndSum.benchmarks || { available: false, rows: [] };
+
+  /* WHAT THE MONEY IS SPENT ON. The total says what a job costs; this says what it is exposed to.
+     Labour moves when a programme slips, imported material moves when the dong does, subcontract
+     is exposure somebody else is carrying — three different risks wearing the same total. */
+  const bar = el.total ? '<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;margin:10px 0 8px">' +
+    el.rows.map(function (r, i) {
+      const tones = ['var(--navy)', 'var(--emerald-deep)', '#B45309', '#6B7280', '#0E7490', '#7C3AED'];
+      return '<div title="' + _tkEscA(r.label + ' ' + _tndPct(r.pct)) + '" style="width:' + r.pct +
+        '%;background:' + tones[i % tones.length] + '"></div>';
+    }).join('') + '</div>' : '';
+
+  const elemPanel = el.rows.length ? '<div class="card" style="margin-bottom:14px">' +
+    '<div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:2px">' +
+      _t('What the money is spent on') + '</div>' +
+    '<div style="font-size:11.5px;color:var(--text-light)">' +
+      _t('Of the cost base, not the selling price — so it does not move when somebody edits the margin.') +
+      '</div>' + bar +
+    '<div class="table-wrap"><table style="min-width:520px"><tbody>' +
+    el.rows.map(function (r) {
+      return '<tr><td style="font-weight:600">' + _estEsc(r.label) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums">' + _tndMoney(r.amount) + '</td>' +
+        '<td style="text-align:right;font-variant-numeric:tabular-nums;color:var(--text-light);width:78px">' +
+        _tndPct(r.pct) + '</td></tr>';
+    }).join('') + '</tbody></table></div></div>' : '';
+
+  /* THE CHECK AN ESTIMATOR ACTUALLY APPLIES. Not "does the total look right" — a billion-dong
+     total looks like any other — but "is this the right price per square metre", against the last
+     three jobs. */
+  const bmPanel = bm.available
+    ? '<div class="card" style="margin-bottom:14px">' +
+      '<div style="font-size:12.5px;font-weight:800;color:var(--navy);margin-bottom:2px">' +
+        _t('Per') + ' ' + _estEsc(bm.unit) + '</div>' +
+      '<div style="font-size:11.5px;color:var(--text-light);margin-bottom:8px">' +
+        _tndNum(bm.qty, 0) + ' ' + _estEsc(bm.unit) + ' — ' +
+        _t('a total cannot be compared with the last job; a rate can.') + '</div>' +
+      '<div style="display:flex;gap:24px;flex-wrap:wrap">' +
+      bm.rows.map(function (r) {
+        return '<div><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-light)">' +
+          _estEsc(r.label) + '</div><div style="font-size:14px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums">' +
+          _tndMoney(r.value) + '</div></div>';
+      }).join('') + '</div></div>'
+    : '<div class="card" style="margin-bottom:14px;border-left:3px solid var(--line)">' +
+      '<div style="font-size:12px;color:var(--text-light)">' +
+      _t('No benchmark quantity set, so this tender cannot be compared with any other. Set one in Assumptions — floor area, airflow, units — and every figure here becomes a rate.') +
+      '</div></div>';
   const can = _estCanPrice() && !_estFrozen(e);
   const adopted = e.adoptedProjectId;
 
@@ -28769,7 +29013,7 @@ function tndTabBudget() {
         : '<div style="font-size:12px;color:var(--text-light)">' +
           _t('A tender becomes a budget once it is approved or won.') + '</div>');
 
-  _estSet(head +
+  _estSet(head + _tndAccuracyPanel() + _tndBasisPanel() + elemPanel + bmPanel +
     (catRow ? '<div class="card" style="margin-bottom:14px">' + catRow + '</div>' : '') +
     '<div class="card" style="padding:0;overflow:hidden;margin-bottom:14px"><div class="table-wrap"><table style="min-width:640px"><thead><tr>' +
     ['Category', 'What it funds', 'Budget'].map(function (h, i) {
@@ -32029,11 +32273,62 @@ function _twXBar() {
     best.addEventListener('scroll', () => { const b = document.getElementById('tw-xbar'); if (b && _twXTarget === best && b.scrollLeft !== best.scrollLeft) b.scrollLeft = best.scrollLeft; });
   }
 }
+/* The Gantt's slide bar. Companion to _twXBar above and deliberately the same shape: a real scrollbar
+   inside a proxy element, kept in step with its box by COMPARING BEFORE ASSIGNING so neither side
+   echoes the other into a loop. The difference is where it sits — .sch-xrow is inset by the label
+   gutter, so the bar is under the chart alone and its travel is the chart's travel. Why the box
+   itself cannot simply be split in two: see the .sch-xrow block in the stylesheet.
+   Idempotent, and it re-finds its nodes on every call — so a re-render that replaces them needs no
+   teardown and leaks nothing. That matters here: the timeline lands via innerHTML and this codebase
+   has no post-render callback. */
+function _schXBar() {
+  if (document.body.classList.contains('exporting')) return;
+  // Same 820px threshold as _twXBar, for the same reason: a finger pans the chart directly, and the
+  // native bar is a zero-height overlay there — so phones keep today's behaviour untouched.
+  if (window.matchMedia && window.matchMedia('(max-width:820px)').matches) return;
+  document.querySelectorAll('.sch-xrow').forEach(row => {
+    const vp = row.previousElementSibling;
+    if (!vp || !vp.classList || !vp.classList.contains('sch-vp')) return;
+    const bar = row.querySelector('.sch-xbar'), inner = bar && bar.firstElementChild;
+    if (!inner) return;
+    // A pane that is not on screen measures ZERO, and "zero width" is not "nothing to scroll".
+    // Concluding the latter writes an inline display:none that survives until the pane is
+    // REBUILT — and pmSchedTab builds each pane once (host.dataset.built), then only flips
+    // style.display, which fires no childList mutation and so never brings us back. Bail while
+    // hidden and the row keeps whatever it had.
+    if (!vp.clientWidth) return;
+    const max = vp.scrollWidth - vp.clientWidth;
+    if (max <= 1) { row.style.display = 'none'; return; }   // nothing to scroll — then no bar at all
+    row.style.display = '';
+    // Sized from MEASURED geometry, never from plotW: the track is narrower than the box by exactly
+    // the gutter, so it is matching the two SCROLLABLE DISTANCES that makes a drag land where the eye
+    // expects. Guarded by a 1px tolerance so this never writes layout it did not change.
+    const want = bar.clientWidth + max;
+    if (Math.abs(parseFloat(inner.style.width || 0) - want) > 1) inner.style.width = want + 'px';
+    if (bar.scrollLeft !== vp.scrollLeft) bar.scrollLeft = vp.scrollLeft;
+  });
+}
+// scroll doesn't bubble → one capture-phase listener covers every current AND future timeline, the
+// same idiom _tblCues uses below.
+document.addEventListener('scroll', e => {
+  const t = e.target;
+  if (!t || !t.classList) return;
+  try {
+    if (t.classList.contains('sch-vp')) {
+      const row = t.nextElementSibling;
+      const bar = row && row.classList && row.classList.contains('sch-xrow') ? row.querySelector('.sch-xbar') : null;
+      if (bar && bar.scrollLeft !== t.scrollLeft) bar.scrollLeft = t.scrollLeft;
+    } else if (t.classList.contains('sch-xbar')) {
+      const vp = t.parentElement && t.parentElement.previousElementSibling;
+      if (vp && vp.classList && vp.classList.contains('sch-vp') && vp.scrollLeft !== t.scrollLeft) vp.scrollLeft = t.scrollLeft;
+    }
+  } catch (_) {}
+}, true);
 let _fitPending = 0;
 function _fitTablesSoon() {
   if (_fitPending) return;
   _fitPending = 1;
-  const run = () => { _fitPending = 0; try { _fitTableScroll(); } catch (e) {} try { _fitTableCues(); } catch (e) {} try { _twXBar(); } catch (e) {} };
+  const run = () => { _fitPending = 0; try { _fitTableScroll(); } catch (e) {} try { _fitTableCues(); } catch (e) {} try { _twXBar(); } catch (e) {} try { _schXBar(); } catch (e) {} };
   // rAF coalesces to one recompute per frame when the tab is visible; fall back to a timer when rAF
   // is paused (a hidden/background tab), so sizing still happens on restore instead of never firing.
   if (typeof requestAnimationFrame === 'function' && !document.hidden) requestAnimationFrame(run);
@@ -32644,6 +32939,7 @@ const _VI = {
   'click an activity to file progress': 'bấm vào công việc để ghi nhận tiến độ',
   'Show or hide this trade': 'Ẩn/hiện bộ môn này',
   'File progress for this activity': 'Ghi nhận tiến độ công việc này',
+  'Scroll the timeline sideways': 'Kéo thanh thời gian sang ngang',
   'Pale bar = planned window · solid = accumulated progress · dot = on plan, slipping or behind': 'Thanh nhạt = khoảng kế hoạch · thanh đậm = tiến độ luỹ kế · chấm = đúng kế hoạch, chậm nhẹ hoặc trễ',
   'Wide': 'Rộng',
   'Fit': 'Vừa khung',
