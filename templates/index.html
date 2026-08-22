@@ -23504,7 +23504,7 @@ function pmRenderSchedule(pid) {
     return _n.length ? _schTimeline(_n, { day: _pmToday(), ns: 'm', collapsed: _pmPhCol,
         toggle: "pmPhToggle('{g}')", labelHead: 'Phase / Activity',
         rowHint: _t('Open this activity'), sub: _t('grouped by phase · click an activity to open it'),
-        actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' })
+        actions: '<button class="btn btn-outline btn-sm" onclick="tkQuickAdd(\'pm_tasks\')">+ ' + _t('Add task') + '</button>' }) + _pmSCurve(pid, _pmToday())
       : '<div class="card" style="padding:22px 18px;text-align:center;color:var(--text-light);font-size:13px">' +
         _t('No activities with dates yet.') + '</div>';
   };
@@ -23631,14 +23631,138 @@ async function pmSetBaseline(pid) {
   if (!_requireLevel('manager')) return;
   const p = _pmProj(pid); if (!p) return;
   const has = _pmBaseline(p);
-  if (!(await tkConfirm({ title: has ? 'Update baseline?' : 'Set baseline?', body: 'This snapshots the current approved budget and planned start / finish as the performance-measurement baseline. Variance is measured against it. Continue?', okLabel: has ? 'Update baseline' : 'Set baseline' }))) return;
-  const bl = { budget: +p.budget || 0, start: p.startPlanned || '', finish: p.endPlanned || '', setOn: _today(), setBy: (TK.user || {}).name || '' };
+  if (!(await tkConfirm({ title: has ? 'Update baseline?' : 'Set baseline?', body: 'This snapshots the approved budget, the planned start / finish, and every dated activity as the performance-measurement baseline. Variance and the S-curve are measured against it, so re-planning afterwards cannot move the target. Continue?', okLabel: has ? 'Update baseline' : 'Set baseline' }))) return;
+  /* Snapshot the ACTIVITIES too, not only the project's outer dates. Three numbers — budget, start,
+     finish — describe a box, and a straight line drawn inside that box is not a programme: it cannot
+     say which work was meant to be finished by now, which is the only question an S-curve is asked.
+     Per-activity baseline dates are what make a planned curve a real shape rather than a diagonal.
+     Only dated activities are captured. An undated one has no baseline position, and inventing one
+     would put a shape on the chart that nobody entered — the curve states its own coverage instead
+     (see _pmBaselineCoverage). Weight is frozen with the dates: re-weighting later must not silently
+     redraw the plan you were measured against. */
+  const _blTasks = ((typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', pid) : [])
+    .filter(t => t && t.start && t.finish)
+    .map(t => ({ id: t.id, wbs: String(t.wbs || ''), name: String(t.name || '').slice(0, 120),
+                 start: t.start, finish: t.finish, w: _pdWeight(t) }));
+  const bl = { budget: +p.budget || 0, start: p.startPlanned || '', finish: p.endPlanned || '',
+               tasks: _blTasks, setOn: _today(), setBy: (TK.user || {}).name || '' };
   try {
     await tkApi('/api/coll/pm_projects/' + pid, { method: 'PATCH', body: Object.assign({}, p, { baseline: bl, startBaseline: bl.start, endBaseline: bl.finish, budgetBaseline: bl.budget }) });
     Object.assign(p, { baseline: bl, startBaseline: bl.start, endBaseline: bl.finish, budgetBaseline: bl.budget });
     try { tkAudit('Project baseline set', p.name || '', p.code || ''); } catch (e) { }
     toast('Baseline set.'); try { _pmReload(); } catch (e) { }
   } catch (e) { toast(_errMsg(e), 'error', 5000); }
+}
+/* ══ MASTER SCHEDULE S-CURVE ════════════════════════════════════════════════
+   The contract programme's shape over time: what the BASELINE said would be done by now, against
+   what has been done. The Cost/EVM tab already carries a cost S-curve (planned value vs actual cost)
+   and the Detail Schedule one for the site's daily reporting; neither answers "is the CONTRACT
+   programme on track", which is what a client, a lender or the board asks.
+
+   Two rules, because a chart that looks like evidence and is not is worse than no chart:
+
+   1. PLANNED COMES FROM THE BASELINE, never from today's dates. Plotting against the current plan
+      lets re-planning move the target, and a job that slipped six months still looks on track. A
+      project with no baseline gets an empty state asking for one — NOT a curve drawn from whatever
+      the dates happen to say today.
+   2. IT STATES WHAT IT DOES NOT COVER. Activities with no baseline dates are excluded rather than
+      given an invented window, and the share of programme weight actually plotted is printed on the
+      card. The roll-ups already work this way; a curve that quietly drew 82% of the job while
+      looking like 100% would be the same lie in a prettier form. */
+function _pmBaselineCoverage(pid) {
+  const p = _pmProj(pid), bl = _pmBaseline(p);
+  const all = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', pid) : [];
+  let totalW = 0; all.forEach(t => { totalW += _pdWeight(t); });
+  if (!bl || !Array.isArray(bl.tasks) || !bl.tasks.length) {
+    return { has: false, pct: 0, plotted: 0, total: all.length, totalW: totalW, setOn: bl && bl.setOn };
+  }
+  // The BASELINE's frozen weights against the CURRENT programme's weight, so activities added since
+  // the baseline correctly REDUCE coverage instead of being invisible.
+  let blW = 0; bl.tasks.forEach(t => { blW += (+t.w || 0); });
+  return { has: true, pct: totalW ? Math.round(blW / totalW * 100) : 0, plotted: bl.tasks.length,
+           total: all.length, totalW: totalW, setOn: bl.setOn, tasks: bl.tasks };
+}
+function _pmSCurve(pid, day) {
+  const cov = _pmBaselineCoverage(pid);
+  if (!cov.has) {
+    return '<div class="card" style="padding:18px;margin-top:14px">' +
+      '<div style="font-weight:700;font-size:13px;margin-bottom:6px">' + _t('S-curve \u2014 planned vs actual') + '</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);line-height:1.6">' +
+      _t('No baseline has been set for this project, so there is nothing honest to plot a plan against. Set one from the project header and the curve appears \u2014 measured against the programme as approved, so re-planning afterwards cannot move the target.') +
+      '</div></div>';
+  }
+  const rows = cov.tasks.filter(t => t.start && t.finish);
+  if (!rows.length) return '';
+  const ds = []; rows.forEach(r => { ds.push(r.start); ds.push(r.finish); });
+  const min = ds.reduce((a, b) => a < b ? a : b), max = ds.reduce((a, b) => a > b ? a : b);
+  const span = Math.max(1, _pmDateDiff(min, max) || 1);
+  const step = span > 120 ? 7 : 1;              // weekly beyond ~4 months; 400 points inform nobody
+  /* Planned at a date: each baseline activity ramps linearly from its baseline start to its baseline
+     finish, weighted by the weight frozen with it. Linear within one activity is an assumption, and
+     it is the honest one — the portal stores no intra-activity curve, so anything richer would be
+     invented shape presented as plan. */
+  const plannedAt = (d) => {
+    let w = 0, acc = 0;
+    rows.forEach(r => {
+      const rw = +r.w || 1; w += rw;
+      const total = (_pmDateDiff(r.start, r.finish) || 0) + 1;
+      const done = (_pmDateDiff(r.start, d) || 0) + 1;
+      acc += rw * Math.max(0, Math.min(100, total > 0 ? (done / total) * 100 : (d >= r.finish ? 100 : 0)));
+    });
+    return w ? acc / w : 0;
+  };
+  const pts = [];
+  for (let i = 0; i <= span; i += step) { const d = _pmDateAdd(min, i); pts.push({ d: d, planned: plannedAt(d) }); }
+  if (!pts.length || pts[pts.length - 1].d !== max) pts.push({ d: max, planned: plannedAt(max) });
+
+  const W = 100, H = 100;
+  const X = d => ((_pmDateDiff(min, d) || 0) / span) * W;
+  const Y = v => H - (Math.max(0, Math.min(100, v)) / 100) * H;
+  const planLine = pts.map((q, i) => (i ? 'L' : 'M') + X(q.d).toFixed(2) + ' ' + Y(q.planned).toFixed(2)).join(' ');
+  /* ACTUAL is a point at today, not a line, and that is a decision rather than an unfinished job.
+     A master activity's percentage resolves through _pmTaskPctRoll to its children, then to the
+     site's detail reporting, then to a typed number — and a typed number has NO history. Drawing a
+     curve through values that were never recorded over time would be inventing the past. Today's
+     figure is known, so today's figure is what is drawn. */
+  const all = (typeof _pmScopeFor === 'function') ? _pmScopeFor('pm_tasks', pid) : [];
+  let aw = 0, aacc = 0;
+  rows.forEach(r => {
+    const cur = all.filter(t => t.id === r.id)[0]; if (!cur) return;
+    const rw = +r.w || 1; aw += rw;
+    aacc += rw * ((typeof _pmTaskPctRoll === 'function') ? _pmTaskPctRoll(cur, all, pid).pct : 0);
+  });
+  const actualNow = aw ? aacc / aw : 0;
+  const plannedNow = plannedAt(day);
+  const v = actualNow - plannedNow;
+  const grid = [0, 25, 50, 75, 100].map(y =>
+    '<line x1="0" y1="' + Y(y) + '" x2="' + W + '" y2="' + Y(y) + '" stroke="var(--line)" stroke-width="0.4" vector-effect="non-scaling-stroke"/>').join('');
+  const todayX = (day >= min && day <= max) ? X(day) : null;
+  const dot = todayX === null ? '' :
+    '<circle cx="' + todayX.toFixed(2) + '" cy="' + Y(actualNow).toFixed(2) + '" r="2.4" fill="var(--emerald)"/>';
+  const todayLine = todayX === null ? '' :
+    '<line x1="' + todayX.toFixed(2) + '" y1="0" x2="' + todayX.toFixed(2) + '" y2="' + H + '" stroke="#EF4444" stroke-width="0.6" vector-effect="non-scaling-stroke"/>';
+
+  return '<div class="card" style="padding:14px 16px;margin-top:14px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div><div style="font-weight:700;font-size:13px">' + _t('S-curve \u2014 planned vs actual') + '</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' +
+          _t('Planned from the baseline set') + ' ' + tkFmtDate(cov.setOn || '') + ' \u00b7 ' +
+          cov.plotted + '/' + cov.total + ' ' + _t('activities') + ' \u00b7 ' +
+          cov.pct + '% ' + _t('of programme weight') + '</div></div>' +
+      '<div style="text-align:right"><div style="font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;color:' + _pdVarColor(v) + '">' +
+        (v >= 0 ? '+' : '') + v.toFixed(1) + '%</div>' +
+        '<div style="font-size:11px;color:var(--text-light)">' + Math.round(actualNow) + '% ' + _t('actual') +
+        ' \u00b7 ' + Math.round(plannedNow) + '% ' + _t('planned today') + '</div></div>' +
+    '</div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none" style="width:100%;height:150px;overflow:visible">' +
+      grid + todayLine +
+      '<path d="' + planLine + '" fill="none" stroke="var(--navy)" stroke-width="1.2" vector-effect="non-scaling-stroke"/>' +
+      dot +
+    '</svg>' +
+    '<div style="font-size:11px;color:var(--text-light);margin-top:6px">' +
+      _t('Navy = the baseline plan. The dot is where the programme stands today \u2014 a point rather than a line, because activities carrying a typed percentage have no history to draw.') +
+      (cov.pct < 100 ? ' \u00b7 ' + _t('Activities with no baseline dates are not plotted.') : '') +
+    '</div></div>';
 }
 /* Month buckets 'YYYY-MM' between two dates (inclusive) — for the S-curve. */
 function _pmMonths(start, end) {
