@@ -17422,7 +17422,12 @@ function _crmDealDate(d) { return (d && (d.closeDate || d.wonDate || d.activityD
    answers false for an empty one — so choosing any period made them vanish rather than saying they
    could not be placed in time. A deal or a lead nobody can see is one nobody works. Undated records
    stay visible; the screens label them so the reason is on the page rather than in this comment. */
-function _crmInPeriod(dateStr, id) { return !dateStr ? true : _inPeriodLF(dateStr, id); }
+/* Per-TOOLBAR period test — the _crmFiltPeriod / _inPeriodLF convention, keyed by the toolbar's own
+   id. It used to be called _crmInPeriod, which is also the name of the GLOBAL-state test declared
+   ~2,400 lines below; index.html is one namespace and the later declaration wins, so this one was
+   dead and every caller's toolbar id was silently dropped. Both behaviours are wanted, so they get
+   different names. See the single-file-namespace-collisions note. */
+function _crmInPeriodLF(dateStr, id) { return !dateStr ? true : _inPeriodLF(dateStr, id); }
 function _crmUndated(rows, dateOf) { return (rows || []).filter(r => !dateOf(r)).length; }
 /* A one-line note under a filtered list: how many rows are showing only because they have no date.
    Silence here is what turned a missing field into an empty screen. */
@@ -17597,7 +17602,7 @@ async function crmRenderPipeline() {
   await Promise.all([tkLoadColl('crm_deals'), tkLoadColl('crm_companies'), tkLoadColl('crm_contacts'), tkLoadColl('crm_products'), tkLoadColl('crm_aop')]);
   const period = _crmLF['crm-pipe-period'] || '';
   const allMine = _crmMine(_HR.crm_deals);
-  const deals = period ? allMine.filter(d => _crmInPeriod(_crmDealDate(d), 'crm-pipe-period')) : allMine;
+  const deals = period ? allMine.filter(d => _crmInPeriodLF(_crmDealDate(d), 'crm-pipe-period')) : allMine;
   const openDeals = deals.filter(d => _CRM_OPEN.includes(d.stage || 'New'));
   const pipeVal = openDeals.reduce((s, d) => s + (+d.value || 0), 0);
   const won = deals.filter(d => d.stage === 'Won'); const lost = deals.filter(d => d.stage === 'Lost');
@@ -17682,7 +17687,7 @@ function crmFillPipe() {
   const ty = document.getElementById('crm-pipe-type') ? document.getElementById('crm-pipe-type').value : '';
   const period = _crmLF['crm-pipe-period'] || '';
   let deals = _crmMine(_HR.crm_deals).filter(d => (!q || ((d.title || '') + ' ' + (d.company || '') + ' ' + (d.contact || '')).toLowerCase().indexOf(q) >= 0) && (!ow || (d.owner || '') === ow) && (!ty || (d.ptype || '') === ty));
-  if (period) deals = deals.filter(d => _crmInPeriod(_crmDealDate(d), 'crm-pipe-period'));
+  if (period) deals = deals.filter(d => _crmInPeriodLF(_crmDealDate(d), 'crm-pipe-period'));
   host.innerHTML = _CRM_STAGES.map(st => {
     const items = deals.filter(d => (d.stage || 'New') === st).sort((a, b) => (+b.priority || 0) - (+a.priority || 0) || (+b.value || 0) - (+a.value || 0));
     const sum = items.reduce((s, d) => s + (+d.value || 0), 0);
@@ -17739,7 +17744,7 @@ async function crmRenderLeads() {
   await Promise.all([tkLoadColl('crm_leads'), tkLoadColl('crm_companies')]);
   const period = _crmLF['crm-leads-period'] || '';
   const allLeads = _crmMine(_HR.crm_leads);
-  const leads = period ? allLeads.filter(l => _crmInPeriod(_crmLeadDate(l), 'crm-leads-period')) : allLeads;
+  const leads = period ? allLeads.filter(l => _crmInPeriodLF(_crmLeadDate(l), 'crm-leads-period')) : allLeads;
   const kpis = _hrKpiRow([
     _hrKpi('Total leads', leads.length),
     _hrKpi('New', leads.filter(l => (l.status || 'New') === 'New').length, '#3168A8'),
@@ -17758,7 +17763,7 @@ function crmFillLeads() {
   const ow = document.getElementById('crm-leads-owner') ? document.getElementById('crm-leads-owner').value : '';
   const period = _crmLF['crm-leads-period'] || '';
   const sc = { New: 'b-navy', Contacted: 'b-info', Qualified: 'b-ok', Unqualified: 'b-danger' };
-  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _crmInPeriod(_crmLeadDate(l), 'crm-leads-period')));
+  const rows = _crmMine(_HR.crm_leads).filter(l => (!q || ((l.name || '') + ' ' + (l.company || '') + ' ' + (l.email || '')).toLowerCase().indexOf(q) >= 0) && (!stt || (l.status || 'New') === stt) && (!src || (l.source || '') === src) && (!ow || (l.owner || '') === ow) && (!period || _crmInPeriodLF(_crmLeadDate(l), 'crm-leads-period')));
   tb.innerHTML = rows.length ? rows.map(l => {
     const done = l.converted || l.status === 'Qualified';
     const conv = done ? '<span class="badge b-ok" style="font-size:10px">Converted</span>' : '<button class="btn btn-emerald btn-sm" title="Convert to deal" style="font-size:10px;padding:4px 8px" onclick="crmConvertLead(\'' + l.id + '\')">Convert</button>';
