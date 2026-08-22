@@ -171,7 +171,12 @@ def build(doc, lines=None):
     rows.append(_row(r_disc, H["tot"], [_cell(c + str(r_disc), S_TOT_LBL, text="Project Discount" if c == "C" else "")
                                         for c in "CDE"] +
                     [_cell("F%d" % r_disc, S_PCT, value=disc),
-                     _cell("G%d" % r_disc, S_MONEY, value=round(sub * disc),
+                     # The server's figure, not this file's own multiplication of it. Recomputing
+                     # here used Python's round() where the server uses vnd(), and the two part
+                     # company on a half — the workbook printed a grand total one dong away from
+                     # the letter for the same tender. One dong is not the point: a customer
+                     # holding two documents that disagree has to ask which is real.
+                     _cell("G%d" % r_disc, S_MONEY, value=_num(tot.get("discount")),
                            formula="G%d*F%d" % (r_sub, r_disc))]))
     # VAT AT ONE RATE, OR AT SEVERAL.
     #

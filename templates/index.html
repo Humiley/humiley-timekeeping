@@ -30135,12 +30135,26 @@ function tndTabRevs() {
           }).join('') + '</tbody></table></div>'
         : '<div style="font-size:12px;color:var(--text-light);margin-top:10px">' +
           _t('No line changed.') + '</div>') +
-      /* A movement no line explains came from somewhere else — a discount, a mark-up, a fee.
-         Surfaced rather than absorbed: it is the difference actually worth looking at. */
+      /* THE DISCOUNT, NAMED. It used to be swept into the panel below, alongside movements nobody
+         could account for at all — so an ordinary re-price on a discounted tender showed a scary
+         "not explained by any line" figure that was simply the discount keeping pace, and a
+         discount somebody genuinely changed looked no different from a mark-up quietly altered. */
+      (c.discountKnown && Math.abs(c.discountMoved || 0) > 0
+        ? '<div style="margin-top:10px;padding:9px 11px;border-left:3px solid var(--navy);background:var(--soft-bg);font-size:12px">' +
+          '<b>' + _tndMoney(Math.abs(c.discountMoved)) + '</b> ' +
+          _t(c.discountMoved > 0 ? 'more was given away as discount, which lowers the price by that much.'
+                                 : 'less was given away as discount, which raises the price by that much.') +
+          '</div>'
+        : '') +
+      /* What is left after the lines and the discount: a mark-up somebody altered, a project fee.
+         Surfaced rather than absorbed — it is now the difference genuinely worth looking at, which
+         is exactly why nothing explainable should be filed here. */
       (Math.abs(c.unexplained) > 0
         ? '<div style="margin-top:10px;padding:9px 11px;border-left:3px solid var(--warning);background:var(--soft-bg);font-size:12px">' +
           '<b>' + _tndMoney(c.unexplained) + '</b> ' +
-          _t('of the movement is not explained by any line — a discount, a changed mark-up or a project fee.') +
+          _t(c.discountKnown
+             ? 'of the movement is explained by neither a line nor the discount — a changed mark-up or a project fee.'
+             : 'of the movement is not explained by any line. This pair predates the record of the discount, so part of it may be that.') +
           '</div>'
         : '') +
       '<div style="font-size:11.5px;color:var(--text-light);margin-top:8px">' +
@@ -30181,6 +30195,13 @@ function tndCompareRevs(fromId, toId) {
 /* The same rule the server applies, so the screen and the record cannot disagree about what moved.
    Kept deliberately small: anything more here would be a second implementation of pricing. */
 function _tndDiff(before, after) {
+  /* A first revision has nothing before it. The server accepts that and reports every line as
+     added; here it would have thrown on `null.lines`. The tab never passes null today — both
+     revisions come from the list — but a divergence that is merely unreachable is still one
+     waiting for the next caller, and the empty shape carries subtotal/discount so the attribution
+     below behaves identically on both sides. */
+  before = before || { net: 0, grossMarginPct: 0, lines: [], subtotal: 0, discount: 0 };
+  after = after || { net: 0, grossMarginPct: 0, lines: [], subtotal: 0, discount: 0 };
   /* Same keying as tender._diff_index, or the screen and the record disagree about what moved.
      Two faults it avoids, both of which produce a WRONG NUMBER rather than an error: keying on id
      alone DISCARDS a duplicate (an import run twice silently became one row), and skipping
@@ -30219,12 +30240,23 @@ function _tndDiff(before, after) {
   rows.sort(function (x, y) { return Math.abs(y.delta) - Math.abs(x.delta); });
   const explained = rows.reduce(function (t, r) { return t + r.delta; }, 0);
   const shared = Object.keys(A).filter(function (k) { return B[k]; }).length;
+  /* The discount is not an unexplained movement — same reasoning as tender.compare_revisions().
+     Lines are frozen pre-discount and the header net is post-discount, so on a discounted tender
+     an ordinary re-price left a residual that got filed under the heading reserved for a change
+     nothing accounts for. Revisions taken before this carry no subtotal and cannot say. */
+  const known = before && after && before.subtotal !== undefined && after.subtotal !== undefined;
+  const discMoved = known ? ((+after.discount || 0) - (+before.discount || 0)) : null;
+  const discEffect = known ? -discMoved : 0;
   return {
     rows: rows, changed: rows.length,
     unchanged: shared - rows.filter(function (r) { return r.status === 'changed'; }).length,
     wasNet: before.net, nowNet: after.net, delta: after.net - before.net,
     deltaPct: before.net ? ((after.net - before.net) / before.net * 100) : 0,
-    explainedByLines: explained, unexplained: (after.net - before.net) - explained,
+    explainedByLines: explained,
+    discountMoved: discMoved,
+    discountEffect: known ? discEffect : null,
+    discountKnown: !!known,
+    unexplained: (after.net - before.net) - explained - discEffect,
     marginMoved: (after.grossMarginPct || 0) - (before.grossMarginPct || 0)
   };
 }

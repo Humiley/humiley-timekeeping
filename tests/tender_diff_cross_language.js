@@ -33,7 +33,14 @@ for (let i = page.indexOf('{', start); i < page.length; i++) {
 const _tndDiff = new Function(page.slice(start, end) + '; return _tndDiff;')();
 
 // --- fixtures: the shapes that used to lose a line -----------------------------------------------
-const rev = (net, lines, margin) => ({ net, grossMarginPct: margin || 0, lines });
+// `subtotal` and `discount` are what let the diff attribute the discount instead of filing it
+// under "unexplained". Fixtures carry them the way revision() now writes them; the pair that omits
+// them, below, is the legacy shape both implementations must still handle identically.
+const rev = (net, lines, margin, discount) => ({
+  net, grossMarginPct: margin || 0, lines,
+  subtotal: net + (discount || 0), discount: discount || 0,
+});
+const legacyRev = (net, lines, margin) => ({ net, grossMarginPct: margin || 0, lines });
 const L = (id, desc, qty, unitCost, net) => ({ id, desc, qty, unitCost, net });
 
 const CASES = {
@@ -62,14 +69,30 @@ const CASES = {
     rev(240, [L('B2', 'Beta', 1, 120, 120), L('A1', 'Alpha', 1, 120, 120)]),
   ],
   'a discount no line explains': [
-    rev(100, [L('L1', 'Pump', 1, 100, 100)], 25),
-    rev(90, [L('L1', 'Pump', 1, 100, 100)], 16.67),
+    rev(100, [L('L1', 'Pump', 1, 100, 100)], 25, 0),
+    rev(90, [L('L1', 'Pump', 1, 100, 100)], 16.67, 10),
+  ],
+  'a re-price on a discounted tender': [      // the phantom residual, on both sides or neither
+    rev(90, [L('L1', 'Pump', 1, 100, 100)], 25, 10),
+    rev(135, [L('L1', 'Pump', 1, 150, 150)], 25, 15),
+  ],
+  'revisions taken before the discount was recorded': [
+    legacyRev(100, [L('L1', 'Pump', 1, 100, 100)], 25),
+    legacyRev(90, [L('L1', 'Pump', 1, 100, 100)], 16.67),
+  ],
+  'one side legacy, one side current': [
+    legacyRev(100, [L('L1', 'Pump', 1, 100, 100)], 25),
+    rev(90, [L('L1', 'Pump', 1, 100, 100)], 16.67, 10),
   ],
   'a line added and a line removed at once': [
     rev(100, [L('L1', 'Pump', 1, 100, 100)]),
     rev(140, [L('L2', 'Fan', 1, 140, 140)]),
   ],
   'nothing at all': [rev(0, []), rev(0, [])],
+  'the very first revision, with nothing before it': [
+    null,                                     // the server accepts this; the page must too
+    rev(90, [L('L1', 'Pump', 1, 100, 100)], 25, 10),
+  ],
 };
 
 // --- the same fixtures through the server's copy -------------------------------------------------
