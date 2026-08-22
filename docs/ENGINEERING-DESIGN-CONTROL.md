@@ -373,6 +373,28 @@ Two things it surfaces that a total would hide: hours booked to the commission b
 deliverable — they count as cost and earn nothing — and deliverables that have spent well past what
 they have earned and are not finished yet.
 
+## Recovering a chargeable change
+
+A chargeable change that was built and never billed is the quietest way a design office funds a
+client's change out of its own fee. It does not look like anything at the time: the ECN is approved,
+the drawings are revised, the work is recorded as done, and the variation that was going to recover
+it is still a conversation somebody meant to have.
+
+Two points where it can still be caught.
+
+**Approval** refuses a change whose chargeability is *"To be agreed"*. That is a deliberate
+deferral, and it settles itself once the hours are spent — against us. A **blank** field is not
+refused: it is a record made before anybody asked the question, and older changes are full of them.
+
+**Implementation** refuses a change agreed as chargeable that has nothing to bill it against. The
+variation does not have to exist at approval — usually it cannot, the scope is still being argued —
+but by the time the work is recorded as done, the thing that recovers it has to be pointed at.
+Absorbing the cost stays available; it just has to be a decision somebody is seen to make, which is
+why the refusal offers both exits.
+
+The Change Control tab totals what is unrecovered: each change looks handled on its own row, and
+the sum is the only place the money shows.
+
 ## Tests
 
 `tests/test_eng_design_control.py` — twelve tests over the five things that would destroy the value

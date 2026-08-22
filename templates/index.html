@@ -25760,6 +25760,8 @@ Object.assign(_QA_SPECS, {
       { k: 'impactDays', label: 'Impact — programme (days)', type: 'number' },
       { k: 'impactSafety', label: 'Impact on safety / statutory', type: 'select', options: ['None', 'Requires safety review', 'Requires re-appraisal (thẩm định)', 'Requires client approval'] },
       { k: 'clientChargeable', label: 'Chargeable to client?', type: 'select', options: ['No — at our cost', 'Yes — variation', 'To be agreed'] },
+      { k: 'variationId', label: 'Sell-side variation that recovers it', type: 'ref', src: 'sales_variations', blank: '— not linked yet —' },
+      { k: 'variationRef', label: 'or the variation reference, if it lives outside the portal' },
       { k: 'decision', label: 'Decision', type: 'select', options: ['Pending', 'Approved', 'Rejected', 'Deferred'] },
       { k: 'status', label: 'Status', type: 'select', options: ['Raised', 'Under review', 'Approved', 'Rejected', 'Implemented', 'Closed'] },
       { k: 'implementedOn', label: 'Implemented on', type: 'date' },
@@ -26914,6 +26916,39 @@ async function engCommentCloseSave(id) {
 }
 
 /* ============================ 8. Change control (ISO 9001 §8.3.6 / ISO 10007) ============================ */
+/* What was agreed as chargeable and has nothing to bill it against. Money the office has already
+   spent and not asked for — invisible in every other view, because each change looks handled on
+   its own row. The total is the only place it shows. */
+function _engRecoveryPanel(pid) {
+  const ecns = _engScopeFor('eng_changes', pid);
+  const chargeable = ecns.filter(e => String(e.clientChargeable || '').toLowerCase().indexOf('yes') === 0);
+  const unlinked = chargeable.filter(e => !String(e.variationId || e.variationRef || '').trim());
+  const undecided = ecns.filter(e => {
+    const c = String(e.clientChargeable || '').toLowerCase();
+    return (!c || c.indexOf('to be agreed') === 0)
+        && ['rejected', 'closed'].indexOf(String(e.status || '').toLowerCase()) < 0;
+  });
+  if (!unlinked.length && !undecided.length) return '';
+  const hrs = unlinked.reduce((n, e) => n + (+e.impactHours || 0), 0);
+  const cost = unlinked.reduce((n, e) => n + (+e.impactCost || 0), 0);
+  let h = '';
+  if (unlinked.length) {
+    h += '<div style="margin:10px 0;padding:12px 14px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+      '<b>' + unlinked.length + ' change(s) agreed as chargeable have nothing to bill them against</b>' +
+      (hrs ? ' — ' + Math.round(hrs).toLocaleString() + ' design hours' : '') +
+      (cost ? ' and ' + _engMoney(cost) : '') + '.<br>' +
+      '<span style="font-size:11.5px">Each looks handled on its own row; together they are work the office has done and not asked to be paid for. Link the variation, or record that we are absorbing it.</span>' +
+      '<div style="margin-top:7px;font-size:11px;font-variant-numeric:tabular-nums">' +
+      unlinked.slice(0, 8).map(e => _engEsc(e.ecnNo || e.title || '?')).join(' · ') + '</div></div>';
+  }
+  if (undecided.length) {
+    h += '<div style="margin:10px 0;padding:12px 14px;border-radius:9px;background:#FEF3C7;border:1px solid #FDE68A;font-size:12px;color:#92400E">' +
+      '<b>' + undecided.length + ' open change(s) have not decided who pays.</b> ' +
+      '<span style="font-size:11.5px">They cannot be approved until they do — "to be agreed" settles itself once the hours are spent, and it settles against us.</span></div>';
+  }
+  return h;
+}
+
 function engRenderChanges(pid) {
   const p = _engProj(pid); if (!p) return;
   const cs = _engScopeFor('eng_changes', pid);
@@ -26957,7 +26992,7 @@ function engRenderChanges(pid) {
     { label: 'Authorise', sk: 'x_sign', render: r => _engChangeSignCell(p, r) },
     { label: 'File', sk: 'x_file', render: r => _engFileCell('eng_changes', r) }
   ], rows, { minw: 1400 }));
-  _engSet(kpis + guide + impCard + tbl);
+  _engSet(kpis + guide + _engRecoveryPanel(pid) + impCard + tbl);
 }
 function _engChangeSignCell(p, r) {
   if (r.decidedBy) return '<span style="font-size:10.5px;color:var(--text-light);white-space:nowrap">✍ ' + _engEsc(r.decidedBy) + (r.decidedOn ? '<br><span style="font-size:10px">' + _engFmt(r.decidedOn) + '</span>' : '') + '</span>';
@@ -33110,6 +33145,10 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Sell-side variation that recovers it': 'Phụ lục bán hàng thu hồi chi phí này',
+  'not linked yet': 'chưa liên kết',
+  'Chargeable to client?': 'Tính phí cho chủ đầu tư?',
+  'To be agreed': 'Sẽ thống nhất sau',
   'Effort & Earned Value': 'Nhân công & Giá trị đạt được',
   'Design hours': 'Giờ thiết kế',
   'Book hours': 'Ghi nhận giờ',

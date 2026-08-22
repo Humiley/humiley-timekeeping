@@ -5172,6 +5172,23 @@ class Handler(BaseHTTPRequestHandler):
                     (self._pm_same_person(_orig, u.get("name"))
                      or str(_orig).strip().lower() == str(u.get("name") or "").strip().lower()):
                 return "A change is authorised by somebody other than the person who raised it."
+            # Who pays is part of the decision, not a thing to settle afterwards. A change approved
+            # with chargeability still "to be agreed" is work that starts before anybody has said
+            # whose budget it comes out of, and the answer arrives after the hours are spent —
+            # which is the moment the office has the least leverage and the client the most.
+            # Only a DELIBERATE deferral blocks. A blank field is a record made before anybody
+            # asked the question — often an older one — and refusing those would break approvals
+            # that were legitimate when they were raised. "To be agreed" is different: somebody
+            # looked at it and put it off, and the deferral is what settles against us later. The
+            # money is caught for certain at implementation, where the work is actually done.
+            if t == "approved":
+                _cc = str(rec.get("clientChargeable") or "").strip().lower()
+                if _cc.startswith("to be agreed"):
+                    return ("Decide who pays for this change before approving it. 'To be agreed' "
+                            "settles itself after the hours are spent, and it settles against us. "
+                            "Mark it chargeable and raise the variation, or record that we are "
+                            "absorbing it — absorbing is a decision somebody should be seen to "
+                            "make.")
             return None
 
         if coll == "eng_transmittals":
@@ -16105,6 +16122,26 @@ class Handler(BaseHTTPRequestHandler):
             # appends a reversal rather than deleting, so testing the chain would leave a reversed
             # record frozen for ever. Each register keeps exactly one later fact editable, because
             # that fact is about the document rather than a change to it.
+            # A chargeable change that was built and never billed is the quietest way a design
+            # office funds a client's change out of its own fee. The variation does not have to
+            # exist yet when the change is approved — it usually cannot, the scope is still being
+            # argued — but by the time the work is recorded as done, the thing that recovers it has
+            # to be pointed at. Nothing here prices it: that is the sell-side's job, and this only
+            # refuses to let the link be forgotten.
+            if name == "eng_changes" and existing:
+                _newst = str(item.get("status") or "").strip().lower()
+                _wasst = str(existing.get("status") or "").strip().lower()
+                _cc = str(item.get("clientChargeable") or existing.get("clientChargeable") or "").strip().lower()
+                _linked = str(item.get("variationId") or existing.get("variationId")
+                              or item.get("variationRef") or existing.get("variationRef") or "").strip()
+                if _newst in ("implemented", "closed") and _wasst not in ("implemented", "closed") \
+                        and _cc.startswith("yes") and not _linked:
+                    return self._err(
+                        "This change was agreed as chargeable to the client, and it is about to be "
+                        "recorded as done with nothing to bill it against. Link the sell-side "
+                        "variation that recovers it, or change it to 'No — at our cost' so the "
+                        "decision to absorb the work is on the record rather than implied.", 409)
+
             # A code revision is not a typo correction. Once an edition has been adopted, every
             # deliverable on the commission has been designed and checked against THAT text; moving
             # the register to a newer one silently re-bases the whole design and leaves the drawings
@@ -16140,7 +16177,8 @@ class Handler(BaseHTTPRequestHandler):
                     # may still be completed.
                     "eng_stages": ("status", ("closed",), ("gateActionsClosedOn",)),
                     # An approved change gets built, and then it is done.
-                    "eng_changes": ("status", ("implemented", "closed"), ("implementedOn",)),
+                    "eng_changes": ("status", ("implemented", "closed"),
+                                    ("implementedOn", "variationId", "variationRef")),
                     # A transmittal is acknowledged by the recipient, days after it went out.
                     "eng_transmittals": ("status", ("acknowledged", "closed"), ("acknowledgedOn", "acknowledgedBy")),
                 }[name]
