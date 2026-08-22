@@ -795,6 +795,111 @@ def pnl(quote, tender):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+#   3c. REVISIONS — what moved between one price and the next, and why
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# A tender gets priced three or four times before it is won. Each time, the only record of the
+# previous price was the previous price: a number in an email, with no way to say which lines moved
+# to produce it. "It went up 8%" is not something anybody can check, argue with, or explain to a
+# client — and when the client asks why, the honest answer was a shrug and a re-read of the whole
+# bill of materials.
+#
+# A REVISION IS A COPY, taken at a moment, and never a live reference — the same rule the rate
+# library already follows and for the same reason. A revision that recomputed itself from today's
+# rows would not be a record of what was sent; it would be a second opinion about it, changing
+# every time somebody edited a line.
+#
+# The comparison is the point, not the archive. Storing old totals so they can be listed is a
+# filing cabinet. Storing old LINES so the difference can be attributed is a reason the price
+# changed.
+
+def revision(tender, quote, elements=None, note=""):
+    """Freeze what this tender says right now, in enough detail to diff it later."""
+    acc = accuracy(tender, quote)
+    return {
+        "estId": tender.get("id"),
+        "quoteNo": str(tender.get("quoteNo") or "").strip(),
+        "note": str(note or "").strip(),
+        "accuracyClass": acc["key"],
+        "accuracyLabel": acc["label"],
+        "costingType": str(tender.get("costingType") or TRADING).strip().lower(),
+        "net": _num(quote.get("net")),
+        "cogs": _num(quote.get("cogs")),
+        "gross": _num(quote.get("gross")),
+        "discountPct": _num(quote.get("discountPct")),
+        "grossMarginPct": _num(quote.get("grossMarginPct")),
+        "labourPct": _num((elements or {}).get("labourPct")),
+        # Only what a diff needs. Freezing the whole priced row would store the mark-up, the VAT
+        # and the FX three times over and make the difference harder to see, not easier.
+        "lines": [{"id": str(l.get("srcId") or l.get("itemCode") or ""),
+                   "desc": str(l.get("desc") or "").strip(),
+                   "qty": _num(l.get("qty")),
+                   "unitCost": _num(l.get("unitCost")),
+                   "net": _num(l.get("net"))}
+                  for l in (quote.get("lines") or [])],
+    }
+
+
+def compare_revisions(before, after):
+    """What moved between two revisions, biggest mover first.
+
+    Sorted by the SIZE of the change rather than by code or description, because the question being
+    asked is "why did the price change" and the answer is almost always two or three lines. An
+    alphabetical list of forty rows, thirty-seven of them unchanged, buries it.
+    """
+    a = {l["id"]: l for l in (before or {}).get("lines", []) if l.get("id")}
+    b = {l["id"]: l for l in (after or {}).get("lines", []) if l.get("id")}
+    rows = []
+    for key in sorted(set(a) | set(b)):
+        was, now = a.get(key), b.get(key)
+        if was and not now:
+            rows.append({"id": key, "desc": was["desc"], "status": "removed",
+                         "was": was["net"], "now": 0, "delta": -was["net"]})
+        elif now and not was:
+            rows.append({"id": key, "desc": now["desc"], "status": "added",
+                         "was": 0, "now": now["net"], "delta": now["net"]})
+        elif was["net"] != now["net"]:
+            rows.append({"id": key, "desc": now["desc"], "status": "changed",
+                         "was": was["net"], "now": now["net"],
+                         "delta": now["net"] - was["net"],
+                         # Which half of the line moved, AT QUOTATION LEVEL. A line that doubled in
+                         # quantity and one whose supplier put the rate up are different problems
+                         # wearing the same delta, and only the first is a scope change.
+                         #
+                         # Read this per engine, because the quotation line is not the same thing
+                         # in each. TRADING quotes per product, so qty and rate mean what they say.
+                         # EPC quotes one LOT per cost centre: doubling a cleanroom's BOM quantity
+                         # arrives here as the lot's rate moving, because at the level the customer
+                         # is quoted there is still one cleanroom. That is not a bug to be fixed by
+                         # reaching into the BOM — the comparison answers "why did the PRICE
+                         # change", and the price is made of lots. It is pinned by a test so nobody
+                         # later "corrects" it into saying something the quotation does not.
+                         "qtyMoved": was["qty"] != now["qty"],
+                         "rateMoved": was["unitCost"] != now["unitCost"]})
+    rows.sort(key=lambda r: -abs(r["delta"]))
+
+    was_net = _num((before or {}).get("net"))
+    now_net = _num((after or {}).get("net"))
+    explained = sum(r["delta"] for r in rows)
+    return {
+        "rows": rows,
+        "changed": len(rows),
+        "unchanged": len(set(a) & set(b)) - len([r for r in rows if r["status"] == "changed"]),
+        "wasNet": was_net,
+        "nowNet": now_net,
+        "delta": now_net - was_net,
+        "deltaPct": round((now_net - was_net) / was_net * 100, 2) if was_net else 0.0,
+        # A movement the lines do not account for came from somewhere else — a discount, a changed
+        # mark-up, a project fee. Reported rather than hidden: an unexplained difference is the one
+        # worth looking at, and rounding it into the line list would lose it.
+        "explainedByLines": explained,
+        "unexplained": (now_net - was_net) - explained,
+        "marginMoved": round(_num((after or {}).get("grossMarginPct"))
+                             - _num((before or {}).get("grossMarginPct")), 2),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 #   3b. HOW GOOD IS THIS NUMBER — accuracy class and basis of estimate
 # ══════════════════════════════════════════════════════════════════════════════
 #
