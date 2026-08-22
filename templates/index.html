@@ -25377,7 +25377,7 @@ const _ENG_NUMSPEC = {
   eng_inputs: { f: 'reqNo', tag: 'DI' }, eng_reviews: { f: 'reviewNo', tag: 'DR' },
   eng_comments: { f: 'commentNo', tag: 'CMT' }, eng_changes: { f: 'ecnNo', tag: 'ECN' },
   eng_tq: { f: 'tqNo', tag: 'TQ' }, eng_transmittals: { f: 'trnNo', tag: 'TRN' },
-  eng_holds: { f: 'ref', tag: 'HLD' }, eng_deviations: { f: 'ref', tag: 'DEV' }
+  eng_holds: { f: 'ref', tag: 'HLD' }, eng_deviations: { f: 'ref', tag: 'DEV' }, eng_risks: { f: 'ref', tag: 'RSK' }
 };
 function _engAutoNumber(coll, data) {
   const sp = _ENG_NUMSPEC[coll]; if (!sp) return;
@@ -25711,6 +25711,25 @@ Object.assign(_QA_SPECS, {
       { k: 'attachment', label: 'Supporting file (PDF / image)', type: 'file' }
     ]
   },
+  eng_risks: {
+    title: 'Design risk', coll: 'eng_risks', reload: 'eng_risks', fields: [
+      { k: 'ref', label: 'Ref' },
+      { k: 'hazard', label: 'The hazard — what could hurt somebody, or fail' },
+      { k: 'phase', label: 'When it bites', type: 'select', options: ['Construction', 'Commissioning', 'Operation', 'Maintenance', 'Cleaning', 'Alteration', 'Demolition'] },
+      { k: 'category', label: 'Kind', type: 'select', options: ['Safety in design', 'Technical / performance', 'Interface', 'Constructability', 'Environmental'] },
+      { k: 'discipline', label: 'Discipline', type: 'select', options: _ENG_DISC_KEYS },
+      { k: 'deliverableId', label: 'Deliverable it sits on', type: 'ref', src: 'eng_deliverables', blank: '— commission-wide —' },
+      { k: 'likelihood', label: 'Likelihood (1 rare … 5 almost certain)', type: 'number' },
+      { k: 'severity', label: 'Severity (1 negligible … 5 catastrophic)', type: 'number' },
+      { k: 'action', label: 'What the DESIGN did — eliminated, reduced, isolated, controlled', type: 'textarea' },
+      { k: 'residualLikelihood', label: 'Residual likelihood', type: 'number' },
+      { k: 'residualSeverity', label: 'Residual severity', type: 'number' },
+      { k: 'informedBy', label: 'If it is carried by somebody else — how they were told', type: 'textarea' },
+      { k: 'owner', label: 'Owner', type: 'combo', dyn: 'eng_people' },
+      { k: 'status', label: 'Status', type: 'select', options: ['Open', 'Controlled', 'Transferred', 'Closed'] },
+      { k: 'note', label: 'Notes', type: 'textarea' }
+    ]
+  },
   eng_deviations: {
     title: 'Deviation / Concession', coll: 'eng_deviations', reload: 'eng_deviations', fields: [
       { k: 'kind', label: 'Kind — a DEVIATION is asked for before, a CONCESSION accepts what was already built', type: 'select', options: ['Deviation', 'Concession'] },
@@ -25910,8 +25929,10 @@ const _ENG_TABS = [
   { k: 'inputs', label: 'Design Inputs', fn: 'engRenderInputs', need: ['eng_projects', 'eng_inputs', 'eng_deliverables'] },
   { k: 'standards', label: 'Codes & Standards', fn: 'engRenderStandards', need: ['eng_projects', 'eng_standards'] },
   { k: 'deviations', label: 'Deviations', fn: 'engRenderDeviations', need: ['eng_projects', 'eng_deviations', 'eng_standards', 'eng_deliverables'] },
+  { k: 'risks', label: 'Design Risk', fn: 'engRenderRisks', need: ['eng_projects', 'eng_risks', 'eng_deliverables'] },
   { k: 'mdr', label: 'Deliverables (MDR)', fn: 'engRenderDeliverables', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'drawings', label: 'Drawing Control', fn: 'engRenderDrawings', need: ['eng_projects', 'eng_deliverables', 'eng_revisions', 'eng_transmittals'] },
+  { k: 'check', label: 'Register Check', fn: 'engRenderCheck', need: ['eng_projects', 'eng_deliverables', 'eng_revisions'] },
   { k: 'reviews', label: 'Reviews & Verification', fn: 'engRenderReviews', need: ['eng_projects', 'eng_reviews', 'eng_deliverables', 'eng_inputs'] },
   { k: 'idc', label: 'IDC Matrix', fn: 'engRenderIdc', need: ['eng_projects', 'eng_idc', 'eng_deliverables'] },
   { k: 'holds', label: 'Holds & Assumptions', fn: 'engRenderHolds', need: ['eng_projects', 'eng_holds', 'eng_deliverables'] },
@@ -26902,6 +26923,243 @@ function engChangeDecideSave(id) {
 }
 
 /* ============================ 9. Technical queries ============================ */
+function _engRiskScore(l, sv) { const a = +l || 0, b = +sv || 0; return (a > 0 && b > 0) ? a * b : null; }
+function _engRiskChip(n) {
+  if (n == null) return '<span style="color:var(--text-light);font-size:11px">—</span>';
+  const hex = n >= 15 ? '#B91C1C' : (n >= 8 ? '#B45309' : (n >= 4 ? '#0369A1' : '#047857'));
+  const bg = n >= 15 ? '#FEE2E2' : (n >= 8 ? '#FEF3C7' : (n >= 4 ? '#E0F2FE' : '#D1FAE5'));
+  return '<span style="font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:' + bg + ';color:' + hex + ';font-variant-numeric:tabular-nums">' + n + '</span>';
+}
+/* ── ENG REGISTER CHECK ─────────────────────────────────────────────────────────────────────
+   Auto-checking the register the auto-numbering produced.
+
+   Numbers and revision codes are generated for you, but only when somebody uses the generator. A
+   register accumulates drawings typed in by hand, imported from a client, renumbered mid-project
+   and superseded out of sequence — and none of that announces itself. A drawing office finds out
+   when two drawings share a number on site, or when the revision on the wall is not the revision
+   in the register.
+
+   Pure function, no DOM, no globals beyond the code tables: give it a commission and its rows and
+   it returns findings. That is what makes it testable — tests/eng_register_check.js runs the same
+   code that ships. */
+const _ENG_CHK_SEV = { error: { hex: '#B91C1C', bg: '#FEE2E2', label: 'Must fix' },
+                       warn: { hex: '#B45309', bg: '#FEF3C7', label: 'Should look at' },
+                       info: { hex: '#0369A1', bg: '#E0F2FE', label: 'For information' } };
+
+function _engCheckRegister(project, delivs, revs) {
+  const out = [];
+  const add = (sev, code, subject, msg, fix) => out.push({ sev: sev, code: code, subject: subject, msg: msg, fix: fix || '' });
+  delivs = (delivs || []).slice();
+  revs = (revs || []).slice();
+  const fmt = _engNumFmt(project);
+  const prj = _engPrjCode(project);
+  const scheme = (project && project.revScheme) || 'ISO 19650 (P01 / C01)';
+  const sepCount = (fmt.match(/-/g) || []).length;
+
+  /* ---- the numbers ---- */
+  const seen = {};
+  delivs.forEach(d => {
+    const no = String(d.docNo || '').trim();
+    const who = no || ('"' + (d.title || 'untitled') + '"');
+    if (!no) {
+      add('error', 'NO-NUMBER', who, 'This deliverable has no document number.',
+          'Open it and leave the number blank to have one generated, or type the client\'s.');
+      return;
+    }
+    (seen[no.toUpperCase()] = seen[no.toUpperCase()] || []).push(d);
+
+    const parts = no.split('-');
+    if (parts.length !== sepCount + 1) {
+      add('error', 'SHAPE', who,
+          'The number has ' + parts.length + ' parts; the commission\'s format ' + fmt + ' has ' + (sepCount + 1) + '.',
+          'Either renumber it, or record on the commission that this register uses another format.');
+    }
+    if (parts.length > 1 && parts[0].toUpperCase() !== prj.toUpperCase()) {
+      add('warn', 'PRJ-CODE', who,
+          'Starts with "' + parts[0] + '" but the commission code is "' + prj + '".',
+          'Client-supplied drawings often keep their own prefix — confirm that is what this is.');
+    }
+    const dc = _engDiscCode(d.discipline);
+    if (dc && parts.length > 2 && parts.indexOf(dc) < 0) {
+      add('warn', 'DISC-CODE', who,
+          'Recorded as ' + d.discipline + ' (' + dc + ') but the number does not contain "' + dc + '".',
+          'One of the two is wrong: the number, or the discipline on the record.');
+    }
+    const tc = _engTypeCode(d.docType);
+    if (tc && parts.length > 2 && parts.indexOf(tc) < 0) {
+      add('warn', 'TYPE-CODE', who,
+          'Recorded as ' + d.docType + ' (' + tc + ') but the number does not contain "' + tc + '".',
+          'A P&ID numbered as a general arrangement is found by nobody.');
+    }
+  });
+  Object.keys(seen).forEach(k => {
+    if (seen[k].length > 1) {
+      add('error', 'DUPLICATE', k,
+          seen[k].length + ' deliverables share this number: ' + seen[k].map(d => '"' + (d.title || '?') + '"').join(', ') + '.',
+          'Two drawings with one number is the failure this register exists to prevent. Renumber all but one.');
+    }
+  });
+
+  /* ---- the revisions ---- */
+  const byDeliv = {};
+  revs.forEach(r => { (byDeliv[r.deliverableId] = byDeliv[r.deliverableId] || []).push(r); });
+  const isoRev = /^([PC])(\d{2,})$/i;
+  const numRev = /^(\d+)$/;
+  const alphaRev = /^([A-Z])$/i;
+  const external = ['IFA', 'IFC', 'IFT', 'IFP', 'AB'];
+
+  delivs.forEach(d => {
+    const rs = (byDeliv[d.id] || []).slice();
+    const who = String(d.docNo || d.title || '?');
+    if (!rs.length) {
+      add('info', 'NO-REV', who, 'No revision has been raised against this deliverable.',
+          'Until one is, the register cannot say what was issued or when.');
+      return;
+    }
+    const codes = {};
+    rs.forEach(r => {
+      const code = String(r.rev || '').trim();
+      if (!code) {
+        add('error', 'REV-BLANK', who, 'A revision row has no revision code.', 'Give it one, or delete the row.');
+        return;
+      }
+      (codes[code.toUpperCase()] = codes[code.toUpperCase()] || []).push(r);
+      const okIso = isoRev.test(code), okNum = numRev.test(code), okAlpha = alphaRev.test(code);
+      const fits = scheme.indexOf('ISO') === 0 ? okIso : (scheme.indexOf('Numeric') === 0 ? okNum : okAlpha);
+      if (!fits) {
+        add('warn', 'REV-SCHEME', who + ' rev ' + code,
+            'Does not fit the commission\'s scheme (' + scheme + ').',
+            'Client drawings often arrive on their own scheme — confirm, then leave it.');
+      }
+      const iss = String(r.issueStatus || '').toUpperCase();
+      const isExternal = external.indexOf(iss) >= 0;
+      const m = code.match(isoRev);
+      if (scheme.indexOf('ISO') === 0 && m) {
+        if (isExternal && m[1].toUpperCase() === 'P') {
+          add('error', 'REV-PRELIM-EXTERNAL', who + ' rev ' + code,
+              'Issued as ' + iss + ' on a preliminary code. ISO 19650 runs P__ while a container is preliminary and C__ once it is contractual.',
+              'Reissue as the next C revision — an IFC on a P code tells the site it is not the real thing.');
+        }
+        if (!isExternal && iss && m[1].toUpperCase() === 'C') {
+          add('warn', 'REV-CONTRACTUAL-INTERNAL', who + ' rev ' + code,
+              'A contractual code (' + code + ') used for an internal issue (' + iss + ').',
+              'Not wrong, but it spends a contractual number on a check print.');
+        }
+      }
+      if (String(r.status || '').toLowerCase() === 'issued' || r.issuedBy) {
+        if (!String(r.reasonForIssue || '').trim()) {
+          add('warn', 'NO-REASON', who + ' rev ' + code,
+              'Issued with no reason for issue recorded.',
+              'ASME Y14.35 makes the description of change non-optional — it is the field a reader needs a year later.');
+        }
+        if (!r.attachment && !r.file && !r.fileName) {
+          add('warn', 'NO-FILE', who + ' rev ' + code,
+              'Issued, but no file is attached to the revision.',
+              'The register says this went out; it cannot show what went out.');
+        }
+      }
+    });
+    Object.keys(codes).forEach(c => {
+      if (codes[c].length > 1) {
+        add('error', 'REV-DUPLICATE', who + ' rev ' + c,
+            'The same revision code appears ' + codes[c].length + ' times on this deliverable.',
+            'A revision code identifies one issue. Renumber the later one.');
+      }
+    });
+    const live = rs.filter(r => (String(r.status || '').toLowerCase() === 'issued' || r.issuedBy)
+                             && String(r.status || '').toLowerCase() !== 'superseded'
+                             && String(r.status || '').toLowerCase() !== 'void');
+    if (live.length > 1) {
+      add('error', 'TWO-CURRENT', who,
+          live.length + ' revisions are issued and none of the earlier ones is marked superseded (' +
+          live.map(r => r.rev).join(', ') + ').',
+          'Only one revision of a drawing is current. Mark the earlier ones superseded.');
+    }
+  });
+
+  const orphan = revs.filter(r => !delivs.some(d => d.id === r.deliverableId));
+  if (orphan.length) {
+    add('error', 'ORPHAN-REV', orphan.length + ' revision(s)',
+        'These revisions point at a deliverable that is not in this register.',
+        'The deliverable was deleted, or they were filed against the wrong commission.');
+  }
+  return out;
+}
+/* ── END ENG REGISTER CHECK ── */
+
+function engRenderCheck(pid) {
+  const proj = _engProj(pid), delivs = _engScopeFor('eng_deliverables', pid), revs = _engScopeFor('eng_revisions', pid);
+  const guide = _engGuide('check', 'Register check — the numbers and revisions, audited against the scheme',
+    '<p>The numbers and revision codes are generated for you, but only when somebody uses the generator. Registers accumulate drawings typed in by hand, imported from a client, renumbered mid-project and superseded out of sequence — and none of that announces itself. A drawing office finds out when two drawings share a number on site, or when the revision on the wall is not the revision in the register.</p>' +
+    '<p>This reads the whole commission and says what does not line up: numbers that do not fit the format, two drawings on one number, a discipline that is not in its own number, an IFC issued on a preliminary code, the same revision twice, two revisions current at once, an issue with no reason or no file.</p>' +
+    '<p><b>Warnings are not failures.</b> A client\'s drawings keep the client\'s prefix, and a drawing with no revision yet is simply new. The list separates what must be fixed from what is worth a look.</p>');
+  const f = _engCheckRegister(proj, delivs, revs);
+  const bySev = { error: f.filter(x => x.sev === 'error'), warn: f.filter(x => x.sev === 'warn'), info: f.filter(x => x.sev === 'info') };
+  const kpis = _hrKpiRow([
+    _hrKpi('Deliverables checked', delivs.length),
+    _hrKpi('Revisions checked', revs.length),
+    _hrKpi('Must fix', bySev.error.length, bySev.error.length ? '#EF4444' : '#00B060'),
+    _hrKpi('Worth a look', bySev.warn.length, bySev.warn.length ? '#F59E0B' : '#00B060')
+  ]);
+  if (!f.length) {
+    return guide + kpis + '<div class="card" style="padding:26px;text-align:center">' +
+      '<div style="font-size:15px;font-weight:600;color:#047857">Every number and revision in this register fits the scheme.</div>' +
+      '<div style="font-size:12.5px;color:var(--text-light);margin-top:6px">' + delivs.length + ' deliverable(s), ' + revs.length + ' revision(s) checked against ' + _engEsc(_engNumFmt(proj)) + ' and ' + _engEsc((proj && proj.revScheme) || 'ISO 19650 (P01 / C01)') + '.</div></div>';
+  }
+  let body = '';
+  ['error', 'warn', 'info'].forEach(sev => {
+    const rows = bySev[sev]; if (!rows.length) return;
+    const st = _ENG_CHK_SEV[sev];
+    body += '<div style="margin:14px 0 6px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:' + st.hex + '">' + st.label + ' — ' + rows.length + '</div>';
+    body += '<div class="table-wrap"><table style="min-width:860px"><thead><tr>' +
+      ['Subject', 'What is wrong', 'What to do', ''].map(h => '<th style="text-align:left">' + h + '</th>').join('') + '</tr></thead><tbody>' +
+      rows.map(r => '<tr>' +
+        '<td style="white-space:nowrap;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:600">' + _engEsc(r.subject) + '</td>' +
+        '<td style="font-size:12px;max-width:340px">' + _engEsc(r.msg) + '</td>' +
+        '<td style="font-size:11.5px;color:var(--text-light);max-width:320px">' + _engEsc(r.fix) + '</td>' +
+        '<td><span style="font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:99px;background:' + st.bg + ';color:' + st.hex + ';white-space:nowrap">' + _engEsc(r.code) + '</span></td>' +
+        '</tr>').join('') + '</tbody></table></div>';
+  });
+  return guide + kpis + '<div class="card" style="padding:16px">' + body + '</div>';
+}
+
+function engRenderRisks(pid) {
+  const all = _engScopeFor('eng_risks', pid), delivs = _engScopeFor('eng_deliverables', pid);
+  const guide = _engGuide('risks', 'Design risk and safety in design — what the design did, and who was told what it could not fix',
+    '<p>A designer\'s duty runs in an order: <b>eliminate</b> the hazard, then <b>reduce</b> it, then <b>control</b> it, and only then <b>inform</b> the people who will inherit what is left. This register is worth having only if it records which of those actually happened, which is why signing a risk off as controlled needs the action written down. "Controlled" with an empty action column is an opinion — and it is the register that gets produced after an accident and proves nothing.</p>' +
+    '<p>What cannot be designed out is carried by somebody else: the contractor who builds it, the technician who changes the filter at 4 m. <b>A residual risk passed to somebody who was never told stays ours.</b> So a risk marked Transferred needs the record of how they were told — the drawing note, the H&S file entry, the residual-risk schedule that went out with the transmittal — and a drawing carrying an uninformed one will not issue for construction.</p>' +
+    '<p>Scores are <b>computed</b> from likelihood × severity, initial and residual. A rating somebody typed is a number that can disagree with its own inputs.</p>');
+  const open = all.filter(r => ['open', ''].indexOf(String(r.status || 'Open').toLowerCase()) >= 0);
+  const transferred = all.filter(r => String(r.status || '').toLowerCase() === 'transferred');
+  const untold = transferred.filter(r => !String(r.informedBy || '').trim());
+  const high = all.map(r => _engRiskScore(r.residualLikelihood || r.likelihood, r.residualSeverity || r.severity)).filter(n => n != null && n >= 15);
+  const kpis = _hrKpiRow([
+    _hrKpi('Risks on the register', all.length),
+    _hrKpi('Still open', open.length, open.length ? '#F59E0B' : '#00B060'),
+    _hrKpi('Carried by others', transferred.length),
+    _hrKpi('Passed on, nobody told', untold.length, untold.length ? '#EF4444' : '#00B060')
+  ]);
+  const specs = [{ k: 'phase', label: 'Phase' }, { k: 'category', label: 'Kind' }, { k: 'discipline', label: 'Discipline' }, { k: 'status', label: 'Status' }];
+  const bar = _engFiltBar('eng_risks', all, specs), rows = _engFiltApply('eng_risks', all, specs);
+  const dname = id => { const d = delivs.filter(x => x.id === id)[0]; return d ? (d.docNo || d.title || '') : ''; };
+  const tbl = _engCard('Design Risk Register', 'eng_risks', 'Record a risk', bar + _engTable('eng_risks', [
+    { label: 'Ref', k: 'ref', render: r => '<span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:700">' + _engEsc(r.ref || '—') + '</span>' },
+    { label: 'Hazard', render: r => '<div style="font-weight:600;max-width:270px">' + _engEsc(r.hazard || '') + '</div>' + (r.category ? '<div style="font-size:10.5px;color:var(--text-light)">' + _engEsc(r.category) + '</div>' : '') },
+    { label: 'When', k: 'phase' },
+    { label: 'On document', render: r => r.deliverableId ? '<span style="font-size:11px;font-variant-numeric:tabular-nums">' + _engEsc(dname(r.deliverableId)) + '</span>' : '<span style="color:var(--text-light);font-size:11px">commission-wide</span>' },
+    { label: 'Initial', align: 'center', render: r => _engRiskChip(_engRiskScore(r.likelihood, r.severity)) },
+    { label: 'What the design did', render: r => r.action ? '<div style="max-width:250px;font-size:11.5px">' + _engEsc(String(r.action).slice(0, 120)) + '</div>' : '<span style="color:#B45309;font-size:11px">nothing recorded</span>' },
+    { label: 'Residual', align: 'center', render: r => _engRiskChip(_engRiskScore(r.residualLikelihood, r.residualSeverity)) },
+    { label: 'Who was told', render: r => String(r.status || '').toLowerCase() === 'transferred'
+        ? (String(r.informedBy || '').trim() ? '<div style="font-size:11px;max-width:200px">' + _engEsc(String(r.informedBy).slice(0, 90)) + '</div>' : '<span style="color:#B91C1C;font-weight:700;font-size:11px">NOBODY</span>')
+        : '<span style="color:var(--text-light);font-size:11px">—</span>' },
+    { label: 'Status', render: r => r.signedOffBy ? '<div>' + _engStatusChip(r.status || '') + '</div><div style="font-size:10px;color:var(--text-light)">✍ ' + _engEsc(r.signedOffBy) + '</div>' : _engStatusChip(r.status || 'Open') }
+  ], rows, { empty: 'No risks recorded. Every design carries some; an empty register means they are in somebody\'s head.', minw: 1200 }));
+  const warn = untold.length ? '<div style="margin:10px 0;padding:11px 13px;border-radius:9px;background:#FEE2E2;border:1px solid #FCA5A5;font-size:12px;color:#7F1D1D">' +
+    '<b>' + untold.length + ' risk(s) are marked as carried by somebody else with no record of how they were told.</b> Until that is written down the risk is still ours, and any drawing they sit on will not issue for construction.</div>' : '';
+  return guide + kpis + warn + tbl;
+}
+
 function engRenderDeviations(pid) {
   const all = _engScopeFor('eng_deviations', pid), stds = _engScopeFor('eng_standards', pid), delivs = _engScopeFor('eng_deliverables', pid);
   const guide = _engGuide('deviations', 'Deviations and concessions — where the design does not follow the code, and who agreed',
@@ -32411,6 +32669,33 @@ try { _tkInitSidebarSwipe(); } catch (e) {}
 
 /* ════════════════ BILINGUAL (EN / VN) — runtime DOM translation ════════════════ */
 const _VI = {
+  'Register Check': 'Kiểm tra sổ đăng ký',
+  'Deliverables checked': 'Số tài liệu đã kiểm',
+  'Revisions checked': 'Số bản sửa đổi đã kiểm',
+  'Must fix': 'Phải sửa',
+  'Worth a look': 'Nên xem lại',
+  'For information': 'Để tham khảo',
+  'What is wrong': 'Vấn đề',
+  'What to do': 'Cần làm gì',
+  'Design Risk': 'Rủi ro thiết kế',
+  'Design Risk Register': 'Sổ đăng ký rủi ro thiết kế',
+  'Design risk': 'Rủi ro thiết kế',
+  'Record a risk': 'Ghi nhận một rủi ro',
+  'Risks on the register': 'Rủi ro đã ghi nhận',
+  'Carried by others': 'Chuyển cho bên khác',
+  'Passed on, nobody told': 'Đã chuyển nhưng chưa thông báo',
+  'Hazard': 'Mối nguy',
+  'Initial': 'Ban đầu',
+  'Residual': 'Còn lại',
+  'What the design did': 'Thiết kế đã xử lý thế nào',
+  'Who was told': 'Đã thông báo cho ai',
+  'nothing recorded': 'chưa ghi nhận',
+  'Safety in design': 'An toàn trong thiết kế',
+  'Constructability': 'Khả năng thi công',
+  'Maintenance': 'Bảo trì',
+  'Demolition': 'Phá dỡ',
+  'Controlled': 'Đã kiểm soát',
+  'Transferred': 'Đã chuyển giao',
   'Deviations': 'Sai lệch',
   'Deviations & Concessions': 'Sai lệch & Chấp thuận ngoại lệ',
   'Deviation / Concession': 'Sai lệch / Chấp thuận ngoại lệ',
@@ -34988,6 +35273,8 @@ const _VI = {
   'Improvement actions': 'Hành động cải thiện',
   'In Zone': 'Trong vùng',
   'Out of Zone': 'Ngoài vùng',
+  'Away from site': 'Ở ngoài công trường',
+  'GPS unverified': 'Chưa xác minh GPS',
   'In/Out Log': 'Nhật ký vào/ra',
   'Timesheet': 'Bảng chấm công',
   'Individual': 'Cá nhân',
@@ -38222,7 +38509,26 @@ function _attMinutes(r) {
    '<zone> (away from site)' or '<zone> (GPS unverified)' — never the literal 'Out of Zone', which is
    produced by exactly one line in the repo and that line is seed data. So the KPI counting
    `r.loc === 'Out of Zone'` read 0 forever, on live data, in a card headed GPS Anomalies.
-   The geometric test is preferred where the row carries a fix; the label is the fallback. */
+   The label IS the record, not a fallback: it is the decision the check-in screen made, showed the
+   worker, and stamped. Both screens read it through _attGpsState below — there is no geometric
+   re-test anywhere. */
+function _attGpsState(r) {
+  /* The three states tkCheckIn can stamp (see the locLabel expression in the check-in path), read
+     back out of the label it wrote:
+       'out'        '<zone> (away from site)'  — and the seed-only literal 'Out of Zone' (db.py)
+       'unverified' '<zone> (GPS unverified)'  — we could not tell. NOT a finding about a person.
+       'in'         a bare zone name
+       'none'       nothing recorded
+     Deriving this from lat/lon instead is not merely a different rule, it is IMPOSSIBLE to do
+     faithfully: the accuracy the check-in decision turned on is never stored (the attendance INSERT
+     is emp_id,name,dept,date,clock_in,status,loc,lat,lon,project — no accuracy column), and neither
+     is which zone the worker selected. */
+  const t = String((r && r.loc) || '');
+  if (!t) return 'none';
+  if (/away from site|out of zone/i.test(t)) return 'out';
+  if (/gps unverified/i.test(t)) return 'unverified';
+  return 'in';
+}
 function _attIsAnomaly(r) {
   // The LABEL, and only the label. It is not a fallback — it is the record.
   //
@@ -38242,7 +38548,7 @@ function _attIsAnomaly(r) {
   // made and showed the worker. That stamp is what an anomaly report is about. "GPS unverified" is
   // deliberately NOT an anomaly: "we could not tell" and "they were somewhere else" are different
   // findings, and only one of them is a finding.
-  return /away from site|out of zone/i.test(String((r && r.loc) || ''));
+  return _attGpsState(r) === 'out';
 }
 /* Reports → Attendance summary KPIs + insights (data-driven from real attendance/leave). */
 function _renderRptAttendance() {
@@ -41219,11 +41525,21 @@ function _mgrNearestZone(lat, lon) {
   (_DEMO_ZONES || []).forEach(z => { if (z.lat == null || z.lon == null) return; const d = _haversineMetres(+lat, +lon, +z.lat, +z.lon); if (!best || d < best.dist) best = { zone: z, dist: Math.round(d) }; });
   return best;
 }
+/* ONE verdict, from the stamp — the same one Reports reads and the same one the worker was shown.
+   The geometric re-test that used to live here measured to the NEAREST zone and ignored GPS
+   accuracy, so it answered a question nobody was ever judged by: it CLEARED punches stamped
+   'away from site' when the worker happened to stand inside some other zone, and it FLAGGED punches
+   the app had told the worker were fine (a 250m-out fix with +/-300m accuracy reads as inside at
+   check-in and as 250m outside here).
+   Why nobody noticed: the two branches partitioned the data backwards. db.py's generate_attendance
+   is the only writer of the literal 'Out of Zone' and its INSERT carries no lat/lon, so the label
+   branch fired only on SEEDED rows and the geometry branch only on REAL ones — which is why the two
+   functions agree in every demo and every test, and disagree only in production.
+   `near` is still computed and still returned: the alert card uses it for distance, nearest-zone
+   name and the map pin. It is CONTEXT on an alert the label raised, never the thing that raises it. */
 function _mgrIsAnomaly(rec) {
-  if (/out of zone/i.test(String(rec.loc || ''))) return { near: _mgrNearestZone(rec.lat, rec.lon), bad: true };
-  const nz = _mgrNearestZone(rec.lat, rec.lon); const rad = nz ? Number(nz.zone.radius) || 0 : 0;
-  if (nz && rad > 0 && nz.dist > rad) return { near: nz, bad: true };
-  return { near: nz, bad: false };
+  const state = _attGpsState(rec);
+  return { near: _mgrNearestZone(rec && rec.lat, rec && rec.lon), state: state, bad: state === 'out' };
 }
 /* On APPROVED leave covering `day` (YYYY-MM-DD)? → the leave row or null. */
 function _mgrLeaveOn(empId, name, day) {
@@ -41257,7 +41573,14 @@ function _mgrRenderLate(list, dateLbl) {
     const e = x.emp, r = x.rec, mins = x.mins;
     const lateBadge = (mins == null) ? '<span class="badge b-warn">' + _t('Late') + '</span>' : '<span class="badge ' + (mins >= 60 ? 'b-danger' : 'b-warn') + '">' + mins + ' ' + _t('min') + '</span>';
     const anom = _mgrIsAnomaly(r);
-    const zoneBadge = anom.bad ? '<span class="badge b-danger">' + _t('Out of Zone') + '</span>' : (anom.near ? '<span class="badge b-ok">' + _t('In Zone') + '</span>' : (r.loc ? '<span class="badge b-navy">' + _crmEsc(r.loc) + '</span>' : '—'));
+    /* Three states, from the stamp. This used to read `anom.near` as a TRUTHINESS test — and near is
+       the nearest zone, which is set whenever the row has coordinates at all — so a punch stamped
+       'away from site' that the old geometric test had cleared rendered a green In Zone badge: the
+       exact opposite of what the record says, on the screen a manager acts from. */
+    const zoneBadge = anom.state === 'out' ? '<span class="badge b-danger">' + _t('Away from site') + '</span>'
+      : anom.state === 'unverified' ? '<span class="badge b-warn">' + _t('GPS unverified') + '</span>'
+      : anom.state === 'in' ? '<span class="badge b-ok">' + _t('In Zone') + '</span>'
+      : (r.loc ? '<span class="badge b-navy">' + _crmEsc(r.loc) + '</span>' : '\u2014');
     const ci = r.in || r.clock_in || '—';
     return '<tr><td><div style="display:flex;align-items:center;gap:8px">' + _mgrAva(e.name) + '<span style="font-weight:600">' + _crmEsc(e.name) + '</span></div></td>'
       + '<td>' + _crmEsc(e.dept || '—') + '</td>'
@@ -41284,7 +41607,7 @@ function _mgrRenderGps(list, dateLbl) {
     const legit = _crmEsc(e.name + ' — ' + _t('marked as a legitimate site visit'));
     return '<div style="border:1px solid var(--line);border-radius:10px;padding:16px">'
       + '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">' + _mgrAva(e.name, 'md')
-      + '<div><div style="font-size:14px;font-weight:700">' + _crmEsc(e.name) + ' — ' + _t('Out of Zone') + '</div><div style="font-size:12px;color:var(--text-light)">' + _crmEsc(e.dept || '') + ' · ' + _t('Check-in') + ' ' + _crmEsc(ci) + '</div></div>'
+      + '<div><div style="font-size:14px;font-weight:700">' + _crmEsc(e.name) + ' — ' + _t('Away from site') + '</div><div style="font-size:12px;color:var(--text-light)">' + _crmEsc(e.dept || '') + ' · ' + _t('Check-in') + ' ' + _crmEsc(ci) + '</div></div>'
       + '<span class="badge b-danger" style="margin-left:auto">' + km + ' ' + _t('from') + ' ' + _crmEsc(nz ? _mgrZoneShort(nz.zone.name) : 'zone') + '</span></div>'
       + '<div style="background:var(--soft-bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
       + '<div><span style="color:var(--text-light)">' + _t('GPS Coordinates') + '</span><br><strong>' + _crmEsc(coords) + '</strong></div>'
@@ -41306,13 +41629,17 @@ function _mgrRenderTeam(team, attByEmp, onLeaveIds, today) {
     else if (r) {
       ci = r.in || r.clock_in || '—';
       hrs = (r.out || r.clock_out) ? (r.hrs || '—') : _t('In progress');
+      /* Punctuality and location are two different facts about one punch. The GPS badge used to sit
+         FIRST in this chain and REPLACE the punctuality one, so somebody who was both late and away
+         from site showed only 'GPS Anomaly' and their late minutes vanished from the summary. Decide
+         punctuality on its own, then append the location flag beside it. */
       const anom = _mgrIsAnomaly(r).bad;
       const lb = _mgrLateBy(r, e);
-      if (anom) statusBadge = '<span class="badge b-warn">' + _t('GPS Anomaly') + '</span>';
-      else if (r.status === 'absent') statusBadge = '<span class="badge b-danger">' + _t('Absent') + '</span>';
+      if (r.status === 'absent') statusBadge = '<span class="badge b-danger">' + _t('Absent') + '</span>';
       else if (r.status === 'late') statusBadge = '<span class="badge b-warn">' + _t('Late') + (lb != null ? ' ' + lb + 'm' : '') + '</span>';
       else if (r.in || r.clock_in) statusBadge = '<span class="badge b-ok">' + _t('On Time') + '</span>';
       else statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>';
+      if (anom) statusBadge += ' <span class="badge b-warn">' + _t('Away from site') + '</span>';
     } else { statusBadge = '<span class="badge" style="background:#eef1f4;color:#64748b">' + _t('Not checked in') + '</span>'; }
     const bal = (e.annualTotal != null) ? (Number(e.annualTotal) - Number(e.annualUsed || 0)) : null;
     const balHtml = (bal == null) ? '—' : '<span style="font-size:12px">' + _t('Annual') + ': <strong>' + bal + 'd</strong></span>';
