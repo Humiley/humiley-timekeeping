@@ -157,3 +157,43 @@ def test_every_engine_reports_these_facts_even_when_there_is_nothing_to_report()
         assert isinstance(quote["unknownGrades"], list)
         assert quote["unpricedDays"] == 0
         assert quote["discountCapped"] is False
+
+
+# --- the words and the figures ----------------------------------------------------------------------
+
+def _with_words(stamp, words="Bốn tỷ đồng"):
+    q = _trading()
+    t = {"amountInWords": words, "amountInWordsFor": stamp}
+    said = [w for w in tender.issue_check(t, q)["warnings"] if "amount in words" in w]
+    return q, said
+
+
+def test_words_written_for_a_different_total_are_flagged():
+    """The amount in words is typed once and the figures move underneath it — a discount, a
+    re-priced line, a new revision — and nobody re-reads a sentence they wrote last week. In a
+    Vietnamese contract the written amount is commonly the one that governs, so a letter whose
+    words and figures disagree is worse than one carrying no words at all."""
+    q, said = _with_words(1)
+    assert said, "the letter says two different things and reported nothing"
+    assert format(int(q["gross"]), ",") in said[0], "the warning does not say what the total is now"
+
+
+def test_words_written_for_this_total_are_silent():
+    q, said = _with_words(None)
+    q2, said2 = _with_words(_trading()["gross"])
+    assert said2 == []
+
+
+def test_a_tender_whose_words_predate_the_stamp_is_not_nagged():
+    """Every tender written before this existed has words and no stamp. Guessing that they are
+    stale would cry wolf on the whole back catalogue; guessing they are fine is the honest default,
+    because the next edit stamps them."""
+    q, said = _with_words(None)
+    assert said == []
+
+
+def test_a_stamp_with_no_words_says_nothing():
+    q = _trading()
+    said = [w for w in tender.issue_check({"amountInWordsFor": 1}, q)["warnings"]
+            if "amount in words" in w]
+    assert said == []

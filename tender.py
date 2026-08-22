@@ -1711,6 +1711,19 @@ def issue_check(tender, quote):
                         % (_num(quote["unpricedDays"]),
                            " — unrecognised grade(s): " + ", ".join(unknown) if unknown else ""))
 
+    # The amount in words against the amount in figures. The words are typed once; the figures
+    # move underneath them — a discount, a re-priced line, a new revision — and nobody re-reads a
+    # sentence they wrote last week. A letter whose words and figures disagree is worse than one
+    # with no words at all: in a Vietnamese contract the written amount is commonly the one that
+    # governs. This cannot read the sentence, but the total it was written against is stamped
+    # beside it, and two numbers can be compared.
+    words = str(tender.get("amountInWords") or "").strip()
+    stamped = tender.get("amountInWordsFor")
+    if words and stamped is not None and _num(stamped) != _num(quote.get("gross")):
+        warnings.append("The amount in words was written for a total of %s VND; the total is now "
+                        "%s VND. The letter says two different things."
+                        % (format(int(_num(stamped)), ","), format(int(_num(quote.get("gross"))), ",")))
+
     free = quote.get("unpricedLines") or []
     if free:
         warnings.append("%d line(s) carry a quantity but no money: %s. A zero in a tender reads as "

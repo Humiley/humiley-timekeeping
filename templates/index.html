@@ -30603,6 +30603,15 @@ async function tndSaveField(el) {
   const e = _estById(_estCur); if (!e) return;
   const field = _QT_FIELD[key]; if (!field) return;
   const patch = Object.assign({}, e); patch[field] = val;
+  /* The amount in words is typed once and then never looked at again, while the figures move
+     underneath it: a discount, a re-priced line, a new revision. A letter whose words and figures
+     disagree is worse than one with no words at all — in a Vietnamese contract the written amount
+     is commonly the one that governs. Stamping the total it was written against is enough for
+     issue_check to notice; it cannot compare a sentence to a number, but it can compare two
+     numbers. */
+  if (field === 'amountInWords') {
+    patch.amountInWordsFor = ((_tndSum || {}).quote || {}).gross || 0;
+  }
   try {
     await tkApi('/api/coll/est_projects/' + e.id, { method: 'PATCH', body: patch });
     tkCollInvalidate('est_projects');
