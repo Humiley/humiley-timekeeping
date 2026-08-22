@@ -8702,6 +8702,81 @@ async function tkRenderAudit() {
     '</div>';
   audFillTable();
   tkAuditChainCheck();
+  tkDemoDataPanel();
+}
+
+/* ===== The shipped sample, and what is left of it =====================================
+   Mounted under the Audit Log because that is where an administrator already goes to look at what
+   the system has done to itself, and because every removal lands in the log directly above.
+   Opens on the PREVIEW. Nothing here removes anything until somebody types the phrase. */
+async function tkDemoDataPanel() {
+  const host = document.getElementById('view-audit'); if (!host) return;
+  let box = document.getElementById('demo-data-panel');
+  if (!box) { box = document.createElement('div'); box.id = 'demo-data-panel';
+              box.style.marginTop = '18px'; host.appendChild(box); }
+  box.innerHTML = '<div class="card" style="padding:16px 18px;color:var(--text-light);font-size:13px">' +
+    _t('Checking for sample data…') + '</div>';
+  let r;
+  try { r = await tkApi('/api/admin/demo-data'); }
+  catch (e) { box.innerHTML = ''; return; }          // not an admin, or not available — say nothing
+  const p = r.plan || {}, t = p.totals || {};
+  const row = (label, n) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:5px 0;' +
+    'border-bottom:1px solid var(--soft-bg);font-size:13px"><span>' + label + '</span>' +
+    '<b style="font-variant-numeric:tabular-nums">' + n + '</b></div>';
+  const names = (list) => list.slice(0, 20).map(x => _crmEsc(x.name || x.id || '')).join(', ') +
+    (list.length > 20 ? ' …' : '');
+
+  const nothing = !p.anything;
+  box.innerHTML = '<div class="card" style="padding:0;overflow:hidden">' +
+    '<div class="card-hdr" style="padding:16px 18px"><div class="card-title">' +
+      _t('Sample data shipped with the portal') + '</div></div>' +
+    '<div style="padding:16px 18px">' +
+      (nothing
+        ? '<div style="font-size:13px;color:var(--text-light)">' +
+            _t('None of the shipped sample is still in this database. Nothing to remove.') + '</div>'
+        : '<div style="font-size:13px;color:var(--text-light);margin-bottom:12px;max-width:70ch">' +
+            _t('These rows match the sample org the portal ships with, on id AND name AND email. Removing them deletes their attendance and leave with them — every row is snapshotted into the audit entry first, so it can be recovered.') +
+          '</div>' +
+          row(_t('Employees'), t.employees) + row(_t('Attendance records'), t.attendance) +
+          row(_t('Leave requests'), t.leave) + row(_t('Zones'), t.zones) +
+          '<div style="font-size:12px;color:var(--text-light);margin-top:8px">' + names(p.employees.demo) + '</div>') +
+      ((p.notes || []).length
+        ? '<div style="margin-top:14px;background:' + _tintHex('var(--warning)') + '18;border-left:3px solid ' +
+          _tintHex('var(--warning)') + ';border-radius:6px;padding:10px 12px;font-size:12.5px;line-height:1.6">' +
+          '<b>' + _t('Left alone') + '</b><br>' + (p.notes || []).map(n => _crmEsc(n)).join('<br>') + '</div>'
+        : '') +
+      (nothing ? '' :
+        '<div style="margin-top:16px;border-top:1px solid var(--line);padding-top:14px">' +
+          '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:8px;cursor:pointer">' +
+            '<input type="checkbox" id="demo-backup" style="width:15px;height:15px;accent-color:var(--navy)"> ' +
+            _t('I have a current backup of this database.') + '</label>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+            '<input id="demo-phrase" class="form-input" style="max-width:260px;font-size:13px" ' +
+              'placeholder="' + _tkEscA(r.confirmPhrase || '') + '" autocomplete="off">' +
+            '<button class="btn btn-outline btn-sm" style="color:#C00000;border-color:#C00000" ' +
+              'onclick="tkDemoDataRemove()">' + _t('Remove sample data') + '</button>' +
+          '</div>' +
+          '<div style="font-size:11.5px;color:var(--text-light);margin-top:6px">' +
+            _t('Type') + ' <b>' + _crmEsc(r.confirmPhrase || '') + '</b> ' + _t('to enable.') + '</div>' +
+        '</div>') +
+    '</div></div>';
+}
+
+async function tkDemoDataRemove() {
+  const phrase = (document.getElementById('demo-phrase') || {}).value || '';
+  const backup = !!(document.getElementById('demo-backup') || {}).checked;
+  if (!backup) { toast(_t('Confirm a current backup exists first.'), 'warn'); return; }
+  if (!(await tkConfirm(_t('Remove the shipped sample data? Every removed row is snapshotted into the audit log and can be recovered from there.')))) return;
+  try {
+    const r = await tkApi('/api/admin/demo-data/remove',
+                          { method: 'POST', body: { confirm: phrase, backupConfirmed: backup } });
+    const rm = r.removed || {};
+    toast(_t('Removed') + ': ' + rm.employees + ' ' + _t('employee(s)') + ', ' + rm.attendance + ' ' +
+          _t('attendance') + ', ' + rm.leave + ' ' + _t('leave') + ', ' + rm.zones + ' ' + _t('zone(s)'),
+          'success', 6000);
+    try { await tkLoadEmployees(); } catch (e) {}
+    tkRenderAudit();
+  } catch (e) { toast(_errMsg(e), 'error', 6000); }
 }
 /* Ask the backend to recompute the audit hash chain and show a tamper-evidence badge. Admin-only
    endpoint; a non-admin (or any error) just leaves the badge blank rather than surfacing a scary state. */
@@ -22583,6 +22658,7 @@ function _pdLabW() {
   // It scales with the window now, between the old 404 and 620; the plot beside it is horizontally
   // scrollable, so giving the names room costs the chart nothing it cannot scroll to.
   try {
+    if (_pdSlim) return 300;                 // name + status only; see _pdSlim
     if (window.matchMedia('(max-width:700px)').matches) return 176;
     // The floor is RAISED, not just scaled: at the old 404 the five fixed sub-columns took ~230 and
     // the name got ~150px — about eighteen characters — which is why names truncated on a wide
@@ -22593,6 +22669,13 @@ function _pdLabW() {
   } catch (e) { return _PD_LABW; }
 }                     // label gutter, px — shared by header, rows and gridlines
 let _pdWide = false;                      // Fit ↔ Wide: long projects need room, short ones do not
+/* The label gutter carries name · who · start · finish · duration · status, and every pixel of it is
+   a pixel the chart does not get. On a long programme the chart is the thing being read and the
+   dates are already ON it, so this collapses the gutter to the name and the status and gives the
+   rest back. Off by default: the columns are useful when you are reading the table rather than the
+   bars. Not persisted — it is a per-session way of looking, not a setting. */
+let _pdSlim = false;
+function pdSlim() { _pdSlim = !_pdSlim; _pmReload(); }
 function pdWide() { _pdWide = !_pdWide; _pmReload(); }
 
 /* ══ SHARED SCHEDULE KIT ═════════════════════════════════════════════════════════════════════════
@@ -22702,7 +22785,7 @@ function _schWho(who) {
 }
 
 function _schTimeline(rows, o) {
-  const LABW = _pdLabW(), NARROW = LABW < 300;   // one decision; every offset below reads it
+  const LABW = _pdLabW(), NARROW = _pdSlim || LABW < 340;   // one decision; every offset below reads it
   o = o || {};
   const day = o.day || _pmToday();
   const ns = o.ns || 'd', total = rows.length;
@@ -22718,7 +22801,11 @@ function _schTimeline(rows, o) {
   // day AFTER the last one, or every bar is drawn one day short and a same-day item — which is what
   // a milestone is — comes out 0% wide and renders as nothing at all. The Dur column three lines
   // below has always counted inclusively ("+1"); the bar did not, and the two disagreed on screen.
-  const axEnd = _pmDateAdd(max, 1);
+  // A MONTH past the last finish, not merely one day past it. Two reasons: a bar that ends on the
+  // final day of the axis sits flush against the edge and cannot be read, and a schedule is looked
+  // at for what is coming — the runway is where the next activity will appear. Still strictly past
+  // `max` either way, which is what keeps a same-day bar from having zero width.
+  const axEnd = _pmDateAdd(max, 31);
   const span = Math.max(1, _pmDateDiff(min, axEnd) || 1);
   const pct = d => Math.max(0, Math.min(100, ((_pmDateDiff(min, d) || 0) / span) * 100));
   // The end of the day `d` covers, for anything drawn as a span rather than a point.
@@ -22862,6 +22949,8 @@ function _schTimeline(rows, o) {
         '<div style="font-size:11px;color:var(--text-light)">' + tkFmtDate(min) + ' → ' + tkFmtDate(max) +
         (o.sub ? ' · ' + o.sub : '') + '</div></div>' +
       '<div style="display:flex;gap:6px">' +
+        '<button class="btn btn-ghost btn-sm" title="' + _tkEscA(_t('Hide the date columns and give the width to the chart')) + '" onclick="pdSlim()">' +
+          (_pdSlim ? _t('Show columns') : _t('More chart')) + '</button>' +
         '<button class="btn btn-ghost btn-sm" onclick="pdWide()">' + (_pdWide ? _t('Fit') : _t('Wide')) + '</button>' +
         (o.actions || '') + '</div></div>' +
     _schFilterBar(ns, rows.length, total) +

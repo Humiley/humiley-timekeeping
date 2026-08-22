@@ -151,9 +151,19 @@ ok('the board has a column for it',
    /\{ k: 'undated',\s+label: 'No dates'/.test(code));
 
 /* ══ 3. the timeline covers whole days, and a point in time is drawn ════════════════════════ */
-ok('the axis runs to the day AFTER the last one',
-   /const axEnd = _pmDateAdd\(max, 1\)/.test(code) &&
-   /const span = Math\.max\(1, _pmDateDiff\(min, axEnd\)/.test(code));
+// The PROPERTY, not the literal. The first version of this pinned `_pmDateAdd(max, 1)`, so adding
+// a month of runway past the last bar — which is what a reader of a programme wants — failed a test
+// that was only ever asserting a constant.
+const _ax = (code.match(/const axEnd = _pmDateAdd\(max, (\d+)\)/) || [])[1];
+ok('the axis extends PAST the last finish, never merely to it',
+   _ax && +_ax >= 1,
+   'a bar ending on the final day of the axis has nowhere to be drawn');
+ok('and it carries about a month of runway, so the last bar is readable',
+   _ax && +_ax >= 28, 'got +' + _ax + ' days');
+ok('the span is measured to that end', /const span = Math\.max\(1, _pmDateDiff\(min, axEnd\)/.test(code));
+ok('a bar still covers the whole day it finishes on, independently of the runway',
+   /const pctEnd = d => pct\(_pmDateAdd\(d, 1\)\);/.test(code),
+   'the runway and the inclusive-day fix are separate properties and must not be confused');
 ok('a bar ends at the END of the day it finishes on',
    /const a = pct\(r\.start\), b = pctEnd\(r\.finish\)/.test(code));
 ok('the month band reaches the extended end, so the last month is not clipped',

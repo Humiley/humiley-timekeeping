@@ -69,6 +69,7 @@ import contracts         # Labour Code Art. 20 contract terms, expiry and the re
 import certificates      # OSH Law Art. 21 health checks + Decree 44/2016 safety training (pure)
 import settlement        # Labour Code Art. 46/47/48 + Art. 113(4) final settlement (pure)
 import payroll_journal   # Circular 200/2014 double-entry lines from a finalised pay run (pure)
+import demo_data         # which rows came from the shipped sample, and which only look like it (pure)
 import bank_transfer     # the salary payment file the bank uploads (pure)
 import access_revoke     # what access has to be cut when somebody leaves, and what is still open (pure)
 import labour_cost       # what each project cost in people, and on what basis (pure)
@@ -3983,6 +3984,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._metrics_report(u))
         if path == "/api/admin/audit/verify":  # admin-only tamper-evidence check of the audit hash chain
             return self._guard(lambda u: self._audit_verify(u))
+        if path == "/api/admin/demo-data":    # admin-only: what of the shipped sample is still here
+            return self._guard(lambda u: self._demo_data_preview(u))
 
         if path in ("/", "/index.html"):
             return self._serve_file(os.path.join(TEMPLATE_DIR, "index.html"))
@@ -4322,6 +4325,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._tk_nudge_test(u))
         if path == "/api/monthly/test":
             return self._guard(lambda u: self._monthly_test(u))
+        if path == "/api/admin/demo-data/remove":   # admin-only, phrase-gated, snapshots first
+            return self._guard(lambda u: self._demo_data_remove(u, body))
         if path == "/api/esign":
             return self._guard(lambda u: self._esign(u, body))
         if path == "/api/esign/pin":
@@ -14472,6 +14477,130 @@ class Handler(BaseHTTPRequestHandler):
             "ts": self._utc_now()})
         res["paymentId"] = pay.get("id")
         return self._json(dict({"ok": True, "payment": pay}, **res))
+
+    def _demo_plan(self):
+        """The shipped sample as it stands in THIS database. Read-only; see demo_data."""
+        emps = db.list_employees()
+        _leave = db.list_leave() or []
+        return demo_data.plan(
+            emps, db.list_zones(),
+            lambda eid: db.list_attendance(emp_id=eid) or [],
+            lambda eid: [l for l in _leave if l.get("emp_id") == eid],
+            # The same evidence _emp_delete refuses on. A sample record with real activity on it is
+            # in use, and in use means it is somebody's, whatever its id says.
+            db.employee_references)
+
+    def _demo_data_preview(self, u):
+        """What a removal WOULD do. Deletes nothing, ever — this is the screen somebody reads before
+        deciding, and it is also the only thing an audit needs to reconstruct what was proposed."""
+        if self._caller_level(u) != "admin":
+            return self._err("Administrator access is required to review the sample data.", 403)
+        plan = self._demo_plan()
+        return self._json({"ok": True, "plan": plan,
+                           "confirmPhrase": self.DEMO_REMOVE_PHRASE,
+                           "note": "Nothing has been changed. Removal is a separate, confirmed step."})
+
+    # Typed by a person, character for character. Not a checkbox: a checkbox is one mis-click, and
+    # this ends in a DELETE against a live database.
+    DEMO_REMOVE_PHRASE = "REMOVE SAMPLE DATA"
+
+    def _demo_data_remove(self, u, body):
+        """Remove ONLY what the preview identified, after snapshotting every row into the audit chain.
+
+        Four gates, in order: administrator level, the typed phrase, an explicit acknowledgement that
+        a backup exists, and a re-computation of the plan at the moment of deletion — the caller's
+        idea of what is removable is never trusted, because the database may have changed since they
+        looked at it.
+        """
+        if self._caller_level(u) != "admin":
+            return self._err("Administrator access is required to remove the sample data.", 403)
+        body = body if isinstance(body, dict) else {}
+        if str(body.get("confirm") or "") != self.DEMO_REMOVE_PHRASE:
+            return self._err("Type %r exactly to confirm. Nothing has been changed."
+                             % self.DEMO_REMOVE_PHRASE, 400)
+        if not body.get("backupConfirmed"):
+            return self._err("Confirm that a current backup exists before removing anything. "
+                             "Nothing has been changed.", 400)
+
+        # RE-COMPUTED here, not taken from the request. A caller cannot name rows to delete.
+        plan = self._demo_plan()
+        if not plan.get("anything"):
+            return self._json({"ok": True, "removed": {"employees": 0, "attendance": 0,
+                                                       "leave": 0, "zones": 0},
+                               "note": "Nothing of the shipped sample is left to remove."})
+
+        removed = {"employees": 0, "attendance": 0, "leave": 0, "zones": 0,
+                   "empEvents": 0, "esignPins": 0}
+        snap = {"employees": [], "zones": []}
+
+        # ── PASS 1: read everything, write the recovery record, and only THEN destroy anything ──
+        # The audit entry is this endpoint's sole recoverability guarantee, and it used to be written
+        # last. Every delete commits on its own connection, so an exception anywhere in the loop —
+        # or in the audit write itself — left the sample org destroyed with no snapshot at all. The
+        # record of what was removed has to exist before the removal does.
+        for e in plan["employees"]["demo"]:
+            full = db.get_employee(e["id"])
+            if not full:
+                continue
+            # Snapshot BEFORE the delete. THREE tables cascade on the employee's FK — attendance,
+            # leave and esign_pin — so once the row is gone, so is everything hanging off it. The
+            # audit chain is what makes that recoverable, and it is only recoverable for what is
+            # actually captured here.
+            #
+            # esign_pin is the exception, on purpose: it holds a signature-PIN hash, and copying a
+            # credential into an audit log that management can read is a worse outcome than losing a
+            # demo account's PIN. It is COUNTED and reported as destroyed rather than archived, so
+            # the claim this endpoint makes about recoverability stays exactly true.
+            events = db.list_emp_events(emp_id=e["id"]) or []
+            snap["employees"].append({
+                "employee": full,
+                "attendance": db.list_attendance(emp_id=e["id"]) or [],
+                "leave": [l for l in (db.list_leave() or []) if l.get("emp_id") == e["id"]],
+                "empEvents": events,
+            })
+            removed["attendance"] += len(snap["employees"][-1]["attendance"])
+            removed["leave"] += len(snap["employees"][-1]["leave"])
+            removed["empEvents"] += len(events)
+            if db.employee_references(e["id"]).get("e-signature PIN"):
+                removed["esignPins"] += 1
+            removed["employees"] += 1
+        for z in plan["zones"]["demo"]:
+            full = next((x for x in (db.list_zones() or []) if x.get("id") == z["id"]), None)
+            if full:
+                snap["zones"].append(full)
+                removed["zones"] += 1
+
+        audit_row = db.put_collection_item("audit", {
+            "actor": u.get("name") or "Administrator", "actorId": u.get("id") or "",
+            "action": "Removed shipped sample data",
+            "target": "employees/zones",
+            "detail": ("%(employees)d employee(s), %(attendance)d attendance record(s), "
+                       "%(leave)d leave request(s), %(zones)d zone(s) — all snapshotted in this "
+                       "entry. %(empEvents)d employment-history record(s) were snapshotted and LEFT "
+                       "IN PLACE (that table is append-only and has no delete path). "
+                       "%(esignPins)d signature PIN(s) were destroyed and NOT archived — a "
+                       "credential hash does not belong in an audit log." % removed),
+            "snapshot": snap,
+            "ts": self._utc_now()})
+
+        # ── PASS 2: destroy. The recovery record is already committed above. ──
+        # emp_events has NO foreign key, deliberately — it is the effective-dated employment record
+        # and is append-only through the API, which is why there is no deleter for it. Its rows
+        # SURVIVE, pointing at an id nobody holds. Harmless (nothing resolves them) and the right
+        # trade: adding a delete path into an append-only employment record, to tidy up a demo
+        # account, is a worse thing to build than a few unreferenced rows.
+        for entry in snap["employees"]:
+            db.delete_employee(entry["employee"]["id"])
+        for z in snap["zones"]:
+            db.delete_zone(z.get("id"))
+
+        return self._json({
+            "ok": True, "removed": removed, "plan": plan,
+            "auditId": (audit_row or {}).get("id"),
+            "note": ("Every removed record is snapshotted in the audit entry for this action and can "
+                     "be recovered from it, except two things named plainly: signature PINs are "
+                     "credential hashes and are destroyed rather than archived, and employment-history "
+                     "rows are snapshotted but left in place because that table is append-only.")})
 
     @staticmethod
     def _payrun_duplicate_people(runs):
