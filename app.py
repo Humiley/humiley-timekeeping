@@ -4343,6 +4343,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._guard(lambda u: self._attendance_ot(u, aid, body), manager=True)
         if path == "/api/leave":
             return self._guard(lambda u: self._leave_create(u, body))
+        if path == "/api/tender/revise":
+            return self._guard(lambda u: self._tender_revise_ep(u, body), manager=True)
         if path == "/api/est/adopt":
             return self._guard(lambda u: self._est_adopt_ep(u, body), manager=True)
         if path == "/api/push/subscribe":
@@ -8373,6 +8375,65 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 return {}
 
+    def _tender_revise_ep(self, u, body):
+        """Freeze what this tender says right now.
+
+        Built from the stored rows, never from the request body: a revision assembled out of
+        whatever a client posted would record what somebody claimed the tender said, which is the
+        opposite of the point. The caller chooses only the note.
+        """
+        tid = str(body.get("estId") or "").strip()
+        e = self._est_get(tid)
+        if not e:
+            return self._err("Tender not found.", 404)
+        ctype = str(e.get("costingType") or "").strip().lower()
+        if ctype not in (tender.TRADING, tender.EPC, tender.SERVICES):
+            return self._err("Revisions are for tender-priced jobs. A BoQ estimate already "
+                             "versions through its own snapshot.", 400)
+        a = tender.assumptions(e.get("assump"))
+        master = rollup = None
+        if ctype == tender.EPC:
+            rollup = tender.bom_rollup(
+                [r for r in db.list_collection("est_bom") if r.get("estId") == tid],
+                a, e.get("bomConfig") or {})
+        elif ctype == tender.SERVICES:
+            rollup = tender.services_rollup(
+                [r for r in db.list_collection("est_wbs") if r.get("estId") == tid],
+                a, e.get("wbsConfig") or {})
+        else:
+            master = tender.cost_master(
+                [r for r in db.list_collection("est_landed") if r.get("estId") == tid],
+                [r for r in db.list_collection("est_local") if r.get("estId") == tid], a)
+        overrides = [r for r in db.list_collection("est_quote") if r.get("estId") == tid]
+        quote = tender.quotation(e, master=master, rollup=rollup, overrides=overrides)
+        if not quote["lineCount"]:
+            return self._err("Nothing priced yet, so there is nothing to record.", 400)
+
+        elements = tender.cost_elements(e, master=master, rollup=rollup)
+        rev = tender.revision(e, quote, elements, note=body.get("note"))
+        existing = [r for r in db.list_collection("est_revs") if r.get("estId") == tid]
+        rev["rev"] = len(existing) + 1
+        rev["takenAt"] = _now_iso()
+        rev["takenBy"] = u.get("name") or u.get("email")
+        row = db.put_collection_item("est_revs", rev)
+
+        def _revno(r):
+            try:
+                return int(r.get("rev") or 0)
+            except (TypeError, ValueError):
+                return 0
+        prev = sorted(existing, key=_revno)[-1] if existing else None
+        db.put_collection_item("audit", {
+            "ts": _now_iso(), "by": u.get("email"), "actor": u.get("name") or u.get("email"),
+            "action": "Tender revision taken", "target": e.get("quoteNo") or tid,
+            "detail": "Rev %d · %s" % (rev["rev"], format(int(rev["net"]), ","))
+                      + (" · was %s" % format(int(float(prev.get("net") or 0)), ",")
+                         if prev else " · first"),
+        })
+        return self._json({"ok": True, "id": row.get("id"), "rev": rev["rev"],
+                           "net": rev["net"],
+                           "compare": tender.compare_revisions(prev, rev) if prev else None})
+
     def _tender_budget(self, e, ctype):
         """The cost base of a tender-priced job, in the structure it was priced in.
 
@@ -8670,7 +8731,7 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True})
 
     # -- generic HR collections (recruitment, onboarding, performance, talent, training) --
-    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
+    COLLECTIONS = {"hrdocs", "hrdoc_acks", "jobs", "candidates", "onboarding", "reviews", "goals", "courses", "talent", "payruns", "padr", "competency", "pip", "claims", "acks", "audit", "travel", "exits", "benefits", "learningpaths", "enrollments", "payadjust", "devices", "handovers", "payments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_projects", "pm_settings", "pm_deliverables", "pm_tasks", "pm_detail", "pm_schedules", "pm_costs", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_procurement", "pm_procurement_payments", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "pm_portfolioSnapshots", "pm_execNotes", "invtrack", "schedules", "contracts", "certificates", "review_cycles", "decisions", "hrletters", "concerns", "incidents", "eng_projects", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_holds", "eng_transmittals", "sales_quotes", "sales_contracts", "sales_applications", "sales_receipts", "sales_variations", "sales_credits", "est_projects", "est_items", "est_resources", "est_rates", "est_landed", "est_local", "est_bom", "est_wbs", "est_quote", "est_risks", "est_revs", "ahu_orders", "ahu_units", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     # Collections any authenticated user (incl. staff) may create for self-service.
     STAFF_WRITE = {"hrdoc_acks", "claims", "travel", "payments", "acks", "audit", "padr", "enrollments", "crm_deals", "crm_companies", "crm_contacts", "crm_leads", "crm_products", "crm_targets", "crm_aop", "pm_tasks", "pm_detail", "pm_schedules", "pm_deliverables", "pm_quality", "pm_quality_itp", "pm_quality_itp_items", "pm_resources", "pm_comms", "pm_issues", "pm_risks", "pm_changes", "pm_lessons", "pm_stakeholders", "pm_rfis", "pm_sitereports", "pm_weekreports", "pm_chat", "eng_team", "eng_stages", "eng_inputs", "eng_deliverables", "eng_revisions", "eng_reviews", "eng_comments", "eng_changes", "eng_tq", "eng_idc", "eng_standards", "eng_deviations", "eng_risks", "eng_holds", "eng_transmittals", "ahu_steps", "ahu_bom", "ahu_docs", "ahu_trace", "ahu_ncr", "ahu_dispatch", "ahu_instruments", "ahu_complaints", "ahu_quals"}
     PAYROLL_ADMIN = {"payruns", "payadjust"}   # payroll writes are Administrator-only
@@ -8737,6 +8798,16 @@ class Handler(BaseHTTPRequestHandler):
     # administrator is deliberately not a way in. Listing the collection would hand every concern
     # to exactly the people the channel exists to be independent of.
     CONFIDENTIAL = {"concerns"}
+
+    # READABLE BUT NEVER WRITABLE through /api/coll. A revision is a record of what a tender said
+    # at a moment; one that can be edited afterwards is not a record, it is a second opinion about
+    # the past. Unlike CONFIDENTIAL these are NOT hidden — the whole point is that people read
+    # them — so the refusal explains itself and names the thing to do instead. They are created by
+    # /api/tender/revise, which builds them from the priced rows rather than from a request body.
+    FROZEN = {"est_revs"}
+    FROZEN_MSG = ("A revision is a record of what this tender said at a moment. It cannot be "
+                  "edited or deleted — take a new revision instead, and the difference between "
+                  "them becomes the explanation.")
     ISSUED_EDITABLE = {"sales_quotes": {"_rev", "id"}, "sales_contracts": {"_rev", "id"},
                        "sales_applications": {"_rev", "id"}, "sales_receipts": {"_rev", "id"},
                        "sales_variations": {"_rev", "id"}, "sales_credits": {"_rev", "id"},   # nothing: every change goes through the endpoint
@@ -8764,7 +8835,7 @@ class Handler(BaseHTTPRequestHandler):
     # which is where a won estimate lands.
     EST_MIN = "manager"
     READ_MIN = {"est_projects": EST_MIN, "est_items": EST_MIN, "est_resources": EST_MIN, "est_rates": EST_MIN,
-                "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_wbs": EST_MIN, "est_quote": EST_MIN,
+                "est_landed": EST_MIN, "est_local": EST_MIN, "est_bom": EST_MIN, "est_wbs": EST_MIN, "est_quote": EST_MIN, "est_revs": EST_MIN,
                 "est_risks": EST_MIN,
                 "sales_quotes": "staff", "sales_contracts": "staff", "sales_applications": "staff", "sales_receipts": "staff", "sales_variations": "staff", "sales_credits": "staff", "invtrack": INVTRACK_MIN, "payruns": "management", "payadjust": "management", "exits": "management", "pip": "management", "review_cycles": "manager",
                 # A labour contract states the agreed wage, so it is compensation data — management
@@ -9705,6 +9776,8 @@ class Handler(BaseHTTPRequestHandler):
     def _coll_add(self, u, name, body):
         if name not in self.COLLECTIONS:
             return self._err("Unknown collection.", 404)
+        if name in self.FROZEN:
+            return self._err(self.FROZEN_MSG, 409)
         if name in self.CONFIDENTIAL:
             # Not 403 with an explanation of what lives here — that confirms the collection exists
             # and how many rows it has. It is simply not a collection this route serves.
@@ -15327,6 +15400,8 @@ class Handler(BaseHTTPRequestHandler):
                            "health": _FINSP_HEALTH})
 
     def _coll_update(self, u, name, iid, body):
+        if name in self.FROZEN:
+            return self._err(self.FROZEN_MSG, 409)
         if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
             # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
             # the collection exists, which for the speak-up channel is itself information.
@@ -16153,6 +16228,8 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "item": {k: v for k, v in _out.items() if k != "token"}})
 
     def _coll_delete(self, u, name, iid):
+        if name in self.FROZEN:
+            return self._err(self.FROZEN_MSG, 409)
         if name not in self.COLLECTIONS or name in self.CONFIDENTIAL or not iid:
             # CONFIDENTIAL folds into the same 404: saying "you may not touch this one" confirms
             # the collection exists, which for the speak-up channel is itself information.
